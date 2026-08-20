@@ -8,6 +8,8 @@ import {
     updateProofMeters,
     loadProofPatch,
     setProofAbBypass,
+    setProofUiLevel,
+    clearProofMeters,
     DEFAULT_PROOF_STATE,
     type ProofMeterData,
 } from '../proofStore';
@@ -169,6 +171,115 @@ describe('updateProofMeters', () => {
 
         expect(notified).toHaveLength(1);
         unsubscribe();
+    });
+});
+
+// ── `clearProofMeters` is what the audio engine calls when a Proof device
+// leaves the graph. Its whole contract is a split: every runtime telemetry
+// field goes back to its default, and nothing persistent moves. A no-op
+// implementation and one that reset the patch would both be invisible without
+// these — nothing else in the tree observes the function. ──
+describe('clearProofMeters', () => {
+    // A factory, not a shared const: `updateProofMeters` stores the frame's own
+    // `dynGr`/`tapPeaks` arrays by reference, so a single literal would let one
+    // test's in-place write reach every later test's seed.
+    function liveMeters(): ProofMeterData {
+        return {
+            inputLufs: -12.5,
+            outputLufs: -10.2,
+            outputStLufs: -9.8,
+            integratedLufs: -14.1,
+            truePeakDb: -0.3,
+            lra: 6.5,
+            correlation: 0.8,
+            limiterGrDb: -2.1,
+            dynGr: [-1, -2, -3, -4],
+            tapPeaks: [{ peakL: -6, peakR: -5 }],
+            latency: 12,
+        };
+    }
+
+    it('resets every runtime metering field to its default', () => {
+        updateProofMeters('dev', liveMeters());
+        // Guard the guard: the seeded frame must actually differ from the
+        // defaults, or "reset" would be indistinguishable from doing nothing.
+        expect(getProofState('dev').integratedLufs).toBe(-14.1);
+
+        clearProofMeters('dev');
+
+        const state = getProofState('dev');
+        expect(state.inputLufs).toBe(DEFAULT_PROOF_STATE.inputLufs);
+        expect(state.outputLufs).toBe(DEFAULT_PROOF_STATE.outputLufs);
+        expect(state.outputStLufs).toBe(DEFAULT_PROOF_STATE.outputStLufs);
+        expect(state.integratedLufs).toBe(DEFAULT_PROOF_STATE.integratedLufs);
+        expect(state.truePeakDb).toBe(DEFAULT_PROOF_STATE.truePeakDb);
+        expect(state.lra).toBe(DEFAULT_PROOF_STATE.lra);
+        expect(state.correlation).toBe(DEFAULT_PROOF_STATE.correlation);
+        expect(state.limiterGrDb).toBe(DEFAULT_PROOF_STATE.limiterGrDb);
+        expect(state.dynGr).toEqual(DEFAULT_PROOF_STATE.dynGr);
+        expect(state.tapPeaks).toEqual(DEFAULT_PROOF_STATE.tapPeaks);
+        expect(state.latency).toBe(DEFAULT_PROOF_STATE.latency);
+    });
+
+    it('preserves the patch and every other persistent field', () => {
+        loadProofPatch({
+            deviceId: 'dev',
+            patch: { ...DEFAULT_PATCH, name: 'Streaming Master', presetId: 'streaming', limCeiling: -1.5 },
+        });
+        setProofUiLevel({ deviceId: 'dev', level: 4 });
+        setProofAbBypass({ deviceId: 'dev', abBypass: true });
+        updateProofMeters('dev', liveMeters());
+
+        clearProofMeters('dev');
+
+        const state = getProofState('dev');
+        // The clear actually happened — otherwise the preservation assertions
+        // below would hold for a function that does nothing at all.
+        expect(state.integratedLufs).toBe(DEFAULT_PROOF_STATE.integratedLufs);
+        expect(state.patch.name).toBe('Streaming Master');
+        expect(state.patch.presetId).toBe('streaming');
+        expect(state.patch.limCeiling).toBe(-1.5);
+        expect(state.projectPatchHydrated).toBe(true);
+        expect(state.uiLevel).toBe(4);
+        expect(state.abBypass).toBe(true);
+    });
+
+    it('hands the cleared device its own arrays rather than the shipped defaults', () => {
+        updateProofMeters('dev', liveMeters());
+
+        clearProofMeters('dev');
+
+        const state = getProofState('dev');
+        // Cleared to the defaults by value…
+        expect(state.dynGr).toEqual(DEFAULT_PROOF_STATE.dynGr);
+        expect(state.tapPeaks).toEqual(DEFAULT_PROOF_STATE.tapPeaks);
+        // …but never *as* the singleton: aliasing it would make the next
+        // in-place meter write on this device rewrite the defaults for every
+        // other Proof instance.
+        expect(state.dynGr).not.toBe(DEFAULT_PROOF_STATE.dynGr);
+        expect(state.tapPeaks).not.toBe(DEFAULT_PROOF_STATE.tapPeaks);
+        expect(state.tapPeaks[0]).not.toBe(DEFAULT_PROOF_STATE.tapPeaks[0]);
+
+        state.dynGr[0] = -9;
+        state.tapPeaks[0] = { peakL: -3, peakR: -3 };
+        expect(DEFAULT_PROOF_STATE.dynGr[0]).toBe(0);
+        expect(DEFAULT_PROOF_STATE.tapPeaks[0]).toEqual({ peakL: -100, peakR: -100 });
+    });
+
+    it('leaves a sibling device metering untouched', () => {
+        updateProofMeters('dev', liveMeters());
+        updateProofMeters('other', liveMeters());
+
+        clearProofMeters('dev');
+
+        expect(getProofState('other').integratedLufs).toBe(-14.1);
+        expect(getProofState('other').tapPeaks).toEqual([{ peakL: -6, peakR: -5 }]);
+    });
+
+    it('does not materialise an instance for a device the store never saw', () => {
+        clearProofMeters('never-loaded');
+
+        expect(proofStore.value?.['never-loaded']).toBeUndefined();
     });
 });
 
