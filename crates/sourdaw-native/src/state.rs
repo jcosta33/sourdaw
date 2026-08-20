@@ -154,6 +154,12 @@ pub struct AppState {
     /// re-cross the wire every batch (#2225). Control-side only, LRU-capped;
     /// see `commands::graph::GraphMappingSessions`.
     pub graph_mapping_sessions: Arc<Mutex<crate::commands::graph::GraphMappingSessions>>,
+    /// The durable half of `plugin_registry`: the file a scan writes and the
+    /// first plugin-touching command reads back, so a relaunched app resolves
+    /// a saved project's plugins without a manual scan. Control-side only —
+    /// every method on it touches the filesystem. See
+    /// `host::plugin_registry_store`.
+    pub plugin_registry_store: Arc<crate::host::plugin_registry_store::PluginRegistryStore>,
 }
 
 /// One registered piece of timeline material: planar stereo PCM and the rate
@@ -172,9 +178,32 @@ pub struct TimelineSample {
 #[derive(Clone, Debug)]
 pub struct PluginRegistryEntry {
     pub path: String,
+    /// `ScannedPlugin::id`: the hash of the path this plugin was scanned at.
+    /// Carried on the entry, not just used as its key, because an entry is also
+    /// reachable under the CLAP descriptor id and still has to be able to say
+    /// which scanned file it came from.
+    pub stable_id: String,
     pub clap_id: String,
     pub format: String,
     pub name: String,
+}
+
+impl AppState {
+    /// App state whose plugin registry is backed by the scan registry file in
+    /// the platform's app-data directory. The production constructor.
+    ///
+    /// `Default` deliberately gives an in-memory store instead. A test that
+    /// builds an `AppState` must not read — or rewrite — the developer's own
+    /// scanned plugin database, and a default that reaches the real file would
+    /// make every such test do exactly that.
+    pub fn with_persisted_plugin_registry() -> Self {
+        Self {
+            plugin_registry_store: Arc::new(
+                crate::host::plugin_registry_store::PluginRegistryStore::at_default_location(),
+            ),
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for AppState {
@@ -193,6 +222,9 @@ impl Default for AppState {
             graph_mapping_sessions: Arc::new(Mutex::new(
                 crate::commands::graph::GraphMappingSessions::default(),
             )),
+            plugin_registry_store: Arc::new(
+                crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
+            ),
         }
     }
 }
