@@ -77,7 +77,7 @@ export function issueRelationshipFromBody(body: string, issue: number | undefine
         }
         return undefined;
     }
-    if (relationships.length !== 1 || relationships[0]?.issue !== issue) {
+    if (relationships.length !== 1 || relationships[0]?.issue !== issue || lines.includes(NO_RELATED_TICKETS)) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
     return relationships[0].label === 'Closes' ? 'closes' : 'relates';

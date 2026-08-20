@@ -249,6 +249,17 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
+    it('rejects mixed None and issue relationships before mutation', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nNone.\nCloses #12',
+        });
+
+        expect(() => publishLane(12, port)).toThrow(/exactly one relationship/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
     it('validates an existing issueless pull request', () => {
         const { port, calls } = fakePort({
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
