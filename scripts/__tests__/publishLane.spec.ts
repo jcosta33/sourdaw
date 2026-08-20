@@ -179,6 +179,35 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).toContain('Closes #12');
     });
 
+    it('references a campaign issue without closing it', () => {
+        const { port, bodies } = fakePort();
+
+        publishLane(12, port, 'relates');
+
+        expect(bodies.at(-1)).toContain('Related #12');
+        expect(bodies.at(-1)).not.toContain('Closes #12');
+    });
+
+    it('takes the related issue from the lane branch', () => {
+        const { port, bodies } = fakePort({
+            trees: [...otherAuthorLanes(), worktree()],
+            cwd: `${ISSUE_LANE}/scripts`,
+        });
+
+        publishLane(undefined, port, 'relates');
+
+        expect(bodies.at(-1)).toContain('Related #12');
+    });
+
+    it('rejects --relates on an issueless lane', () => {
+        const { port } = fakePort({
+            trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+            cwd: CLEANUP_LANE,
+        });
+
+        expect(() => publishLane(undefined, port, 'relates')).toThrow(/requires an issue lane/);
+    });
+
     it('publishes the lane it is standing in even when other author lanes exist', () => {
         const { port, calls, bodies, logs } = fakePort({
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
@@ -386,10 +415,13 @@ describe('lane publish', () => {
             locked: true,
             lockReason: AUTHOR_LOCK_REASON,
         });
-        expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, help: false });
-        expect(parsePublishLaneArgs([])).toEqual({ help: false });
-        expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
+        expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, relationship: 'closes', help: false });
+        expect(parsePublishLaneArgs(['12', '--relates'])).toEqual({ issue: 12, relationship: 'relates', help: false });
+        expect(parsePublishLaneArgs(['--relates'])).toEqual({ relationship: 'relates', help: false });
+        expect(parsePublishLaneArgs([])).toEqual({ relationship: 'closes', help: false });
+        expect(parsePublishLaneArgs(['--help'])).toEqual({ relationship: 'closes', help: true });
         expect(() => parsePublishLaneArgs(['12', '13'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
     });
 

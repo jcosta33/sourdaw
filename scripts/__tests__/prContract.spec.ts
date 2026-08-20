@@ -22,6 +22,13 @@ describe('pull-request contract', () => {
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
     });
 
+    it('references an umbrella issue without closing it', () => {
+        const body = composePublishBody(2164, 'feat(vcs): add identities', 'relates');
+        expect(body).toContain('Related #2164');
+        expect(body).not.toContain('Closes #2164');
+        expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
     it('composes a nonempty Related tickets section when no issue is given', () => {
         const body = composePublishBody(undefined, 'feat(vcs): add identities');
         expect(body).not.toContain('Closes #');
