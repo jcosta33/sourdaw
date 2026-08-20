@@ -185,15 +185,21 @@ export const PianoRoll = ({
     // clips' notes are drawn in this same coordinate space (`openedClipNotes`
     // below, rendered by `usePianoRollRenderer.ts`'s `drawOpenedClipNotes`)
     // and are editable, not read-only, so their content must also grow the
-    // canvas. This must stay in lock-step with the same call in
-    // `usePianoRollRenderer.ts`.
-    const extentBeats = getPianoRollExtentBeats([
-        { clipLengthBeats: clipLengthsBeats[clipId] ?? 0, notes },
-        ...Object.entries(openedClipNotes ?? {}).map(([id, openedNotes]) => ({
-            clipLengthBeats: clipLengthsBeats[id] ?? 0,
-            notes: openedNotes,
-        })),
-    ]);
+    // canvas. `pixelsPerBeat` (same `beatWidth * devicePixelRatio` expression
+    // as `usePianoRollRenderer.ts`) must stay in lock-step with the same call
+    // there — it is what the extent's ceiling is derived from at the current
+    // zoom, not a fixed beat count.
+    const pixelsPerBeat = beatWidth * (window.devicePixelRatio || 1);
+    const extentBeats = getPianoRollExtentBeats(
+        [
+            { clipLengthBeats: clipLengthsBeats[clipId] ?? 0, notes },
+            ...Object.entries(openedClipNotes ?? {}).map(([id, openedNotes]) => ({
+                clipLengthBeats: clipLengthsBeats[id] ?? 0,
+                notes: openedNotes,
+            })),
+        ],
+        pixelsPerBeat
+    );
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {

@@ -45,27 +45,36 @@ const EXTENT_BEATS_PER_BAR = 4;
 const TRAILING_BARS = 1;
 
 /**
- * Ceiling on the content beats (clip length or furthest note end) the extent
- * formula will honor, before bar-rounding and trailing room are added.
+ * Pixel budget the extent ceiling bounds against — a canvas *dimension*
+ * limit, not a beat limit. The piano roll's canvas is sized in device pixels
+ * as `extentBeats * beatWidth * devicePixelRatio` (see
+ * `usePianoRollRenderer.ts`, `canvas.width = Math.round(totalWidth * dpr)`),
+ * so the safe number of *beats* is not one fixed constant — it depends on how
+ * many pixels each beat currently occupies, i.e. on the caller's zoom level.
  *
- * The piano roll canvas is sized in device pixels as
- * `extentBeats * beatWidth * devicePixelRatio` (see `usePianoRollRenderer.ts`,
- * `canvas.width = Math.round(totalWidth * dpr)`). Chromium's own measured
- * hard limit for a single canvas dimension is ~32,767px — see
- * https://issues.chromium.org/issues/40349850 and
- * https://github.com/jhildenbiddle/canvas-size. `beatWidth` maxes out at 160
- * (zoom is clamped to 400% — `Math.max(1, 40 * zoom)` with zoom capped at 4 in
- * `usePianoRollInteractions.ts` and the toolbar's zoom slider). At that zoom
- * and a common HiDPI `devicePixelRatio` of 2, the hard limit is first reached
- * around 32767 / (160 * 2) ≈ 102 beats. 64 beats leaves ~38% headroom under
- * that — safe even for devicePixelRatio approaching 3 — while a fixed
- * constant absorbed this before this PR let the extent grow with real
- * content. Past this ceiling, notes are still stored and playable; only the
- * piano roll's editable canvas stops growing, so their tail becomes
- * unreachable by mouse — degraded, but strictly better than the whole canvas
- * collapsing to zero width the way an unclamped or non-finite extent would.
+ * Chromium's own measured hard limit for a single `<canvas>` dimension is
+ * ~32,767px (2^15 - 1, hit through 32-bit backing-store math and GPU
+ * texture-size limits) — see https://issues.chromium.org/issues/40349850 and
+ * the cross-browser measurements at
+ * https://github.com/jhildenbiddle/canvas-size. That figure is
+ * browser-and-GPU-dependent, not a spec guarantee, so this bounds at 24,576px
+ * (75% of it) rather than the measured limit itself: a quarter of headroom
+ * for driver/platform variance (older or embedded GPUs, non-Chromium
+ * WebViews) without being measurably restrictive at any zoom level a piano
+ * roll user actually works at — see `getPianoRollExtentBeats`' per-call
+ * derivation below.
  */
-export const MAX_EXTENT_BEATS = 64;
+export const MAX_CANVAS_DIMENSION_PX = 24_576;
+
+/**
+ * Fallback pixels-per-beat used only if a caller passes a non-finite or
+ * non-positive value — the worst realistic case (max zoom, `beatWidth` 160 at
+ * 400% — see `usePianoRollInteractions.ts`'s zoom clamp and the toolbar's
+ * zoom slider — times a common HiDPI `devicePixelRatio` of 2). An invalid
+ * input then still gets the smallest (most protective) ceiling instead of an
+ * unbounded one.
+ */
+const FALLBACK_PIXELS_PER_BEAT = 320;
 
 /**
  * One clip's contribution to the piano roll's shared beat extent: its own
@@ -90,11 +99,25 @@ export type PianoRollExtentSource = {
  * fix, just through a second clip instead of a long first one.
  *
  * The result floors at `GRID_BEATS` so an empty or very short clip still
- * opens on a usable grid, clamps at `MAX_EXTENT_BEATS` so a malformed
- * `startBeat`/`endBeat` (or a legitimately huge one) cannot drive the canvas
- * backing store past what the browser can allocate, rounds up to a whole
- * bar, then appends `TRAILING_BARS` of room past that boundary so the user
- * can draw or drag past the end.
+ * opens on a usable grid, clamps at a ceiling derived from `pixelsPerBeat`
+ * (below) so a malformed `startBeat`/`endBeat` (or a legitimately huge one)
+ * cannot drive the canvas backing store past what the browser can allocate,
+ * rounds up to a whole bar, then appends `TRAILING_BARS` of room past that
+ * boundary so the user can draw or drag past the end.
+ *
+ * `pixelsPerBeat` is the caller's current `beatWidth * devicePixelRatio` —
+ * how many device pixels one beat actually occupies right now. The ceiling
+ * is `floor(MAX_CANVAS_DIMENSION_PX / pixelsPerBeat)`: a *pixel* budget
+ * converted to beats at the current zoom, not a fixed beat count computed
+ * once at maximum zoom and applied everywhere. A fixed beat ceiling sized
+ * for maximum zoom is itself the extent-cap bug this helper exists to fix,
+ * just re-triggered by ordinary content instead of a fixed constant — a
+ * 200-beat clip (50 bars at 4/4, an unremarkable arrangement) has its tail
+ * clipped at every zoom level even though at anything but maximum zoom the
+ * canvas has plenty of pixel budget left. Deriving the ceiling from the
+ * current `pixelsPerBeat` means it only engages when the pixel math actually
+ * demands it — a malformed import at any zoom, or ordinary long content only
+ * once the user zooms in far enough that it would matter anyway.
  *
  * A non-finite `clipLengthBeats` (nothing validates clip `startBeat`/`endBeat`
  * upstream) is treated as `0` rather than passed to `Math.max` — an `Infinity`
@@ -107,12 +130,14 @@ export type PianoRollExtentSource = {
  * This is the single source of truth for the grid's beat span — both
  * `PianoRoll.tsx` (scroll container + expression-lane width) and
  * `usePianoRollRenderer.ts` (canvas backing store + grid cache) must call
- * this with the same set of sources instead of recomputing the rule
- * themselves. Two independent copies of this formula — or two different
- * source lists — is how a MIDI clip (or an opened one alongside it) ends up
- * with its tail undrawn, unscrollable, and unselectable again.
+ * this with the same source list *and* the same `pixelsPerBeat` (their own
+ * `beatWidth * (window.devicePixelRatio || 1)`) instead of recomputing the
+ * rule themselves. Two independent copies of this formula — different source
+ * lists, or different `pixelsPerBeat` — is how a MIDI clip (or an opened one
+ * alongside it) ends up with its tail undrawn, unscrollable, and
+ * unselectable again.
  */
-export const getPianoRollExtentBeats = (sources: readonly PianoRollExtentSource[]): number => {
+export const getPianoRollExtentBeats = (sources: readonly PianoRollExtentSource[], pixelsPerBeat: number): number => {
     let maxClipLengthBeats = 0;
     let furthestNoteEndBeat = 0;
     for (const source of sources) {
@@ -128,8 +153,11 @@ export const getPianoRollExtentBeats = (sources: readonly PianoRollExtentSource[
             }
         }
     }
+    const safePixelsPerBeat =
+        Number.isFinite(pixelsPerBeat) && pixelsPerBeat > 0 ? pixelsPerBeat : FALLBACK_PIXELS_PER_BEAT;
+    const maxContentBeats = Math.floor(MAX_CANVAS_DIMENSION_PX / safePixelsPerBeat);
     const contentBeats = Math.max(maxClipLengthBeats, furthestNoteEndBeat, GRID_BEATS);
-    const clampedContentBeats = Math.min(contentBeats, MAX_EXTENT_BEATS);
+    const clampedContentBeats = Math.min(contentBeats, maxContentBeats);
     const barBeats = Math.ceil(clampedContentBeats / EXTENT_BEATS_PER_BAR) * EXTENT_BEATS_PER_BAR;
     return barBeats + TRAILING_BARS * EXTENT_BEATS_PER_BAR;
 };

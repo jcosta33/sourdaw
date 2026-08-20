@@ -181,8 +181,9 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             // opened alongside it (see `getPianoRollExtentBeats`) — opened
             // clips' notes are drawn in this same coordinate space by
             // `drawOpenedClipNotes` below and are editable, not read-only, so
-            // their content must also grow the canvas. This must stay in
-            // lock-step with the same call in PianoRoll.tsx.
+            // their content must also grow the canvas. `pixelsPerBeat` must
+            // stay in lock-step with the same call in PianoRoll.tsx — it is
+            // what the extent's ceiling is derived from at the current zoom.
             const clip = tracks?.find((time) => time.id === tId)?.clips.find((context) => context.id === cId);
             const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
             const extentSources = [{ clipLengthBeats, notes }];
@@ -197,7 +198,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     extentSources.push({ clipLengthBeats: openedClipLengthBeats, notes: openedNotes });
                 }
             }
-            const extentBeats = getPianoRollExtentBeats(extentSources);
+            const extentBeats = getPianoRollExtentBeats(extentSources, bw * dpr);
             const containerW = canvas.parentElement?.clientWidth ?? extentBeats * bw;
             const totalWidth = Math.max(containerW, extentBeats * bw);
             const height = noteAreaHeight + RULER_HEIGHT;

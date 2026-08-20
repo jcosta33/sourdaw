@@ -5,7 +5,7 @@ import {
     getVisiblePitches,
     getPianoRollExtentBeats,
     GRID_BEATS,
-    MAX_EXTENT_BEATS,
+    MAX_CANVAS_DIMENSION_PX,
     TOTAL_ROWS,
     BASE_PITCH,
     type PianoRollExtentSource,
@@ -19,9 +19,19 @@ const note = (startBeat: number, duration: number): MidiNote => ({
     velocity: 100,
 });
 
+/**
+ * `beatWidth` 40 at `devicePixelRatio` 1 — zoom 100% (the default) on a
+ * standard-density desktop display. Ordinary enough that none of the
+ * existing floor/rounding assertions below come anywhere near the ceiling.
+ */
+const ORDINARY_PIXELS_PER_BEAT = 40;
+
 /** Single-source call, matching the shape most existing tests exercise. */
-const extentOf = (clipLengthBeats: number, notes: readonly MidiNote[]): number =>
-    getPianoRollExtentBeats([{ clipLengthBeats, notes }]);
+const extentOf = (
+    clipLengthBeats: number,
+    notes: readonly MidiNote[],
+    pixelsPerBeat = ORDINARY_PIXELS_PER_BEAT
+): number => getPianoRollExtentBeats([{ clipLengthBeats, notes }], pixelsPerBeat);
 
 describe('getVisiblePitches — unfolded (all pitches)', () => {
     it('returns all 60 pitches descending from 83 to 24 when unfolded', () => {
@@ -125,7 +135,7 @@ describe('getPianoRollExtentBeats', () => {
             { clipLengthBeats: 0, notes: [note(50, 2)] },
         ];
         // furthest end across sources: 52 → bar 52, + 4 trailing = 56.
-        expect(getPianoRollExtentBeats(sources)).toBe(56);
+        expect(getPianoRollExtentBeats(sources, ORDINARY_PIXELS_PER_BEAT)).toBe(56);
     });
 
     it('takes the longer clip length across multiple sources, not just the first', () => {
@@ -133,7 +143,7 @@ describe('getPianoRollExtentBeats', () => {
             { clipLengthBeats: 8, notes: [] },
             { clipLengthBeats: 48, notes: [] },
         ];
-        expect(getPianoRollExtentBeats(sources)).toBe(extentOf(48, []));
+        expect(getPianoRollExtentBeats(sources, ORDINARY_PIXELS_PER_BEAT)).toBe(extentOf(48, []));
     });
 
     // Gap: nothing upstream validates a clip's startBeat/endBeat, so a
@@ -153,20 +163,65 @@ describe('getPianoRollExtentBeats', () => {
             { clipLengthBeats: NaN, notes: [] },
             { clipLengthBeats: 48, notes: [] },
         ];
-        expect(getPianoRollExtentBeats(sources)).toBe(extentOf(48, []));
+        expect(getPianoRollExtentBeats(sources, ORDINARY_PIXELS_PER_BEAT)).toBe(extentOf(48, []));
     });
 
     // Gap: a malformed import (or a genuinely huge startBeat + duration) must
     // not drive the canvas backing store past what the browser can allocate.
-    // See MAX_EXTENT_BEATS' own doc comment for the pixel-limit derivation.
-    it('clamps an absurd note end beat to MAX_EXTENT_BEATS rather than growing unbounded', () => {
+    // The ceiling is a *pixel* budget (MAX_CANVAS_DIMENSION_PX), converted to
+    // beats at the caller's current pixelsPerBeat — see getPianoRollExtentBeats'
+    // own doc comment for why a fixed beat ceiling would itself be a bug.
+    it('clamps an absurd note end beat to a ceiling derived from the pixel budget, not growing unbounded', () => {
         const absurd = extentOf(0, [note(1_000_000, 1)]);
-        const barAlignedMax = Math.ceil(MAX_EXTENT_BEATS / 4) * 4 + 4;
+        const maxContentBeats = Math.floor(MAX_CANVAS_DIMENSION_PX / ORDINARY_PIXELS_PER_BEAT);
+        const barAlignedMax = Math.ceil(maxContentBeats / 4) * 4 + 4;
         expect(absurd).toBe(barAlignedMax);
         expect(absurd).toBeLessThan(1_000_000);
     });
 
     it('clamps an absurd clip length the same way as an absurd note end beat', () => {
         expect(extentOf(1_000_000, [])).toBe(extentOf(0, [note(1_000_000, 1)]));
+    });
+
+    // The decisive case: an ordinary long clip, at an ordinary zoom, must
+    // remain fully reachable. A fixed beat ceiling sized for maximum zoom
+    // (the round-1 bug) would clip this at 64 beats regardless of zoom —
+    // asserting against the clip's own length, not a hardcoded number, keeps
+    // this test meaningful if the ceiling constant moves again.
+    it('keeps a clip of a few hundred beats fully reachable at an ordinary zoom', () => {
+        const clipLengthBeats = 200; // 50 bars at 4/4 — an unremarkable arrangement.
+        const extent = extentOf(clipLengthBeats, []);
+        expect(extent).toBeGreaterThanOrEqual(clipLengthBeats);
+    });
+
+    // Directly rebuts the round-1 defect: the ceiling must track the
+    // caller's current zoom, not one constant applied everywhere. A small
+    // pixelsPerBeat (zoomed out) must permit far more beats than a large one
+    // (zoomed in) before the ceiling engages.
+    it('derives a looser ceiling when zoomed out (smaller pixelsPerBeat) than when zoomed in', () => {
+        const zoomedOutCeiling = Math.floor(MAX_CANVAS_DIMENSION_PX / 10); // beatWidth 10 — minimum zoom.
+        const zoomedInCeiling = Math.floor(MAX_CANVAS_DIMENSION_PX / 320); // beatWidth 160 * dpr 2 — maximum zoom, HiDPI.
+        expect(zoomedOutCeiling).toBeGreaterThan(zoomedInCeiling);
+
+        const hugeClip = 10_000;
+        const zoomedOutExtent = extentOf(hugeClip, [], 10);
+        const zoomedInExtent = extentOf(hugeClip, [], 320);
+        // Zoomed out, the pixel budget covers far more of the huge clip's
+        // beats than zoomed in — proving the clamp genuinely varies with zoom
+        // rather than capping at one fixed beat count everywhere.
+        expect(zoomedOutExtent).toBeGreaterThan(zoomedInExtent);
+    });
+
+    // Defensive fallback: an invalid pixelsPerBeat (should never happen —
+    // both call sites always pass a positive finite beatWidth * dpr) must not
+    // disable the ceiling outright; it degrades to the most protective case.
+    it('falls back to the most protective ceiling when pixelsPerBeat is invalid', () => {
+        const withNaNPixelsPerBeat = getPianoRollExtentBeats(
+            [{ clipLengthBeats: 0, notes: [note(1_000_000, 1)] }],
+            NaN
+        );
+        const withZeroPixelsPerBeat = getPianoRollExtentBeats([{ clipLengthBeats: 0, notes: [note(1_000_000, 1)] }], 0);
+        expect(withNaNPixelsPerBeat).toBeLessThan(1_000_000);
+        expect(withZeroPixelsPerBeat).toBeLessThan(1_000_000);
     });
 });
