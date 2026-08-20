@@ -44,6 +44,8 @@ type WriteSession = {
     modelLease: ModelStorageLockLease;
     offset: number;
     partialLease: ModelStorageLockLease;
+    released: boolean;
+    terminalPromise: Promise<void> | null;
     temporaryName: string;
 };
 
@@ -130,8 +132,16 @@ function getTemporaryWriteId(name: string): string | null {
     return name.slice(TEMPORARY_MODEL_PREFIX.length, -TEMPORARY_MODEL_SUFFIX.length);
 }
 
+function getModelPathSegments(input: { family: string; modelId: string }): string[] {
+    const segments = `${input.family}/${input.modelId}`.split('/').filter(Boolean);
+    if (segments.length === 0) {
+        throw new TypeError('Model storage path must include a file name');
+    }
+    return segments;
+}
+
 function modelLockName(input: { family: string; modelId: string }): string {
-    return `${MODEL_LOCK_PREFIX}${JSON.stringify([input.family, input.modelId])}`;
+    return `${MODEL_LOCK_PREFIX}${JSON.stringify(getModelPathSegments(input))}`;
 }
 
 function partialLockName(writeId: string): string {
@@ -181,9 +191,9 @@ async function resolveModelLocation(
     create: boolean
 ): Promise<{ directory: FileSystemDirectoryHandle; fileName: string }> {
     const models = await root.getDirectoryHandle(MODELS_DIRECTORY, { create });
-    const segments = `${input.family}/${input.modelId}`.split('/').filter(Boolean);
+    const segments = getModelPathSegments(input);
     const fileName = segments.pop();
-    if (!fileName) {
+    if (fileName === undefined) {
         throw new TypeError('Model storage path must include a file name');
     }
     let directory = models;
@@ -248,13 +258,14 @@ export function createModelStorageRequestHandler({
 }: CreateModelStorageRequestHandlerInput): (request: ModelStorageWorkerRequest) => Promise<void> {
     const writes = new Map<string, WriteSession>();
 
-    async function abortWrite(writeId: string): Promise<void> {
-        const session = writes.get(writeId);
-        if (!session) {
+    async function releaseWriteSession(writeId: string, session: WriteSession, removePartial: boolean): Promise<void> {
+        if (session.released) {
             return;
         }
-        writes.delete(writeId);
-        session.abortController.abort();
+        session.released = true;
+        if (writes.get(writeId) === session) {
+            writes.delete(writeId);
+        }
         try {
             if (session.access !== null) {
                 session.access.close();
@@ -262,12 +273,30 @@ export function createModelStorageRequestHandler({
             }
         } finally {
             try {
-                await removeTemporaryFile(session);
+                if (removePartial) {
+                    await removeTemporaryFile(session);
+                }
             } finally {
-                await session.partialLease.release();
-                await session.modelLease.release();
+                try {
+                    await session.partialLease.release();
+                } finally {
+                    await session.modelLease.release();
+                }
             }
         }
+    }
+
+    async function abortWrite(writeId: string): Promise<void> {
+        const session = writes.get(writeId);
+        if (!session) {
+            return;
+        }
+        session.abortController.abort();
+        if (session.terminalPromise !== null) {
+            await session.terminalPromise.catch(() => undefined);
+            return;
+        }
+        await releaseWriteSession(writeId, session, true);
     }
 
     async function withModelLock<Result>(
@@ -393,6 +422,8 @@ export function createModelStorageRequestHandler({
                 modelLease,
                 offset: 0,
                 partialLease,
+                released: false,
+                terminalPromise: null,
                 temporaryName,
             });
         } catch (error) {
@@ -442,74 +473,92 @@ export function createModelStorageRequestHandler({
         if (!session) {
             throw new Error(`Unknown model write: ${request.writeId}`);
         }
-        try {
-            throwIfAborted(session);
-            if (session.expectedSizeBytes !== undefined && session.offset !== session.expectedSizeBytes) {
-                throw new Error(
-                    `Size check failed for ${session.modelId}: expected ${String(session.expectedSizeBytes)} bytes, got ${String(session.offset)}`
-                );
-            }
-            await closeWriteAccess(session);
-
-            let storedBytes = session.offset;
-            let extractedPath: string | null = null;
-            let downloadedBytes: ArrayBuffer | null = null;
-            if (session.expectedSha256 !== undefined || session.archive) {
-                downloadedBytes = await readAll(session.file, session.expectedSizeBytes);
-                if (downloadedBytes === null) {
-                    throw new Error(`Size check failed for ${session.modelId} while reopening downloaded bytes`);
-                }
-            }
-            if (session.expectedSha256 !== undefined && downloadedBytes !== null) {
-                postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'verifying' });
-                const actualSha256 = await sha256(downloadedBytes);
-                throwIfAborted(session);
-                if (actualSha256 !== session.expectedSha256) {
-                    throw new Error(
-                        `Integrity check failed for ${session.modelId}: expected ${session.expectedSha256}, got ${actualSha256}`
-                    );
-                }
-            }
-            if (session.archive && downloadedBytes !== null) {
-                postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'extracting' });
-                const extracted = await extractArchive({
-                    bytes: new Uint8Array(downloadedBytes),
-                    suffix: '.onnx',
-                    signal: session.abortController.signal,
-                });
-                throwIfAborted(session);
-                extractedPath = extracted.path;
-                const access = await session.file.createSyncAccessHandle({ mode: 'readwrite' });
-                session.access = access;
-                access.truncate(0);
-                const bytesWritten = access.write(extracted.data, { at: 0 });
-                if (bytesWritten !== extracted.data.byteLength) {
-                    throw new Error(
-                        `OPFS wrote ${String(bytesWritten)} of ${String(extracted.data.byteLength)} extracted model bytes`
-                    );
-                }
-                storedBytes = bytesWritten;
-                await closeWriteAccess(session);
-            }
-
-            if (session.expectedSha256 !== undefined || session.archive) {
-                postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'storing' });
-            }
-            throwIfAborted(session);
-            await session.file.move(session.directory, session.fileName);
-            await session.partialLease.release();
-            await session.modelLease.release();
-            writes.delete(request.writeId);
-            postResponse({
-                type: 'write-committed',
-                requestId: request.requestId,
-                storedBytes,
-                extractedPath,
-            });
-        } catch (error) {
-            await abortWrite(request.writeId);
-            throw error;
+        if (session.terminalPromise !== null) {
+            throw new Error(`Model write is already committing: ${request.writeId}`);
         }
+        const terminalPromise = Promise.resolve().then(async () => {
+            let moved = false;
+            try {
+                throwIfAborted(session);
+                if (session.expectedSizeBytes !== undefined && session.offset !== session.expectedSizeBytes) {
+                    throw new Error(
+                        `Size check failed for ${session.modelId}: expected ${String(session.expectedSizeBytes)} bytes, got ${String(session.offset)}`
+                    );
+                }
+                await closeWriteAccess(session);
+
+                let storedBytes = session.offset;
+                let extractedPath: string | null = null;
+                let downloadedBytes: ArrayBuffer | null = null;
+                if (session.expectedSha256 !== undefined || session.archive) {
+                    downloadedBytes = await readAll(session.file, session.expectedSizeBytes);
+                    if (downloadedBytes === null) {
+                        throw new Error(`Size check failed for ${session.modelId} while reopening downloaded bytes`);
+                    }
+                }
+                if (session.expectedSha256 !== undefined && downloadedBytes !== null) {
+                    postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'verifying' });
+                    const actualSha256 = await sha256(downloadedBytes);
+                    throwIfAborted(session);
+                    if (actualSha256 !== session.expectedSha256) {
+                        throw new Error(
+                            `Integrity check failed for ${session.modelId}: expected ${session.expectedSha256}, got ${actualSha256}`
+                        );
+                    }
+                }
+                if (session.archive && downloadedBytes !== null) {
+                    postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'extracting' });
+                    const extracted = await extractArchive({
+                        bytes: new Uint8Array(downloadedBytes),
+                        suffix: '.onnx',
+                        signal: session.abortController.signal,
+                    });
+                    throwIfAborted(session);
+                    extractedPath = extracted.path;
+                    const access = await session.file.createSyncAccessHandle({ mode: 'readwrite' });
+                    session.access = access;
+                    access.truncate(0);
+                    const bytesWritten = access.write(extracted.data, { at: 0 });
+                    if (bytesWritten !== extracted.data.byteLength) {
+                        throw new Error(
+                            `OPFS wrote ${String(bytesWritten)} of ${String(extracted.data.byteLength)} extracted model bytes`
+                        );
+                    }
+                    storedBytes = bytesWritten;
+                    await closeWriteAccess(session);
+                }
+
+                if (session.expectedSha256 !== undefined || session.archive) {
+                    postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'storing' });
+                }
+                throwIfAborted(session);
+                await session.file.move(session.directory, session.fileName);
+                moved = true;
+                throwIfAborted(session);
+                await releaseWriteSession(request.writeId, session, false);
+                postResponse({
+                    type: 'write-committed',
+                    requestId: request.requestId,
+                    storedBytes,
+                    extractedPath,
+                });
+            } catch (error) {
+                try {
+                    if (moved && session.abortController.signal.aborted) {
+                        await session.directory.removeEntry(session.fileName).catch((removeError: unknown) => {
+                            if (!isNotFoundError(removeError)) {
+                                throw removeError;
+                            }
+                        });
+                    }
+                } finally {
+                    await releaseWriteSession(request.writeId, session, true);
+                }
+                throw error;
+            }
+        });
+        session.terminalPromise = terminalPromise;
+        await terminalPromise;
     }
 
     async function measureDirectory(

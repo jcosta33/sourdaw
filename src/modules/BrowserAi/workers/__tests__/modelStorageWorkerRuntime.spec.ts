@@ -1203,6 +1203,211 @@ describe('modelStorageWorkerRuntime', () => {
         });
     });
 
+    it('serializes aliases that resolve to the same nested OPFS model path', async () => {
+        const secondReachedStorage = deferred<void>();
+        const files = new Map<string, FileSystemFileHandle>();
+        const directory = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(directory)),
+            getFileHandle: vi.fn((name: string) => {
+                if (name === '.sourdaw-write-alias-b.partial') {
+                    secondReachedStorage.resolve();
+                }
+                const existing = files.get(name);
+                if (existing) {
+                    return Promise.resolve(existing);
+                }
+                const access = readAccess(new Uint8Array(0));
+                access.write = vi.fn((input) => input.byteLength);
+                const file = {
+                    createSyncAccessHandle: vi.fn(() => Promise.resolve(access)),
+                    move: vi.fn(() => Promise.resolve()),
+                } as unknown as FileSystemFileHandle;
+                files.set(name, file);
+                return Promise.resolve(file);
+            }),
+            removeEntry: vi.fn((name: string) => {
+                files.delete(name);
+                return Promise.resolve();
+            }),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(directory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const originLocks = new TestOriginLocks();
+        const first = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('alias-a'),
+            postResponse: vi.fn(),
+        });
+        const second = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('alias-b'),
+            postResponse: vi.fn(),
+        });
+
+        await first({
+            type: 'begin-model-write',
+            requestId: 'begin-alias-a',
+            writeId: 'write-alias-a',
+            family: 'voice/cloned',
+            modelId: 'user/model',
+            archive: false,
+        });
+        const secondBegin = second({
+            type: 'begin-model-write',
+            requestId: 'begin-alias-b',
+            writeId: 'write-alias-b',
+            family: 'voice',
+            modelId: 'cloned/user/model',
+            archive: false,
+        });
+        let secondReachedPath = false;
+        void secondReachedStorage.promise.then(() => {
+            secondReachedPath = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(secondReachedPath).toBe(false);
+
+        await first({ type: 'abort-model-write', requestId: 'abort-alias-a', writeId: 'write-alias-a' });
+        await secondBegin;
+        expect(secondReachedPath).toBe(true);
+        await second({ type: 'abort-model-write', requestId: 'abort-alias-b', writeId: 'write-alias-b' });
+    });
+
+    it('holds the model lease until an aborted in-flight move settles before admitting a replacement', async () => {
+        const moveStarted = deferred<void>();
+        const finishMove = deferred<void>();
+        let finalOwner: 'cancelled' | 'replacement' | null = null;
+        const access = () => {
+            const syncAccess = readAccess(new Uint8Array(0));
+            syncAccess.write = vi.fn((input) => input.byteLength);
+            return syncAccess;
+        };
+        const cancelledFile = {
+            createSyncAccessHandle: vi.fn(() => Promise.resolve(access())),
+            move: vi.fn(async () => {
+                moveStarted.resolve();
+                await finishMove.promise;
+                finalOwner = 'cancelled';
+            }),
+        } as unknown as FileSystemFileHandle;
+        const replacementFile = {
+            createSyncAccessHandle: vi.fn(() => Promise.resolve(access())),
+            move: vi.fn(() => {
+                finalOwner = 'replacement';
+                return Promise.resolve();
+            }),
+        } as unknown as FileSystemFileHandle;
+        const replacementReachedStorage = deferred<void>();
+        const familyDirectory = {
+            getFileHandle: vi.fn((name: string) => {
+                if (name === '.sourdaw-write-cancelled-move.partial') {
+                    return Promise.resolve(cancelledFile);
+                }
+                if (name === '.sourdaw-write-after-move.partial') {
+                    replacementReachedStorage.resolve();
+                    return Promise.resolve(replacementFile);
+                }
+                return Promise.reject(new DOMException('missing', 'NotFoundError'));
+            }),
+            removeEntry: vi.fn((name: string) => {
+                if (name === 'model.onnx') {
+                    finalOwner = null;
+                }
+                return Promise.resolve();
+            }),
+        } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const originLocks = new TestOriginLocks();
+        const cancelledResponses: ModelStorageWorkerResponse[] = [];
+        const replacementResponses: ModelStorageWorkerResponse[] = [];
+        const cancelled = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('cancelled-move-worker'),
+            postResponse: (response) => cancelledResponses.push(response),
+        });
+        const replacement = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('replacement-after-move-worker'),
+            postResponse: (response) => replacementResponses.push(response),
+        });
+
+        await cancelled({
+            type: 'begin-model-write',
+            requestId: 'begin-cancelled-move',
+            writeId: 'write-cancelled-move',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        await cancelled({
+            type: 'write-model-chunk',
+            requestId: 'chunk-cancelled-move',
+            writeId: 'write-cancelled-move',
+            chunk: Uint8Array.from([1, 2, 3]).buffer,
+        });
+        const commit = cancelled({
+            type: 'commit-model-write',
+            requestId: 'commit-cancelled-move',
+            writeId: 'write-cancelled-move',
+        });
+        await moveStarted.promise;
+        const abort = cancelled({
+            type: 'abort-model-write',
+            requestId: 'abort-cancelled-move',
+            writeId: 'write-cancelled-move',
+        });
+        const replacementBegin = replacement({
+            type: 'begin-model-write',
+            requestId: 'begin-after-move',
+            writeId: 'write-after-move',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        let replacementReachedPath = false;
+        void replacementReachedStorage.promise.then(() => {
+            replacementReachedPath = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(replacementReachedPath).toBe(false);
+
+        finishMove.resolve();
+        await Promise.all([commit, abort, replacementBegin]);
+        await replacement({
+            type: 'write-model-chunk',
+            requestId: 'chunk-after-move',
+            writeId: 'write-after-move',
+            chunk: Uint8Array.from([4, 5, 6]).buffer,
+        });
+        await replacement({
+            type: 'commit-model-write',
+            requestId: 'commit-after-move',
+            writeId: 'write-after-move',
+        });
+
+        expect(finalOwner).toBe('replacement');
+        expect(cancelledResponses).not.toContainEqual(expect.objectContaining({ type: 'write-committed' }));
+        expect(cancelledResponses).toContainEqual({
+            type: 'error',
+            requestId: 'commit-cancelled-move',
+            name: 'AbortError',
+            message: 'Aborted',
+        });
+        expect(cancelledResponses).toContainEqual({ type: 'write-aborted', requestId: 'abort-cancelled-move' });
+        expect(replacementResponses).toContainEqual({
+            type: 'write-committed',
+            requestId: 'commit-after-move',
+            storedBytes: 3,
+            extractedPath: null,
+        });
+    });
+
     it('reports a nested cache miss without hiding non-not-found storage failures', async () => {
         const notFound = new DOMException('missing', 'NotFoundError');
         const permissionError = new DOMException('denied', 'NotAllowedError');
