@@ -1,0 +1,32 @@
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_7ba0b7bee9e951::t_9e433f5dea37aa 299
+src/modules/AudioEngine/useCases/offlineRender/__tests__/nullTestRenderHarness.ts
+  s_7ba0b7bee9e951::t_35255b6c29b50d 257-258
+  s_7ba0b7bee9e951::t_ecc001ac804771 459
+  s_7ba0b7bee9e951::t_c472c8b3685365 810-811
+  s_7ba0b7bee9e951::t_eeea971609d097 31-32
+  s_7ba0b7bee9e951::t_d09212350fe176 39-40
+  s_7ba0b7bee9e951::t_e3d25f0c1d4b2c 608
+  s_7ba0b7bee9e951::t_67138097220d42 496-497
+  s_7ba0b7bee9e951::t_664591bf081200 171-172
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_97bafd712f0d93 43
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_7ba0b7bee9e951::t_214118658a57c6 1957-1965
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9f14d9977c121c60faf23b75ae1c946e4f36d12e",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
