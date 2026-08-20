@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { AudioWaveform, Loader2, Music4, Play, Plus, RefreshCw, X } from 'lucide-react';
 
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 type AiTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
@@ -60,18 +61,18 @@ export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): Rea
 
         <div className="mt-2">
             {task.status === 'processing' ? (
-                <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-accent-lavender)]">
+                <Row gap={1.5} className="text-[10px] text-[var(--color-accent-lavender)]">
                     <Loader2 className="size-3 animate-spin" />
                     Processing...
-                </div>
+                </Row>
             ) : null}
             {task.status === 'error' ? <div className="text-[10px] text-destructive">{task.error}</div> : null}
             {task.status === 'success' ? (
-                <div className="mt-1 flex items-center justify-between border-t border-border/30 pt-1">
+                <Row justify="between" className="mt-1 border-t border-border/30 pt-1">
                     <span className="text-[9px] text-muted-foreground/70">
                         {task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}
                     </span>
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <Button variant="secondary" size="icon-xs" className="h-5 w-5 bg-surface-base" title="Preview">
                             <Play className="size-3 text-foreground" />
                         </Button>
@@ -83,8 +84,8 @@ export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): Rea
                         >
                             <Plus className="size-3 text-foreground" />
                         </Button>
-                    </div>
-                </div>
+                    </Row>
+                </Row>
             ) : null}
         </div>
     </div>
