@@ -1,6 +1,17 @@
 import { type ReactElement, useState } from 'react';
 
-import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
+import {
+    FolderOpen,
+    Trash2,
+    RefreshCw,
+    Loader2,
+    Plus,
+    AlertCircle,
+    CheckCircle2,
+    Info,
+    Plug,
+    Monitor,
+} from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
@@ -152,6 +163,23 @@ export const PluginScanSettings = (): ReactElement | null => {
                             <div key={index} className="flex items-start gap-1 text-[10px] text-destructive">
                                 <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                                 <span>{err}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : null}
+
+                {/*
+                 * Informational, not destructive. These say why a recognised
+                 * plugin format is not loaded — the expected outcome of a scan
+                 * that went fine — so they carry no alert colour and no alert
+                 * icon, and they do not gate the success badge below.
+                 */}
+                {state.notices.length > 0 ? (
+                    <div className="space-y-1 rounded-md border border-border/60 bg-surface-overlay/40 p-2">
+                        {state.notices.map((notice) => (
+                            <div key={notice} className="flex items-start gap-1 text-[10px] text-muted-foreground">
+                                <Info className="size-3 shrink-0 mt-px" aria-hidden="true" />
+                                <span>{notice}</span>
                             </div>
                         ))}
                     </div>

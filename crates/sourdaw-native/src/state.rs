@@ -99,7 +99,7 @@ pub struct EnginePluginInstanceData {
 }
 
 pub struct AppState {
-    /// Native audio engine handle (cpal thread + lock-free scheduler).
+    /// Native audio engine handle (audio-owner thread + lock-free scheduler).
     /// None until the first `apply_graph_commands` batch lazily starts it
     /// (#1984). Declared before engine-owned runtime maps so app teardown
     /// drops the stream before active CLAP runtimes.
@@ -122,7 +122,7 @@ pub struct AppState {
     /// on the audio relay path.
     pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
     /// Retired engine-owned runtimes kept alive after scheduler removal is
-    /// queued so the CPAL callback never final-drops a hosted plugin. Declared
+    /// queued so the render callback never final-drops a hosted plugin. Declared
     /// after `engine` so app teardown drops the stream before these runtimes.
     ///
     /// Entries leave only through `sweep_retired_engine_plugins`, and only once
@@ -154,6 +154,12 @@ pub struct AppState {
     /// re-cross the wire every batch (#2225). Control-side only, LRU-capped;
     /// see `commands::graph::GraphMappingSessions`.
     pub graph_mapping_sessions: Arc<Mutex<crate::commands::graph::GraphMappingSessions>>,
+    /// The durable half of `plugin_registry`: the file a scan writes and the
+    /// first plugin-touching command reads back, so a relaunched app resolves
+    /// a saved project's plugins without a manual scan. Control-side only —
+    /// every method on it touches the filesystem. See
+    /// `host::plugin_registry_store`.
+    pub plugin_registry_store: Arc<crate::host::plugin_registry_store::PluginRegistryStore>,
 }
 
 /// One registered piece of timeline material: planar stereo PCM and the rate
@@ -172,9 +178,44 @@ pub struct TimelineSample {
 #[derive(Clone, Debug)]
 pub struct PluginRegistryEntry {
     pub path: String,
+    /// `ScannedPlugin::id`: the hash of the path this plugin was scanned at.
+    /// Carried on the entry, not just used as its key, because an entry is also
+    /// reachable under the CLAP descriptor id and still has to be able to say
+    /// which scanned file it came from.
+    pub stable_id: String,
     pub clap_id: String,
     pub format: String,
     pub name: String,
+    /// Total audio channels the plugin declared through `clap.audio-ports` when
+    /// it was scanned, and whether it implements `clap.gui`.
+    ///
+    /// `capability_metadata_reason` is present exactly when these three are
+    /// unqueried defaults rather than facts — a targeted activation rescan, for
+    /// one, reads the descriptor only and never creates the instance these
+    /// answers come from. Read the counts without reading the reason and a
+    /// default becomes indistinguishable from a measurement.
+    pub num_inputs: u32,
+    pub num_outputs: u32,
+    pub has_custom_ui: bool,
+    pub capability_metadata_reason: Option<String>,
+}
+
+impl AppState {
+    /// App state whose plugin registry is backed by the scan registry file in
+    /// the platform's app-data directory. The production constructor.
+    ///
+    /// `Default` deliberately gives an in-memory store instead. A test that
+    /// builds an `AppState` must not read — or rewrite — the developer's own
+    /// scanned plugin database, and a default that reaches the real file would
+    /// make every such test do exactly that.
+    pub fn with_persisted_plugin_registry() -> Self {
+        Self {
+            plugin_registry_store: Arc::new(
+                crate::host::plugin_registry_store::PluginRegistryStore::at_default_location(),
+            ),
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for AppState {
@@ -193,6 +234,9 @@ impl Default for AppState {
             graph_mapping_sessions: Arc::new(Mutex::new(
                 crate::commands::graph::GraphMappingSessions::default(),
             )),
+            plugin_registry_store: Arc::new(
+                crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
+            ),
         }
     }
 }
@@ -211,7 +255,7 @@ fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtim
 /// Move every retired runtime the scheduler has already released out of the vec
 /// and hand it back to the caller — *without* dropping it.
 ///
-/// The retirement vec exists so the CPAL callback never final-drops a hosted
+/// The retirement vec exists so the render callback never final-drops a hosted
 /// plugin: removal from the scheduler is *queued*, so at the moment a runtime is
 /// retired the audio thread may still be holding — and processing — the
 /// `ClapPluginSlot` that owns the second `Arc`. Freeing then is a use-after-free

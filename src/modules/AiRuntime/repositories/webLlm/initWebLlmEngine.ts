@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
@@ -16,6 +17,9 @@ type InitWebLlmEngineOptions = {
 export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
     ({ logger, admitWebLlmModelArtifacts }) =>
         function initWebLlmEngine(modelId?: string, options: InitWebLlmEngineOptions = {}): Promise<WebLlmEngine> {
+            if (!MODEL_RELEASE_ADMISSION.webLlm) {
+                return Promise.reject(new Error('Browser WebLLM model artifacts are not admitted in this release'));
+            }
             const targetModel = modelId ?? engineState.activeModelId;
             let targetArtifactSetDigest: string;
             try {

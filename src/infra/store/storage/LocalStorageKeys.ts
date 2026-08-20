@@ -104,6 +104,9 @@ export type LocalStorageKey =
     | 'sourdaw-recent-projects'
     | 'sourdaw:recent-projects'
 
+    // Stores the last plugin scan result and the configured scan folders
+    | 'sourdaw:plugin-scan'
+
     // Stores user-created sound presets
     | 'sourdaw-user-presets'
 

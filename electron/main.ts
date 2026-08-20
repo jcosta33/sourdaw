@@ -27,6 +27,7 @@ import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
+import { getWindowChromeOptions } from './windowChrome.js';
 
 // Logging must never crash the shell. When stdout or stderr is a closed pipe
 // — a packaged app whose parent went away — every console write raises EPIPE,
@@ -111,8 +112,9 @@ const createWindow = (): BrowserWindow => {
         minWidth: 1024,
         minHeight: 600,
         title: 'Sourdaw',
-        backgroundColor: '#000000',
+        backgroundColor: '#0a0a0a',
         show: false,
+        ...getWindowChromeOptions(process.platform),
         webPreferences: {
             // Stated rather than inherited: these three are Electron's defaults
             // today, and each one is load-bearing. A future default change, or

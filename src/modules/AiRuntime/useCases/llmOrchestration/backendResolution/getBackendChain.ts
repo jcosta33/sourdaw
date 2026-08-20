@@ -1,3 +1,5 @@
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
+
 import { type AiBackendPreference, type RunnableAiBackend } from '../../../models/LlmOrchestrationTypes';
 import {
     type ModelProviderModality,
@@ -29,7 +31,7 @@ type BackendChainRequirements = {
 
 function isBackendAvailable(backend: RunnableAiBackend): boolean {
     if (backend === 'webllm') {
-        return typeof navigator !== 'undefined' && 'gpu' in navigator;
+        return MODEL_RELEASE_ADMISSION.webLlm && typeof navigator !== 'undefined' && 'gpu' in navigator;
     }
     return isCloudAvailable();
 }

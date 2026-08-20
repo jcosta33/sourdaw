@@ -6,7 +6,7 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { getMasterAnalyser, PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases';
+import { getMasterStereoAnalysers, PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type PhaseCorrelationDisplayProps = {
@@ -29,8 +29,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
         }
 
         let rafId = 0;
-        // Reused across frames — reallocated only if frequencyBinCount changes.
-        let data: Float32Array<ArrayBuffer> | null = null;
+        // Reused across frames — reallocated only if fftSize changes.
         let left: Float32Array<ArrayBuffer> | null = null;
         let right: Float32Array<ArrayBuffer> | null = null;
 
@@ -43,26 +42,17 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
         const clipColor = resolveToken('--color-meter-clip', '#FF3300');
 
         const draw = (): void => {
-            const analyser = getMasterAnalyser();
-            const binCount = analyser.frequencyBinCount;
-            if (!data || data.length !== binCount) {
-                data = new Float32Array(binCount);
-                const halfLen = Math.floor(binCount / 2);
-                left = new Float32Array(halfLen);
-                right = new Float32Array(halfLen);
+            const { left: leftAnalyser, right: rightAnalyser } = getMasterStereoAnalysers();
+            if (!left || left.length !== leftAnalyser.fftSize) {
+                left = new Float32Array(leftAnalyser.fftSize);
             }
-            analyser.getFloatTimeDomainData(data);
-
-            // Split into pseudo L/R (AnalyserNode is mono sum — for true stereo,
-            // the engine would need a ChannelSplitter. Here we approximate by
-            // treating odd/even samples as L/R, which works for interleaved sources)
-            const halfLen = Math.floor(data.length / 2);
-            for (let index = 0; index < halfLen; index++) {
-                left![index] = data[index * 2]!;
-                right![index] = data[index * 2 + 1]!;
+            if (!right || right.length !== rightAnalyser.fftSize) {
+                right = new Float32Array(rightAnalyser.fftSize);
             }
+            leftAnalyser.getFloatTimeDomainData(left);
+            rightAnalyser.getFloatTimeDomainData(right);
 
-            const correlation = meterRef.current.update(left!, right!);
+            const correlation = meterRef.current.update(left, right);
 
             // Draw
             ctx.clearRect(0, 0, width, height);

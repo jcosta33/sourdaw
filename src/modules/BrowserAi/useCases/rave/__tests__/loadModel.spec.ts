@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+const releaseGate = vi.hoisted(() => ({ rave: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
+
 import { raveStore, raveLogger, type RaveModel } from '../../../stores/rave';
 import { loadModel } from '../loadModel';
 
@@ -20,6 +24,7 @@ function createModel(overrides: Partial<RaveModel>): RaveModel {
 describe('loadModel', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        releaseGate.rave = true;
         raveStore.set({
             models: [createModel({ id: 'model-a' }), createModel({ id: 'model-b' })],
             activeModelId: null,
@@ -28,6 +33,13 @@ describe('loadModel', () => {
             realTimeEnabled: false,
             latentCache: [],
         });
+    });
+
+    it('rejects every model while RAVE artifacts are withheld', () => {
+        releaseGate.rave = false;
+
+        expect(() => loadModel('model-a')).toThrow('RAVE model artifacts are not admitted in this release');
+        expect(raveStore.value?.activeModelId).toBeNull();
     });
 
     it('marks the matching model loaded and activates it, leaving others untouched', () => {

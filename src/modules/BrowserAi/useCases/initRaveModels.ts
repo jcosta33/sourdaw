@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { checkModelCached } from '../repositories/checkModelCached';
 import { FACTORY_MODELS, RAVE_MODEL_FAMILY, raveStore, type RaveModel } from '../stores/rave';
@@ -31,6 +32,10 @@ export const initRaveModels = inject({ logger, checkModelCached })(
         async function initRaveModels(): Promise<void> {
             const state = raveStore.value;
             if (!state) {
+                return;
+            }
+            if (!MODEL_RELEASE_ADMISSION.rave) {
+                raveStore.set({ ...state, models: [], activeModelId: null });
                 return;
             }
 

@@ -5,13 +5,27 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
+import { getMasterStereoAnalysers } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type GoniometerProps = {
     size?: number;
     color?: string;
 };
+
+/**
+ * Rotate a genuine left/right sample pair 45° into the mid/side (M/S) axes the
+ * Lissajous trace is plotted on: M = (L+R)/√2 runs vertically (mono content
+ * traces a straight vertical line), S = (L-R)/√2 runs horizontally (fully
+ * out-of-phase content traces a straight horizontal line). Exported so the
+ * rotation math is directly testable without mounting a canvas.
+ */
+export function computeLissajousPoint(left: number, right: number): { message: number; state: number } {
+    return {
+        message: (left + right) * Math.SQRT1_2,
+        state: (left - right) * Math.SQRT1_2,
+    };
+}
 
 export const Goniometer = ({
     size = 120,
@@ -31,15 +45,20 @@ export const Goniometer = ({
         }
 
         let rafId = 0;
-        // Reused across frames — reallocated only if frequencyBinCount changes.
-        let data: Float32Array<ArrayBuffer> | null = null;
+        // Reused across frames — reallocated only if fftSize changes.
+        let leftData: Float32Array<ArrayBuffer> | null = null;
+        let rightData: Float32Array<ArrayBuffer> | null = null;
 
         const draw = (): void => {
-            const analyser = getMasterAnalyser();
-            if (!data || data.length !== analyser.frequencyBinCount) {
-                data = new Float32Array(analyser.frequencyBinCount);
+            const { left, right } = getMasterStereoAnalysers();
+            if (!leftData || leftData.length !== left.fftSize) {
+                leftData = new Float32Array(left.fftSize);
             }
-            analyser.getFloatTimeDomainData(data);
+            if (!rightData || rightData.length !== right.fftSize) {
+                rightData = new Float32Array(right.fftSize);
+            }
+            left.getFloatTimeDomainData(leftData);
+            right.getFloatTimeDomainData(rightData);
 
             // Phosphor decay: fade previous frame
             if (trailRef.current) {
@@ -96,14 +115,8 @@ export const Goniometer = ({
             ctx.shadowBlur = 6;
             ctx.globalAlpha = 0.7;
 
-            const halfLen = Math.floor(data.length / 2);
-            for (let index = 0; index < halfLen; index++) {
-                const L = data[index * 2] ?? 0;
-                const R = data[index * 2 + 1] ?? 0;
-
-                // Rotate 45°: M = (L+R)/√2, S = (L-R)/√2
-                const message = (L + R) * 0.7071;
-                const state = (L - R) * 0.7071;
+            for (let index = 0; index < leftData.length; index++) {
+                const { message, state } = computeLissajousPoint(leftData[index] ?? 0, rightData[index] ?? 0);
 
                 const px = cx + state * scale;
                 const py = cy - message * scale;

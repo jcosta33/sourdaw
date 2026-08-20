@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
+const releaseGate = vi.hoisted(() => ({ rave: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
+
 import { FACTORY_MODELS, raveStore } from '../../stores/rave';
 import { initRaveModels } from '../initRaveModels';
 
@@ -25,7 +29,20 @@ function resetRaveStore(): void {
 describe('initRaveModels', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        releaseGate.rave = true;
         resetRaveStore();
+    });
+
+    it('does not probe or register models while RAVE artifacts are withheld', async () => {
+        releaseGate.rave = false;
+        const checkModelCached = vi.fn<CheckModelCached>().mockResolvedValue(true);
+        injectDependencies(initRaveModels, { logger: createLoggerMock(), checkModelCached });
+
+        await initRaveModels();
+
+        expect(checkModelCached).not.toHaveBeenCalled();
+        expect(raveStore.value?.models).toEqual([]);
+        expect(raveStore.value?.activeModelId).toBeNull();
     });
 
     it('registers nothing when no RAVE weights are present in OPFS', async () => {

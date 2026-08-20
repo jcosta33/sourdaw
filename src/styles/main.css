@@ -17,6 +17,20 @@
     }
 }
 
+@media (display-mode: window-controls-overlay) {
+    .desktop-titlebar-region {
+        margin-left: env(titlebar-area-x, 0px);
+        width: env(titlebar-area-width, 100%);
+        -webkit-app-region: drag;
+        app-region: drag;
+    }
+
+    .desktop-titlebar-region :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
+    }
+}
+
 /* ── DAW-specific utilities ────────────────────────────────────────────── */
 @utility panel-raised {
     background: var(--color-bg-panel);

@@ -29,11 +29,8 @@ describe('commandRegistry', () => {
 });
 
 /**
- * No RAVE model is shipped or hosted, and the encode/decode pair behind the
- * feature is a hand-written sine transform, not a neural codec. The palette
- * must not offer a RAVE entry while the weights are absent — and must offer it
- * again, unchanged, once they are present. Asserting only the absence would be
- * satisfied by deleting the feature, which is why both directions are pinned.
+ * RAVE architecture remains in the catalog, but release admission overrides
+ * stale or manually seeded model-presence state.
  */
 describe('RAVE command availability', () => {
     const RAVE_COMMAND_IDS = ['load-rave-strings', 'load-rave-vocals'];
@@ -65,19 +62,19 @@ describe('RAVE command availability', () => {
         expect(offeredRaveCommandIds()).toEqual([]);
     });
 
-    it('offers exactly the RAVE entries whose model weights are present', async () => {
+    it('withholds RAVE when one model appears present without release admission', async () => {
         await probeWithPresentModelIds(['rave-vocals']);
 
-        expect(offeredRaveCommandIds()).toEqual(['load-rave-vocals']);
+        expect(offeredRaveCommandIds()).toEqual([]);
     });
 
-    it('offers both RAVE entries once both models are present', async () => {
+    it('withholds RAVE when every model appears present without release admission', async () => {
         await probeWithPresentModelIds(['rave-strings', 'rave-vocals']);
 
-        expect(offeredRaveCommandIds()).toEqual(['load-rave-strings', 'load-rave-vocals']);
+        expect(offeredRaveCommandIds()).toEqual([]);
     });
 
-    it('keeps the RAVE entries in the catalog so the gate is a presence check, not a deletion', () => {
+    it('keeps the neutral RAVE commands in the catalog', () => {
         expect(commandRegistry.filter((entry) => RAVE_COMMAND_IDS.includes(entry.id)).map((entry) => entry.id)).toEqual(
             RAVE_COMMAND_IDS
         );

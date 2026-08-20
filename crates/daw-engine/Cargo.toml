@@ -8,7 +8,26 @@ description = "Real-time thread, lock-free communication, and graph processing."
 crate-type = ["rlib"]
 
 [dependencies]
-rtrb = "0.3"
+rtrb = "0.4"
 cpal = { version = "0.18", features = [] }
 daw-dsp = { version = "0.1.0", path = "../daw-dsp" }
 triple_buffer = "9.0.0"
+
+# The IAudioClient3/WASAPI device backend (ADR 0027). Target-gated so no
+# other platform compiles or downloads the Windows bindings.
+#
+# Keep the workspace `windows` dependency on the same windows-core family that
+# cpal resolves. Splitting the graph across windows-core families breaks the
+# Windows build with mismatched COM types; after either dependency changes,
+# verify one family remains and cross-check daw-engine for
+# x86_64-pc-windows-msvc.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+] }
