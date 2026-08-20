@@ -8,7 +8,8 @@ type WebGpuOutcome =
     | { status: 'supported' }
     | {
           status: 'unavailable';
-          reason: 'missing-surface' | 'adapter-unavailable' | 'fallback-adapter' | 'device-unavailable';
+          reason:
+              'missing-surface' | 'adapter-unavailable' | 'fallback-adapter' | 'device-unavailable' | 'probe-failed';
       };
 
 const UNAVAILABLE_COPY: Record<Extract<WebGpuOutcome, { status: 'unavailable' }>['reason'], string> = {
@@ -16,7 +17,22 @@ const UNAVAILABLE_COPY: Record<Extract<WebGpuOutcome, { status: 'unavailable' }>
     'adapter-unavailable': 'No core WebGPU adapter is available',
     'fallback-adapter': 'Only a software WebGPU fallback adapter is available',
     'device-unavailable': 'The WebGPU adapter could not create a device',
+    'probe-failed': 'The WebGPU usability check could not complete',
 };
+
+const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
+
+function isWebGpuOutcome(value: unknown): value is WebGpuOutcome {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const status: unknown = Reflect.get(value, 'status');
+    if (status === 'supported') {
+        return true;
+    }
+    const reason: unknown = Reflect.get(value, 'reason');
+    return status === 'unavailable' && typeof reason === 'string' && Object.hasOwn(UNAVAILABLE_COPY, reason);
+}
 
 test('reports the live Chromium WebGPU adapter/device outcome at the Browser AI boundary', async ({
     page,
@@ -24,32 +40,22 @@ test('reports the live Chromium WebGPU adapter/device outcome at the Browser AI 
     await setupWorkspace(page);
     await launch_new_project(page);
 
-    const directOutcome = await page.evaluate(async (): Promise<WebGpuOutcome> => {
-        if (!('gpu' in navigator)) {
-            return { status: 'unavailable', reason: 'missing-surface' };
+    await expect
+        .poll(() => page.evaluate((key) => window.localStorage.getItem(key) !== null, CAPABILITY_STORAGE_KEY))
+        .toBe(true);
+    const observedOutcome: unknown = await page.evaluate((key) => {
+        const cached = window.localStorage.getItem(key);
+        if (cached === null) {
+            return null;
         }
-        const adapter = await navigator.gpu
-            .requestAdapter({ featureLevel: 'core', forceFallbackAdapter: false })
-            .catch(() => null);
-        if (!adapter) {
-            return { status: 'unavailable', reason: 'adapter-unavailable' };
-        }
-        const isFallbackAdapter: unknown = Reflect.get(adapter.info, 'isFallbackAdapter');
-        if (typeof isFallbackAdapter !== 'boolean') {
-            return { status: 'unavailable', reason: 'adapter-unavailable' };
-        }
-        if (isFallbackAdapter) {
-            return { status: 'unavailable', reason: 'fallback-adapter' };
-        }
-        const device = await adapter.requestDevice().catch(() => null);
-        if (!device) {
-            return { status: 'unavailable', reason: 'device-unavailable' };
-        }
-        device.destroy();
-        return { status: 'supported' };
-    });
+        const report: unknown = JSON.parse(cached);
+        return typeof report === 'object' && report !== null ? Reflect.get(report, 'webGpu') : null;
+    }, CAPABILITY_STORAGE_KEY);
+    if (!isWebGpuOutcome(observedOutcome)) {
+        throw new TypeError(`Browser AI cached an invalid WebGPU result: ${JSON.stringify(observedOutcome)}`);
+    }
     await testInfo.attach('webgpu-admission-outcome', {
-        body: JSON.stringify(directOutcome),
+        body: JSON.stringify(observedOutcome),
         contentType: 'application/json',
     });
 
@@ -57,10 +63,10 @@ test('reports the live Chromium WebGPU adapter/device outcome at the Browser AI 
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: 'AI', exact: true }).click();
 
-    if (directOutcome.status === 'supported') {
+    if (observedOutcome.status === 'supported') {
         await expect(page.getByRole('status', { name: 'Browser AI capabilities' })).toBeVisible();
         await expect(page.getByText('Not Measured')).toBeVisible();
     } else {
-        await expect(page.getByText(UNAVAILABLE_COPY[directOutcome.reason])).toBeVisible();
+        await expect(page.getByText(UNAVAILABLE_COPY[observedOutcome.reason])).toBeVisible();
     }
 });
