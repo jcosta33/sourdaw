@@ -1,19 +1,10 @@
 /**
- * The one place the offline render chooses its `AudioGraphBackend`.
+ * The `web-audio/offline` half of the engine selection: the shipping Web Audio
+ * graph backend, behind the seam's factory name.
  *
- * `renderOffline` is the seam's sole production consumer, and today the answer
- * is fixed: the Web Audio offline backend is the shipping renderer. The native
- * backend (`createNativeOfflineGraphBackend` in `repositories/nativeGraph/`,
- * backendId `native/offline`) is constructible and proven — the live/offline
- * null test drives it against the web leg over the shared fixture set — but it
- * cannot occupy this slot yet, because the export still reaches through the
- * web implementation's own surface (`getTrackStrip`, sidechain and Toaster
- * routing, clip/note scheduling) rather than the contract.
- *
- * **The selection flips here, in D3.c.2 (#2225)**: when the export's graph work
- * arrives entirely through commands, this function becomes the composition
- * decision between `web-audio/offline` and `native/offline`, and nothing else
- * in the render path moves.
+ * Which renderer an export gets is decided in `selectOfflineRenderEngine`
+ * (#2225, D3.c.2); this factory is what a `web-audio/offline` selection — a
+ * browser render, a degraded desktop render, or a native decline — constructs.
  */
 
 import {

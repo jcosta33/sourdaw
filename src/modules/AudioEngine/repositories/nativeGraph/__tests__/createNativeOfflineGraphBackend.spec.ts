@@ -3,11 +3,12 @@
  *
  * Everything the backend does *between* the contract and the wire is pinned
  * here: material registered before the probe, the render-nothing mapping
- * probe carrying the committed prior beside the incoming batch,
- * refusal-with-rollback, wire-fed reports and the interleaved-bytes round
- * trip — and the line between a batch refusal, which resolves, and a seam
- * fault, which throws. What the wire's far side does with those payloads is
- * the null test's question, answered against the built addon.
+ * probe naming the committed history through its session key (#2225),
+ * refusal-with-rollback, wire-fed reports, the interleaved-bytes round
+ * trip, the line between a batch refusal, which resolves, and a seam
+ * fault, which throws — and the linear-traffic law the session exists for.
+ * What the wire's far side does with those payloads is the null test's
+ * question, answered against the built addon.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -153,11 +154,13 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(view.getFloat32(4, true)).toBe(0.25);
         expect(view.getFloat32(8, true)).toBe(-1);
         expect(view.getFloat32(12, true)).toBe(1);
-        // Both applies probed with nothing rendered: the committed commands
-        // ride as the prior, the incoming batch alone rides as the batch —
-        // the split that scopes reports and refusal indices to this apply.
+        // Both applies probed with nothing rendered: the committed history is
+        // named by the session key's revision, the incoming batch alone rides
+        // as the batch — the split that scopes reports and refusal indices to
+        // this apply, without the history re-crossing the wire.
         expect(transport.renders).toHaveLength(0);
-        expect(transport.maps.map((probe) => probe.prior.length)).toEqual([0, 2]);
+        expect(transport.maps.map((probe) => probe.prior.length)).toEqual([0, 0]);
+        expect(transport.maps.map((probe) => probe.session?.revision)).toEqual([0, 2]);
         expect(transport.maps.map((probe) => probe.batch.commands.length)).toEqual([2, 1]);
         expect(transport.maps[1]!.sampleRate).toBe(SAMPLE_RATE);
     });
@@ -258,7 +261,7 @@ describe('createNativeOfflineGraphBackend', () => {
             sampleRate: SAMPLE_RATE,
             transport: scriptedTransport({
                 reports: (input) =>
-                    input.prior.length === 0
+                    input.session?.revision === 0
                         ? [{ kind: 'track', id: 'track-1', deviceIds: [] }]
                         : [{ kind: 'track', id: 'track-1', deviceIds: ['dev-prior', 'dev-new'] }],
             }),
@@ -387,6 +390,115 @@ describe('createNativeOfflineGraphBackend', () => {
         await expect(malformedReports.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
             'map_graph_batch answered a malformed strip report'
         );
+    });
+
+    it('crosses the wire linearly over many applies: the history rides as a session, never as prior', async () => {
+        // The law the mapping session exists for (#2225): the stateless probe
+        // re-sent the whole committed history every apply, so N accepted
+        // batches crossed O(N²) commands in total — N(N−1)/2 = 496 prior
+        // commands for the 32 applies below. With the session the history is
+        // named, not resent: total prior traffic stays zero
+        // however long the render runs, while the render itself still
+        // carries every committed command exactly once.
+        const transport = scriptedTransport();
+        const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
+        const applies = 32;
+
+        await backend.apply({ schemaVersion: 1, commands: [TRACK_STRIP] });
+        for (let index = 1; index < applies; index++) {
+            const applied = await backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    {
+                        kind: 'write-parameter',
+                        target: { kind: 'track-fader', trackId: 'track-1' },
+                        write: { shape: 'step', value: index / applies, time: index / SAMPLE_RATE },
+                    },
+                ],
+            });
+            expect(applied.application).toBe('applied');
+        }
+
+        const totalPriorCommands = transport.maps.reduce((total, probe) => total + probe.prior.length, 0);
+        expect(transport.maps).toHaveLength(applies);
+        expect(totalPriorCommands).toBe(0);
+        // One session, monotone revisions — the committed count each probe
+        // claims, which is what makes the empty prior sound.
+        expect(new Set(transport.maps.map((probe) => probe.session?.sessionId)).size).toBe(1);
+        expect(transport.maps.map((probe) => probe.session?.revision)).toEqual(
+            Array.from({ length: applies }, (_, index) => index)
+        );
+        // The render is the one place the whole history crosses, once.
+        await backend.render(4);
+        expect(transport.renders[0]!.batch.commands).toHaveLength(applies);
+    });
+
+    it('recovers from an evicted session by resending the full prior exactly once, under the same key', async () => {
+        // Scripted eviction: the native side "lost" the session before the
+        // third apply, as an LRU eviction or an addon restart would. The
+        // fault opens with the seam's session prefix, and the backend's
+        // recovery is one re-establishing probe carrying the full committed
+        // history — after which traffic is linear again.
+        let faultOnce = true;
+        const maps: MapGraphBatchInput[] = [];
+        const base = scriptedTransport();
+        const transport: NativeGraphTransport = {
+            ...base,
+            async mapGraphBatch(input) {
+                if (faultOnce && (input.session?.revision ?? 0) === 2 && input.prior.length === 0) {
+                    faultOnce = false;
+                    throw new Error("mapping session unknown: 'offline-x' is not held at revision 2");
+                }
+                maps.push(input);
+                return { acceptance: 'accepted', application: 'applied', reports: [] };
+            },
+        };
+        const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
+
+        await backend.apply({ schemaVersion: 1, commands: [TRACK_STRIP] });
+        await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 'track-1' },
+                    write: { shape: 'step', value: 0.25, time: 0.125 },
+                },
+            ],
+        });
+        const recovered = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 'track-1' },
+                    write: { shape: 'step', value: 0.5, time: 0.25 },
+                },
+            ],
+        });
+
+        expect(recovered.application).toBe('applied');
+        // The recovery probe carried the whole committed history under the
+        // same session key, so the far side can hold it again.
+        const recovery = maps.at(-1)!;
+        expect(recovery.prior.map((command) => command.kind)).toEqual(['create-track-strip', 'write-parameter']);
+        expect(recovery.session?.revision).toBe(2);
+        expect(recovery.session?.sessionId).toBe(maps[0]!.session?.sessionId);
+    });
+
+    it('names a fresh session per backend, so two renders can never resume each other', () => {
+        const first = scriptedTransport();
+        const second = scriptedTransport();
+        const backendA = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport: first });
+        const backendB = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport: second });
+
+        return Promise.all([
+            backendA.apply({ schemaVersion: 1, commands: [] }),
+            backendB.apply({ schemaVersion: 1, commands: [] }),
+        ]).then(() => {
+            expect(first.maps[0]!.session?.sessionId).toBeDefined();
+            expect(first.maps[0]!.session?.sessionId).not.toBe(second.maps[0]!.session?.sessionId);
+        });
     });
 
     it('refuses a schema version it does not speak, and everything after dispose', async () => {

@@ -15,6 +15,18 @@ import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
 import { type NativeGraphWireBatch, type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 
+/**
+ * Names one backend's mapping session on the native side (`MappingSessionKeyPayload`
+ * in `crates/sourdaw-native/src/commands/graph.rs`): the kept probe registry
+ * that lets `prior` stay empty across one render's applies. `revision` is how
+ * many commands the caller has had accepted — the history the kept registry
+ * must represent for a resume to be sound.
+ */
+export type MapGraphSessionKey = Readonly<{
+    sessionId: string;
+    revision: number;
+}>;
+
 export type RegisterTimelineSampleInput = Readonly<{
     sampleId: string;
     /** The material's own rate; the engine rate-converts at playback. */
@@ -37,11 +49,21 @@ export type ApplyGraphCommandsInput = Readonly<{
 export type MapGraphBatchInput = Readonly<{
     /**
      * The already-committed wire commands the incoming batch maps after —
-     * what scopes the result's reports to the incoming batch alone.
+     * what scopes the result's reports to the incoming batch alone. Empty
+     * when `session` resumes that history natively instead.
      */
     prior: readonly NativeGraphWireCommand[];
     batch: NativeGraphWireBatch;
     sampleRate: number;
+    /**
+     * Resumable prior (#2225): with a key, the native side keeps the mapped
+     * registry under `sessionId` so the next apply's `prior` stays empty. A
+     * session the native side no longer holds is a transport error opening
+     * with the seam's session-fault prefix; the caller re-establishes by
+     * resending its full prior under the same key. Absent or `null` is the
+     * stateless behaviour.
+     */
+    session?: MapGraphSessionKey | null;
 }>;
 
 export type NativeGraphTransport = Readonly<{
@@ -56,8 +78,11 @@ export type NativeGraphTransport = Readonly<{
     /**
      * `apply_graph_commands`: one batch onto the **live** native engine, which
      * lazily starts on the first batch. Not called by the offline backend —
-     * live adoption is the D3.c.2 cutover (#2225) — but carried on the seam so
-     * the cutover swaps a call site, not the transport.
+     * live adoption is the bridge-deletion slice (#2226) — but carried on the
+     * seam so that cutover swaps a call site, not the transport. Its command
+     * stays in `DENIED_COMMANDS` until that caller exists (the exposure law
+     * in `electron/commands.ts`), so invoking this method today throws at the
+     * bridge seam.
      */
     applyGraphCommands: (input: ApplyGraphCommandsInput) => Promise<unknown>;
     /**
@@ -86,8 +111,10 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
         async applyGraphCommands({ batch }) {
             return desktopInvoke('apply_graph_commands', { batch });
         },
-        async mapGraphBatch({ prior, batch, sampleRate }) {
-            return desktopInvoke('map_graph_batch', { prior, batch, sampleRate });
+        async mapGraphBatch({ prior, batch, sampleRate, session }) {
+            // Explicit `null` rather than an absent key: the seam orders named
+            // arguments positionally, and the addon reads null as "no session".
+            return desktopInvoke('map_graph_batch', { prior, batch, sampleRate, session: session ?? null });
         },
     };
 }

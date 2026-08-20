@@ -74,11 +74,36 @@ describe('createDesktopNativeGraphTransport', () => {
             sampleRate: 48_000,
         });
 
+        // An absent session crosses as an explicit `null`: the seam orders
+        // named arguments positionally, and the addon reads null as "no
+        // session" — an `undefined` hole would deserialize the same today but
+        // depends on it, so the transport states the absence.
         expect(desktopInvoke).toHaveBeenCalledWith('map_graph_batch', {
             prior,
             batch: BATCH,
             sampleRate: 48_000,
+            session: null,
         });
         expect(result).toBe(mapResult);
+    });
+
+    it('carries a mapping session key through map_graph_batch when the caller resumes one', async () => {
+        const mapResult = { acceptance: 'accepted', application: 'applied', reports: [] };
+        vi.mocked(desktopInvoke).mockResolvedValue(mapResult);
+        const session = { sessionId: 'offline-abc', revision: 3 };
+
+        await createDesktopNativeGraphTransport().mapGraphBatch({
+            prior: [],
+            batch: BATCH,
+            sampleRate: 48_000,
+            session,
+        });
+
+        expect(desktopInvoke).toHaveBeenCalledWith('map_graph_batch', {
+            prior: [],
+            batch: BATCH,
+            sampleRate: 48_000,
+            session,
+        });
     });
 });

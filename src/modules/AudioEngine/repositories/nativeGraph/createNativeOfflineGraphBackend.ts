@@ -15,33 +15,48 @@
  * every refusal reason this backend is accountable for: `stretched-clip-
  * unsupported`, `smoothed-write-unsupported`, `bus-to-track-routing-
  * unsupported`, the queue-capacity refusals) lives on the native side. So
- * `apply` probes through `map_graph_batch`: the commands committed so far
- * replay as the prior graph, the incoming batch maps against it, and the
- * answer is the native apply-result itself — refusal reasons and strip
- * reports — with nothing rendered. A probe that refuses commits nothing, so a
- * rejected batch changes nothing this backend will ever render — the same
- * whole-or-nothing law `apply_graph_commands` keeps on the live path. One
- * honest caveat: clip material is sent to the native sample pool *before* the
- * probe, because a `schedule-clip` the probe maps must find its sample there.
- * The pool is process-wide and identity-keyed with replace semantics, so a
- * refused batch may leave material in it; the backend forgets those ids on
- * refusal and a retry simply re-registers the same bytes under the same
- * identity.
+ * `apply` probes through `map_graph_batch`: the incoming batch maps against
+ * the graph the committed commands built, and the answer is the native
+ * apply-result itself — refusal reasons and strip reports — with nothing
+ * rendered. A probe that refuses commits nothing, so a rejected batch changes
+ * nothing this backend will ever render — the same whole-or-nothing law
+ * `apply_graph_commands` keeps on the live path. One honest caveat: clip
+ * material is sent to the native sample pool *before* the probe, because a
+ * `schedule-clip` the probe maps must find its sample there. The pool is
+ * process-wide and identity-keyed with replace semantics, so a refused batch
+ * may leave material in it; the backend forgets those ids on refusal and a
+ * retry simply re-registers the same bytes under the same identity.
+ *
+ * ── Where the committed history lives ─────────────────────────────────────
+ *
+ * On the native side, normally. Every probe names this backend's *mapping
+ * session* (`sessionId`, plus the committed command count as `revision`) and
+ * carries an empty `prior`, and the native side maps the batch against the
+ * registry it is already holding under that key. A bounce of N batches
+ * therefore crosses O(N) commands in total rather than the O(N²) a stateless
+ * prior replay costs.
+ *
+ * The session is a cache, never the truth: `wireCommands` stays this backend's
+ * committed history, both because the render sends it and because it is what
+ * re-establishes a lost session. A native side that evicted or restarted
+ * answers a session fault, and *that* leg — and only that leg — replays the
+ * full prior, once, under the same key. Full-prior replay is the recovery
+ * path, not the normal one.
  *
  * An offline backend deliberately never calls `apply_graph_commands`: that
  * command lazily starts the live CPAL engine (#1984), and a bounce must not
- * open an audio device. Live adoption is the D3.c.2 cutover (#2225).
+ * open an audio device. Live adoption is the bridge-deletion slice (#2226).
  *
  * ── The strip reports ─────────────────────────────────────────────────────
  *
  * Reports are the native mapping's own observations, carried across the wire:
  * the same touched-strip reports `graph.rs` builds from its post-batch
- * registry on the live path, scoped to the incoming batch by the
- * prior/incoming split of `map_graph_batch`. Nothing is restated TS-side —
- * a device the native side degraded is absent because the native side
- * observed it absent. The `runtimeRevision` in the result stays this
- * backend's own counter: a mapping has no runtime, so the wire result
- * deliberately carries none.
+ * registry on the live path, scoped to the incoming batch by the split
+ * `map_graph_batch` draws between the graph it already held and the commands
+ * this call adds. Nothing is restated TS-side — a device the native side
+ * degraded is absent because the native side observed it absent. The
+ * `runtimeRevision` in the result stays this backend's own counter: a mapping
+ * has no runtime, so the wire result deliberately carries none.
  */
 
 import {
@@ -71,6 +86,16 @@ export const NATIVE_OFFLINE_BACKEND_ID = 'native/offline';
  * a message — never reword one side alone.
  */
 const PRIOR_FAULT_PREFIX = 'previously applied commands no longer map';
+
+/**
+ * The wire's fault marker for a mapping session the native side no longer
+ * holds (`SESSION_FAULT_PREFIX` in `crates/sourdaw-native/src/commands/
+ * graph.rs`). Unlike a prior fault it is *recoverable by design*: the backend
+ * answers it by resending its full committed history once, which re-establishes
+ * the session, so an evicted or restarted native side costs one stateless
+ * apply instead of an export. A seam contract — never reword one side alone.
+ */
+const SESSION_FAULT_PREFIX = 'mapping session unknown';
 
 export type NativeOfflineGraphBackendDeps = Readonly<{
     /** The render's rate; every batch time is mapped to frames against it. */
@@ -161,6 +186,11 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
 
     /** Every command accepted so far, in application order, wire-shaped. */
     let wireCommands: NativeGraphWireCommand[] = [];
+    /**
+     * This backend's mapping-session name on the native side. Fresh per
+     * backend so two renders can never resume each other's history.
+     */
+    const sessionId = `offline-${crypto.randomUUID()}`;
     /** Source ids of material an *accepted* batch put in the native pool. */
     const registeredSourceIds = new Set<string>();
     let runtimeRevision = 0;
@@ -208,35 +238,59 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 sentSourceIds.push(source.sourceId);
             }
 
-            // The whole-batch probe (see the header): the committed commands
-            // replay as the prior graph, the incoming batch maps against it,
-            // nothing renders. A refusal is the native side's own reasons and
-            // commits nothing; an acceptance carries the native reports. Cost
-            // note: every probe re-serializes and re-sends the whole
-            // accumulated command list, so a bounce of N batches crosses the
-            // wire O(N²) commands in total. Harmless at bounce sizes today;
-            // the D3.c.2 consumer (#2225) must either diff batches or cap the
-            // accumulation before adopting this path for live-sized runs.
+            // The whole-batch probe (see the header): the incoming batch maps
+            // against the graph the native side already holds under this
+            // backend's session key, nothing renders. A refusal is the native
+            // side's own reasons and commits nothing; an acceptance carries
+            // the native reports. `prior` stays empty here — the recovery leg
+            // below is the only place the committed history re-crosses.
+            const session = { sessionId, revision: wireCommands.length };
             let mappedRaw: unknown;
             try {
                 mappedRaw = await transport.mapGraphBatch({
-                    prior: wireCommands,
+                    prior: [],
                     batch: incoming,
                     sampleRate,
+                    session,
                 });
             } catch (error) {
-                // A prior fault is not this batch's refusal: those commands
-                // were accepted once, so a mapping that no longer takes them
-                // is a broken seam invariant, and shaping it as `rejected`
-                // would blame the incoming batch for a fault it did not cause
-                // and hand the caller a reason no command of theirs explains.
-                // It surfaces as a throw, exactly as a malformed wire result
-                // does (`readMappedResult`) — one law for seam defects.
                 const reason = reasonOf(error);
-                if (reason.startsWith(PRIOR_FAULT_PREFIX)) {
-                    throw error;
+                if (!reason.startsWith(SESSION_FAULT_PREFIX)) {
+                    // A prior fault is not this batch's refusal: those commands
+                    // were accepted once, so a mapping that no longer takes
+                    // them is a broken seam invariant, and shaping it as
+                    // `rejected` would blame the incoming batch for a fault it
+                    // did not cause and hand the caller a reason no command of
+                    // theirs explains. It surfaces as a throw, exactly as a
+                    // malformed wire result does (`readMappedResult`) — one
+                    // law for seam defects. (Unreachable from the empty-prior
+                    // probe, which replays nothing; kept for the law's sake.)
+                    if (reason.startsWith(PRIOR_FAULT_PREFIX)) {
+                        throw error;
+                    }
+                    return rejected(reason);
                 }
-                return rejected(reason);
+                // Recovery, exactly once: the full committed history replays
+                // as the prior and re-establishes the session under the same
+                // key. A session fault here *again* would mean the native side
+                // cannot hold what it just built; it is not retried a second
+                // time — it falls into the same `rejected` answer as any other
+                // non-prior transport error, so the caller declines and falls
+                // back to the Web Audio render instead of looping.
+                try {
+                    mappedRaw = await transport.mapGraphBatch({
+                        prior: wireCommands,
+                        batch: incoming,
+                        sampleRate,
+                        session,
+                    });
+                } catch (retryError) {
+                    const retryReason = reasonOf(retryError);
+                    if (retryReason.startsWith(PRIOR_FAULT_PREFIX)) {
+                        throw retryError;
+                    }
+                    return rejected(retryReason);
+                }
             }
             const mapped = readMappedResult(mappedRaw);
             if (mapped.outcome === 'rejected') {

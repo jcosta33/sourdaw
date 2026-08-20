@@ -2109,6 +2109,99 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
 /// the seam contract — never reword one side alone.
 const PRIOR_FAULT_PREFIX: &str = "previously applied commands no longer map";
 
+/// The wire's fault marker for a mapping session this process no longer holds:
+/// the stable prefix of the transport error [`map_graph_batch`] raises when a
+/// caller asks to resume a session that is absent or held at a different
+/// revision. `createNativeOfflineGraphBackend.ts` matches this exact text to
+/// retry once with its full committed history (which re-establishes the
+/// session), so it is a seam contract like [`PRIOR_FAULT_PREFIX`] — never
+/// reword one side alone.
+const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
+
+/// How many offline mapping sessions this process keeps alive at once.
+///
+/// A session is one backend's probe registry kept across applies so `prior`
+/// does not have to re-cross the wire every batch (the O(N²) accumulation the
+/// stateless path pays). Renders are serialized behind the app's render lock,
+/// so one is the working set; the headroom covers a disposed backend whose
+/// session has not been evicted yet. Eviction is least-recently-used and is
+/// never a fault by itself: an evicted caller gets [`SESSION_FAULT_PREFIX`]
+/// and re-establishes with its full prior, landing exactly where the
+/// stateless path always was.
+const MAX_MAPPING_SESSIONS: usize = 4;
+
+/// One kept probe registry: the graph a session's accepted commands built,
+/// and the count of those commands (`revision`) that names which history it
+/// represents.
+struct GraphMappingSession {
+    registry: GraphRegistry,
+    revision: u64,
+    touched: u64,
+}
+
+/// The process-wide store of offline mapping sessions (`AppState`'s
+/// `graph_mapping_sessions`). Control-side only: nothing here is reachable
+/// from the audio thread, and a session holds registries — ids and strip
+/// facts — never PCM.
+#[derive(Default)]
+pub struct GraphMappingSessions {
+    sessions: HashMap<String, GraphMappingSession>,
+    touch_counter: u64,
+}
+
+impl GraphMappingSessions {
+    /// The kept registry for `session_id` at exactly `revision`, cloned so the
+    /// caller can map onto it without committing, or `None` when this process
+    /// does not hold that history.
+    fn resume(&mut self, session_id: &str, revision: u64) -> Option<GraphRegistry> {
+        self.touch_counter += 1;
+        let touch = self.touch_counter;
+        let session = self.sessions.get_mut(session_id)?;
+        if session.revision != revision {
+            return None;
+        }
+        session.touched = touch;
+        Some(session.registry.clone())
+    }
+
+    /// Keep `registry` as `session_id`'s state at `revision`, evicting the
+    /// least-recently-touched session past [`MAX_MAPPING_SESSIONS`].
+    fn store(&mut self, session_id: &str, registry: GraphRegistry, revision: u64) {
+        self.touch_counter += 1;
+        let touched = self.touch_counter;
+        self.sessions.insert(
+            session_id.to_string(),
+            GraphMappingSession {
+                registry,
+                revision,
+                touched,
+            },
+        );
+        while self.sessions.len() > MAX_MAPPING_SESSIONS {
+            let Some(oldest) = self
+                .sessions
+                .iter()
+                .min_by_key(|(_, session)| session.touched)
+                .map(|(id, _)| id.clone())
+            else {
+                break;
+            };
+            self.sessions.remove(&oldest);
+        }
+    }
+}
+
+/// The wire shape of [`map_graph_batch`]'s optional `session` argument —
+/// hand-mirrored in `nativeGraphTransport.ts` like every other payload here.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MappingSessionKeyPayload {
+    session_id: String,
+    /// How many commands the caller has had accepted so far — the history the
+    /// kept registry must represent for a resume to be sound.
+    revision: u64,
+}
+
 /// Map one batch against the graph a prior command sequence built — the
 /// report wire of the offline seam, with nothing rendered.
 ///
@@ -2134,20 +2227,66 @@ const PRIOR_FAULT_PREFIX: &str = "previously applied commands no longer map";
 /// seam contract, not a message, and the TS consumer
 /// (`createNativeOfflineGraphBackend.ts`) matches on it to rethrow instead of
 /// shaping a batch refusal. Change it on both sides or not at all.
+/// With a `session`, the prior replay becomes resumable (#2225): the caller
+/// names `{ sessionId, revision }` where `revision` is how many commands it
+/// has had accepted, and this process keeps the post-batch registry under
+/// that name so the next apply resumes it with an **empty** `prior` — one
+/// batch crosses the wire per apply instead of the whole history. The kept
+/// registry advances only on an accepted batch (a rejected batch commits
+/// nothing, the same whole-or-nothing law as everywhere else). When the
+/// session is not held at the stated revision, the call either
+/// *re-establishes* it — `revision == prior.len()`, so the prior *is* the
+/// history and replays exactly as the stateless path — or faults with
+/// [`SESSION_FAULT_PREFIX`], which tells the caller to resend its full prior.
+/// No `session` is the stateless behaviour, unchanged.
 pub async fn map_graph_batch(
     prior: Value,
     batch: Value,
     sample_rate: f64,
+    session: Option<Value>,
     state: &AppState,
 ) -> Result<Value, String> {
     if !(sample_rate.is_finite() && sample_rate > 0.0) {
         return Err("Sample rate must be a positive, finite number".to_string());
     }
+    let session_key = match session {
+        None => None,
+        Some(value) if value.is_null() => None,
+        Some(value) => Some(
+            serde_json::from_value::<MappingSessionKeyPayload>(value)
+                .map_err(|error| format!("Invalid mapping session key: {error}"))?,
+        ),
+    };
     let prior_commands: Vec<GraphCommandPayload> = serde_json::from_value(prior)
         .map_err(|error| format!("Invalid prior command sequence: {error}"))?;
     let batch = match parse_batch(batch) {
         Ok(batch) => batch,
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+    };
+    let prior_len = prior_commands.len() as u64;
+
+    // Resume before replay: a held session at the stated revision *is* the
+    // prior graph, so the replay below runs only to establish one.
+    let resumed: Option<GraphRegistry> = match &session_key {
+        Some(key) => {
+            let mut sessions = state
+                .graph_mapping_sessions
+                .lock()
+                .map_err(|error| format!("Failed to lock mapping sessions: {error}"))?;
+            let resumed = sessions.resume(&key.session_id, key.revision);
+            if resumed.is_none() && key.revision != prior_len {
+                // Not held, and the prior cannot re-establish it: replaying
+                // `prior` would build a different history than the one
+                // `revision` names. The caller resends its full prior.
+                return Err(format!(
+                    "{SESSION_FAULT_PREFIX}: '{}' is not held at revision {} — resend the full \
+                     prior to re-establish it",
+                    key.session_id, key.revision
+                ));
+            }
+            resumed
+        }
+        None => None,
     };
 
     let samples = state
@@ -2155,19 +2294,54 @@ pub async fn map_graph_batch(
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
 
-    let mut registry = GraphRegistry::default();
-    if !prior_commands.is_empty() {
-        let replay = GraphBatchPayload {
-            schema_version: 1,
-            correlation: None,
-            commands: prior_commands,
-        };
-        map_batch(&replay, &mut registry, &samples, sample_rate as f32)
-            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
-    }
+    let mut registry = match resumed {
+        Some(registry) => registry,
+        None => {
+            let mut registry = GraphRegistry::default();
+            if !prior_commands.is_empty() {
+                let replay = GraphBatchPayload {
+                    schema_version: 1,
+                    correlation: None,
+                    commands: prior_commands,
+                };
+                map_batch(&replay, &mut registry, &samples, sample_rate as f32)
+                    .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+            }
+            registry
+        }
+    };
+
+    // `map_batch` mutates the registry it maps onto, so the pre-batch state is
+    // kept aside: a rejected batch must leave the session exactly where the
+    // accepted history put it.
+    let pre_batch = session_key.as_ref().map(|_| registry.clone());
+    let base_revision = session_key.as_ref().map(|key| key.revision).unwrap_or(0);
+    let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
-    match map_batch(&batch, &mut registry, &samples, sample_rate as f32) {
+    let mapped = map_batch(&batch, &mut registry, &samples, sample_rate as f32);
+    drop(samples);
+
+    if let Some(key) = &session_key {
+        let mut sessions = state
+            .graph_mapping_sessions
+            .lock()
+            .map_err(|error| format!("Failed to lock mapping sessions: {error}"))?;
+        match (&mapped, pre_batch) {
+            (Ok(_), _) => sessions.store(&key.session_id, registry, base_revision + batch_len),
+            (Err(_), Some(pre_batch)) => sessions.store(&key.session_id, pre_batch, base_revision),
+            (Err(_), None) => {}
+        }
+        return match mapped {
+            Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
+                correlation,
+                mapped.reports,
+            )),
+            Err(reason) => result_json(&GraphApplyResultPayload::rejected(reason)),
+        };
+    }
+
+    match mapped {
         Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
             correlation,
             mapped.reports,
@@ -3210,7 +3384,7 @@ mod tests {
                 track_strip("t2"),
             ] });
 
-        let result = block_on_test(map_graph_batch(prior, incoming, 48_000.0, &state))
+        let result = block_on_test(map_graph_batch(prior, incoming, 48_000.0, None, &state))
             .expect("a mappable batch resolves");
 
         assert_eq!(result["acceptance"], "accepted");
@@ -3247,6 +3421,7 @@ mod tests {
                   "target": { "kind": "master" } }
             ] }),
             48_000.0,
+            None,
             &state,
         ))
         .expect("a refusal resolves to a result");
@@ -3260,12 +3435,218 @@ mod tests {
             json!([track_strip("t1"), track_strip("t1")]),
             json!({ "schemaVersion": 1, "commands": [] }),
             48_000.0,
+            None,
             &state,
         ))
         .expect_err("a prior that no longer maps is a transport fault");
         // Leading, not merely present: the TS consumer keys its rethrow off
         // the prefix, so the marker has to open the message.
         assert!(fault.starts_with(PRIOR_FAULT_PREFIX), "got: {fault}");
+    }
+
+    fn session_key(session_id: &str, revision: u64) -> Option<Value> {
+        Some(json!({ "sessionId": session_id, "revision": revision }))
+    }
+
+    fn fader_step(track_id: &str) -> Value {
+        json!({ "kind": "write-parameter",
+                "target": { "kind": "track-fader", "trackId": track_id },
+                "write": { "shape": "step", "value": 0.5, "time": 0.25 } })
+    }
+
+    fn batch_of(commands: Value) -> Value {
+        json!({ "schemaVersion": 1, "commands": commands })
+    }
+
+    /// The mapping session's reason to exist (#2225): the second apply names
+    /// the session with an **empty** prior, and still maps against the strip
+    /// the first apply built — only the kept registry can know it. Without
+    /// the session (revert the resume path) this refuses "unknown strip".
+    #[test]
+    fn a_mapping_session_resumes_the_prior_graph_without_resending_it() {
+        let state = AppState::default();
+
+        let first = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([track_strip("t1")])),
+            48_000.0,
+            session_key("s1", 0),
+            &state,
+        ))
+        .expect("establishing apply resolves");
+        assert_eq!(first["acceptance"], "accepted");
+
+        let second = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s1", 1),
+            &state,
+        ))
+        .expect("resumed apply resolves");
+        // The acceptance is the discriminating fact: a fader write on "t1"
+        // maps only against a registry that still holds the first apply's
+        // strip, so without the resume this is `rejected: unknown strip`.
+        assert_eq!(second["acceptance"], "accepted", "got: {second}");
+        assert_eq!(second["application"], "applied");
+    }
+
+    /// Whole-or-nothing across the session: a rejected batch advances
+    /// nothing, so the next apply resumes at the same revision — and an apply
+    /// claiming the rejected batch's revision faults instead of resuming a
+    /// history that was never committed.
+    #[test]
+    fn a_rejected_batch_does_not_advance_the_mapping_session() {
+        let state = AppState::default();
+
+        block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([track_strip("t1")])),
+            48_000.0,
+            session_key("s1", 0),
+            &state,
+        ))
+        .expect("establishing apply resolves");
+
+        let refused = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("missing")])),
+            48_000.0,
+            session_key("s1", 1),
+            &state,
+        ))
+        .expect("a refusal resolves to a result");
+        assert_eq!(refused["acceptance"], "rejected");
+
+        let fault = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s1", 2),
+            &state,
+        ))
+        .expect_err("a revision the session never reached is not resumable");
+        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+
+        let resumed = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s1", 1),
+            &state,
+        ))
+        .expect("the committed revision still resumes");
+        assert_eq!(resumed["acceptance"], "accepted");
+    }
+
+    /// The recovery leg the TS backend drives on a session fault: an unknown
+    /// session with a nonzero revision faults with the seam's prefix, and the
+    /// retry carrying the full prior at that revision re-establishes it —
+    /// after which the empty-prior resume works again.
+    #[test]
+    fn an_evicted_session_faults_and_a_full_prior_reestablishes_it() {
+        let state = AppState::default();
+
+        let fault = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s1", 1),
+            &state,
+        ))
+        .expect_err("an unheld session at a nonzero revision faults");
+        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+
+        let reestablished = block_on_test(map_graph_batch(
+            json!([track_strip("t1")]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s1", 1),
+            &state,
+        ))
+        .expect("a full prior at the stated revision re-establishes");
+        assert_eq!(reestablished["acceptance"], "accepted");
+
+        let resumed = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s1", 2),
+            &state,
+        ))
+        .expect("the re-established session resumes without a prior");
+        assert_eq!(resumed["acceptance"], "accepted");
+    }
+
+    /// The cap is the boundedness claim: sessions past
+    /// [`MAX_MAPPING_SESSIONS`] evict least-recently-used, and the evicted
+    /// caller lands on the recoverable fault, never on silent growth.
+    #[test]
+    fn mapping_sessions_evict_least_recently_used_past_the_cap() {
+        let state = AppState::default();
+
+        for index in 0..=MAX_MAPPING_SESSIONS {
+            block_on_test(map_graph_batch(
+                json!([]),
+                batch_of(json!([track_strip("t1")])),
+                48_000.0,
+                session_key(&format!("s{index}"), 0),
+                &state,
+            ))
+            .expect("establishing apply resolves");
+        }
+
+        let fault = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key("s0", 1),
+            &state,
+        ))
+        .expect_err("the least-recently-used session was evicted");
+        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+
+        let survivor = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            session_key(&format!("s{MAX_MAPPING_SESSIONS}"), 1),
+            &state,
+        ))
+        .expect("the most recent session survives the cap");
+        assert_eq!(survivor["acceptance"], "accepted");
+    }
+
+    /// Stateless callers are untouched: no `session` (or an explicit null) is
+    /// exactly the pre-session behaviour, and a session key that does not
+    /// deserialize is a named transport error rather than a silent stateless
+    /// fallback.
+    #[test]
+    fn an_absent_or_null_session_stays_stateless_and_a_malformed_one_errors() {
+        let state = AppState::default();
+
+        let with_null = block_on_test(map_graph_batch(
+            json!([track_strip("t1")]),
+            batch_of(json!([fader_step("t1")])),
+            48_000.0,
+            Some(Value::Null),
+            &state,
+        ))
+        .expect("a null session maps statelessly");
+        assert_eq!(with_null["acceptance"], "accepted");
+
+        let malformed = block_on_test(map_graph_batch(
+            json!([]),
+            batch_of(json!([])),
+            48_000.0,
+            Some(json!({ "sessionId": 7 })),
+            &state,
+        ))
+        .expect_err("a malformed session key errors by name");
+        assert!(
+            malformed.contains("Invalid mapping session key"),
+            "got: {malformed}"
+        );
     }
 
     /// A payload that does not deserialize resolves to the contract's

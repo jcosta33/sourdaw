@@ -98,6 +98,11 @@ describe('the Electron command surface', () => {
         // The capability file died with the Tauri shell, so minimality is the
         // check that remains: an exposed command nothing in `src/` invokes is
         // pure attack surface and fails here until a caller exists.
+        //
+        // A string mention is a weak proxy for a caller (jcosta33/sourdaw#2221):
+        // this check passes on any quoted occurrence, reachable or not. An
+        // exposure therefore also needs the call chain verified by hand and
+        // recorded in the exposing commit.
         const productionSource = readProductionTypescript('src');
         for (const command of EXPOSED_COMMANDS) {
             expect(productionSource, `no production caller for '${command}'`).toMatch(
@@ -305,6 +310,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['list_midi_inputs', []],
     ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
+    ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
     ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
@@ -313,6 +319,8 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['scan_plugins', ['paths']],
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],

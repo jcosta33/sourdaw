@@ -2315,7 +2315,12 @@ type NativeHostAddon = {
         pcm: Uint8Array
     ) => Promise<unknown>;
     renderGraphOffline: (batch: NativeGraphWireBatch, frames: number, sampleRate: number) => Promise<Uint8Array>;
-    mapGraphBatch: (prior: unknown, batch: NativeGraphWireBatch, sampleRate: number) => Promise<unknown>;
+    mapGraphBatch: (
+        prior: unknown,
+        batch: NativeGraphWireBatch,
+        sampleRate: number,
+        session: unknown
+    ) => Promise<unknown>;
 };
 
 const NATIVE_CRATE_DIR = join(
@@ -2378,7 +2383,7 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
             return host.renderGraphOffline(input.batch, input.frames, input.sampleRate);
         },
         async mapGraphBatch(input) {
-            return host.mapGraphBatch(input.prior, input.batch, input.sampleRate);
+            return host.mapGraphBatch(input.prior, input.batch, input.sampleRate, input.session ?? null);
         },
         async applyGraphCommands() {
             throw new Error('the offline null test never touches the live engine (apply_graph_commands)');

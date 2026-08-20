@@ -61,8 +61,16 @@ export type OfflineDeviceAutomationLaw = {
 export type ScheduleTrackAutomationInput = {
     lanes: AutomationLane[];
     trackId: string;
-    trackGainNode: GainNode;
-    trackPanNode: StereoPannerNode;
+    /**
+     * Structural on purpose — `.gain`/`.pan` is the whole of what this
+     * scheduler reads off the two nodes, and stating only that is what lets
+     * the native export path (#2225) hand in a recording `AudioParam` and
+     * receive the same compiled writes the Web Audio path receives, instead of
+     * keeping a second copy of the lane laws. A real `GainNode` and
+     * `StereoPannerNode` satisfy these unchanged.
+     */
+    trackGainNode: { gain: AudioParam };
+    trackPanNode: { pan: AudioParam };
     /** App-owned graph bindings keyed by the persisted `send:<busId>` target. */
     sendAutomationParams?: ReadonlyMap<string, AudioParam>;
     deviceEntries: ScheduleTrackAutomationDeviceEntry[];
