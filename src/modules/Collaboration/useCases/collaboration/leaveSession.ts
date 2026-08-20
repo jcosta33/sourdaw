@@ -36,5 +36,6 @@ export async function leaveSession(): Promise<void> {
         peers: [],
         connectionStatus: 'disconnected',
         error: null,
+        quarantinedPeerIds: [],
     });
 }

@@ -25,6 +25,7 @@ export function createSession(name: string): string {
         peers: [],
         connectionStatus: 'disconnected',
         error: null,
+        quarantinedPeerIds: [],
     });
 
     return sessionId;

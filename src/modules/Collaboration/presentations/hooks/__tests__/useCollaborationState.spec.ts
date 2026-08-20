@@ -24,6 +24,7 @@ describe('useCollaborationState', () => {
             peers: [],
             connectionStatus: 'connected' as const,
             error: null,
+            quarantinedPeerIds: [],
         };
         mocks.useStore.mockReturnValue(state);
 
@@ -49,6 +50,7 @@ describe('useCollaborationState', () => {
             peers: [],
             connectionStatus: 'disconnected',
             error: null,
+            quarantinedPeerIds: [],
         });
     });
 });

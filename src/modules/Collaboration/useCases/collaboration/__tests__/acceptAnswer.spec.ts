@@ -26,6 +26,7 @@ const baseState: CollaborationState = {
     peers: [],
     connectionStatus: 'connecting',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 function makeAnswer(overrides: Record<string, unknown> = {}): Record<string, unknown> {

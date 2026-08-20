@@ -41,6 +41,7 @@ describe('generateInvite', () => {
             peers: [],
             connectionStatus: 'disconnected',
             error: null,
+            quarantinedPeerIds: [],
         });
     });
 
