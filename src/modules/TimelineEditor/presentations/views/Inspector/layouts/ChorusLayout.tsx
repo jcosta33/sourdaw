@@ -3,6 +3,8 @@
  */
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { ModulationLFO } from '../../../components/ModulationLFO';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
@@ -44,11 +46,11 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
     };
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <SectionHeader title="Modulation" />
-            <div className="flex justify-center">
+            <Row align="stretch" justify="center">
                 <ModulationLFO rate={rate} depth={depth} shape="sine" width={240} height={50} />
-            </div>
+            </Row>
             <SectionHeader title="Controls" />
             {/* Show all params in pairs of 2 */}
             {renderIife_21()}
@@ -56,7 +58,7 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
             {filterParams(parameters, ['phaser-stages']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
-        </div>
+        </Stack>
     );
 };
 

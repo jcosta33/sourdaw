@@ -1,6 +1,7 @@
 import { type ReactElement, type RefObject, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
@@ -134,8 +135,8 @@ export const AutomationLane = ({
     };
 
     return (
-        <div className="flex h-full flex-col">
-            <div className="flex items-center gap-2 px-2 py-0.5 border-b border-border/30 bg-surface-raised shrink-0">
+        <Stack className="h-full">
+            <Row gap={2} shrink={false} className="px-2 py-0.5 border-b border-border/30 bg-surface-raised">
                 <label htmlFor="lane-selector" className="text-[9px] text-muted-foreground shrink-0">
                     Lane:
                 </label>
@@ -152,8 +153,8 @@ export const AutomationLane = ({
                         </option>
                     ))}
                 </DawCompactSelect>
-            </div>
-            <div className="flex flex-1 min-h-0">
+            </Row>
+            <Row align="stretch" grow className="min-h-0">
                 {/* Piano-key gutter spacer — matches PianoRoll's w-10 column */}
                 <div
                     className="shrink-0 border-r border-border/30 bg-surface-raised"
@@ -167,7 +168,7 @@ export const AutomationLane = ({
                 >
                     <div style={{ width: contentWidth, height: '100%' }}>{renderLane()}</div>
                 </div>
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };

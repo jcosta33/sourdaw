@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
@@ -80,7 +81,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                         );
                     } else {
                         return (
-                            <div className="flex h-full items-center justify-center p-6">
+                            <Row justify="center" className="h-full p-6">
                                 <DawBlockedState
                                     eyebrow="Inspector"
                                     className="max-w-64"
@@ -88,7 +89,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                                     description="Pick a track, clip, or device to inspect its details."
                                     summary="The inspector follows the current selection and switches between track, clip, and device detail."
                                 />
-                            </div>
+                            </Row>
                         );
                     }
                 }

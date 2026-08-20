@@ -4,6 +4,7 @@ import { Activity, Plus, RotateCcw } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultGainEnvelopeStoreState, gainEnvelopeStore } from '#/modules/Arrangement/stores';
@@ -39,13 +40,13 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                 title="Gain Envelope"
                 startSlot={<Activity className="size-3 text-muted-foreground" aria-hidden="true" />}
             />
-            <div className="space-y-2">
-                <div className="flex items-center justify-between">
+            <Stack gap={2}>
+                <Row justify="between">
                     <MetaText>
                         {envelope.enabled ? 'Enabled' : 'Disabled'} · {envelope.points.length} point
                         {envelope.points.length !== 1 ? 's' : ''}
                     </MetaText>
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -75,12 +76,12 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                         >
                             <RotateCcw className="size-3" />
                         </Button>
-                    </div>
-                </div>
+                    </Row>
+                </Row>
                 {envelope.enabled && envelope.points.length > 0 ? (
                     <InsetPanel className="space-y-1">
                         {envelope.points.map((pt) => (
-                            <div key={pt.id} className="flex items-center justify-between gap-2">
+                            <Row justify="between" gap={2} key={pt.id}>
                                 <DawMicroBadge rounded="full" className="w-12 justify-center px-0 py-0.5 font-mono">
                                     @{pt.beatOffset.toFixed(1)}
                                 </DawMicroBadge>
@@ -97,11 +98,11 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                 >
                                     <span className="text-[9px] text-muted-foreground">×</span>
                                 </Button>
-                            </div>
+                            </Row>
                         ))}
                     </InsetPanel>
                 ) : null}
-            </div>
+            </Stack>
         </section>
     );
 };

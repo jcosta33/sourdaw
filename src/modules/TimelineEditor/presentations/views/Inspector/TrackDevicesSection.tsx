@@ -5,6 +5,7 @@ import { Plus, Power, Trash2, Monitor, LayoutGrid, RefreshCw } from 'lucide-reac
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -291,16 +292,16 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 }
                             }}
                         >
-                            <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                            <Row gap={1.5} className="pr-2">
                                 <span
                                     className="text-[10px] text-muted-foreground/50 select-none shrink-0"
                                     aria-hidden="true"
                                 >
-                                    <div className="flex flex-col gap-0.5">
+                                    <Stack gap={0.5}>
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>
-                                    </div>
+                                    </Stack>
                                 </span>
                                 <div className="min-w-0">
                                     <span className="text-xs text-foreground font-medium truncate">{device.name}</span>
@@ -308,8 +309,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         <span className="block text-[9px] text-muted-foreground">Unavailable</span>
                                     ) : null}
                                 </div>
-                            </div>
-                            <div className="flex items-center gap-0.5 shrink-0">
+                            </Row>
+                            <Row gap={0.5} shrink={false}>
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
@@ -400,7 +401,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 >
                                     <Trash2 className="size-3 text-muted-foreground" />
                                 </Button>
-                            </div>
+                            </Row>
                         </ChoiceCard>
                     ))}
                 </div>

@@ -4,6 +4,7 @@ import { Snowflake, Zap, AlertCircle, RefreshCw } from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import {
@@ -46,15 +47,15 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
             const renderIife_17 = () => {
                 if (isFreezing) {
                     return (
-                        <div className="flex flex-col gap-1.5 min-w-32">
-                            <div className="flex items-center justify-between">
+                        <Stack gap={1.5} className="min-w-32">
+                            <Row justify="between">
                                 <span className="text-[9px] font-bold text-primary animate-pulse uppercase tracking-wider">
                                     Freezing...
                                 </span>
                                 <span className="text-[10px] text-muted-foreground tabular-nums">
                                     {Math.round((track.freezeState.renderProgress ?? 0) * 100)}%
                                 </span>
-                            </div>
+                            </Row>
                             <DawMeterBar
                                 value={(track.freezeState.renderProgress ?? 0) * 100}
                                 size="sm"
@@ -68,7 +69,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                             >
                                 Cancel
                             </Button>
-                        </div>
+                        </Stack>
                     );
                 } else {
                     const renderIife_18 = () => {
@@ -95,12 +96,15 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                             {isStale ? (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help">
+                                        <Row
+                                            gap={1}
+                                            className="px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help"
+                                        >
                                             <AlertCircle className="size-3" />
                                             <span className="text-[10px] font-bold uppercase tracking-tight">
                                                 Stale
                                             </span>
-                                        </div>
+                                        </Row>
                                     </TooltipTrigger>
                                     <TooltipContent>Content has changed since freeze. Update required.</TooltipContent>
                                 </Tooltip>
@@ -129,14 +133,14 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                 }
             };
 
-            return <div className="flex items-center gap-2">{renderIife_17()}</div>;
+            return <Row gap={2}>{renderIife_17()}</Row>;
         } else {
             return null;
         }
     };
 
     return (
-        <div className="flex flex-col">
+        <Stack>
             <InsetPanel tone="framed" className="space-y-3">
                 <div>
                     <MetaText className="mb-1 block">Name</MetaText>
@@ -167,18 +171,18 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                     )}
                 </div>
 
-                <div className="flex items-center gap-2 justify-between">
-                    <div className="flex items-center gap-2">
+                <Row justify="between" gap={2}>
+                    <Row gap={2}>
                         <MetaText>Kind:</MetaText>
                         <span className="text-[10px] font-medium text-foreground capitalize">{track.kind}</span>
-                    </div>
+                    </Row>
 
                     {renderIife_16()}
-                </div>
+                </Row>
 
-                <div className="space-y-1.5 pt-1">
+                <Stack gap={1.5} className="pt-1">
                     <MetaText className="block">Color</MetaText>
-                    <div className="flex flex-wrap gap-1">
+                    <Row align="stretch" wrap gap={1}>
                         {TRACK_COLOR_PRESETS.map((context) => (
                             <button
                                 type="button"
@@ -194,9 +198,9 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                 aria-label={`Set color ${context}`}
                             />
                         ))}
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             </InsetPanel>
-        </div>
+        </Stack>
     );
 };

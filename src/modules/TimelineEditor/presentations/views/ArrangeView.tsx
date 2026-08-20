@@ -9,6 +9,7 @@ import {
 
 import { Piano, Upload, Headphones } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import {
     AdjustmentLayerStrip,
@@ -190,22 +191,19 @@ export const ArrangeView = (): ReactElement => {
     // Welcome screen — clean, no timeline chrome
     if (!hasUserTracks) {
         return (
-            <div className="flex h-full relative">
+            <Row align="stretch" className="h-full relative">
                 <EmptyArrangeOverlay />
-            </div>
+            </Row>
         );
     }
 
     return (
-        <div className="flex h-full">
+        <Row align="stretch" className="h-full">
             {dualViewOpen ? (
                 <>
-                    <div
-                        className="flex flex-col border-r border-border/20 bg-surface-base"
-                        style={{ width: localSessionWidth }}
-                    >
+                    <Stack className="border-r border-border/20 bg-surface-base" style={{ width: localSessionWidth }}>
                         <SessionView />
-                    </div>
+                    </Stack>
                     <ResizeHandle
                         direction="vertical"
                         onResize={handleSessionResize}
@@ -233,7 +231,7 @@ export const ArrangeView = (): ReactElement => {
                     />
                 </>
             ) : null}
-            <div ref={timelineContainerRef} className="flex flex-1 flex-col overflow-hidden relative">
+            <Stack grow className="overflow-hidden relative" ref={timelineContainerRef}>
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 <AdjustmentLayerStrip pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
@@ -261,8 +259,8 @@ export const ArrangeView = (): ReactElement => {
                     viewportWidth={viewportWidth}
                 />
                 {scratchPadOpen ? <ScratchPadView height={scratchPadHeight} onToggle={closeScratchPad} /> : null}
-            </div>
-        </div>
+            </Stack>
+        </Row>
     );
 };
 
@@ -446,8 +444,9 @@ const EmptyArrangeOverlay = (): ReactElement => {
     };
 
     return (
-        <div
-            className="absolute inset-0 flex items-center justify-center z-10 pointer-events-auto"
+        <Row
+            justify="center"
+            className="absolute inset-0 z-10 pointer-events-auto"
             style={{
                 background:
                     'radial-gradient(ellipse at 50% 40%, rgba(217,119,6,0.05) 0%, rgba(0,0,0,0) 55%), var(--color-surface-base)',
@@ -477,9 +476,12 @@ const EmptyArrangeOverlay = (): ReactElement => {
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-cyan)]/10 hover:border-[var(--color-accent-cyan)]/30 transition-all cursor-pointer"
                         onClick={() => addTrack({ name: 'Audio 1', kind: 'audio' })}
                     >
-                        <div className="size-8 rounded-lg bg-[var(--color-accent-cyan)]/15 flex items-center justify-center group-hover:bg-[var(--color-accent-cyan)]/25 transition-colors">
+                        <Row
+                            justify="center"
+                            className="size-8 rounded-lg bg-[var(--color-accent-cyan)]/15 group-hover:bg-[var(--color-accent-cyan)]/25 transition-colors"
+                        >
                             <Headphones className="size-4 text-[var(--color-accent-cyan)]" aria-hidden="true" />
-                        </div>
+                        </Row>
                         <div className="text-center">
                             <span className="text-[11px] font-medium text-foreground/80 block">Audio</span>
                             <span className="text-[9px] text-muted-foreground/40">Record or import</span>
@@ -491,9 +493,12 @@ const EmptyArrangeOverlay = (): ReactElement => {
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-lavender)]/10 hover:border-[var(--color-accent-lavender)]/30 transition-all cursor-pointer"
                         onClick={() => addTrack({ name: 'MIDI 1', kind: 'midi' })}
                     >
-                        <div className="size-8 rounded-lg bg-[var(--color-accent-lavender)]/15 flex items-center justify-center group-hover:bg-[var(--color-accent-lavender)]/25 transition-colors">
+                        <Row
+                            justify="center"
+                            className="size-8 rounded-lg bg-[var(--color-accent-lavender)]/15 group-hover:bg-[var(--color-accent-lavender)]/25 transition-colors"
+                        >
                             <Piano className="size-4 text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                        </div>
+                        </Row>
                         <div className="text-center">
                             <span className="text-[11px] font-medium text-foreground/80 block">MIDI</span>
                             <span className="text-[9px] text-muted-foreground/40">Keys &amp; synths</span>
@@ -513,6 +518,6 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     <span className="text-[10px]">Drop audio or MIDI files here</span>
                 </div>
             </ArrangeEmptyStateShell>
-        </div>
+        </Row>
     );
 };

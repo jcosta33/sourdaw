@@ -13,6 +13,7 @@ import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayou
 
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -317,7 +318,7 @@ export const PianoRoll = ({
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
 
     return (
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <Stack grow className="overflow-hidden">
             <PianoRollToolbar
                 gridSnap={gridSnap}
                 onGridSnapChange={setGridSnap}
@@ -353,10 +354,12 @@ export const PianoRoll = ({
                 activeExpressionLane={activeExpressionLane}
                 onActiveExpressionLaneChange={setActiveExpressionLane}
             />
-            <div className="flex flex-1 flex-col overflow-hidden">
-                <div
+            <Stack grow className="overflow-hidden">
+                <Row
+                    align="stretch"
+                    grow
+                    className="overflow-auto"
                     ref={scrollRef}
-                    className="flex flex-1 overflow-auto"
                     onScroll={(event) => {
                         const sl = (event.target as HTMLElement).scrollLeft;
                         setScrollX(sl);
@@ -432,16 +435,16 @@ export const PianoRoll = ({
                             aria-label="Piano roll editor"
                         />
                     </div>
-                </div>
+                </Row>
 
                 {/* I4: Expression View bottom panel */}
                 {showExpressionView ? (
-                    <div className="h-32 border-t border-border/20 bg-surface-well flex">
-                        <div className="w-10 shrink-0 border-r border-border/10 flex flex-col items-center py-1">
+                    <Row align="stretch" className="h-32 border-t border-border/20 bg-surface-well">
+                        <Stack align="center" shrink={false} className="w-10 border-r border-border/10 py-1">
                             <span className="text-[8px] text-muted-foreground uppercase vertical-text">
                                 {activeExpressionLane}
                             </span>
-                        </div>
+                        </Stack>
                         <div
                             ref={expressionScrollRef}
                             className="flex-1 overflow-x-auto"
@@ -488,9 +491,9 @@ export const PianoRoll = ({
                                 />
                             </div>
                         </div>
-                    </div>
+                    </Row>
                 ) : null}
-            </div>
+            </Stack>
             {ctxMenu ? (
                 <PianoRollContextMenu
                     menu={ctxMenu}
@@ -502,6 +505,6 @@ export const PianoRoll = ({
                     onClearSelection={() => setSelectedNoteIds(new Set())}
                 />
             ) : null}
-        </div>
+        </Stack>
     );
 };

@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
+import { Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -33,9 +34,9 @@ const DistortionLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
     };
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <SectionHeader title="Waveshaper" />
-            <div className="flex justify-center">
+            <Row align="stretch" justify="center">
                 <DistortionCurve
                     drive={pv['dist-drive'] ?? 20}
                     tone={pv['dist-tone'] ?? 4000}
@@ -44,7 +45,7 @@ const DistortionLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                     height={130}
                     onParamChange={change}
                 />
-            </div>
+            </Row>
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
                 {filterParams(parameters, ['dist-drive', 'dist-tone']).map((param) => (
@@ -56,7 +57,7 @@ const DistortionLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-        </div>
+        </Stack>
     );
 };
 

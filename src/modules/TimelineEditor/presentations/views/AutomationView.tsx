@@ -3,6 +3,7 @@ import { type ReactElement, type WheelEvent, useRef } from 'react';
 import { X } from 'lucide-react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
@@ -46,7 +47,7 @@ export const AutomationView = (): ReactElement => {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden relative" ref={containerRef}>
+        <Stack className="h-full overflow-hidden relative" ref={containerRef}>
             <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
             <Button
                 variant="ghost"
@@ -59,7 +60,7 @@ export const AutomationView = (): ReactElement => {
             </Button>
             <div className="flex-1 overflow-y-auto bg-surface-base/50" onWheel={handleWheel}>
                 {tracks.length === 0 ? (
-                    <div className="flex h-full items-center justify-center p-6">
+                    <Row justify="center" className="h-full p-6">
                         <DawBlockedState
                             eyebrow="Automation"
                             title="No tracks yet"
@@ -67,7 +68,7 @@ export const AutomationView = (): ReactElement => {
                             className="max-w-sm"
                             summary="This view mirrors the arrangement timeline and exposes automation per track."
                         />
-                    </div>
+                    </Row>
                 ) : (
                     tracks.map((track) => (
                         <TrackAutomationSection
@@ -84,6 +85,6 @@ export const AutomationView = (): ReactElement => {
                     ))
                 )}
             </div>
-        </div>
+        </Stack>
     );
 };

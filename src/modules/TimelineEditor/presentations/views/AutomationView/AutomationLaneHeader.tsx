@@ -4,6 +4,7 @@
 import { type ReactElement, type RefObject } from 'react';
 
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row } from '#/components/layout';
 
 import { formatParameterValue } from '../../helpers/automationLaneConstants';
 
@@ -34,7 +35,7 @@ export const AutomationLaneHeader = ({
     viewMin,
     viewMax,
 }: AutomationLaneHeaderProps): ReactElement => (
-    <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5">
+    <Row gap={1.5} className="absolute top-1 left-2 z-10">
         <div className="size-2 rounded-full" style={{ backgroundColor: curveColor }} />
         <DawMicroBadge className="border-border/20 bg-surface-base/90 text-muted-foreground backdrop-blur-sm">
             {parameterName}
@@ -57,5 +58,5 @@ export const AutomationLaneHeader = ({
                 Y:{(viewMin * 100).toFixed(0)}–{(viewMax * 100).toFixed(0)}%
             </DawMicroBadge>
         ) : null}
-    </div>
+    </Row>
 );

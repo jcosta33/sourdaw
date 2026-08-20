@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
+import { Row, Stack } from '#/components/layout';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
@@ -29,9 +30,9 @@ const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
     const pv = device.parameterValues;
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <SectionHeader title="Impulse Response" />
-            <div className="flex justify-center">
+            <Row align="stretch" justify="center">
                 <ReverbDecay
                     size={pv['rev-size'] ?? 0.5}
                     decay={pv['rev-decay'] ?? 2}
@@ -40,7 +41,7 @@ const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
                     width={240}
                     height={70}
                 />
-            </div>
+            </Row>
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
                 {filterParams(parameters, ['rev-size', 'rev-decay']).map((param) => (
@@ -57,7 +58,7 @@ const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-        </div>
+        </Stack>
     );
 };
 

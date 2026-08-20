@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
@@ -31,14 +32,18 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
     const otherParams = parameters.filter((param) => !drawbars.includes(param.id));
 
     return (
-        <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-2">
+        <Stack gap={6}>
+            <Stack gap={2}>
                 <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Drawbars</h3>
-                <div className="flex flex-row justify-between bg-surface-raised p-4 rounded-md border border-border/50">
+                <Row
+                    align="stretch"
+                    justify="between"
+                    className="bg-surface-raised p-4 rounded-md border border-border/50"
+                >
                     {drawbarParams.map((param) => {
                         const val = device.parameterValues[param.id] ?? param.value;
                         return (
-                            <div key={param.id} className="flex flex-col items-center gap-2">
+                            <Stack align="center" gap={2} key={param.id}>
                                 <div className="h-[120px] relative w-6">
                                     <Slider
                                         orientation="vertical"
@@ -63,13 +68,13 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
                                     {param.name.split(' ')[0]}
                                 </span>
                                 <span className="text-[10px] font-mono text-foreground/80">{Math.round(val)}</span>
-                            </div>
+                            </Stack>
                         );
                     })}
-                </div>
-            </div>
+                </Row>
+            </Stack>
             {otherParams.length > 0 ? (
-                <div className="flex flex-col gap-2 border-t border-border/40 pt-4">
+                <Stack gap={2} className="border-t border-border/40 pt-4">
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
                     <div className="grid grid-cols-2 gap-4">
                         {otherParams.map((param) => (
@@ -78,9 +83,9 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
                             </SurfaceCard>
                         ))}
                     </div>
-                </div>
+                </Stack>
             ) : null}
-        </div>
+        </Stack>
     );
 };
 

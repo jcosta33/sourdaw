@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { executeAppAction } from '#/modules/Command/useCases';
 
@@ -54,9 +55,9 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                             }
                         }}
                     >
-                        <div className="flex items-center justify-between w-full">
+                        <Row justify="between" className="w-full">
                             <span className="truncate text-xs font-medium text-foreground">{alt.name}</span>
-                            <div className="flex items-center gap-0.5 shrink-0">
+                            <Row gap={0.5} shrink={false}>
                                 <DawMicroBadge className="mr-1">{alt.clips.length}c</DawMicroBadge>
                                 {track.alternatives.length > 1 ? (
                                     <Button
@@ -75,8 +76,8 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                         <Trash2 className="size-3 text-muted-foreground" />
                                     </Button>
                                 ) : null}
-                            </div>
-                        </div>
+                            </Row>
+                        </Row>
                     </ChoiceCard>
                 ))}
             </div>

@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultVcaGroupState, vcaGroupStore } from '#/modules/Arrangement/stores';
@@ -45,7 +46,7 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 <SurfaceCard>
-                    <div className="flex items-center gap-2">
+                    <Row gap={2}>
                         <DawCompactSelect
                             className="flex-1 border-border"
                             value={track.vcaGroupId ?? ''}
@@ -66,7 +67,7 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                                 </option>
                             ))}
                         </DawCompactSelect>
-                    </div>
+                    </Row>
                 </SurfaceCard>
             </div>
         </div>

@@ -4,6 +4,7 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
@@ -48,7 +49,7 @@ export const ClipView = (): ReactElement => {
 
     if (!selectedTrack) {
         return (
-            <div className="flex h-full p-4">
+            <Row align="stretch" className="h-full p-4">
                 <DawBlockedState
                     eyebrow="Clip Editor"
                     className="flex-1"
@@ -61,7 +62,7 @@ export const ClipView = (): ReactElement => {
                         </Button>
                     }
                 />
-            </div>
+            </Row>
         );
     }
 
@@ -92,7 +93,7 @@ export const ClipView = (): ReactElement => {
     const renderIife_8 = () => {
         if (selectedTrack.kind === 'audio' && selectedClip) {
             return (
-                <div className="flex items-center gap-1 ml-4 bg-muted/50 p-0.5 rounded-md">
+                <Row gap={1} className="ml-4 bg-muted/50 p-0.5 rounded-md">
                     <Button
                         variant={audioEditMode === 'waveform' ? 'secondary' : 'ghost'}
                         size="xs"
@@ -109,7 +110,7 @@ export const ClipView = (): ReactElement => {
                     >
                         Knead (Pitch)
                     </Button>
-                </div>
+                </Row>
             );
         } else {
             return null;
@@ -137,14 +138,14 @@ export const ClipView = (): ReactElement => {
                     return <WaveformEditor clipId={selectedClip.id} audioBufferId={selectedClip.audioBufferId} />;
                 } else {
                     return (
-                        <div className="flex flex-1 p-4">
+                        <Row align="stretch" grow className="p-4">
                             <DawEmptyState
                                 compact
                                 className="flex-1"
                                 title="No clips on this track"
                                 description="Add or record a clip in Arrange view, then return here to edit it."
                             />
-                        </div>
+                        </Row>
                     );
                 }
             }
@@ -182,7 +183,7 @@ export const ClipView = (): ReactElement => {
                     </span>
                 ) : null}
                 {selectedTrack.clips.length > 1 ? (
-                    <div className="flex items-center gap-1 ml-2">
+                    <Row gap={1} className="ml-2">
                         {selectedTrack.clips.map((clip) => (
                             <Button
                                 key={clip.id}
@@ -194,11 +195,13 @@ export const ClipView = (): ReactElement => {
                                 {clip.name}
                             </Button>
                         ))}
-                    </div>
+                    </Row>
                 ) : null}
                 {renderIife_8()}
             </DawControlStrip>
-            <div className="flex flex-1 overflow-hidden">{renderIife_9()}</div>
+            <Row align="stretch" grow className="overflow-hidden">
+                {renderIife_9()}
+            </Row>
             <ClipEditorTray className="h-28">
                 <AutomationLane
                     clipId={selectedClip?.id ?? null}

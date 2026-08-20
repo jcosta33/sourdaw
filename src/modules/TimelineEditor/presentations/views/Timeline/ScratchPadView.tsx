@@ -17,6 +17,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { scratchPadStore } from '#/modules/Arrangement/stores';
 import {
@@ -114,12 +115,12 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
     const effectiveHeight = collapsed ? 30 : height;
 
     return (
-        <div
-            className="relative border-t border-border/40 bg-surface-base/80 flex flex-col select-none overflow-hidden"
+        <Stack
+            className="relative border-t border-border/40 bg-surface-base/80 select-none overflow-hidden"
             style={{ height: effectiveHeight, minHeight: 30 }}
         >
             {/* ── Header strip ── */}
-            <div className="flex items-center gap-1.5 px-2 h-[30px] shrink-0 bg-surface-base border-b border-border/30">
+            <Row gap={1.5} shrink={false} className="px-2 h-[30px] bg-surface-base border-b border-border/30">
                 <GripHorizontal className="size-3 text-muted-foreground/30" aria-hidden="true" />
                 <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">
                     Scratch Pad
@@ -182,18 +183,18 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 >
                     ✕
                 </button>
-            </div>
+            </Row>
             {/* ── Sections area ── */}
             {!collapsed ? (
                 <div className="flex-1 overflow-x-auto overflow-y-hidden px-2 py-1.5">
                     {sections.length === 0 ? (
-                        <div className="flex items-center justify-center h-full">
+                        <Row justify="center" className="h-full">
                             <DawInlineHint>
                                 Click "Capture" to snapshot the current arrangement · Drag to reorder
                             </DawInlineHint>
-                        </div>
+                        </Row>
                     ) : (
-                        <div className="flex gap-1 h-full items-stretch">
+                        <Row align="stretch" gap={1} className="h-full">
                             {sections.map((section, index) => {
                                 const color =
                                     section.color && section.color !== 'oklch(0.5 0.1 260)'
@@ -203,10 +204,11 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                 const duration = section.endBeat - section.startBeat;
 
                                 return (
-                                    <div
+                                    <Stack
                                         key={section.id}
+                                        justify="center"
                                         className={cn(
-                                            'relative rounded-[3px] flex flex-col justify-center cursor-default',
+                                            'relative rounded-[3px] cursor-default',
                                             'border border-white/10 hover:border-white/20 transition-all',
                                             'shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
                                             'min-w-[64px] px-2 py-1'
@@ -244,10 +246,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                             </span>
                                         )}
                                         <span className="text-[8px] text-white/40 mt-0.5">{duration} beats</span>
-                                    </div>
+                                    </Stack>
                                 );
                             })}
-                        </div>
+                        </Row>
                     )}
                 </div>
             ) : null}
@@ -269,7 +271,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         Rename
                     </button>
                     <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
-                    <div className="flex gap-1 px-2 pb-1">
+                    <Row align="stretch" gap={1} className="px-2 pb-1">
                         {SECTION_COLORS.map((context) => (
                             <DawSwatchButton
                                 key={context}
@@ -282,7 +284,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                 aria-label={`Set color ${context}`}
                             />
                         ))}
-                    </div>
+                    </Row>
                     <DawMenuSeparator className="my-0.5 border-border/50" />
                     <button
                         type="button"
@@ -319,6 +321,6 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     </button>
                 </div>
             ) : null}
-        </div>
+        </Stack>
     );
 };

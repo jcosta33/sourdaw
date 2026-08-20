@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
 
+import { Stack } from '#/components/layout';
+
 import { type Track } from '../../../models/TrackViewTypes';
 
 import { MasterVisualizationsSection } from './MasterVisualizationsSection';
@@ -33,7 +35,7 @@ export const TrackInspector = ({
     onSelectDevice,
 }: TrackInspectorProps): ReactElement => {
     return (
-        <div className="space-y-4 p-3">
+        <Stack gap={4} className="p-3">
             <TrackHeaderSection track={track} />
             <TrackAlternativesSection track={track} />
             <TrackLevelSection track={track} />
@@ -50,6 +52,6 @@ export const TrackInspector = ({
             {track.kind === 'master' ? <MasterVisualizationsSection /> : null}
             <SignalFlowSection />
             <TrackNotesSection track={track} />
-        </div>
+        </Stack>
     );
 };

@@ -3,6 +3,7 @@ import { type ReactElement, useRef, useEffect, useLayoutEffect, useState, type P
 import { Mic } from 'lucide-react';
 
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { logger } from '#/infra/logger/appLogger';
@@ -642,7 +643,11 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     const renderIife_10 = () => {
         if (!hasKnead) {
             return (
-                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm">
+                <Stack
+                    align="center"
+                    justify="center"
+                    className="absolute inset-0 z-30 bg-surface-base/80 backdrop-blur-sm"
+                >
                     <Mic className="size-8 text-muted-foreground/50 mb-3" />
                     <p className="text-sm font-medium mb-1">Pitch Correction Disabled</p>
                     <p className="text-xs text-muted-foreground mb-4 max-w-xs text-center">
@@ -660,7 +665,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     >
                         Enable Pitch Editor
                     </Button>
-                </div>
+                </Stack>
             );
         }
         if (!kneadState || kneadState.blobs.length === 0) {
@@ -671,20 +676,28 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             // a contour exists).
             if (contour) {
                 return (
-                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300">
+                    <Stack
+                        align="center"
+                        justify="center"
+                        className="absolute inset-0 z-30 bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300"
+                    >
                         <p className="text-xs text-muted-foreground font-medium">No pitch detected in this clip.</p>
-                    </div>
+                    </Stack>
                 );
             }
             return (
-                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="flex flex-col items-center gap-2 mb-4">
+                <Stack
+                    align="center"
+                    justify="center"
+                    className="absolute inset-0 z-30 bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300"
+                >
+                    <Stack align="center" gap={2} className="mb-4">
                         <div className="size-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
                         <p className="text-xs text-muted-foreground font-medium">Analyzing pitch tracking data...</p>
                         {/* The analyser reports progress through `onProgress`; an
                             indeterminate spinner throws that away and leaves a long
                             take indistinguishable from a hang. */}
-                        <div className="flex items-center gap-2">
+                        <Row gap={2}>
                             <div className="w-24 h-1.5 bg-surface-sunken rounded overflow-hidden">
                                 <div
                                     className="h-full bg-primary transition-all duration-100"
@@ -694,20 +707,23 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                             <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
                                 {Math.round(kneadStoreState.analysisProgress * 100)}%
                             </span>
-                        </div>
-                    </div>
-                </div>
+                        </Row>
+                    </Stack>
+                </Stack>
             );
         }
         return null;
     };
 
     return (
-        <div className="flex flex-col flex-1 w-full relative bg-surface-sunken overflow-hidden" ref={containerRef}>
-            <div className="absolute top-0 left-0 right-0 h-10 bg-surface-base/90 backdrop-blur-md border-b flex items-center px-4 gap-6 z-20 shadow-sm">
+        <Stack grow className="w-full relative bg-surface-sunken overflow-hidden" ref={containerRef}>
+            <Row
+                gap={6}
+                className="absolute top-0 left-0 right-0 h-10 bg-surface-base/90 backdrop-blur-md border-b px-4 z-20 shadow-sm"
+            >
                 {hasKnead && kneadState && kneadState.blobs.length > 0 ? (
                     <>
-                        <div className="flex items-center gap-2">
+                        <Row gap={2}>
                             <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
                                 Retune
                             </span>
@@ -720,15 +736,15 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                     updateClipKneadState(clipId, (state) => ({ ...state, retuneSpeedMs: val ?? 25 }))
                                 }
                             />
-                        </div>
+                        </Row>
 
                         <div className="h-4 w-[1px] bg-border mx-1" />
 
-                        <div className="flex items-center gap-3">
+                        <Row gap={3}>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                                 Scale
                             </p>
-                            <div className="flex items-center gap-1">
+                            <Row gap={1}>
                                 <select
                                     className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors"
                                     value={keyRoot}
@@ -755,7 +771,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                         </option>
                                     ))}
                                 </select>
-                            </div>
+                            </Row>
                             <Button
                                 variant="ghost"
                                 size="xs"
@@ -764,8 +780,8 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                             >
                                 Correct All
                             </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
+                        </Row>
+                        <Row gap={2}>
                             <span className="text-[10px] uppercase font-bold text-muted-foreground w-12 text-right">
                                 Human
                             </span>
@@ -779,8 +795,8 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                     updateClipKneadState(clipId, (state) => ({ ...state, humanizePercent: val ?? 40 }))
                                 }
                             />
-                        </div>
-                        <div className="flex items-center gap-2 px-3 border-l border-border">
+                        </Row>
+                        <Row gap={2} className="px-3 border-l border-border">
                             <DawCompactCheckbox
                                 checked={kneadState.formantPreserve ?? true}
                                 onChange={(event) =>
@@ -798,10 +814,10 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                             >
                                 Formants
                             </label>
-                        </div>
+                        </Row>
                     </>
                 ) : null}
-                <div className="flex items-center gap-2 ml-auto">
+                <Row gap={2} className="ml-auto">
                     {canCommitPitchEdit ? (
                         <Button
                             variant="secondary"
@@ -821,8 +837,8 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                         step={10}
                         onValueChange={([val]) => setZoom((val ?? 100) / 100)}
                     />
-                </div>
-            </div>
+                </Row>
+            </Row>
             <div className="flex-1 w-full relative overflow-auto pt-10">
                 <canvas
                     ref={canvasRef}
@@ -833,6 +849,6 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                 />
             </div>
             {renderIife_10()}
-        </div>
+        </Stack>
     );
 };

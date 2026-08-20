@@ -12,6 +12,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
+import { Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -99,12 +100,12 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
     };
 
     return (
-        <div className="space-y-4">
+        <Stack gap={4}>
             {/* ═══ PRIMARY: Always visible ═══ */}
             {/* Oscillator */}
             <div>
                 <SectionHeader title="Oscillator" />
-                <div className="flex justify-center mb-3">
+                <Row align="stretch" justify="center" className="mb-3">
                     <OscillatorWaveform
                         waveform={waveform}
                         osc2Waveform={osc2Waveform}
@@ -113,13 +114,13 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                         width={200}
                         height={60}
                     />
-                </div>
+                </Row>
                 <Row2 ids={['waveform', 'detune']} params={parameters} device={device} trackId={trackId} />
             </div>
             {/* Filter — interactive */}
             <div>
                 <SectionHeader title="Filter" />
-                <div className="flex justify-center mb-3">
+                <Row align="stretch" justify="center" className="mb-3">
                     <FilterResponse
                         cutoff={pv.filterCutoff ?? 5000}
                         resonance={pv.filterResonance ?? 1}
@@ -128,13 +129,13 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                         height={70}
                         onParamChange={change}
                     />
-                </div>
+                </Row>
                 <Row2 ids={['filterCutoff', 'filterResonance']} params={parameters} device={device} trackId={trackId} />
             </div>
             {/* Envelope — interactive */}
             <div>
                 <SectionHeader title="Envelope" />
-                <div className="flex justify-center mb-3">
+                <Row align="stretch" justify="center" className="mb-3">
                     <ADSREnvelope
                         attack={pv.attack ?? 0.01}
                         decay={pv.decay ?? 0.2}
@@ -144,7 +145,7 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                         height={80}
                         onParamChange={change}
                     />
-                </div>
+                </Row>
                 <Row2 ids={['attack', 'decay']} params={parameters} device={device} trackId={trackId} />
                 <div className="mt-2">
                     <Row2 ids={['sustain', 'release']} params={parameters} device={device} trackId={trackId} />
@@ -156,16 +157,16 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
             ))}
             {/* ═══ ADVANCED: Collapsible ═══ */}
             <Collapsible title="Oscillator 2" defaultOpen={false}>
-                <div className="space-y-2">
+                <Stack gap={2}>
                     <Row2 ids={['osc2Waveform', 'osc2Detune']} params={parameters} device={device} trackId={trackId} />
                     <Row2 ids={['osc2Mix', 'stereoSpread']} params={parameters} device={device} trackId={trackId} />
-                </div>
+                </Stack>
             </Collapsible>
             <Collapsible title="Sub & Noise" defaultOpen={false}>
                 <Row2 ids={['subOscLevel', 'noiseLevel']} params={parameters} device={device} trackId={trackId} />
             </Collapsible>
             <Collapsible title="Filter Advanced" defaultOpen={false}>
-                <div className="space-y-2">
+                <Stack gap={2}>
                     {filterParams(parameters, ['filterType']).map((param) => (
                         <Param key={param.id} param={param} device={device} trackId={trackId} />
                     ))}
@@ -175,17 +176,17 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                         device={device}
                         trackId={trackId}
                     />
-                </div>
+                </Stack>
             </Collapsible>
             <Collapsible title="Modulation" defaultOpen={false}>
-                <div className="space-y-2">
+                <Stack gap={2}>
                     <Row2 ids={['vibratoRate', 'vibratoDepth']} params={parameters} device={device} trackId={trackId} />
                     {filterParams(parameters, ['vibratoDelay']).map((param) => (
                         <Param key={param.id} param={param} device={device} trackId={trackId} />
                     ))}
-                </div>
+                </Stack>
             </Collapsible>
-        </div>
+        </Stack>
     );
 };
 

@@ -1,6 +1,7 @@
 import { type ReactElement, type ChangeEvent } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { Row, Stack } from '#/components/layout';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
@@ -347,11 +348,11 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     return (
         <div className={cn('flex w-full min-w-0', isSlider ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
             {isSlider ? (
-                <div className="flex items-center justify-between w-full">
+                <Row justify="between" className="w-full">
                     <label className="text-[10px] font-medium text-foreground truncate" title={param.name}>
                         {param.name}
                     </label>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <Row gap={1.5} className="mt-0.5">
                         <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
@@ -382,10 +383,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
                             />
                         ) : null}
-                    </div>
-                </div>
+                    </Row>
+                </Row>
             ) : (
-                <div className="flex flex-col flex-1 min-w-0 overflow-hidden justify-center gap-1.5">
+                <Stack justify="center" grow gap={1.5} className="min-w-0 overflow-hidden">
                     <label className="text-[10px] font-medium text-foreground truncate w-full" title={param.name}>
                         {param.name}
                     </label>
@@ -395,7 +396,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
                     ) : null}
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <Row gap={1.5} className="mt-0.5">
                         <MidiLearnButton
                             targetType="deviceParam"
                             trackId={trackId}
@@ -422,8 +423,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
                             />
                         ) : null}
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             )}
 
             <div className={cn('flex items-center justify-center', isSlider ? 'w-full px-1' : 'shrink-0')}>

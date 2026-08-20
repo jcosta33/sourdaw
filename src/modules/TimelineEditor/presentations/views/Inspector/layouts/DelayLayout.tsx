@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
+import { Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -33,9 +34,9 @@ const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactE
     };
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <SectionHeader title="Echo Pattern" />
-            <div className="flex justify-center">
+            <Row align="stretch" justify="center">
                 <DelayTaps
                     time={pv['delay-time'] ?? 250}
                     feedback={pv['delay-feedback'] ?? 0.4}
@@ -44,7 +45,7 @@ const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactE
                     height={60}
                     onParamChange={change}
                 />
-            </div>
+            </Row>
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
                 {filterParams(parameters, ['delay-time', 'delay-feedback']).map((param) => (
@@ -59,7 +60,7 @@ const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactE
             {filterParams(parameters, ['delay-mix']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
-        </div>
+        </Stack>
     );
 };
 
