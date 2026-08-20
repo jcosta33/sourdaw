@@ -1,0 +1,19 @@
+tests/e2e/automationDrawPlaybackTestId.spec.ts
+  s_24b1bdbc3c31ad::t_804b9039b6f681 44,46,48,50,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "84adb2cf388046adb28445de302d864f29b1c140",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
