@@ -7,6 +7,7 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
+import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 
 export const RETENTION_CLASSES = [
     'keep',
@@ -565,6 +566,7 @@ export function checkReleaseInventory(root: string): void {
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
+    checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
     const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
     const levainContract = {
