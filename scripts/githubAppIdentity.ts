@@ -435,8 +435,8 @@ function assertMintedPermissions(requested: MintPermissions, granted: Record<str
     }
     const requestedNames = new Set(Object.keys(requested));
     for (const [key, level] of Object.entries(granted)) {
-        if (level === 'write' && !requestedNames.has(key)) {
-            fail(`installation token granted ${key}: write`);
+        if (!requestedNames.has(key) && level !== 'read' && level !== 'none') {
+            fail(`installation token granted ${key}: ${level}`);
         }
     }
 }

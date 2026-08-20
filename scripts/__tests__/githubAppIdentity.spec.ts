@@ -275,6 +275,28 @@ describe('installation mint', () => {
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
+    it.each([
+        [
+            'unrequested admin',
+            { contents: 'read', pull_requests: 'write', repository_projects: 'admin' },
+            /repository_projects: admin/,
+        ],
+        ['requested write upgraded to admin', { contents: 'read', pull_requests: 'admin' }, /pull_requests is admin/],
+    ])('refuses %s before further GitHub writes', async (_case, permissions, expected) => {
+        const { requests, request } = mintClient({ login: REVIEWER_BOT_LOGIN, permissions });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(expected);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
     it('refuses an author token whose contents level does not match the request', async () => {
         const { requests, request } = mintClient({
             login: AUTHOR_BOT_LOGIN,
