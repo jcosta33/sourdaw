@@ -8,10 +8,12 @@ import { fileURLToPath } from 'node:url';
 import {
     AUTHOR_LOCK_REASON,
     assertTrustedExecutingBlob,
+    isAuthorBotLogin,
     originMainBlob,
     removalLockPid,
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
+import { supersessionReplacement } from './prContract.ts';
 
 export type Worktree = {
     path: string;
@@ -34,6 +36,18 @@ export type PullRequest = {
     mergedAt: string | null;
 };
 
+export type IssueComment = {
+    body: string;
+    authorLogin: string | null;
+    authorType: string | null;
+};
+
+export type ReplacementPullRequest = {
+    number: number;
+    state: string;
+    mergedAt: string | null;
+};
+
 export type LaneRemovalPort = {
     fetch: () => void;
     repository: () => string;
@@ -46,6 +60,8 @@ export type LaneRemovalPort = {
     operation: (path: string) => string | undefined;
     remoteHead: (branch: string) => string | undefined;
     pullRequests: (branch: string) => PullRequest[];
+    comments: (number: number) => IssueComment[];
+    replacement: (number: number) => ReplacementPullRequest;
     lock: (path: string, reason?: string) => void;
     unlock: (path: string) => void;
     remove: (path: string) => void;
@@ -146,8 +162,40 @@ type OwnershipSnapshot = {
     branch: string;
     ignored: string[];
     pullRequest: number;
+    supersededBy?: number;
     remoteHead?: string;
 };
+
+/**
+ * A lane is spent once the work it holds is on `main`. Merging is the ordinary way there; being
+ * superseded is the other one, and `pr:supersede` closes the old pull request unmerged, so state
+ * alone cannot tell that lane from an abandoned one — and removing an abandoned lane discards
+ * unmerged work.
+ *
+ * The receipt is what separates them. `pr:supersede` posts exactly one author-bot comment naming
+ * the replacement and verifies it is the only one before it closes anything, so a closed pull
+ * request carrying that receipt was closed by the supersede path and by nothing else. Reading it
+ * back is not enough on its own: the receipt says where the work went, not that it arrived, so the
+ * named replacement must itself be merged before this lane counts as spent.
+ */
+function supersededReplacement(number: number, port: LaneRemovalPort): number {
+    const receipts = port
+        .comments(number)
+        .filter((comment) => comment.authorType === 'Bot' && isAuthorBotLogin(comment.authorLogin))
+        .map((comment) => supersessionReplacement(comment.body));
+    const [replacement] = receipts;
+    if (receipts.length !== 1 || replacement === undefined) {
+        fail(`PR #${number} is closed without a supersession receipt`);
+    }
+    if (replacement === number) {
+        fail(`PR #${number} names itself as its replacement`);
+    }
+    const landed = port.replacement(replacement);
+    if (landed.number !== replacement || landed.state !== 'MERGED' || landed.mergedAt === null) {
+        fail(`PR #${number} was superseded by #${replacement}, which is not merged`);
+    }
+    return replacement;
+}
 
 function validateOwnership(
     target: string,
@@ -198,9 +246,11 @@ function validateOwnership(
     if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
         fail(`PR #${pullRequest.number} is foreign`);
     }
-    if (pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null || pullRequest.isDraft) {
+    const merged = pullRequest.state === 'MERGED' && pullRequest.mergedAt !== null;
+    if (pullRequest.isDraft || (!merged && pullRequest.state !== 'CLOSED')) {
         fail(`PR #${pullRequest.number} is still active`);
     }
+    const supersededBy = merged ? undefined : supersededReplacement(pullRequest.number, port);
     const remoteHead = port.remoteHead(branch);
     if (
         pullRequest.headRefName !== branch ||
@@ -217,6 +267,7 @@ function validateOwnership(
         branch,
         ignored: [...ignored].sort(),
         pullRequest: pullRequest.number,
+        supersededBy,
         remoteHead,
     };
 }
@@ -378,6 +429,33 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                 mergedAt: pullRequest.merged_at,
             }));
         },
+        comments: (number) => {
+            const pages = parseJson<Array<Array<{ body: string; user: { login: string; type: string } | null }>>>(
+                shell.capture('gh', [
+                    'api',
+                    '--paginate',
+                    '--slurp',
+                    `repos/${repository()}/issues/${number}/comments?per_page=100`,
+                ]),
+                'pull-request comment query'
+            );
+            return pages.flat().map((comment) => ({
+                body: comment.body,
+                authorLogin: comment.user?.login ?? null,
+                authorType: comment.user?.type ?? null,
+            }));
+        },
+        replacement: (number) => {
+            const pullRequest = parseJson<{ number: number; state: string; merged_at: string | null }>(
+                shell.capture('gh', ['api', `repos/${repository()}/pulls/${number}`]),
+                `PR #${number} query`
+            );
+            return {
+                number: pullRequest.number,
+                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : 'MERGED',
+                mergedAt: pullRequest.merged_at,
+            };
+        },
         lock: (path, reason = `lane-remove:${process.pid}`) =>
             shell.run('git', ['worktree', 'lock', '--reason', reason, path]),
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
@@ -392,7 +470,8 @@ function main(): number {
             console.log('Usage: node scripts/removeLane.ts <worktree-path>');
             console.log('');
             console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
-            console.log('hold the merged head of exactly one pull request in this repository.');
+            console.log('hold the head of exactly one pull request in this repository that either');
+            console.log('merged, or was superseded by a pull request that merged.');
             return 0;
         }
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
