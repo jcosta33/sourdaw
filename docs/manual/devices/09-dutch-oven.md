@@ -1,8 +1,8 @@
 # Dutch Oven — Reverb
 
 Dutch Oven is a reverb. Reach for it when a track or bus needs a space around it — a hall, a room,
-a plate, a spring, or a reverse build-up. A saturation stage and a vintage colour sit on the output
-and are off, or Modern, until you change them.
+a plate, a spring, or a reverse build-up. A saturator can run in the reverb loop. **Vintage**
+colours the output. Both stay off, or **Modern**, until you change them.
 
 The panel is labelled **Reverb stage**. The device opens on **Plate**, with **Hall** highlighted in
 the space tray.
@@ -12,9 +12,9 @@ the space tray.
 ## At a glance
 
 - Five algorithms: **Plate**, **FDN 8**, **FDN 16**, **Spring**, **Reverse**.
-- Eight space rows that load a starting point for the main knobs.
+- Eight space rows that each replace the whole patch with a starting point.
 - Mix, decay, pre-delay, size, tone cuts, modulation, and an optional shimmer and saturator.
-- A Decay EQ overlay on the spectrogram, and a Flow view of the path.
+- A Decay EQ overlay on **Tail view**, and a Flow view of the path.
 
 ## First moves
 
@@ -67,10 +67,11 @@ Picking an algorithm writes only the algorithm. It does not reset Mix, Decay, or
 
 ## Space tray
 
-Eight rows, each with a short mood line. Clicking a row loads a starting point for **Size**,
-**Decay**, **Damp**, **Diffuse**, **Depth**, and **Pre**. **Shimmer** also turns **Shimmer** on.
-**Spring** also switches **Algorithm** to **Spring**. **Infinite** pushes **Decay** to the top of
-the Plate range, which silences **Decay EQ** until you turn Decay down.
+Eight rows, each with a short mood line. Clicking a row replaces the whole patch with the module
+defaults, then that row's own **Size**, **Decay**, **Damp**, **Diffuse**, **Depth**, and **Pre**.
+**Shimmer** also turns **Shimmer** on. **Spring** also switches **Algorithm** to **Spring**.
+**Infinite** pushes **Decay** to the top of the Plate range, which silences **Decay EQ** until you
+turn Decay down.
 
 A new device highlights **Hall** and **Live**, and still uses the module defaults below until you
 click a row. Clicking **Hall** then writes a longer decay and a 20 ms pre-delay, which is not what
@@ -84,11 +85,11 @@ Space itself has no automation lane. The knobs it writes do.
 | --------------------------------------------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Modern · 80s · 70s**                        | those three   | **Modern** | Output colour. **80s** and **70s** change bandwidth and noise on the whole output, not only the wet. The same three chips sit under **Vintage** in Character. |
 | **Plate · FDN 8 · FDN 16 · Spring · Reverse** | those five    | **Plate**  | Which reverb runs. The same chips sit in Engine.                                                                                                              |
-| **Decay EQ**                                  | view on / off | off        | Opens the six-band overlay on the spectrogram. A view toggle: it does not write a parameter.                                                                  |
+| **Decay EQ**                                  | view on / off | off        | Opens the six-band overlay on **Tail view**. A view toggle: it does not write a parameter.                                                                    |
 | **Flow**                                      | view on / off | off        | Opens a picture of the path. A view toggle.                                                                                                                   |
 | **Freeze**                                    | On / Off      | Off        | Holds the tank. See Switches.                                                                                                                                 |
 | **Shimmer**                                   | On / Off      | Off        | Pitch in the loop. See Switches.                                                                                                                              |
-| **Saturation**                                | On / Off      | Off        | Output saturator. See Switches.                                                                                                                               |
+| **Saturation**                                | On / Off      | Off        | Saturator in the reverb loop. See Switches.                                                                                                                   |
 
 ## IR tray
 
@@ -103,12 +104,12 @@ Drag a WAV, AIFF, or FLAC onto the tray. The tray shows the file name and a wave
 The heading **Control deck** sits above these four cards. The same Mix, Decay, Pre, and Width
 values appear as tiles in the **Reverb stage** header.
 
-| Control   | Range       | Default | What it does                                                                                                                                                                                                             |
-| --------- | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Size**  | 0 to 100%   | 75%     | How large the space reads. On **Plate**, this spaces the early reflections; the tank delays stay put.                                                                                                                    |
-| **Decay** | 0 to 0.999  | 0.500   | How long the tail lasts. **Plate** and **Spring** show the coefficient. **FDN 8** and **FDN 16** show seconds (~1.7 s at the default, up to ~29.8 s at the top). **Spring** stops the knob at 0.95; **Reverse** at 0.99. |
-| **Mix**   | 0 to 100%   | 30%     | Wet against dry.                                                                                                                                                                                                         |
-| **Pre**   | 0 to 500 ms | 15 ms   | Delay before the reverb. Grey on **Spring** and **Reverse**.                                                                                                                                                             |
+| Control   | Range       | Default | What it does                                                                                                                                                                                                                                                                                                                                                |
+| --------- | ----------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Size**  | 0 to 100%   | 75%     | How large the space reads. On **Plate**, this spaces the early reflections; the tank delays stay put. On **Reverse**, this is the build-up length, from 0.5 s to 3.0 s.                                                                                                                                                                                     |
+| **Decay** | 0 to 0.999  | 0.500   | How long the tail lasts on **Plate**, **Spring**, **FDN 8**, and **FDN 16**. **Plate** and **Spring** show the coefficient. **FDN 8** and **FDN 16** show seconds (~1.7 s at the default, up to ~29.8 s at the top). **Spring** stops the knob at 0.95. On **Reverse**, Decay is the level of the reversed grain, not its duration; the knob stops at 0.99. |
+| **Mix**   | 0 to 100%   | 30%     | Wet against dry.                                                                                                                                                                                                                                                                                                                                            |
+| **Pre**   | 0 to 500 ms | 15 ms   | Delay before the reverb. Grey on **Spring** and **Reverse**.                                                                                                                                                                                                                                                                                                |
 
 On a new **Plate**, **Size** already reads 75%, but the early reflections are still the 50% room
 until Size is written — moving the knob away and back, or writing 75% from an automation lane,
@@ -118,8 +119,8 @@ changes the sound.
 
 | Control     | Range         | Default | What it does                                                                                                                 |
 | ----------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Hi Cut**  | 1.0k to 20.0k | 12.0k   | Low-pass on the output. The readout drops "Hz" and prints `k` above 1 kHz.                                                   |
-| **Lo Cut**  | 20 to 1000 Hz | 80 Hz   | High-pass on the output.                                                                                                     |
+| **Hi Cut**  | 1.0k to 20.0k | 12.0k   | Low-pass on the wet signal, before Mix. The dry path is unfiltered. The readout drops "Hz" and prints `k` above 1 kHz.       |
+| **Lo Cut**  | 20 to 1000 Hz | 80 Hz   | High-pass on the wet signal, before Mix. The dry path is unfiltered.                                                         |
 | **Damp**    | 0 to 100%     | 30%     | High frequencies die faster in the tail as you raise it. Grey on **Reverse**. **Spring** stops the knob just shy of the top. |
 | **Diffuse** | 0 to 100%     | 75%     | Spreads the incoming sound before the tank. Grey on **FDN 8**, **FDN 16**, and **Reverse**.                                  |
 
@@ -134,15 +135,15 @@ changes the sound.
 
 ## Character
 
-| Control     | Range                  | Default    | What it does                                                                                               |
-| ----------- | ---------------------- | ---------- | ---------------------------------------------------------------------------------------------------------- |
-| **Gravity** | −1.00 to +1.00         | +0.50      | Tilts the plate tank. Negative is a reverse swell; positive is the ordinary direction. Grey off **Plate**. |
-| **Vintage** | **Modern · 80s · 70s** | **Modern** | Same as the Flavor chips. The knob snaps to those three.                                                   |
-| **Density** | 0 to 100%              | 100%       | How tightly the plate tank is coupled. Grey off **Plate**.                                                 |
+| Control     | Range                  | Default    | What it does                                               |
+| ----------- | ---------------------- | ---------- | ---------------------------------------------------------- |
+| **Gravity** | −1.00 to +1.00         | +0.50      | Changes how the plate tank rings. Grey off **Plate**.      |
+| **Vintage** | **Modern · 80s · 70s** | **Modern** | Same as the Flavor chips. The knob snaps to those three.   |
+| **Density** | 0 to 100%              | 100%       | How tightly the plate tank is coupled. Grey off **Plate**. |
 
 ## Decay EQ and Flow
 
-**Decay EQ** draws six nodes on the spectrogram at 100 Hz, 400 Hz, 1.2 kHz, 3.5 kHz, 8 kHz, and
+**Decay EQ** draws six nodes on **Tail view** at 100 Hz, 400 Hz, 1.2 kHz, 3.5 kHz, 8 kHz, and
 12 kHz. Each node is a multiplier on that band's decay, from 0.25× at the bottom to 4.0× at the
 top. Centre (1.0×) is the base decay — the default for every band, and the setting that leaves that
 band alone.
@@ -161,14 +162,14 @@ draw and refuse to move.
 The same **Shimmer**, **Freeze**, and **Saturation** chips sit in Flavor. Amount, Pitch, and the
 curve chips appear here when the matching switch is on.
 
-| Control                 | Range                  | Default    | What it does                                                                                                  |
-| ----------------------- | ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| **Freeze**              | On / Off               | Off        | Holds the tank at full sustain and closes the input. Grey off **Plate**.                                      |
-| **Shimmer**             | On / Off               | Off        | A pitch shifter in the loop. Grey off **Plate**.                                                              |
-| **Amount**              | 0 to 100%              | 20%        | How much shimmer. Shown while **Shimmer** is on.                                                              |
-| **Pitch**               | **Fifth** / **Octave** | **Octave** | Interval. Shown while **Shimmer** is on.                                                                      |
-| **Saturation**          | On / Off               | Off        | Saturator on the output. Grey on **Spring** and **Reverse**. Live on **Plate** and on **FDN 8** / **FDN 16**. |
-| **Tanh · Cheby · Clip** | those three            | **Tanh**   | Curve. Shown while **Saturation** is on. Live on **Plate** only.                                              |
+| Control                 | Range                  | Default    | What it does                                                                                                       |
+| ----------------------- | ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Freeze**              | On / Off               | Off        | Holds the tank at full sustain and closes the input. Grey off **Plate**.                                           |
+| **Shimmer**             | On / Off               | Off        | A pitch shifter in the loop. Grey off **Plate**.                                                                   |
+| **Amount**              | 0 to 100%              | 20%        | How much shimmer. Shown while **Shimmer** is on.                                                                   |
+| **Pitch**               | **Fifth** / **Octave** | **Octave** | Interval. Shown while **Shimmer** is on.                                                                           |
+| **Saturation**          | On / Off               | Off        | Saturator in the reverb loop. Grey on **Spring** and **Reverse**. Live on **Plate** and on **FDN 8** / **FDN 16**. |
+| **Tanh · Cheby · Clip** | those three            | **Tanh**   | Curve. Shown while **Saturation** is on. Live on **Plate** only.                                                   |
 
 On **Plate**, turning **Freeze** on also silences shimmer in the tank. The **Shimmer** chip can
 stay lit. Turning **Freeze** off does not bring shimmer back until you click **Shimmer** off and
@@ -176,15 +177,15 @@ on again.
 
 ## Meters and readouts
 
-| Readout                                                | Shows                                                                        |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| **Decay** (header)                                     | The Decay knob's readout — coefficient, or seconds on **FDN 8** / **FDN 16** |
-| **Mix** (header)                                       | Wet mix                                                                      |
-| **Pre** (header)                                       | Pre-delay                                                                    |
-| **Width** (header)                                     | Stereo width as a percentage                                                 |
-| Spectrogram                                            | A picture of the tail, with the Decay EQ overlay when that chip is on        |
-| **High cut** / **Low cut** / **Damping** / **Gravity** | The same values as **Hi Cut**, **Lo Cut**, **Damp**, and **Gravity**         |
-| **Freeze on / off** · **Shimmer on / off**             | Whether those switches are on                                                |
+| Readout                                                | Shows                                                                                                                       |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **Decay** (header)                                     | The Decay knob's readout — coefficient, or seconds on **FDN 8** / **FDN 16**                                                |
+| **Mix** (header)                                       | Wet mix                                                                                                                     |
+| **Pre** (header)                                       | Pre-delay                                                                                                                   |
+| **Width** (header)                                     | Stereo width as a percentage                                                                                                |
+| **Tail view**                                          | Illustrative picture driven by **Decay** and **Damp**, not a live meter of the audio. Decay EQ overlay when that chip is on |
+| **High cut** / **Low cut** / **Damping** / **Gravity** | The same values as **Hi Cut**, **Lo Cut**, **Damp**, and **Gravity**                                                        |
+| **Freeze on / off** · **Shimmer on / off**             | Whether those switches are on                                                                                               |
 
 ## Presets
 
