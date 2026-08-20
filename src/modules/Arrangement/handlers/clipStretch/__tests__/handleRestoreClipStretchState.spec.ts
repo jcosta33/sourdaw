@@ -99,4 +99,57 @@ describe('handleRestoreClipStretchState', () => {
         expect(handleRestoreClipStretchState.undoable).toBe(false);
         expect(handleRestoreClipStretchState.describe(action).inverseAction).toBeNull();
     });
+
+    describe('replay guard', () => {
+        it('is always batch-compensable, since expected is mandatory on this payload', () => {
+            expect(
+                handleRestoreClipStretchState.canReapplyAfterDivergence?.({
+                    type: 'restoreClipStretchState',
+                    payload: { clipId: 'clip-1', expected: presentState, replacement: absentState },
+                })
+            ).toBe(true);
+        });
+
+        it('validate rejects a diverged stretch state', () => {
+            expect(
+                handleRestoreClipStretchState.validate?.(
+                    {
+                        type: 'restoreClipStretchState',
+                        payload: {
+                            clipId: 'clip-1',
+                            expected: { ...presentState, ratio: { present: false, value: 2 } },
+                            replacement: absentState,
+                        },
+                    },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(false);
+        });
+
+        it('validate accepts a matching stretch state', () => {
+            expect(
+                handleRestoreClipStretchState.validate?.(
+                    {
+                        type: 'restoreClipStretchState',
+                        payload: { clipId: 'clip-1', expected: presentState, replacement: absentState },
+                    },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(true);
+        });
+
+        it('validate rejects when the clip no longer exists', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+            expect(
+                handleRestoreClipStretchState.validate?.(
+                    {
+                        type: 'restoreClipStretchState',
+                        payload: { clipId: 'clip-1', expected: presentState, replacement: absentState },
+                    },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(false);
+        });
+    });
 });
