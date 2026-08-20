@@ -1,17 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-    type LevainProvenance,
-    parseLevainProvenance,
-    validateLevainProvenance,
-    validateLevainUpstream,
-} from '../checkLevainProvenance';
+import { type LevainProvenance, parseLevainProvenance, validateLevainProvenance } from '../checkLevainProvenance';
 import { LEVAIN_SOURCE } from '../levainSource';
 
 function digest(algorithm: 'sha1' | 'sha256', contents: Buffer): string {
@@ -52,7 +47,7 @@ function fixture(root: string): LevainProvenance {
             {
                 path: 'public/samples/levain/violin/manifest.json',
                 source: `git:${sourceCommit}`,
-                license: 'project-source',
+                license: 'pending:OS-10-project-license',
                 sha256: digest('sha256', manifest),
             },
         ],
@@ -119,29 +114,19 @@ describe('Levain provenance', () => {
         }
     });
 
-    it('proves paths and license against the pinned upstream tree', () => {
+    it.runIf(process.platform !== 'win32')('rejects a symlinked bank root', () => {
         const root = mkdtempSync(join(tmpdir(), 'levain-provenance-'));
+        const target = mkdtempSync(join(tmpdir(), 'levain-provenance-target-'));
         try {
-            const provenance = fixture(root);
-            const commit = { sha: LEVAIN_SOURCE.revision, commit: { tree: { sha: LEVAIN_SOURCE.tree } } };
-            const tree = {
-                truncated: false,
-                tree: [
-                    { path: LEVAIN_SOURCE.licensePath, type: 'blob', sha: LEVAIN_SOURCE.licenseBlob },
-                    {
-                        path: provenance.samples[0]!.sourcePath,
-                        type: 'blob',
-                        sha: provenance.samples[0]!.gitBlob,
-                    },
-                ],
-            };
-            expect(validateLevainUpstream(provenance, commit, tree)).toEqual([]);
-            tree.tree[1]!.sha = 'd'.repeat(40);
-            expect(validateLevainUpstream(provenance, commit, tree)).toContain(
-                'public/samples/levain/violin/note.wav: upstream path does not match Git blob'
+            const provenance = fixture(target);
+            mkdirSync(join(root, 'public/samples'), { recursive: true });
+            symlinkSync(join(target, 'public/samples/levain'), join(root, 'public/samples/levain'));
+            expect(validateLevainProvenance(root, provenance)).toContain(
+                'Levain symlinks are forbidden:\npublic/samples/levain'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
+            rmSync(target, { recursive: true, force: true });
         }
     });
 });

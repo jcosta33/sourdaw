@@ -476,7 +476,11 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "public/samples/levain/**",
+                "release/levain-CC0-1.0.txt",
+                "release/levain-upstream-commit.base64",
+                "release/levain-upstream-tree.tsv",
                 "scripts/checkLevainProvenance.ts",
+                "scripts/checkLevainUpstreamProof.ts",
                 "scripts/download-levain-samples-direct.ts",
                 "scripts/download-levain-samples.ts",
                 "scripts/levainSource.ts"
@@ -487,13 +491,13 @@
                 "git-tree:0ecebcfca0c7e0fe501f71964027f8f59fa0e432",
                 "file-level:public/samples/levain/provenance.tsv"
             ],
-            "licenses": ["CC0-1.0"],
+            "licenses": ["CC0-1.0", "pending:OS-10-project-license"],
             "productSurfaces": ["bundled Levain orchestral sample bank"],
             "evidence": [
-                "public/samples/levain/provenance.tsv maps every WAV to its immutable upstream path and Git blob, records SHA-256 and license, and identifies every generated manifest."
+                "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
             ],
             "obligations": [
-                "Preserve the pinned source revision, file-level provenance, and CC0 classification when refreshing the bank."
+                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
             ]
         },
         {
@@ -775,11 +779,6 @@
             "file": "scripts/download-levain-samples.ts",
             "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${slot}",
             "templateSha256": "c1c4dd6ac9e3b00c3d2e0db33c7ebbf5330e1b17263fc32709a93adec824c655"
-        },
-        {
-            "surface": "levain-sample-bank",
-            "file": "scripts/checkLevainProvenance.ts",
-            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE"
         },
         {
             "surface": "levain-sample-bank",
