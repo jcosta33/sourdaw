@@ -53,6 +53,37 @@ describe('scanUiRestatements', () => {
         expect(rows[0]?.id).toMatch(/^ui-[a-f0-9]{16}$/);
     });
 
+    it('keeps an occurrence ID when preceding lines shift', () => {
+        const before = tree({
+            'src/modules/Demo/presentations/views/Panel.tsx': `export const Panel = () => <div className="flex flex-col gap-2" />;
+`,
+        });
+        const after = tree({
+            'src/modules/Demo/presentations/views/Panel.tsx': `const padding = 0;
+export const Panel = () => <div className="flex flex-col gap-2" />;
+`,
+        });
+        const original = scanUiRestatements(before)[0];
+        const shifted = scanUiRestatements(after)[0];
+        expect(original?.id).toBe(shifted?.id);
+        expect(shifted?.line).toBe((original?.line ?? 0) + 1);
+    });
+
+    it('gives distinct IDs to two identical restatements in one file', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Panel.tsx': `export const Panel = () => (
+  <>
+    <div className="flex flex-col gap-2" />
+    <div className="flex flex-col gap-2" />
+  </>
+);
+`,
+        });
+        const rows = scanUiRestatements(root);
+        expect(rows).toHaveLength(2);
+        expect(rows[0]?.id).not.toBe(rows[1]?.id);
+    });
+
     it('maps a horizontal flex row to Row', () => {
         const root = tree({
             'src/modules/Demo/presentations/views/Toolbar.tsx': `export const Toolbar = () => <div className="flex items-center gap-2" />;

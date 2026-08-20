@@ -310,16 +310,25 @@ function layoutDisposition(relativePath: string, classNames: string, dynamic: bo
     return 'eligible';
 }
 
-function makeRow(
+type ClassifiedRow = Omit<UiRestatementRow, 'id'>;
+
+function classifiedRow(
     relativePath: string,
     line: number,
     fingerprint: string,
     kind: UiRestatementKind,
     mapping: string,
     disposition: UiRestatementDisposition
-): UiRestatementRow {
-    const id = `ui-${createHash('sha256').update(`${relativePath}:${line}:${fingerprint}`).digest('hex').slice(0, 16)}`;
-    return { id, file: relativePath, line, fingerprint, kind, mapping, disposition };
+): ClassifiedRow {
+    return { file: relativePath, line, fingerprint, kind, mapping, disposition };
+}
+
+function withStableId(row: ClassifiedRow, occurrence: number): UiRestatementRow {
+    const id = `ui-${createHash('sha256')
+        .update(`${row.file}:${row.fingerprint}:${String(occurrence)}`)
+        .digest('hex')
+        .slice(0, 16)}`;
+    return { id, ...row };
 }
 
 function classifyElement(
@@ -328,22 +337,22 @@ function classifyElement(
     classNames: string,
     dynamic: boolean,
     line: number
-): UiRestatementRow | undefined {
+): ClassifiedRow | undefined {
     if (LAYOUT_PRIMITIVES.has(tag)) {
-        return makeRow(relativePath, line, `${tag}\t`, 'layout', tag, 'already-migrated');
+        return classifiedRow(relativePath, line, `${tag}\t`, 'layout', tag, 'already-migrated');
     }
     if (DAW_CHROME.has(tag)) {
-        return makeRow(relativePath, line, `${tag}\t`, 'daw-chrome', tag, 'semantic-wrapper');
+        return classifiedRow(relativePath, line, `${tag}\t`, 'daw-chrome', tag, 'semantic-wrapper');
     }
     if (UI_CONTROLS.has(tag) || DAW_COMPACT.has(tag)) {
-        return makeRow(relativePath, line, `${tag}\t`, 'generic-control', tag, 'already-migrated');
+        return classifiedRow(relativePath, line, `${tag}\t`, 'generic-control', tag, 'already-migrated');
     }
     if (NATIVE_CONTROLS.has(tag)) {
         const mapping = CONTROL_MAPPING[tag];
         if (mapping === undefined) {
             return undefined;
         }
-        return makeRow(
+        return classifiedRow(
             relativePath,
             line,
             `${tag}\t`,
@@ -355,7 +364,7 @@ function classifyElement(
     if (!LAYOUT_TAGS.has(tag) || !hasLayoutClass(classNames)) {
         return undefined;
     }
-    return makeRow(
+    return classifiedRow(
         relativePath,
         line,
         `${tag}\t${classNames}`,
@@ -367,7 +376,7 @@ function classifyElement(
 
 function scanSourceFile(relativePath: string, contents: string): UiRestatementRow[] {
     const sourceFile = ts.createSourceFile(relativePath, contents, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const rows: UiRestatementRow[] = [];
+    const classified: ClassifiedRow[] = [];
     const visit = (node: ts.Node): void => {
         if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
             const tag = tagName(node.tagName);
@@ -377,14 +386,19 @@ function scanSourceFile(relativePath: string, contents: string): UiRestatementRo
                 const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
                 const row = classifyElement(relativePath, tag, parsed.text.trim(), parsed.dynamic, line);
                 if (row !== undefined) {
-                    rows.push(row);
+                    classified.push(row);
                 }
             }
         }
         node.forEachChild(visit);
     };
     visit(sourceFile);
-    return rows;
+    const occurrences = new Map<string, number>();
+    return classified.map((row) => {
+        const occurrence = occurrences.get(row.fingerprint) ?? 0;
+        occurrences.set(row.fingerprint, occurrence + 1);
+        return withStableId(row, occurrence);
+    });
 }
 
 export function scanUiRestatements(root: string): UiRestatementRow[] {
