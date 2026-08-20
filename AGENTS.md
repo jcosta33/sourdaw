@@ -121,9 +121,10 @@ Run `pnpm deps:validate` after cross-module changes. Full rules:
 ## Worktrees
 
 One change, one lane. Mutable work lives under `.agents/worktrees/`, never in the primary checkout.
-`pnpm lane:open <issue> [slug]` fetches `origin/main`, creates `agent/<issue>/<slug>` (slug `work`
-if omitted), and locks `active:sourdaw-author`. Last stdout line is the lane path. It does not mint
-or spawn `gh`. Touch only that lane.
+`pnpm lane:open [issue] [slug]` fetches `origin/main`, creates `agent/<issue>/<slug>` — or
+`agent/<slug>` when the work closes no issue — and locks `active:sourdaw-author`. The slug is
+`work` if omitted, and never purely numeric, because a bare number is read as the issue. Last
+stdout line is the lane path. It does not mint or spawn `gh`. Touch only that lane.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
 Removal requires exactly one merged pull request for that branch. Delete a leftover local branch
@@ -148,8 +149,8 @@ GitHub writes for agent work go through trusted `pnpm` scripts. The model does n
 
 | Need                        | Command                         |
 | --------------------------- | ------------------------------- |
-| Open a lane                 | `pnpm lane:open <issue> [slug]` |
-| Push; open or update the PR | `pnpm lane:publish <issue>`     |
+| Open a lane                 | `pnpm lane:open [issue] [slug]` |
+| Push; open or update the PR | `pnpm lane:publish [issue]`     |
 | Write the review bundle     | `pnpm review:prepare <pr>`      |
 | Post `review.json`          | `pnpm review:publish <pr>`      |
 | Squash-merge                | `pnpm deliver <pr>`             |
@@ -164,11 +165,14 @@ not mint the reviewer.
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
 
-`lane:publish` prints the PR number. It pushes without `--force`, titles the PR with the HEAD
-subject (`type(scope): subject`), keeps the four headings in
+`lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
+it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
+standing in, so an issueless lane is publishable only from inside itself. It pushes without
+`--force`, titles the PR with the HEAD subject (`type(scope): subject`), keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes, and puts `Closes #<issue>` in Related tickets. It does not enable auto-merge or post a
-review.
+bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
+there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
+branch carries no issue. It does not enable auto-merge or post a review.
 
 `review:prepare` prints a bundle path on the primary root. The bundle is `manifest.json`,
 `diff.patch`, `pr.md`, and base-commit `contracts/`. The caller writes `review.json` for **this**
