@@ -178,9 +178,10 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
 never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
 number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
-`agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
-`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
-directory is what identifies it when no issue number does. Touch only your own lane.
+`agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
+`lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`,
+and `lane:publish` must run from inside that lane because the working directory identifies it. Touch
+only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -236,7 +237,7 @@ tracker state. Identity for a script-covered write is the App that script mints,
 | Need                        | Command                                                           |
 | --------------------------- | ----------------------------------------------------------------- |
 | Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
-| Push; open or update the PR | `pnpm lane:publish [issue]`                                       |
+| Push; open or update the PR | `pnpm lane:publish [issue] [--relates]`                           |
 | Write the review bundle     | `pnpm review:prepare <pr>`                                        |
 | Post `review.json`          | `pnpm review:publish <pr>`                                        |
 | Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
@@ -277,11 +278,11 @@ standing in, so an issueless lane is publishable only from inside itself. It pus
 `--force`, titles the PR with the newest non-merge commit the lane holds above `origin/main`
 (`type(scope): subject`), so merging `origin/main` in never retitles it, keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
-there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
-branch carries no issue. It refuses a lane with uncommitted changes, and one carrying no non-merge
-commit above `origin/main`: commit the work yourself with a conventional subject first. It does not
-enable auto-merge or post a review.
+bytes. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
+`Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
+Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses uncommitted
+lanes and lanes with no non-merge commit above `origin/main`. It does not enable auto-merge or post
+a review.
 
 Write the pull request for a teammate who was not in the session. Under the four template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
