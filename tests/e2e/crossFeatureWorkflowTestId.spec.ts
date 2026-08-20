@@ -1,179 +1,182 @@
-import { test, expect } from '@playwright/test';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { expect, test, type Page } from '@playwright/test';
+
+import { launch_from_template, setupWorkspace } from './e2eUtils';
+
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+}
+
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
+    if ((await dock.getAttribute('aria-pressed')) === 'false') {
+        await dock.click();
+    }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function openInspector(page: Page): Promise<void> {
+    const toggle = page.getByRole('button', { name: 'Toggle inspector' });
+    if ((await toggle.getAttribute('aria-pressed')) === 'false') {
+        await toggle.click();
+    }
+    await expect(page.getByRole('complementary', { name: 'Inspector panel' })).toBeVisible();
+}
+
+async function openPianoRollOnNewClip(page: Page): Promise<void> {
+    await addMidiTrack(page);
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    const row = trackList.getByRole('row').last();
+    await row.click();
+    const rowBox = await row.boundingBox();
+    const canvas = page.getByLabel('Timeline editor surface');
+    await expect(canvas).toBeVisible();
+    const canvasBox = await canvas.boundingBox();
+    if (rowBox === null || canvasBox === null) {
+        throw new Error('track lane has no bounding box');
+    }
+    const y = Math.min(Math.max(rowBox.y - canvasBox.y + rowBox.height / 2, 8), canvasBox.height - 8);
+    await canvas.click({ button: 'right', position: { x: 300, y } });
+    await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+    await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+    await canvas.dblclick({ position: { x: 300, y } });
+    await expect(page.getByLabel('Piano roll editor')).toBeVisible();
+}
 
 test.describe('Cross-feature workflow — EDM template', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'EDM' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_from_template({ page, template_name: /EDM/i });
     });
 
     test('play → mute track → open piano roll → draw note → undo → stop', async ({ page }) => {
-        // Start playback.
-        await page.getByTestId('transport-play').click();
-        await page.waitForTimeout(500);
+        const play = page.getByTestId('transport-play');
+        const playhead = page.getByTestId('transport-playhead');
+        await expect(play).toHaveAttribute('aria-label', 'Play');
 
-        // Mute first track during playback.
+        await play.click();
+        await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Pause');
+
         const mute = page.locator('[data-testid^="track-mute-"]').first();
+        await expect(mute).toBeVisible();
         await mute.click();
         await expect(mute).toHaveAttribute('data-active', 'true');
 
-        // Stop.
         await page.getByTestId('transport-stop').click();
+        await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Play');
 
-        // Open piano roll.
-        const canvas = page.getByLabel('Timeline editor surface');
-        const positions = [{ x: 100, y: 40 }, { x: 200, y: 40 }, { x: 150, y: 80 }];
-        let opened = false;
-        for (const pos of positions) {
-            await canvas.dblclick({ position: pos });
-            await page.waitForTimeout(500);
-            if (await page.locator('[aria-label="Piano roll editor"]').isVisible().catch(() => false)) {
-                opened = true;
-                break;
-            }
+        await openPianoRollOnNewClip(page);
+        const noteCount = page.getByTestId('selected-clip-note-count');
+        await expect(noteCount).toHaveText(/0 notes/);
+
+        const paint = page.getByRole('button', { name: 'Toggle paint mode' });
+        await expect(paint).toBeVisible();
+        if ((await paint.getAttribute('aria-pressed')) !== 'true') {
+            await paint.click();
         }
-        if (opened) {
-            // Draw a note.
-            await page.locator('[aria-label="Piano roll editor"]').dblclick({ position: { x: 100, y: 100 } });
-            await page.waitForTimeout(500);
+        await expect(paint).toHaveAttribute('aria-pressed', 'true');
+        await page.getByLabel('Piano roll editor').click({ position: { x: 200, y: 130 } });
+        await expect(noteCount).toHaveText(/1 note/);
 
-            // Undo.
-            await expect(page.getByTestId('transport-undo')).toBeEnabled({ timeout: 10_000 });
-            await page.getByTestId('transport-undo').click();
-            await page.waitForTimeout(500);
-        }
+        const undo = page.getByTestId('transport-undo');
+        await expect(undo).toBeEnabled();
+        await undo.click();
+        await expect(noteCount).toHaveText(/0 notes/);
 
-        // Unmute.
         await mute.click();
         await expect(mute).toHaveAttribute('data-active', 'false');
     });
 
     test('add track → add device → bypass → open export → cancel', async ({ page }) => {
-        // Add a track.
-        await page.getByTestId('add-track-button').getByRole('button').click();
-        await page.getByTestId('add-track-midi').click();
-        await page.waitForTimeout(500);
-
-        // Select and open inspector.
+        await addMidiTrack(page);
         const trackList = page.getByRole('grid', { name: /Track list/i }).first();
         await trackList.getByRole('row').last().click();
-        const inspector = page.getByTestId('toggle-inspector');
-        if ((await inspector.getAttribute('aria-pressed')) === 'false') {
-            await inspector.click();
-            await page.waitForTimeout(300);
-        }
+        await openInspector(page);
 
-        // Add device.
-        const addDevice = page.getByTestId('add-device-button');
-        if (await addDevice.isVisible().catch(() => false)) {
-            await addDevice.click();
-            await page.waitForTimeout(300);
-            await page.getByRole('menu').getByRole('menuitem').first().click();
-            await page.waitForTimeout(500);
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        await inspector.getByRole('button', { name: 'Add device' }).click();
+        await page.getByRole('menuitem', { name: /^Gluten$/ }).click();
+        const bypass = inspector.locator('[data-testid^="device-bypass-"]').first();
+        await expect(bypass).toBeVisible();
+        await expect(bypass).toHaveAttribute('aria-pressed', 'false');
+        await bypass.click();
+        await expect(bypass).toHaveAttribute('aria-pressed', 'true');
 
-            // Bypass.
-            const bypass = page.locator('[data-testid^="device-bypass-"]').first();
-            if (await bypass.isVisible().catch(() => false)) {
-                await bypass.click();
-                await expect(bypass).toHaveAttribute('aria-pressed', 'true');
-            }
-        }
-
-        // Open export dialog.
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
-        await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-        await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
-
-        // Cancel.
+        await page.keyboard.press(`${MOD}+Shift+E`);
+        const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        await expect(bakery).toBeVisible();
         await page.getByTestId('export-cancel').click();
-        await page.waitForTimeout(300);
+        await expect(bakery).toBeHidden();
     });
 
     test('command palette → search → Escape → open preferences', async ({ page }) => {
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
-
-        // Open command palette.
-        await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
-        await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 5000 });
-
-        // Type and close.
-        await page.getByTestId('command-palette-input').fill('track');
-        await page.waitForTimeout(300);
+        await page.keyboard.press(`${MOD}+k`);
+        const palette = page.getByPlaceholder('Type a command...', { exact: true });
+        await expect(palette).toBeVisible();
+        await palette.fill('track');
         await page.keyboard.press('Escape');
+        await expect(palette).toBeHidden();
 
-        // Open preferences.
-        await page.getByTestId('toggle-preferences').click();
-        await page.waitForTimeout(500);
-
-        // Dialog should appear.
+        await page.getByRole('button', { name: 'Open Preferences' }).click();
         const dialog = page.getByRole('dialog');
-        const hasDialog = await dialog.isVisible().catch(() => false);
-        if (hasDialog) {
-            expect(await dialog.innerText()).toBeTruthy();
-        }
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'General', exact: true })).toBeVisible();
     });
 
     test('solo mode cycle → BPM increment → metronome → play', async ({ page }) => {
-        // Cycle solo mode SIP → AFL.
-        await page.getByTestId('solo-mode-afl').click();
-        await expect(page.getByTestId('solo-mode-afl')).toHaveAttribute('aria-checked', 'true');
+        const sip = page.getByTestId('solo-mode-sip');
+        const afl = page.getByTestId('solo-mode-afl');
+        await expect(sip).toHaveAttribute('aria-checked', 'true');
+        await afl.click();
+        await expect(afl).toHaveAttribute('aria-checked', 'true');
+        await sip.click();
+        await expect(sip).toHaveAttribute('aria-checked', 'true');
 
-        // Back to SIP.
-        await page.getByTestId('solo-mode-sip').click();
-
-        // BPM increment.
         const bpm = page.getByTestId('transport-tempo-bpm').getByRole('spinbutton');
+        const before = await bpm.getAttribute('aria-valuenow');
         await bpm.focus();
         await page.keyboard.press('ArrowUp');
+        await expect(bpm).not.toHaveAttribute('aria-valuenow', before ?? '');
 
-        // Metronome on.
-        await page.getByTestId('transport-metronome').click();
-        await expect(page.getByTestId('transport-metronome')).toHaveAttribute('aria-pressed', 'true');
+        const metronome = page.getByTestId('transport-metronome');
+        await metronome.click();
+        await expect(metronome).toHaveAttribute('aria-pressed', 'true');
 
-        // Play.
-        await page.getByTestId('transport-play').click();
-        await page.waitForTimeout(500);
+        const play = page.getByTestId('transport-play');
+        const playhead = page.getByTestId('transport-playhead');
+        await play.click();
+        await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Pause');
         await page.getByTestId('transport-stop').click();
+        await expect(play).toHaveAttribute('aria-label', 'Play');
 
-        // Metronome off.
-        await page.getByTestId('transport-metronome').click();
+        await metronome.click();
+        await expect(metronome).toHaveAttribute('aria-pressed', 'false');
     });
 
     test('dual view → scene launch → close dual view → open mixer', async ({ page }) => {
-        // Open dual view.
-        await page.getByTestId('toggle-dual-view').click();
-        await page.waitForTimeout(500);
+        const dualView = page.getByRole('button', { name: 'Toggle Session + Arrangement View' });
+        await dualView.click();
+        await expect(dualView).toHaveAttribute('aria-pressed', 'true');
+        const scene1 = page.getByRole('button', { name: 'Launch scene 1' });
+        await expect(scene1).toBeVisible();
+        await scene1.click();
 
-        // Launch scene 1.
-        await page.getByRole('button', { name: 'Launch scene 1' }).click();
-        await page.waitForTimeout(300);
+        await dualView.click();
+        await expect(dualView).toHaveAttribute('aria-pressed', 'false');
+        await expect(scene1).toBeHidden();
 
-        // Close dual view.
-        await page.getByTestId('toggle-dual-view').click();
-        await page.waitForTimeout(500);
-
-        // Open mixer.
-        const dock = page.getByTestId('toggle-bottom-dock');
-        if ((await dock.getAttribute('aria-pressed')) === 'false') {
-            await dock.click();
-            await page.waitForTimeout(500);
-        }
-
-        const mixerTab = page.locator('#bottom-dock-tab-mixer');
-        if (await mixerTab.isVisible().catch(() => false)) {
-            await mixerTab.click();
-            await page.waitForTimeout(500);
-
-            // Channel mute buttons should be visible.
-            const mutes = page.locator('[data-testid^="channel-mute-"]');
-            const hasMutes = await mutes.first().isVisible().catch(() => false);
-            if (hasMutes) {
-                expect(await mutes.count()).toBeGreaterThan(0);
-            }
-        }
+        await openBottomTab(page, 'Mixer');
+        await expect(page.getByRole('region', { name: 'Mixer panel' })).toBeVisible();
+        await expect(page.locator('[data-testid^="channel-mute-"]').first()).toBeVisible();
     });
 });
