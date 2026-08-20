@@ -21,7 +21,9 @@ const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
 
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
 use crate::params::PluginParameter;
-use crate::traits::AudioPlugin;
+use crate::traits::{
+    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, ProcessingGate,
+};
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
@@ -51,124 +53,7 @@ use libloading::Library;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ClapParameterUpdate {
-    pub param_id: u32,
-    pub value: f64,
-}
-
-/// Host timeline handed to a plugin each block.
-///
-/// Deliberately its own type rather than the engine's transport struct: this
-/// crate must stay loadable without the engine, and the engine must be free to
-/// grow fields a CLAP plugin has no slot for.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct HostTransport {
-    pub tempo: f64,
-    pub time_sig_num: u16,
-    pub time_sig_denom: u16,
-    pub is_playing: bool,
-    pub song_pos_beats: f64,
-    pub song_pos_seconds: f64,
-}
-
-/// Ownership of a plugin's processing state, split by thread the way CLAP
-/// splits it.
-///
-/// CLAP annotates `start_processing` and `stop_processing` `[audio-thread]`, so
-/// neither may be called from the loader, the unload command, or a `Drop`. This
-/// gate lets a control thread state an *intent* — "this plugin should (not) be
-/// processing" — which the audio thread carries out on its next block, and lets
-/// the control thread observe when that has happened.
-///
-/// Exclusive access to the wrapper does not substitute for thread affinity: a
-/// plugin that gates real-time state on these callbacks cares which thread ran
-/// them, not who else was excluded at the time.
-///
-/// One case cannot be served on the audio thread: a slot that has already left
-/// the graph will never be handed another block, so nothing there can perform
-/// the stop that must precede `deactivate`. That path calls
-/// `force_stop_processing_off_audio_thread`, which counts itself so the
-/// deviation is measurable rather than assumed rare.
-#[derive(Debug, Default)]
-pub struct ProcessingGate {
-    /// Control-thread intent. Read by the audio thread each block.
-    requested: AtomicBool,
-    /// Audio-thread truth: `start_processing` returned true and has not been undone.
-    active: AtomicBool,
-    /// Stops performed off the audio thread because no further block was coming.
-    off_audio_thread_stops: AtomicU32,
-}
-
-impl ProcessingGate {
-    /// Intent set by the loader once activation succeeds: the plugin should be
-    /// processing as soon as the audio thread next runs it.
-    pub fn request_start(&self) {
-        self.requested.store(true, Ordering::Release);
-    }
-
-    /// Intent set before deactivate/destroy. Callable from any thread; performs
-    /// no CLAP call itself.
-    pub fn request_stop(&self) {
-        self.requested.store(false, Ordering::Release);
-    }
-
-    /// Whether the plugin is currently in the CLAP processing state.
-    pub fn is_processing(&self) -> bool {
-        self.active.load(Ordering::Acquire)
-    }
-
-    /// Whether a requested stop has been carried out. A control thread waits on
-    /// this after `request_stop` before it deactivates.
-    pub fn has_stopped(&self) -> bool {
-        !self.is_processing()
-    }
-
-    /// How many stops had to be performed off the audio thread.
-    pub fn off_audio_thread_stops(&self) -> u32 {
-        self.off_audio_thread_stops.load(Ordering::Acquire)
-    }
-
-    /// Whether the control thread currently wants this plugin processing.
-    pub fn wants_processing(&self) -> bool {
-        self.requested.load(Ordering::Acquire)
-    }
-
-    /// Whether a stop has been asked for but not yet carried out. The audio
-    /// thread uses this to decide whether a block is worth a visit.
-    pub fn has_pending_stop(&self) -> bool {
-        !self.wants_processing() && self.is_processing()
-    }
-
-    /// A gate in the state a freshly loaded plugin reaches after its first
-    /// audio block: wanted, and processing.
-    ///
-    /// Fixture-only. In production `active` is written by the audio thread and
-    /// nothing else, which is the whole point of the split — so the setter that
-    /// short-circuits that is not compiled into a normal build.
-    #[cfg(feature = "engine-owned-command-fixture")]
-    pub fn fixture_already_processing() -> Self {
-        let gate = Self::default();
-        gate.request_start();
-        gate.mark_started();
-        gate
-    }
-
-    fn mark_started(&self) {
-        self.active.store(true, Ordering::Release);
-    }
-
-    fn mark_stopped(&self) {
-        self.active.store(false, Ordering::Release);
-    }
-
-    fn count_off_audio_thread_stop(&self) {
-        self.off_audio_thread_stops.fetch_add(1, Ordering::AcqRel);
-    }
-}
 
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
@@ -772,7 +657,7 @@ impl ClapWrapper {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        parameter_updates: &[ClapParameterUpdate],
+        parameter_updates: &[HostParameterUpdate],
     ) {
         self.process_with_midi_and_parameters(inputs, outputs, num_samples, &[], parameter_updates);
     }
@@ -788,7 +673,7 @@ impl ClapWrapper {
         outputs: &mut [&mut [f32]],
         num_samples: usize,
         midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
-        parameter_updates: &[ClapParameterUpdate],
+        parameter_updates: &[HostParameterUpdate],
     ) {
         if !self.activated
             || self.plugin.is_null()
@@ -1494,12 +1379,92 @@ impl AudioPlugin for ClapWrapper {
         Ok(())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    // The seam's GUI four. Every body below is the inherent method of the same
+    // name, reached through an explicit `ClapWrapper::` path: an inherent
+    // associated item shadows a trait one, so these forward rather than recurse.
+    // Forwarding rather than relocating keeps each unsafe CLAP body byte-for-byte
+    // what it was before this trait existed.
+    fn get_name(&self) -> &str {
+        ClapWrapper::get_name(self)
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn has_gui(&self) -> bool {
+        ClapWrapper::has_gui(self)
+    }
+
+    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
+        ClapWrapper::open_gui(self, handle_ptr)
+    }
+
+    fn close_gui(&mut self) {
+        ClapWrapper::close_gui(self)
+    }
+}
+
+/// CLAP's implementation of the runtime seam. Same forwarding rule as the
+/// `AudioPlugin` impl above: the bodies stay in the inherent `impl ClapWrapper`
+/// blocks, which is what keeps the RT and control paths textually unchanged.
+impl HostedPluginRuntime for ClapWrapper {
+    fn is_activated(&self) -> bool {
+        ClapWrapper::is_activated(self)
+    }
+
+    fn processing_gate(&self) -> Arc<ProcessingGate> {
+        ClapWrapper::processing_gate(self)
+    }
+
+    fn sync_processing_state(&mut self) {
+        ClapWrapper::sync_processing_state(self)
+    }
+
+    fn set_transport(&mut self, transport: HostTransport) {
+        ClapWrapper::set_transport(self, transport)
+    }
+
+    fn process_with_parameter_updates(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        parameter_updates: &[HostParameterUpdate],
+    ) {
+        ClapWrapper::process_with_parameter_updates(
+            self,
+            inputs,
+            outputs,
+            num_samples,
+            parameter_updates,
+        )
+    }
+
+    fn process_with_midi_and_parameters(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        midi_events: &[(u8, u8, i16, bool)],
+        parameter_updates: &[HostParameterUpdate],
+    ) {
+        ClapWrapper::process_with_midi_and_parameters(
+            self,
+            inputs,
+            outputs,
+            num_samples,
+            midi_events,
+            parameter_updates,
+        )
+    }
+
+    fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        ClapWrapper::poll_latency_change(self)
+    }
+
+    fn latency_ms(&self) -> f64 {
+        ClapWrapper::latency_ms(self)
+    }
+
+    fn latency_samples(&self) -> u32 {
+        ClapWrapper::latency_samples(self)
     }
 }
 

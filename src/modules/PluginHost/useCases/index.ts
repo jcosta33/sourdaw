@@ -24,6 +24,7 @@ export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExterna
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';
+export { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat } from './pluginScan/supportedPluginFormats';
 export { getExternalPluginContractVersionForCommand } from './pluginScan/getExternalPluginContractVersionForCommand';
 export { getAgentDeviceFactoryManifest } from './getAgentDeviceFactoryManifest';
 

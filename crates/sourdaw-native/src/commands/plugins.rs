@@ -1,6 +1,6 @@
 //! Plugin scanning, loading, and parameter management.
 
-use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
+use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{PersistedPluginEntry, PluginRegistryStore, RescanClaim};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
@@ -9,7 +9,7 @@ use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
-use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
+use daw_plugin_host::scanner::{self, PluginFormat, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -128,11 +128,11 @@ fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginReg
     }
 
     for plugin in plugins {
-        if plugin.clap_id.is_empty() {
+        if plugin.descriptor_id.is_empty() {
             continue;
         }
         registry
-            .entry(plugin.clap_id.clone())
+            .entry(plugin.descriptor_id.clone())
             .or_insert_with(|| registry_entry(plugin));
     }
 
@@ -143,7 +143,7 @@ fn registry_entry(plugin: &ScannedPlugin) -> PluginRegistryEntry {
     PluginRegistryEntry {
         path: plugin.path.clone(),
         stable_id: plugin.id.clone(),
-        clap_id: plugin.clap_id.clone(),
+        descriptor_id: plugin.descriptor_id.clone(),
         format: plugin.format.clone(),
         name: plugin.name.clone(),
         num_inputs: plugin.num_inputs,
@@ -291,8 +291,12 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     scan_complete = false;
                     break;
                 }
-                scanned_paths.push(candidate.clone());
-                match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
+                scanned_paths.push(candidate.path.clone());
+                match plugin_scan_worker::scan_descriptor_metadata(
+                    candidate.format,
+                    &candidate.path,
+                    remaining,
+                ) {
                     Ok(mut metadata) => {
                         // One inspection worker answers parameters and
                         // capabilities together, so they succeed and fail
@@ -304,8 +308,9 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                         let instance = if instance_remaining.is_zero() {
                             Err("deadline".to_string())
                         } else {
-                            plugin_scan_worker::scan_clap_instance_metadata(
-                                &candidate,
+                            plugin_scan_worker::scan_instance_metadata(
+                                candidate.format,
+                                &candidate.path,
                                 instance_remaining,
                             )
                         };
@@ -320,9 +325,11 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                                 );
                             }
                         }
-                        plugins.push(scanner::scanned_plugin(&candidate, metadata));
+                        plugins.push(scanner::scanned_plugin(&candidate.path, metadata));
                     }
-                    Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
+                    Err(error) => {
+                        scan_errors.push(format!("{}: {error}", candidate.path.display()))
+                    }
                 }
             }
             (plugins, scan_errors, notices, scanned_paths, scan_complete)
@@ -436,7 +443,7 @@ fn resolve_registry_entry(
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
-    rescan: impl FnOnce(&Path) -> Result<PluginRegistryEntry, String>,
+    rescan: impl FnOnce(&str, &Path) -> Result<PluginRegistryEntry, String>,
 ) -> Result<PluginRegistryEntry, String> {
     registry_store.hydrate_into(plugin_registry, scan_policy);
 
@@ -464,7 +471,7 @@ fn resolve_registry_entry(
     let last_known_path = PathBuf::from(&last_known.path);
     let rescanned = match scan_policy
         .authorize_scan_root(&last_known_path)
-        .and_then(|()| rescan(&last_known_path))
+        .and_then(|()| rescan(&last_known.format, &last_known_path))
     {
         Ok(rescanned) => rescanned,
         Err(reason) => {
@@ -486,9 +493,9 @@ fn resolve_registry_entry(
         registry
             .entry(rescanned.stable_id.clone())
             .or_insert_with(|| rescanned.clone());
-        if !rescanned.clap_id.is_empty() {
+        if !rescanned.descriptor_id.is_empty() {
             registry
-                .entry(rescanned.clap_id.clone())
+                .entry(rescanned.descriptor_id.clone())
                 .or_insert_with(|| rescanned.clone());
         }
     }
@@ -507,8 +514,14 @@ fn resolve_registry_entry(
 ///
 /// Parameter metadata is not re-read. Activation does not need it, and it is a
 /// second child process for a user who is waiting.
-fn rescan_plugin_file(path: &Path) -> Result<PluginRegistryEntry, String> {
-    let metadata = plugin_scan_worker::scan_clap_metadata(path, TARGETED_RESCAN_TIMEOUT)?;
+fn rescan_plugin_file(format: &str, path: &Path) -> Result<PluginRegistryEntry, String> {
+    // The format comes off the persisted row rather than from the extension:
+    // the row is what the scan that wrote it claimed, and re-deriving it here
+    // would let a rename decide which extractor loads the file.
+    let format = PluginFormat::from_wire_name(format)
+        .ok_or_else(|| format!("Unknown plugin format: {format}"))?;
+    let metadata =
+        plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
     Ok(registry_entry(&scanner::scanned_plugin(path, metadata)))
 }
 
@@ -537,6 +550,47 @@ async fn resolve_plugin_registry_entry(
 
 // ── Instance lifecycle commands ─────────────────────────────────────────
 
+/// The host backend a registry row's format resolves to.
+///
+/// One variant, because one format is hostable. It exists as an enum rather
+/// than a bool so [`load_plugin`]'s factory switch stays exhaustive: adding a
+/// backend adds an arm the compiler demands be written, instead of a string
+/// somebody remembers to add to a `match`.
+enum HostBackend {
+    /// `ClapWrapper`.
+    Clap,
+}
+
+/// Look a persisted format string up in the host-backend registry.
+///
+/// The instantiation counterpart of `plugin_scan_worker`'s scan registry, and
+/// deliberately a second lookup: scanning a format and hosting it are different
+/// capabilities, and a format arrives at the first before the second.
+///
+/// A recognised format with no backend refuses in the scanner's own words, so
+/// the reason a user is given for skipping the file during a scan is the reason
+/// they are given for refusing to activate it — see
+/// `.agents/decisions/0031-native-plugin-format-strategy.md`. A name that is not
+/// a format at all is not something that decision covers, so it says only that.
+fn host_backend(format: &str) -> Result<HostBackend, String> {
+    let Some(recognised) = PluginFormat::from_wire_name(format) else {
+        return Err(format!("Unknown plugin format: {format}"));
+    };
+
+    match recognised {
+        PluginFormat::Clap => Ok(HostBackend::Clap),
+        unhosted => Err(match unhosted.scan_support() {
+            scanner::FormatScanSupport::NoExtractor(refusal) => refusal.to_string(),
+            // A format Sourdaw can scan but cannot yet host. None is in that
+            // state today; the moment one is, this is the honest thing to say
+            // about it, and it is not a sentence ADR 0031 has wording for.
+            scanner::FormatScanSupport::Extractor => {
+                format!("No host backend for plugin format {}", unhosted.wire_name())
+            }
+        }),
+    }
+}
+
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
@@ -555,8 +609,8 @@ pub async fn load_plugin(
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
 
-    match entry.format.as_str() {
-        "clap" => {
+    match host_backend(&entry.format)? {
+        HostBackend::Clap => {
             // A CLAP id is the descriptor's own reverse-DNS identifier and the
             // key the entry point resolves a plugin by. The display name is not
             // one: substituting it produced a wrapper failure that named a
@@ -564,13 +618,13 @@ pub async fn load_plugin(
             // sharing a display name would have resolved to each other. An empty
             // id means the scan of this file yielded no usable descriptor, so
             // say that, and say which file.
-            if entry.clap_id.is_empty() {
+            if entry.descriptor_id.is_empty() {
                 return Err(format!(
                     "CLAP plugin {} reports no descriptor id in the registry entry for {}. Rescan the plugin directory.",
                     entry.path, plugin_id.0
                 ));
             }
-            let clap_id = entry.clap_id.clone();
+            let descriptor_id = entry.descriptor_id.clone();
 
             // Query the real device sample rate so the plugin is activated at the correct rate.
             let sample_rate = cpal::default_host()
@@ -579,7 +633,7 @@ pub async fn load_plugin(
                 .map(|c| c.sample_rate() as f64)
                 .unwrap_or(48000.0);
 
-            let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
+            let wrapper = ClapWrapper::new(&entry.path, &descriptor_id, sample_rate)?;
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
             let has_gui = wrapper.has_gui();
@@ -626,7 +680,7 @@ pub async fn load_plugin(
 
                     let id = engine.reserve_plugin_id();
                     let (bridge, bridge_handle) = create_audio_bridge(id);
-                    let shared_plugin = Arc::new(SharedClapPlugin::new(wrapper));
+                    let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
                     let mut engine_plugins = state
                         .engine_plugins
@@ -647,7 +701,7 @@ pub async fn load_plugin(
 
                     if let Err(error) = engine.add_plugin_with_bridge(
                         id,
-                        Box::new(ClapPluginSlot::new(shared_plugin)),
+                        Box::new(HostedPluginSlot::new(shared_plugin)),
                         bridge,
                     ) {
                         engine_plugins.remove(&instance_id.0);
@@ -694,15 +748,6 @@ pub async fn load_plugin(
 
             Ok(instance)
         }
-        // A format Sourdaw recognises and does not load. The refusal is the
-        // scanner's own wording, so the reason a user is given for skipping the
-        // file during a scan is the same reason they are given for refusing to
-        // activate it — see
-        // `.agents/decisions/0031-native-plugin-format-strategy.md`.
-        format => match scanner::unsupported_format_refusal(format) {
-            Some(refusal) => Err(refusal.to_string()),
-            None => Err(format!("Unknown plugin format: {format}")),
-        },
     }
 }
 
@@ -1368,7 +1413,7 @@ mod tests {
         );
         wrapper.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.25)]);
         let parameters = wrapper.get_parameters();
-        let runtime = Arc::new(SharedClapPlugin::new(wrapper));
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper));
         let mut engine_plugins = state
             .engine_plugins
             .lock()
@@ -1387,7 +1432,7 @@ mod tests {
         );
     }
 
-    fn engine_fixture_runtime(state: &AppState, instance_id: &str) -> Arc<SharedClapPlugin> {
+    fn engine_fixture_runtime(state: &AppState, instance_id: &str) -> Arc<SharedHostedPlugin> {
         let engine_plugins = state
             .engine_plugins
             .lock()
@@ -1771,7 +1816,7 @@ mod tests {
                 instance_id.to_string(),
                 EnginePluginInstanceData {
                     engine_plugin_id: 18,
-                    runtime: Arc::new(SharedClapPlugin::new(wrapper)),
+                    runtime: Arc::new(SharedHostedPlugin::new(wrapper)),
                     name: "Reloaded Fixture".to_string(),
                     parameters,
                     has_gui: true,
@@ -2108,7 +2153,7 @@ mod tests {
                 PluginRegistryEntry {
                     path: "/plugins/no-descriptor-id.clap".to_string(),
                     stable_id: "clap-without-descriptor-id".to_string(),
-                    clap_id: String::new(),
+                    descriptor_id: String::new(),
                     format: "clap".to_string(),
                     name: "Nameless".to_string(),
                     num_inputs: 2,
@@ -2200,7 +2245,7 @@ mod tests {
                 PluginRegistryEntry {
                     path: "/plugins/should-not-be-loaded.vst3".to_string(),
                     stable_id: "vst3-fixture".to_string(),
-                    clap_id: String::new(),
+                    descriptor_id: String::new(),
                     format: "vst3".to_string(),
                     name: "Unsupported VST3".to_string(),
                     num_inputs: 0,
@@ -2270,7 +2315,7 @@ mod tests {
                     PluginRegistryEntry {
                         path: path.to_string(),
                         stable_id: plugin_id.to_string(),
-                        clap_id: String::new(),
+                        descriptor_id: String::new(),
                         format: format.to_string(),
                         name: "Refused".to_string(),
                         num_inputs: 0,
@@ -2295,6 +2340,59 @@ mod tests {
         }
     }
 
+    /// The instantiation switch is a registry lookup over `PluginFormat`, not a
+    /// comparison against format strings written out here.
+    ///
+    /// Driven by `PluginFormat::ALL`, so it sees every recognised format rather
+    /// than the ones this test thought of. Two things fail if the inline string
+    /// match comes back: a recognised format that the match forgot falls into
+    /// its "unknown format" arm, which the second assertion catches; and a
+    /// refusal written out here instead of taken from the scanner diverges from
+    /// `unsupported_format_refusal`, which the first one catches.
+    #[test]
+    fn the_host_backend_lookup_answers_for_every_recognised_format() {
+        for format in PluginFormat::ALL {
+            let wire_name = format.wire_name();
+            let looked_up = host_backend(wire_name);
+
+            match scanner::unsupported_format_refusal(wire_name) {
+                Some(refusal) => {
+                    let error = looked_up
+                        .err()
+                        .unwrap_or_else(|| panic!("{wire_name} must not be hostable"));
+                    assert_eq!(
+                        error, refusal,
+                        "{wire_name} must refuse in the scanner's own words"
+                    );
+                    assert!(
+                        !error.starts_with("Unknown plugin format"),
+                        "{wire_name} is a format Sourdaw recognises and must never be reported as unknown"
+                    );
+                }
+                None => assert!(
+                    looked_up.is_ok(),
+                    "{wire_name} carries no refusal, so it must resolve to a host backend"
+                ),
+            }
+        }
+    }
+
+    /// The other half: exactly one format is hostable today. This fails the
+    /// moment a backend is registered, which is the point — registering one is
+    /// a packet, not an edit.
+    #[test]
+    fn clap_is_the_only_format_with_a_host_backend() {
+        for format in PluginFormat::ALL {
+            let hostable = host_backend(format.wire_name()).is_ok();
+            assert_eq!(
+                hostable,
+                format == PluginFormat::Clap,
+                "{} hostability disagrees with the registry",
+                format.wire_name()
+            );
+        }
+    }
+
     /// A format the registry has never carried is still not silently accepted.
     #[test]
     fn an_unrecognised_format_is_refused_by_name() {
@@ -2308,7 +2406,7 @@ mod tests {
                 PluginRegistryEntry {
                     path: "/plugins/Vendor.mystery".to_string(),
                     stable_id: "unknown-format".to_string(),
-                    clap_id: String::new(),
+                    descriptor_id: String::new(),
                     format: "mystery".to_string(),
                     name: "Mystery".to_string(),
                     num_inputs: 0,
@@ -2563,7 +2661,7 @@ mod tests {
     // resolves — strictly additive: the path hash is inserted first and is never
     // displaced, so nothing that resolves today stops resolving.
 
-    fn scanned(id: &str, clap_id: &str, format: &str) -> ScannedPlugin {
+    fn scanned(id: &str, descriptor_id: &str, format: &str) -> ScannedPlugin {
         ScannedPlugin {
             id: id.to_string(),
             name: format!("Plugin {id}"),
@@ -2572,7 +2670,7 @@ mod tests {
             category: "effect".to_string(),
             path: format!("/plugins/{id}.clap"),
             version: "1.0.0".to_string(),
-            clap_id: clap_id.to_string(),
+            descriptor_id: descriptor_id.to_string(),
             num_inputs: 2,
             num_outputs: 2,
             num_parameters: 0,
@@ -2630,7 +2728,7 @@ mod tests {
                 PluginRegistryEntry {
                     path: path.display().to_string(),
                     stable_id: plugin_id.to_string(),
-                    clap_id: "com.vendor.reverb".to_string(),
+                    descriptor_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb".to_string(),
                     num_inputs: 2,
@@ -2664,12 +2762,12 @@ mod tests {
             &fixture.store(),
             &fixture.scan_policy(),
             "aaaa1111",
-            |path| panic!("a hydrated registry must resolve without rescanning {path:?}"),
+            |_format, path| panic!("a hydrated registry must resolve without rescanning {path:?}"),
         )
         .expect("the persisted plugin must resolve in a new session");
 
         assert_eq!(entry.path, plugin_path.display().to_string());
-        assert_eq!(entry.clap_id, "com.vendor.reverb");
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
     }
 
     /// A plugin updated in place fails hydration's staleness check, which is
@@ -2692,12 +2790,19 @@ mod tests {
             &store,
             &fixture.scan_policy(),
             "aaaa1111",
-            |path| {
+            |format, path| {
                 rescans.set(rescans.get() + 1);
+                // The rescan is told which format to read the file as, from the
+                // row that recorded it. Deriving it from the extension here
+                // instead would let a rename pick the extractor.
+                assert_eq!(
+                    format, "clap",
+                    "the targeted rescan must be handed the persisted row's format"
+                );
                 Ok(PluginRegistryEntry {
                     path: path.display().to_string(),
                     stable_id: "aaaa1111".to_string(),
-                    clap_id: "com.vendor.reverb".to_string(),
+                    descriptor_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb 2".to_string(),
                     // A targeted rescan reads the descriptor only, so it
@@ -2761,7 +2866,7 @@ mod tests {
         // Borrows the counter rather than owning it, so the same closure can be
         // handed to both calls: the point of the test is that only one of them
         // reaches it.
-        let rescan = |path: &Path| {
+        let rescan = |_format: &str, path: &Path| {
             rescans.set(rescans.get() + 1);
             Err::<PluginRegistryEntry, String>(format!("no such file: {}", path.display()))
         };
@@ -2810,7 +2915,7 @@ mod tests {
             &fixture.store(),
             &fixture.scan_policy(),
             "aaaa1111",
-            |path| Err(format!("no such file: {}", path.display())),
+            |_format, path| Err(format!("no such file: {}", path.display())),
         )
         .expect_err("a removed plugin must not resolve");
 
@@ -2830,7 +2935,7 @@ mod tests {
 
         let entry = registry.get("aaaa1111").expect("path hash resolves");
         assert_eq!(entry.path, "/plugins/aaaa1111.clap");
-        assert_eq!(entry.clap_id, "com.vendor.reverb");
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
     }
 
     #[test]
