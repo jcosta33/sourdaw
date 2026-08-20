@@ -272,6 +272,32 @@ fn relative_gate_factor(lu: f64) -> f64 {
     10.0_f64.powf(-lu / 10.0)
 }
 
+/// Zero-based rank of the 95th percentile among `n` sorted values.
+///
+/// EBU Tech 3342 fixes the two percentiles loudness range is built from but not
+/// the rule that turns a percentage into a rank, so implementations legitimately
+/// differ. This is the rule `libebur128` uses — `(size_t)((n - 1) * 0.95 + 0.5)`
+/// — and it is the convention adopted here because that implementation is what
+/// the EBU's own conformance material and the rest of the industry measure
+/// against, so agreeing with it is what makes a Sourdaw LRA figure comparable
+/// to one taken anywhere else.
+///
+/// The rule this replaced was `floor(n · 0.95)`, a rank taken over the *count*
+/// rather than over the zero-based positions. The two differ by at most one
+/// rank, which is under 0.01 LU on programme-length material, but on a short
+/// programme the difference is not cosmetic: at `n = 20` the old rule returns
+/// index 19 — the single loudest gated block — so the reported range became the
+/// distance from the 10th percentile to the maximum, and one transient set it.
+/// This rule returns 18 there.
+///
+/// The `.min` is a clamp against nothing this crate can currently reach: the
+/// expression is already at or below `n - 1` for every `n ≥ 2`. It stays
+/// because `n` is a runtime block count and an out-of-range rank is a panic.
+#[inline]
+fn p95_index(n: usize) -> usize {
+    ((((n - 1) as f64) * 0.95 + 0.5) as usize).min(n - 1)
+}
+
 /// Upper bound on a derived window/hop sample count, safely above anything a
 /// real audio rate produces (3 s at 768 kHz — an extreme professional rate —
 /// is 2,304,000 samples) but far below what a corrupt or absurd host-reported
@@ -357,9 +383,13 @@ impl MomentaryLufs {
 
     /// Clear the K-weighting filter state, the ring buffers, and the running
     /// sums, so one non-finite input sample cannot poison every reading taken
-    /// after a reset. Without this, `k_l`/`k_r`'s filter state and
-    /// `sum_sq_l`/`sum_sq_r` survive a caller's `reset` untouched — see
-    /// `IntegratedLufs::reset`, which calls this.
+    /// after a reset. The running sum is the part that does not heal on its
+    /// own: the ring buffer overwrites the bad sample within one window, but
+    /// `sum_sq -= old*old` keeps propagating the NaN forever.
+    ///
+    /// Clearing is O(window) and allocates nothing, so it is safe on the audio
+    /// thread once per event — but not once per sample. A caller reacting to
+    /// non-finite input must latch.
     pub fn reset(&mut self) {
         self.k_l.reset();
         self.k_r.reset();
@@ -423,8 +453,8 @@ impl ShortTermLufs {
     }
 
     /// Clear the K-weighting filter state, the ring buffers, and the running
-    /// sums — the short-term twin of [`MomentaryLufs::reset`]. Called from
-    /// `LoudnessRange::reset`.
+    /// sums — the short-term twin of [`MomentaryLufs::reset`], and the more
+    /// expensive one, since its window is three seconds rather than 400 ms.
     pub fn reset(&mut self) {
         self.k_l.reset();
         self.k_r.reset();
@@ -722,7 +752,7 @@ fn gated_loudness_range(blocks: &[f64], scratch: &mut Vec<f64>) -> f32 {
 
     let n = scratch.len();
     let p10 = (n as f32 * 0.10) as usize;
-    let p95 = ((n as f32 * 0.95) as usize).min(n - 1);
+    let p95 = p95_index(n);
     let order = |a: &f64, b: &f64| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal);
 
     // Read the low percentile before selecting the high one: the second
@@ -751,25 +781,62 @@ pub struct IntegratedLufs {
     cached_lufs: f32,
     hop_counter: usize,
     hop_size: usize, // 100ms hop
+    /// Samples still to be processed before the momentary window holds nothing
+    /// but real audio. See [`Self::process_sample`].
+    warmup_remaining: usize,
+    /// The momentary window length, kept so `reset` can restate the warm-up
+    /// without re-deriving it from a sample rate this struct no longer holds.
+    window_size: usize,
 }
 
 impl IntegratedLufs {
     pub fn new(sr: f64) -> Self {
         let hop_size = sanitized_sample_count(0.1, sr);
+        let momentary = MomentaryLufs::new(sr);
+        let window_size = momentary.window_size;
         Self {
-            momentary: MomentaryLufs::new(sr),
+            momentary,
             blocks: BlockStore::new(),
             cached_lufs: -100.0,
             hop_counter: 0,
             hop_size,
+            warmup_remaining: window_size,
+            window_size,
         }
     }
 
+    /// Feed one sample, and push a gating block at each 100 ms hop boundary
+    /// **once the 400 ms momentary window is full**.
+    ///
+    /// BS.1770-4 §5.1 measures gating blocks over complete 400 ms windows, the
+    /// first of which ends at t = 400 ms. The momentary ring buffer starts
+    /// zeroed, so a block taken at an earlier hop boundary covers a window that
+    /// is part audio and part silence — three quarters, one half and one
+    /// quarter zeros at the first three boundaries — and every one of them
+    /// clears the −70 LUFS absolute gate and is averaged in. That is a
+    /// start-up ramp on the integrated reading, and it is long: measured on a
+    /// 1 kHz tone at −23 dBFS the reading was −23.699 at 1 s, −23.332 at 2 s
+    /// and −23.126 at 5 s against a full-blocks-only −22.993, i.e. outside
+    /// EBU Tech 3341's ±0.1 LU tolerance until roughly 7 seconds in.
+    ///
+    /// The counter runs from construction *and* from `reset`, deliberately
+    /// without a special case for either: the ramp is identical whichever way
+    /// the window came to be zeroed, and "Reset Integrated" is the button a
+    /// mastering engineer presses precisely when they are about to read the
+    /// number.
+    ///
+    /// The hop counter keeps running through warm-up, so the hop grid stays
+    /// anchored to sample zero and the first block lands on the 400 ms
+    /// boundary rather than 400 ms after it.
     pub fn process_sample(&mut self, l: f32, r: f32) {
         self.momentary.process_sample(l, r);
         self.hop_counter += 1;
+        self.warmup_remaining = self.warmup_remaining.saturating_sub(1);
         if self.hop_counter >= self.hop_size {
             self.hop_counter = 0;
+            if self.warmup_remaining > 0 {
+                return;
+            }
             self.blocks.push(self.momentary.energy());
             self.cached_lufs = gated_integrated_lufs(self.blocks.as_slice());
         }
@@ -784,6 +851,7 @@ impl IntegratedLufs {
         self.blocks.clear();
         self.cached_lufs = -100.0;
         self.hop_counter = 0;
+        self.warmup_remaining = self.window_size;
     }
 }
 
@@ -968,9 +1036,12 @@ impl LoudnessQuantiles {
             return 0.0;
         }
 
-        // The same nearest-rank percentiles the sorted implementation indexes.
+        // The same percentile ranks the sorted implementation indexes — see
+        // [`p95_index`] for the 95th's convention, which this restates over a
+        // `u64` count because the quantile path is the one that runs past the
+        // block store's capacity.
         let p10 = (gated as f32 * 0.10) as u64;
-        let p95 = ((gated as f32 * 0.95) as u64).min(gated - 1);
+        let p95 = (((gated - 1) as f64 * 0.95 + 0.5) as u64).min(gated - 1);
         match (self.at_rank(threshold, p10), self.at_rank(threshold, p95)) {
             (Some(low), Some(high)) => high - low,
             _ => 0.0,
@@ -1454,6 +1525,18 @@ mod k_weighting_design_tests {
         }
     }
 
+    /// Radius the degenerate-rate poles must stay under.
+    ///
+    /// `radius < 1.0` is not the property this test's name claims, because f64
+    /// arithmetic reaches 1.0 from below without ever getting there. Raising
+    /// `MAX_PREWARP_RATIO` from 0.49 to 0.5 makes `tan(π·0.5)` evaluate to
+    /// 1.633e16 rather than an infinity, which puts the pole at a radius of
+    /// about `1 − 6e-17` — strictly under one, and a filter whose DC transient
+    /// never decays inside any run length a meter sees. At the shipped 0.49 the
+    /// measured radius is ≈0.957, so this bound has three orders of magnitude
+    /// of margin against the real design and none against that mutation.
+    const MAX_DEGENERATE_POLE_RADIUS: f64 = 0.9999;
+
     #[test]
     fn a_nonsensical_sample_rate_still_yields_a_stable_filter() {
         // The rate arrives from the host. Zero, negative and NaN must not be
@@ -1469,11 +1552,50 @@ mod k_weighting_design_tests {
                         && coefficients.a2.is_finite(),
                     "a sample rate of {sr} produced a non-finite coefficient"
                 );
+                let radius = pole_radius(coefficients);
                 assert!(
-                    pole_radius(coefficients) < 1.0,
-                    "a sample rate of {sr} produced an unstable filter"
+                    radius < MAX_DEGENERATE_POLE_RADIUS,
+                    "a sample rate of {sr} produced a pole of radius {radius}, at or \
+                     past the {MAX_DEGENERATE_POLE_RADIUS} bound — see \
+                     MAX_DEGENERATE_POLE_RADIUS for why `< 1.0` does not observe \
+                     stability here"
                 );
             }
+
+            // The property the bound stands in for, measured rather than
+            // inferred: fed an impulse, the clamped filter's output has to die
+            // away. A pole at radius 0.957 falls below a millionth of the early
+            // peak within a few hundred samples, so 20,000 is generous; a pole
+            // at 1 − 6e-17 is still ringing at full amplitude when it ends.
+            let mut filter = KWeightingFilter::new(sr);
+            let mut peak_early = 0.0_f64;
+            let mut peak_late = 0.0_f64;
+            for n in 0..20_000 {
+                let x = if n == 0 { 1.0 } else { 0.0 };
+                let y = filter.process(x);
+                assert!(
+                    y.is_finite(),
+                    "the impulse response went non-finite at sample {n} for a sample \
+                     rate of {sr}"
+                );
+                if n < 100 {
+                    peak_early = peak_early.max(y.abs());
+                } else if n >= 10_000 {
+                    peak_late = peak_late.max(y.abs());
+                }
+            }
+            assert!(
+                peak_early > 0.1,
+                "the clamped filter is not passing the impulse at all for a sample \
+                 rate of {sr} (early peak {peak_early:e}) — a decay assertion over \
+                 silence proves nothing"
+            );
+            assert!(
+                peak_late < peak_early * 1e-6,
+                "for a sample rate of {sr} the tail peak {peak_late:e} has not decayed \
+                 away from the early peak {peak_early:e} — the clamped filter rings \
+                 forever instead of settling"
+            );
         }
     }
 
@@ -1725,6 +1847,359 @@ mod k_weighting_design_tests {
 }
 
 #[cfg(test)]
+mod percentile_convention_tests {
+    //! EBU Tech 3342 names the two percentiles loudness range is built from and
+    //! leaves the rule that turns a percentage into a rank to the
+    //! implementation. Sourdaw adopts `libebur128`'s, because that is what the
+    //! rest of the industry compares against and an LRA figure is only useful
+    //! if it means the same thing here as it does in the meter next to it.
+
+    use super::p95_index;
+
+    /// The rule this replaced: a rank taken over the *count* rather than over
+    /// the zero-based positions.
+    fn floor_rule(n: usize) -> usize {
+        ((n as f32 * 0.95) as usize).min(n - 1)
+    }
+
+    #[test]
+    fn the_reference_rank_is_reachable_for_every_block_count() {
+        // The `.min(n - 1)` clamp in `p95_index` is a guard against a rank the
+        // formula cannot currently produce. If it ever starts binding, the
+        // returned percentile silently becomes the maximum instead — the exact
+        // failure the floor rule had — so pin that it does not.
+        for n in 2..=super::MAX_LOUDNESS_BLOCKS {
+            let unclamped = ((n - 1) as f64 * 0.95 + 0.5) as usize;
+            assert_eq!(
+                p95_index(n),
+                unclamped,
+                "the clamp bound at {n} blocks, so the reported 95th percentile is \
+                 the maximum rather than the reference rank"
+            );
+        }
+    }
+
+    #[test]
+    fn a_short_programme_does_not_report_its_loudest_block_as_the_percentile() {
+        // A loudness range whose top end is the maximum is not a 95th
+        // percentile, it is an outlier reading — and a short programme is
+        // exactly where a single transient is the maximum.
+        assert_eq!(p95_index(20), 18);
+        assert_ne!(
+            floor_rule(20),
+            p95_index(20),
+            "the two conventions must actually differ at n = 20, or this case is \
+             describing a distinction the code does not make"
+        );
+        assert_eq!(
+            floor_rule(20),
+            19,
+            "the rule this replaced returned the maximum at n = 20"
+        );
+    }
+}
+
+#[cfg(test)]
+mod integrated_warmup_tests {
+    //! BS.1770-4 §5.1 measures gating blocks over **complete** 400 ms windows,
+    //! the first ending at t = 400 ms. Pushing a block at every 100 ms hop from
+    //! sample zero instead averages in three windows that are mostly the zeroed
+    //! ring buffer, and all three clear the −70 LUFS absolute gate, so the
+    //! integrated reading climbs out of a hole for several seconds.
+    //!
+    //! That ramp is the whole subject here, so the oracle is the loudness of
+    //! one *complete* window of the same tone — the value every gating block
+    //! carries once none of them straddles the meter's start. A tolerance
+    //! against a hard-coded LUFS figure would also pass for a meter that was
+    //! uniformly mis-calibrated, and this file's history is exactly that.
+
+    use super::{IntegratedLufs, MomentaryLufs};
+
+    const SR: f64 = 48_000.0;
+
+    /// EBU Tech 3341's tolerance on integrated loudness.
+    const TOLERANCE_LU: f32 = 0.1;
+
+    /// Peak amplitude of a 1 kHz sine whose per-channel RMS is −23 dBFS.
+    fn tone_amplitude() -> f64 {
+        10.0_f64.powf(-23.0 / 20.0) * core::f64::consts::SQRT_2
+    }
+
+    fn tone_sample(n: usize) -> f32 {
+        (tone_amplitude() * (2.0 * core::f64::consts::PI * 1_000.0 * n as f64 / SR).sin()) as f32
+    }
+
+    /// Loudness of a complete 400 ms window of the tone, read after five
+    /// window-lengths so no part of it is the meter's own start-up.
+    fn full_block_loudness() -> f32 {
+        let mut settled = MomentaryLufs::new(SR);
+        for n in 0..(SR as usize * 2) {
+            let s = tone_sample(n);
+            settled.process_sample(s, s);
+        }
+        settled.get_lufs()
+    }
+
+    fn integrated_after_one_second(meter: &mut IntegratedLufs) -> f32 {
+        for n in 0..(SR as usize) {
+            let s = tone_sample(n);
+            meter.process_sample(s, s);
+        }
+        meter.get_lufs()
+    }
+
+    #[test]
+    fn a_fresh_meter_is_inside_tolerance_after_one_second() {
+        let expected = full_block_loudness();
+        let mut meter = IntegratedLufs::new(SR);
+        let measured = integrated_after_one_second(&mut meter);
+        assert!(
+            (measured - expected).abs() <= TOLERANCE_LU,
+            "one second into a steady −23 dBFS 1 kHz tone the integrated reading is \
+             {measured:.4} LUFS against a full-block {expected:.4} LUFS — \
+             {:.4} LU out, past EBU Tech 3341's ±{TOLERANCE_LU} LU. Without the \
+             warm-up gate this reads about 0.7 LU low, because the blocks at \
+             100, 200 and 300 ms are three quarters, one half and one quarter \
+             zeros and every one of them is gated in.",
+            (measured - expected).abs()
+        );
+    }
+
+    #[test]
+    fn a_reset_meter_is_inside_tolerance_after_one_second() {
+        // "Reset Integrated" is a panel action, so this is the path a mastering
+        // engineer actually takes before reading the number. It must not be
+        // special-cased against the fresh-construction path above: the window
+        // is zeroed identically either way.
+        let expected = full_block_loudness();
+        let mut meter = IntegratedLufs::new(SR);
+        // Run the meter for a while first, so `reset` has real state to clear
+        // rather than clearing a meter that was already empty.
+        for n in 0..(SR as usize * 2) {
+            let s = tone_sample(n);
+            meter.process_sample(s, s);
+        }
+        meter.reset();
+        assert_eq!(
+            meter.get_lufs(),
+            -100.0,
+            "reset must return the reading to the silence floor"
+        );
+
+        let measured = integrated_after_one_second(&mut meter);
+        assert!(
+            (measured - expected).abs() <= TOLERANCE_LU,
+            "one second after a reset the integrated reading is {measured:.4} LUFS \
+             against a full-block {expected:.4} LUFS — {:.4} LU out, past EBU Tech \
+             3341's ±{TOLERANCE_LU} LU",
+            (measured - expected).abs()
+        );
+    }
+
+    #[test]
+    fn no_gating_block_is_recorded_before_the_window_is_full() {
+        // The mechanism, stated directly: before t = 400 ms there is no
+        // complete block to record, so the meter still reads the silence floor.
+        // At 400 ms exactly the first block lands, which also pins that the hop
+        // grid stays anchored to sample zero through warm-up rather than
+        // restarting after it.
+        let mut meter = IntegratedLufs::new(SR);
+        let window = (SR * 0.4) as usize;
+        for n in 0..window - 1 {
+            let s = tone_sample(n);
+            meter.process_sample(s, s);
+        }
+        assert_eq!(
+            meter.get_lufs(),
+            -100.0,
+            "a block was recorded before the 400 ms window was full"
+        );
+
+        let s = tone_sample(window - 1);
+        meter.process_sample(s, s);
+        assert!(
+            meter.get_lufs() > -100.0,
+            "the first complete 400 ms block must be recorded at t = 400 ms, not later"
+        );
+    }
+}
+
+#[cfg(test)]
+mod absolute_gate_conjunct_tests {
+    //! BS.1770-4 §5.1's gated set is `J_g = {j : l_j > Γ_r AND l_j > Γ_a}` —
+    //! both thresholds, in the second pass as well as the first.
+    //!
+    //! On any ordinary programme the absolute conjunct in that second pass
+    //! decides nothing. Γ_r sits 10 LU (20 LU for loudness range) below a mean
+    //! that is tens of LU above −70 LUFS, so Γ_r is the binding threshold and
+    //! `energy > absolute_gate` is redundant with it. Deleting the conjunct
+    //! from either second pass therefore leaves the rest of this file's suite
+    //! entirely green, which is why these cases exist: without a programme
+    //! quiet enough to invert the two thresholds, the clause this diff reworks
+    //! is unobserved.
+    //!
+    //! The inversion needs an absolute-gated mean below −60 LUFS for integrated
+    //! loudness, and below −50 LUFS for loudness range. Each case below asserts
+    //! that inversion holds before asserting anything about the result, so a
+    //! future edit that moves a level cannot quietly turn these back into
+    //! ordinary programmes that prove nothing.
+
+    use super::loudness_block_store_tests::energy;
+    use super::{gated_integrated_lufs, gated_loudness_range};
+
+    /// Γ_a as a block loudness.
+    const ABSOLUTE_GATE_LUFS: f64 = -70.0;
+
+    /// Loudness of the mean energy of the blocks above Γ_a — the level both
+    /// relative gates are referred to.
+    fn absolute_gated_mean_lufs(blocks: &[f64]) -> f64 {
+        let gate = energy(ABSOLUTE_GATE_LUFS);
+        let above: Vec<f64> = blocks.iter().copied().filter(|&e| e > gate).collect();
+        assert!(
+            !above.is_empty(),
+            "the programme has no block above the absolute gate at all"
+        );
+        let mean = above.iter().sum::<f64>() / above.len() as f64;
+        -0.691 + 10.0 * mean.log10()
+    }
+
+    /// Assert the configuration actually inverts the two thresholds, so the
+    /// absolute conjunct is what excludes the quiet blocks rather than the
+    /// relative one doing it anyway.
+    fn assert_relative_gate_falls_below_the_absolute_gate(
+        blocks: &[f64],
+        relative_offset_lu: f64,
+        quiet_lufs: f64,
+    ) {
+        let relative_gate = absolute_gated_mean_lufs(blocks) - relative_offset_lu;
+        assert!(
+            relative_gate < ABSOLUTE_GATE_LUFS,
+            "Γ_r is {relative_gate:.4} LUFS, at or above Γ_a — the relative gate is \
+             still the binding one, so this case cannot observe the absolute conjunct"
+        );
+        assert!(
+            quiet_lufs > relative_gate,
+            "the quiet blocks at {quiet_lufs} LUFS sit below Γ_r ({relative_gate:.4} \
+             LUFS), so the relative gate excludes them and the absolute conjunct is \
+             still unobserved"
+        );
+        assert!(
+            quiet_lufs < ABSOLUTE_GATE_LUFS,
+            "the quiet blocks at {quiet_lufs} LUFS clear Γ_a, so nothing excludes them"
+        );
+    }
+
+    /// The second pass with the `energy > absolute_gate` conjunct dropped —
+    /// the mutation these tests exist to catch, so the gap they assert is
+    /// measured here rather than described in a comment.
+    fn integrated_without_the_absolute_conjunct(blocks: &[f64]) -> f32 {
+        let absolute_gate = energy(ABSOLUTE_GATE_LUFS);
+        let above: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > absolute_gate)
+            .collect();
+        let relative_gate =
+            (above.iter().sum::<f64>() / above.len() as f64) * 10.0_f64.powf(-10.0 / 10.0);
+        let gated: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > relative_gate)
+            .collect();
+        let mean = gated.iter().sum::<f64>() / gated.len() as f64;
+        (-0.691 + 10.0 * mean.log10()) as f32
+    }
+
+    #[test]
+    fn integrated_loudness_excludes_quiet_blocks_the_relative_gate_admits() {
+        // Ten blocks at −65 LUFS clear Γ_a; ninety at −72 LUFS do not. The
+        // first pass therefore averages only the −65 blocks, putting
+        // Γ_r = −75 LUFS, five LU *below* Γ_a. Every −72 block then sits above
+        // Γ_r and below Γ_a, so `energy > absolute_gate` in the second pass is
+        // the only thing keeping them out.
+        const LOUD_LUFS: f64 = -65.0;
+        const QUIET_LUFS: f64 = -72.0;
+        let mut blocks = vec![energy(LOUD_LUFS); 10];
+        blocks.resize(100, energy(QUIET_LUFS));
+        assert_relative_gate_falls_below_the_absolute_gate(&blocks, 10.0, QUIET_LUFS);
+
+        let measured = gated_integrated_lufs(&blocks);
+        assert!(
+            (f64::from(measured) - LOUD_LUFS).abs() < 1e-3,
+            "the gated set must be the ten −65 LUFS blocks alone, integrating to \
+             {LOUD_LUFS} LUFS; got {measured:.4}"
+        );
+
+        // Admitting the −72 LUFS blocks drags the averaged energy down, so the
+        // mutation reads *low* — the direction that matters, because a
+        // mastering engineer trusting a too-quiet integrated figure pushes the
+        // master harder and overshoots the delivery target.
+        let mutated = integrated_without_the_absolute_conjunct(&blocks);
+        assert!(
+            measured - mutated > 5.0,
+            "dropping the absolute conjunct from the second pass must change the \
+             answer here — it reads {mutated:.4} LUFS against {measured:.4} LUFS. If \
+             this gap ever closes, the case has stopped observing the clause."
+        );
+    }
+
+    /// The loudness-range twin of the helper above: the second pass with the
+    /// absolute conjunct dropped.
+    fn loudness_range_without_the_absolute_conjunct(blocks: &[f64]) -> f32 {
+        let absolute_gate = energy(ABSOLUTE_GATE_LUFS);
+        let above: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > absolute_gate)
+            .collect();
+        let relative_gate =
+            (above.iter().sum::<f64>() / above.len() as f64) * 10.0_f64.powf(-20.0 / 10.0);
+        let mut gated: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > relative_gate)
+            .collect();
+        gated.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+        let n = gated.len();
+        let p10 = (n as f32 * 0.10) as usize;
+        let p95 = (((n - 1) as f64 * 0.95 + 0.5) as usize).min(n - 1);
+        (10.0 * (gated[p95] / gated[p10]).log10()) as f32
+    }
+
+    #[test]
+    fn loudness_range_excludes_quiet_blocks_the_relative_gate_admits() {
+        // EBU Tech 3342's relative gate is 20 LU down, so the inversion needs a
+        // quieter programme: a hundred blocks at −60 LUFS and a hundred at −52
+        // put the absolute-gated mean near −54.4 LUFS and Γ_r near −74.4 LUFS.
+        // A hundred blocks at −72 LUFS then sit above Γ_r and below Γ_a. Admit
+        // them and they become the whole bottom of the distribution, so the
+        // 10th percentile moves onto them and the reported range roughly
+        // trebles.
+        const QUIET_LUFS: f64 = -72.0;
+        let mut blocks = vec![energy(QUIET_LUFS); 100];
+        blocks.extend(core::iter::repeat(energy(-60.0)).take(100));
+        blocks.extend(core::iter::repeat(energy(-52.0)).take(100));
+        assert_relative_gate_falls_below_the_absolute_gate(&blocks, 20.0, QUIET_LUFS);
+
+        let mut scratch = Vec::with_capacity(blocks.len());
+        let measured = gated_loudness_range(&blocks, &mut scratch);
+        assert!(
+            (measured - 8.0).abs() < 1e-3,
+            "the gated set must be the −60 and −52 LUFS blocks alone, a range of \
+             8 LU; got {measured:.4} LU"
+        );
+
+        let mutated = loudness_range_without_the_absolute_conjunct(&blocks);
+        assert!(
+            mutated - measured > 5.0,
+            "dropping the absolute conjunct from the loudness-range second pass must \
+             change the answer here — it reads {mutated:.4} LU against {measured:.4} \
+             LU. If this gap ever closes, the case has stopped observing the clause."
+        );
+    }
+}
+
+#[cfg(test)]
 mod loudness_block_store_tests {
     //! The store keeps block energies exactly, so the read path is the
     //! previous collect-and-average algorithm over a preallocated array. That
@@ -1805,7 +2280,9 @@ mod loudness_block_store_tests {
         above_rel.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         let n = above_rel.len();
         let p10_idx = (n as f32 * 0.10) as usize;
-        let p95_idx = ((n as f32 * 0.95) as usize).min(n - 1);
+        // `libebur128`'s 95th-percentile rank, written out rather than taken
+        // from `p95_index` so this oracle does not inherit the thing it checks.
+        let p95_idx = (((n - 1) as f64 * 0.95 + 0.5) as usize).min(n - 1);
         (10.0 * (above_rel[p95_idx] / above_rel[p10_idx]).log10()) as f32
     }
 
@@ -2126,7 +2603,9 @@ mod energy_domain_gating_tests {
         above_rel.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         let n = above_rel.len();
         let p10 = (n as f32 * 0.10) as usize;
-        let p95 = ((n as f32 * 0.95) as usize).min(n - 1);
+        // Same percentile ranks as the energy-domain path, so the measured gap
+        // below is the averaging domain and nothing else.
+        let p95 = (((n - 1) as f64 * 0.95 + 0.5) as usize).min(n - 1);
         above_rel[p95] - above_rel[p10]
     }
 
@@ -2607,7 +3086,9 @@ mod loudness_range_past_capacity_tests {
         above_rel.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         let n = above_rel.len();
         let p10_idx = (n as f32 * 0.10) as usize;
-        let p95_idx = ((n as f32 * 0.95) as usize).min(n - 1);
+        // `libebur128`'s 95th-percentile rank, written out rather than taken
+        // from `p95_index` so this oracle does not inherit the thing it checks.
+        let p95_idx = (((n - 1) as f64 * 0.95 + 0.5) as usize).min(n - 1);
         (10.0 * (above_rel[p95_idx] / above_rel[p10_idx]).log10()) as f32
     }
 
@@ -2796,7 +3277,9 @@ mod extreme_loudness_tests {
         above_rel.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         let n = above_rel.len();
         let p10_idx = (n as f32 * 0.10) as usize;
-        let p95_idx = ((n as f32 * 0.95) as usize).min(n - 1);
+        // `libebur128`'s 95th-percentile rank, written out rather than taken
+        // from `p95_index` so this oracle does not inherit the thing it checks.
+        let p95_idx = (((n - 1) as f64 * 0.95 + 0.5) as usize).min(n - 1);
         (10.0 * (above_rel[p95_idx] / above_rel[p10_idx]).log10()) as f32
     }
 
