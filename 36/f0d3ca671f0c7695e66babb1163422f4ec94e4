@@ -1,0 +1,38 @@
+src/modules/Toaster/presentations/components/PadGrid.tsx
+  s_2175fca1f07426::t_517a3893cb74c1 4
+  s_24b1bdbc3c31ad::t_9b2e9a4e1d363b 3,109-110,125,127-132,135,146-147,150,154
+src/modules/Toaster/presentations/components/StepSequencer.tsx
+  s_2175fca1f07426::t_b3feaf4fafc4d8 4
+  s_24b1bdbc3c31ad::t_1a49c11b0b2d7a 3,69-70,75,77,157-158
+src/modules/Toaster/presentations/components/PadMixer.tsx
+  s_2175fca1f07426::t_75a5c5bab0ed58 8
+  s_24b1bdbc3c31ad::t_349f39aa4ce201 7,17,19,110,131,140,142
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_e138968ab0b287 1211,2073-2076,2078-2079,2237,2363,2612-2620,3377-3385,3548-3556,4034-4042,4064,4214-4222,5666,5744-5752,5765,6053,6716-6724,7751-7759,8589-8592,8595,8816,9176,9563,10094,10895,11327,11495-11503,13061-13069,13226,13649,14294-14302,14510-14518,15566,16070,16373-16381,16724-16732,16886-16894,17087,17381-17389,17570-17578,17885-17893,18707,19316-19324,19667-19675,19721-19729,20135-20143,20387-20395,21065,21083,22406,22439-22447,22952-22960,23195-23203,23879-23887,24347-24355,24446-24454,24638
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_2175fca1f07426::t_64b4ecf3931c00 10,93,108,161-162,167-168,285,287,295-296,312,319,326,340-344,352,361,432,434-436,441,443,445-447,454,467-468,495-496,512,514,516,544,562,584,588-592,610-615,631,695
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "36f0d3ca671f0c7695e66babb1163422f4ec94e4",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
