@@ -20,6 +20,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 // Levain's offline setup fetches sample manifests; this spec never exercises it.
 vi.mock('#/modules/Levain/useCases', () => ({
     prepareOfflineLevain: vi.fn(() => Promise.resolve()),
+    getLevainArticulationId: vi.fn(),
 }));
 
 // Crumbs' offline setup reads a sample off disk over the native bridge and
