@@ -535,13 +535,11 @@ describe('glueClips MIDI state integration', () => {
         expect(warpStates.has('clip-b')).toBe(false);
     });
 
-    it('does not destroy a source clip warp entry through a full apply/undo/redo round trip', () => {
-        // Every entry below is content-default on purpose: `hasClipGlueDependencies`
-        // gates both the apply *and* the restore direction on the same
-        // `expected`/`replacement` participant set, so a genuinely non-default
-        // entry on any of them would block the call outright rather than
-        // exercise the sweep. Content-default is exactly the shape the
-        // content-aware gate lets through, and its presence in the map is
+    it('migrates and restores a source clip warp entry through a full apply/undo/redo round trip', () => {
+        // Content-default on purpose: `hasClipGlueDependencies` no longer
+        // gates on warp state at all (ledger #2108 — it migrates instead), so
+        // a genuinely non-default entry would exercise the same path. Content
+        // default just keeps the fixture minimal; its presence in the map is
         // still observable via `warpStates.has`, which is what this test
         // exercises.
         setStretchMode('clip-a', 'repitch');
@@ -549,45 +547,53 @@ describe('glueClips MIDI state integration', () => {
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
 
+        // Apply: clip-a is the first (earliest-start) source, so its warp
+        // entry migrates onto the glued clip; clip-b had none to retire.
         expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
         expect(warpStates.has('clip-a')).toBe(false);
         expect(warpStates.has('clip-b')).toBe(false);
-
-        // Normal usage after gluing: the glued clip picks up its own warp
-        // footprint. This is what undo must retire — it is the clip undo
-        // consumes.
-        setStretchMode(gluedId, 'repitch');
         expect(warpStates.has(gluedId)).toBe(true);
 
-        // A real map entry sitting under the restored clips' ids at the moment
-        // undo runs — exactly what an unconditional sweep (one that clears
-        // both sides of the operation, or the wrong side) would destroy the
-        // instant it reinserts `clip-a` and `clip-b` back onto the track.
-        setStretchMode('clip-a', 'repitch');
-        setStretchMode('clip-b', 'repitch');
-
+        // Undo: `restoreClipGlueState` validates the live satellite state for
+        // every id the plan touches against the snapshot it captured BEFORE
+        // writing anything (see its own docstring) — so it moves the glued
+        // clip's migrated entry back onto clip-a and clears the glued id,
+        // reproducing exactly what `previous` recorded.
         expect(restoreClipGlueState({ expected: next, replacement: previous })).toBe(true);
-
-        // The glued clip's own entry is gone — it is the id undo consumed.
         expect(warpStates.has(gluedId)).toBe(false);
-        // The restored clips keep whatever satellite state they had.
         expect(warpStates.has('clip-a')).toBe(true);
-        expect(warpStates.has('clip-b')).toBe(true);
+        expect(warpStates.has('clip-b')).toBe(false);
 
-        // Redo: the third step a user actually performs — glue, undo to hear
-        // the parts again, redo. `handleGlueClips.describe` captures
-        // `plan.previous`/`plan.next` exactly once and wires `redoAction` as
-        // the same forward direction the initial apply used, never a freshly
-        // recomputed snapshot — so this call reuses the very `previous`/`next`
-        // objects from the original `prepareClipGlue`, not a new call to it.
-        // Redo re-consumes `clip-a` and `clip-b`, so their entries (set again
-        // above, right before undo ran) must be swept a second time, landing
-        // on exactly the state the first apply produced: no entry for either
-        // source id, and none for the glued id either, since nothing wrote
-        // one for it between undo and redo.
+        // Redo reuses the very `previous`/`next` objects from the original
+        // `prepareClipGlue` call (never a freshly recomputed snapshot — see
+        // `handleGlueClips.describe`), and the live state undo just restored
+        // matches `previous` exactly, so redo migrates clip-a's entry onto
+        // the glued clip again.
         expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
-        expect(warpStates.has(gluedId)).toBe(false);
+        expect(warpStates.has(gluedId)).toBe(true);
         expect(warpStates.has('clip-a')).toBe(false);
         expect(warpStates.has('clip-b')).toBe(false);
+    });
+
+    it('rejects rather than clobbers a satellite-tracked id that drifted from the captured plan (regression #2108)', () => {
+        setStretchMode('clip-a', 'repitch');
+        const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
+        expect(plan).not.toBeNull();
+        const { previous, next, targetClipId: gluedId } = plan!;
+        expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
+
+        // A write to a retired source id out of band (never possible through
+        // the app — the clip is gone from the track — but exactly what a
+        // stale plan replayed after further edits would look like) leaves
+        // the live satellite state disagreeing with what `next` captured.
+        setWarpState('clip-a', { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null });
+
+        // The guard must refuse rather than silently overwrite that entry —
+        // `prepareClipSatelliteStateRestore` validates every store this call
+        // touches before writing any of them, and rejecting here is what
+        // keeps a stale undo from clobbering unrelated live state.
+        expect(restoreClipGlueState({ expected: next, replacement: previous })).toBe(false);
+        expect(warpStates.has(gluedId)).toBe(true);
+        expect(warpStates.has('clip-a')).toBe(true);
     });
 });
