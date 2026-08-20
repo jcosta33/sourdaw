@@ -1,6 +1,17 @@
 import { type ReactElement, useState } from 'react';
 
-import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
+import {
+    Search,
+    ChevronDown,
+    ChevronRight,
+    Plug,
+    RefreshCw,
+    Loader2,
+    Plus,
+    AlertCircle,
+    Info,
+    Monitor,
+} from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
@@ -218,6 +229,21 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         <div key={index} className="flex items-start gap-1 text-[9px] text-destructive">
                             <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                             <span>{err}</span>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+            {/*
+             * Why a plugin the user owns is not in the list above. That is the
+             * expected result of a healthy scan, so it reads as muted
+             * information rather than as the failure styling directly above it.
+             */}
+            {state.notices.length > 0 && !state.isScanning ? (
+                <div className="px-2 py-1">
+                    {state.notices.map((notice) => (
+                        <div key={notice} className="flex items-start gap-1 text-[9px] text-muted-foreground">
+                            <Info className="size-3 shrink-0 mt-px" aria-hidden="true" />
+                            <span>{notice}</span>
                         </div>
                     ))}
                 </div>

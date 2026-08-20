@@ -107,17 +107,34 @@ export function shellPort(
     };
 }
 
-function main(): number {
+/**
+ * Everything `lane:open` does that leaves the process. `verifyTrustedBlob` reads `origin/main`
+ * through git and `createPort` resolves the primary root the same way, so a test that imported the
+ * real pair would run git for real; taking them as a parameter is what gives a test a whole CLI
+ * with no path outward at all.
+ */
+export type OpenLaneCli = {
+    verifyTrustedBlob: (cwd: string) => void;
+    createPort: (cwd: string) => OpenLanePort;
+};
+
+const shellCli: OpenLaneCli = {
+    verifyTrustedBlob: (cwd) => {
+        const executingFile = fileURLToPath(import.meta.url);
+        assertTrustedExecutingBlob('scripts/openLane.ts', executingFile, originMainBlob('scripts/openLane.ts', cwd));
+    },
+    createPort: (cwd) => shellPort(spawnCapture, spawnRun, cwd),
+};
+
+export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string = process.cwd()): number {
     try {
-        const parsed = parseOpenLaneArgs(process.argv.slice(2));
+        const parsed = parseOpenLaneArgs(argv);
         if (parsed.help) {
             console.log('Usage: pnpm lane:open [issue-number] [slug]');
             return 0;
         }
-        const executingFile = fileURLToPath(import.meta.url);
-        const cwd = process.cwd();
-        assertTrustedExecutingBlob('scripts/openLane.ts', executingFile, originMainBlob('scripts/openLane.ts', cwd));
-        openLane(parsed.issue, parsed.slug, shellPort());
+        cli.verifyTrustedBlob(cwd);
+        openLane(parsed.issue, parsed.slug, cli.createPort(cwd));
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
@@ -126,5 +143,5 @@ function main(): number {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    process.exit(main());
+    process.exit(runCli(process.argv.slice(2)));
 }

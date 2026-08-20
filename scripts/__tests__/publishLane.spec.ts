@@ -1,4 +1,7 @@
-import { dirname, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -21,6 +24,7 @@ import {
 } from '../publishLane.ts';
 
 const PRIMARY_ROOT = '/repo';
+const DEFAULT_SUBJECT = 'feat(vcs): add identities';
 const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
@@ -51,7 +55,8 @@ type FakeInput = {
     ahead?: number;
     behind?: number;
     dirty?: boolean;
-    subject?: string;
+    /** `null` stands for a lane with no non-merge commit of its own above `origin/main`. */
+    subject?: string | null;
     headSha?: string;
     remoteSha?: string;
     ancestor?: boolean;
@@ -64,7 +69,8 @@ function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const logs: string[] = [];
     const bodies: string[] = [];
-    let dirty = input.dirty ?? false;
+    const dirty = input.dirty ?? false;
+    const subject = input.subject === undefined ? DEFAULT_SUBJECT : (input.subject ?? undefined);
     let pullRequestQueries = 0;
     const port: PublishLanePort = {
         fetchMain: () => calls.push('fetch'),
@@ -76,12 +82,8 @@ function fakePort(input: FakeInput = {}) {
         },
         aheadBehind: () => ({ ahead: input.ahead ?? 1, behind: input.behind ?? 0 }),
         dirty: () => dirty,
-        headSubject: () => input.subject ?? 'feat(vcs): add identities',
+        laneSubject: () => subject,
         headSha: () => input.headSha ?? 'abc',
-        commitAll: (_lane, subject) => {
-            calls.push(`commit:${subject}`);
-            dirty = false;
-        },
         remoteBranchSha: () => input.remoteSha,
         isAncestor: () => input.ancestor ?? true,
         push: (_lane, branch) => calls.push(`push:${branch}`),
@@ -134,6 +136,11 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
     ['zero ahead', { ahead: 0 }, /lane must be strictly ahead of origin\/main/],
     ['behind', { behind: 1, ahead: 1 }, /lane must be strictly ahead of origin\/main/],
     ['free-text subject', { subject: 'WIP' }, /pull-request title is not conventional/],
+    [
+        'a lane whose only commits above origin/main are merges',
+        { subject: null },
+        /agent\/12\/work carries no non-merge commit above origin\/main/,
+    ],
     ['diverged remote', { remoteSha: 'other', ancestor: false }, /refusing non-fast-forward push of agent\/12\/work/],
 ];
 
@@ -157,32 +164,32 @@ describe('lane publish', () => {
         expect(calls).toContain('edit:41:feat(vcs): add identities');
     });
 
-    it('commits leftover dirty files with the conventional HEAD subject', () => {
+    it('refuses a dirty lane instead of committing it under an earlier commit subject', () => {
         const { port, calls } = fakePort({ dirty: true });
 
-        publishLane(12, port);
-
+        expect(() => publishLane(12, port)).toThrow(
+            /agent\/12\/work has uncommitted changes: commit them yourself with a conventional subject/
+        );
         expect(calls).toContain('fetch');
-        expect(calls).toContain('commit:feat(vcs): add identities');
-        expect(calls).toContain('push:agent/12/work');
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
-    it('does not create an extra commit when the lane is already clean', () => {
+    it('publishes a clean lane', () => {
         const { port, calls } = fakePort({ dirty: false });
 
         publishLane(12, port);
 
-        expect(calls.some((call) => call.startsWith('commit:'))).toBe(false);
+        expect(calls).toContain('push:agent/12/work');
     });
 
-    it('names the resolved lane before it commits, pushes or opens a pull request', () => {
-        const { port, calls } = fakePort({ dirty: true });
+    it('names the resolved lane before it pushes or opens a pull request', () => {
+        const { port, calls } = fakePort();
 
         publishLane(12, port);
 
         const receipt = calls.indexOf(`log:publishing ${ISSUE_LANE} on agent/12/work`);
         expect(receipt).toBeGreaterThanOrEqual(0);
-        expect(receipt).toBeLessThan(calls.findIndex((call) => call.startsWith('commit:')));
         expect(receipt).toBeLessThan(calls.findIndex((call) => call.startsWith('push:')));
         expect(receipt).toBeLessThan(calls.findIndex((call) => call.startsWith('create:')));
     });
@@ -370,7 +377,6 @@ describe('lane publish', () => {
 
         expect(() => publishLane(12, port)).toThrow(/issue #12 does not exist in jcosta33\/sourdaw/);
         expect(calls).toContain('issueExists:12');
-        expect(calls.some((call) => call.startsWith('commit:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -400,7 +406,7 @@ describe('lane publish', () => {
         ).toThrow(/#2254 in jcosta33\/sourdaw is a pull request, not an issue/);
     });
 
-    it('uses the HEAD subject as the pull-request title', () => {
+    it('uses the lane subject as the pull-request title', () => {
         const { port, calls } = fakePort({ subject: 'feat(foo): bar' });
 
         publishLane(12, port);
@@ -440,6 +446,56 @@ describe('lane publish', () => {
         expect(here).not.toBe(resolvePrimaryRoot(undefined, here));
         expect(shellPort(session, here).cwd()).toBe(here);
         expect(shellPort(session).cwd()).toBe(process.cwd());
+    });
+
+    /**
+     * The regression this pins is a real merge commit, so it is measured against real git history:
+     * a fake port can only prove which port member `publishLane` calls, never what the git command
+     * behind it answers. The merge subject is the one that reached `main` through pull request
+     * #2281, and the `main` commit is dated after the lane commit so a walk that leaves the
+     * `origin/main..HEAD` range picks it up.
+     */
+    it('takes the subject from the newest lane commit, never a merge or an origin/main commit', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-subject-'));
+        const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
+        const git = (args: string[], date = '2026-01-01T00:00:00') =>
+            execFileSync('git', args, {
+                cwd: repository,
+                encoding: 'utf8',
+                env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+            }).trim();
+        const commit = (file: string, message: string, date: string) => {
+            writeFileSync(join(repository, file), `${message}\n`);
+            git(['add', '-A'], date);
+            git(['commit', '--no-gpg-sign', '-m', message], date);
+        };
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            commit('base.txt', 'chore(fixture): base', '2026-01-01T00:00:00');
+            const base = git(['rev-parse', 'HEAD']);
+            git(['checkout', '-b', 'agent/12/work']);
+            commit('lane.txt', 'feat(issue): add milestone and project support', '2026-01-01T00:01:00');
+            git(['checkout', 'main']);
+            commit('main.txt', 'docs(main): a commit the lane merely merged in', '2026-01-01T00:05:00');
+            git(['update-ref', 'refs/remotes/origin/main', git(['rev-parse', 'main'])]);
+            git(['checkout', 'agent/12/work']);
+            const mergeSubject = 'chore(build): merge main into the tracker metadata lane';
+            git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:10:00');
+
+            expect(git(['log', '-1', '--format=%s'])).toBe(mergeSubject);
+            expect(shellPort(session, repository).laneSubject(repository)).toBe(
+                'feat(issue): add milestone and project support'
+            );
+
+            git(['checkout', '-b', 'agent/13/merge-only', base]);
+            git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:11:00');
+            expect(git(['rev-list', '--count', 'origin/main..HEAD'])).toBe('1');
+            expect(shellPort(session, repository).laneSubject(repository)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
 
     it('requests headRefName and isCrossRepository so the match can be proven client-side', () => {
@@ -651,6 +707,25 @@ describe('lane publish', () => {
                 trees: [...otherAuthorLanes(), legacyWorktree()],
                 cwd: LEGACY_LANE,
                 existing: 2275,
+            });
+
+            expect(publishLane(undefined, port)).toBe(2275);
+            expect(calls).toContain(`push:${LEGACY_BRANCH}`);
+            expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(bodies).toEqual([]);
+        });
+
+        it('publishes a legacy lane whose only commits above origin/main are merges', () => {
+            // The newest-non-merge-commit title rule, and the refusal for a lane that has no such
+            // commit, both exist to name a title this script is about to write. A legacy lane's
+            // title is not this script's to write, so neither may reach it. `subject: null` is
+            // exactly the input that refuses on a conforming lane; here the push must still happen.
+            const { port, calls, bodies } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+                subject: null,
             });
 
             expect(publishLane(undefined, port)).toBe(2275);
