@@ -222,7 +222,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
         try {
             let file: File;
-            if (nativeRuntimeAvailable && root.provider === 'tauri' && root.rootRef) {
+            if (nativeRuntimeAvailable && root.provider === 'desktop' && root.rootRef) {
                 file = await readNativeLibrarySampleFile({
                     rootPath: root.rootRef,
                     relativePath: sample.relativePath,

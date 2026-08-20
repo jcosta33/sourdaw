@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isDesktopRuntime } from '#/utils/desktopBridge';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, libraryStore, setActiveRoot } from '../../stores/libraryStore';
@@ -14,8 +14,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-function isRootProvider(value: unknown): value is LibraryRoot['provider'] {
-    return value === 'browser' || value === 'tauri';
+/**
+ * The spelling `'desktop'` carried on disk before the desktop shell moved off
+ * Tauri. Roots connected then are still in IndexedDB, so it is accepted on read
+ * and mapped forward. Nothing writes it: `parseLibraryRoot` hands the store the
+ * normalized kind, and `persistLibraryRoots` serializes what the store holds.
+ */
+const LEGACY_DESKTOP_PROVIDER = 'tauri';
+
+/**
+ * Read a persisted provider kind, or `null` when the value is not one this
+ * build understands. A root whose provider cannot be resolved is dropped rather
+ * than restored into a state no scanner will service.
+ */
+function parseRootProvider(value: unknown): LibraryRoot['provider'] | null {
+    if (value === LEGACY_DESKTOP_PROVIDER) {
+        return 'desktop';
+    }
+    if (value === 'browser' || value === 'desktop') {
+        return value;
+    }
+    return null;
 }
 
 function isRootStatus(value: unknown): value is LibraryRoot['status'] {
@@ -58,10 +77,11 @@ function parseLibraryRoot(value: unknown): LibraryRoot | null {
     if (!isRecord(value) || !isRecord(value.settings)) {
         return null;
     }
+    const provider = parseRootProvider(value.provider);
     if (
         typeof value.id !== 'string' ||
         typeof value.name !== 'string' ||
-        !isRootProvider(value.provider) ||
+        provider === null ||
         typeof value.rootRef !== 'string' ||
         !isOptionalNonnegativeNumber(value.connectedAt) ||
         typeof value.connectedAt !== 'number' ||
@@ -78,7 +98,7 @@ function parseLibraryRoot(value: unknown): LibraryRoot | null {
     const root: LibraryRoot = {
         id: value.id,
         name: value.name,
-        provider: value.provider,
+        provider,
         rootRef: value.rootRef,
         connectedAt: value.connectedAt,
         status: value.status,

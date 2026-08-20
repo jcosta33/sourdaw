@@ -1,5 +1,5 @@
-import { basename_from_path } from '#/utils/path-basename';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
+import { basename_from_path } from '#/utils/path-basename';
 
 import { type LibraryRoot } from '../../models/LibraryTypes';
 import { pickNativeSampleFolder } from '../../repositories/pickNativeSampleFolder';
@@ -56,7 +56,7 @@ async function connectFolderNative(): Promise<string | null> {
         const root: LibraryRoot = {
             id,
             name: folderName,
-            provider: 'tauri',
+            provider: 'desktop',
             rootRef: selected,
             connectedAt: Date.now(),
             status: 'scanning',

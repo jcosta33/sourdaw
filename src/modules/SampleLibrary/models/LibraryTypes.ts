@@ -7,7 +7,15 @@
 
 // ── File provider abstraction ────────────────────────────────────────────────
 
-export type FileProviderKind = 'browser' | 'tauri';
+/**
+ * Which file provider backs a library root: the browser's File System Access
+ * handles, or the desktop shell's native filesystem.
+ *
+ * Roots connected before the desktop shell moved off Tauri persisted the
+ * `'desktop'` kind under its old spelling. Reading that legacy value is the
+ * persistence layer's job; nothing outside it ever sees the old spelling.
+ */
+export type FileProviderKind = 'browser' | 'desktop';
 
 export type FileEntry = {
     name: string;

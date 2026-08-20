@@ -252,7 +252,7 @@ describe('useTimelineFileDrop', () => {
     it('reads a native-root sample through the SampleLibrary resolver before decoding', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
-        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-native', buffer: { duration: 2 } });
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
@@ -346,7 +346,7 @@ describe('useTimelineFileDrop', () => {
     it('warns with the decode message when a native-root sample file cannot be decoded', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
-        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
         mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
         mocks.hitTestTrack.mockReturnValue('t1');
         mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
