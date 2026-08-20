@@ -99,7 +99,9 @@ function generateAutomationShapePoints({
  * Halving the smallest gap keeps every generated point distinct — the merge
  * window is open, so a gap of exactly twice the epsilon never matches — while
  * the cap preserves the freehand dedup against pre-existing points wherever
- * the generated spacing is wider than it.
+ * the generated spacing is wider than it. A zero gap must not zero the
+ * epsilon, because the merge windows are open and a zero epsilon merges
+ * nothing — coincident generated points are left to the freehand default.
  */
 function shapeMergeEpsilon(points: readonly AutomationPoint[]): number {
     let minGap = Infinity;
@@ -109,7 +111,9 @@ function shapeMergeEpsilon(points: readonly AutomationPoint[]): number {
             minGap = gap;
         }
     }
-    return Number.isFinite(minGap) ? Math.min(DEFAULT_BEAT_MERGE_EPSILON, minGap / 2) : DEFAULT_BEAT_MERGE_EPSILON;
+    return Number.isFinite(minGap) && minGap > 0
+        ? Math.min(DEFAULT_BEAT_MERGE_EPSILON, minGap / 2)
+        : DEFAULT_BEAT_MERGE_EPSILON;
 }
 
 /**

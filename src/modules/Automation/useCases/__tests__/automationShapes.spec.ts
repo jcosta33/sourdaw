@@ -147,6 +147,19 @@ describe('automationShapes', () => {
         expect(storeCell.state?.lanes[0]?.points[1]?.value).toBe(10);
     });
 
+    // The merge test above cannot see the cap: this shape's 2-beat gaps would
+    // give an uncapped epsilon of 1.0, which would swallow the pre-existing
+    // 2.2 point into the generated beat 2. The 0.2 offset sits far outside the
+    // freehand 0.05 window, so only the capped default leaves both standing.
+    it('keeps a pre-existing point outside the freehand window even when the shape spacing is wide', () => {
+        storeCell.state = {
+            lanes: [{ ...makeLane('lane-a'), points: [{ beat: 2.2, value: 4, curve: 'linear', tension: 0 }] }],
+        };
+        insertAutomationShape('lane-a', 'triangle', 0, 4);
+
+        expect(storeCell.state?.lanes[0]?.points.map((point) => point.beat)).toEqual([0, 2, 2.2, 4]);
+    });
+
     it('scales shape values to the lane min/max when they differ from 0/10', () => {
         storeCell.state = { lanes: [{ ...makeLane('lane-b'), minValue: 20, maxValue: 40 }] };
         insertAutomationShape('lane-b', 'triangle', 0, 4);
