@@ -68,9 +68,12 @@ at −0.3 dBTP. Those two only match after you pick the row again, which writes 
 | Music | **Hi-Fi Streaming** | −12 LUFS | −1.0 dBTP |
 | Custom | **Custom…** | — | unchanged |
 
-The header LED reads **On target** while short-term loudness stays within 0.25 dB of the target, and
-**Watch _n_ dB** when short-term is louder than that. **Custom…** has no target, so Penalty and the
-LED treat it as no goal.
+The header LED reads **On target** when short-term loudness is not more than 0.25 dB *above* the
+target — quieter than the target still reads **On target**. **Watch _n_ dB** appears only when
+short-term exceeds the target by more than 0.25 dB.
+
+**Custom…** has no loudness goal. Penalty then stays at 0.0 dB and the LED still reads **On
+target**, so that status is not a measurement.
 
 ## Gain and ceiling
 
@@ -79,7 +82,7 @@ LED treat it as no goal.
 | **Gain** | 0 to +18 dB | 0 dB | Input push, on the left strip. Drag up to add gain. Hold Ctrl or Cmd for a finer drag. |
 | **Ceiling** | −6 to 0 dBTP | −0.3 dBTP | Output stop. Also in the header as a readout, and as a number field in the footer. |
 | **True peak** | On / Off | On | Limits inter-sample peaks, not only sample peaks. |
-| **OS off · 2× · 4× · 8× · 16× · 32×** | those six | **4×** | Oversamples the limiter. **OS off** is 1×. Visible from **L2** up. |
+| **OS off · 2× · 4× · 8× · 16× · 32×** | those six | **4×** | Oversamples the saturator only. **OS off** is 1×. Visible from **L2** up. No effect while saturation is off. |
 
 **Push** (top tile) is the same value as **Gain**. **Shave** is how much the limiter is taking off
 right now.
@@ -104,7 +107,7 @@ The line under the chips is the panel's own description of the selected algorith
 
 | Control | Range | Default | What it does |
 |---|---|---|---|
-| **Lookahead** | 0 to 10 ms | 2 ms | Delays the audio so reduction can start before the peak. At 0 ms there is no look-ahead. |
+| **Lookahead** | 0 to 10 ms | 2 ms | Extra delay for the main limiter so reduction can start before the peak. At 0 ms that adjustable look-ahead is off. **True peak** still adds its own fixed look-ahead while it is on. |
 | **Attack** | 0 to 100 ms | Auto | How quickly reduction engages. **Attack Auto** is on by default; while it is on, the millisecond value is ignored. |
 | **Release** | 0 to 1000 ms | Auto | How quickly reduction lets go. **Release Auto** is on by default. Release also stays automatic while the knob is at 0 ms, even if Auto is off. |
 | **Link Trans** | 0 to 100% | 100% | How much the two channels share transient reduction. |
@@ -134,19 +137,23 @@ over it.
 |---|---|---|---|
 | **Wide · 3band · 5band** | those three | **Wide** | Wideband, three-band, or five-band limiting. |
 | **STEREO · MS** | those two | **STEREO** | Ordinary stereo, or mid-side. |
-| **SC HPF** switch | On / Off | Off | High-pass on the detector so low end drives the limiter less. |
-| **HPF** | 20 to 200 Hz | 60 Hz | Detector cutoff. Shown only while **SC HPF** is on. |
+| **SC HPF** switch | On / Off | Off | High-pass on the detector so low end drives the limiter less. **Wide** only. |
+| **HPF** | 20 to 200 Hz | 60 Hz | Detector cutoff. Shown only while **SC HPF** is on. **Wide** only. |
 | **Dithering** | Off · TPDF 16-bit · TPDF 24-bit · POW-R 1 · POW-R 2 · POW-R 3 | Off | Dither before the true-peak safety stage. |
 | **16-bit · 24-bit · 32-bit** | those three | **24-bit** | Output word length for dither. Shown only while dither is not Off. |
 
 **3band** and **5band** split at 80 Hz and 2 kHz. There is no on-screen control for those
 frequencies.
 
+> [!WARNING]
+> **Not yet active** on **3band** and **5band**. **SC HPF** and **HPF** stay on screen and remember
+> their values, but the limiter ignores them whenever the split is not **Wide**.
+
 ## Footer
 
 | Control | Range | Default | What it does |
 |---|---|---|---|
-| **Delta** | On / Off | Off | Listen to what the limiter removed, not the programme. Also labelled **DELTA** on **L3**. |
+| **Delta** | On / Off | Off | Difference between the delayed dry input and the complete Crust output — gain, saturation, limiting, dither, and the rest, not only the limiter's reduction. Also labelled **DELTA** on **L3**. |
 | **A=B** | On / Off | Off | See Gain and ceiling. |
 | **Reset** | — | — | Clears the panel meter readouts. Live meters fill in again as soon as audio is passing. |
 | **TP max** reset | — | — | The small button on the **TP max** heading. Clears the held true-peak reading in the limiter. Use this, not **Reset**, when **Clip** has latched. |
@@ -165,8 +172,10 @@ frequencies.
 | Loudness | Integrated LUFS against the Target, plus **ST**, **MOM**, and **LRA** |
 | **TP max** | Held true-peak maximum, with **Clear** or **Clip** |
 
-**L5** repeats integrated, short-term max, momentary max, LRA, TP max, and GR max under the
-controls.
+**L5** repeats six readouts under the controls. **TP Max** is the held true-peak maximum. Despite
+the names, **ST Max**, **MOM Max**, and **GR Max** are the live short-term, momentary, and
+gain-reduction readings — they are not held maxima. **Integrated** and **LRA** are the live
+loudness values.
 
 ## Presets
 
