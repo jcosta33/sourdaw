@@ -6,6 +6,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
@@ -98,7 +99,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                 title="Action History"
                 titleClassName="text-xs font-medium normal-case tracking-normal text-foreground"
                 actions={
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         {visibleItems.length > 0 ? (
                             <Button
                                 variant="ghost"
@@ -118,7 +119,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                         >
                             <X className="size-3" />
                         </Button>
-                    </div>
+                    </Row>
                 }
             />
             {clear_error ? (
@@ -183,7 +184,7 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
             <DawUtilityListRow
                 dimmed={group.reverted}
                 startSlot={
-                    <div className="flex items-center gap-1.5">
+                    <Row gap={1.5}>
                         <button
                             type="button"
                             onClick={() => setExpanded(!expanded)}
@@ -192,21 +193,21 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
                             {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                         </button>
                         <Bot className="size-3 text-[var(--color-accent-lavender)]" />
-                    </div>
+                    </Row>
                 }
                 title={group.prompt}
                 subtitle={`${group.actions.length} ${isRuntimeExecution ? 'runtime command' : 'change'}${group.actions.length !== 1 ? 's' : ''} · ${formatTimeAgo(group.timestamp)}`}
                 endSlot={endSlot}
             />
             {expanded ? (
-                <div className="px-3 pb-1.5 pl-8 space-y-0.5">
+                <Stack gap={0.5} className="px-3 pb-1.5 pl-8">
                     {group.actions.map((alpha, index) => (
-                        <div key={index} className="flex items-center gap-1.5">
+                        <Row gap={1.5} key={index}>
                             <span className="size-1 rounded-full bg-[var(--color-accent-lavender)]/40 shrink-0" />
                             <span className="text-[9px] text-muted-foreground truncate">{alpha.label}</span>
-                        </div>
+                        </Row>
                     ))}
-                </div>
+                </Stack>
             ) : null}
         </div>
     );

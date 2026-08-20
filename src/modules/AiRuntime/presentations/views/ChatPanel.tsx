@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
@@ -95,13 +96,16 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
             aria-label={expanded ? 'Collapse reasoning' : 'Expand reasoning'}
             className="flex flex-col w-full max-w-[92%] mb-1 text-left"
         >
-            <div className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors">
+            <Row
+                gap={1}
+                className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors"
+            >
                 {expanded ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
                 <span className="font-medium">Reasoning</span>
                 {!expanded ? (
                     <span className="truncate max-w-[200px] opacity-50">{reasoning.slice(0, 60)}...</span>
                 ) : null}
-            </div>
+            </Row>
             {expanded ? (
                 <div
                     id={regionId}
@@ -158,10 +162,10 @@ const ChatMessageItem = ({
 
     return (
         <div className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}>
-            <div className="flex items-center gap-1.5 mb-1 opacity-70">
+            <Row gap={1.5} className="mb-1 opacity-70">
                 {msgIcon}
                 <span className="text-[10px] font-medium tracking-wide">{msgRoleLabel}</span>
-            </div>
+            </Row>
             {/* Reasoning (collapsible) */}
             {msg.reasoning ? (
                 <ReasoningBlock reasoning={msg.reasoning} isStreaming={msg.isStreaming && !msg.content} />
@@ -191,7 +195,7 @@ const ChatMessageItem = ({
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                 )}
                 {pendingConfirmationId ? (
-                    <div className="mt-3 flex items-center gap-2 border-t border-emerald-500/20 pt-2">
+                    <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button
                             size="xs"
                             variant="secondary"
@@ -212,10 +216,10 @@ const ChatMessageItem = ({
                             <X className="size-3" />
                             Cancel
                         </Button>
-                    </div>
+                    </Row>
                 ) : null}
                 {retryableFollowUpId ? (
-                    <div className="mt-3 flex items-center gap-2 border-t border-emerald-500/20 pt-2">
+                    <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button
                             size="xs"
                             variant="secondary"
@@ -226,7 +230,7 @@ const ChatMessageItem = ({
                             <RotateCw className="size-3" />
                             Retry renders
                         </Button>
-                    </div>
+                    </Row>
                 ) : null}
             </div>
         </div>
@@ -294,18 +298,18 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     let chatPanelContent;
     if (chatState.messages.length === 0) {
         chatPanelContent = (
-            <div className="h-full flex flex-col items-center justify-center text-center px-6 opacity-60">
+            <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
                 <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
                 <h3 className="text-sm font-medium text-foreground mb-1">The kitchen is quiet</h3>
                 <p className="text-xs text-muted-foreground">
                     Say something to get the dough rising. Ask about music production, navigating this DAW, or analyzing
                     your project.
                 </p>
-            </div>
+            </Stack>
         );
     } else {
         chatPanelContent = (
-            <div className="flex w-full flex-col gap-5">
+            <Stack className="w-full gap-5">
                 {chatState.messages.map((msg) => (
                     <ChatMessageItem
                         key={msg.id}
@@ -315,27 +319,27 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     />
                 ))}
                 <div ref={messagesEndRef} className="h-2 w-full shrink-0" />
-            </div>
+            </Stack>
         );
     }
 
     return (
-        <div
+        <Stack
+            className="contain-strict bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
             style={style}
-            className="contain-strict flex flex-col bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
         >
             {/* Header */}
             <DawHeaderBand
                 className="sticky top-0 z-10 h-10 px-3"
                 title={
-                    <span className="flex items-center gap-1.5">
+                    <Row as="span" gap={1.5}>
                         <Bot className="size-3.5 text-[var(--color-accent-lavender)]" />
                         AI Chat
-                    </span>
+                    </Row>
                 }
                 titleClassName="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
                 actions={
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -355,7 +359,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         >
                             <X className="size-3.5" />
                         </Button>
-                    </div>
+                    </Row>
                 }
             >
                 {!isLlmAvailable() ? (
@@ -395,6 +399,6 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 onSend={handleSend}
                 onStop={stopGenerating}
             />
-        </div>
+        </Stack>
     );
 };
