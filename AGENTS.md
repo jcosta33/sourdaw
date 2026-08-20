@@ -261,7 +261,8 @@ freshness.
 `lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
 it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
 standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, titles the PR with the HEAD subject (`type(scope): subject`), keeps the four headings in
+`--force`, titles the PR with the newest non-merge commit the lane holds above `origin/main`
+(`type(scope): subject`), so merging `origin/main` in never retitles it, keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
 bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
 there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
