@@ -76,6 +76,10 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         await peer.acceptAnswer(answer.sdp);
         runtime.state.pendingInviteId = null;
 
+        if (answer.pendingPeerId !== answer.peerId) {
+            peerManager.rekeyPeer(answer.pendingPeerId, answer.peerId);
+        }
+
         // Add the joiner to our peer list
         const state = collaborationStore.value;
         if (state) {

@@ -49,7 +49,7 @@ describe('acceptAnswer', () => {
         mockRuntime.state.pendingInviteId = 'stale-pending-id';
         acceptAnswerOnPeer = vi.fn().mockResolvedValue(undefined);
         getPeer = vi.fn().mockReturnValue({ acceptAnswer: acceptAnswerOnPeer });
-        mockRuntime.state.peerManager = { getPeer } as unknown as PeerConnectionManager;
+        mockRuntime.state.peerManager = { getPeer, rekeyPeer: vi.fn() } as unknown as PeerConnectionManager;
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
         mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
     });
@@ -211,5 +211,17 @@ describe('acceptAnswer', () => {
 
         expect(collaborationStore.value).toBeNull();
         expect(mockRuntime.state.pendingInviteId).toBeNull();
+    });
+
+    it('re-keys the peer in peerManager from pendingPeerId to answer.peerId', async () => {
+        const rekeyPeer = vi.fn();
+        mockRuntime.state.peerManager = { getPeer, rekeyPeer } as unknown as PeerConnectionManager;
+        mockRuntime.decompressInvite.mockResolvedValueOnce(
+            JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'joiner-actual-99' }))
+        );
+
+        await acceptAnswer('raw');
+
+        expect(rekeyPeer).toHaveBeenCalledWith('pending-slot-42', 'joiner-actual-99');
     });
 });

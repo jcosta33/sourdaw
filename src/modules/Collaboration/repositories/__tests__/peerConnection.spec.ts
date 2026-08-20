@@ -512,4 +512,39 @@ describe('PeerConnectionManager', () => {
         expect(readyPresenceChannel.send).toHaveBeenCalledWith(JSON.stringify(presenceMessage));
         expect(pendingPresenceChannel.send).not.toHaveBeenCalled();
     });
+
+    describe('rekeyPeer', () => {
+        it('re-keys an existing peer and updates its internal peerId for callbacks', async () => {
+            const onConnected = vi.fn();
+            const onMessage = vi.fn();
+            const rekeyManager = new PeerConnectionManager({ ...noopCallbacks, onConnected, onMessage });
+
+            const peer = rekeyManager.createPeer('pending-slot-1');
+            await peer.createOffer();
+            const fakeRtc = peer.rtc as unknown as FakeRTCPeerConnection;
+            const channel = fakeRtc.channels.find((c) => c.label === 'crdt-sync')!;
+
+            const rekeyResult = rekeyManager.rekeyPeer('pending-slot-1', 'confirmed-joiner-1');
+            expect(rekeyResult).toBe(true);
+
+            expect(rekeyManager.getPeer('pending-slot-1')).toBeUndefined();
+            expect(rekeyManager.getPeer('confirmed-joiner-1')).toBe(peer);
+
+            // Verify callbacks use the updated peerId
+            channel.open();
+            expect(onConnected).toHaveBeenCalledWith('confirmed-joiner-1');
+
+            channel.onmessage?.({ data: JSON.stringify({ type: 'crdt-sync', docId: 'test', syncMessage: 'xyz' }) });
+            expect(onMessage).toHaveBeenCalledWith({
+                peerId: 'confirmed-joiner-1',
+                message: expect.objectContaining({ type: 'crdt-sync' }),
+            });
+        });
+
+        it('returns false when oldPeerId does not exist or matches newPeerId', () => {
+            expect(manager.rekeyPeer('nonexistent', 'new-id')).toBe(false);
+            manager.createPeer('same-id');
+            expect(manager.rekeyPeer('same-id', 'same-id')).toBe(false);
+        });
+    });
 });
