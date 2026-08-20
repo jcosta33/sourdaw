@@ -1,0 +1,20 @@
+tests/e2e/deviceChainTestId.spec.ts
+  s_24b1bdbc3c31ad::t_0fa3df1e79b219 1,5,7,9-29,34,37,41-43,46-49,51-53,56-58,60,62,66-68,70,72,75-77,79-80,83-86,88,90-91
+  s_24b1bdbc3c31ad::t_90ed6ab08b45e3 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "839aeee38c811d14c8e60f5dd29797a5136ccaa3",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
