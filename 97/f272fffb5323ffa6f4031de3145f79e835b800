@@ -1,0 +1,19 @@
+docs/manual/devices/15-levain.md
+  s_487e9aa1e46063::t_0ac03f7025ff6e 103-104,167-169,201-202,204-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "97f272fffb5323ffa6f4031de3145f79e835b800",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
