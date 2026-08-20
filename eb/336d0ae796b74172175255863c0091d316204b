@@ -1,0 +1,30 @@
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_487e9aa1e46063::t_dcaf46eacaa81c 439-443
+  s_487e9aa1e46063::t_63b134fd690e29 444,454,459,461-462,472-473
+  s_487e9aa1e46063::t_332c41b1e81674 31,33-40
+  s_487e9aa1e46063::t_529113f893edf8 446-447,450-451
+  s_487e9aa1e46063::t_2b52c9832ffa84 53
+  s_487e9aa1e46063::t_fcbae5a8719726 320-381
+  s_487e9aa1e46063::t_b76e1b77e380a0 26-30
+  s_487e9aa1e46063::t_7e0911f61ea0b3 382-392,445,452-453,457-458,460,474-484
+docs/06-testing.md
+  s_487e9aa1e46063::t_f296feb805611c 152
+scripts/checkBarrelMockCoverage.ts
+  s_487e9aa1e46063::t_55b6a6a3eda475 104-113,133-159,167,172-177,181-194,199-200,205-206,211-222,227-239,244-256,261-269,274-275,322-340,360-373,799-805,808-813,818-826,833-845,861,864-867,888-894,896-898,930,932,934-943,966-978,986-987,1011-1014,1051,1178-1195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "eb336d0ae796b74172175255863c0091d316204b",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
