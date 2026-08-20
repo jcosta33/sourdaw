@@ -10,8 +10,8 @@
 const BYTES_PER_SAMPLE = 4;
 
 export type PlanarStereo = Readonly<{
-    left: Float32Array;
-    right: Float32Array;
+    left: Float32Array<ArrayBuffer>;
+    right: Float32Array<ArrayBuffer>;
 }>;
 
 /**

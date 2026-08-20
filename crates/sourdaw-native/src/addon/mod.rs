@@ -519,17 +519,27 @@ impl SourdawNative {
     /// offline seam. Returns the apply-result mirror with the incoming
     /// batch's touched-strip reports and no `runtimeRevision`; a refusal is
     /// a `rejected` result, a prior that no longer maps is a transport
-    /// error.
+    /// error. `session` (`{ sessionId, revision }`, nullable) resumes a kept
+    /// mapping session so `prior` can stay empty across one render's applies;
+    /// a session this process no longer holds is a transport error the caller
+    /// answers by resending its full prior.
     #[napi]
     pub async fn map_graph_batch(
         &self,
         prior: Value,
         batch: Value,
         sample_rate: f64,
+        session: Option<Value>,
     ) -> Result<Value> {
         reason(
-            commands::graph::map_graph_batch(prior, batch, sample_rate, &self.singletons.app_state)
-                .await,
+            commands::graph::map_graph_batch(
+                prior,
+                batch,
+                sample_rate,
+                session,
+                &self.singletons.app_state,
+            )
+            .await,
         )
     }
 

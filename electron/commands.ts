@@ -35,6 +35,7 @@
  */
 export const EXPOSED_COMMANDS = [
     'analyze_pitch',
+    'apply_graph_commands',
     'arm_recording',
     'cancel_provider_gateway_request',
     'close_midi_input',
@@ -73,6 +74,7 @@ export const EXPOSED_COMMANDS = [
     'list_midi_inputs',
     'load_plugin',
     'load_sample',
+    'map_graph_batch',
     'open_midi_input',
     'open_plugin_gui',
     'open_provider_gateway_session',
@@ -81,6 +83,8 @@ export const EXPOSED_COMMANDS = [
     'process_plugin_audio',
     'provider_gateway_request',
     'read_file_bytes',
+    'register_timeline_sample',
+    'render_graph_offline',
     'scan_plugins',
     'send_push_midi',
     'set_crumbs_mode',
@@ -107,17 +111,15 @@ export const EXPOSED_COMMANDS = [
  * reachable only through the narrower commands that wrap them.
  *
  * The graph commands (`apply_graph_commands`, `map_graph_batch`,
- * `register_timeline_sample`, `render_graph_offline`) stay denied even though
- * their IPC transport exists (`src/modules/AudioEngine/repositories/
- * nativeGraph/nativeGraphTransport.ts`): nothing in `src/` reaches that
- * transport yet — `createOfflineRenderBackend` returns the web backend
- * unconditionally, and the null test drives the addon in-process, not over
- * IPC. Exposing a command requires a production caller. The D3.c.2 cutover
- * (jcosta33/sourdaw#2225) flips the backend selection, and that same change
- * moves these four to `EXPOSED_COMMANDS` together with their caller.
+ * `register_timeline_sample`, `render_graph_offline`) are exposed as of the
+ * D3.c.2 cutover (jcosta33/sourdaw#2225): desktop offline export selects the
+ * native engine in `createOfflineRenderBackend`, which reaches them through
+ * `src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts`.
+ * They moved to `EXPOSED_COMMANDS` as one unit — they are one renderer-facing
+ * capability (drive the native graph over IPC), and splitting the set would
+ * leave a half-usable surface.
  */
 export const DENIED_COMMANDS = [
-    'apply_graph_commands',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',
     'collab_start_advertising',
@@ -128,11 +130,8 @@ export const DENIED_COMMANDS = [
     'get_asr_status',
     'hide_all_plugin_guis',
     'load_whisper_model',
-    'map_graph_batch',
     'post_process_audio',
     'read_audio_file',
-    'register_timeline_sample',
-    'render_graph_offline',
     'send_plugin_midi',
     'show_all_plugin_guis',
     'update_plugin_transport',

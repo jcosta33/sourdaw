@@ -20,6 +20,7 @@
  */
 export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['analyze_pitch', ['analysis_id', 'audio_path']],
+    ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
@@ -58,6 +59,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['list_midi_inputs', []],
     ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
+    ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
     ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
@@ -66,6 +68,8 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['scan_plugins', ['paths']],
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],

@@ -149,6 +149,11 @@ pub struct AppState {
     /// (kind, VCA fold, chain occupancy) batch validation needs. See
     /// `commands::graph`.
     pub graph: Arc<Mutex<crate::commands::graph::GraphRegistry>>,
+    /// Offline mapping sessions: probe registries `map_graph_batch` keeps
+    /// across one render's applies so the TS backend's `prior` does not
+    /// re-cross the wire every batch (#2225). Control-side only, LRU-capped;
+    /// see `commands::graph::GraphMappingSessions`.
+    pub graph_mapping_sessions: Arc<Mutex<crate::commands::graph::GraphMappingSessions>>,
 }
 
 /// One registered piece of timeline material: planar stereo PCM and the rate
@@ -185,6 +190,9 @@ impl Default for AppState {
             bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
             timeline_samples: Arc::new(Mutex::new(HashMap::new())),
             graph: Arc::new(Mutex::new(crate::commands::graph::GraphRegistry::default())),
+            graph_mapping_sessions: Arc::new(Mutex::new(
+                crate::commands::graph::GraphMappingSessions::default(),
+            )),
         }
     }
 }
