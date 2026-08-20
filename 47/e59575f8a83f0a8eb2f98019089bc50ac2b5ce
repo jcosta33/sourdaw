@@ -1,0 +1,25 @@
+tests/e2e/undoClipSplitTestId.spec.ts
+  s_24b1bdbc3c31ad::t_4b735428381c4a 62-63
+  s_24b1bdbc3c31ad::t_819828f1d5d22e 84
+  s_24b1bdbc3c31ad::t_913a90ce3be8e0 99-100
+  s_24b1bdbc3c31ad::t_b6b1f3ec3a5b01 47
+  s_24b1bdbc3c31ad::t_e5894bdefabef2 1,32-36,38,40,42-46,48-61,66-72,74-78,81,93-94,101-102,104,106,108-109,111,114-115,119-120
+  s_24b1bdbc3c31ad::t_7ca34af8d21d56 80,82-83,85
+  s_24b1bdbc3c31ad::t_30c746141897b6 31,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "47e59575f8a83f0a8eb2f98019089bc50ac2b5ce",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
