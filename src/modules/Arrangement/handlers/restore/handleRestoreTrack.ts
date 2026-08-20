@@ -92,7 +92,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         }
 
         for (const entry of clipSatellites) {
-            writeClipSatelliteEntry(entry as never);
+            writeClipSatelliteEntry(entry);
         }
 
         const midiClipIds = new Set([

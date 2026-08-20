@@ -221,34 +221,59 @@ describe('glueClips MIDI state integration', () => {
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
     });
 
-    it('retires a source clip automation lane instead of refusing the glue or stranding the lane (regression #2108)', () => {
-        automationStore.set({
-            lanes: [
-                {
-                    id: 'lane-clip-a-gain',
-                    trackId: 'track-midi',
-                    clipId: 'clip-a',
-                    parameterId: 'gain',
-                    parameterName: 'Gain',
-                    points: [{ id: 'point-a', beat: 9, value: 0.5, curve: 'linear', tension: 0.5 }],
-                    objects: [],
-                    visible: true,
-                    enabled: true,
-                    collapsed: false,
-                    minValue: 0,
-                    maxValue: 1,
-                },
-            ],
-        });
+    it('migrates a source clip automation lane onto the glued clip instead of refusing or retiring it (regression #2108)', () => {
+        setClipAutomationLanes([
+            clipAutomationLane('lane-clip-a-gain', 'clip-a', 'gain', [
+                { id: 'point-a', beat: 9, value: 0.5, curve: 'linear', tension: 0.5 },
+            ]),
+        ]);
 
         expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
 
         const glued = trackStore.value!.tracks[0]!.clips[0]!;
-        // No coherent per-clip merge exists for automation: the source's lane
-        // is retired rather than migrated onto the glued clip.
-        expect(automationStore.value!.lanes).toEqual([]);
+        // Points are absolute timeline beats and the glued clip spans the
+        // union of the source windows, so re-keying the lane preserves
+        // playback exactly. Retiring it would silence automation that played
+        // a moment earlier.
+        expect(automationStore.value!.lanes).toHaveLength(1);
+        expect(automationStore.value!.lanes[0]).toMatchObject({
+            clipId: glued.id,
+            parameterId: 'gain',
+            points: [{ id: 'point-a', beat: 9, value: 0.5, curve: 'linear', tension: 0.5 }],
+        });
+        expect(automationStore.value!.lanes[0]!.id).not.toBe('lane-clip-a-gain');
         expect(midiStore.value!.notesByClipId).not.toHaveProperty('clip-a');
         expect(midiStore.value!.notesByClipId).toHaveProperty(glued.id);
+    });
+
+    it('merges two sources automating the same parameter into one lane on the glued clip (regression #2108)', () => {
+        setClipAutomationLanes([
+            clipAutomationLane('lane-a-gain', 'clip-a', 'gain', [
+                { id: 'point-a', beat: 9, value: 0.25, curve: 'linear', tension: 0 },
+            ]),
+            clipAutomationLane('lane-b-gain', 'clip-b', 'gain', [
+                { id: 'point-b', beat: 13, value: 0.75, curve: 'linear', tension: 0 },
+            ]),
+            clipAutomationLane('lane-b-pan', 'clip-b', 'pan', [
+                { id: 'point-c', beat: 14, value: 0.5, curve: 'linear', tension: 0 },
+            ]),
+        ]);
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
+
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        const lanes = automationStore.value!.lanes;
+        expect(lanes).toHaveLength(2);
+        expect(lanes.every((lane) => lane.clipId === glued.id)).toBe(true);
+        // The source windows are disjoint, so the two gain lanes interleave
+        // into one without conflict.
+        expect(lanes.find((lane) => lane.parameterId === 'gain')!.points).toEqual([
+            { id: 'point-a', beat: 9, value: 0.25, curve: 'linear', tension: 0 },
+            { id: 'point-b', beat: 13, value: 0.75, curve: 'linear', tension: 0 },
+        ]);
+        expect(lanes.find((lane) => lane.parameterId === 'pan')!.points).toEqual([
+            { id: 'point-c', beat: 14, value: 0.5, curve: 'linear', tension: 0 },
+        ]);
     });
 
     it('migrates the FIRST source clip gain envelope onto the glued clip (regression #2108)', () => {

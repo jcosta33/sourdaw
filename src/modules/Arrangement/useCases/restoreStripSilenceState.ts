@@ -87,8 +87,6 @@ export function restoreStripSilenceState({ expected, replacement }: RestoreStrip
     // satellite and automation-lane guards must both pass before
     // `setTrackState` writes, so a later guard failure can never leave a
     // half-applied transaction.
-    const expectedClipAutomationLanes = expected.clipAutomationLanes as never;
-    const replacementClipAutomationLanes = replacement.clipAutomationLanes as never;
     const clipSatellitePreparation = prepareClipSatelliteStateRestore({
         version: 1,
         expected: { version: 1, entries: expected.clipSatellites },
@@ -100,8 +98,16 @@ export function restoreStripSilenceState({ expected, replacement }: RestoreStrip
     // The completeness check re-reads live lanes for the full affected set,
     // so a lane added to a segment out of band (after the strip, before
     // undo) is detected here and blocks rather than getting silently
-    // orphaned once that segment's clip id stops existing.
-    if (!clipAutomationLaneTransitionMatchesStore(affectedClipIds, expectedClipAutomationLanes)) {
+    // orphaned once that segment's clip id stops existing. It also covers
+    // the replacement side's id collisions, so the apply below can only fail
+    // on a store that refused the write outright.
+    if (
+        !clipAutomationLaneTransitionMatchesStore(
+            affectedClipIds,
+            expected.clipAutomationLanes,
+            replacement.clipAutomationLanes
+        )
+    ) {
         return false;
     }
 
@@ -113,10 +119,17 @@ export function restoreStripSilenceState({ expected, replacement }: RestoreStrip
         return false;
     }
 
-    // Clip-scoped automation lanes: only the first segment can inherit one;
-    // the rest (and the target's own, on redo) were retired.
+    // Clip-scoped automation lanes: each lane is re-keyed to the segment
+    // whose beat window holds its points; points falling in stripped silence
+    // have nowhere to live and retire (and on undo the original lane comes
+    // back). This is the last store the transition touches, so a `false`
+    // here means the automation store itself refused the write.
     if (
-        !applyClipAutomationLaneTransition(affectedClipIds, expectedClipAutomationLanes, replacementClipAutomationLanes)
+        !applyClipAutomationLaneTransition(
+            affectedClipIds,
+            expected.clipAutomationLanes,
+            replacement.clipAutomationLanes
+        )
     ) {
         return false;
     }

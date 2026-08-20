@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
@@ -7,7 +9,7 @@ import { type TrackState } from '../../repositories/track/getTrackState';
 import { prepareStripSilence } from '../prepareStripSilence';
 
 const mocks = vi.hoisted(() => ({
-    getAutomationLanes: vi.fn(() => []),
+    getAutomationLanes: vi.fn<() => unknown[]>(() => []),
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
     getTrackState: vi.fn<() => TrackState | null>(),
     resolveEligibleClipWriteTarget: vi.fn(),
@@ -37,6 +39,16 @@ function createTrackState(track: Track): TrackState {
     return { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
 }
 
+/**
+ * The clip-to-buffer mapping runs through tempo (`audioOffsetBeats` and the
+ * clip's span are beats; the buffer is samples), so every fixture pins one.
+ * At 600 BPM a beat is 0.1s, which at the fixtures' 100 Hz sample rate is
+ * exactly 10 samples per beat — the 1 sample : 0.1 beat scale these buffers
+ * are written against.
+ */
+const FIXTURE_TEMPO = 600;
+const SAMPLES_PER_BEAT = 10;
+
 function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuffer {
     const sampleRate = 100;
     return {
@@ -57,12 +69,17 @@ function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuf
 describe('prepareStripSilence', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transportStore.set({ ...defaultTransportState, tempo: FIXTURE_TEMPO });
         mocks.getAutomationLanes.mockReturnValue([]);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({
             status: 'eligible',
             trackId: 'track-1',
             clipId: 'clip-1',
         });
+    });
+
+    afterEach(() => {
+        transportStore.set(defaultTransportState);
     });
 
     it('returns null when track state is missing', () => {
@@ -194,5 +211,98 @@ describe('prepareStripSilence', () => {
 
         expect(plan).not.toBeNull();
         expect(plan!.next.clips).toHaveLength(2);
+    });
+
+    describe('a start-trimmed clip (audioOffsetBeats > 0)', () => {
+        // Buffer: 200 samples @ 100 Hz = 20 buffer beats at 10 samples/beat.
+        // Clip [16, 26] with audioOffsetBeats 3 plays buffer beats [3, 13) —
+        // samples [30, 130). Sound sits at buffer beats [0,2) (BEFORE the
+        // played window: the clip never reaches it), [4,6) and [10,13).
+        function trimmedClipChannelData(): Float32Array<ArrayBuffer> {
+            const channelData = new Float32Array(20 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 0 * SAMPLES_PER_BEAT, 2 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 4 * SAMPLES_PER_BEAT, 6 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 10 * SAMPLES_PER_BEAT, 13 * SAMPLES_PER_BEAT);
+            return channelData;
+        }
+
+        function createTrimmedClip(): Clip {
+            return ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 16,
+                endBeat: 26,
+                audioOffsetBeats: 3,
+            });
+        }
+
+        it('scans only the played window and keeps each segment on the audio it already played (regression #2108)', () => {
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createTrimmedClip()])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(trimmedClipChannelData()));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            // Sound at buffer beats [4,6) played at timeline [17,19); sound at
+            // [10,13) played at [23,26). Each segment must sit exactly there
+            // AND read from exactly that buffer beat — audible-playback
+            // equivalence. Scanning the whole buffer instead would have found
+            // a third region at buffer beats [0,2) that the clip never plays.
+            expect(plan!.next.clips).toEqual([
+                expect.objectContaining({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 }),
+                expect.objectContaining({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 }),
+            ]);
+        });
+
+        it('re-keys a clip-scoped automation lane to the LATER segment that contains its points, verbatim (regression #2108)', () => {
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createTrimmedClip()])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(trimmedClipChannelData()));
+            // Absolute beat 24 lives inside the SECOND segment [23, 26]. A
+            // first-segment-only migration retires it; a rebasing one moves it
+            // off the audio it was drawn against.
+            mocks.getAutomationLanes.mockReturnValue([
+                {
+                    id: 'lane-a',
+                    trackId: 'track-1',
+                    clipId: 'clip-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ id: 'point-a', beat: 24, value: 0.5, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ]);
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            const [, second] = plan!.next.clips;
+            expect(plan!.next.clipAutomationLanes).toEqual([
+                expect.objectContaining({
+                    clipId: second!.id,
+                    parameterId: 'gain',
+                    points: [{ id: 'point-a', beat: 24, value: 0.5, curve: 'linear', tension: 0 }],
+                }),
+            ]);
+            expect(plan!.next.clipAutomationLanes[0]!.id).not.toBe('lane-a');
+        });
+
+        it('returns null when the clip starts past the end of its buffer', () => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                audioOffsetBeats: 25,
+            });
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(trimmedClipChannelData()));
+
+            expect(prepareStripSilence({ clipId: 'clip-1' })).toBeNull();
+        });
     });
 });

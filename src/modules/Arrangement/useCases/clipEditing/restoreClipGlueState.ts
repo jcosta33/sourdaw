@@ -79,8 +79,6 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     // them — `restoreMidiClipGlueState` and `setTrackState` below have no
     // rollback, so a guard that fails after one of them has already written
     // would leave the transaction half-applied.
-    const expectedClipAutomationLanes = expected.clipAutomationLanes as never;
-    const replacementClipAutomationLanes = replacement.clipAutomationLanes as never;
     const clipSatellitePreparation = prepareClipSatelliteStateRestore({
         version: 1,
         expected: { version: 1, entries: expected.clipSatellites },
@@ -92,8 +90,16 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     // The completeness check re-reads live lanes for the full affected set,
     // so a lane added to the glued clip out of band (after glue, before
     // undo) is detected here and blocks rather than getting silently
-    // orphaned once the glued clip id stops existing.
-    if (!clipAutomationLaneTransitionMatchesStore(affectedClipIds, expectedClipAutomationLanes)) {
+    // orphaned once the glued clip id stops existing. It also covers the
+    // replacement side's id collisions, so the apply below can only fail on
+    // a store that refused the write outright.
+    if (
+        !clipAutomationLaneTransitionMatchesStore(
+            affectedClipIds,
+            expected.clipAutomationLanes,
+            replacement.clipAutomationLanes
+        )
+    ) {
         return false;
     }
 
@@ -109,10 +115,16 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
         return false;
     }
 
-    // Clip-scoped automation lanes: every source's lanes were retired (or
-    // restored, on undo) — none migrate to the glued clip.
+    // Clip-scoped automation lanes: every source's lanes are re-keyed onto
+    // the glued clip (or back onto their sources, on undo). Points stay in
+    // the absolute timeline frame they were authored in, so playback is
+    // unchanged either way.
     if (
-        !applyClipAutomationLaneTransition(affectedClipIds, expectedClipAutomationLanes, replacementClipAutomationLanes)
+        !applyClipAutomationLaneTransition(
+            affectedClipIds,
+            expected.clipAutomationLanes,
+            replacement.clipAutomationLanes
+        )
     ) {
         return false;
     }

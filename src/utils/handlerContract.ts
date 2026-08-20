@@ -229,6 +229,50 @@ export type AutomationPointSnapshot = {
     readonly cp1?: { readonly x: number; readonly y: number };
     readonly cp2?: { readonly x: number; readonly y: number };
 };
+/** A bounded automation container owned by one lane, carried verbatim inside
+ *  `ClipAutomationLaneSnapshot`. */
+export type ClipAutomationObjectSnapshot = {
+    readonly id: string;
+    readonly laneId: string;
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly points: readonly AutomationPointSnapshot[];
+    readonly poolId?: string;
+    readonly loopLength?: number;
+    readonly overrides?: Readonly<Record<string, boolean>>;
+    readonly name: string;
+};
+/** A WHOLE clip-scoped automation lane, carried by the clip-identity actions
+ *  (`stripSilence`, `glueClips`, `restoreClip`) whose inverses must be able to
+ *  put a retired lane back exactly as it was. Unlike `AutomationLaneSnapshot`
+ *  — an id-only reference used where the lane still lives in its own store —
+ *  every field of Automation's `AutomationLane` is declared here, because the
+ *  generated argument schema closes each object (`additionalProperties: false`)
+ *  and an undeclared field makes the whole envelope unallowlisted. Kept
+ *  structural (not imported from Automation's models) for the same reason
+ *  every other snapshot here is. */
+export type ClipAutomationLaneSnapshot = {
+    readonly id: string;
+    readonly trackId: string;
+    readonly clipId?: string;
+    readonly clipAutomationMode?: 'additive' | 'multiplicative';
+    readonly parameterId: string;
+    readonly parameterName: string;
+    readonly points: readonly AutomationPointSnapshot[];
+    readonly trimPoints?: readonly AutomationPointSnapshot[];
+    readonly objects: readonly ClipAutomationObjectSnapshot[];
+    readonly ghostPoints?: readonly AutomationPointSnapshot[];
+    readonly visible: boolean;
+    readonly enabled: boolean;
+    readonly collapsed: boolean;
+    readonly linkedLaneId?: string;
+    readonly linkScale?: number;
+    readonly minValue: number;
+    readonly maxValue: number;
+    readonly viewMinValue?: number;
+    readonly viewMaxValue?: number;
+    readonly color?: string;
+};
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
 export type MidiClipNoteSnapshot = {
@@ -281,14 +325,14 @@ export type ClipGlueActionSnapshot = {
     readonly clipOrder: readonly string[];
     readonly midi: MidiClipGlueActionSnapshot;
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
-    readonly clipAutomationLanes: readonly AutomationLaneSnapshot[];
+    readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
 export type StripSilenceActionSnapshot = {
     readonly trackId: string;
     readonly clips: readonly ClipStateSnapshot[];
     readonly clipOrder: readonly string[];
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
-    readonly clipAutomationLanes: readonly AutomationLaneSnapshot[];
+    readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
 export type ClipSplitActionSnapshot = {
     readonly trackId: string;
@@ -308,7 +352,7 @@ export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
     readonly shiftedClips: readonly RippleShiftSnapshot[];
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
-    readonly clipAutomationLanes: readonly AutomationLaneSnapshot[];
+    readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
 export type AdjustmentLayerSnapshot = {
     readonly id: string;
