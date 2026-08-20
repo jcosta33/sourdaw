@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_487e9aa1e46063::t_d272ecdd59a789 454
+  s_487e9aa1e46063::t_576df0ce152b4e 492-507
+src/modules/Arrangement/stores/warpStates.ts
+  s_487e9aa1e46063::t_a703fff45511be 17-32,35-36
+  s_487e9aa1e46063::t_29b141bba8a287 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c1cc8d5fdb443c83059489ee36eb1183f02ea59e",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
