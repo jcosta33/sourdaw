@@ -75,9 +75,24 @@ test.describe('Crust device — adds a real device and opens its panel', () => {
         await panel.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Crust$/ }).click();
 
-        await expect(panel.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
-        await expect(panel.getByText('Crust', { exact: true })).toBeVisible();
+        const bypass = panel.getByRole('button', { name: /^Bypass Crust$/i });
+        await expect(bypass).toBeVisible();
+        await expect(bypass).toHaveAttribute('aria-pressed', 'false');
         await expect(panel.getByRole('button', { name: /^Remove Crust$/i })).toBeVisible();
+
+        await bypass.click();
+        const enable = panel.getByRole('button', { name: /^Enable Crust$/i });
+        await expect(enable).toBeVisible();
+        await expect(enable).toHaveAttribute('aria-pressed', 'true');
+
+        await enable.click();
+        await expect(panel.getByRole('button', { name: /^Bypass Crust$/i })).toHaveAttribute('aria-pressed', 'false');
+
+        await panel
+            .locator('[data-testid^="device-card-"]')
+            .filter({ has: page.getByText('Crust', { exact: true }) })
+            .click();
+        await expect(page.getByRole('button', { name: 'Close Crust' })).toBeVisible();
     });
 });
 
