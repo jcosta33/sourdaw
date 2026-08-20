@@ -1,0 +1,35 @@
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_0a74ab84caa6a1 569-572,574
+scripts/download-levain-samples.ts
+  s_0a3429e31e555d::t_0a74ab84caa6a1 20-22
+scripts/__tests__/checkLevainProvenance.spec.ts
+  s_0a3429e31e555d::t_efd625fe8544ce 9-15,41,48,108-146
+  s_0a3429e31e555d::t_d5291c563914e3 1,33-38,54
+scripts/levainSource.ts
+  s_0a3429e31e555d::t_0a74ab84caa6a1 1-9
+scripts/download-levain-samples-direct.ts
+  s_0a3429e31e555d::t_0a74ab84caa6a1 20-22
+scripts/checkLevainProvenance.ts
+  s_0a3429e31e555d::t_0a74ab84caa6a1 1,5-7,24,38-40,52-65,116,131-134,144-148,165-166,201-215,221-280,282-284,288-291
+  s_0a3429e31e555d::t_ffeeee60c177fa 292-300
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_4d896a317ac055 481-482,782-786
+public/samples/levain/provenance.tsv
+  s_0a3429e31e555d::t_2a9435e485d449 1362-1379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "140ae829b4dbb517446ade2db0c337ca6fd3b909",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
