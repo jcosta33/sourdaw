@@ -1,4 +1,4 @@
-import { desktopOpenDialog } from '#/utils/tauriBridge';
+import { desktopOpenDialog } from '#/utils/desktopBridge';
 
 type SelectNativeAudioExportDirectoryOutput = Promise<string | null>;
 

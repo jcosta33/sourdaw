@@ -1,4 +1,4 @@
-import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
+import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
@@ -36,16 +36,12 @@ import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRa
 
 import { checkCancel } from './checkCancel';
 import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
+import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
+import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
 import { type OfflineScheduleTally, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
-
-type ResolvedClip = Track['clips'][number] & {
-    regionStartBeat: number;
-    regionEndBeat: number;
-    sourceStartBeat: number;
-};
 
 type GetSourceOccurrenceOffsetInput = {
     sourceStartBeat: number;
@@ -70,91 +66,6 @@ function getSourceOccurrenceOffset({
     }
 
     return Math.floor(beatsFromSourceStart / loopLength);
-}
-
-function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
-    const laneState = takeLaneStore.value;
-    if (!laneState) {
-        return clips.map((clip) => ({
-            ...clip,
-            regionStartBeat: clip.startBeat,
-            regionEndBeat: clip.endBeat,
-            sourceStartBeat: clip.startBeat,
-        }));
-    }
-
-    const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
-    if (!lane || lane.activeCompRegions.length === 0) {
-        return clips.map((clip) => ({
-            ...clip,
-            regionStartBeat: clip.startBeat,
-            regionEndBeat: clip.endBeat,
-            sourceStartBeat: clip.startBeat,
-        }));
-    }
-
-    const resolvedClips: ResolvedClip[] = [];
-
-    for (const region of lane.activeCompRegions) {
-        const take = lane.takes.find((candidateTake) => candidateTake.id === region.takeId);
-        if (!take) {
-            continue;
-        }
-
-        const sourceClip = clips.find((clip) => clip.id === take.clipId);
-        if (!sourceClip) {
-            continue;
-        }
-
-        const overlapStart = Math.max(region.startBeat, sourceClip.startBeat);
-        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
-        if (overlapStart >= overlapEnd) {
-            continue;
-        }
-
-        resolvedClips.push({
-            ...sourceClip,
-            startBeat: overlapStart,
-            endBeat: overlapEnd,
-            regionStartBeat: overlapStart,
-            regionEndBeat: overlapEnd,
-            sourceStartBeat: sourceClip.startBeat,
-        });
-    }
-
-    const sortedRegions = lane.activeCompRegions;
-
-    for (const clip of clips) {
-        const gaps: { start: number; end: number }[] = [];
-        let cursor = clip.startBeat;
-
-        for (const region of sortedRegions) {
-            if (region.endBeat <= clip.startBeat || region.startBeat >= clip.endBeat) {
-                continue;
-            }
-            const regionStart = Math.max(region.startBeat, clip.startBeat);
-            if (cursor < regionStart) {
-                gaps.push({ start: cursor, end: regionStart });
-            }
-            cursor = Math.max(cursor, Math.min(region.endBeat, clip.endBeat));
-        }
-        if (cursor < clip.endBeat) {
-            gaps.push({ start: cursor, end: clip.endBeat });
-        }
-
-        for (const gap of gaps) {
-            resolvedClips.push({
-                ...clip,
-                startBeat: gap.start,
-                endBeat: gap.end,
-                regionStartBeat: gap.start,
-                regionEndBeat: gap.end,
-                sourceStartBeat: clip.startBeat,
-            });
-        }
-    }
-
-    return resolvedClips.sort((leftClip, rightClip) => leftClip.startBeat - rightClip.startBeat);
 }
 
 /**
@@ -854,99 +765,34 @@ export async function scheduleTrackClips({
                 continue;
             }
 
-            const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
-            // Clamp stretchRatio to a sane positive range — zero or negative would
-            // cause division-by-zero in `buffer.duration / stretchRatio`.
-            const safeStretchRatio = Math.max(0.01, Math.min(100, stretchRatio));
-            const clipGainValue = clip.gain;
-
-            for (let iter = 0; iter < maxIterations; iter++) {
+            // The loop, trim, stretch and fade arithmetic — extracted so the
+            // native export path (#2225) maps the same projection into
+            // `schedule-clip` commands rather than a second copy of it.
+            const playbacks = projectOfflineAudioClipPlaybacks({
+                clip,
+                bufferDurationSeconds: buffer.duration,
+                regionStartBeat,
+                regionStartSec,
+                durationSeconds,
+                compensationDelay,
+                projectBeatToSeconds,
+            });
+            for (const playback of playbacks) {
                 checkCallerAbort();
-                const iterStartBeat = clip.startBeat + iter * loopLen;
-                if (iterStartBeat >= clip.endBeat) {
-                    break;
-                }
-
-                const remainingBeats = Math.min(loopLen, clip.endBeat - iterStartBeat);
-                const iterEndBeat = iterStartBeat + remainingBeats;
-                if (iterEndBeat <= regionStartBeat) {
-                    continue;
-                }
-
-                const rawIterStartSec = projectBeatToSeconds(iterStartBeat) + compensationDelay;
-                const rawIterEndSec = projectBeatToSeconds(iterEndBeat) + compensationDelay;
-                const iterStartTime = rawIterStartSec - regionStartSec;
-                const iterEndTime = rawIterEndSec - regionStartSec;
-                if (iterStartTime >= durationSeconds) {
-                    break;
-                }
-
-                const isFirstIter = iter === 0;
-                const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
-
-                const iterDurationSec = iterEndTime - iterStartTime;
-                const maxBufferSec = buffer.duration / safeStretchRatio;
-                const availableSec = Math.min(iterDurationSec, maxBufferSec);
-
-                // If this iteration straddles the region start, trim the leading portion
-                // by advancing the buffer read offset and clamping start to 0.
-                const trimBeforeSec = Math.max(0, -iterStartTime);
-                const bufferOffsetSec = trimBeforeSec * safeStretchRatio;
-                if (bufferOffsetSec >= buffer.duration) {
-                    continue;
-                }
-
-                const startSec = Math.max(0, iterStartTime);
-                const playDuration = Math.max(0, availableSec - trimBeforeSec);
-
-                if (playDuration <= 0) {
-                    continue;
-                }
-
-                // `isFirstIter && trimBeforeSec === 0` is what makes a fade in
-                // present at all: a later loop iteration, or one entered
-                // part-way by the region trim, continues an unbroken sound and
-                // must not dip at the seam. `isLastIter` is the same question
-                // for the tail.
-                // Within a fade that is present, a zero-length user fade leaves
-                // `userEndSec`/`userStartSec` absent, which the scheduler reads
-                // as the anti-click micro-fade.
-                const fadeIn =
-                    isFirstIter && trimBeforeSec === 0
-                        ? {
-                              userEndSec:
-                                  clip.fadeInBeats > 0
-                                      ? projectBeatToSeconds(clip.startBeat + clip.fadeInBeats) +
-                                        compensationDelay -
-                                        regionStartSec
-                                      : undefined,
-                          }
-                        : undefined;
-                const fadeOut = isLastIter
-                    ? {
-                          userStartSec:
-                              clip.fadeOutBeats > 0
-                                  ? projectBeatToSeconds(clip.endBeat - clip.fadeOutBeats) +
-                                    compensationDelay -
-                                    regionStartSec
-                                  : undefined,
-                      }
-                    : undefined;
-
                 scheduleOfflineClipSource({
                     context: offlineCtx,
                     destinationNode: trackInputNode,
                     buffer,
-                    startSec,
-                    bufferOffsetSec,
-                    playDuration,
-                    playbackRate: safeStretchRatio,
-                    clipGainValue,
-                    fadeIn,
-                    fadeOut,
+                    startSec: playback.startSec,
+                    bufferOffsetSec: playback.bufferOffsetSec,
+                    playDuration: playback.playDuration,
+                    playbackRate: playback.playbackRate,
+                    clipGainValue: playback.clipGainValue,
+                    fadeIn: playback.fadeIn,
+                    fadeOut: playback.fadeOut,
                     microFadeSeconds: MICRO_FADE_SECONDS,
                 });
-                if (rawIterEndSec > tallyStartSeconds) {
+                if (playback.rawIterEndSec > tallyStartSeconds) {
                     tally?.scheduledBuffers.push(buffer);
                 }
             }

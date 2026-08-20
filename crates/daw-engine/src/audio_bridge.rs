@@ -63,7 +63,7 @@ pub struct PluginAudioBridge {
     pub output_tx: Producer<AudioBlock>,
 }
 
-/// The other side, held by the main thread / Tauri command layer.
+/// The other side, held by the main thread / native command layer.
 pub struct PluginAudioBridgeHandle {
     pub plugin_id: usize,
     /// Input: main thread pushes audio from the worklet

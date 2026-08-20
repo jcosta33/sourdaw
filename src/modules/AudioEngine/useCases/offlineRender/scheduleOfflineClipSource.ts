@@ -120,7 +120,14 @@ export function scheduleOfflineClipSource(input: ScheduleOfflineClipSourceInput)
         }
     }
 
-    // duration arg is destination-timeline seconds — NOT buffer-time scaled by playbackRate.
-    source.start(startSec, bufferOffsetSec, playDuration);
+    // `start`'s third argument is measured in the *source buffer's* own time:
+    // the node stops once it has consumed that many source seconds, which takes
+    // `duration / playbackRate` seconds on the destination timeline. Everything
+    // above — `endSec`, both fade spans — is destination seconds, so the one
+    // number that leaves that frame is scaled into source seconds here, exactly
+    // as the live scheduler does. The caller clamps `playDuration` to
+    // `(buffer.duration - bufferOffsetSec) / playbackRate`, so the scaled value
+    // never reaches past the end of the material.
+    source.start(startSec, bufferOffsetSec, playDuration * playbackRate);
     return source;
 }

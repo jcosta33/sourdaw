@@ -28,17 +28,20 @@
  * differently* is implemented for real:
  *
  *   - `GainNode`               multiplies.
- *   - `StereoPannerNode`       the spec's stereo equal-power law (§1.14.1).
- *   - `BiquadFilterNode`       the spec's transfer functions (§1.7.1), running
+ *   - `StereoPannerNode`       the spec's stereo equal-power law.
+ *   - `BiquadFilterNode`       the spec's transfer functions, running
  *                              direct-form-1 with per-node state across quanta.
  *   - `WaveShaperNode`         the spec's curve lookup with linear interpolation.
  *   - `AnalyserNode`           pass-through, which is what it is.
  *   - `AudioWorkletNode`       runs the real registered processor's `process()`.
  *   - `AudioBufferSourceNode`  starts when it was told to, reads from the offset
- *                              it was given, stops after the destination-timeline
- *                              duration it was handed, and interpolates between
- *                              frames at a non-unity rate. Only on a `scheduled`
- *                              context — see the automation sections below.
+ *                              it was given, stops once it has consumed the
+ *                              source duration it was handed (the spec's
+ *                              playback algorithm — so `d / r`
+ *                              of the timeline at rate `r`), and interpolates
+ *                              between frames at a non-unity rate. Only on a
+ *                              `scheduled` context — see the automation
+ *                              sections below.
  *
  * A node type nothing here models throws on construction rather than degrading
  * to a pass-through. That is deliberate: a silently-inert node turns this from a
@@ -69,6 +72,13 @@
  * `src/`. A null it reports is proof that the two paths configure the graph
  * identically — not proof that an un-modelled browser behaviour also agrees.
  *
+ * **The cancellation is conditional on both legs being this model, and one
+ * caller's are not**: `renderOfflineNativeParity.spec.ts` subtracts a native
+ * render from a harness render, so there every modelled shortcut is measured
+ * rather than cancelled. A shortcut taken here on the grounds that "no fixture
+ * exercises it" therefore has to be revisited, not restated, when a fixture
+ * does — which is why the panner below reads its position a-rate.
+ *
  * ── Automation is settled, not glided ─────────────────────────────────────
  *
  * `AudioParam` records writes and reports the value the last write targets.
@@ -98,7 +108,7 @@
  * hold the fade-out's final `0` for the whole render and the clip would be
  * silent. A context constructed with `{ automation: 'scheduled' }` therefore
  * skips the settle and evaluates each param's timeline at render time —
- * per sample for a gain, once per quantum elsewhere.
+ * per sample for a gain and a pan, once per quantum elsewhere.
  *
  * It is opt-in, and must stay opt-in, for the reason the settle exists: the live
  * writers glide, so a globally-scheduled harness would put a ~100 ms exponential
@@ -165,7 +175,8 @@ class HarnessAudioParam {
     }
 
     /**
-     * Drop every event at or after `time`, per Web Audio §1.6.3 — **not** every
+     * Drop every event at or after `time`, per the spec's
+     * `AudioParam.cancelScheduledValues` — **not** every
      * event.
      *
      * The difference is the whole content of the contract's cancel-and-replace
@@ -250,7 +261,8 @@ class HarnessAudioParam {
                     if (event.kind === 'linear') {
                         return from + (event.target - from) * fraction;
                     }
-                    // Web Audio §1.6.3 refuses an exponential ramp through zero;
+                    // The spec's `exponentialRampToValueAtTime` refuses a ramp
+                    // through zero;
                     // a from-value of zero degrades to the linear reading rather
                     // than producing a NaN the render would carry everywhere.
                     if (from === 0 || event.target === 0 || from * event.target < 0) {
@@ -295,9 +307,9 @@ class HarnessAudioParam {
  * The rate param the buffer source reads as a plain `.value` — its
  * `transform` never walks the timeline, so a scheduled write here would be
  * recorded and then silently ignored, the silent-inert-node failure this
- * module exists to refuse. Scheduling therefore throws until the node
- * samples the timeline, which the stretched-clip fixture (jcosta33/sourdaw#2098)
- * will force.
+ * module exists to refuse. Scheduling therefore throws until the node samples
+ * the timeline. A constant rate — what a stretched clip sets — is a plain
+ * `.value` write and is unaffected.
  */
 class HarnessPlaybackRateParam extends HarnessAudioParam {
     private static refuse(): never {
@@ -451,7 +463,17 @@ class HarnessGainNode extends HarnessAudioNode {
     }
 }
 
-/** Web Audio §1.14.1, the stereo-input branch. */
+/**
+ * The spec's `StereoPannerNode` panning algorithm, the stereo-input branch.
+ *
+ * A-rate, as the spec defines `pan`: the position is read once per frame, not
+ * once per quantum. An earlier revision read it per quantum on the reasoning
+ * that no fixture moves a pan lane inside one — which held only because every
+ * fixture time landed on a quantum boundary at 48 kHz. It stops holding the
+ * moment a fixture renders at another rate (44 100 is not a multiple of 128),
+ * and a block-rate read then quantises a step to the next boundary and reads
+ * as a backend divergence that is really the model's.
+ */
 class HarnessStereoPannerNode extends HarnessAudioNode {
     constructor(
         readonly pan: HarnessAudioParam,
@@ -461,17 +483,12 @@ class HarnessStereoPannerNode extends HarnessAudioNode {
     }
 
     protected override transform(): void {
-        // Block-rate, which is what the module header says this model is. A pan
-        // lane that moves inside a quantum is not a property any fixture here
-        // measures, and no production writer aims one at a panner.
-        const position = Math.max(
-            -1,
-            Math.min(1, this.pan.sample((this.renderedQuantum * QUANTUM_FRAMES) / this.sampleRate))
-        );
-        const x = position <= 0 ? position + 1 : position;
-        const gainLeft = Math.cos((x * Math.PI) / 2);
-        const gainRight = Math.sin((x * Math.PI) / 2);
+        const startFrame = this.renderedQuantum * QUANTUM_FRAMES;
         for (let index = 0; index < QUANTUM_FRAMES; index++) {
+            const position = Math.max(-1, Math.min(1, this.pan.sample((startFrame + index) / this.sampleRate)));
+            const x = position <= 0 ? position + 1 : position;
+            const gainLeft = Math.cos((x * Math.PI) / 2);
+            const gainRight = Math.sin((x * Math.PI) / 2);
             const left = this.out.left[index]!;
             const right = this.out.right[index]!;
             if (position <= 0) {
@@ -488,7 +505,8 @@ class HarnessStereoPannerNode extends HarnessAudioNode {
 type BiquadCoefficients = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
 /**
- * Web Audio §1.7.1. `Q` is interpreted in dB for lowpass/highpass, as the spec
+ * The spec's `BiquadFilterNode` filter characteristics. `Q` is interpreted in
+ * dB for lowpass/highpass, as the spec
  * requires, and linearly elsewhere — the two are different numbers and a
  * harness that used one everywhere would be insensitive to `filter-resonance`
  * on exactly the device most likely to carry it.
@@ -599,7 +617,7 @@ class HarnessBiquadFilterNode extends HarnessAudioNode {
     }
 }
 
-/** Web Audio §1.13.1. `oversample` is ignored; see the module header. */
+/** The spec's `WaveShaperNode`. `oversample` is ignored; see the module header. */
 class HarnessWaveShaperNode extends HarnessAudioNode {
     curve: Float32Array | null = null;
     oversample = 'none';
@@ -798,21 +816,46 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
 
     /**
      * A real `AudioBufferSourceNode`: it starts when it was told to, reads from
-     * the offset it was given, and stops after the destination-timeline duration
-     * it was handed.
+     * the offset it was given, and stops once it has consumed the *source*
+     * duration it was handed.
+     *
+     * The unit of that third argument is the whole of the spec's
+     * `AudioBufferSourceNode.start(when, offset, duration)` contract: `start`'s
+     * `duration` is measured in the buffer's own time, so a clip handed `d` at
+     * rate `r` sounds for `d / r` of the destination timeline. Modelling it as a
+     * destination span reads the same at rate 1 — every fixture here would stay
+     * green — and hides every stretched clip's length, which is why it is
+     * modelled in source frames even though nothing but the stretched fixture
+     * can tell the difference.
      *
      * Those three numbers are the whole content of a clip command, so a model
      * that ignored any of them would let a backend schedule a clip at the wrong
      * place and still null. `start()` is refused twice, as Web Audio refuses it,
      * because a second start on one node is a graph the product cannot build.
+     *
+     * ── Rate conversion ───────────────────────────────────────────────────
+     *
+     * The buffer's own rate is the fourth number. Web Audio resamples material
+     * decoded at another rate onto the context's clock, which is the same law
+     * as an added playback rate of `buffer.sampleRate / context.sampleRate`:
+     * the read head advances that many *source* frames per rendered frame, so
+     * the material keeps its pitch and its duration in seconds. `offset` and
+     * `duration` are both measured in the buffer's own time, so both resolve
+     * against the buffer's rate, not the context's — which is why they are
+     * held here in seconds and converted where the buffer is known. At an
+     * equal-rate buffer every quantity collapses to what it was before.
      */
     class HarnessAudioBufferSourceNode extends HarnessAudioNode {
         override numberOfInputs = 0;
         buffer: HarnessAudioBuffer | null = null;
         readonly playbackRate: HarnessAudioParam;
         private startFrame: number | null = null;
-        private offsetFrames = 0;
-        private durationFrames = Infinity;
+        /** Source seconds, per `start`'s second argument. */
+        private offsetSeconds = 0;
+        /** Source seconds, per `start`'s third argument. */
+        private durationSourceSeconds = Infinity;
+        /** Destination frame `stop()` cuts the sound off at, in its own unit. */
+        private stopFrame = Infinity;
 
         constructor(
             playbackRate: HarnessAudioParam,
@@ -827,13 +870,12 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
                 throw new Error('nullTestRenderHarness: AudioBufferSourceNode.start() called twice');
             }
             this.startFrame = Math.round(when * this.sampleRate);
-            this.offsetFrames = offset * this.sampleRate;
-            this.durationFrames = duration === undefined ? Infinity : duration * this.sampleRate;
+            this.offsetSeconds = offset;
+            this.durationSourceSeconds = duration ?? Infinity;
         }
 
         stop(when = 0): void {
-            const startFrame = this.startFrame ?? 0;
-            this.durationFrames = Math.min(this.durationFrames, Math.max(0, when * this.sampleRate - startFrame));
+            this.stopFrame = Math.min(this.stopFrame, Math.max(this.startFrame ?? 0, when * this.sampleRate));
         }
 
         protected override transform(): void {
@@ -841,19 +883,30 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
             if (!buffer || startFrame === null) {
                 return;
             }
-            const rate = this.playbackRate.value;
+            // The buffer's rate against the context's is the resampling half
+            // of the read rate; the node's own `playbackRate` is the other.
+            const rate = this.playbackRate.value * (buffer.sampleRate / this.sampleRate);
+            const offsetFrames = this.offsetSeconds * buffer.sampleRate;
+            const durationSourceFrames = this.durationSourceSeconds * buffer.sampleRate;
             const left = buffer.getChannelData(0);
             const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
             const blockStart = this.renderedQuantum * QUANTUM_FRAMES;
             for (let index = 0; index < QUANTUM_FRAMES; index++) {
-                const elapsed = blockStart + index - startFrame;
-                if (elapsed < 0 || elapsed >= this.durationFrames) {
+                const frame = blockStart + index;
+                const elapsed = frame - startFrame;
+                if (elapsed < 0 || frame >= this.stopFrame) {
+                    continue;
+                }
+                // The read head, in source frames since the offset. It is also
+                // what `duration` bounds, so the two are compared in one unit.
+                const consumed = elapsed * rate;
+                if (consumed >= durationSourceFrames) {
                     continue;
                 }
                 // Linear interpolation, because a non-unity rate lands between
                 // frames. At rate 1 with an integral start the position is
                 // integral and this reads the sample itself.
-                const position = this.offsetFrames + elapsed * rate;
+                const position = offsetFrames + consumed;
                 const lower = Math.floor(position);
                 if (lower < 0 || lower >= buffer.length) {
                     continue;

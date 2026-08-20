@@ -1,0 +1,11 @@
+{
+    // Emit project for `pnpm desktop:dev`: the same shipped scope as
+    // `tsconfig.build.json`, plus source maps for a debuggable dev main
+    // process. The sibling `tsconfig.json` includes the specs for type
+    // coverage but cannot emit — a spec may import renderer code (`#/*`),
+    // which has no home under `electron/out/`.
+    "extends": "./tsconfig.build.json",
+    "compilerOptions": {
+        "sourceMap": true
+    }
+}

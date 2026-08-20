@@ -1,10 +1,10 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type PluginParameter } from './types';
 
 export async function getPluginParameters(instanceId: string): Promise<PluginParameter[]> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return [];
     }
-    return tauriInvoke('get_plugin_parameters', { instanceId }) as Promise<PluginParameter[]>;
+    return desktopInvoke('get_plugin_parameters', { instanceId }) as Promise<PluginParameter[]>;
 }

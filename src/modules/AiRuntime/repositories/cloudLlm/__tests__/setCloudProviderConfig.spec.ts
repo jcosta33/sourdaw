@@ -9,13 +9,13 @@ import { setCloudProviderConfig } from '../setCloudProviderConfig';
 
 const mocks = vi.hoisted(() => ({
     invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
-    isTauri: vi.fn(() => true),
+    isDesktopRuntime: vi.fn(() => true),
     info: vi.fn(),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: mocks.isTauri,
-    tauriInvoke: mocks.invoke,
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: mocks.isDesktopRuntime,
+    desktopInvoke: mocks.invoke,
     createChannel: vi.fn(),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { info: mocks.info } }));
@@ -24,7 +24,7 @@ describe('setCloudProviderConfig', () => {
     beforeEach(async () => {
         await clearCloudProviderConfig();
         vi.clearAllMocks();
-        mocks.isTauri.mockReturnValue(true);
+        mocks.isDesktopRuntime.mockReturnValue(true);
         mocks.invoke.mockImplementation(async (command) =>
             command === 'open_provider_gateway_session'
                 ? 'provider-session-00000000000000000000000000000000'
@@ -127,7 +127,7 @@ describe('setCloudProviderConfig', () => {
     });
 
     it('rejects hosted configuration outside the desktop shell', async () => {
-        mocks.isTauri.mockReturnValue(false);
+        mocks.isDesktopRuntime.mockReturnValue(false);
         await expect(setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test' })).rejects.toThrow(
             'desktop builds only'
         );

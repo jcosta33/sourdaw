@@ -1,5 +1,5 @@
 /**
- * Plugin bridge types — DTOs for Tauri plugin IPC.
+ * Plugin bridge types — DTOs for native plugin IPC.
  */
 
 import { type ScannedPlugin } from '../../models/ScannedPlugin';
@@ -35,8 +35,9 @@ export type PluginInstance = {
      *
      * `null` is a degraded load, not a failure: the plugin is instantiated and
      * its state is restorable, but it is in no rendering graph, so it processes
-     * no audio until it is loaded again against a running engine. Loading before
-     * `start_native_engine` is a legitimate flow, which is why the host returns
+     * no audio until it is loaded again against a running engine. The engine
+     * starts lazily on the first `apply_graph_commands` batch, so loading a
+     * plugin before it runs is a legitimate flow, which is why the host returns
      * success — this field is how a caller tells the two apart.
      */
     engine_plugin_id: number | null;

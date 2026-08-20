@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 /**
  * Handles raw audio bytes crossing from the AudioWorklet bridge to Rust and back.
- * Bypasses JSON entirely to use binary payloads on the Tauri custom protocol.
+ * Bypasses JSON entirely: the trailing byte payload crosses on the desktop
+ * bridge's binary IPC channel.
  */
 type ProcessAudioIPCInput = {
     /**
@@ -59,12 +60,12 @@ function reportProcessAudioFailure(instanceId: string, message: string): void {
 }
 
 export async function processAudioIPC(input: ProcessAudioIPCInput): ProcessAudioIPCOutput {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return null;
     }
 
     try {
-        const response = await tauriInvoke('process_plugin_audio', {
+        const response = await desktopInvoke('process_plugin_audio', {
             instanceId: input.instanceId,
             audioBytes: input.audioBytes,
         });

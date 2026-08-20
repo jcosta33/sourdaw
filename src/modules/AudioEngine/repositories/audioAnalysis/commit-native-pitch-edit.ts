@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 type PitchEditSegment = {
     start_time_ms: number;
@@ -21,11 +21,11 @@ export async function commitNativePitchEdit<TContour>({
     segments,
     contour,
 }: CommitNativePitchEditInput<TContour>): CommitNativePitchEditOutput {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return false;
     }
 
-    await tauriInvoke('commit_pitch_edit', {
+    await desktopInvoke('commit_pitch_edit', {
         request: {
             inputAudioPath,
             outputAudioPath,

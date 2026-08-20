@@ -16,7 +16,7 @@ type TestGatewayChannel = {
     toJSON: () => string;
 };
 
-const tauriHarness = vi.hoisted(() => {
+const desktopHarness = vi.hoisted(() => {
     const channels: TestGatewayChannel[] = [];
     let nextChannelId = 100;
     return {
@@ -36,9 +36,9 @@ const tauriHarness = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/utils/tauriBridge', () => ({
-    createChannel: tauriHarness.createChannel,
-    tauriInvoke: tauriHarness.invoke,
+vi.mock('#/utils/desktopBridge', () => ({
+    createChannel: desktopHarness.createChannel,
+    desktopInvoke: desktopHarness.invoke,
 }));
 
 const BASE_INSTALLATION: ProviderAdapterInstallationInput = {
@@ -70,7 +70,7 @@ function gatewayEvent(
 
 function installGatewayResponses(requestChunks: readonly string[], requestContentType: string): void {
     const encoder = new TextEncoder();
-    tauriHarness.invoke.mockImplementation(async (command, args) => {
+    desktopHarness.invoke.mockImplementation(async (command, args) => {
         if (command !== 'provider_gateway_request') {
             return undefined;
         }
@@ -106,9 +106,9 @@ function installGatewayResponses(requestChunks: readonly string[], requestConten
 
 describe('provider adapter conformance', () => {
     afterEach(() => {
-        tauriHarness.channels.length = 0;
-        tauriHarness.createChannel.mockClear();
-        tauriHarness.invoke.mockReset();
+        desktopHarness.channels.length = 0;
+        desktopHarness.createChannel.mockClear();
+        desktopHarness.invoke.mockReset();
         vi.unstubAllGlobals();
     });
     it('compiles a stable installed adapter into the privileged provider contract', () => {
@@ -138,7 +138,7 @@ describe('provider adapter conformance', () => {
                 : undefined
         );
         const dependencies: ProviderGatewayDependencies = {
-            createChannel: tauriHarness.createChannel,
+            createChannel: desktopHarness.createChannel,
             invoke,
         };
 
@@ -156,7 +156,7 @@ describe('provider adapter conformance', () => {
     it('rejects a malformed native credential session ID', async () => {
         const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const dependencies: ProviderGatewayDependencies = {
-            createChannel: tauriHarness.createChannel,
+            createChannel: desktopHarness.createChannel,
             invoke: async () => 'secret-or-untrusted-value',
         };
 
@@ -475,7 +475,7 @@ describe('provider adapter conformance', () => {
         ).resolves.toEqual([{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(
-            tauriHarness.invoke.mock.calls
+            desktopHarness.invoke.mock.calls
                 .filter(([command]) => command === 'provider_gateway_request')
                 .map(([, args]) => args?.operation)
         ).toEqual(['probe', 'request']);
@@ -503,7 +503,7 @@ describe('provider adapter conformance', () => {
         ).resolves.toBe('stop');
         expect(onToken).toHaveBeenCalledWith('Privileged');
         expect(fetchMock).not.toHaveBeenCalled();
-        const requests = tauriHarness.invoke.mock.calls.filter(([command]) => command === 'provider_gateway_request');
+        const requests = desktopHarness.invoke.mock.calls.filter(([command]) => command === 'provider_gateway_request');
         expect(requests.map(([, args]) => args?.operation)).toEqual(['probe', 'request']);
         expect(JSON.parse(String(requests[1]?.[1]?.body))).toMatchObject({ model: 'studio-model-v1', stream: true });
     });

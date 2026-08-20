@@ -239,10 +239,10 @@ export const TimelineSurface = (): ReactElement => {
         return unsubscribe;
     }, []);
 
-    // NOTE: pinch/gesture handling (gesturestart/change/end) is owned solely by
-    // useTimelineGestures (invoked via useTimelineInteractions). A duplicate
-    // listener block previously lived here too, so each Safari `gesturechange`
-    // fired zoomTimeline(delta * 2) twice → 2x zoom (NEW-bug). Do not re-add it.
+    // NOTE: wheel zoom and scroll are owned solely by useTimelineGestures
+    // (invoked via useTimelineInteractions). A duplicate listener block
+    // previously lived here too, so every zoom event was applied twice. Do not
+    // re-add it.
 
     useEffect(() => {
         const canvas = canvasRef.current;

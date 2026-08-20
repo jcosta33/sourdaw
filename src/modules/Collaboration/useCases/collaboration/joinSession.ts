@@ -1,5 +1,5 @@
 import { createCollaborationError } from '../../errors/CollaborationError';
-import { type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
+import { type SignalingMessage, PEER_COLORS, sanitizePeerName } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 
 import { joinAttemptAuthority } from './joinAttemptAuthority';
@@ -67,7 +67,9 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             peers: [
                 {
                     id: invite.peerId,
-                    name: invite.name,
+                    // Invite payloads are sender-controlled — bound the host
+                    // name with the same limit every identity ingress uses.
+                    name: sanitizePeerName(invite.name),
                     color: PEER_COLORS[0],
                     isHost: true,
                     isConnected: false,

@@ -1,6 +1,6 @@
 # WASM DSP Pipeline
 
-Sourdaw's built-in device DSP is written in Rust and compiled twice: natively (linked into the Tauri backend) and to WebAssembly (for AudioWorklet processors in the browser engine). This document describes the WASM half of that pipeline — build, codegen, loading — and its traps.
+Sourdaw's built-in device DSP is written in Rust and compiled twice: natively (linked into the `sourdaw-native` addon) and to WebAssembly (for AudioWorklet processors in the browser engine). This document describes the WASM half of that pipeline — build, codegen, loading — and its traps.
 
 It complements:
 
@@ -51,7 +51,7 @@ Each DSP crate exports `#[wasm_bindgen]` instance structs (`FermenterInstance`, 
 
 ## 4. Traps
 
-- **Worklet isolation.** Worklet code may not import app/helpers/Tauri (`worklets-no-*` depcruise rules — currently forward-looking: they match `src/modules/<M>/worklets/**` only; the 3 raw JS processors in `public/audio/worklets/` sit outside those paths).
+- **Worklet isolation.** Worklet code may not import app/helpers/desktop IPC (`worklets-no-*` depcruise rules — currently forward-looking: they match `src/modules/<M>/worklets/**` only; the 3 raw JS processors in `public/audio/worklets/` sit outside those paths).
 - **`worker.format: 'iife'`** in `vite.config.ts` exists so worklet blob URLs can load bundles. Changing it breaks worklet loading in non-obvious ways.
 - **Two Faust integration points** — AudioEngine and PluginHost both use `@grame/faustwasm` (`public/faust/`). Check both before touching Faust wiring.
 - **Allocation.** The Rust side of this pipeline is held to an alloc-free audio path, test-proven via `assert_no_alloc` in daw-dsp. The WASM target is not an exemption.

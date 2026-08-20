@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { exportDawProject } from '../../useCases/exportDawProject';
 import { saveDawProjectNativeFile } from '../../useCases/saveDawProjectNativeFile';
@@ -38,8 +38,8 @@ vi.mock('../../useCases/exportDawProject', () => ({
     exportDawProject: vi.fn(),
 }));
 
-vi.mock('#/utils/tauriRuntime', () => ({
-    isTauri: vi.fn(),
+vi.mock('#/utils/desktopRuntime', () => ({
+    isDesktopRuntime: vi.fn(),
 }));
 
 vi.mock('../../useCases/saveDawProjectNativeFile', () => ({
@@ -53,7 +53,7 @@ describe('handleExportDawProject', () => {
         vi.mocked(exportDawProject).mockReset();
         vi.mocked(saveDawProjectNativeFile).mockReset();
         vi.mocked(notifyUser).mockReset();
-        vi.mocked(isTauri).mockReset();
+        vi.mocked(isDesktopRuntime).mockReset();
         vi.mocked(logger.error).mockReset();
         vi.mocked(logger.warn).mockReset();
     });
@@ -63,7 +63,7 @@ describe('handleExportDawProject', () => {
     });
 
     it('should save DAWproject bytes through native repositories and notify success', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
         vi.mocked(saveDawProjectNativeFile).mockResolvedValue(undefined);
 
@@ -74,7 +74,7 @@ describe('handleExportDawProject', () => {
     });
 
     it('should return without writing when the native save dialog is cancelled', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
         vi.mocked(saveDawProjectNativeFile).mockResolvedValue(undefined);
 
@@ -86,7 +86,7 @@ describe('handleExportDawProject', () => {
     });
 
     it('should keep browser showSaveFilePicker export behavior unchanged', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
         vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
 
         const writable = {
@@ -112,7 +112,7 @@ describe('handleExportDawProject', () => {
     });
 
     it('should log and notify when export fails', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(exportDawProject).mockRejectedValue(new Error('zip failed'));
 
         await handleExportDawProject.execute({ type: 'exportDawProject' });

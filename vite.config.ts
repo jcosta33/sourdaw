@@ -74,7 +74,6 @@ export default defineConfig({
             exclude: [
                 '**/node_modules/**',
                 'dist/**',
-                'src-tauri/**',
                 '**/*.spec.ts',
                 '**/*.spec.tsx',
                 'src/vite-env.d.ts',

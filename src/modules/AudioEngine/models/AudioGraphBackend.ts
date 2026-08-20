@@ -296,16 +296,11 @@ export type AudioGraphClipPlayback = Readonly<{
     source: AudioGraphClipSource;
     /** Absolute time on the backend's clock at which the first frame is heard. */
     startTime: number;
-    /** Where playback enters the source material. */
+    /** Where playback enters the source material, in the source's own time. */
     sourceOffsetSeconds: number;
     /**
      * How long the clip sounds, on the **destination** timeline: a stretched
      * clip that plays for two seconds plays for two seconds whatever its rate.
-     *
-     * Known deviation — the two web runtimes disagree about this today, and
-     * this contract states the law they should converge on rather than the
-     * disagreement. See jcosta33/sourdaw#2098, which must be resolved before a
-     * second backend implements a stretched clip against this field.
      */
     durationSeconds: number;
     /**
@@ -514,7 +509,16 @@ export type AudioGraphCommandBatch = Readonly<{
     commands: readonly AudioGraphCommand[];
 }>;
 
-/** What a strip-creating command actually built. */
+/**
+ * What one strip a batch touched actually holds after the whole batch.
+ *
+ * One report law for every backend: a batch reports every strip it created
+ * **or whose device chain it edited** (`insert-device`, `remove-device`),
+ * each report reading the realized post-batch chain. A backend that refuses
+ * chain edits outright (the web backend refuses `insert-device` and
+ * `remove-device`) satisfies the law with creation reports alone — the only
+ * chain-touching commands it can apply are creates.
+ */
 export type AudioGraphStripReport = Readonly<{
     kind: 'track' | 'bus';
     id: string;
@@ -535,8 +539,9 @@ export type AudioGraphStripReport = Readonly<{
  * The three states mean exactly what they mean there — `rejected` is refused
  * before the graph changed, `applied` is whole, `needs-reconcile` is a partial
  * application the caller must resolve against project truth — and the extra
- * field is the reports, because a batch that builds strips has to say what it
- * built.
+ * field is the reports, because a batch that touched a strip has to say what
+ * that strip now holds ({@link AudioGraphStripReport}: created or chain-edited
+ * alike).
  */
 export type AudioGraphApplyResult =
     | Readonly<{

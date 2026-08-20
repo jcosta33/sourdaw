@@ -369,7 +369,8 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
     });
 
     it('applies the clamped stretch ratio to playbackRate and limits play length to the sped-up buffer', async () => {
-        // 0.4s of source audio at 2x consumes in 0.2s of timeline.
+        // 0.4s of source audio at 2x consumes in 0.2s of timeline, so the clip
+        // sounds for 0.2s and reads all 0.4s of the material.
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(0.4));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
@@ -380,7 +381,75 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
 
         const source = sources[0]!;
         expect(source.playbackRate.value).toBe(2);
-        expect(source.start).toHaveBeenCalledWith(0, 0, 0.2);
+        expect(source.start).toHaveBeenCalledWith(0, 0, 0.4);
+    });
+
+    /// Regression (#2098): `start`'s duration argument is measured in the
+    /// source buffer's own time — the node stops after consuming that many
+    /// source seconds, which takes `duration / playbackRate` of the timeline.
+    /// Passing the destination span unscaled made a half-speed clip bounce for
+    /// twice its region length and a sped-up clip stop short. The live
+    /// scheduler already scales; this is the export agreeing with it.
+    it('asks for the source seconds a half-speed clip consumes, not its destination span', async () => {
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'timestretch', stretchRatio: 0.5 })],
+        });
+
+        await run({ track, ctx });
+
+        const source = sources[0]!;
+        expect(source.playbackRate.value).toBe(0.5);
+        // 2 beats at 120bpm is 1.0s of timeline; at half speed that is 0.5s of
+        // material. Handing 1.0 here would sound the clip for 2.0s.
+        expect(source.start).toHaveBeenCalledWith(0, 0, 0.5);
+    });
+
+    it('asks for the source seconds a double-speed clip consumes when the buffer is not the limit', async () => {
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'timestretch', stretchRatio: 2 })],
+        });
+
+        await run({ track, ctx });
+
+        // 1.0s of timeline at 2x is 2.0s of material; handing 1.0 here would
+        // cut the clip off half way through its region.
+        expect(sources[0]!.start).toHaveBeenCalledWith(0, 0, 2);
+    });
+
+    it('never reads past the end of the material when the region outlasts the stretched buffer', async () => {
+        // 0.6s of material at 1.5x sounds for 0.4s, and the clip's region is
+        // 1.0s — the clamp, restated in source seconds, is the whole buffer.
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(0.6));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'timestretch', stretchRatio: 1.5 })],
+        });
+
+        await run({ track, ctx });
+
+        // Exactly the buffer, from its head: the clamp bounds the destination
+        // span, and scaling it back by the rate lands on the material's end
+        // rather than past it.
+        expect(sources[0]!.start).toHaveBeenCalledWith(0, 0, expect.closeTo(0.6, 12));
+    });
+
+    it('reads a stretched clip trimmed by the region start from the offset it already advanced', async () => {
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        // Region starts at beat 2 (1.0s); the clip spans beats 0-4 (2.0s) at 2x.
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 4, stretchMode: 'timestretch', stretchRatio: 2 })],
+        });
+
+        await run({ track, ctx, regionStartBeat: 2 });
+
+        // 1.0s of timeline was trimmed, which is 2.0s of material; the
+        // remaining 1.0s of timeline is another 2.0s of material.
+        expect(sources[0]!.start).toHaveBeenCalledWith(0, 2, 2);
     });
 
     it('clamps a corrupt zero stretch ratio instead of dividing by zero', async () => {

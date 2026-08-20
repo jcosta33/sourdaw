@@ -1,6 +1,6 @@
 export { buildFolderTree } from './buildFolderTree';
 export { requestPermission } from './requestPermission';
-export { readTauriLibrarySampleFile } from './readTauriLibrarySampleFile';
+export { readNativeLibrarySampleFile } from './readNativeLibrarySampleFile';
 export { resolveDroppedSampleFile } from './resolveDroppedSampleFile';
 export { restoreLibrary } from './restoreLibrary';
 export { searchSamples } from './searchSamples';

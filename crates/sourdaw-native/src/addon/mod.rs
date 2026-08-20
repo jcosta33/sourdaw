@@ -1,9 +1,8 @@
 //! The Node addon surface over the command bodies.
 //!
 //! One class, [`SourdawNative`], owns the long-lived singletons for the life of
-//! the process, exactly as the Tauri shell's `.manage()` registrations did. Its
-//! methods carry the same names, arguments and results as the commands they
-//! replace.
+//! the process. Its methods carry the same names, arguments and results as the
+//! command bodies they expose.
 //!
 //! Two shapes are deliberate. Structured arguments and results cross as JSON
 //! values rather than as generated JS classes: the wire shapes are already
@@ -99,9 +98,10 @@ impl<Event: Serialize> EventStream<Event> for TsfnEventStream {
 
 /// Run the bounded CLAP descriptor-extraction worker.
 ///
-/// The process contract is the argv scan the Tauri binary performed in
-/// `main.rs`: same policy, same bounded child process, same exit code. Returns
-/// `None` when this process was not started as a scan worker.
+/// The process contract is an argv scan of the application binary: same
+/// policy, same bounded child process, same exit code regardless of which
+/// shell started the process. Returns `None` when this process was not
+/// started as a scan worker.
 #[napi]
 pub fn run_plugin_scan_worker() -> Option<i32> {
     crate::run_plugin_scan_worker_from_process_args()
@@ -180,9 +180,8 @@ impl SourdawNative {
     /// close, or the owner-destroy cascade).
     ///
     /// Async so the reset runs on the executor rather than the JS thread —
-    /// the same off-the-event-thread contract the Tauri shell honours by
-    /// spawning, because the reset takes the plugin mutexes and the CLAP
-    /// control lock. Idempotent; see
+    /// the reset must never run on the shell's event thread, because it takes
+    /// the plugin mutexes and the CLAP control lock. Idempotent; see
     /// [`commands::plugin_gui::reset_plugin_gui_state_after_os_close`].
     #[napi]
     pub async fn notify_plugin_window_closed(&self, instance_id: String, label: String) {
@@ -457,9 +456,91 @@ impl SourdawNative {
         )
     }
 
+    // The native engine has no explicit start command: `apply_graph_commands`
+    // lazily starts it on the first batch (#1984), and a machine where it
+    // cannot start rejects that batch observably. The old `start_native_engine`
+    // method was deleted with that decision.
+
+    /// Apply one `AudioGraphCommandBatch` (the AudioGraphBackend.ts wire
+    /// shape) to the live native engine. Returns the apply-result mirror of
+    /// `AudioGraphApplyResult`; a refusal is a `rejected` result, not a
+    /// transport error.
     #[napi]
-    pub async fn start_native_engine(&self) -> Result<String> {
-        reason(commands::plugins::start_native_engine(&self.singletons.app_state).await)
+    pub async fn apply_graph_commands(&self, batch: Value) -> Result<Value> {
+        reason(commands::graph::apply_graph_commands(batch, &self.singletons.app_state).await)
+    }
+
+    /// Register decoded timeline material for `schedule-clip` to reference by
+    /// source id. `pcm` is interleaved f32 little-endian at `sample_rate`,
+    /// `channels` 1 or 2. Returns `{ "frames": n }`.
+    #[napi]
+    pub async fn register_timeline_sample(
+        &self,
+        sample_id: String,
+        sample_rate: f64,
+        channels: u32,
+        pcm: Buffer,
+    ) -> Result<Value> {
+        reason(
+            commands::graph::register_timeline_sample(
+                sample_id,
+                sample_rate,
+                channels,
+                pcm.to_vec(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    /// Render a command batch deterministically with no audio device: the
+    /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
+    /// PCM; a refused batch is an error carrying the batch's refusal reasons.
+    #[napi]
+    pub async fn render_graph_offline(
+        &self,
+        batch: Value,
+        frames: u32,
+        sample_rate: f64,
+    ) -> Result<Buffer> {
+        Ok(Buffer::from(reason(
+            commands::graph::render_graph_offline(
+                batch,
+                frames,
+                sample_rate,
+                &self.singletons.app_state,
+            )
+            .await,
+        )?))
+    }
+
+    /// Map one graph batch against the graph a prior wire-command sequence
+    /// built, with nothing rendered: the report and refusal wire of the
+    /// offline seam. Returns the apply-result mirror with the incoming
+    /// batch's touched-strip reports and no `runtimeRevision`; a refusal is
+    /// a `rejected` result, a prior that no longer maps is a transport
+    /// error. `session` (`{ sessionId, revision }`, nullable) resumes a kept
+    /// mapping session so `prior` can stay empty across one render's applies;
+    /// a session this process no longer holds is a transport error the caller
+    /// answers by resending its full prior.
+    #[napi]
+    pub async fn map_graph_batch(
+        &self,
+        prior: Value,
+        batch: Value,
+        sample_rate: f64,
+        session: Option<Value>,
+    ) -> Result<Value> {
+        reason(
+            commands::graph::map_graph_batch(
+                prior,
+                batch,
+                sample_rate,
+                session,
+                &self.singletons.app_state,
+            )
+            .await,
+        )
     }
 
     #[napi]
@@ -489,31 +570,6 @@ impl SourdawNative {
         reason(
             commands::plugins::set_plugin_bypass(instance_id, bypassed, &self.singletons.app_state)
                 .await,
-        )
-    }
-
-    #[napi]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn update_plugin_transport(
-        &self,
-        tempo: f64,
-        time_sig_num: u16,
-        time_sig_denom: u16,
-        is_playing: bool,
-        song_pos_beats: f64,
-        song_pos_seconds: f64,
-    ) -> Result<()> {
-        reason(
-            commands::plugins::update_plugin_transport(
-                tempo,
-                time_sig_num,
-                time_sig_denom,
-                is_playing,
-                song_pos_beats,
-                song_pos_seconds,
-                &self.singletons.app_state,
-            )
-            .await,
         )
     }
 

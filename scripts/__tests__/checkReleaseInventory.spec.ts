@@ -58,9 +58,9 @@ describe('release inventory', () => {
         expect(
             validateReleaseInventory(inventory(), {
                 ...snapshot(),
-                releaseFiles: [...snapshot().releaseFiles, 'src-tauri/sidecar/new.bin'],
+                releaseFiles: [...snapshot().releaseFiles, 'electron/sidecar/new.bin'],
             })
-        ).toContain('unclassified release files:\n- src-tauri/sidecar/new.bin');
+        ).toContain('unclassified release files:\n- electron/sidecar/new.bin');
     });
 
     it('rejects a new endpoint in an already-owned file', () => {

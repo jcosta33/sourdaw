@@ -22,12 +22,12 @@ import {
 type FakeWindow = EditorWindow & {
     readonly emitClosed: () => void;
     readonly options: EditorWindowOptions;
-    readonly setContentSize: ReturnType<typeof vi.fn>;
-    readonly show: ReturnType<typeof vi.fn>;
-    readonly showInactive: ReturnType<typeof vi.fn>;
-    readonly focus: ReturnType<typeof vi.fn>;
-    readonly hide: ReturnType<typeof vi.fn>;
-    readonly destroy: ReturnType<typeof vi.fn>;
+    readonly setContentSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
+    readonly show: ReturnType<typeof vi.fn<() => void>>;
+    readonly showInactive: ReturnType<typeof vi.fn<() => void>>;
+    readonly focus: ReturnType<typeof vi.fn<() => void>>;
+    readonly hide: ReturnType<typeof vi.fn<() => void>>;
+    readonly destroy: ReturnType<typeof vi.fn<() => void>>;
 };
 
 const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
@@ -43,12 +43,12 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
         options,
         emitClosed,
         getNativeWindowHandle: () => Buffer.alloc(8, 1),
-        setContentSize: vi.fn(),
-        show: vi.fn(),
-        showInactive: vi.fn(),
-        focus: vi.fn(),
-        hide: vi.fn(),
-        destroy: vi.fn(() => {
+        setContentSize: vi.fn<(width: number, height: number) => void>(),
+        show: vi.fn<() => void>(),
+        showInactive: vi.fn<() => void>(),
+        focus: vi.fn<() => void>(),
+        hide: vi.fn<() => void>(),
+        destroy: vi.fn<() => void>(() => {
             emitClosed();
         }),
         isDestroyed: () => destroyed,
@@ -241,7 +241,7 @@ describe('createPluginWindowHost', () => {
         expect(window.focus).toHaveBeenCalledTimes(1);
         expect(window.hide).toHaveBeenCalledTimes(1);
         expect(window.show).toHaveBeenCalledTimes(1);
-        // The label-addressed show is focus-free, matching Tauri's
+        // The label-addressed show is focus-free, matching the seam's
         // `show_window`; only `showAndFocus` may steal focus.
         expect(window.showInactive).toHaveBeenCalledTimes(1);
     });

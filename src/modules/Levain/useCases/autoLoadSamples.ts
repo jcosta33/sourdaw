@@ -27,7 +27,7 @@ export async function autoLoadLevainSamples(
     instrumentId: string,
     signal?: AbortSignal
 ): Promise<void> {
-    // The repository owns the Tauri IPC: on desktop it resolves the bundled
+    // The repository owns the desktop IPC: on desktop it resolves the bundled
     // resource directory (massive sample banks straight from OS resources); on
     // web it returns the public `/samples/levain/<id>` path.
     const manifestBase = await resolveSampleBasePath(instrumentId);

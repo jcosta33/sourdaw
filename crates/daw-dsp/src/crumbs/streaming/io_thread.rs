@@ -6,8 +6,8 @@
 ///
 /// This module defines the data structures and scheduling logic.
 /// The actual thread spawning and file I/O happens in the integration
-/// layer (src-tauri) since it requires OS threading and file system access
-/// that is not available in WASM.
+/// layer (sourdaw-native) since it requires OS threading and file system
+/// access that is not available in WASM.
 use super::ring_buffer::StreamRequest;
 
 // ── I/O Priority Queue ────────────────────────────────────────────────

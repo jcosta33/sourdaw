@@ -14,7 +14,7 @@ type LibraryBrowserMocks = {
         stop: Mock<() => void>;
     };
     projectSpatialMap: ReturnType<typeof vi.fn>;
-    readTauriLibrarySampleFile: ReturnType<typeof vi.fn>;
+    readNativeLibrarySampleFile: ReturnType<typeof vi.fn>;
 };
 
 const mocks = vi.hoisted((): LibraryBrowserMocks => ({
@@ -27,7 +27,7 @@ const mocks = vi.hoisted((): LibraryBrowserMocks => ({
         stop: vi.fn<() => void>(),
     },
     projectSpatialMap: vi.fn(),
-    readTauriLibrarySampleFile: vi.fn(),
+    readNativeLibrarySampleFile: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -42,8 +42,8 @@ vi.mock('../../../useCases/isNativeSampleLibraryRuntimeAvailable', () => ({
     isNativeSampleLibraryRuntimeAvailable: mocks.isNativeSampleLibraryRuntimeAvailable,
 }));
 
-vi.mock('../../../useCases/readTauriLibrarySampleFile', () => ({
-    readTauriLibrarySampleFile: mocks.readTauriLibrarySampleFile,
+vi.mock('../../../useCases/readNativeLibrarySampleFile', () => ({
+    readNativeLibrarySampleFile: mocks.readNativeLibrarySampleFile,
 }));
 
 vi.mock('../../../useCases/projectSpatialMap', () => ({
@@ -56,7 +56,7 @@ vi.mock('../SpatialMapRenderer', () => ({
 }));
 
 type CreateLibraryStateInput = {
-    provider: 'browser' | 'tauri';
+    provider: 'browser' | 'desktop';
     ext: string;
     rootRef: string;
     relativePath: string;
@@ -139,12 +139,12 @@ describe('LibraryBrowser', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('should preview a Tauri-root sample through the SampleLibrary use case', async () => {
+    it('should preview a native-root sample through the SampleLibrary use case', async () => {
         const file = new File(['audio'], 'Kick.wav', { type: 'audio/wav' });
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
-        mocks.readTauriLibrarySampleFile.mockResolvedValue(file);
+        mocks.readNativeLibrarySampleFile.mockResolvedValue(file);
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',
@@ -156,7 +156,7 @@ describe('LibraryBrowser', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
         await waitFor(() => {
-            expect(mocks.readTauriLibrarySampleFile).toHaveBeenCalledWith({
+            expect(mocks.readNativeLibrarySampleFile).toHaveBeenCalledWith({
                 rootPath: '/Users/jose/Samples',
                 relativePath: 'Drums/Kick.wav',
                 fallbackName: 'Kick',
@@ -188,7 +188,7 @@ describe('LibraryBrowser', () => {
 
     it('should render a subfolder label by its Windows-native basename', () => {
         const state = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: 'C:\\Users\\jose\\Samples',
             relativePath: 'Drums\\Kits\\Kick.wav',
@@ -207,7 +207,7 @@ describe('LibraryBrowser', () => {
 
     it('should sort multiple subfolders by basename across slash, backslash, and mixed separators', () => {
         const state = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: 'C:\\Users\\jose\\Samples',
             relativePath: 'Drums\\Snares\\Snare.wav',
@@ -246,9 +246,9 @@ describe('LibraryBrowser', () => {
     it('should not show the browser risky-format warning in the native runtime', async () => {
         const file = new File(['audio'], 'Texture.flac', { type: 'audio/flac' });
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
-        mocks.readTauriLibrarySampleFile.mockResolvedValue(file);
+        mocks.readNativeLibrarySampleFile.mockResolvedValue(file);
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'flac',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Loops/Texture.flac',
@@ -270,7 +270,7 @@ describe('LibraryBrowser', () => {
 
     it('does not offer fabricated musical analysis for indexed samples', () => {
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',
@@ -284,7 +284,7 @@ describe('LibraryBrowser', () => {
 
     it('should render the Re-project UMAP control disabled with the unavailable label and never dispatch', () => {
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',

@@ -1,5 +1,5 @@
-import { isTauri as isTauriRuntimeAvailable } from '#/utils/tauriRuntime';
+import { isDesktopRuntime as isDesktopRuntimeAvailable } from '#/utils/desktopRuntime';
 
 export function isNativeSampleLibraryRuntimeAvailable(): boolean {
-    return isTauriRuntimeAvailable();
+    return isDesktopRuntimeAvailable();
 }

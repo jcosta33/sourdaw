@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import { getEngineRtDiagnostics } from '../getEngineRtDiagnostics';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(),
-    tauriInvoke: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(),
+    desktopInvoke: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -16,7 +16,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 /**
  * The exact payload `engine_rt_diagnostics` emits. Pinned against the Rust
- * wire-shape test in `src-tauri/src/commands/engine_diagnostics.rs`: both sides
+ * wire-shape test in `crates/sourdaw-native/src/commands/engine_diagnostics.rs`: both sides
  * are hand-maintained, so a drift here is a drift in the contract.
  */
 const nativePayload = {
@@ -40,29 +40,29 @@ describe('getEngineRtDiagnostics', () => {
     });
 
     it('maps every counter and event of the native payload', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue(nativePayload);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue(nativePayload);
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(tauriInvoke).toHaveBeenCalledWith('engine_rt_diagnostics');
+        expect(desktopInvoke).toHaveBeenCalledWith('engine_rt_diagnostics');
         expect(diagnostics).toEqual(nativePayload);
     });
 
     it('reports the not-running shape outside the desktop app', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(tauriInvoke).not.toHaveBeenCalled();
+        expect(desktopInvoke).not.toHaveBeenCalled();
         expect(diagnostics.running).toBe(false);
         expect(diagnostics.events).toEqual([]);
         expect(diagnostics.bridgeInputBlocksRefused).toBe(0);
     });
 
     it('reads a stopped engine as not running rather than as an absent reading', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue({
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
             ...nativePayload,
             running: false,
             events: [],
@@ -77,8 +77,8 @@ describe('getEngineRtDiagnostics', () => {
     it('keeps a stream error whose kind it does not recognize', async () => {
         // Dropping it would recreate the exact defect this surface exists to
         // fix: a stream that errored and left no trace.
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue({
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
             ...nativePayload,
             events: [{ type: 'streamError', kind: 'somethingCpalAddedLater' }],
         });
@@ -92,8 +92,8 @@ describe('getEngineRtDiagnostics', () => {
         // The union is hand-mirrored from Rust. An unmapped `type` cannot be
         // turned into a typed event, but a native side that grew a variant this
         // build never learned must not vanish without a trace.
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue({
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
             ...nativePayload,
             events: [{ type: 'xrunBurst', count: 4 }],
         });
@@ -107,8 +107,8 @@ describe('getEngineRtDiagnostics', () => {
     });
 
     it('falls back to the not-running shape when the native payload is not an object', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue(null);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue(null);
 
         const diagnostics = await getEngineRtDiagnostics();
 
@@ -117,8 +117,8 @@ describe('getEngineRtDiagnostics', () => {
     });
 
     it('reads a missing or non-numeric counter as zero rather than as NaN', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue({
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
             running: true,
             unmappedSetParamCalls: 'many',
             events: 'not-a-list',

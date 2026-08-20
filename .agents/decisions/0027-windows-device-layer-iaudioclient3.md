@@ -69,6 +69,11 @@ is the integration point; where its surface does not already expose period negot
 initialization, the implementing wave extends that seam rather than introducing a second device
 abstraction alongside it.
 
+> **Amended 2026-08-20 during wave D4.** cpal's WASAPI host exposes neither IAudioClient3 period
+> negotiation nor exclusive initialization, so the shipped integration point is the engine-side
+> device seam (`crates/daw-engine/src/device/`), behind which cpal still carries macOS and Linux
+> unchanged.
+
 Performance benchmarks are explicitly waived for this decision. No wave may assert a latency
 improvement as an acceptance condition of this ADR, and no user-facing copy may quote a latency
 figure that has not been measured on the shipped build.

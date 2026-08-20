@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { exportDawProject } from '../useCases/exportDawProject';
 import { saveDawProjectNativeFile } from '../useCases/saveDawProjectNativeFile';
@@ -24,7 +24,7 @@ function getShowSaveFilePicker(): ShowSaveFilePicker | null {
 }
 
 async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void> {
-    if (isTauri()) {
+    if (isDesktopRuntime()) {
         await saveDawProjectNativeFile({ bytes, suggestedName });
         return;
     }

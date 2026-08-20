@@ -8,9 +8,7 @@ const MAX_SAFE_PEAK: f32 = 2.0;
 const ONE_DB_RATIO: f32 = 1.122_018_5;
 
 fn is_within_one_db(actual: f32, expected: f32) -> bool {
-    actual.is_finite()
-        && actual >= expected / ONE_DB_RATIO
-        && actual <= expected * ONE_DB_RATIO
+    actual.is_finite() && actual >= expected / ONE_DB_RATIO && actual <= expected * ONE_DB_RATIO
 }
 
 fn shipped_level_is_acceptable(

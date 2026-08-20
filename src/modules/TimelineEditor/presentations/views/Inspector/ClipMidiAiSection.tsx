@@ -82,7 +82,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     });
 
     const capability = capState?.phase === 'done' ? capState.report.capability : null;
-    const isUnsupported = capability === 'unsupported-browser' || capability === 'unsupported-platform';
+    const isUnsupported = capability === 'unsupported-browser';
 
     const kokoroStatus = registry?.kokoroModel?.status ?? 'not-downloaded';
     const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;

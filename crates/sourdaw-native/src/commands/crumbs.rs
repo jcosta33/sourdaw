@@ -327,7 +327,7 @@ pub async fn load_sample(
     let sample_id = instance.next_sample_id;
     instance.next_sample_id += 1;
 
-    // Store in Tauri state for analysis commands.
+    // Store in app state for analysis commands.
     instance.samples.insert(sample_id, shared_data.clone());
 
     // Send to engine via command queue.

@@ -4,8 +4,8 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 
 ## Shell independence
 
-- Nothing here may name a shell. No `tauri::*`, no `electron`, no IPC transport type. A body that needs to reach the host does it through a trait in `events.rs` or `host/` and the shell supplies the implementation.
-- Bodies take plain owned arguments and return plain owned results. Byte payloads are `&[u8]` / `Vec<u8>`; how they cross a wire is the shell's decision, and the shared validation for that decision lives in `commands/binary_ipc.rs`.
+- Nothing here may name a shell: no Tauri or Electron types, no IPC transport type. A body that needs to reach the host does it through a trait in `events.rs` or `host/` and the shell supplies the implementation.
+- Bodies take plain owned arguments and return plain owned results. Byte payloads are `&[u8]` / `Vec<u8>`; how they cross a wire is the shell's decision.
 - Host seams take **owned** payloads: an implementation may hand the value to another thread and outlive the caller's frame.
 - A shell adds a command by adding a body here and a wrapper there. The wrapper unwraps transport and calls the body; it never holds behaviour, and no command may exist in one shell only.
 - A shell's quit path calls `shutdown::shutdown` and never reassembles the cascade. Its three steps and their order are a contract: a shell that inlines them can silently drop one, and the sweep must follow the editor close because closing an editor is what retires a runtime.
@@ -20,7 +20,7 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 - Never final-drop a hosted plugin on the audio thread — removed CLAP runtimes go to `retired_engine_plugins` (`state.rs`).
 - If non-RT control owns a plugin wrapper's mutex, the RT path bypasses it rather than waiting (`host/native_bridge.rs`).
 - WebAudio↔Rust audio crosses `PluginAudioBridge` (rtrb SPSC rings sized from `MAX_CALLBACK_FRAMES`, 36 blocks × up to 512 frames stereo), relayed from the worklet via main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`). Capacity is headroom, not latency: the callback holds the round trip within twice the device period by processing a block and then withholding it from the return ring, so latency settles at that depth instead of ratcheting up to the ring. Never shed a block before the plugin sees it — the input side is the native sampler's only record feed.
-- The native chain renders silence except bridged plugins (`audio_thread.rs`); timeline audio is a Web Audio concern.
+- The native chain renders bridged plugins plus the timeline graph built through the graph-command surface (`commands/graph.rs` — tracks, clips, buses, sends, device chains), started lazily by the first `apply_graph_commands`. Web Audio remains the live product path until the D3.c cutover; nothing else may make the native chain sound.
 
 ## Constraints
 

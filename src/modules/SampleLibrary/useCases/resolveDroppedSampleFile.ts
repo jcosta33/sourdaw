@@ -4,7 +4,7 @@ import { readBrowserLibrarySampleFile } from '../repositories/readBrowserLibrary
 import { libraryStore } from '../stores/libraryStore';
 
 import { isNativeSampleLibraryRuntimeAvailable } from './isNativeSampleLibraryRuntimeAvailable';
-import { readTauriLibrarySampleFile } from './readTauriLibrarySampleFile';
+import { readNativeLibrarySampleFile } from './readNativeLibrarySampleFile';
 
 type ResolveDroppedSampleFileInput = {
     libraryRootId: string;
@@ -15,7 +15,7 @@ type ResolveDroppedSampleFileInput = {
 type ResolveDroppedSampleFileOutput = Promise<
     | {
           status: 'resolved';
-          provider: 'browser' | 'tauri';
+          provider: 'browser' | 'desktop';
           file: File;
       }
     | {
@@ -26,13 +26,13 @@ type ResolveDroppedSampleFileOutput = Promise<
 export const resolveDroppedSampleFile = inject({
     libraryStore,
     isNativeSampleLibraryRuntimeAvailable,
-    readTauriLibrarySampleFile,
+    readNativeLibrarySampleFile,
     readBrowserLibrarySampleFile,
 })(
     ({
         libraryStore,
         isNativeSampleLibraryRuntimeAvailable,
-        readTauriLibrarySampleFile,
+        readNativeLibrarySampleFile,
         readBrowserLibrarySampleFile,
     }) =>
         async function resolveDroppedSampleFile({
@@ -46,13 +46,13 @@ export const resolveDroppedSampleFile = inject({
             }
 
             const nativeRuntimeAvailable = isNativeSampleLibraryRuntimeAvailable();
-            if (nativeRuntimeAvailable && root.provider === 'tauri' && root.rootRef) {
-                const file = await readTauriLibrarySampleFile({
+            if (nativeRuntimeAvailable && root.provider === 'desktop' && root.rootRef) {
+                const file = await readNativeLibrarySampleFile({
                     rootPath: root.rootRef,
                     relativePath,
                     fallbackName,
                 });
-                return { status: 'resolved', provider: 'tauri', file };
+                return { status: 'resolved', provider: 'desktop', file };
             }
 
             if (!nativeRuntimeAvailable && root.provider === 'browser' && root.handle) {

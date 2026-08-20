@@ -53,7 +53,7 @@ Skip a step and something degrades silently: no handler map → no undo; no tele
 ## 5. Study these first
 
 - **Gluten** — the cleanest small effect: store split, engine, node, panel.
-- **Crumbs** — the native-only exception: full engine behind Tauri commands with a `repositories/crumbsBridge/` mirror.
+- **Crumbs** — the native-only exception: full engine behind native commands with a `repositories/crumbsBridge/` mirror.
 - **ProofChamber** — the separate-crate exception (reverb as `proof-chamber`, "Dutch Oven" device id).
 
 ## References

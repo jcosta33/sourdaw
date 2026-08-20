@@ -114,11 +114,12 @@ fn running_engine_diagnostics(
 /// started: asking a stopped engine how it is doing is a legitimate poll, not a
 /// failure.
 ///
-/// Declared `async` so it runs off the main thread, as `start_native_engine`
-/// does: a synchronous command takes the engine mutex on the thread Tauri also
-/// drives the webview from, and this one is polled every second for the life of
-/// the session. The guard is `std::sync::Mutex` and is held only for the
-/// snapshot and the drain, so there is no await under it.
+/// Declared `async` so it runs off the main thread, as `apply_graph_commands`
+/// (the lazy engine bootstrap) does: a synchronous command would take the
+/// engine mutex on the shell's event-loop thread, and this one is polled
+/// every second for the life of the session. The guard is `std::sync::Mutex`
+/// and is held only for the snapshot and the drain, so there is no await
+/// under it.
 pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnostics, String> {
     let bridge_input_blocks_refused = state.bridge_input_blocks_refused.load(Ordering::Relaxed);
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: () => false,
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
 }));
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';

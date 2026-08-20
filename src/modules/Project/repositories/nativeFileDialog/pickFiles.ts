@@ -1,7 +1,7 @@
 import { basename_from_path } from '#/utils/path-basename';
-import { isTauri, readFileBytes } from '#/utils/tauriBridge';
+import { isDesktopRuntime, readFileBytes } from '#/utils/desktopBridge';
 
-import { openViaTauri } from './openViaTauri';
+import { openViaNative } from './openViaNative';
 
 import type { OpenFileOptions } from './helpers';
 
@@ -66,13 +66,13 @@ function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 /**
  * Opens a file picker and returns the selected File objects.
- * In Tauri, opens the native dialog then reads files via the native path-policy command.
+ * On the desktop app, opens the native dialog then reads files via the native path-policy command.
  * In the browser, uses a hidden `<input type="file">`.
  * Returns `null` when the user cancels.
  */
 export async function pickFiles(options: OpenFileOptions = {}): Promise<File[] | null> {
-    if (isTauri()) {
-        const paths = await openViaTauri(options);
+    if (isDesktopRuntime()) {
+        const paths = await openViaNative(options);
         if (!paths || paths.length === 0) {
             return null;
         }

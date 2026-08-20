@@ -1,4 +1,4 @@
-import { startDictation as startVoiceDictation } from '../../repositories/voiceTauriAdapter/startDictation';
+import { startDictation as startVoiceDictation } from '../../repositories/voiceNativeAdapter/startDictation';
 
 export function startDictation(): Promise<void> {
     return startVoiceDictation();

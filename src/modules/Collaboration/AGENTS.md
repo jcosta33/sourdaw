@@ -4,7 +4,7 @@ P2P collaboration sessions over Automerge CRDTs. There are **three independent c
 
 1. **Serverless WebRTC (browser):** manual offer/answer exchange with QR-code invites — `repositories/peerConnection.ts` (raw `RTCPeerConnection`), `useCases/collaboration/generateInvite.ts` / `acceptAnswer.ts`. No signaling server involved; the `qrcode` dependency is used here.
 2. **WebSocket relay (optional signaling):** standalone package at repo-root `server/` (`sourdaw-collab-server`, `ws`-based, port 8787). It is **not** in the pnpm workspace and has its own `package-lock.json`; `scripts/health-gates-server.sh` builds it during explicit full validation. Message types: join/leave/action/cursor/sync-request/sync-response/state-update.
-3. **Native LAN (Tauri):** the `daw-collab` crate — Automerge `DocumentStore`, `.sdaw` binary bundles (magic `SDAW`), mDNS discovery (`_sourdaw._tcp.local.`), exposed via the `collab_*` Tauri commands.
+3. **Native LAN:** the `daw-collab` crate — Automerge `DocumentStore`, `.sdaw` binary bundles (magic `SDAW`), mDNS discovery (`_sourdaw._tcp.local.`), exposed via the `collab_*` native commands.
 
 ## Trust model — an invite is unconditional write access
 

@@ -1,4 +1,4 @@
-import { desktopSaveDialog } from '#/utils/tauriBridge';
+import { desktopSaveDialog } from '#/utils/desktopBridge';
 
 type SelectNativeAudioExportFileInput = {
     formats: string[];

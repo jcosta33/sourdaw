@@ -100,8 +100,9 @@ pub struct EnginePluginInstanceData {
 
 pub struct AppState {
     /// Native audio engine handle (cpal thread + lock-free scheduler).
-    /// None until start_native_engine is called. Declared before engine-owned
-    /// runtime maps so app teardown drops the stream before active CLAP runtimes.
+    /// None until the first `apply_graph_commands` batch lazily starts it
+    /// (#1984). Declared before engine-owned runtime maps so app teardown
+    /// drops the stream before active CLAP runtimes.
     pub engine: Arc<Mutex<Option<EngineHandle>>>,
     /// Active plugin instances keyed by instance_id.
     pub plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
@@ -134,6 +135,38 @@ pub struct AppState {
     /// refusal is counted and reported through `engine_rt_diagnostics` rather
     /// than discarded with the block.
     pub bridge_input_blocks_refused: Arc<AtomicU64>,
+    /// Decoded timeline material, keyed by the app's stable source id.
+    ///
+    /// This is the native realisation of `AudioGraphClipSource.sourceId`
+    /// (`src/modules/AudioEngine/models/AudioGraphBackend.ts`): the identity
+    /// crosses the seam, the PCM is registered here once through
+    /// `register_timeline_sample`, and every `schedule-clip` resolves the id
+    /// against this pool. Control-side only — the audio thread receives copies
+    /// already built into `TimelineClip`s.
+    pub timeline_samples: Arc<Mutex<HashMap<String, TimelineSample>>>,
+    /// The control-side registry that resolves the app's string strip, device
+    /// and sample ids onto the engine's `usize` node ids, plus the strip facts
+    /// (kind, VCA fold, chain occupancy) batch validation needs. See
+    /// `commands::graph`.
+    pub graph: Arc<Mutex<crate::commands::graph::GraphRegistry>>,
+    /// Offline mapping sessions: probe registries `map_graph_batch` keeps
+    /// across one render's applies so the TS backend's `prior` does not
+    /// re-cross the wire every batch (#2225). Control-side only, LRU-capped;
+    /// see `commands::graph::GraphMappingSessions`.
+    pub graph_mapping_sessions: Arc<Mutex<crate::commands::graph::GraphMappingSessions>>,
+}
+
+/// One registered piece of timeline material: planar stereo PCM and the rate
+/// it was decoded at.
+///
+/// `right` is empty for mono material, matching `daw_engine::TimelineClip`'s
+/// own convention, and `sample_rate` is the *material's* rate — a clip
+/// scheduled onto an engine running at a different rate is converted at the
+/// clip's `playback_rate` (rate conversion, not time stretch).
+pub struct TimelineSample {
+    pub left: Vec<f32>,
+    pub right: Vec<f32>,
+    pub sample_rate: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -155,6 +188,11 @@ impl Default for AppState {
             audio_bridges: Arc::new(Mutex::new(HashMap::new())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
             bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
+            timeline_samples: Arc::new(Mutex::new(HashMap::new())),
+            graph: Arc::new(Mutex::new(crate::commands::graph::GraphRegistry::default())),
+            graph_mapping_sessions: Arc::new(Mutex::new(
+                crate::commands::graph::GraphMappingSessions::default(),
+            )),
         }
     }
 }

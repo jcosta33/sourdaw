@@ -20,11 +20,6 @@
                 "scripts/**",
                 "server/**",
                 "src/**",
-                "src-tauri/AGENTS.md",
-                "src-tauri/CLAUDE.md",
-                "src-tauri/GEMINI.md",
-                "src-tauri/src/**",
-                "src-tauri/tests/**",
                 "tests/**",
                 ".dependency-cruiser-known-violations-reachability.json",
                 ".dependency-cruiser-known-violations-tests.json",
@@ -43,10 +38,12 @@
                 ".prettierrc",
                 "AGENTS.md",
                 "CLAUDE.md",
+                "CONTRIBUTING.md",
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
                 "README.md",
+                "SECURITY.md",
                 "components.json",
                 "eslint.config.mjs",
                 "index.html",
@@ -80,32 +77,15 @@
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "desktop"],
-            "paths": [
-                "electron/**",
-                "src-tauri/.cargo/**",
-                "src-tauri/Cargo.toml",
-                "src-tauri/Entitlements.plist",
-                "src-tauri/Info.plist",
-                "src-tauri/build.rs",
-                "src-tauri/capabilities/**",
-                "src-tauri/gen/**",
-                "src-tauri/icons/**",
-                "src-tauri/permissions/**",
-                "src-tauri/tauri.conf.json"
-            ],
-            "sources": [
-                "https://github.com/electron/electron",
-                "https://github.com/tauri-apps/tauri",
-                "package.json",
-                "src-tauri/Cargo.toml"
-            ],
-            "revisions": ["pnpm-lock.yaml", "Cargo.lock"],
+            "paths": ["electron/**", "build/**", "electron-builder.yml"],
+            "sources": ["https://github.com/electron/electron", "package.json"],
+            "revisions": ["pnpm-lock.yaml"],
             "digests": ["pending:OS-07-final-desktop-package"],
             "licenses": ["pending:OS-07"],
-            "productSurfaces": ["Electron shell", "Tauri shell"],
-            "evidence": ["package.json", "src-tauri/Cargo.toml"],
+            "productSurfaces": ["Electron shell"],
+            "evidence": ["package.json"],
             "obligations": [
-                "Reconcile both desktop shells and every bundled runtime notice after campaign 2037 settles."
+                "Reconcile the Electron shell and every bundled runtime notice before the desktop package ships."
             ]
         },
         {
@@ -140,8 +120,8 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": ["Cargo.toml", "Cargo.lock", "crates/**", "src-tauri/Cargo.toml"],
-            "sources": ["Cargo.toml", "src-tauri/Cargo.toml", "Cargo.lock"],
+            "paths": ["Cargo.toml", "Cargo.lock", "crates/**"],
+            "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
             "digests": ["sha256:e3b3d4ad90a892b92acf9a72c701a99d5ef4f1f9ecc04254cd19283d81f7c88a"],
             "licenses": ["individual dependency terms pending OS-10 notice assembly"],
@@ -209,7 +189,7 @@
             "retention": "defer-behind-admission",
             "owner": "OS-04",
             "releaseModes": ["desktop"],
-            "paths": ["crates/sourdaw-native/src/commands/speech.rs", "src-tauri/src/commands/speech.rs"],
+            "paths": ["crates/sourdaw-native/src/commands/speech.rs"],
             "sources": ["https://huggingface.co/ggerganov/whisper.cpp"],
             "revisions": ["5359861c739e955e79d9a303bcbc70fb988958b1"],
             "digests": ["sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"],
@@ -338,8 +318,7 @@
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
                 "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
-                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
-                "src-tauri/src/commands/provider_gateway.rs"
+                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx"
             ],
             "sources": [
                 "https://api.anthropic.com/v1/messages",
@@ -518,7 +497,7 @@
                 "public/icon.png",
                 "public/logo-parts/**",
                 "sourdaw.png",
-                "src-tauri/icons/**"
+                "build/icons/**"
             ],
             "sources": ["unknown pending OS-08 owner attestation"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
@@ -634,7 +613,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "612714cab773a1e49f5e961b0deb82e28b44d28deca5cb259d26306b8a600b54"
+            "sha256": "8800f79c8725efc8e0c102adee3cd9841b5781b84d62c65223b18d849913d304"
         },
         {
             "path": "server/package.json",
@@ -646,19 +625,15 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "1d1ad26954efd783f3953a648c2224bf96ecc0e3f1104bb23376ba317fb1fec8"
+            "sha256": "9154e917357ca7bc62566fdbc0b601f27c56c3e8c62c5a19378c1f60f0a925b6"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "5180c54656c229953fc8ee2712ef121341e6af3ab014a7f71ea9d17fccd6e60f"
-        },
-        {
-            "path": "src-tauri/Cargo.toml",
-            "sha256": "297fab6a955eb807003cd30f18d34f824493d702248d52784c3895de6bbb54b9"
+            "sha256": "05b593cb24e1dfe392ae417ae6d80b24b45c9e9b0205118372da0eff364ac50c"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "54b56397362b96c342dd3426929b16e1481555f5eb8510c8e42817ee3af4fa06"
+            "sha256": "556bccf886a221ecaca60076b2112ae0d4970ec4b253c1936b698de93cef3cdb"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -666,7 +641,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "6c8edbf1a39e780641b1324b58350b4741aa25cbed3f9ee0478d5529b642958a"
+            "sha256": "506853a334648b1232b39285edd8a36a6db5b5d809a4486f297518412882566c"
         }
     ],
     "externalReferences": [
@@ -762,6 +737,49 @@
             "surface": "webllm-qwen-artifacts",
             "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
             "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://*.huggingface.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://*.hf.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/app"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/app/installations/${slot}/access_tokens",
+            "templateSha256": "76200d27ac9ab019dcfb19f05709725ad0be2d0093145bbb300ced8d3b1306ab"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://github.com/${slot}.git",
+            "templateSha256": "23b8ac49f564e78e90b87a229539dc6e2563b9a6f1a1b5d4f098b277a7240b8e"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://x-access-token:${slot}@github.com/${slot}.git",
+            "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
         },
         {
             "surface": "cloud-ai-providers",

@@ -119,8 +119,7 @@ fn octave_distance(actual: f32, expected: f32) -> f32 {
 }
 
 fn expected_glide_frequency(source: f32, destination: f32, elapsed_seconds: f32) -> f32 {
-    destination
-        + (source - destination) * (-std::f32::consts::TAU * elapsed_seconds / 2.0).exp()
+    destination + (source - destination) * (-std::f32::consts::TAU * elapsed_seconds / 2.0).exp()
 }
 
 #[test]
@@ -146,8 +145,10 @@ fn karplus_glide_changes_pitch_without_losing_the_pluck_in_either_direction() {
 
         let source_frequency = note_frequency(source_note);
         let destination_frequency = note_frequency(destination_note);
-        let expected_early = expected_glide_frequency(source_frequency, destination_frequency, 0.093);
-        let expected_late = expected_glide_frequency(source_frequency, destination_frequency, 2.127);
+        let expected_early =
+            expected_glide_frequency(source_frequency, destination_frequency, 0.093);
+        let expected_late =
+            expected_glide_frequency(source_frequency, destination_frequency, 2.127);
         let early_frequency = estimated_frequency(&gliding[2_400..6_496], expected_early);
         let late_frequency = estimated_frequency(&gliding[100_000..104_096], expected_late);
         assert!(

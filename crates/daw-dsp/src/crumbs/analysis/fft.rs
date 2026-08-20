@@ -4,7 +4,7 @@
 //! used to evaluate a direct DFT bin by bin: `fft_size` multiply-accumulates
 //! per bin, `fft_size / 2 + 1` bins per frame. At the shipped 1024-point,
 //! 441-hop settings that is roughly 9 × 10⁹ MACs for three minutes of 44.1 kHz
-//! audio, which the calling Tauri command pays synchronously. This module is
+//! audio, which the calling native command pays synchronously. This module is
 //! the O(N log N) replacement. It is written in-crate rather than pulled from
 //! a dependency because this crate's dependency set is deliberately minimal
 //! (see `crates/daw-dsp/AGENTS.md`).

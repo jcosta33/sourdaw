@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { isCrumbsNativeAvailable } from '../is-crumbs-native-available';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn<() => boolean>(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn<() => boolean>(),
 }));
 
 describe('isCrumbsNativeAvailable', () => {
@@ -13,14 +13,14 @@ describe('isCrumbsNativeAvailable', () => {
         vi.clearAllMocks();
     });
 
-    it('should return true when the Tauri bridge is available', () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+    it('should return true when the desktop bridge is available', () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
 
         expect(isCrumbsNativeAvailable()).toBe(true);
     });
 
-    it('should return false when the Tauri bridge is unavailable', () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+    it('should return false when the desktop bridge is unavailable', () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
         expect(isCrumbsNativeAvailable()).toBe(false);
     });

@@ -302,8 +302,18 @@ fn a_suppressed_note_renders_exactly_as_if_glide_were_off() {
 /// very fixture.
 #[test]
 fn neither_mode_glides_a_note_with_nothing_played_before_it() {
-    let always = render_probe(ALWAYS_MODE, GLIDE_SECONDS, PriorNote::None, COMPARISON_BLOCKS);
-    let legato = render_probe(LEGATO_MODE, GLIDE_SECONDS, PriorNote::None, COMPARISON_BLOCKS);
+    let always = render_probe(
+        ALWAYS_MODE,
+        GLIDE_SECONDS,
+        PriorNote::None,
+        COMPARISON_BLOCKS,
+    );
+    let legato = render_probe(
+        LEGATO_MODE,
+        GLIDE_SECONDS,
+        PriorNote::None,
+        COMPARISON_BLOCKS,
+    );
     let glide_off = render_probe(ALWAYS_MODE, GLIDE_OFF, PriorNote::None, COMPARISON_BLOCKS);
     assert_eq!(
         always, glide_off,
@@ -335,8 +345,18 @@ fn legato_mode_snaps_while_the_previous_note_rings_out_its_release() {
 /// the same glide mode 0 would have produced.
 #[test]
 fn legato_mode_glides_while_the_previous_key_is_still_down() {
-    let legato = render_probe(LEGATO_MODE, GLIDE_SECONDS, PriorNote::Held, COMPARISON_BLOCKS);
-    let always = render_probe(ALWAYS_MODE, GLIDE_SECONDS, PriorNote::Held, COMPARISON_BLOCKS);
+    let legato = render_probe(
+        LEGATO_MODE,
+        GLIDE_SECONDS,
+        PriorNote::Held,
+        COMPARISON_BLOCKS,
+    );
+    let always = render_probe(
+        ALWAYS_MODE,
+        GLIDE_SECONDS,
+        PriorNote::Held,
+        COMPARISON_BLOCKS,
+    );
     assert_eq!(
         legato, always,
         "with a key still down both modes glide, so they must render the same \

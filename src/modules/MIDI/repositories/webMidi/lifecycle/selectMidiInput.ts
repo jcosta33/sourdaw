@@ -2,12 +2,12 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
-import { getTauriMode } from '../getTauriMode';
+import { getNativeMode } from '../getNativeMode';
 import { setState } from '../setState';
 
 import { attachInput } from './helpers';
-import { listTauriMidiInputs } from './listTauriMidiInputs';
-import { selectMidiInputTauri } from './selectMidiInputTauri';
+import { listNativeMidiInputs } from './listNativeMidiInputs';
+import { selectMidiInputNative } from './selectMidiInputNative';
 
 type SelectMidiInputInput = {
     deviceId: string;
@@ -24,15 +24,15 @@ type SelectMidiInputInput = {
  * id, because the list the picker was drawn from can be one replug out of date
  * and the index would then open a different instrument (issue #1837 F9).
  */
-async function openTauriPort({ deviceId, onMidiMessage }: SelectMidiInputInput): Promise<void> {
+async function openNativePort({ deviceId, onMidiMessage }: SelectMidiInputInput): Promise<void> {
     try {
-        const port = (await listTauriMidiInputs()).find((entry) => entry.id === deviceId);
+        const port = (await listNativeMidiInputs()).find((entry) => entry.id === deviceId);
         if (!port) {
             logger.warn('[MIDI] Requested MIDI input is no longer present:', deviceId);
             return;
         }
 
-        await selectMidiInputTauri({ portIndex: port.portIndex, portName: port.name, onMidiMessage });
+        await selectMidiInputNative({ portIndex: port.portIndex, portName: port.name, onMidiMessage });
         setState({ selectedInputId: deviceId });
     } catch (error: unknown) {
         logger.warn('[MIDI] Failed to open MIDI input:', error);
@@ -40,8 +40,8 @@ async function openTauriPort({ deviceId, onMidiMessage }: SelectMidiInputInput):
 }
 
 export function selectMidiInput({ deviceId, onMidiMessage }: SelectMidiInputInput): void {
-    if (getTauriMode()) {
-        void openTauriPort({ deviceId, onMidiMessage });
+    if (getNativeMode()) {
+        void openNativePort({ deviceId, onMidiMessage });
         return;
     }
 

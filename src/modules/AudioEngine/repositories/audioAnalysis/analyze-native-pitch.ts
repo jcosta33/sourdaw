@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 type AnalyzeNativePitchInput = {
     analysisId: string;
@@ -57,11 +57,11 @@ function isNativePitchContour(value: unknown): value is NativePitchContour {
 }
 
 export async function analyzeNativePitch({ analysisId, audioPath }: AnalyzeNativePitchInput): AnalyzeNativePitchOutput {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return null;
     }
 
-    const result = await tauriInvoke('analyze_pitch', { analysisId, audioPath });
+    const result = await desktopInvoke('analyze_pitch', { analysisId, audioPath });
 
     if (!isNativePitchContour(result)) {
         throw new TypeError('analyze_pitch returned an invalid payload');

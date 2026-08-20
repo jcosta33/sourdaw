@@ -12,7 +12,6 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { sessionState } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
@@ -209,16 +208,6 @@ describe('scheduleAudioClips', () => {
         expect(when + duration).toBeCloseTo(10, 9);
     });
 
-    it('disposeAudioClipScheduling clears the requested-asset dedup (regression: §B fix 5)', () => {
-        sessionState.requestedAssets.add('hash-a');
-        sessionState.requestedAssets.add('hash-b');
-        expect(sessionState.requestedAssets.size).toBe(2);
-
-        disposeAudioClipScheduling();
-
-        expect(sessionState.requestedAssets.size).toBe(0);
-    });
-
     // Regression (PR #514 review): identical defect to the MIDI path — the
     // frozen-track dedup was keyed by track.id only, so an unfreeze → refreeze
     // within one session (new frozenBufferId, same id) stayed silent. Keying by
@@ -374,7 +363,11 @@ describe('scheduleAudioClips', () => {
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
 
-    it('requests a missing asset from peers once when collaboration is enabled and the clip has a hash', () => {
+    // The scheduler deliberately keeps no dedup of its own. A local
+    // "requested once, ever" Set made an asset permanently unfetchable after
+    // one aborted transfer; AssetTransfer owns the dedup because only it knows
+    // whether the request is still alive, and it re-opens the hash on abort.
+    it('asks AssetTransfer for a missing asset on every tick while collaboration is enabled', () => {
         const requestAsset = vi.fn();
         vi.mocked(getAssetTransfer).mockReturnValue({ requestAsset } as never);
         collaborationStoreState.value = { isEnabled: true };
@@ -384,10 +377,9 @@ describe('scheduleAudioClips', () => {
         const scheduled = new Set<string>();
 
         scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
-        // Second tick: asset already requested, must not re-request.
         scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
 
-        expect(requestAsset).toHaveBeenCalledTimes(1);
+        expect(requestAsset).toHaveBeenCalledTimes(2);
         expect(requestAsset).toHaveBeenCalledWith('hash-1');
         expect(notifyUser).not.toHaveBeenCalled();
     });
@@ -409,6 +401,27 @@ describe('scheduleAudioClips', () => {
         // Timeline duration 4 beats / 2 bps = 2 s; *stretch 2 = 4 s.
         expect(duration).toBeCloseTo(4, 6);
         expect(offset).toBeCloseTo(0, 6);
+    });
+
+    /// The live half of #2098's law, pinned so it cannot drift back into
+    /// agreement with the defect the export carried: `start`'s duration
+    /// argument is measured in the source buffer's own time, so a clip that
+    /// occupies two seconds of timeline at half speed asks for one second of
+    /// material. The export asserts the same thing in
+    /// `AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts`.
+    it('asks for the source seconds a half-speed clip consumes, not its destination span', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ stretchMode: 'timestretch', stretchRatio: 0.5 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect((fakeSource.playbackRate as { value: number }).value).toBe(0.5);
+        const [, , duration] = fakeSource.start.mock.calls[0]!;
+        // Timeline duration 4 beats / 2 bps = 2 s; *stretch 0.5 = 1 s of material.
+        expect(duration).toBeCloseTo(1, 6);
     });
 
     it('inserts an envelope gain node scaled by 10^(db/20) when the clip has env gain', () => {

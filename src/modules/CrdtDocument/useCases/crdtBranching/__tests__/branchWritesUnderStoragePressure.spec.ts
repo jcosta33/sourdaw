@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * These specs drive the real `branchStore` — and therefore the real
  * `createLocalStorage` adapter — with a `setItem` that throws, which is what a
- * full origin quota and Safari private mode both look like. The point is the
+ * full origin quota and blocked storage access both look like. The point is the
  * caller's own invariant under that throw, not that a `catch` exists.
  */
 const { mockAutomergeRepo, mockCompactProject, mockLoadCrdtProject, mockProjectCrdtToStores, mockRunPersistenceOp } =
