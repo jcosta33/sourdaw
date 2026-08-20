@@ -213,31 +213,34 @@ and nothing is filed — and add the issue to the roadmap project when it is on 
 either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
 applies the template's labels and the derived priority label, and takes the milestone and the
 project. Get the metadata right there, because no sanctioned script edits an issue once it exists
-and a correction afterwards is `gh` by hand. Read the live sets with
-`gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`;
-never from a list written down here, which drifts the day it is written.
+and a correction afterwards is `gh` by hand. Read the live sets with `gh label list`,
+`gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`; never from a list
+written down here, which drifts the day it is written.
 
 ## Delivery
 
 GitHub writes for agent work go through trusted `pnpm` scripts. Where a script covers the action it
 is the only way to take it: identity and the delivery gates live inside those scripts, so a
-hand-rolled equivalent or a route around a gate defeats both. Where none covers it, run `gh`
-yourself, provided the write only moves tracker metadata, one later command puts it back, and it
-clears no delivery gate. Anything that lands a commit, a pull request, a review, or a merge has a
-script and never qualifies; resolving a review thread clears the gate that holds a merge, so
-reversibility never rescues it. `git push` carries no such exception: lane tooling owns every push,
-because a push from anywhere else destroys the review anchor and can strand a lane. Read-only `gh`
-stays unrestricted and is how you check live tracker state. Identity is the App those scripts mint,
-not a persona.
+hand-rolled equivalent or a route around a gate defeats both. One exception is open, and it is
+closed by list: an issue's own state, labels, milestone, project membership, and sub-issue links may
+be corrected by hand with `gh`. Nothing else may. A pull request is not an issue, so no `gh pr`
+write ever falls inside, whatever flag or field it names. A by-hand write is attributed to the
+operator's own account rather than to a mint, and so reads as the operator acting personally; that
+is why the exception stops at issue metadata one later command puts back. `git push` has no
+exception at all: lane tooling owns every push, because a push from anywhere else destroys the
+review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
+tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                        | Command                         |
-| --------------------------- | ------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]` |
-| Push; open or update the PR | `pnpm lane:publish [issue]`     |
-| Write the review bundle     | `pnpm review:prepare <pr>`      |
-| Post `review.json`          | `pnpm review:publish <pr>`      |
-| Squash-merge                | `pnpm deliver <pr>`             |
-| Remove a spent lane         | `pnpm lane:remove <path>`       |
+| Need                           | Command                                                      |
+| ------------------------------ | ------------------------------------------------------------ |
+| Open a lane                    | `pnpm lane:open [issue] [slug]`                              |
+| Push; open or update the PR    | `pnpm lane:publish [issue]`                                  |
+| Write the review bundle        | `pnpm review:prepare <pr>`                                   |
+| Post `review.json`             | `pnpm review:publish <pr>`                                   |
+| Reply `Done`; resolve a thread | `pnpm review:resolve <pr> --thread <id> --head <sha>`        |
+| Squash-merge                   | `pnpm deliver <pr>`                                          |
+| Close a superseded PR          | `pnpm pr:supersede <old-pr> --head <sha> --replacement <pr>` |
+| Remove a spent lane            | `pnpm lane:remove <path>`                                    |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for `review:prepare`
@@ -299,10 +302,11 @@ makes it worse. Style-guide violations block; personal style does not. Leave the
 write one sentence about the code.
 
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
-refuses to merge while one is unresolved, and no sanctioned script resolves a thread — so a note
-meant not to block is exactly what blocks. Put a non-blocking observation in the approval body,
-prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
-where the thread is meant to stop the merge and a new head clears it.
+refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying
+`Done` on it — so a note meant not to block is exactly what blocks, and clearing it asserts a repair
+that never happened. Put a non-blocking observation in the approval body, prefixed `Nit:` or
+`Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review, where the thread is
+meant to stop the merge and a new head clears it.
 
 When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
 the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
