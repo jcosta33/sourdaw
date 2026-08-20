@@ -62,12 +62,15 @@ test.describe('Transport toggles — test-id targeted', () => {
         await expect(autoScroll).toBeVisible();
         await expect(autoScroll).toHaveAttribute('data-testid', 'transport-auto-scroll');
         await expect(autoScroll).toHaveAttribute('aria-pressed', 'true');
+        await expect(autoScroll).toHaveAttribute('data-variant', 'secondary');
 
         await autoScroll.click();
         await expect(autoScroll).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(autoScroll).toHaveAttribute('data-variant', 'ghost');
 
         await autoScroll.click();
         await expect(autoScroll).toHaveAttribute('aria-pressed', 'true');
+        await expect(autoScroll).toHaveAttribute('data-variant', 'secondary');
     });
 
     test('undo and redo buttons are present via test IDs', async ({ page }) => {
