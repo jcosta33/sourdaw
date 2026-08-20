@@ -5,6 +5,7 @@ import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Piano, Disc3 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { findWithheldDeviceType, isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
@@ -321,7 +322,7 @@ export const InstrumentsTab = ({
         const totalCount = allResults.length + premiumMatches.length;
 
         return (
-            <div className="flex flex-col gap-1.5 animate-in fade-in duration-100">
+            <Stack gap={1.5} className="animate-in fade-in duration-100">
                 <SearchSummary count={totalCount} query={query} className="px-1 py-0.5" />
                 {totalCount > 0 ? (
                     <>
@@ -351,7 +352,7 @@ export const InstrumentsTab = ({
                 ) : (
                     <EmptyState message="No instruments found." />
                 )}
-            </div>
+            </Stack>
         );
     }
 
@@ -365,7 +366,7 @@ export const InstrumentsTab = ({
         }
 
         return (
-            <div className="flex flex-col gap-1.5 animate-in slide-in-from-right-4 duration-200">
+            <Stack gap={1.5} className="animate-in slide-in-from-right-4 duration-200">
                 {/* Preset list (header handled by Sidebar back bar with icon) */}
                 {renderPresets.length > 0 ? (
                     renderPresets.map((preset) => (
@@ -389,7 +390,7 @@ export const InstrumentsTab = ({
                 ) : (
                     <EmptyState message="No presets in this category." />
                 )}
-            </div>
+            </Stack>
         );
     }
 
@@ -399,9 +400,9 @@ export const InstrumentsTab = ({
     );
 
     return (
-        <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
+        <Stack className="px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
             {/* ── House Specials ─────────────────────────────────── */}
-            <div className="flex flex-col gap-1.5 mb-3">
+            <Stack gap={1.5} className="mb-3">
                 <DawSectionDivider
                     label="Play Dough"
                     className="mb-0.5 px-1"
@@ -450,7 +451,7 @@ export const InstrumentsTab = ({
                         theme={GRAND_BOULE_THEME}
                     />
                 ) : null}
-            </div>
+            </Stack>
             <DawSectionDivider
                 label="Standard grain"
                 className="mb-1 px-1"
@@ -466,7 +467,7 @@ export const InstrumentsTab = ({
 
                 return (
                     <div key={group.label} className="mb-2">
-                        <div className="flex flex-col gap-1.5">
+                        <Stack gap={1.5}>
                             {groupCats.map((cat) => {
                                 const presetsInCat = soundPresets.filter((param) => param.category === cat);
                                 const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
@@ -495,7 +496,7 @@ export const InstrumentsTab = ({
                                     />
                                 );
                             })}
-                        </div>
+                        </Stack>
                     </div>
                 );
             })}
@@ -506,7 +507,7 @@ export const InstrumentsTab = ({
                 labelClassName="font-bold text-[var(--color-accent-orange)]"
                 lineClassName="bg-[var(--color-accent-orange)]/15"
             />
-            <div className="flex items-center gap-1 mb-2">
+            <Row gap={1} className="mb-2">
                 <DawPickerRow
                     compact
                     className="flex-1 px-2 py-1.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 shadow-sm"
@@ -514,12 +515,12 @@ export const InstrumentsTab = ({
                     heading="My Presets"
                     description={`${filteredUser.length} saved`}
                     endSlot={
-                        <div className="flex items-center gap-1">
+                        <Row gap={1}>
                             <span className="text-[10px] text-muted-foreground tabular-nums">
                                 {filteredUser.length}
                             </span>
                             <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                        </div>
+                        </Row>
                     }
                     onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
                 />
@@ -539,11 +540,14 @@ export const InstrumentsTab = ({
                         ) : null}
                     </>
                 ) : null}
-            </div>
+            </Row>
             {/* Save form (inline) */}
             {showSaveForm && selectedTrack ? (
-                <div className="space-y-1.5 px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2">
-                    <div className="flex items-center gap-1">
+                <Stack
+                    gap={1.5}
+                    className="px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2"
+                >
+                    <Row gap={1}>
                         <Input
                             type="text"
                             placeholder="Preset name…"
@@ -569,8 +573,8 @@ export const InstrumentsTab = ({
                         >
                             <X className="size-3.5" />
                         </Button>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
+                    </Row>
+                    <Row gap={1.5} className="mt-1">
                         <DawCompactSelect
                             value={saveFormCategory}
                             onChange={(event) => setSaveFormCategory(event.target.value as SoundPresetCategory)}
@@ -592,8 +596,8 @@ export const InstrumentsTab = ({
                         >
                             Save
                         </Button>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             ) : null}
             {/* Blank track shortcut */}
             <div className="border-t border-border/20 pt-2 mt-1">
@@ -606,6 +610,6 @@ export const InstrumentsTab = ({
                     title="Add a blank MIDI track with a default synthesizer"
                 />
             </div>
-        </div>
+        </Stack>
     );
 };
