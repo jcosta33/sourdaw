@@ -1,0 +1,329 @@
+.agents/decisions/0031-native-plugin-format-strategy.md
+  s_487e9aa1e46063::t_761e1e8e7391ed 4,20
+.agents/decisions/0032-withhold-grand-boule-from-release.md
+  s_487e9aa1e46063::t_a610c6a5dc6fff 1-53
+.agents/decisions/README.md
+  s_487e9aa1e46063::t_2ed002ec2b8684 47-48
+.agents/specs/piano-plugin/spec.md
+  s_487e9aa1e46063::t_50eed82ce27bd3 4-5,8,11,15-16,20,22-24,26,28-29,31,33-35,37,39-41,43,45-46,48,50-51
+AGENTS.md
+  s_487e9aa1e46063::t_aed0682ae1d82c 99-100,103-107,286,288-290,303
+crates/daw-dsp/src/proof/chain.rs
+  s_487e9aa1e46063::t_7c89f0608af62f 66-71,106-160,232,241,249,297,544-690
+crates/daw-dsp/src/proof/metering.rs
+  s_487e9aa1e46063::t_7117cca9763457 5-97,124-146,148-169,215-326,341,374-379,381-400,418,446-450,452-465,478-493,552-559,592,629,632,637,641,659,661-668,673-674,677-679,687-690,693-695,702,705-716,723,728-729,731-733,740-741,744-746,755-756,763-770,775,784-789,794-796,798,803-804,808-830,834,837-840,850,854,933-938,941-947,961-963,976,984-988,991-994,998,1024-1027,1039-1042,1044,1074,1084,1089,1099,1116,1127-1128,1135-1137,1155-1156,1164-1166,1177,1258,1262-1269,1271-1272,1284-1298,1300-1303,1309-1312,1328,1380,1406-2201,2204,2216-2229,2233,2236-2237,2243,2247,2252-2253,2256-2258,2262-2267,2271-2276,2283-2286,2289,2296,2301-2302,2312,2315,2318,2358,2371,2391-2392,2399,2410,2424-2425,2442,2456-2457,2463-2464,2488,2491,2497,2542-2798,2808,2811,2815,2818-2819,2825,2829,2834-2839,2842-2848,2851-2852,2857,2860,2873-2883,2885-2891,2961-2962,2981-2997,3000-3005,3012-3015,3020,3033,3035,3041-3042,3061,3064,3068-3073,3077-3082,3089-3092,3098,3101,3107,3174,3179-3180,3195-3209,3211,3213,3226-3227,3233,3250,3255,3259-3264,3268-3273,3280-3283,3286,3294-3296,3304,3307-3308,3346-3347
+crates/daw-dsp/src/proof/mod.rs
+  s_487e9aa1e46063::t_048382121c1349 164-169,173-228
+docs/06-testing.md
+  s_487e9aa1e46063::t_0f0ff674df772f 152,695-701
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_487e9aa1e46063::t_1a75ebcec9f81b 39
+docs/manual/02-concepts.md
+  s_487e9aa1e46063::t_dcb6a0e1e366b3 122-137
+docs/manual/README.md
+  s_487e9aa1e46063::t_9464ee644a2ee8 17-18,35-42
+docs/manual/coverage-exceptions.json
+  s_487e9aa1e46063::t_c5e7de31f66033 105-131,217-306
+docs/manual/devices/16-toaster.md
+  s_487e9aa1e46063::t_4db6a4d2483545 1-158
+docs/manual/devices/17-fermenter.md
+  s_487e9aa1e46063::t_5ca505d372355e 1-313
+docs/manual/devices/18-crumbs.md
+  s_487e9aa1e46063::t_90c101d29ce269 1-156
+docs/manual/devices/19-knead.md
+  s_487e9aa1e46063::t_cfc77ded0655e5 1-114
+docs/manual/devices/20-eq.md
+  s_487e9aa1e46063::t_0157305e1b2218 1-70
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_487e9aa1e46063::t_f64a8f45ab18d3 1,756-763,884-899,914-969
+public/wasm/daw-dsp/daw_dsp.js
+  s_487e9aa1e46063::t_fae0280c6534cf 1763-1770
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_487e9aa1e46063::t_61e3367626dc00 1,45-60,75-130
+public/wasm/manifest.json
+  s_487e9aa1e46063::t_7a424b41595972 12,15-18,20-21
+release/open-source-inventory.json
+  s_487e9aa1e46063::t_9b07e50df4981e 457,462-466,468,694
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_487e9aa1e46063::t_03b4dd66590868 26-31,33-40,45,50,53,320-425,427-455,457-464,468-482,486,488-495,497-502,504-514
+scripts/__tests__/prContract.spec.ts
+  s_487e9aa1e46063::t_f855283958623c 4,15-32,39,42-49,123-128,134-201
+scripts/__tests__/resourceGuard.spec.ts
+  s_487e9aa1e46063::t_c2dd41766b4d04 6,12,15-16,26-35,81,94-226,291,294,296,298-299,303,311-315,335-359,363-365,369-385,392,397,410,418,438,464-465,477,497,513,517,527,546,575,584-588
+scripts/checkBarrelMockCoverage.ts
+  s_487e9aa1e46063::t_ab1b2d56ab5496 77-115,117-121,133-159,167-277,322-340,360-373,382-400,402-429,472-499,502-507,519-527,531-540,553-555,799-805,808-813,818-826,833-845,861,864-867,888-894,896-898,930,932,934-943,966-978,986-987,1011-1014,1051,1134-1138,1178-1195,1198-1202,1204-1207
+scripts/prContract.ts
+  s_487e9aa1e46063::t_4a7e21b741148e 3-8,10-22,41-69,74-81,84-88,90-92
+scripts/resourceGuard.ts
+  s_487e9aa1e46063::t_647a12e9fb5e1d 5,7,11,25-40,48-49,51,79-80,90,123-126,149-152,154,161-162,289-409,411-415,418-433,435-461,463-476,478-621,639-642,665-682,714-715,798,868-896,899-900,911,932,939-963,983-991,998,1019-1022,1037-1043,1141,1150,1173-1181,1193,1202-1207
+scripts/ui-restatement-census.json
+  s_487e9aa1e46063::t_33ffdd9acc6d64 47-55,66-69,71-72,119-127,131,156-159,161-162,203,245-253,263-280,329,545,569-577,599,641-649,713-721,875-883,938-946,1382,1397-1405,1535,1550-1558,1580,1622-1630,1796,1847-1855,2045-2053,2064-2076,2136-2139,2142,2156,2165,2201,2207-2215,2255,2309,2414-2422,2462,2480,2507,2552,2567-2575,2621-2629,2667-2670,2673,2855-2863,2867,2894,2981-2998,3008-3016,3047,3080-3088,3101,3146,3269-3277,3299,3344,3359-3367,3407,3452,3497,3512-3520,3539-3547,3704,3926-3934,3938,4178-4186,4250-4258,4433,4442,4478,4493-4510,4514,4547-4555,4637-4645,4793,4838,4989-4992,4995,4998,5000-5001,5004-5013,5036,5051-5059,5090,5141-5149,5171,5207,5213-5221,5231-5239,5252,5297,5333,5366-5374,5396,5538,5540-5541,5544,5637-5647,5654-5662,5727-5730,5733,5816-5824,5961-5964,5967,6095-6103,6116,6188,6197,6203-6211,6221-6229,6242,6269,6305,6311-6319,6347-6355,6392-6400,6458,6464-6472,6521,6554-6562,6674,6681-6684,6686-6687,6707-6724,6734-6742,6782,6905-6913,7094-7102,7133,7160,7205,7221-7224,7265-7273,7319-7327,7364-7372,7400-7408,7463-7471,7547,7700,7706-7714,7835,7851-7854,7857,7860-7862,7886-7903,8075-8083,8291-8299,8318-8326,8357,8391-8403,8406,8516-8524,8546,8786-8794,8915,8924,8984-8992,9074-9082,9086,9104,9146-9154,9194,9248,9338,9473,9533-9541,9750-9753,9755-9756,9770,9806,10049,10109-10117,10139,10163-10171,10199-10207,10361-10369,10388-10396,10445,10499,10517,10526,10544,10550-10558,10589,10652,10661,10694-10702,10757-10765,10847-10855,10937-10945,10985,11046-11058,11061,11153-11161,11219,11282,11327,11480,11516,11676-11687,11696,11858,11918-11926,11948,12053-12061,12092,12137,12182,12353,12386-12394,12416,12452,12557-12565,12692-12700,12713,12821,12866,13025-13033,13055,13109,13127,13136,13163,13307,13316,13331-13339,13349-13357,13397,13433,13541,13577,13700-13708,13772-13780,13863,13865-13866,13868-13869,13880-13888,13916-13924,13934-13942,14240-14248,14306,14420-14428,14513,14529-14532,14534-14535,14630,14657,14765,14873,14882,14891,14918,14925-14928,14931,14936,14978-14986,15015-15017,15024-15027,15030,15113-15121,15125,15149-15157,15188,15311-15319,15350,15413,15500-15508,15527-15535,15599-15607,15653-15670,15836,15870-15882,15899,15968-15976,15986-15994,16106,16169,16214,16241,16304,16475,16518-16521,16524,16535-16543,16547,16601,16745,16808,16889,16949-16957,17075-17092,17165-17173,17186,17228-17236,17249,17276,17309-17317,17492,17609,17660-17668,17681,17714-17722,17816,17834,17858-17866,17885-17893,17906,17951,17967-17970,17973,17993-18001,18005,18068,18083-18091,18128-18136,18146-18154,18203,18209-18217,18236-18244,18291-18294,18297-18306,18335-18343,18371-18379,18383,18515-18523,18587-18595,18650-18658,18740-18748,18752,18761,18803-18811,18815,18830-18838,18939-18942,18945,18965-18973,18992-19000,19055-19063,19211,19247,19265,19290-19293,19296,19526,19542,19544-19545,19548,19551-19554,19556-19557,19661,19769,19773,19829-19846,19901-19909,19940,19946-19954,20129,20192,20288-20296,20354,20369-20377,20417,20432-20440,20471,20534,20588,20606,20666-20674,20693-20701,20705,20714,20822,20837-20845,20975,21053-21061,21089-21097,21137,21233-21241,21296-21304,21395-21403,21470,21488,21551,21587,21632,21641,21704,21731,21836-21844,21854-21862,22037,22151-22159,22214-22222,22226,22242-22245,22247-22248,22322-22330,22334,22340-22348,22352,22394-22402,22457-22465,22496,22586,22592-22600,22649,22658,22685,22703,22739,22745-22753,22919,23051-23059,23090,23108,23162,23207,23222-23230,23276-23284,23348-23356,23360,23387,23404-23406,23412-23415,23417-23418,23432,23441,23450,23558,23618-23626,23693,23729,23837,23852-23860,23963,24176-24184,24267,24269-24270,24273,24338-24346,24509-24517,24582-24585,24588,24689-24706,24743-24751,24944,24968-24976,24980,25031-25039,25139-25147,25178,25291-25299
+src/app/__tests__/agentProtocolVersioning.spec.ts
+  s_487e9aa1e46063::t_00e23c255a9273 23-25
+src/app/__tests__/bootstrap.spec.ts
+  s_487e9aa1e46063::t_70f0f77b6304c6 333
+src/infra/release/__tests__/deviceReleaseAdmission.spec.ts
+  s_487e9aa1e46063::t_8c3ee3cc995240 1,3-7,9-15,18-22
+src/infra/release/deviceReleaseAdmission.ts
+  s_487e9aa1e46063::t_3b1935f4c134cd 1-18
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_487e9aa1e46063::t_4eb5d0b354d53c 264,333
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_487e9aa1e46063::t_c265ea4dc2149e 18-42
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_487e9aa1e46063::t_94c7c4a09dd2f6 314
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_487e9aa1e46063::t_e19f02472c4005 1,181-183
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_487e9aa1e46063::t_4264b19f1c55b1 28-31,45-54
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_487e9aa1e46063::t_98d31da5b6e315 3-4,19-20
+src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts
+  s_487e9aa1e46063::t_dd66359421277f 5,57,189-215
+src/modules/Arrangement/useCases/__tests__/loadTrackTemplate.spec.ts
+  s_487e9aa1e46063::t_8077dbb331a23e 3-4,29,64-89
+src/modules/Arrangement/useCases/__tests__/saveTrackAsTemplate.spec.ts
+  s_487e9aa1e46063::t_00d088c9bad92b 3-4,24,60-84
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_487e9aa1e46063::t_5a5e314e6490a7 51-54,83-84
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_487e9aa1e46063::t_3534a149e20eb5 44
+src/modules/Arrangement/useCases/duplicateTrack.ts
+  s_487e9aa1e46063::t_1caeaf28770a72 2,5,32-36
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_487e9aa1e46063::t_4b938b8eaf54f0 1-2,78,82,86
+src/modules/Arrangement/useCases/getDeviceManifestProtocolContract.ts
+  s_487e9aa1e46063::t_502850657e5283 1-2,20-28
+src/modules/Arrangement/useCases/loadTrackTemplate.ts
+  s_487e9aa1e46063::t_22e4884717405f 1-3,22-26
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_487e9aa1e46063::t_88dc68bc08a8fa 115-134
+src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts
+  s_487e9aa1e46063::t_f1cbb00e0bdcc5 1,18-22
+src/modules/Arrangement/useCases/preset/materializePresetDevices.ts
+  s_487e9aa1e46063::t_291e5c41e70156 1,26-31
+src/modules/Arrangement/useCases/preset/presetStorage/__tests__/saveCurrentAsPreset.spec.ts
+  s_487e9aa1e46063::t_4578a3c465cf2e 3-4,7-8,36-38,53-71
+src/modules/Arrangement/useCases/preset/presetStorage/saveCurrentAsPreset.ts
+  s_487e9aa1e46063::t_902752983ce437 1-3,25,28-32
+src/modules/Arrangement/useCases/saveTrackAsTemplate.ts
+  s_487e9aa1e46063::t_7258235f00ce0d 1-3,16-23
+src/modules/Arrangement/useCases/soundPresetLibrary.ts
+  s_487e9aa1e46063::t_c4f2424fa4642f 4,28
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  s_487e9aa1e46063::t_f041df321d1699 19,21,41-44,102-103,142-143,147,151-152,167,322-452
+src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts
+  s_487e9aa1e46063::t_fc3cf779f8f229 4,16-17,56-61,75-84,91-96,98-124,126-131
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_487e9aa1e46063::t_a64ea6806b3c00 10,941
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_487e9aa1e46063::t_7aa6eae5756872 10,94-98
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_487e9aa1e46063::t_f709ef962da79d 11,1936-1942
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_487e9aa1e46063::t_bddb4f44af6b6f 6,105-107,682-706
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_487e9aa1e46063::t_ddc907002479e3 11-12,88
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/nativeDspDeviceTypeWeld.spec.ts
+  s_487e9aa1e46063::t_7da41dc02c869c 5,55-59
+src/modules/AudioEngine/repositories/deviceStrategy/findReleasedNativeDspDeviceFactory.ts
+  s_487e9aa1e46063::t_636a8307acf69a 1-10
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_487e9aa1e46063::t_2738b19c33e3d1 191
+src/modules/AudioEngine/useCases/__tests__/agentBuiltinDeviceRuntimeManifest.spec.ts
+  s_487e9aa1e46063::t_5350deefab1891 3,10-13,85
+src/modules/AudioEngine/useCases/getAgentBuiltinDeviceRuntimeManifest.ts
+  s_487e9aa1e46063::t_a1a02dae65f163 1-3,13,17-20,22-23
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_487e9aa1e46063::t_508f28e3983594 1,756-763,884-899,914-969
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_487e9aa1e46063::t_a41204001f1b58 1940-1947
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_487e9aa1e46063::t_dc914039a93fe8 150-164,167-171
+src/modules/Automation/useCases/__tests__/automationShapes.spec.ts
+  s_487e9aa1e46063::t_9aa6ffcbfd1d44 104-162
+src/modules/Automation/useCases/automationShapes.ts
+  s_487e9aa1e46063::t_e1af3aaf24c3b0 6,92-118,160
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_487e9aa1e46063::t_0b770828f31cf0 46-69
+src/modules/BrowserAi/models/CapabilityReport.ts
+  s_487e9aa1e46063::t_424216c5e7f3d7 32,73-76
+src/modules/BrowserAi/models/WebGpuProbe.ts
+  s_487e9aa1e46063::t_36f63fe59d82f0 13-25
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_487e9aa1e46063::t_203c3ee119a451 29,81-82,85-88,90,162-163,165
+src/modules/BrowserAi/presentations/views/__tests__/CapabilityReportPanel.spec.tsx
+  s_487e9aa1e46063::t_68222349d13b97 20-21,73-79,82-86,92,96-112,114-117,123,143-145,151
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_487e9aa1e46063::t_8ef6b6f23b12bd 6,27,29,43,52,54-61,68,72,80-84,86,99-100,115-119,225,237,254-371,570-601,603-619,626-646,648,687-716,723,729,732,737
+src/modules/BrowserAi/repositories/__tests__/probeWebGpuUsability.spec.ts
+  s_487e9aa1e46063::t_5a8fca2784eb86 18,23,37-39,72-76,79-83,103,107-111,120-136,144,152-164,195-196
+src/modules/BrowserAi/repositories/capabilityDetector.ts
+  s_487e9aa1e46063::t_652e102b3c25a6 4,56,89-91,103-114,170-173,195-201,211-212,230-232,236-271,274,284-285,287,314-333,335-336,341,343-344,349-356,366-367,377-378
+src/modules/BrowserAi/repositories/probeWebGpuUsability.ts
+  s_487e9aa1e46063::t_99c1096bc97f59 1,25-26,43-46,51-52,59
+src/modules/BrowserAi/stores/__tests__/capabilityStore.spec.ts
+  s_487e9aa1e46063::t_47710285a1bb9f 27-28
+src/modules/BrowserAi/useCases/__tests__/capabilityColdStart.spec.ts
+  s_487e9aa1e46063::t_762a301e197fc4 37-38,58-59
+src/modules/BrowserAi/useCases/__tests__/detectCapabilities.spec.ts
+  s_487e9aa1e46063::t_c23ef051dc326a 22-23
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_487e9aa1e46063::t_dba8cd555711e9 54-55
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_487e9aa1e46063::t_f77e2d3afdb964 20-23
+src/modules/BrowserAi/workers/__tests__/webGpuProbeWorker.spec.ts
+  s_487e9aa1e46063::t_1989c81d035c0b 26,35,46,61,84,100,119,138,142-155
+src/modules/BrowserAi/workers/webGpuProbeWorker.ts
+  s_487e9aa1e46063::t_50ef9efc90a729 49-53
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_b9f255714a02a1 23-36
+src/modules/Collaboration/presentations/hooks/__tests__/useCollaborationState.spec.ts
+  s_487e9aa1e46063::t_800efd0c45fb15 27,53
+src/modules/Collaboration/presentations/hooks/useCollaborationState.ts
+  s_487e9aa1e46063::t_a9aa6842adedb9 16
+src/modules/Collaboration/presentations/views/CollaborationPanel.tsx
+  s_487e9aa1e46063::t_1d1ae63f64aaae 173-186,366-373
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_487e9aa1e46063::t_d1d039e252a721 66,170-199
+src/modules/Collaboration/stores/__tests__/collaborationStore.spec.ts
+  s_487e9aa1e46063::t_c1f06fac847df8 16,57,99
+src/modules/Collaboration/stores/collaborationStore.ts
+  s_487e9aa1e46063::t_26c7f7682c60c1 15
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_487e9aa1e46063::t_1e9cdc119dbef7 7-10,12-13,22,27,29,51,123-141,338-543,546-553,557,559-561,564-926
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_487e9aa1e46063::t_e106a0526b0d38 6,12,23,61-98,173-186,228-238,280-285,294-305,315-342,361-368,410-433,437-441,479-644,679-684,701-708
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_487e9aa1e46063::t_e26b8f1ec230e5 29
+src/modules/Collaboration/useCases/collaboration/__tests__/broadcastPresence.spec.ts
+  s_487e9aa1e46063::t_691856bb3bffd4 32
+src/modules/Collaboration/useCases/collaboration/__tests__/canExecuteCommandBatch.spec.ts
+  s_487e9aa1e46063::t_fc3c77a0ba0e2d 9
+src/modules/Collaboration/useCases/collaboration/__tests__/clearCollaborationFailure.spec.ts
+  s_487e9aa1e46063::t_4b74548e31e813 17
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_487e9aa1e46063::t_efade4815557ca 67
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_487e9aa1e46063::t_2f419aaefa0134 44
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_487e9aa1e46063::t_fba292a6739d0c 60,153,197
+src/modules/Collaboration/useCases/collaboration/__tests__/leaveSession.spec.ts
+  s_487e9aa1e46063::t_fccaafb8dc0dda 33,46
+src/modules/Collaboration/useCases/collaboration/__tests__/recordCollaborationFailure.spec.ts
+  s_487e9aa1e46063::t_462de54531f563 17
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_c5bd03527fde26 48-49,55,140-141,150,239,448-491,871-905,1287-1324
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_487e9aa1e46063::t_69dde46b4e58d7 75
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_487e9aa1e46063::t_d98db1ba495506 28
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_487e9aa1e46063::t_a999b29b0c16ea 21,83,127
+src/modules/Collaboration/useCases/collaboration/leaveSession.ts
+  s_487e9aa1e46063::t_ec0abf683ba091 39
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_0bb3793c3b86b0 315-342,385-390,699,823-830,838
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_487e9aa1e46063::t_8861fb6857409b 770
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_487e9aa1e46063::t_b9fc35d9ef9904 10,64,140,143-149,168,170,178,188-190,299,308,314-319,443-452
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_487e9aa1e46063::t_7a3465ab109951 24-29,44-45,50-53,129-130,295,306,310-311,313-338,340-373
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  s_487e9aa1e46063::t_cd96808eb2819e 18,130,155,167,184,251,264,268,272,284,291,326,329,340-341,362-363,377,386-387,402,414-415,420,443,447-448,452,464,470,482,488,510,512,536,548,551,620-622,646
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  s_487e9aa1e46063::t_0525886d08d75b 8-9,80-84,94-98,168,180
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  s_487e9aa1e46063::t_d93a5b301f18f7 10,124-126,135,148-149,159,226-227,237-238,240
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_487e9aa1e46063::t_46e1cb57e36fcc 13,124-126,131,133,145,164-165,187,213-214,247,251,259-260,262,265,285,292-293,308-309,326,340,356,362-363,377,389,401,404,424-426
+src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx
+  s_487e9aa1e46063::t_ed7d81b972f381 3-4,32,39,44,48,71-72
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_487e9aa1e46063::t_6b45452ffe7590 11,410-414,427,433,441,482-483,496-497,526,548-550,567-568,578,603-604,623,639-640,648-651,662-664,668,670-672,677,679,685-686,688,716-717,719,723,751-752,754-756,762,770,772,783-784,796,798,801,824-825,850,891,923-924,940,965,970-971,980-981,984-985,997,1003,1016,1019,1032,1037,1051-1053,1067,1070,1078-1079,1085,1101,1111,1121,1136,1180,1194-1195,1216-1217,1219,1244,1246-1247,1333,1404,1408,1420-1421,1436,1465-1466,1476,1538,1542,1559-1561,1580-1581,1600-1601,1620-1621,1627-1628,1655,1676,1707-1708,1737,1742,1748-1750,1762,1789-1790,1796-1797,1810,1915,1920-1921,1927-1928,1933-1934,1966,1997-1998,2003,2010-2011,2096-2097,2099,2110-2111,2115
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_487e9aa1e46063::t_043e1479a08a27 57-60
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_487e9aa1e46063::t_23fd0438503ac0 15,246,249-251,253,1357
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_487e9aa1e46063::t_3e7e12d54a1049 88,106,115
+src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts
+  s_487e9aa1e46063::t_c2fe9b40c08ac2 97,99-101
+src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts
+  s_487e9aa1e46063::t_e491514904c5f1 136-139
+src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts
+  s_487e9aa1e46063::t_857f6f07a14bb0 131,133-135
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/buildDevice.spec.ts
+  s_487e9aa1e46063::t_8b2c569ddb0880 30-35
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/createInstrumentTrack.spec.ts
+  s_487e9aa1e46063::t_30dabb24bd5541 19-20,23-24
+src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts
+  s_487e9aa1e46063::t_fb160237c86e45 1-2,13-16
+src/modules/Proof/presentations/components/ProofDynSection.tsx
+  s_487e9aa1e46063::t_6b72a21d3d4948 10,65,91,102,119,122,130-134,212,216
+src/modules/Proof/presentations/components/ProofEqSection.tsx
+  s_487e9aa1e46063::t_c9bdaf818bc204 11,56,95-98,196,199
+src/modules/Proof/presentations/components/ProofExciterSection.tsx
+  s_487e9aa1e46063::t_e1e29ce01fd073 10,40,69-73,136,140
+src/modules/Proof/presentations/components/ProofImagerSection.tsx
+  s_487e9aa1e46063::t_25f461b531fb3a 9,52,79,81,101,103,106,146,149,167,169
+src/modules/Proof/presentations/components/ProofLimiterSection.tsx
+  s_487e9aa1e46063::t_3f11f06e2124c8 10,35,62-63,87,89,113,115,139-140,143-144,147,155,162-163,166,189,208-209,211
+src/modules/Proof/presentations/components/TonalBalance.tsx
+  s_487e9aa1e46063::t_3ba69ab654f540 11-12,281-284,288
+src/modules/Proof/presentations/views/ProofPanel.tsx
+  s_487e9aa1e46063::t_9516bb86d9f6c8 13,481-482,484,501-502,504,506,521-522,524,526,540-542,546-548,554,557,571,586,608,612,622,648-649,675,677,679,696-697,703,719-720,737-739,743,745,749-751,755,767,790,792,803,821,824,827,971-972,992,994,1032,1036,1123,1132-1133,1136-1137,1140-1141,1144-1145,1148-1149,1154-1155,1158-1160,1194,1203,1209-1214,1218,1237-1238,1240,1245,1257-1258,1277-1278,1297-1299,1307,1312,1323,1325,1365,1368,1442,1466,1510,1512,1543-1544
+src/modules/Transport/handlers/transport/__tests__/handleSetMasterGain.spec.ts
+  s_487e9aa1e46063::t_b1bea00bc1b1ac 54-77,125-133
+src/modules/Transport/handlers/transport/handleSetMasterGain.ts
+  s_487e9aa1e46063::t_d4c03d7be51d94 14-19,52-60
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  s_487e9aa1e46063::t_30dbc7a7b656df 9,157,161,197,221,227,229-231,238-239,267-268,272-273,278,281,283,290,294,304,309,312,314-315,318-319,322-323,326-327,332-333,336,338-340,343,345,348,350-351,741,743,749,752
+src/utils/handlerContract.ts
+  s_487e9aa1e46063::t_78167ec691e735 792-802
+tests/e2e/automationDrawPlaybackTestId.spec.ts
+  s_487e9aa1e46063::t_cb156ac062060b 1,3,5-6,10-13,20-21,25-27,32-33,35-36,38-39,44-50,53-54,58-60,62-64,66-68,71,73-74
+tests/e2e/automationLanesTestId.spec.ts
+  s_487e9aa1e46063::t_cd01a6439536bd 1,5-14,16-19,21-24,29,32-33,37-39,44-45,50-51,53-54,56-57,61-63
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_487e9aa1e46063::t_e5f41c6b56165a 9,16,21,23-24,27-36,46-47
+tests/e2e/browserInstrumentsTestId.spec.ts
+  s_487e9aa1e46063::t_2000937f780fd4 36
+tests/e2e/crossFeatureWorkflowTestId.spec.ts
+  s_487e9aa1e46063::t_693a1179057f35 1-53,59,63-70,73,78-79,81-88,90-97,104,107-120,122,126-134,136,138,140-141,145-151,154,157-168,170,172-173,177-190
+tests/e2e/crumbsTestId.spec.ts
+  s_487e9aa1e46063::t_29d86ef457b317 22,30-32,42-44
+tests/e2e/instrumentPanels.spec.ts
+  s_487e9aa1e46063::t_fc276accc6537a 15,20-21,38-47
+tests/e2e/instrumentPanelsTestId.spec.ts
+  s_487e9aa1e46063::t_1a9a87cc286c00 5,55-58
+tests/e2e/remainingCoverage.spec.ts
+  s_487e9aa1e46063::t_5c05efa3e5ae1c 154
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_e1a9dcce411498::t_d966e1939d4334 8,355,793,800-810,2501
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "aa9c8908e78582bcae06773d309bb72047bf9f27",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e1a9dcce411498": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aea80b9ebf204bc47",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
