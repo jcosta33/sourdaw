@@ -14,16 +14,20 @@ const { transportRef, tempoMapRef, livePlayheadRef } = vi.hoisted(() => {
     return { transportRef, tempoMapRef, livePlayheadRef };
 });
 
-vi.mock('../../stores/transportStore', () => ({
-    transportStore: {
-        get value() {
-            return transportRef.value;
+vi.mock('../../stores/transportStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../stores/transportStore')>();
+    return {
+        ...actual,
+        transportStore: {
+            get value() {
+                return transportRef.value;
+            },
+            set: (next: TransportState) => {
+                transportRef.value = next;
+            },
         },
-        set: (next: TransportState) => {
-            transportRef.value = next;
-        },
-    },
-}));
+    };
+});
 
 vi.mock('../../stores/tempoMapStore', () => ({
     MIN_TEMPO_MAP_TEMPO: 20,
