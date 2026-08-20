@@ -35,6 +35,12 @@ describe('pull-request contract', () => {
         expect(issueRelationshipFromBody(`${prefix}Closes #2164`, 2164)).toBe('closes');
         expect(issueRelationshipFromBody(`${prefix}CLOSES #2164`, 2164)).toBe('closes');
         expect(issueRelationshipFromBody(`${prefix}Closes: #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Closes jcosta33/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toBe(
+            'closes'
+        );
+        expect(issueRelationshipFromBody(`${prefix}Closes JCOSTA33/SOURDAW#2164`, 2164, 'jcosta33/sourdaw')).toBe(
+            'closes'
+        );
         expect(issueRelationshipFromBody(`${prefix}Related #2164`, 2164)).toBe('relates');
         expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
         expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
@@ -55,6 +61,9 @@ describe('pull-request contract', () => {
             /unexpected issue-closing references/
         );
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
+        expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
+            /exactly one relationship/
+        );
     });
 
     it('rejects hidden GitHub closing references', () => {

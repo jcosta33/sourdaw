@@ -222,7 +222,9 @@ export function publishLane(
         fail('existing pull-request body is unreadable');
     }
     const existingRelationship =
-        existing === undefined ? undefined : issueRelationshipFromBody(existing.body as string, laneIssue);
+        existing === undefined
+            ? undefined
+            : issueRelationshipFromBody(existing.body as string, laneIssue, REQUIRED_REPOSITORY);
     const resolvedRelationship = relationship ?? existingRelationship ?? 'closes';
     const body = composePublishBody(laneIssue, title, resolvedRelationship);
     port.push(lane.path, lane.branch);
