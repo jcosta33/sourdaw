@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { validateLgplRuntimeProvenance } from '../checkLgplRuntimeProvenance';
+import { type LgplRuntimeContract, validateLgplRuntimeProvenance } from '../checkLgplRuntimeProvenance';
 
 const roots: string[] = [];
 
@@ -14,27 +14,81 @@ function write(root: string, path: string, value: string | Buffer): void {
     writeFileSync(absolute, value);
 }
 
-function mutateComponent(
-    root: string,
-    mutate: (component: { licenseFiles: Record<string, string>; shippedFiles: Record<string, string> }) => void
-): void {
+type TestSource = {
+    id: string;
+    repository: string;
+    revision: string;
+    version?: string;
+    relationship: 'npm-gitHead' | 'embedded-version-match';
+    archive: string;
+};
+
+type TestComponent = {
+    id: string;
+    package: string;
+    version: string;
+    specifier: string;
+    integrity: string;
+    repository: string;
+    revision: string;
+    distribution: 'copied-byte-for-byte' | 'vite-bundle';
+    packageLicense: string;
+    license: string;
+    licenseFiles: Record<string, string>;
+    packageFiles: Record<string, string>;
+    shippedFiles: Record<string, string>;
+    sources: TestSource[];
+    integration?: { file: string; import: string };
+};
+
+function readComponents(root: string): TestComponent[] {
+    return (
+        JSON.parse(readFileSync(join(root, 'public/legal/SOURCES.json'), 'utf8')) as {
+            components: TestComponent[];
+        }
+    ).components;
+}
+
+function fixtureContract(root: string): LgplRuntimeContract {
+    return Object.fromEntries(
+        readComponents(root).map((component) => [
+            component.id,
+            {
+                package: component.package,
+                version: component.version,
+                specifier: component.specifier,
+                integrity: component.integrity,
+                repository: component.repository,
+                revision: component.revision,
+                distribution: component.distribution,
+                packageLicense: component.packageLicense,
+                license: component.license,
+                licenseFiles: component.licenseFiles,
+                packageFiles: component.packageFiles,
+                shippedFiles: component.shippedFiles,
+                sources: Object.fromEntries(component.sources.map((source) => [source.id, source])),
+                integration: component.integration,
+            },
+        ])
+    );
+}
+
+function mutateComponent(root: string, mutate: (component: TestComponent) => void): void {
     const path = join(root, 'public/legal/SOURCES.json');
-    const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
-        components: Array<{ licenseFiles: Record<string, string>; shippedFiles: Record<string, string> }>;
-    };
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as { components: TestComponent[] };
     mutate(manifest.components[0]!);
     writeFileSync(path, JSON.stringify(manifest));
 }
 
-function fixture(): string {
+function fixture(): { root: string; contract: LgplRuntimeContract } {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-lgpl-'));
     roots.push(root);
     const revision = 'a'.repeat(40);
     const compilerRevision = 'b'.repeat(40);
     const lameRevision = 'c'.repeat(40);
-    const archive = `https://example.com/faustwasm/${revision}.tar.gz`;
-    const compilerArchive = `https://example.com/faust/${compilerRevision}.tar.gz`;
-    const lameArchive = `https://example.com/lamejs/${lameRevision}.tar.gz`;
+    const archive = `https://github.com/grame-cncm/faustwasm/archive/${revision}.tar.gz`;
+    const compilerArchive = `https://github.com/grame-cncm/faust/archive/${compilerRevision}.tar.gz`;
+    const lameArchive = `https://github.com/gideonstele/lamejs/archive/${lameRevision}.tar.gz`;
     const digest = 'sha256:8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4';
 
     write(
@@ -45,7 +99,7 @@ function fixture(): string {
     write(
         root,
         'pnpm-lock.yaml',
-        `'@grame/faustwasm@1.0.0':\n  integrity: sha512-test\n'@breezystack/lamejs@1.2.7':\n  integrity: sha512-lame\n`
+        `importers:\n\n  .:\n    dependencies:\n      '@breezystack/lamejs':\n        specifier: 1.2.7\n        version: 1.2.7\n      '@grame/faustwasm':\n        specifier: 1.0.0\n        version: 1.0.0\n\npackages:\n\n  '@breezystack/lamejs@1.2.7':\n    resolution: {integrity: sha512-lame}\n\n  '@grame/faustwasm@1.0.0':\n    resolution: {integrity: sha512-test}\n`
     );
     write(
         root,
@@ -97,6 +151,7 @@ function fixture(): string {
                     repository: 'https://github.com/grame-cncm/faustwasm',
                     revision,
                     modifications: 'none',
+                    distribution: 'copied-byte-for-byte',
                     packageLicense: 'LGPL-3.0',
                     license: 'LGPL-2.1-or-later',
                     licenseFiles: { 'public/legal/faustwasm-COPYING.txt': digest },
@@ -139,6 +194,7 @@ function fixture(): string {
                     repository: 'https://github.com/gideonstele/lamejs',
                     revision: lameRevision,
                     modifications: 'none',
+                    distribution: 'vite-bundle',
                     packageLicense: 'LGPL-3.0',
                     license: 'LGPL-3.0-only',
                     licenseFiles: {
@@ -165,7 +221,7 @@ function fixture(): string {
         })
     );
 
-    return root;
+    return { root, contract: fixtureContract(root) };
 }
 
 afterEach(() => {
@@ -176,41 +232,63 @@ afterEach(() => {
 
 describe('LGPL runtime provenance', () => {
     it('accepts exact package, source, license, and shipped-file evidence', () => {
-        const root = fixture();
-        expect(validateLgplRuntimeProvenance(root)).toEqual([]);
+        const { root, contract } = fixture();
+        expect(validateLgplRuntimeProvenance(root, contract)).toEqual([]);
     });
 
     it('rejects a shipped binary that no longer matches the package', () => {
-        const root = fixture();
+        const { root, contract } = fixture();
         write(root, 'public/faust/libfaust-wasm.wasm', 'different 2.0.0');
 
-        expect(validateLgplRuntimeProvenance(root)).toContain(
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain(
             'faustwasm: shipped file differs from package: public/faust/libfaust-wasm.wasm'
         );
     });
 
     it('rejects a source revision omitted from user directions', () => {
-        const root = fixture();
+        const { root, contract } = fixture();
         write(root, 'public/legal/THIRD-PARTY-NOTICES.md', '1.0.0 LGPL-2.1-or-later');
 
-        expect(validateLgplRuntimeProvenance(root)).toContain(`faustwasm: source directions omit ${'a'.repeat(40)}`);
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain(
+            `faustwasm: source directions omit ${'a'.repeat(40)}`
+        );
     });
 
     it('rejects deletion of a required license file contract', () => {
-        const root = fixture();
+        const { root, contract } = fixture();
         mutateComponent(root, (component) => {
             delete component.licenseFiles['public/legal/faustwasm-COPYING.txt'];
         });
 
-        expect(validateLgplRuntimeProvenance(root)).toContain('faustwasm: required license files drifted');
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: required license evidence drifted');
     });
 
     it('rejects redirection of a shipped file mapping', () => {
-        const root = fixture();
+        const { root, contract } = fixture();
         mutateComponent(root, (component) => {
             component.shippedFiles['public/faust/libfaust-wasm.wasm'] = 'COPYING.txt';
         });
 
-        expect(validateLgplRuntimeProvenance(root)).toContain('faustwasm: shipped file mapping drifted');
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: shipped file mapping drifted');
+    });
+
+    it('rejects duplicate source identities', () => {
+        const { root, contract } = fixture();
+        mutateComponent(root, (component) => {
+            component.sources.push({ ...component.sources[0]! });
+        });
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: source IDs must be unique');
+    });
+
+    it('rejects an integrity found outside the exact package resolution', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n\n  .:\n    dependencies:\n      '@grame/faustwasm':\n        specifier: 1.0.0\n        version: 1.0.0\n\npackages:\n\n  '@grame/faustwasm@1.0.0':\n    resolution: {integrity: sha512-wrong}\n\n  'other@1.0.0':\n    resolution: {integrity: sha512-test}\n`
+        );
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
     });
 });

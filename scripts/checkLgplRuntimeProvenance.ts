@@ -23,6 +23,7 @@ type Component = {
     repository: string;
     revision: string;
     modifications: 'none';
+    distribution: 'copied-byte-for-byte' | 'vite-bundle';
     packageLicense: string;
     license: string;
     licenseFiles: Record<string, string>;
@@ -39,27 +40,54 @@ type Provenance = {
 
 type RequiredComponent = {
     package: string;
+    version: string;
+    specifier: string;
+    integrity: string;
+    repository: string;
+    revision: string;
+    distribution: Component['distribution'];
     packageLicense: string;
     license: string;
-    licenseFiles: string[];
-    packageFiles: string[];
+    licenseFiles: Record<string, string>;
+    packageFiles: Record<string, string>;
     shippedFiles: Record<string, string>;
-    sources: Record<string, { repository: string; relationship: Source['relationship'] }>;
+    sources: Record<
+        string,
+        {
+            repository: string;
+            revision: string;
+            version?: string;
+            relationship: Source['relationship'];
+        }
+    >;
     integration?: Component['integration'];
 };
 
-const REQUIRED_COMPONENTS: Record<string, RequiredComponent> = {
+export type LgplRuntimeContract = Readonly<Record<string, RequiredComponent>>;
+
+const REQUIRED_COMPONENTS: LgplRuntimeContract = {
     faustwasm: {
         package: '@grame/faustwasm',
+        version: '0.16.7',
+        specifier: '0.16.7',
+        integrity: 'sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==',
+        repository: 'https://github.com/grame-cncm/faustwasm',
+        revision: 'a1ae243d885d6494409a2a4a227cbdd2a6833edf',
+        distribution: 'copied-byte-for-byte',
         packageLicense: 'LGPL-3.0',
         license: 'LGPL-2.1-or-later',
-        licenseFiles: ['public/legal/faustwasm-COPYING.txt'],
-        packageFiles: [
-            'COPYING.txt',
-            'libfaust-wasm/libfaust-wasm.data',
-            'libfaust-wasm/libfaust-wasm.js',
-            'libfaust-wasm/libfaust-wasm.wasm',
-        ],
+        licenseFiles: {
+            'public/legal/faustwasm-COPYING.txt':
+                'sha256:587bc956e3703e11aa8f4350193d6f5e37b497d84a552abdbe348b48e542d5a1',
+        },
+        packageFiles: {
+            'COPYING.txt': 'sha256:c747ba23f84a8b47ebc6007bf536215b3ceeab6bfa2f803cab422a512e3f1ed3',
+            'libfaust-wasm/libfaust-wasm.data':
+                'sha256:1a5acda82475a3196eb09444fc6cc42951ae3b8c062828fc4b6f0155a6f23f3f',
+            'libfaust-wasm/libfaust-wasm.js': 'sha256:3e582a8a47128ae1eb594c7e39c9a706844304d2377f11439cf3a9f8a8be2622',
+            'libfaust-wasm/libfaust-wasm.wasm':
+                'sha256:c84e10786d9090eb5a70cab806f66b1cf82009d5c0836c473d3cb76fae7e76db',
+        },
         shippedFiles: {
             'public/faust/libfaust-wasm.data': 'libfaust-wasm/libfaust-wasm.data',
             'public/faust/libfaust-wasm.js': 'libfaust-wasm/libfaust-wasm.js',
@@ -68,24 +96,41 @@ const REQUIRED_COMPONENTS: Record<string, RequiredComponent> = {
         sources: {
             faustwasm: {
                 repository: 'https://github.com/grame-cncm/faustwasm',
+                revision: 'a1ae243d885d6494409a2a4a227cbdd2a6833edf',
                 relationship: 'npm-gitHead',
             },
             'faust-core': {
                 repository: 'https://github.com/grame-cncm/faust',
+                revision: '011423ab76674cd96009385af15cadcd281a3259',
+                version: '2.86.2',
                 relationship: 'embedded-version-match',
             },
         },
     },
     lamejs: {
         package: '@breezystack/lamejs',
+        version: '1.2.7',
+        specifier: '1.2.7',
+        integrity: 'sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==',
+        repository: 'https://github.com/gideonstele/lamejs',
+        revision: '1fb0ef5fa177413107e2e107d054a9b994e3f79c',
+        distribution: 'vite-bundle',
         packageLicense: 'LGPL-3.0',
         license: 'LGPL-3.0-only',
-        licenseFiles: ['public/legal/LGPL-3.0-and-GPL-3.0.txt', 'public/legal/lamejs-NOTICE.txt'],
-        packageFiles: ['LICENSE', 'dist/lamejs.js'],
+        licenseFiles: {
+            'public/legal/LGPL-3.0-and-GPL-3.0.txt':
+                'sha256:5eecce16e59e24ddd9d3712012517a033f2cd0459ace22b43d5659d4624abff0',
+            'public/legal/lamejs-NOTICE.txt': 'sha256:b89d10b0c083613ad440e2357ef7b2cddb22e79495237d533efde4cfa3cee5fc',
+        },
+        packageFiles: {
+            LICENSE: 'sha256:cd144ca132e3842b01f5ed2d6f3a32141e24a1cc15e115aa5f19a2294ce0a379',
+            'dist/lamejs.js': 'sha256:1c5f944911ccf2f6e29ab36c2e568363210ab16f50c0d76077060f40ecf91d28',
+        },
         shippedFiles: {},
         sources: {
             lamejs: {
                 repository: 'https://github.com/gideonstele/lamejs',
+                revision: '1fb0ef5fa177413107e2e107d054a9b994e3f79c',
                 relationship: 'npm-gitHead',
             },
         },
@@ -117,11 +162,30 @@ function sameRecord(actual: Record<string, string>, expected: Record<string, str
     return JSON.stringify(Object.entries(actual).sort()) === JSON.stringify(Object.entries(expected).sort());
 }
 
-function sameKeys(actual: Record<string, string>, expected: string[]): boolean {
-    return JSON.stringify(Object.keys(actual).sort()) === JSON.stringify([...expected].sort());
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
-export function validateLgplRuntimeProvenance(root: string): string[] {
+function lockHasExactResolution(lock: string, component: Component): boolean {
+    const packageName = escapeRegExp(component.package);
+    const version = escapeRegExp(component.version);
+    const specifier = escapeRegExp(component.specifier);
+    const integrity = escapeRegExp(component.integrity);
+    const importer = new RegExp(
+        `^      '${packageName}':\\n        specifier: ${specifier}\\n        version: ${version}$`,
+        'mu'
+    );
+    const resolution = new RegExp(
+        `^  '${packageName}@${version}':\\n    resolution: \\{integrity: ${integrity}\\}$`,
+        'mu'
+    );
+    return importer.test(lock) && resolution.test(lock);
+}
+
+export function validateLgplRuntimeProvenance(
+    root: string,
+    requiredComponents: LgplRuntimeContract = REQUIRED_COMPONENTS
+): string[] {
     const manifest = readJson<Provenance>(resolve(root, 'public/legal/SOURCES.json'));
     const projectPackage = readJson<{ dependencies?: Record<string, string> }>(resolve(root, 'package.json'));
     const lock = readFileSync(resolve(root, 'pnpm-lock.yaml'), 'utf8');
@@ -139,31 +203,41 @@ export function validateLgplRuntimeProvenance(root: string): string[] {
     }
 
     const ids = manifest.components.map((component) => component.id).sort();
-    if (JSON.stringify(ids) !== JSON.stringify(Object.keys(REQUIRED_COMPONENTS).sort())) {
+    if (JSON.stringify(ids) !== JSON.stringify(Object.keys(requiredComponents).sort())) {
         errors.push('component set drifted');
     }
 
     for (const component of manifest.components) {
-        const required = REQUIRED_COMPONENTS[component.id];
+        const required = requiredComponents[component.id];
         if (required === undefined) {
             continue;
         }
         if (
             component.package !== required.package ||
+            component.version !== required.version ||
+            component.specifier !== required.specifier ||
+            component.integrity !== required.integrity ||
+            component.repository !== required.repository ||
+            component.revision !== required.revision ||
             component.packageLicense !== required.packageLicense ||
             component.license !== required.license ||
-            component.modifications !== 'none'
+            component.modifications !== 'none' ||
+            component.distribution !== required.distribution
         ) {
             errors.push(`${component.id}: identity or license contract drifted`);
         }
-        if (!sameKeys(component.licenseFiles, required.licenseFiles)) {
-            errors.push(`${component.id}: required license files drifted`);
+        if (!sameRecord(component.licenseFiles, required.licenseFiles)) {
+            errors.push(`${component.id}: required license evidence drifted`);
         }
-        if (!sameKeys(component.packageFiles, required.packageFiles)) {
-            errors.push(`${component.id}: required package files drifted`);
+        if (!sameRecord(component.packageFiles, required.packageFiles)) {
+            errors.push(`${component.id}: required package evidence drifted`);
         }
         if (!sameRecord(component.shippedFiles, required.shippedFiles)) {
             errors.push(`${component.id}: shipped file mapping drifted`);
+        }
+        const sourceIds = component.sources.map((source) => source.id);
+        if (new Set(sourceIds).size !== sourceIds.length) {
+            errors.push(`${component.id}: source IDs must be unique`);
         }
         const sources = Object.fromEntries(component.sources.map((source) => [source.id, source]));
         if (JSON.stringify(Object.keys(sources).sort()) !== JSON.stringify(Object.keys(required.sources).sort())) {
@@ -171,7 +245,13 @@ export function validateLgplRuntimeProvenance(root: string): string[] {
         }
         for (const [id, contract] of Object.entries(required.sources)) {
             const source = sources[id];
-            if (source?.repository !== contract.repository || source.relationship !== contract.relationship) {
+            if (
+                source?.repository !== contract.repository ||
+                source.revision !== contract.revision ||
+                source.version !== contract.version ||
+                source.relationship !== contract.relationship ||
+                source.archive !== `${contract.repository}/archive/${contract.revision}.tar.gz`
+            ) {
                 errors.push(`${component.id}: ${id} source identity drifted`);
             }
         }
@@ -181,7 +261,7 @@ export function validateLgplRuntimeProvenance(root: string): string[] {
         if (projectPackage.dependencies?.[component.package] !== component.specifier) {
             errors.push(`${component.id}: dependency specifier drifted`);
         }
-        if (!lock.includes(`${component.package}@${component.version}`) || !lock.includes(component.integrity)) {
+        if (!lockHasExactResolution(lock, component)) {
             errors.push(`${component.id}: lock resolution drifted`);
         }
 
@@ -243,7 +323,7 @@ export function validateLgplRuntimeProvenance(root: string): string[] {
     }
 
     const faust = manifest.components.find((component) => component.id === 'faustwasm');
-    const compiler = faust?.sources.find((source) => source.version !== undefined);
+    const compiler = faust?.sources.find((source) => source.id === 'faust-core');
     const compilerBinary = Object.keys(faust?.shippedFiles ?? {}).find((path) => path.endsWith('.wasm'));
     if (compiler?.version === undefined) {
         errors.push('faustwasm: compiler source version is missing');

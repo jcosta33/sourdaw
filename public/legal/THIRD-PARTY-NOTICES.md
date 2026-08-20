@@ -1,6 +1,7 @@
 # Third-Party Notices
 
-Sourdaw ships two unmodified LGPL libraries.
+Sourdaw uses two LGPL packages without source modifications. FaustWasm runtime files are copied
+byte-for-byte from its package. Vite bundles lamejs into Sourdaw's application code.
 
 | Component | Version | License           | Source                                                                                                                                                                                                              |
 | --------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

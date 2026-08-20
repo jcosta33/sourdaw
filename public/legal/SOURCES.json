@@ -10,6 +10,7 @@
             "repository": "https://github.com/grame-cncm/faustwasm",
             "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
             "modifications": "none",
+            "distribution": "copied-byte-for-byte",
             "packageLicense": "LGPL-3.0",
             "license": "LGPL-2.1-or-later",
             "licenseFiles": {
@@ -53,6 +54,7 @@
             "repository": "https://github.com/gideonstele/lamejs",
             "revision": "1fb0ef5fa177413107e2e107d054a9b994e3f79c",
             "modifications": "none",
+            "distribution": "vite-bundle",
             "packageLicense": "LGPL-3.0",
             "license": "LGPL-3.0-only",
             "licenseFiles": {

@@ -87,7 +87,16 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
     // that would inherit this origin.
     window.webContents.setWindowOpenHandler(({ url }) => {
         const decision = decideWindowOpen(url);
-        if (decision.openExternally) {
+        if (decision.legalDocument !== undefined) {
+            const legalRoot = app.isPackaged
+                ? join(process.resourcesPath, 'legal')
+                : resolve(dirname(import.meta.dirname), '..', 'public', 'legal');
+            void shell.openPath(join(legalRoot, decision.legalDocument)).then((error) => {
+                if (error !== '') {
+                    console.warn(`[shell] failed to open legal document: ${error}`);
+                }
+            });
+        } else if (decision.openExternally) {
             void shell.openExternal(url);
         } else {
             console.warn(`[shell] blocked window-open target: ${url}`);
