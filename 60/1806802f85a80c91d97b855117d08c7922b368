@@ -1,0 +1,22 @@
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_27578aec2aab3b::t_a191ff2f2848d1 309,323-326
+src/modules/BrowserAi/repositories/capabilityDetector.ts
+  s_27578aec2aab3b::t_8003a51e805fb8 221
+  s_27578aec2aab3b::t_6260a57fb908d1 222-228,239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "601806802f85a80c91d97b855117d08c7922b368",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
