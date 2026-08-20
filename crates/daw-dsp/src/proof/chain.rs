@@ -63,6 +63,12 @@ pub struct ProofChain {
     /// so the dry signal matches the processed signal's loudness.
     ab_bypass: bool,
     ab_gain_offset: f32, // dB offset applied when in A (bypass) mode
+
+    /// Latch: set while the input loudness meter has already been cleared for
+    /// the current run of non-finite input. See [`Self::meter_input_sample`].
+    input_meter_cleared: bool,
+    /// The same latch for the two output loudness meters.
+    output_meter_cleared: bool,
 }
 
 impl ProofChain {
@@ -97,6 +103,61 @@ impl ProofChain {
             bypassed: false,
             ab_bypass: false,
             ab_gain_offset: 0.0,
+            input_meter_cleared: false,
+            output_meter_cleared: false,
+        }
+    }
+
+    /// Feed one sample to the input loudness meter, clearing the meter instead
+    /// when the sample is not finite.
+    ///
+    /// A sliding-window loudness meter carries a running sum of squares, so one
+    /// non-finite sample parks it at NaN permanently: every later
+    /// `sum_sq -= old*old` / `sum_sq += new*new` propagates the NaN, the window
+    /// energy stays NaN, and `loudness_from_energy` answers the −100 LUFS
+    /// silence floor forever. `ProofInstance::process` scrubs non-finite
+    /// samples out of the *output buffer* after this chain has run, so it
+    /// protects downstream audio and not these meters.
+    ///
+    /// `input_lufs`, `output_lufs` and `output_st_lufs` are read straight off
+    /// this struct by the mastering panel and no caller resets them —
+    /// `ProofInstance::reset_integrated` reaches `integrated_lufs`, `true_peak`
+    /// and `lra`, which is why those three have a recovery path and these do
+    /// not. The answer here is the same one `IntegratedLufs::reset` gives:
+    /// clear the filter state, the ring buffer and the running sums, so the
+    /// next valid block reads normally.
+    ///
+    /// **The latch is what makes it affordable on the audio thread.** Clearing
+    /// is O(window) — the short-term meter's ring buffers are three seconds of
+    /// `f64` per channel, over a megabyte at 48 kHz and four at 192 kHz — so
+    /// clearing per non-finite sample would memset hundreds of megabytes for a
+    /// single render quantum of NaN and miss the deadline outright. One clear
+    /// per contiguous run of bad samples is all the recovery needs, because
+    /// after the first the window is already zero. It allocates nothing and
+    /// takes no lock either way.
+    #[inline]
+    fn meter_input_sample(&mut self, l: f32, r: f32) {
+        if l.is_finite() && r.is_finite() {
+            self.input_meter_cleared = false;
+            self.input_lufs.process_sample(l, r);
+        } else if !self.input_meter_cleared {
+            self.input_meter_cleared = true;
+            self.input_lufs.reset();
+        }
+    }
+
+    /// The output twin of [`Self::meter_input_sample`], covering the momentary
+    /// and short-term meters the panel reads after processing.
+    #[inline]
+    fn meter_output_sample(&mut self, l: f32, r: f32) {
+        if l.is_finite() && r.is_finite() {
+            self.output_meter_cleared = false;
+            self.output_lufs.process_sample(l, r);
+            self.output_st_lufs.process_sample(l, r);
+        } else if !self.output_meter_cleared {
+            self.output_meter_cleared = true;
+            self.output_lufs.reset();
+            self.output_st_lufs.reset();
         }
     }
 
@@ -168,7 +229,7 @@ impl ProofChain {
         // Input metering
         for i in 0..left.len() {
             self.taps[0].process(left[i], right[i]);
-            self.input_lufs.process_sample(left[i], right[i]);
+            self.meter_input_sample(left[i], right[i]);
         }
 
         // A/B comparison: auto gain-match the dry signal to the processed level
@@ -177,8 +238,7 @@ impl ProofChain {
             for i in 0..left.len() {
                 left[i] *= ab_gain;
                 right[i] *= ab_gain;
-                self.output_lufs.process_sample(left[i], right[i]);
-                self.output_st_lufs.process_sample(left[i], right[i]);
+                self.meter_output_sample(left[i], right[i]);
                 self.true_peak.process_sample(left[i], right[i]);
             }
             return;
@@ -186,8 +246,7 @@ impl ProofChain {
 
         if self.bypassed {
             for i in 0..left.len() {
-                self.output_lufs.process_sample(left[i], right[i]);
-                self.output_st_lufs.process_sample(left[i], right[i]);
+                self.meter_output_sample(left[i], right[i]);
                 self.integrated_lufs.process_sample(left[i], right[i]);
                 self.true_peak.process_sample(left[i], right[i]);
                 self.lra.process_sample(left[i], right[i]);
@@ -235,8 +294,7 @@ impl ProofChain {
 
         // Output metering
         for i in 0..left.len() {
-            self.output_lufs.process_sample(left[i], right[i]);
-            self.output_st_lufs.process_sample(left[i], right[i]);
+            self.meter_output_sample(left[i], right[i]);
             self.integrated_lufs.process_sample(left[i], right[i]);
             self.true_peak.process_sample(left[i], right[i]);
             self.lra.process_sample(left[i], right[i]);
@@ -479,6 +537,153 @@ mod latency_contract_tests {
         assert!(
             chain.linear_eq.is_active(),
             "a designed FIR must report itself as filtering"
+        );
+    }
+}
+
+#[cfg(test)]
+mod metering_nan_recovery_tests {
+    //! The three loudness meters the mastering panel reads live on this struct:
+    //! `input_lufs`, `output_lufs` and `output_st_lufs`. Each carries a running
+    //! sum of squares over a sliding window, so one non-finite sample parks it
+    //! at NaN permanently — the ring buffer overwrites the bad value but the
+    //! sum never recovers, and the readout sits on the −100 LUFS silence floor
+    //! for the rest of the session.
+    //!
+    //! Nothing resets them. `ProofInstance::reset_integrated` reaches
+    //! `integrated_lufs`, `true_peak` and `lra`, which is why those three have
+    //! a user-facing recovery path; these do not, and
+    //! `ProofInstance::process` scrubs non-finite samples out of the output
+    //! buffer only *after* this chain has already metered them.
+    //!
+    //! The oracle is a second chain fed the same audio without the NaN, so the
+    //! assertion is "reads what it would have read anyway" rather than a
+    //! hardcoded level that would also pass for a mis-calibrated meter.
+
+    use super::ProofChain;
+
+    const SR: f64 = 48_000.0;
+    const BLOCK: usize = 128;
+    /// Longer than the short-term meter's 3 s window, so by the end both
+    /// chains' windows hold nothing but the tone.
+    const SETTLE_SECONDS: usize = 4;
+
+    fn tone(n: usize) -> f32 {
+        (0.25 * (2.0 * core::f64::consts::PI * 1_000.0 * n as f64 / SR).sin()) as f32
+    }
+
+    /// Render `seconds` of 1 kHz tone through `chain`, optionally poisoning the
+    /// very first sample of the very first block.
+    fn render(chain: &mut ProofChain, seconds: usize, poison_first_sample: bool) {
+        let blocks = seconds * SR as usize / BLOCK;
+        for b in 0..blocks {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+                let s = tone(b * BLOCK + i);
+                *l = s;
+                *r = s;
+            }
+            if b == 0 && poison_first_sample {
+                left[0] = f32::NAN;
+                right[0] = f32::NAN;
+            }
+            chain.process(&mut left, &mut right);
+        }
+    }
+
+    /// Bypassed, so the NaN reaches the output meters unchanged rather than
+    /// being reshaped by the limiter on its way. The input meter is fed before
+    /// the bypass branch either way, so one render covers all three.
+    fn bypassed_chain() -> ProofChain {
+        let mut chain = ProofChain::new(SR);
+        chain.set_param("bypass", 1.0);
+        chain
+    }
+
+    #[test]
+    fn one_non_finite_sample_does_not_park_the_displayed_loudness_meters() {
+        let mut poisoned = bypassed_chain();
+        render(&mut poisoned, SETTLE_SECONDS, true);
+
+        let mut clean = bypassed_chain();
+        render(&mut clean, SETTLE_SECONDS, false);
+
+        for (name, measured, expected) in [
+            (
+                "input_lufs",
+                poisoned.input_lufs.get_lufs(),
+                clean.input_lufs.get_lufs(),
+            ),
+            (
+                "output_lufs",
+                poisoned.output_lufs.get_lufs(),
+                clean.output_lufs.get_lufs(),
+            ),
+            (
+                "output_st_lufs",
+                poisoned.output_st_lufs.get_lufs(),
+                clean.output_st_lufs.get_lufs(),
+            ),
+        ] {
+            assert!(
+                expected > -100.0,
+                "{name} on the unpoisoned chain reads {expected}, so this comparison \
+                 cannot distinguish recovery from the silence floor"
+            );
+            assert!(
+                measured > -100.0,
+                "{name} is still parked on the silence floor {SETTLE_SECONDS} s after a \
+                 single NaN sample — one poisoned sample has taken the meter out for \
+                 the rest of the session"
+            );
+            assert!(
+                (measured - expected).abs() < 0.1,
+                "{name} reads {measured:.4} LUFS after recovering from one NaN sample \
+                 against {expected:.4} LUFS on a chain that never saw it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sustained_run_of_non_finite_samples_latches_and_then_releases() {
+        // Recovery has to survive a *sustained* fault, not just an isolated
+        // sample, and the latch that keeps the clear affordable has to release
+        // again — a latch stuck set would leave the next poisoning event
+        // unanswered, which is the failure mode the latch itself introduces.
+        let mut chain = bypassed_chain();
+        let mut left = [f32::NAN; BLOCK];
+        let mut right = [f32::NAN; BLOCK];
+        chain.process(&mut left, &mut right);
+        assert!(
+            chain.input_meter_cleared && chain.output_meter_cleared,
+            "a block of non-finite samples must latch both meter groups, or the \
+             clear is running once per sample"
+        );
+
+        render(&mut chain, SETTLE_SECONDS, false);
+        assert!(
+            !chain.input_meter_cleared && !chain.output_meter_cleared,
+            "the latch must release on the first finite sample — held set, a second \
+             poisoning event would never be cleared at all"
+        );
+
+        let mut clean = bypassed_chain();
+        render(&mut clean, SETTLE_SECONDS, false);
+
+        assert!(
+            (chain.output_st_lufs.get_lufs() - clean.output_st_lufs.get_lufs()).abs() < 0.1,
+            "short-term loudness reads {:.4} LUFS after a full block of NaN against \
+             {:.4} LUFS on a chain that never saw one",
+            chain.output_st_lufs.get_lufs(),
+            clean.output_st_lufs.get_lufs()
+        );
+        assert!(
+            (chain.output_lufs.get_lufs() - clean.output_lufs.get_lufs()).abs() < 0.1,
+            "momentary loudness reads {:.4} LUFS after a full block of NaN against \
+             {:.4} LUFS on a chain that never saw one",
+            chain.output_lufs.get_lufs(),
+            clean.output_lufs.get_lufs()
         );
     }
 }
