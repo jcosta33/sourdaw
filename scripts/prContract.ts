@@ -53,8 +53,15 @@ export const ISSUE_NUMBER_PATTERN = /^[1-9][0-9]*$/;
 
 export const NO_RELATED_TICKETS = 'None.';
 
-export function composePublishBody(issue: number | undefined, subject: string): string {
-    const relatedTickets = issue === undefined ? NO_RELATED_TICKETS : `Closes #${issue}`;
+export type IssueRelationship = 'closes' | 'relates';
+
+export function composePublishBody(
+    issue: number | undefined,
+    subject: string,
+    relationship: IssueRelationship = 'closes'
+): string {
+    const relatedTickets =
+        issue === undefined ? NO_RELATED_TICKETS : `${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`;
     const body = `### 🎯 What does this PR do?
 ${subject}
 
@@ -68,8 +75,8 @@ None.
 ${relatedTickets}
 `;
     assertPullRequestBody(body, 'pull-request body');
-    if (issue !== undefined && !body.includes(`Closes #${issue}`)) {
-        fail('pull-request body is missing Closes #<issue-number>');
+    if (issue !== undefined && !body.includes(`${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`)) {
+        fail(`pull-request body is missing ${relationship === 'closes' ? 'Closes' : 'Related'} #<issue-number>`);
     }
     return body;
 }

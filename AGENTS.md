@@ -222,14 +222,14 @@ GitHub writes for agent work go through trusted `pnpm` scripts. The model never 
 or `git push` at all; read-only `gh` queries are fine and are how you check live tracker state.
 Identity is the App those scripts mint, not a persona.
 
-| Need                        | Command                         |
-| --------------------------- | ------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]` |
-| Push; open or update the PR | `pnpm lane:publish [issue]`     |
-| Write the review bundle     | `pnpm review:prepare <pr>`      |
-| Post `review.json`          | `pnpm review:publish <pr>`      |
-| Squash-merge                | `pnpm deliver <pr>`             |
-| Remove a spent lane         | `pnpm lane:remove <path>`       |
+| Need                        | Command                                 |
+| --------------------------- | --------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`         |
+| Push; open or update the PR | `pnpm lane:publish [issue] [--relates]` |
+| Write the review bundle     | `pnpm review:prepare <pr>`              |
+| Post `review.json`          | `pnpm review:publish <pr>`              |
+| Squash-merge                | `pnpm deliver <pr>`                     |
+| Remove a spent lane         | `pnpm lane:remove <path>`               |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for `review:prepare`
