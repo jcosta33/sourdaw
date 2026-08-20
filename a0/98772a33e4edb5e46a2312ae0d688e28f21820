@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_487e9aa1e46063::t_a5e869c3c485cf 116-125
+  s_487e9aa1e46063::t_05053cdeac89ad 363-365
+  s_487e9aa1e46063::t_0ed0cccd5c50ee 444-488
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollExpressionLaneReach.spec.tsx
+  s_487e9aa1e46063::t_62502c02969a05 1-85,90,92-110,113-232,234-262
+  s_487e9aa1e46063::t_9fe53e48bad2a5 86-89,91
+  s_487e9aa1e46063::t_3ad999b238222c 111-112
+  s_487e9aa1e46063::t_4c819235f21014 233
+  s_487e9aa1e46063::t_deabcd67544ca5 263-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a098772a33e4edb5e46a2312ae0d688e28f21820",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
