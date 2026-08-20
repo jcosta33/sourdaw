@@ -6,7 +6,7 @@
  * pitch, velocity, duration, and pitch bends. ~10 MB model, runs entirely
  * in the browser.
  *
- * License: Apache-2.0 (safe for commercial use).
+ * Package metadata declares Apache-2.0.
  */
 
 import { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } from '@spotify/basic-pitch';
@@ -17,6 +17,7 @@ import { type NoteEventTime } from '@spotify/basic-pitch';
 import basicPitchModelUrl from '@spotify/basic-pitch/model/model.json?url';
 
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
@@ -85,6 +86,9 @@ async function getBasicPitchModel(): Promise<BasicPitch> {
 export async function polyphonicAudioToMidi(
     options: PolyphonicAudioToMidiOptions
 ): Promise<PolyphonicAudioToMidiResult | null> {
+    if (!MODEL_RELEASE_ADMISSION.basicPitch) {
+        throw new Error('Basic Pitch model artifacts are not admitted in this release');
+    }
     const { clipId, onsetThreshold = 0.5, frameThreshold = 0.3, minNoteLength = 11, onProgress } = options;
 
     // Find the source clip and its audio buffer

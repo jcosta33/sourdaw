@@ -16,13 +16,13 @@ AiRuntime owns two explicit runtime classes:
 
 | Runtime          | Boundary                             | Use                                                                                   |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| WebLLM           | Browser worker via `@mlc-ai/web-llm` | Local inference without credentials                                                   |
+| WebLLM           | Browser worker via `@mlc-ai/web-llm` | Architecture retained; exact model artifacts withheld                                 |
 | Hosted providers | Desktop native gateway               | Anthropic, OpenAI, and OpenAI-compatible inference through opaque credential sessions |
 
 Voice input runs through whisper-rs dictation in `speech.rs`.
 
-Automatic selection uses WebLLM only and fails closed without WebGPU. Hosted providers require the
-desktop app and explicit selection. Native code reads fixed `SOURDAW_*_API_KEY` environment
+No browser language model is admitted in this release. Hosted providers require the desktop app and
+explicit selection. Native code reads fixed `SOURDAW_*_API_KEY` environment
 variables; the renderer receives only an opaque session ID. Web builds expose no hosted credential
 surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credential and remain local.
 
@@ -30,9 +30,13 @@ surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credentia
 
 **Native:** DeepFilterNet denoise (`ai_audio.rs`) plus audio post-processing (`audio_postprocess.rs`).
 
-**In-browser (BrowserAi):** Kokoro TTS and RAVE timbre transfer run through dedicated workers and a model registry (`initBrowserAi.ts`). Singing synthesis stays unavailable until a compatible model chain passes admission. BrowserAi initializes non-blocking at bootstrap.
+**In-browser (BrowserAi):** Kokoro TTS runs through a dedicated worker and model registry. Its model
+and exposed voices are revision-pinned and SHA-256 verified. DDSP, RAVE, and singing synthesis stay
+withheld until exact model chains pass admission. BrowserAi initializes non-blocking at bootstrap.
 
-**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via Spotify's basic-pitch, and mix-vs-reference comparison. Stem separation stays unavailable until a compatible model passes admission.
+**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via the
+admitted Spotify Basic Pitch package, and mix-vs-reference comparison. Stem separation stays
+unavailable until a compatible model passes admission.
 
 ## 3. The action bridge — AI that does things
 
@@ -72,5 +76,6 @@ only in AudioAnalysis. Hosted provider transport lives in `sourdaw-native`.
 
 - `.agents/skills/llm-action-bridge/SKILL.md` — rules for model-driven actions
 - `.agents/decisions/0028-native-provider-credential-sessions.md` — hosted credential boundary
+- `.agents/decisions/0030-exact-model-release-admission.md` — model artifact admission
 - `crates/sourdaw-native/AGENTS.md` — native command-body boundaries
 - `docs/architecture/06-crdt-collaboration.md` — the write path actions enter

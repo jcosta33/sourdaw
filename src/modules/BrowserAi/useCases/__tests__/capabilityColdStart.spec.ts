@@ -11,6 +11,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 
 import { type CapabilityReport } from '../../models/CapabilityReport';
+import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { initBrowserAi } from '../initBrowserAi';
@@ -37,7 +38,7 @@ const supported_report: CapabilityReport = {
     chromeVersion: 133,
     inference: {
         status: 'measured',
-        modelId: 'kokoro-82m-q8',
+        modelId: KOKORO_MODEL_ARTIFACT.id,
         executionProviders: ['webgpu', 'wasm'],
         audioSeconds: 4,
         elapsedSeconds: 2,

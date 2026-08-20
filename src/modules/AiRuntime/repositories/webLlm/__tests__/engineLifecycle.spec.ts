@@ -4,18 +4,24 @@ import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
 import { unloadWebLlmEngine } from '../unloadWebLlmEngine';
 
-const { artifactAdmissionMock, mockLogger, createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(() => ({
-    artifactAdmissionMock: vi.fn(),
-    mockLogger: {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-        debug: vi.fn(),
-    },
-    createWebWorkerEngineMock: vi.fn(),
-    terminateWorkerMock: vi.fn(),
-}));
+const { admissionGate, artifactAdmissionMock, mockLogger, createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(
+    () => ({
+        admissionGate: { webLlm: true },
+        artifactAdmissionMock: vi.fn(),
+        mockLogger: {
+            info: vi.fn(),
+            warn: vi.fn(),
+            error: vi.fn(),
+            debug: vi.fn(),
+        },
+        createWebWorkerEngineMock: vi.fn(),
+        terminateWorkerMock: vi.fn(),
+    })
+);
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({
+    MODEL_RELEASE_ADMISSION: admissionGate,
+}));
 vi.mock('@mlc-ai/web-llm', () => ({
     CreateWebWorkerMLCEngine: createWebWorkerEngineMock,
 }));
@@ -40,6 +46,7 @@ function ignoreEngine(_engine: unknown): void {}
 describe('WebLLM engineLifecycle injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        admissionGate.webLlm = true;
         artifactAdmissionMock.mockReset();
         createWebWorkerEngineMock.mockReset();
         engineState.engine = null;
@@ -82,6 +89,14 @@ describe('WebLLM engineLifecycle injectables', () => {
         expect(engineState.initAttemptId).toBeNull();
         expect(engineState.initController).toBeNull();
         expect(engineState.initPromise).toBeNull();
+    });
+
+    it('should reject init when browser model artifacts are withheld', async () => {
+        admissionGate.webLlm = false;
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+
+        await expect(initWebLlmEngine()).rejects.toThrow(/not admitted in this release/);
+        expect(artifactAdmissionMock).not.toHaveBeenCalled();
     });
 
     it('should unload engine and log', () => {

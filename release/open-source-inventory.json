@@ -157,12 +157,19 @@
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
+                "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts",
                 "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
                 "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
-                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts"
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
+                "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts",
+                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
+                "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx"
             ],
             "sources": [
-                "https://huggingface.co/mlc-ai",
+                "https://huggingface.co/mlc-ai/Qwen3-1.7B-q4f16_1-MLC",
+                "https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC",
+                "https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC",
                 "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs-bin"
             ],
             "revisions": [
@@ -176,47 +183,75 @@
                 "sha256:2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f",
                 "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
             ],
-            "licenses": ["pending:OS-04-exact-quantized-artifacts"],
-            "productSurfaces": ["browser-local language model"],
+            "licenses": ["Apache-2.0:Qwen-base-models", "unverified:exact-MLC-quantized-artifact-repositories"],
+            "productSurfaces": ["withheld browser-local language model"],
             "evidence": [
-                "The manifest pins artifacts but does not prove the exact quantized repositories' license chain."
+                "The manifest pins exact artifacts, but the three quantized repository cards publish no license metadata.",
+                "Runtime, preferences, and status controls consume the false release-admission gate."
             ],
-            "obligations": ["Admit exact artifacts and notices or remove their product surface."]
+            "obligations": ["Keep the stack unreachable until exact repositories and runtime obligations are proved."]
         },
         {
             "id": "whisper-model",
             "kind": "model-stack",
-            "retention": "defer-behind-admission",
+            "retention": "keep-with-obligations",
             "owner": "OS-04",
             "releaseModes": ["desktop"],
-            "paths": ["crates/sourdaw-native/src/commands/speech.rs"],
-            "sources": ["https://huggingface.co/ggerganov/whisper.cpp"],
-            "revisions": ["5359861c739e955e79d9a303bcbc70fb988958b1"],
+            "paths": [
+                "Cargo.lock",
+                "crates/sourdaw-native/Cargo.toml",
+                "crates/sourdaw-native/src/commands/speech.rs",
+                "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/AiRuntime/useCases/voiceDictation/ensureWhisperReady.ts"
+            ],
+            "sources": [
+                "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
+                "https://crates.io/crates/whisper-rs/0.16.0"
+            ],
+            "revisions": [
+                "ggerganov/whisper.cpp 5359861c739e955e79d9a303bcbc70fb988958b1 ggml-base.en.bin",
+                "whisper-rs 0.16.0",
+                "whisper-rs-sys 0.15.0"
+            ],
             "digests": ["sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"],
-            "licenses": ["pending:OS-04-complete-stack"],
+            "licenses": ["MIT:model-artifact-repository", "Unlicense:whisper-rs-runtime"],
             "productSurfaces": ["desktop speech transcription"],
-            "evidence": ["The current URL pins one whisper.cpp artifact revision."],
-            "obligations": ["Record the complete artifact, runtime, license, hash, and notice chain before admission."]
+            "evidence": [
+                "The download pins one model revision and verifies its exact 147964211-byte SHA-256.",
+                "The model repository declares MIT; installed whisper-rs and whisper-rs-sys metadata declare Unlicense."
+            ],
+            "obligations": ["Carry the MIT and Unlicense notices in distributed desktop material."]
         },
         {
             "id": "kokoro-model",
             "kind": "model-stack",
-            "retention": "defer-behind-admission",
+            "retention": "keep-with-obligations",
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
-                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
-                "src/modules/BrowserAi/useCases/renderKokoroTts.ts"
+                "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/BrowserAi/models/KokoroArtifactManifest.ts",
+                "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "src/modules/BrowserAi/repositories/sha256ArrayBuffer.ts",
+                "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "src/modules/BrowserAi/useCases/renderKokoroTts.ts",
+                "src/modules/BrowserAi/workers/onnxInferenceWorker.ts"
             ],
-            "sources": ["https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX"],
-            "revisions": ["mutable main reference"],
-            "digests": ["pending:OS-04-model-and-voice-hashes"],
-            "licenses": ["pending:OS-04-complete-stack"],
+            "sources": [
+                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/tree/1939ad2a8e416c0acfeecc08a694d14ef25f2231"
+            ],
+            "revisions": ["1939ad2a8e416c0acfeecc08a694d14ef25f2231"],
+            "digests": [
+                "sha256:04c658aec1b6008857c2ad10f8c589d4180d0ec427e7e6118ceb487e215c3cd0",
+                "sha256-manifest:21 voice artifacts in src/modules/BrowserAi/models/KokoroArtifactManifest.ts"
+            ],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["browser text-to-speech", "desktop text-to-speech"],
             "evidence": [
-                "The current model and voice URLs use mutable main references without complete artifact notices."
+                "The exact repository revision declares Apache-2.0.",
+                "The manifest pins the model and every exposed voice by revision, byte count, and SHA-256."
             ],
-            "obligations": ["Pin and hash every model and voice artifact, then record its complete license chain."]
+            "obligations": ["Carry Apache-2.0 attribution and preserve download integrity checks."]
         },
         {
             "id": "ddsp-models",
@@ -224,13 +259,21 @@
             "retention": "defer-behind-admission",
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
-            "paths": ["src/modules/BrowserAi/models/DdspInstrumentCatalog.ts"],
+            "paths": [
+                "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "src/modules/BrowserAi/useCases/initBrowserAi.ts"
+            ],
             "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
             "revisions": ["mutable checkpoint directories"],
             "digests": ["pending:OS-04-checkpoint-hashes"],
-            "licenses": ["Apache-2.0 claim pending exact-artifact verification"],
-            "productSurfaces": ["browser DDSP instruments", "desktop DDSP instruments"],
-            "evidence": ["The catalog claims Apache-2.0 but uses mutable unverified checkpoint directories."],
+            "licenses": ["unverified:exact-GCS-checkpoint-artifacts"],
+            "productSurfaces": ["withheld browser DDSP instruments", "withheld desktop DDSP instruments"],
+            "evidence": [
+                "The framework is Apache-2.0, but the mutable checkpoint directories publish no exact artifact grant or digest.",
+                "The false release-admission gate keeps checkpoints out of the registry and model manager."
+            ],
             "obligations": ["Pin, hash, and verify each exact checkpoint and transitive runtime before admission."]
         },
         {
@@ -268,15 +311,17 @@
                 "src/modules/CommandInterface/useCases/commands/AiCommands.ts",
                 "src/modules/CommandInterface/useCases/commands/__tests__/AiCommands.spec.ts",
                 "src/modules/CommandInterface/useCases/searchCommandRegistry.ts",
-                "src/utils/handlerContract.ts"
+                "src/utils/handlerContract.ts",
+                "src/infra/release/modelReleaseAdmission.ts"
             ],
             "sources": ["src/modules/BrowserAi/stores/rave.ts", ".agents/specs/rave-timbre-transfer/spec.md"],
             "revisions": ["five local catalog entries without admitted artifacts"],
             "digests": ["none:no-model-artifacts-admitted"],
             "licenses": ["unverified:no-model-source-or-license-recorded"],
-            "productSurfaces": ["fail-closed runtime handlers", "presence-gated command palette"],
+            "productSurfaces": ["withheld runtime handlers", "withheld command palette"],
             "evidence": [
-                "The catalog names five models but records no weights, source, digest, license, or download path."
+                "The catalog names five models but records no weights, source, digest, license, or download path.",
+                "The false release-admission gate clears registry state and rejects model activation."
             ],
             "obligations": [
                 "Keep the capability unavailable until a complete model and runtime stack passes admission."
@@ -288,8 +333,13 @@
             "retention": "keep-with-obligations",
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
-            "paths": ["package.json", "pnpm-lock.yaml", "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts"],
-            "sources": ["https://www.npmjs.com/package/@spotify/basic-pitch"],
+            "paths": [
+                "package.json",
+                "pnpm-lock.yaml",
+                "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts",
+                "src/infra/release/modelReleaseAdmission.ts"
+            ],
+            "sources": ["https://registry.npmjs.org/@spotify/basic-pitch/1.0.1"],
             "revisions": ["@spotify/basic-pitch 1.0.1"],
             "digests": [
                 "sha512:SAxiFi9ZnyhGdhWEOS9YVhdunZiKzI3I5zOccZzDzQRr4s00Ii9lphqlPMMfby3iYa7TSupB2g8yuu1kJ6gL+Q=="
@@ -788,18 +838,14 @@
         },
         {
             "surface": "kokoro-model",
-            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
-            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx"
+            "file": "src/modules/BrowserAi/models/KokoroArtifactManifest.ts",
+            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/${slot}",
+            "templateSha256": "439de0d3111c11751a7cdb270a5ed577de628e32c85049c906d5619db6199da7"
         },
         {
             "surface": "ddsp-models",
             "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
-        },
-        {
-            "surface": "kokoro-model",
-            "file": "src/modules/BrowserAi/useCases/renderKokoroTts.ts",
-            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices"
         },
         {
             "surface": "collaboration-stun",

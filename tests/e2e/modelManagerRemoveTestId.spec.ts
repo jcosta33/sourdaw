@@ -1,9 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { KOKORO_MODEL_ARTIFACT } from '../../src/modules/BrowserAi/models/KokoroArtifactManifest';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-const KOKORO_DOWNLOAD_URL =
-    'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx';
+const KOKORO_DOWNLOAD_URL = KOKORO_MODEL_ARTIFACT.url;
+
+async function acceptStubKokoroDigest(page: Page): Promise<void> {
+    await page.evaluate((sha256) => {
+        const digest = Uint8Array.from(sha256.match(/.{2}/gu) ?? [], (byte) => Number.parseInt(byte, 16));
+        Object.defineProperty(crypto.subtle, 'digest', { value: async () => digest.buffer });
+    }, KOKORO_MODEL_ARTIFACT.sha256);
+}
 
 async function open_preferences_ai_section(page: Page): Promise<void> {
     await page.getByTestId('toggle-preferences').click();
@@ -32,6 +40,7 @@ test.describe('Browser AI model removal', () => {
 
     test('a stored model returns to Download after removal', async ({ page }) => {
         const dialog = page.getByRole('dialog');
+        await acceptStubKokoroDigest(page);
         await page.route(KOKORO_DOWNLOAD_URL, (route) => route.fulfill({ body: 'stub-kokoro-onnx-bytes' }));
 
         const download_button = dialog.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ });

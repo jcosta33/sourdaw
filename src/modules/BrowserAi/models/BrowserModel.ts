@@ -14,7 +14,7 @@ export type ModelFamily =
 
 export type ModelDownloadStatus = 'not-downloaded' | 'downloading' | 'ready' | 'error' | 'stale';
 
-export type ModelLicense = 'Apache-2.0' | 'CC-BY-NC-SA-4.0' | 'MIT';
+export type ModelLicense = 'Apache-2.0' | 'CC-BY-NC-SA-4.0' | 'MIT' | 'Unverified';
 
 export type BrowserModel = {
     id: string;

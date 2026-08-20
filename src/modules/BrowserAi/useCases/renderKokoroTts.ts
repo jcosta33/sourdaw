@@ -13,12 +13,20 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
+import {
+    KOKORO_MODEL_ARTIFACT,
+    KOKORO_VOICE_ARTIFACTS,
+    KOKORO_VOICE_BASE_URL,
+    KOKORO_VOICE_SIZE_BYTES,
+} from '../models/KokoroArtifactManifest';
 import { type RenderProvenance } from '../models/RenderProgress';
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readModel } from '../repositories/readModel';
 import { readRenderCache } from '../repositories/readRenderCache';
+import { sha256ArrayBuffer } from '../repositories/sha256ArrayBuffer';
 import { writeRenderCache } from '../repositories/writeRenderCache';
 import { resampleTo44100, applyFades } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
@@ -26,15 +34,8 @@ import { startActiveRender, clearActiveRender } from '../stores/inferenceProgres
 import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441; // 10 ms at 44.1 kHz
-const KOKORO_MODEL_ID = 'kokoro-82m-q8';
+const KOKORO_MODEL_ID = KOKORO_MODEL_ARTIFACT.id;
 const KOKORO_NATIVE_SAMPLE_RATE = 24000;
-
-/**
- * HuggingFace CDN base for Kokoro v1.0 ONNX voice embeddings.
- * Each voice file is a raw float32 binary of shape (-1, 1, 256).
- * Voice files are ~500 KB each; fetched once per voice and cached in memory.
- */
-const KOKORO_VOICES_BASE = 'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices';
 
 /** In-memory cache: voiceId → full float32 array (N × 256 floats, reshaped as flat) */
 const voiceEmbeddingCache = new Map<string, Float32Array>();
@@ -47,24 +48,40 @@ const voiceEmbeddingCache = new Map<string, Float32Array>();
  * sequence length. Using voices[tokenCount] conditions the prosody on sequence length
  * (the same convention used by the original Kokoro Python inference code).
  */
-async function fetchVoiceStyle(voiceId: string, tokenCount: number): Promise<Float32Array> {
-    let allEmbeddings = voiceEmbeddingCache.get(voiceId);
+async function fetchVoiceStyle(
+    voice: (typeof KOKORO_VOICE_ARTIFACTS)[number],
+    tokenCount: number
+): Promise<Float32Array> {
+    let allEmbeddings = voiceEmbeddingCache.get(voice.id);
 
     if (!allEmbeddings) {
-        const url = `${KOKORO_VOICES_BASE}/${voiceId}.bin`;
-        const response = await fetch(url);
+        const url = `${KOKORO_VOICE_BASE_URL}/${voice.id}.bin`;
+        const response = await fetch(url, {
+            cache: 'no-store',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+        });
         if (!response.ok) {
-            throw new Error(`Failed to fetch Kokoro voice embedding for "${voiceId}": ${response.statusText}`);
+            throw new Error(`Failed to fetch Kokoro voice embedding for "${voice.id}": ${response.statusText}`);
         }
         const buffer = await response.arrayBuffer();
+        if (buffer.byteLength !== KOKORO_VOICE_SIZE_BYTES) {
+            throw new Error(
+                `Kokoro voice embedding "${voice.id}" has ${String(buffer.byteLength)} bytes; expected ${String(KOKORO_VOICE_SIZE_BYTES)}`
+            );
+        }
+        const digest = await sha256ArrayBuffer(buffer);
+        if (digest !== voice.sha256) {
+            throw new Error(`Kokoro voice embedding "${voice.id}" failed SHA-256 verification`);
+        }
         allEmbeddings = new Float32Array(buffer);
-        voiceEmbeddingCache.set(voiceId, allEmbeddings);
+        voiceEmbeddingCache.set(voice.id, allEmbeddings);
     }
 
     // Each embedding is 256 floats; index by tokenCount (before padding)
     if (allEmbeddings.length < 256) {
         throw new Error(
-            `Kokoro voice file for "${voiceId}" is empty or corrupted (${String(allEmbeddings.length)} floats). ` +
+            `Kokoro voice file for "${voice.id}" is empty or corrupted (${String(allEmbeddings.length)} floats). ` +
                 'Re-download the voice from AI Settings.'
         );
     }
@@ -97,7 +114,14 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
             speed = 1.0,
             targetDurationSec,
         }: RenderKokoroTtsInput): RenderKokoroTtsOutput {
+            if (!MODEL_RELEASE_ADMISSION.kokoro) {
+                throw new Error('Kokoro model artifacts are not admitted in this release');
+            }
             const requestId = crypto.randomUUID();
+            const voice = KOKORO_VOICE_ARTIFACTS.find((candidate) => candidate.id === speakerId);
+            if (!voice) {
+                throw new Error(`Unknown Kokoro voice "${speakerId}"`);
+            }
 
             // Deterministic cache key
             const textEncoder = new TextEncoder();
@@ -149,7 +173,7 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
                 const { inputIds, tokenCount } = textToKokoroInputIds(text);
 
                 // 3. Fetch voice embedding (CDN, cached in memory)
-                const style = await fetchVoiceStyle(speakerId, tokenCount);
+                const style = await fetchVoiceStyle(voice, tokenCount);
 
                 // 4. Run Kokoro ONNX inference in the worker
                 //    inputIds and style buffers are transferred (zero-copy) — do not use after this call.

@@ -18,7 +18,7 @@
  *
  * The probe is the real Kokoro model
  * ----------------------------------
- * The measurement runs the shipped `kokoro-82m-q8` ONNX graph through the same
+ * The measurement runs the admitted Kokoro ONNX graph through the same
  * `inferenceWorkerBridge` and the same execution-provider selection production
  * uses. A synthetic graph would need a calibration constant to become a realtime
  * factor, and that constant would be invented — the exact defect being fixed.
@@ -51,12 +51,13 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type InferenceThroughput } from '../models/CapabilityReport';
+import { KOKORO_MODEL_ARTIFACT } from '../models/KokoroArtifactManifest';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 
 import { inferenceWorkerBridge } from './inferenceWorkerBridge';
 import { readModel } from './readModel';
 
-const PROBE_MODEL_ID = 'kokoro-82m-q8';
+const PROBE_MODEL_ID = KOKORO_MODEL_ARTIFACT.id;
 const PROBE_MODEL_FAMILY = 'kokoro';
 
 /** Kokoro ONNX emits 24 kHz PCM — see `onnxInferenceWorker.runKokoroOnnx`. */

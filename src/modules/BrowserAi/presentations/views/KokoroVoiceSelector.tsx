@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 
-import { KOKORO_VOICE_CATALOG } from '../../models/DdspInstrumentCatalog';
+import { KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
 
 type KokoroVoiceSelectorProps = {
     value: string;
@@ -32,8 +32,8 @@ export function KokoroVoiceSelector({
     className,
 }: KokoroVoiceSelectorProps): ReactElement {
     // Group voices by accent then gender for <optgroup> nesting
-    const groups = new Map<GroupKey, typeof KOKORO_VOICE_CATALOG>();
-    for (const voice of KOKORO_VOICE_CATALOG) {
+    const groups = new Map<GroupKey, Array<(typeof KOKORO_VOICE_ARTIFACTS)[number]>>();
+    for (const voice of KOKORO_VOICE_ARTIFACTS) {
         const key: GroupKey = `${voice.accent}|${voice.gender}`;
         const existing = groups.get(key);
         if (existing) {

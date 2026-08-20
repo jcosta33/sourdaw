@@ -16,6 +16,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 
 import { type CapabilityReport } from '../../models/CapabilityReport';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
+import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
@@ -49,7 +50,7 @@ const fresh_capability_report: CapabilityReport = {
     chromeVersion: 133,
     inference: {
         status: 'measured',
-        modelId: 'kokoro-82m-q8',
+        modelId: KOKORO_MODEL_ARTIFACT.id,
         executionProviders: ['webgpu', 'wasm'],
         audioSeconds: 4,
         elapsedSeconds: 2,
@@ -97,7 +98,7 @@ describe('initBrowserAi', () => {
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
     });
 
-    it('should initialize DDSP instruments as unavailable while the TF.js worker is stubbed', async () => {
+    it('should keep withheld DDSP checkpoints out of the runtime registry', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
 
@@ -109,20 +110,13 @@ describe('initBrowserAi', () => {
 
         await initBrowserAi();
 
-        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
-            DDSP_INSTRUMENT_CATALOG.map((instrument) => ({
-                ...instrument,
-                status: 'error',
-                downloadProgress: 0,
-            }))
-        );
-        expect(modelRegistryStore.value?.ddspInstruments.map((instrument) => instrument.status)).toEqual([
-            'error',
-            'error',
-            'error',
-            'error',
-        ]);
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
+        expect(DDSP_INSTRUMENT_CATALOG.every((instrument) => instrument.license === 'Unverified')).toBe(true);
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
+        expect(check_model_cached).toHaveBeenCalledWith({
+            family: 'kokoro',
+            modelId: KOKORO_MODEL_ARTIFACT.id,
+        });
         expect(modelRegistryStore.value?.vocoder).toBeNull();
     });
 

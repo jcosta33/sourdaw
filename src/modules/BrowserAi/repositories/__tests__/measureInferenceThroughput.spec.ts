@@ -22,6 +22,7 @@ vi.mock('../inferenceWorkerBridge', () => ({
     inferenceWorkerBridge: { loadOnnxSession, runKokoroTts },
 }));
 
+import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { measureInferenceThroughput } from '../measureInferenceThroughput';
 
 type LoggerMock = {
@@ -95,7 +96,7 @@ describe('measureInferenceThroughput', () => {
 
         expect(throughput).toEqual({
             status: 'measured',
-            modelId: 'kokoro-82m-q8',
+            modelId: KOKORO_MODEL_ARTIFACT.id,
             executionProviders: ['webgpu', 'wasm'],
             audioSeconds: 4,
             elapsedSeconds: 2,
