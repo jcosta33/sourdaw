@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 const loadOnnxSession = vi.hoisted(() =>
-    vi.fn<(input: { modelId: string; modelData: ArrayBuffer }) => Promise<string[]>>()
+    vi.fn<(input: { modelId: string; modelDataPort: MessagePort }) => Promise<string[]>>()
 );
 const runKokoroTts = vi.hoisted(() =>
     vi.fn<(input: unknown) => Promise<{ type: 'tts-result'; audio: Float32Array; samplingRate: number }>>()
@@ -53,12 +53,12 @@ function install_no_webgpu(): void {
 }
 
 type InstallReadVerifiedModelInput = {
-    result?: ArrayBuffer | null;
+    result?: MessagePort | null;
     error?: Error;
 };
 
 function install_read_verified_model({
-    result = new ArrayBuffer(1024),
+    result = new MessageChannel().port1,
     error,
 }: InstallReadVerifiedModelInput = {}): void {
     const readVerifiedModel = vi.fn(() => (error ? Promise.reject(error) : Promise.resolve(result)));
@@ -166,7 +166,7 @@ describe('measureInferenceThroughput', () => {
 
     it('should refuse to measure without WebGPU and never touch storage', async () => {
         install_no_webgpu();
-        const readVerifiedModel = vi.fn(() => Promise.resolve(new ArrayBuffer(8)));
+        const readVerifiedModel = vi.fn(() => Promise.resolve(new MessageChannel().port1));
         injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readVerifiedModel });
 
         const throughput = await measureInferenceThroughput();
@@ -177,7 +177,7 @@ describe('measureInferenceThroughput', () => {
 
     it('should refuse to measure when the Kokoro artifact is withheld', async () => {
         releaseGate.kokoro = false;
-        const readVerifiedModel = vi.fn(() => Promise.resolve(new ArrayBuffer(8)));
+        const readVerifiedModel = vi.fn(() => Promise.resolve(new MessageChannel().port1));
         injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readVerifiedModel });
 
         const throughput = await measureInferenceThroughput();

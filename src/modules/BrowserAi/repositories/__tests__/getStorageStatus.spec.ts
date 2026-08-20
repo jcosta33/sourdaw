@@ -1,40 +1,39 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { getStorageStatus } from '../getStorageStatus';
 
-import { dir, file, installStorage } from './storageTestDoubles';
-
-afterEach(() => {
-    vi.restoreAllMocks();
-});
-
 describe('getStorageStatus', () => {
-    it('measures only BrowserAi model and render directories', async () => {
-        installStorage(
-            dir({
-                models: dir({ ddsp: dir({ 'violin.onnx': file(100) }) }),
-                renders: dir({ 'cache-a.pcm': file(20) }),
-                projects: dir({ 'song.daw': file(1_000_000) }),
-                arrangementCache: file(500_000),
-            })
-        );
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const modelStorageWorkerBridge = { measureStorage: vi.fn() };
 
-        await expect(getStorageStatus()).resolves.toMatchObject({ usedBytes: 120 });
+    beforeEach(() => {
+        vi.clearAllMocks();
+        modelStorageWorkerBridge.measureStorage.mockResolvedValue(120);
+        Object.defineProperty(navigator, 'storage', {
+            configurable: true,
+            value: {
+                estimate: vi.fn(() => Promise.resolve({ quota: 1_000, usage: 250 })),
+                persisted: vi.fn(() => Promise.resolve(true)),
+            },
+        });
+        injectDependencies(getStorageStatus, { logger, modelStorageWorkerBridge });
     });
 
-    it('reports zero when both owned directories are absent', async () => {
-        installStorage(dir({ projects: dir({ 'song.daw': file(999) }) }));
-
-        await expect(getStorageStatus()).resolves.toMatchObject({ usedBytes: 0 });
+    it('combines worker-owned OPFS usage with renderer storage metadata', async () => {
+        await expect(getStorageStatus()).resolves.toMatchObject({
+            usedBytes: 120,
+            availableBytes: 750,
+            persisted: true,
+        });
+        expect(modelStorageWorkerBridge.measureStorage).toHaveBeenCalledOnce();
     });
 
     it('falls back to zero used bytes when measuring storage throws', async () => {
-        installStorage(dir(), {
-            getDirectory: vi.fn(() =>
-                Promise.reject(new Error('opfs unavailable'))
-            ) as unknown as StorageManager['getDirectory'],
-        });
+        modelStorageWorkerBridge.measureStorage.mockRejectedValue(new Error('opfs unavailable'));
 
-        await expect(getStorageStatus()).resolves.toMatchObject({ usedBytes: 0, persisted: false });
+        await expect(getStorageStatus()).resolves.toMatchObject({ usedBytes: 0 });
+        expect(logger.warn).toHaveBeenCalledOnce();
     });
 });
