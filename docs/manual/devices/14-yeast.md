@@ -87,7 +87,8 @@ yet. Add one from the sprout shelf and the note lanes will wake up.**
 
 > [!WARNING]
 > **Not yet active.** With **Arp Off**, **Mode**, **Rate**, and **Latch** still take a gesture and
-> do not write. Clicking **Arp On** after turning them still starts the compiled defaults.
+> do not write. Clicking **Arp On** after turning them still starts at **Up**, `1/8`, and Latch
+> off.
 > [#2411](https://github.com/jcosta33/sourdaw/issues/2411)
 
 ## Shape
@@ -101,7 +102,7 @@ yet. Add one from the sprout shelf and the note lanes will wake up.**
 
 > [!WARNING]
 > **Not yet active.** With **Arp Off**, these four knobs still turn and do not write. **Arp On**
-> after that still starts the compiled defaults.
+> after that still starts at 0.8 ×, 0%, 1 octave, and Velocity 100.
 > [#2411](https://github.com/jcosta33/sourdaw/issues/2411)
 
 ## Build
