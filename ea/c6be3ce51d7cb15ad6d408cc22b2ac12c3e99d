@@ -1,0 +1,39 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_f10b67c4654db4 158,446,743,1409,1895,1931,2108-2116,2765-2773,3659,3980-3988,4541,4997-5005,5036,5078-5086,5600-5608,5621,5690-5698,5753-5761,6116,6323,6455-6463,6563-6571,6890,7193-7201,7889,8213,8831-8839,9470-9478,9959,9965-9982,10163-10171,10802-10810,10859,11333-11341,11477-11485,11864-11872,12251-12268,12614,12677,12980-12988,13019,13394-13402,13943-13951,13961-13969,14009,15194-15202,15518-15526,16025,16094-16102,16232,16517-16525,16904-16912,17534-17542,17723-17731,18029-18037,18326-18334,18407-18415,18758-18766,18803-18811,18878,19202,19298-19306,19733,20739-20742,20745,20801-20809,21224-21232,21746-21754,22934-22942,23519-23536,24296,24521,24629,24761-24769,25160
+src/modules/Levain/presentations/components/ArticulationList.tsx
+  s_487e9aa1e46063::t_f88ae846d490ad 10,60,84
+src/modules/Levain/presentations/components/ExpressionPanel.tsx
+  s_487e9aa1e46063::t_00f14b73a318f8 14,122,130,143,162-163,178,180-181,196,203,218-219,234,236,251-254
+src/modules/Levain/presentations/components/HumanizePanel.tsx
+  s_487e9aa1e46063::t_21c1040c2d468e 11,22,27,42,45-46,61,63,78,80,95,97,112-114
+src/modules/Levain/presentations/components/LegatoTuning.tsx
+  s_487e9aa1e46063::t_56be6ef11a9d9e 12,116,139-140,153,155,168,170,185-187
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_487e9aa1e46063::t_67f73d6ad98455 16,38,40,42,89,91-92,109,111,136,139-141
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_487e9aa1e46063::t_6f936b84e98693 11,100-103,108,117,119,128,130,147,149,165,172,176-177,189,191-193,198,200,224-225,228,276,278,308-309,327,329,356-357,359,361,363,365,383,385
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "eac6be3ce51d7cb15ad6d408cc22b2ac12c3e99d",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
