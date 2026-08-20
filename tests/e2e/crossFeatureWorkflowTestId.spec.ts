@@ -10,7 +10,7 @@ async function addMidiTrack(page: Page): Promise<void> {
     await page.keyboard.press(`${MOD}+k`);
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
-    await expect(trackList.getByRole('row')).not.toHaveCount(before);
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
 }
 
 async function openBottomTab(page: Page, name: string): Promise<void> {
@@ -65,7 +65,8 @@ test.describe('Cross-feature workflow — EDM template', () => {
         await expect(play).toHaveAttribute('aria-label', 'Play');
 
         await play.click();
-        await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(playhead).toHaveText(/\d+\.\d+\.\d+/, { timeout: 10_000 });
+        await expect(playhead).not.toHaveText('1.1.000');
         await expect(play).toHaveAttribute('aria-label', 'Pause');
 
         const mute = page.locator('[data-testid^="track-mute-"]').first();
@@ -158,7 +159,8 @@ test.describe('Cross-feature workflow — EDM template', () => {
         const play = page.getByTestId('transport-play');
         const playhead = page.getByTestId('transport-playhead');
         await play.click();
-        await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(playhead).toHaveText(/\d+\.\d+\.\d+/, { timeout: 10_000 });
+        await expect(playhead).not.toHaveText('1.1.000');
         await expect(play).toHaveAttribute('aria-label', 'Pause');
         await page.getByTestId('transport-stop').click();
         await expect(play).toHaveAttribute('aria-label', 'Play');
