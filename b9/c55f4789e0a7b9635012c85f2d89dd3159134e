@@ -1,0 +1,41 @@
+electron/commands.ts
+  s_7ba0b7bee9e951::t_fecf79e7172d77 115
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_7ba0b7bee9e951::t_4dafc7d5a6cf77 2510
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_a107b3af721968 693-700
+  s_7ba0b7bee9e951::t_183a38826d9d9a 504-513
+  s_7ba0b7bee9e951::t_0d23484af781f9 1926-1934
+  s_7ba0b7bee9e951::t_1b5816f01fc014 71-73
+  s_7ba0b7bee9e951::t_975b2d76b02a91 672-679
+  s_7ba0b7bee9e951::t_38e4dec0863434 110,112-117
+  s_7ba0b7bee9e951::t_713c619a60c216 2205-2207
+  s_7ba0b7bee9e951::t_544f6a705cd879 69-70
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_7ba0b7bee9e951::t_bb5407381d9148 32
+  s_7ba0b7bee9e951::t_34da114e5e7f15 50
+  s_7ba0b7bee9e951::t_23e48138b858b9 186
+src/modules/AudioEngine/useCases/offlineRender/createOfflineRenderBackend.ts
+  s_7ba0b7bee9e951::t_a7b26e13a2b473 13
+crates/daw-engine/src/scheduler.rs
+  s_7ba0b7bee9e951::t_f881c8505c46e7 565-566
+  s_7ba0b7bee9e951::t_0b9236bbf4954b 1594-1604
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_7ba0b7bee9e951::t_96d3420f69075a 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b9c55f4789e0a7b9635012c85f2d89dd3159134e",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
