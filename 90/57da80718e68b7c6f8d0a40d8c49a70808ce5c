@@ -1,0 +1,31 @@
+scripts/checkLgplRuntimeProvenance.ts
+  s_0a3429e31e555d::t_aec5548779ca0f 147-163,235-244,252-254,274-283,393-395
+  s_487e9aa1e46063::t_7c5a6e690bb944 396
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_0a3429e31e555d::t_aec5548779ca0f 109-113,265-283
+  s_487e9aa1e46063::t_19063efa3654bb 284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9057da80718e68b7c6f8d0a40d8c49a70808ce5c",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
