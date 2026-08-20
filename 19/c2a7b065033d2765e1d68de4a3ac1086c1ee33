@@ -1,0 +1,19 @@
+.github/dependabot.yml
+  s_e469ec4fed6ab8::t_272987bbb0e1aa 10,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "19c2a7b065033d2765e1d68de4a3ac1086c1ee33",
+  "prompts": {},
+  "sessions": {
+    "s_e469ec4fed6ab8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01f52-7250-7a20-b14c-11aadfd43abe",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
