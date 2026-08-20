@@ -11,7 +11,11 @@ import {
     spawnCapture,
     spawnRun,
 } from './githubAppIdentity.ts';
-import { assertIssueNumber, assertLaneSlug, fail, laneBranchName } from './prContract.ts';
+import { assertIssueNumber, assertLaneSlug, fail, isIssueArgument, laneBranchName } from './prContract.ts';
+
+export const OPEN_LANE_USAGE = 'usage: pnpm lane:open [issue-number] [slug]';
+
+const DEFAULT_LANE_SLUG = 'work';
 
 export type OpenLanePort = {
     primaryRoot: () => string;
@@ -28,24 +32,34 @@ export function parseOpenLaneArgs(args: string[]): { issue?: number; slug: strin
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
-        return { help: true, slug: 'work' };
+        return { help: true, slug: DEFAULT_LANE_SLUG };
     }
-    const issueArg = args[0];
-    if (issueArg === undefined) {
-        fail('usage: pnpm lane:open <issue-number> [slug]');
+    const first = args[0];
+    if (first === undefined) {
+        return { slug: DEFAULT_LANE_SLUG, help: false };
     }
-    const issue = assertIssueNumber(issueArg, 'usage: pnpm lane:open <issue-number> [slug]');
-    const slug = args[1] ?? 'work';
-    if (args.length > 2) {
-        fail(`unknown option: ${args[2] ?? ''}`);
+    if (isIssueArgument(first)) {
+        if (args.length > 2) {
+            fail(`unknown option: ${args[2] ?? ''}`);
+        }
+        const slug = args[1] ?? DEFAULT_LANE_SLUG;
+        assertLaneSlug(slug);
+        return { issue: assertIssueNumber(first, OPEN_LANE_USAGE), slug, help: false };
     }
-    assertLaneSlug(slug);
-    return { issue, slug, help: false };
+    if (args.length > 1) {
+        fail(`unknown option: ${args[1] ?? ''}`);
+    }
+    assertLaneSlug(first);
+    return { slug: first, help: false };
 }
 
-export function openLane(issue: number, slug: string, port: OpenLanePort): string {
+export function laneDirectoryName(issue: number | undefined, slug: string): string {
+    return issue === undefined ? `agent-${slug}` : `agent-${issue}-${slug}`;
+}
+
+export function openLane(issue: number | undefined, slug: string, port: OpenLanePort): string {
     const branch = laneBranchName(issue, slug);
-    const lanePath = join(port.primaryRoot(), '.agents', 'worktrees', `agent-${issue}-${slug}`);
+    const lanePath = join(port.primaryRoot(), '.agents', 'worktrees', laneDirectoryName(issue, slug));
     if (port.pathExists(lanePath)) {
         fail(`lane already exists: ${lanePath}`);
     }
@@ -91,11 +105,8 @@ function main(): number {
     try {
         const parsed = parseOpenLaneArgs(process.argv.slice(2));
         if (parsed.help) {
-            console.log('Usage: pnpm lane:open <issue-number> [slug]');
+            console.log('Usage: pnpm lane:open [issue-number] [slug]');
             return 0;
-        }
-        if (parsed.issue === undefined) {
-            fail('usage: pnpm lane:open <issue-number> [slug]');
         }
         const executingFile = fileURLToPath(import.meta.url);
         const cwd = process.cwd();

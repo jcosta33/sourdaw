@@ -39,6 +39,25 @@ describe('lane open', () => {
         expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-beat:agent/12/beat');
     });
 
+    it('creates an issueless lane without an issue segment', () => {
+        const { port, calls, logs } = fakePort();
+
+        const path = openLane(undefined, 'cleanup', port);
+
+        expect(path).toBe('/repo/.agents/worktrees/agent-cleanup');
+        expect(calls).toContain('add:/repo/.agents/worktrees/agent-cleanup:agent/cleanup');
+        expect(calls).toContain('lock:/repo/.agents/worktrees/agent-cleanup');
+        expect(logs.at(-1)).toBe(path);
+    });
+
+    it('stays offline: the port exposes no gh or issue lookup', () => {
+        const { port } = fakePort();
+
+        openLane(undefined, 'cleanup', port);
+
+        expect(Object.keys(port).filter((key) => /gh|github|issue/i.test(key))).toEqual([]);
+    });
+
     it('does not modify a primary checkout path', () => {
         const { port, calls } = fakePort();
 
@@ -49,14 +68,26 @@ describe('lane open', () => {
     });
 
     it.each([
-        [['0'], /usage/],
-        [[], /usage/],
+        [[], { slug: 'work', help: false }],
+        [['12'], { issue: 12, slug: 'work', help: false }],
+        [['12', 'beat'], { issue: 12, slug: 'beat', help: false }],
+        [['beat'], { slug: 'beat', help: false }],
+        [['lane-issue-optional'], { slug: 'lane-issue-optional', help: false }],
+        [['--help'], { slug: 'work', help: true }],
+    ])('parses argv %j', (args, expected) => {
+        expect(parseOpenLaneArgs(args)).toEqual(expected);
+    });
+
+    it.each([
+        [['0'], /purely numeric/],
+        [['2206', '12'], /purely numeric/],
         [['12', 'Work'], /slug/],
-        [['agent'], /usage/],
+        [['beat', 'extra'], /unknown option/],
+        [['12', 'beat', 'extra'], /unknown option/],
+        [['--help', 'beat'], /--help/],
     ])('rejects argv %j before creating a worktree', (args, message) => {
         expect(() => parseOpenLaneArgs(args)).toThrow(message);
-        const { port, calls } = fakePort();
+        const { calls } = fakePort();
         expect(calls).toEqual([]);
-        void port;
     });
 });

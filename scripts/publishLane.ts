@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -27,9 +29,13 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
+export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number]';
+
 export type PublishLanePort = {
     fetchMain: () => void;
     worktrees: () => PublishWorktree[];
+    cwd: () => string;
+    issueExists: (issue: number) => boolean;
     aheadBehind: (lane: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
     headSubject: (lane: string) => string;
@@ -52,30 +58,80 @@ export function parsePublishLaneArgs(args: string[]): { issue?: number; help: bo
         return { help: true };
     }
     const issueArg = args[0];
-    if (issueArg === undefined || args.length !== 1) {
-        fail('usage: pnpm lane:publish <issue-number>');
+    if (issueArg === undefined) {
+        return { help: false };
     }
-    return { issue: assertIssueNumber(issueArg, 'usage: pnpm lane:publish <issue-number>'), help: false };
+    if (args.length !== 1) {
+        fail(PUBLISH_LANE_USAGE);
+    }
+    return { issue: assertIssueNumber(issueArg, PUBLISH_LANE_USAGE), help: false };
 }
 
-export function publishLane(issue: number, port: PublishLanePort): number {
-    port.fetchMain();
-    const prefix = `agent/${issue}/`;
-    const matches = port.worktrees().filter((worktree) => {
+type ResolvedLane = { path: string; branch: string };
+
+export const NO_ISSUE_LANE_FAILURE =
+    'not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number';
+
+export function canonicalPath(path: string, resolveExisting: (path: string) => string): string {
+    const absolute = resolve(path);
+    try {
+        return resolveExisting(absolute);
+    } catch {
+        return absolute;
+    }
+}
+
+export function containsPath(container: string, candidate: string): boolean {
+    const relation = relative(container, candidate);
+    return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
+}
+
+function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
+    return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        return (
-            worktree.locked &&
-            worktree.lockReason === AUTHOR_LOCK_REASON &&
-            branch !== undefined &&
-            branch.startsWith(prefix)
-        );
+        if (!worktree.locked || worktree.lockReason !== AUTHOR_LOCK_REASON || branch === undefined) {
+            return [];
+        }
+        return [{ path: worktree.path, branch }];
     });
+}
+
+export function resolveAuthorLane(
+    issue: number | undefined,
+    worktrees: PublishWorktree[],
+    cwd: string,
+    resolveExisting: (path: string) => string = realpathSync
+): ResolvedLane {
+    const lanes = authorLanes(worktrees);
+    if (issue === undefined) {
+        const here = canonicalPath(cwd, resolveExisting);
+        const enclosing = lanes.filter((lane) => containsPath(canonicalPath(lane.path, resolveExisting), here));
+        const innermost = enclosing.reduce<ResolvedLane | undefined>(
+            (deepest, lane) => (deepest === undefined || lane.path.length > deepest.path.length ? lane : deepest),
+            undefined
+        );
+        if (innermost === undefined) {
+            fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
+        }
+        return innermost;
+    }
+    const prefix = `agent/${issue}/`;
+    const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
         fail(`expected exactly one locked author lane for issue #${issue}`);
     }
     const lane = matches[0];
-    if (lane === undefined || lane.branch === undefined) {
+    if (lane === undefined) {
         fail(`expected exactly one locked author lane for issue #${issue}`);
+    }
+    return lane;
+}
+
+export function publishLane(issue: number | undefined, port: PublishLanePort): number {
+    port.fetchMain();
+    const lane = resolveAuthorLane(issue, port.worktrees(), port.cwd());
+    if (issue !== undefined && !port.issueExists(issue)) {
+        fail(`issue #${issue} does not exist in ${REQUIRED_REPOSITORY}`);
     }
     if (port.dirty(lane.path)) {
         const subject = port.headSubject(lane.path);
@@ -131,6 +187,19 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         },
         worktrees: () =>
             parsePublishWorktrees(spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })),
+        cwd: () => cwd,
+        issueExists: (issue) => {
+            const result = spawnSync('gh', issueLookupArgs(issue), {
+                cwd: primaryRoot,
+                env: session.env,
+                encoding: 'utf8',
+                shell: false,
+            });
+            if (result.error !== undefined) {
+                throw result.error;
+            }
+            return issueExistsFromLookup(issue, result);
+        },
         aheadBehind: (lane) => {
             const output = spawnCapture('git', ['rev-list', '--left-right', '--count', 'origin/main...HEAD'], {
                 cwd: lane,
@@ -229,6 +298,26 @@ function isAncestorCommit(lane: string, ancestorSha: string, descendantSha: stri
     throw new Error(result.stderr.trim() || 'git merge-base --is-ancestor failed');
 }
 
+const ISSUE_NOT_FOUND_PATTERN = /HTTP 404|Not Found|Could not resolve to an? Issue/i;
+
+export function issueLookupArgs(issue: number): string[] {
+    return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', '.number'];
+}
+
+export function issueExistsFromLookup(
+    issue: number,
+    result: { status: number | null; stdout: string; stderr: string }
+): boolean {
+    if (result.status === 0) {
+        return result.stdout.trim() === String(issue);
+    }
+    const stderr = result.stderr.trim();
+    if (ISSUE_NOT_FOUND_PATTERN.test(stderr)) {
+        return false;
+    }
+    throw new Error(stderr || `cannot prove issue #${issue} exists in ${REQUIRED_REPOSITORY}`);
+}
+
 export function existingOpenPullRequestArgs(branch: string): string[] {
     return ['pr', 'list', '--repo', REQUIRED_REPOSITORY, '--head', branch, '--state', 'open', '--json', 'number'];
 }
@@ -256,11 +345,8 @@ export function parsePublishWorktrees(value: string): PublishWorktree[] {
 async function main(): Promise<number> {
     const parsed = parsePublishLaneArgs(process.argv.slice(2));
     if (parsed.help) {
-        console.log('Usage: pnpm lane:publish <issue-number>');
+        console.log('Usage: pnpm lane:publish [issue-number]');
         return 0;
-    }
-    if (parsed.issue === undefined) {
-        fail('usage: pnpm lane:publish <issue-number>');
     }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();
