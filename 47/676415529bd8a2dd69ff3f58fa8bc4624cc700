@@ -1,0 +1,73 @@
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0a3429e31e555d::t_426fa637b6d387 12,1743-1748,1779-1782,1786
+AGENTS.md
+  s_0a3429e31e555d::t_9e867cdd5eb3d7 192-194,218-221,225-246,249-252,308-319
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_0a3429e31e555d::t_191b531a125d36 121,132-135,137-138,150-154,166,168,179-189,207-215,225,227-228,230
+src/modules/Arrangement/models/StoredDeviceParameterMigration.ts
+  s_0a3429e31e555d::t_03bfa8d5afbcd3 1-73
+src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts
+  s_0a3429e31e555d::t_ad80bdfa6fcbeb 1,81-84
+src/modules/Arrangement/stores/__tests__/storedDeviceParameterMigration.spec.ts
+  s_0a3429e31e555d::t_0e2a70363e9835 1-106
+src/modules/Arrangement/stores/trackStore.ts
+  s_0a3429e31e555d::t_92793254e3584e 4,340-346
+src/modules/Arrangement/useCases/preset/__tests__/canonicalPresetDeviceParameters.spec.ts
+  s_0a3429e31e555d::t_9b79845e66ea58 1-48
+src/modules/Arrangement/useCases/preset/canonicalPresetDeviceParameters.ts
+  s_0a3429e31e555d::t_92c1e2f18bfd8c 1-36
+src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts
+  s_0a3429e31e555d::t_a1eb50a0177fea 5-6,22
+src/modules/Arrangement/useCases/preset/materializePresetDevices.ts
+  s_0a3429e31e555d::t_0beed8d77a7b4a 6-7,34
+src/modules/AudioEngine/engine/__tests__/faustLookaheadLatency.spec.ts
+  s_0a3429e31e555d::t_0f18fca26b1cfe 1-152
+src/modules/PluginHost/useCases/faustEngine/__tests__/brickWallLimiterDspBehavior.spec.ts
+  s_0a3429e31e555d::t_7ec5643ee749cd 1-297
+src/modules/PluginHost/useCases/faustEngine/__tests__/declaredControlRepairsDspBehavior.spec.ts
+  s_0a3429e31e555d::t_48032a97e8db3f 1-250
+src/modules/PluginHost/useCases/faustEngine/__tests__/multibandCompressorDspBehavior.spec.ts
+  s_0a3429e31e555d::t_34f7872ac2d0dd 1-307
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspCompile.spec.ts
+  s_0a3429e31e555d::t_26491ea068db7f 10-12,14-15,23-46,60-68,71-83,86-88,91,93-99,103,105-151,160-167,170-171,177-183,186,188,196,203-333,338,344,350-356,363
+src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts
+  s_0a3429e31e555d::t_8ca1e9723176ec 248-249,257-259,271
+src/modules/PluginHost/useCases/faustEngine/dsp/1176-compressor.dsp
+  s_0a3429e31e555d::t_a0b8f32509daa5 2-21
+src/modules/PluginHost/useCases/faustEngine/dsp/brick-wall-limiter.dsp
+  s_0a3429e31e555d::t_05c02be647c352 2-116
+src/modules/PluginHost/useCases/faustEngine/dsp/de-esser.dsp
+  s_0a3429e31e555d::t_03e00456d94355 4,6-11,20-21
+src/modules/PluginHost/useCases/faustEngine/dsp/gain-utility.dsp
+  s_0a3429e31e555d::t_ce9af2a354a805 3-8
+src/modules/PluginHost/useCases/faustEngine/dsp/lufs-meter.dsp
+  s_0a3429e31e555d::t_7929a260a824a2 8-19
+src/modules/PluginHost/useCases/faustEngine/dsp/multiband-compressor.dsp
+  s_0a3429e31e555d::t_85aa0c363847f5 2-64
+src/modules/PluginHost/useCases/faustEngine/dsp/noise-gate.dsp
+  s_0a3429e31e555d::t_ab70db37b08b81 3-7
+src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp
+  s_0a3429e31e555d::t_bc02ce06309929 6-8
+src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp
+  s_0a3429e31e555d::t_d318b5e018bdfb 21-27
+src/modules/PluginHost/useCases/faustEngine/getFaustModuleLatencyMs.ts
+  s_0a3429e31e555d::t_5e9409fe9247d5 1-33
+src/modules/PluginHost/useCases/index.ts
+  s_0a3429e31e555d::t_e48e6f8d1b7914 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "47676415529bd8a2dd69ff3f58fa8bc4624cc700",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
