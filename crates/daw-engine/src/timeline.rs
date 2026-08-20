@@ -108,7 +108,7 @@ pub enum RampShape {
 /// Deliberately an enum of fixed-size addresses rather than a name: a command
 /// carrying a `String` would have its allocation freed on the audio thread
 /// when the command is consumed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum AutomationTarget {
     TrackGain(usize),
     TrackPan(usize),

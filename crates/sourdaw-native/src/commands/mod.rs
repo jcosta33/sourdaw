@@ -4,6 +4,7 @@ pub mod collab;
 pub mod crumbs;
 pub mod engine_diagnostics;
 pub mod filesystem;
+pub mod graph;
 pub mod link;
 pub mod midi;
 pub mod model_download;

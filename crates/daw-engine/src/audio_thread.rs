@@ -12,6 +12,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::Duration;
 use triple_buffer::Input;
@@ -176,19 +177,30 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         engine_event_tx,
         false,
     )
+    .map(|(handle, _sample_rate)| handle)
 }
 
+/// Spawn the audio thread and report the sample rate the stream actually
+/// opened at.
+///
+/// The rate is decided inside the stream build — it is the device's own
+/// default configuration, queried on the owner thread — so it travels back
+/// through a cell the factory fills before the ready handshake. The caller
+/// needs it because every graph command that names a time in seconds has to be
+/// converted to frames on *this* clock, and any other rate is a guess.
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
-) -> Result<AudioThreadHandle, String> {
+) -> Result<(AudioThreadHandle, f32), String> {
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
     let reclaimer_shutdown_tx = spawn_retirement_reclaimer(retired_rx)?;
+    let sample_rate_cell = Arc::new(OnceLock::new());
+    let sample_rate_slot = Arc::clone(&sample_rate_cell);
 
-    spawn_owned_audio_stream(move || {
+    let handle = spawn_owned_audio_stream(move || {
         match build_audio_stream(
             command_rx,
             retired_tx,
@@ -196,6 +208,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             timeline_rt_diagnostics_tx,
             engine_event_tx,
             force_default_buffer,
+            &sample_rate_slot,
         ) {
             Ok(stream) => Ok(StreamWithReclaimerShutdown(
                 Some(stream),
@@ -206,7 +219,15 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
                 Err(error)
             }
         }
-    })
+    })?;
+
+    // The factory fills the cell before the stream is built, and the ready
+    // handshake the spawn waited on happens after the factory returned, so a
+    // successful spawn implies a filled cell.
+    let sample_rate = *sample_rate_cell
+        .get()
+        .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
+    Ok((handle, sample_rate))
 }
 
 /// Write the engine's internal stereo pair (`left`/`right`, always rendered
@@ -300,6 +321,7 @@ fn effective_buffer_size(
     negotiated_buffer_size(supported)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
@@ -307,6 +329,7 @@ fn build_audio_stream(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
+    sample_rate_out: &OnceLock<f32>,
 ) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
     let device = host
@@ -323,6 +346,7 @@ fn build_audio_stream(
     }
 
     let sample_rate = config.sample_rate() as f32;
+    let _ = sample_rate_out.set(sample_rate);
     let mut scheduler = AudioScheduler::with_rt_diagnostics(
         command_rx,
         retired_tx,
