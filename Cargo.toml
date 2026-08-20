@@ -13,6 +13,13 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+# The Windows device layer (ADR 0027) reaches IAudioClient3 and WASAPI
+# Exclusive through the platform's own bindings. Pinned to the version
+# already present in the lockfile through cpal's Windows dependency tree,
+# so both resolve to one copy.
+windows = "0.61.3"
+
 [profile.release]
 opt-level = 3
 lto = true

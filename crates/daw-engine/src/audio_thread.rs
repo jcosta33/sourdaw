@@ -1,5 +1,14 @@
-//! Native OS Audio Thread using CPAL
+//! Native OS Audio Thread
+//!
+//! Owns the thread the stream lives on and the render callback the device
+//! seam carries. Which platform API the stream runs through is the device
+//! seam's decision (`crate::device`): cpal on macOS and Linux, the
+//! IAudioClient3/WASAPI backend on Windows (ADR 0027).
 
+use crate::device::{
+    DeviceOpenRequest, OpenOutput, OutputBackend, PlatformOutputBackend, PlatformStream, RenderFn,
+    StreamErrorFn,
+};
 use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind};
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
@@ -9,7 +18,6 @@ use crate::scheduler::{
     RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -23,6 +31,7 @@ pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
 /// 512 frames is the common professional default (Live, Logic, Reaper all ship
 /// a buffer of this order): low enough for playable monitoring latency, high
 /// enough that a bridged plugin chain is not woken more often than it can serve.
+#[cfg(any(not(windows), test))]
 const PREFERRED_BUFFER_FRAMES: cpal::FrameCount = 512;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
@@ -329,7 +338,8 @@ fn write_interleaved(
 /// or below it. A device that cannot exceed the limit keeps its preference
 /// untouched; a device whose whole range sits above the limit cannot be helped
 /// and keeps it too.
-fn negotiated_buffer_size(supported: &cpal::SupportedBufferSize) -> cpal::BufferSize {
+#[cfg(any(not(windows), test))]
+pub(crate) fn negotiated_buffer_size(supported: &cpal::SupportedBufferSize) -> cpal::BufferSize {
     let cpal::SupportedBufferSize::Range { min, max } = *supported else {
         return cpal::BufferSize::Default;
     };
@@ -348,7 +358,8 @@ fn negotiated_buffer_size(supported: &cpal::SupportedBufferSize) -> cpal::Buffer
 /// code a `Default` request never runs, so a build can fail for the negotiated
 /// period alone. `EngineHandle::new` then rebuilds with this set, trading the
 /// negotiation for an engine that starts.
-fn effective_buffer_size(
+#[cfg(any(not(windows), test))]
+pub(crate) fn effective_buffer_size(
     supported: &cpal::SupportedBufferSize,
     force_default: bool,
 ) -> cpal::BufferSize {
@@ -369,22 +380,22 @@ fn build_audio_stream(
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
-) -> Result<cpal::Stream, String> {
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| "No default audio output device found".to_string())?;
+) -> Result<PlatformStream, String> {
+    let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
+        force_default_period: force_default_buffer,
+        // WASAPI Exclusive is an explicit user opt-in (ADR 0027). No engine
+        // setting is wired to it yet, so every open today takes the shared
+        // default; the flag exists on the seam so wiring the setting is a
+        // one-line change here and nowhere else.
+        exclusive: false,
+    })?;
 
-    let config = device
-        .default_output_config()
-        .map_err(|e| format!("Failed to get default output config: {}", e))?;
-
-    let channels = config.channels() as usize;
-    if channels == 0 {
+    let negotiated = open.negotiated();
+    if negotiated.channels == 0 {
         return Err("Audio output device reports zero channels".to_string());
     }
 
-    let sample_rate = config.sample_rate() as f32;
+    let sample_rate = negotiated.sample_rate;
     let _ = sample_rate_out.set(sample_rate);
     let mut scheduler = AudioScheduler::with_rt_diagnostics(
         command_rx,
@@ -395,97 +406,78 @@ fn build_audio_stream(
         graph_progress_tx,
     );
 
-    // Ask the device for a period the callback and the plugin bridge can carry,
-    // but only where the device could otherwise exceed it (see
-    // `negotiated_buffer_size`), or not at all on the fallback build.
-    let mut stream_config: cpal::StreamConfig = config.into();
-    stream_config.buffer_size = effective_buffer_size(config.buffer_size(), force_default_buffer);
+    let mut left_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
+    let mut right_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
 
-    // We strictly use f32 streams.
+    // The render callback. It runs on the audio thread, whichever backend
+    // carries it: no heap allocation, no locks, no IPC — scratch is fixed-size
+    // and captured, and every channel it publishes into is wait-free.
     //
-    // The backend runs this on the real-time thread — ALSA reports from its xrun
-    // path and WASAPI from inside the output run loop — so the callback does the
-    // one wait-free thing open to it and nothing else: push a fixed-size `Copy`
-    // event into a preallocated ring. No formatting, no stderr lock, no
-    // allocation, no wait; a full ring drops the report rather than stalling the
-    // audio side. Reporting the error is the drain side's job
+    // `channels` arrives per call because a Windows device-invalidation
+    // recovery may resume this same callback on an endpoint with a different
+    // channel layout; the cpal backends pass a constant.
+    let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
+        if channels == 0 {
+            return;
+        }
+
+        // 1. Process pending commands lock-free
+        scheduler.update_graph();
+
+        // 2. Process ring-buffer audio bridges (production path)
+        // Reads input from worklets via main thread, processes through
+        // CLAP/VST3, writes output back for main thread to return.
+        // The device's frame count for this period is the budget:
+        // a bridge may spend it plus one quantum of catch-up, so a
+        // backlog never renders as one spike inside the deadline.
+        scheduler.process_audio_bridges(data.len() / channels);
+
+        // 3. Process the native effects chain (for standalone native rendering).
+        // Scratch is fixed-size and captured by the callback, so no heap
+        // allocation occurs per buffer.
+        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
+            let frames = chunk.len() / channels;
+            let left = &mut left_scratch[..frames];
+            let right = &mut right_scratch[..frames];
+            left.fill(0.0);
+            right.fill(0.0);
+
+            // The timeline renders here, into scratch the
+            // callback owns: clips, track device chains, sends,
+            // buses and the master sum, then the master insert
+            // chain and the master fader. An engine with no
+            // tracks renders silence, exactly as before the
+            // timeline existed. process_block always renders a
+            // stereo pair regardless of the device's channel
+            // layout.
+            scheduler.process_block(left, right, frames);
+
+            // Adapt the rendered stereo pair to the device's actual
+            // channel count.
+            write_interleaved(chunk, left, right, channels, frames);
+        }
+
+        scheduler.publish_midi_rt_diagnostics();
+        scheduler.publish_timeline_rt_diagnostics();
+        // Published last, after every block of this callback:
+        // the snapshot's happens-before (GraphProgressSnapshot)
+        // holds because everything it vouches for has already
+        // been drained, rendered and popped above.
+        scheduler.publish_graph_progress();
+    });
+
+    // The backend may call this from the real-time thread — ALSA reports from
+    // its xrun path and WASAPI from inside the output run loop — so it does
+    // the one wait-free thing open to it and nothing else: push a fixed-size
+    // `Copy` event into a preallocated ring. No formatting, no stderr lock, no
+    // allocation, no wait; a full ring drops the report rather than stalling
+    // the audio side. Reporting the error is the drain side's job
     // (`drain_engine_events`).
-    let err_fn = move |err: cpal::Error| {
-        let _ = engine_event_tx.push(EngineEvent::StreamError {
-            kind: StreamErrorKind::from(&err),
-        });
-    };
+    let on_error: StreamErrorFn = Box::new(move |kind: StreamErrorKind| {
+        let _ = engine_event_tx.push(EngineEvent::StreamError { kind });
+    });
 
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => {
-            let mut left_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
-            let mut right_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
-
-            device
-                .build_output_stream(
-                    stream_config,
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        // 1. Process pending commands lock-free
-                        scheduler.update_graph();
-
-                        // 2. Process ring-buffer audio bridges (production path)
-                        // Reads input from worklets via main thread, processes through
-                        // CLAP/VST3, writes output back for main thread to return.
-                        // The device's frame count for this period is the budget:
-                        // a bridge may spend it plus one quantum of catch-up, so a
-                        // backlog never renders as one spike inside the deadline.
-                        scheduler.process_audio_bridges(data.len() / channels);
-
-                        // 3. Process the native effects chain (for standalone native rendering).
-                        // Scratch is fixed-size and captured by the callback, so no heap
-                        // allocation occurs per buffer.
-                        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
-                            let frames = chunk.len() / channels;
-                            let left = &mut left_scratch[..frames];
-                            let right = &mut right_scratch[..frames];
-                            left.fill(0.0);
-                            right.fill(0.0);
-
-                            // The timeline renders here, into scratch the
-                            // callback owns: clips, track device chains, sends,
-                            // buses and the master sum, then the master insert
-                            // chain and the master fader. An engine with no
-                            // tracks renders silence, exactly as before the
-                            // timeline existed. process_block always renders a
-                            // stereo pair regardless of the device's channel
-                            // layout.
-                            scheduler.process_block(left, right, frames);
-
-                            // Adapt the rendered stereo pair to the device's actual
-                            // channel count.
-                            write_interleaved(chunk, left, right, channels, frames);
-                        }
-
-                        scheduler.publish_midi_rt_diagnostics();
-                        scheduler.publish_timeline_rt_diagnostics();
-                        // Published last, after every block of this callback:
-                        // the snapshot's happens-before (GraphProgressSnapshot)
-                        // holds because everything it vouches for has already
-                        // been drained, rendered and popped above.
-                        scheduler.publish_graph_progress();
-                    },
-                    err_fn,
-                    None,
-                )
-                .map_err(|e| format!("Failed to build output stream: {}", e))?
-        }
-        _ => {
-            return Err(
-                "Unsupported sample format (only F32 is supported by the engine)".to_string(),
-            )
-        }
-    };
-
-    stream
-        .play()
-        .map_err(|e| format!("Failed to play stream: {}", e))?;
-
-    Ok(stream)
+    open.start(render, on_error)
 }
 
 #[cfg(test)]
