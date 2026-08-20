@@ -3,6 +3,7 @@
  */
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 import { GRID_SNAP_OPTIONS, type GridSnapOption } from '../../models/Preferences';
@@ -11,20 +12,20 @@ import { CaptureKeyButton } from '../components/CaptureKeyButton';
 // ── SectionTitle ──────────────────────────────────────────────────────
 
 export const SectionTitle = ({ icon, title }: { icon: ReactElement; title: string }): ReactElement => (
-    <div className="flex items-center gap-2 pb-2 mb-1">
+    <Row gap={2} className="pb-2 mb-1">
         <span className="text-muted-foreground">{icon}</span>
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
         <div className="daw-seam ml-2 h-px flex-1" />
-    </div>
+    </Row>
 );
 
 // ── FieldGroup ────────────────────────────────────────────────────────
 
 export const FieldGroup = ({ label, children }: { label: string; children: React.ReactNode }): ReactElement => (
-    <section className="space-y-1.5">
+    <Stack as="section" gap={1.5}>
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block">{label}</label>
         {children}
-    </section>
+    </Stack>
 );
 
 // ── ToggleRow ─────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ export const ToggleRow = ({
     onChange: (v: boolean) => void;
     descriptionId?: string;
 }): ReactElement => (
-    <div className="flex items-center justify-between">
+    <Row justify="between">
         <span className="text-xs text-foreground">{label}</span>
         <button
             type="button"
@@ -55,7 +56,7 @@ export const ToggleRow = ({
                 className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white transition-transform ${value ? 'translate-x-4' : ''}`}
             />
         </button>
-    </div>
+    </Row>
 );
 
 // ── VoiceKeyEditor ────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ export const VoiceKeyEditor = ({
 
     return (
         <FieldGroup label="Voice Command Key">
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <CaptureKeyButton
                     ref={ref}
                     listening={listening}
@@ -100,7 +101,7 @@ export const VoiceKeyEditor = ({
                 <span className="text-[10px] text-muted-foreground">
                     {listening ? 'Listening for keypress' : 'Click to change — hold to activate voice input'}
                 </span>
-            </div>
+            </Row>
         </FieldGroup>
     );
 };
@@ -122,9 +123,9 @@ export const GridSubdivisionSection = ({
     onChange: (v: GridSnapOption) => void;
 }): ReactElement => (
     <FieldGroup label="Grid Snap">
-        <div className="space-y-1.5">
+        <Stack gap={1.5}>
             {GRID_GROUPS.map((group) => (
-                <div key={group.label || 'misc'} className="flex flex-wrap gap-1 items-center">
+                <Row wrap gap={1} key={group.label || 'misc'}>
                     {group.label ? (
                         <span className="text-[9px] text-muted-foreground/60 w-12 shrink-0">{group.label}</span>
                     ) : null}
@@ -143,8 +144,8 @@ export const GridSubdivisionSection = ({
                             </Button>
                         );
                     })}
-                </div>
+                </Row>
             ))}
-        </div>
+        </Stack>
     </FieldGroup>
 );

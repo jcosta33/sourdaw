@@ -102,10 +102,10 @@ export const measureInferenceThroughput = inject({ logger, readVerifiedModel })(
                 return { status: 'not-measured', reason: 'no-webgpu' };
             }
 
-            let modelData: ArrayBuffer | null;
+            let modelDataPort: MessagePort | null;
             let executionProviders: string[];
             try {
-                modelData = await readVerifiedModel({
+                modelDataPort = await readVerifiedModel({
                     family: PROBE_MODEL_FAMILY,
                     modelId: PROBE_MODEL_ID,
                     sha256: KOKORO_MODEL_ARTIFACT.sha256,
@@ -116,7 +116,7 @@ export const measureInferenceThroughput = inject({ logger, readVerifiedModel })(
                 return { status: 'not-measured', reason: 'model-not-cached' };
             }
 
-            if (!modelData) {
+            if (!modelDataPort) {
                 logger.info(
                     `[BrowserAi] Throughput not measured: ${PROBE_MODEL_ID} is not in OPFS. ` +
                         'Download it in AI Settings, then re-detect.'
@@ -129,7 +129,7 @@ export const measureInferenceThroughput = inject({ logger, readVerifiedModel })(
                 // header. `loadOnnxSession` is idempotent; the worker caches by modelId.
                 executionProviders = await inferenceWorkerBridge.loadOnnxSession({
                     modelId: PROBE_MODEL_ID,
-                    modelData,
+                    modelDataPort,
                 });
                 if (!executionProviders.includes('webgpu')) {
                     logger.warn('[BrowserAi] Throughput probe session did not use WebGPU.');

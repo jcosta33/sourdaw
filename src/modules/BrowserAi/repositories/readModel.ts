@@ -1,31 +1,23 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { isNotFoundError } from './isNotFoundError';
-import { resolveFileHandle } from './resolveFileHandle';
-import { MODELS_DIRECTORY } from './storageConstants';
-import { toOpfsPath } from './toOpfsPath';
+import { modelStorageWorkerBridge } from './modelStorageWorkerBridge';
 
-type ReadModelInput = { family: string; modelId: string };
-type ReadModelOutput = Promise<ArrayBuffer | null>;
+type ReadModelInput = {
+    family: string;
+    modelId: string;
+    expectedSizeBytes?: number;
+    expectedSha256?: string;
+};
+type ReadModelOutput = Promise<MessagePort | null>;
 
-export const readModel = inject({ logger })(
-    ({ logger }) =>
-        async function readModel({ family, modelId }: ReadModelInput): ReadModelOutput {
+export const readModel = inject({ logger, modelStorageWorkerBridge })(
+    ({ logger, modelStorageWorkerBridge }) =>
+        async function readModel(input: ReadModelInput): ReadModelOutput {
+            const { family, modelId } = input;
             try {
-                const root = await navigator.storage.getDirectory();
-                const modelsDir = await root.getDirectoryHandle(MODELS_DIRECTORY, { create: false });
-                const fileHandle = await resolveFileHandle({
-                    opfsRoot: modelsDir,
-                    relativePath: toOpfsPath({ family, modelId }),
-                    create: false,
-                });
-                const file = await fileHandle.getFile();
-                return file.arrayBuffer();
+                return await modelStorageWorkerBridge.readModel(input);
             } catch (error) {
-                if (isNotFoundError(error)) {
-                    return null;
-                }
                 logger.warn(`[StorageManager] Failed to read model ${family}/${modelId}: ${String(error)}`);
                 throw error;
             }

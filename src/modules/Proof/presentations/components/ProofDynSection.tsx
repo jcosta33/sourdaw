@@ -7,6 +7,7 @@ import { type ReactElement } from 'react';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { PROOF_PATCH_RANGES, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -61,7 +62,7 @@ export const ProofDynSection = ({
     };
 
     return (
-        <div className="flex flex-col gap-1.5 px-2">
+        <Stack gap={1.5} className="px-2">
             <DawPluginSectionHeader
                 title="Multiband Dynamics"
                 size="xs"
@@ -87,7 +88,7 @@ export const ProofDynSection = ({
             />
 
             {/* Crossover frequencies */}
-            <div className="flex items-center gap-2 px-1">
+            <Row gap={2} className="px-1">
                 <span className="text-[7px] text-muted-foreground">Crossovers:</span>
                 {patch.dynCrossoverFreqs.map((freq, i) => {
                     const crossoverKey = CROSSOVER_KEYS[i]!;
@@ -98,7 +99,7 @@ export const ProofDynSection = ({
                     const max = next === undefined ? rangeMax : Math.max(freq, next - 1);
 
                     return (
-                        <div key={crossoverKey} className="flex items-center gap-0.5">
+                        <Row gap={0.5} key={crossoverKey}>
                             <RotaryKnob
                                 value={freq}
                                 aria-label={`Dynamics ${crossoverKey} crossover frequency`}
@@ -115,10 +116,10 @@ export const ProofDynSection = ({
                             <span className="text-[6px] text-muted-foreground font-mono">
                                 {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : `${freq.toFixed(0)}`}
                             </span>
-                        </div>
+                        </Row>
                     );
                 })}
-            </div>
+            </Row>
 
             {/* Per-band controls */}
             <div className={`flex gap-1 ${patch.dynBypassed ? 'opacity-30' : ''}`}>
@@ -126,9 +127,12 @@ export const ProofDynSection = ({
                     const band = patch.dynBands[i]!;
                     const gr = dynGr[i] ?? 0;
                     return (
-                        <div
+                        <Stack
+                            align="center"
+                            grow
+                            gap={0.5}
+                            className="px-1 py-1 rounded bg-surface-base/50"
                             key={label}
-                            className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
                         >
                             <span className="text-[7px] font-bold uppercase" style={{ color: BAND_COLORS[i] }}>
                                 {label}
@@ -205,10 +209,10 @@ export const ProofDynSection = ({
                                 tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Rel</span>
-                        </div>
+                        </Stack>
                     );
                 })}
             </div>
-        </div>
+        </Stack>
     );
 };

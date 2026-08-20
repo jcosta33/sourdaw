@@ -20,7 +20,7 @@ type DetectCapabilitiesRepo = (input?: {
     forceRefresh?: boolean;
     measureInference?: boolean;
 }) => Promise<CapabilityReport>;
-type ReadVerifiedModel = () => Promise<ArrayBuffer | null>;
+type CheckVerifiedModel = () => Promise<boolean>;
 
 function create_logger_mock(): { info: (m: string) => void; warn: (m: string) => void; debug: (m: string) => void } {
     return {
@@ -32,10 +32,11 @@ function create_logger_mock(): { info: (m: string) => void; warn: (m: string) =>
 
 const supported_report: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
-    sharedArrayBuffer: true,
+    crossOriginIsolated: true,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: {
         status: 'measured',
         modelId: KOKORO_MODEL_ARTIFACT.id,
@@ -52,10 +53,11 @@ const supported_report: CapabilityReport = {
 // first-launch report.
 const regressed_report: CapabilityReport = {
     capability: 'unsupported-browser',
-    webGpuTier: 'unavailable',
-    sharedArrayBuffer: false,
+    webGpu: { status: 'unavailable', reason: 'device-unavailable' },
+    webGpuTier: 'not-measured',
+    crossOriginIsolated: false,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: { status: 'not-measured', reason: 'no-webgpu' },
     detectedAt: 1_803_643_200_000,
 };
@@ -75,12 +77,12 @@ describe('BrowserAi capabilityColdStart', () => {
 
     it('forces a fresh capability probe on cold start rather than accepting a cached report', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(supported_report);
-        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            readVerifiedModel: read_verified_model,
+            checkVerifiedModel: check_verified_model,
         });
 
         await initBrowserAi();
@@ -94,12 +96,12 @@ describe('BrowserAi capabilityColdStart', () => {
             .fn<DetectCapabilitiesRepo>()
             .mockResolvedValueOnce(supported_report)
             .mockResolvedValueOnce(regressed_report);
-        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            readVerifiedModel: read_verified_model,
+            checkVerifiedModel: check_verified_model,
         });
 
         // First cold start: healthy runtime.

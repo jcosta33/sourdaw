@@ -17,7 +17,7 @@ import { type DdspInstrument, type KokoroModel, type ModelDownloadStatus } from 
 import { DDSP_INSTRUMENT_CATALOG } from '../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroArtifactManifest';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { readVerifiedModel } from '../repositories/readVerifiedModel';
+import { checkVerifiedModel } from '../repositories/checkVerifiedModel';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
@@ -40,8 +40,8 @@ export const KOKORO_MODEL_ENTRY: KokoroModel = {
     sha256: KOKORO_MODEL_ARTIFACT.sha256,
 };
 
-export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, readVerifiedModel })(
-    ({ logger, detectCapabilitiesRepo, readVerifiedModel }) =>
+export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkVerifiedModel })(
+    ({ logger, detectCapabilitiesRepo, checkVerifiedModel }) =>
         async function initBrowserAi(): Promise<void> {
             logger.info('[BrowserAi] Initializing…');
 
@@ -83,13 +83,13 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, readVerifi
             if (MODEL_RELEASE_ADMISSION.kokoro) {
                 let kokoroStatus: ModelDownloadStatus;
                 try {
-                    const modelData = await readVerifiedModel({
+                    const verified = await checkVerifiedModel({
                         family: 'kokoro',
                         modelId: KOKORO_MODEL_ENTRY.id,
                         sha256: KOKORO_MODEL_ARTIFACT.sha256,
                         sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
                     });
-                    kokoroStatus = modelData ? 'ready' : 'not-downloaded';
+                    kokoroStatus = verified ? 'ready' : 'not-downloaded';
                 } catch (error) {
                     kokoroStatus = 'error';
                     logger.warn(`[BrowserAi] Kokoro cache probe failed: ${String(error)}`);

@@ -64,6 +64,7 @@ describe('createSession', () => {
             peers: [],
             connectionStatus: 'disconnected',
             error: null,
+            quarantinedPeerIds: [],
         });
     });
 });

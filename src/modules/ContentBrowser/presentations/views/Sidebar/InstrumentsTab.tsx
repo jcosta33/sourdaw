@@ -5,8 +5,10 @@ import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Piano, Disc3 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
+import { findWithheldDeviceType, isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import {
     addTrack,
     getFactoryPresets,
@@ -60,6 +62,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
 const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler', 'grand-boule']);
+const GRAND_BOULE_RELEASED = isDeviceReleaseAdmitted('grand-boule');
 
 // Categories that belong in the Effects tab, not here
 const EFFECTS_CATEGORIES = new Set<SoundPresetCategory>(['fx', 'vocal']);
@@ -135,10 +138,16 @@ export const InstrumentsTab = ({
     const soundPresets = factoryPresets.filter((param) => isSoundPreset(param) && matchesSearch(param));
     const filteredUser = userPresets.filter((param) => matchesSearch(param));
 
-    const executeCatalogPreset = async (presetId: string, trackId?: string) => {
+    const executeCatalogPreset = async (presetId: string, trackId?: string, devices: SoundPreset['devices'] = []) => {
         const plan = compileLoadPresetActions({ presetId, ...(trackId ? { trackId } : {}) });
         if (!plan) {
-            notifyUser('Preset cannot be applied to the current track.', 'error');
+            const withheldDevice = findWithheldDeviceType(devices);
+            notifyUser(
+                withheldDevice
+                    ? `Preset contains withheld device "${withheldDevice}" and cannot be loaded in this build.`
+                    : 'Preset cannot be applied to the current track.',
+                'error'
+            );
             return null;
         }
         try {
@@ -157,9 +166,9 @@ export const InstrumentsTab = ({
             (preset.trackKind === 'midi' && selectedTrack?.kind === 'midi') ||
             (preset.trackKind === 'audio' && selectedTrack?.kind === 'audio');
         if (selectedTrackId && trackKindMatches) {
-            void executeCatalogPreset(preset.id, selectedTrackId);
+            void executeCatalogPreset(preset.id, selectedTrackId, preset.devices);
         } else {
-            void executeCatalogPreset(preset.id);
+            void executeCatalogPreset(preset.id, undefined, preset.devices);
         }
     };
 
@@ -167,7 +176,7 @@ export const InstrumentsTab = ({
         if (!selectedTrack || !saveFormName.trim()) {
             return;
         }
-        saveCurrentAsPreset({
+        const savedPreset = saveCurrentAsPreset({
             name: saveFormName.trim(),
             category: saveFormCategory,
             trackKind: selectedTrack.kind === 'midi' ? 'midi' : 'audio',
@@ -177,6 +186,9 @@ export const InstrumentsTab = ({
                 parameterValues: data.parameterValues,
             })),
         });
+        if (!savedPreset) {
+            return;
+        }
         setSaveFormName('');
         setShowSaveForm(false);
         setUserPresetsVersion((value) => value + 1);
@@ -285,7 +297,7 @@ export const InstrumentsTab = ({
                         />
                     );
                 case 'grand-boule':
-                    return (
+                    return GRAND_BOULE_RELEASED ? (
                         <InstrumentCard
                             icon={Piano}
                             label="Grand Boule"
@@ -294,21 +306,23 @@ export const InstrumentsTab = ({
                             onClick={handleAddGrandBouleTrack}
                             theme={GRAND_BOULE_THEME}
                         />
-                    );
+                    ) : null;
                 default:
                     return null;
             }
         };
 
-        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule'].filter((id) => {
-            const name = id.replace('-', ' ');
-            return name.toLowerCase().includes(query) || (id === 'crumbs' && 'crumbs'.includes(query));
-        });
+        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule']
+            .filter((id) => id !== 'grand-boule' || GRAND_BOULE_RELEASED)
+            .filter((id) => {
+                const name = id.replace('-', ' ');
+                return name.toLowerCase().includes(query) || (id === 'crumbs' && 'crumbs'.includes(query));
+            });
 
         const totalCount = allResults.length + premiumMatches.length;
 
         return (
-            <div className="flex flex-col gap-1.5 animate-in fade-in duration-100">
+            <Stack gap={1.5} className="animate-in fade-in duration-100">
                 <SearchSummary count={totalCount} query={query} className="px-1 py-0.5" />
                 {totalCount > 0 ? (
                     <>
@@ -338,7 +352,7 @@ export const InstrumentsTab = ({
                 ) : (
                     <EmptyState message="No instruments found." />
                 )}
-            </div>
+            </Stack>
         );
     }
 
@@ -352,7 +366,7 @@ export const InstrumentsTab = ({
         }
 
         return (
-            <div className="flex flex-col gap-1.5 animate-in slide-in-from-right-4 duration-200">
+            <Stack gap={1.5} className="animate-in slide-in-from-right-4 duration-200">
                 {/* Preset list (header handled by Sidebar back bar with icon) */}
                 {renderPresets.length > 0 ? (
                     renderPresets.map((preset) => (
@@ -376,7 +390,7 @@ export const InstrumentsTab = ({
                 ) : (
                     <EmptyState message="No presets in this category." />
                 )}
-            </div>
+            </Stack>
         );
     }
 
@@ -386,9 +400,9 @@ export const InstrumentsTab = ({
     );
 
     return (
-        <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
+        <Stack className="px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
             {/* ── House Specials ─────────────────────────────────── */}
-            <div className="flex flex-col gap-1.5 mb-3">
+            <Stack gap={1.5} className="mb-3">
                 <DawSectionDivider
                     label="Play Dough"
                     className="mb-0.5 px-1"
@@ -427,15 +441,17 @@ export const InstrumentsTab = ({
                     onClick={handleAddCrumbsTrack}
                     theme={CRUMBS_THEME}
                 />
-                <InstrumentCard
-                    icon={Piano}
-                    label="Grand Boule"
-                    badge="Piano"
-                    description="Physical modeling · 88 keys · Modal synthesis · Pedals"
-                    onClick={handleAddGrandBouleTrack}
-                    theme={GRAND_BOULE_THEME}
-                />
-            </div>
+                {GRAND_BOULE_RELEASED ? (
+                    <InstrumentCard
+                        icon={Piano}
+                        label="Grand Boule"
+                        badge="Piano"
+                        description="Physical modeling · 88 keys · Modal synthesis · Pedals"
+                        onClick={handleAddGrandBouleTrack}
+                        theme={GRAND_BOULE_THEME}
+                    />
+                ) : null}
+            </Stack>
             <DawSectionDivider
                 label="Standard grain"
                 className="mb-1 px-1"
@@ -451,7 +467,7 @@ export const InstrumentsTab = ({
 
                 return (
                     <div key={group.label} className="mb-2">
-                        <div className="flex flex-col gap-1.5">
+                        <Stack gap={1.5}>
                             {groupCats.map((cat) => {
                                 const presetsInCat = soundPresets.filter((param) => param.category === cat);
                                 const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
@@ -480,7 +496,7 @@ export const InstrumentsTab = ({
                                     />
                                 );
                             })}
-                        </div>
+                        </Stack>
                     </div>
                 );
             })}
@@ -491,7 +507,7 @@ export const InstrumentsTab = ({
                 labelClassName="font-bold text-[var(--color-accent-orange)]"
                 lineClassName="bg-[var(--color-accent-orange)]/15"
             />
-            <div className="flex items-center gap-1 mb-2">
+            <Row gap={1} className="mb-2">
                 <DawPickerRow
                     compact
                     className="flex-1 px-2 py-1.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 shadow-sm"
@@ -499,12 +515,12 @@ export const InstrumentsTab = ({
                     heading="My Presets"
                     description={`${filteredUser.length} saved`}
                     endSlot={
-                        <div className="flex items-center gap-1">
+                        <Row gap={1}>
                             <span className="text-[10px] text-muted-foreground tabular-nums">
                                 {filteredUser.length}
                             </span>
                             <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                        </div>
+                        </Row>
                     }
                     onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
                 />
@@ -524,11 +540,14 @@ export const InstrumentsTab = ({
                         ) : null}
                     </>
                 ) : null}
-            </div>
+            </Row>
             {/* Save form (inline) */}
             {showSaveForm && selectedTrack ? (
-                <div className="space-y-1.5 px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2">
-                    <div className="flex items-center gap-1">
+                <Stack
+                    gap={1.5}
+                    className="px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2"
+                >
+                    <Row gap={1}>
                         <Input
                             type="text"
                             placeholder="Preset name…"
@@ -554,8 +573,8 @@ export const InstrumentsTab = ({
                         >
                             <X className="size-3.5" />
                         </Button>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
+                    </Row>
+                    <Row gap={1.5} className="mt-1">
                         <DawCompactSelect
                             value={saveFormCategory}
                             onChange={(event) => setSaveFormCategory(event.target.value as SoundPresetCategory)}
@@ -577,8 +596,8 @@ export const InstrumentsTab = ({
                         >
                             Save
                         </Button>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             ) : null}
             {/* Blank track shortcut */}
             <div className="border-t border-border/20 pt-2 mt-1">
@@ -591,6 +610,6 @@ export const InstrumentsTab = ({
                     title="Add a blank MIDI track with a default synthesizer"
                 />
             </div>
-        </div>
+        </Stack>
     );
 };

@@ -1,5 +1,6 @@
 import { type ComponentType, type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 type RailBackBarProps = {
@@ -10,7 +11,7 @@ type RailBackBarProps = {
 };
 
 export const RailBackBar = ({ title, onBack, icon: Icon, iconColor }: RailBackBarProps): ReactElement => (
-    <div className="flex h-[34px] shrink-0 items-center gap-1 border-b border-border/50 bg-surface-overlay px-2 py-1.5">
+    <Row gap={1} shrink={false} className="h-[34px] border-b border-border/50 bg-surface-overlay px-2 py-1.5">
         <Button
             variant="ghost"
             size="icon-xs"
@@ -35,5 +36,5 @@ export const RailBackBar = ({ title, onBack, icon: Icon, iconColor }: RailBackBa
             {title}
         </span>
         {Icon ? <Icon className={`size-3.5 shrink-0 ${iconColor ?? 'text-muted-foreground/50'}`} /> : null}
-    </div>
+    </Row>
 );

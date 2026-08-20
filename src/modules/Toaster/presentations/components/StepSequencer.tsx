@@ -1,5 +1,7 @@
 import { type ReactElement, useRef } from 'react';
 
+import { Row } from '#/components/layout';
+
 import { type PadState, type Pattern } from '../../models/ToasterKit';
 
 type StepSequencerProps = {
@@ -64,15 +66,15 @@ export const StepSequencer = ({
                 }
 
                 return (
-                    <div key={track.padIndex} className="mb-1 flex items-end gap-2">
-                        <div className="toaster-step-label flex h-8 w-[88px] shrink-0 items-center gap-2 rounded-[14px] px-2">
+                    <Row align="end" gap={2} className="mb-1" key={track.padIndex}>
+                        <Row gap={2} shrink={false} className="toaster-step-label h-8 w-[88px] rounded-[14px] px-2">
                             <div className="size-2 rounded-full" style={{ backgroundColor: pad.color }} />
                             <span className="truncate text-[9px] font-medium" style={{ color: `${pad.color}dd` }}>
                                 {pad.name}
                             </span>
-                        </div>
+                        </Row>
 
-                        <div className="flex min-w-0 flex-1 gap-1">
+                        <Row align="stretch" grow gap={1}>
                             {track.steps.slice(0, stepCount).map((step, stepIndex) => {
                                 const isCurrent = isPlaying && stepIndex === currentStep;
                                 const isBarStart = stepIndex % 4 === 0;
@@ -152,8 +154,8 @@ export const StepSequencer = ({
                                     </div>
                                 );
                             })}
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 );
             })}
         </div>

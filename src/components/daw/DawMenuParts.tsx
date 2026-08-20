@@ -1,5 +1,6 @@
 import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawMenuSectionLabelProps = HTMLAttributes<HTMLParagraphElement>;
@@ -32,14 +33,10 @@ type DawMenuDisabledRowProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 export const DawMenuDisabledRow = ({ icon, className, children, ...props }: DawMenuDisabledRowProps): ReactElement => (
-    <div
-        className={cn('flex cursor-not-allowed items-center gap-2 px-3 py-2 opacity-50', className)}
-        aria-disabled="true"
-        {...props}
-    >
+    <Row gap={2} className={cn('cursor-not-allowed px-3 py-2 opacity-50', className)} aria-disabled="true" {...props}>
         {icon}
         <span className="text-[10px] text-muted-foreground">{children}</span>
-    </div>
+    </Row>
 );
 
 type DawMenuButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -61,10 +58,12 @@ export const DawMenuButton = ({
     type = 'button',
     ...props
 }: DawMenuButtonProps): ReactElement => (
-    <button
+    <Row
+        as="button"
         type={type}
+        gap={2}
         className={cn(
-            'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-30',
+            'w-full rounded-sm px-2 py-1.5 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-30',
             tone === 'danger'
                 ? 'text-destructive hover:bg-destructive/10'
                 : 'text-popover-foreground hover:bg-accent hover:text-accent-foreground',
@@ -73,12 +72,12 @@ export const DawMenuButton = ({
         )}
         {...props}
     >
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        <Row grow gap={2} className="min-w-0">
             {leadingContent}
             <span className="truncate">{children}</span>
-        </span>
+        </Row>
         {(trailingContent ?? shortcut) ? (
             <span className="pl-4 text-[10px] text-muted-foreground">{trailingContent ?? shortcut}</span>
         ) : null}
-    </button>
+    </Row>
 );

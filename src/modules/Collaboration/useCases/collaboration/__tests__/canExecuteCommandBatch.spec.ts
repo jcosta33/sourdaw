@@ -6,6 +6,7 @@ import { canExecuteCommandBatch } from '../canExecuteCommandBatch';
 const disconnectedState = {
     connectionStatus: 'disconnected' as const,
     error: null,
+    quarantinedPeerIds: [],
     isEnabled: false,
     isHost: false,
     localColor: '',

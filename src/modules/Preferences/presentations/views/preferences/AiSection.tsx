@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Separator } from '#/components/ui/separator';
@@ -184,7 +185,7 @@ export const AiSection = (): ReactElement => {
                 </p>
             </FieldGroup>
             <FieldGroup label="Active Backend">
-                <div className="flex items-center gap-2">
+                <Row gap={2}>
                     <span
                         className={cn(
                             'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium',
@@ -197,7 +198,7 @@ export const AiSection = (): ReactElement => {
                         <DawStatusDot tone={renderIife_16()} />
                         {renderIife_17()}
                     </span>
-                </div>
+                </Row>
             </FieldGroup>
             <Separator />
             {hostedProvidersAvailable ? (
@@ -285,7 +286,7 @@ export const AiSection = (): ReactElement => {
                             aria-label="OpenAI-compatible base URL"
                         />
                     ) : null}
-                    <div className="flex justify-end">
+                    <Row align="stretch" justify="end">
                         <Button
                             size="sm"
                             className="h-8 text-xs"
@@ -300,14 +301,14 @@ export const AiSection = (): ReactElement => {
                         >
                             Save
                         </Button>
-                    </div>
+                    </Row>
                     {configurationError ? (
                         <p className="mt-1.5 text-[10px] text-destructive" role="alert">
                             {configurationError}
                         </p>
                     ) : null}
 
-                    <div className="flex items-center justify-between mt-2">
+                    <Row justify="between" className="mt-2">
                         <span className="text-[10px] text-muted-foreground">
                             Status:{' '}
                             <span
@@ -335,7 +336,7 @@ export const AiSection = (): ReactElement => {
                                 Remove
                             </Button>
                         ) : null}
-                    </div>
+                    </Row>
                 </FieldGroup>
             ) : (
                 <FieldGroup label="Hosted AI provider">

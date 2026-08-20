@@ -7,6 +7,7 @@
 import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { Stack } from '#/components/layout';
 
 import { type ArticulationEntry, type ArticulationType } from '../../models/LevainPatch';
 
@@ -56,7 +57,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
 
     // Compact sidebar list
     return (
-        <div className="flex flex-col gap-0 p-1">
+        <Stack className="p-1">
             <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-2 py-1">
                 Articulations
             </span>
@@ -80,6 +81,6 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                     </DawPluginChip>
                 );
             })}
-        </div>
+        </Stack>
     );
 };

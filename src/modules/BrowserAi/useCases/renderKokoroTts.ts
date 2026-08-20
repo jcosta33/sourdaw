@@ -125,7 +125,9 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
 
             // Deterministic cache key
             const textEncoder = new TextEncoder();
-            const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}`).buffer;
+            const durationKey =
+                targetDurationSec !== undefined && targetDurationSec > 0 ? `:${String(targetDurationSec)}` : '';
+            const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}${durationKey}`).buffer;
             const cacheKey = await computeRenderCacheKey({
                 modelId: KOKORO_MODEL_ID,
                 inputData,
@@ -163,16 +165,16 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
 
                 // 1. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
-                const modelData = await readVerifiedModel({
+                const modelDataPort = await readVerifiedModel({
                     family: 'kokoro',
                     modelId: KOKORO_MODEL_ID,
                     sha256: KOKORO_MODEL_ARTIFACT.sha256,
                     sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
                 });
-                if (!modelData) {
+                if (!modelDataPort) {
                     throw new Error('Kokoro model is absent or failed verification; download it in AI Settings');
                 }
-                await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelData });
+                await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelDataPort });
 
                 // 2. Tokenize text on the main thread
                 const { inputIds, tokenCount } = textToKokoroInputIds(text);

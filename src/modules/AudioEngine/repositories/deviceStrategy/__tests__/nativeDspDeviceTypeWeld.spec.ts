@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { NATIVE_DSP_DEVICE_TYPES, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
+import { findReleasedNativeDspDeviceFactory } from '../findReleasedNativeDspDeviceFactory';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_FACTORIES } from '../nativeDspDeviceFactories';
 
 /**
@@ -49,6 +50,11 @@ describe('native DSP device types are welded to the factory list', () => {
         const unbuildable = NATIVE_DSP_DEVICE_TYPES.filter((type) => !isNativeDspDevice(type));
 
         expect(unbuildable).toEqual([]);
+    });
+
+    it('keeps withheld implementations out of released offline rendering', () => {
+        expect(isNativeDspDevice('grand-boule')).toBe(true);
+        expect(findReleasedNativeDspDeviceFactory('grand-boule')).toBeUndefined();
     });
 
     it('the resolver and the factory matchers agree on what is native', () => {

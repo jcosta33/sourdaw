@@ -10,6 +10,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
@@ -120,16 +121,16 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     }
 
     return (
-        <div className="crust-faceplate flex h-full min-h-0 flex-col gap-2.5 overflow-hidden p-2.5 text-foreground">
-            <header className="crust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
-                <div className="space-y-1">
+        <Stack gap={2.5} className="crust-faceplate h-full overflow-hidden p-2.5 text-foreground">
+            <Row as="header" wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
+                <Stack gap={1}>
                     <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">
                         Loudness desk
                     </div>
                     <div className="text-[13px] font-semibold text-foreground">Crust</div>
-                </div>
+                </Stack>
 
-                <div className="flex flex-wrap gap-1.5">
+                <Row align="stretch" wrap gap={1.5}>
                     {([1, 2, 3, 4, 5] as const).map((level) => (
                         <DawPluginChip
                             key={level}
@@ -141,7 +142,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             L{level}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
 
                 <div className="relative shrink-0">
                     <button
@@ -160,8 +161,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/65" />
                     </button>
                     {presetMenuOpen ? (
-                        <div
-                            className="crust-window daw-floating-surface absolute left-0 top-full z-50 mt-1 flex max-h-[280px] min-w-[220px] flex-col overflow-y-auto p-1"
+                        <Stack
+                            className="crust-window daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[280px] min-w-[220px] overflow-y-auto p-1"
                             role="listbox"
                             aria-label="Crust presets"
                         >
@@ -183,7 +184,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     aria-selected={preset.patch.name === patch.name}
                                 />
                             ))}
-                        </div>
+                        </Stack>
                     ) : null}
                 </div>
 
@@ -209,8 +210,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/65" />
                     </button>
                     {streamingMenuOpen ? (
-                        <div
-                            className="crust-window daw-floating-surface absolute right-0 top-full z-50 mt-1 flex max-h-[300px] min-w-[268px] flex-col overflow-y-auto p-1"
+                        <Stack
+                            className="crust-window daw-floating-surface absolute right-0 top-full z-50 mt-1 max-h-[300px] min-w-[268px] overflow-y-auto p-1"
                             role="listbox"
                             aria-label="Streaming loudness targets"
                         >
@@ -243,11 +244,11 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     ))}
                                 </div>
                             ))}
-                        </div>
+                        </Stack>
                     ) : null}
                 </div>
 
-                <div className="ml-auto flex items-center gap-2">
+                <Row gap={2} className="ml-auto">
                     <DawPluginLed tone="copper">
                         {normalizationLoss > 0.25 ? `Watch ${normalizationLoss.toFixed(1)} dB` : 'On target'}
                     </DawPluginLed>
@@ -255,13 +256,13 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</div>
                         <div className="font-mono text-[11px] text-foreground">{patch.ceiling.toFixed(1)} dBTP</div>
                     </div>
-                </div>
-            </header>
+                </Row>
+            </Row>
 
-            <div className="flex min-h-0 flex-1 gap-2.5">
+            <Row align="stretch" grow gap={2.5} className="min-h-0">
                 <CrustGainStrip value={patch.gain} onChange={(value) => handleSetParam('gain', value)} />
 
-                <div className="flex min-w-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
+                <Stack grow gap={2.5} className="min-w-0 overflow-y-auto pr-1">
                     <div className="grid shrink-0 grid-cols-4 gap-2.5">
                         <MetricTile label="Push" value={`${patch.gain.toFixed(1)} dB`} detail="Input shove" />
                         <MetricTile
@@ -281,15 +282,15 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         />
                     </div>
 
-                    <div className="crust-window flex min-h-0 flex-1 flex-col gap-3 p-2.5">
+                    <Stack grow gap={3} className="crust-window p-2.5">
                         <DawPluginSectionHeader
                             className="px-1"
                             size="xs"
                             title="Mission control"
                             titleClassName="text-muted-foreground/70"
                             actions={
-                                <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-                                    <div className="space-y-0.5">
+                                <Row gap={2} className="text-[9px] text-muted-foreground">
+                                    <Stack gap={0.5}>
                                         <DawReadoutRow
                                             label="ST"
                                             value={`${lufsShortTerm.toFixed(1)} LUFS`}
@@ -304,8 +305,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             labelClassName="text-[8px] text-muted-foreground/55"
                                             valueClassName="text-[8px] text-muted-foreground"
                                         />
-                                    </div>
-                                </div>
+                                    </Stack>
+                                </Row>
                             }
                         />
                         <div className="px-1 text-[12px] font-medium text-foreground">
@@ -322,7 +323,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 scrollSpeed={patch.scrollSpeed}
                             />
                         </div>
-                    </div>
+                    </Stack>
 
                     <div className="crust-window min-h-0 overflow-y-auto">
                         <CrustControlZone
@@ -336,7 +337,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             grDb={grDb}
                         />
                     </div>
-                </div>
+                </Stack>
 
                 <div className="crust-window shrink-0 overflow-hidden">
                     <CrustMeteringStrip
@@ -352,14 +353,14 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         onResetTp={() => resetCrustTruePeakIndicator(deviceId)}
                     />
                 </div>
-            </div>
+            </Row>
 
             {/* A plain <div>, not <footer>: this is a control strip inside a device
                 panel, not page footer content. As a <footer> whose ancestors are all
                 <div> it mapped to a second `contentinfo` landmark alongside the app
                 status bar, which is invalid and makes landmark navigation ambiguous. */}
-            <div className="crust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
-                <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <Row wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
+                <Row as="label" gap={2} className="text-[10px] text-muted-foreground">
                     <span className="uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</span>
                     <DawCompactInput
                         type="number"
@@ -373,7 +374,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         monospace
                         aria-label="Output ceiling in dBTP"
                     />
-                </label>
+                </Row>
 
                 <DawPluginChip
                     active={patch.truePeak}
@@ -385,7 +386,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </DawPluginChip>
 
                 {patch.uiLevel >= 2 ? (
-                    <div className="flex flex-wrap gap-1.5">
+                    <Row align="stretch" wrap gap={1.5}>
                         {CRUST_OVERSAMPLE_FACTORS.map((option) => (
                             <DawPluginChip
                                 key={option}
@@ -397,10 +398,10 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 {option === 1 ? 'OS off' : `${option}×`}
                             </DawPluginChip>
                         ))}
-                    </div>
+                    </Row>
                 ) : null}
 
-                <div className="ml-auto flex flex-wrap gap-1.5">
+                <Row align="stretch" wrap gap={1.5} className="ml-auto">
                     <DawPluginChip
                         active={patch.unityGain}
                         tone="copper"
@@ -420,8 +421,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     <DawPluginChip type="button" tone="copper" size="sm" onClick={() => resetCrustPanelMeters()}>
                         Reset
                     </DawPluginChip>
-                </div>
-            </div>
-        </div>
+                </Row>
+            </Row>
+        </Stack>
     );
 };

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { REVIEWER_BOT_LOGIN } from '../githubAppIdentity.ts';
+import { REVIEWER_BOT_LOGIN, type GhSession } from '../githubAppIdentity.ts';
 import {
     parsePublishReviewArgs,
     parseReviewDocument,
     publishReview,
+    shellPort,
     type PublishReviewPort,
 } from '../publishReview.ts';
 
@@ -102,5 +103,59 @@ describe('review publish', () => {
     it('parses argv', () => {
         expect(parsePublishReviewArgs(['7'])).toEqual({ number: 7, help: false });
         expect(parseReviewDocument({ event: 'APPROVE', comments: [] }).event).toBe('APPROVE');
+    });
+});
+
+/**
+ * GitHub can coerce the `event` a review is posted with — observed live when the target PR closed
+ * or merged between bundle preparation and posting — and still answer 200 with a review whose
+ * recorded `state` disagrees with what was requested. `publishReview.spec.ts` above only exercises
+ * `postReview` through a fake port, so it cannot see that coercion: it is `shellPort`'s own
+ * `postReview` that reads the raw `gh` response and must compare `state` against `event` itself.
+ * These tests drive `shellPort` with a fake `capture` so no real `gh` is ever reached: the sibling
+ * `openLane.spec.ts` documents why `vi.mock('node:child_process')` does not intercept a module
+ * under `scripts/` and why a prior spec that trusted it filed a live issue on the public tracker.
+ */
+describe('shellPort postReview state verification', () => {
+    const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
+
+    function fakeCapture(reviewResponse: unknown) {
+        return (command: string, args: string[]): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'api') {
+                return JSON.stringify(reviewResponse);
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+    }
+
+    it('fails loudly, naming both the requested event and the recorded state, when GitHub coerces the review', () => {
+        const capture = fakeCapture({ id: 4985383093, state: 'APPROVED', user: { login: REVIEWER_BOT_LOGIN } });
+        const port = shellPort(session, process.cwd(), capture);
+
+        expect(() =>
+            port.postReview({ number: 2353, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
+        ).toThrow(/requested REQUEST_CHANGES but GitHub recorded APPROVED/);
+    });
+
+    it('posts successfully when the recorded state agrees with the requested event', () => {
+        const capture = fakeCapture({ id: 42, state: 'CHANGES_REQUESTED', user: { login: REVIEWER_BOT_LOGIN } });
+        const port = shellPort(session, process.cwd(), capture);
+
+        expect(
+            port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
+        ).toEqual({ id: 42, login: REVIEWER_BOT_LOGIN });
+    });
+
+    it('posts successfully when APPROVE is recorded as APPROVED', () => {
+        const capture = fakeCapture({ id: 43, state: 'APPROVED', user: { login: REVIEWER_BOT_LOGIN } });
+        const port = shellPort(session, process.cwd(), capture);
+
+        expect(port.postReview({ number: 42, commitId: 'sha', event: 'APPROVE', body: '', comments: [] })).toEqual({
+            id: 43,
+            login: REVIEWER_BOT_LOGIN,
+        });
     });
 });

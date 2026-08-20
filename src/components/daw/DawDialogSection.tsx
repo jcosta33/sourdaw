@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 import { DawEyebrowLabel } from './DawEyebrowLabel';
@@ -40,12 +41,7 @@ export const DawDialogSection = ({
 }: DawDialogSectionProps): ReactElement => (
     <section className={cn('overflow-hidden rounded-lg border', TONE_CLASS_NAMES[tone], className)} {...props}>
         {title || detail || actions ? (
-            <div
-                className={cn(
-                    'flex items-center justify-between gap-3 border-b px-3 py-2.5',
-                    HEADER_TONE_CLASS_NAMES[tone]
-                )}
-            >
+            <Row justify="between" gap={3} className={cn('border-b px-3 py-2.5', HEADER_TONE_CLASS_NAMES[tone])}>
                 <div className="min-w-0">
                     {title ? (
                         <DawEyebrowLabel size="sm" className={TITLE_TONE_CLASS_NAMES[tone]}>
@@ -55,7 +51,7 @@ export const DawDialogSection = ({
                     {detail ? <div className="mt-0.5 text-[10px] text-muted-foreground/75">{detail}</div> : null}
                 </div>
                 {actions ? <div className="shrink-0">{actions}</div> : null}
-            </div>
+            </Row>
         ) : null}
         <div className={cn('px-3 py-3', bodyClassName)}>{children}</div>
     </section>
