@@ -100,8 +100,8 @@ crossfade time as `Nms xfade`.
 | **Onset**     | 0 to 500 ms   | 200 ms  | Delay before vibrato starts on a new note           |
 
 > [!WARNING]
-> **Not yet active.** **Linear**, **S-Curve**, and **Logarithmic** redraw the picture and save with
-> the patch. Playback stays on **S-Curve**.
+> **Not yet active.** **Linear**, **S-Curve**, and **Logarithmic** redraw the picture. Playback stays
+> on **S-Curve**. The chips stay with this session.
 > [#2418](https://github.com/jcosta33/sourdaw/issues/2418)
 
 ## Lift
@@ -164,8 +164,9 @@ Eight knobs, 0 to 1. Every handle double-clicks to 0.50. A fresh patch is **Dyna
 | **Attack**     | 0.50    | Envelope attack scale                    |
 | **Release**    | 0.50    | Envelope release scale                   |
 
-The handle position saves. It does not rewrite **Spread** or **Stage**, so those faders can disagree
-with the last **Tightness** or **Space** move until you turn the granular control again.
+The handle position stays with this session. It does not rewrite **Spread** or **Stage**, so those
+faders can disagree with the last **Tightness** or **Space** move until you turn the granular
+control again.
 
 <!-- ac: SPEC-orchestra-progressive-disclosure-ux/AC-004 -->
 
@@ -197,10 +198,11 @@ percentage, or **Error**).
 
 ## Presets
 
-Levain has no factory-preset drawer on this panel. Section, articulations, Phrase, Lift, Spread,
-Stage, Handles, and Desk save with the project, per Levain.
+Levain has no factory-preset drawer on this panel. Section, current articulation, Phrase knobs,
+Lift knobs, Spread knobs, Stage mics, and Desk **Master** save with the project, per Levain.
 
-**Find a section** and the family chips stay with this session.
+**Handles**, **Find a section**, the family chips, and the **Linear** / **S-Curve** / **Logarithmic**
+chips stay with this session.
 
 <!-- ac: SPEC-levain-multi-instance/AC-010 -->
 
