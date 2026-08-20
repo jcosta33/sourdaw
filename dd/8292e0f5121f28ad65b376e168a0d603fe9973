@@ -1,0 +1,20 @@
+crates/daw-engine/src/engine_events.rs
+  s_b3e68b902b6b93::t_7ce8765ec99f82 3-5
+  s_b3e68b902b6b93::t_08d1088ce81893 24-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dd8292e0f5121f28ad65b376e168a0d603fe9973",
+  "prompts": {},
+  "sessions": {
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
