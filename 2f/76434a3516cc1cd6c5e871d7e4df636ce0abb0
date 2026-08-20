@@ -1,0 +1,19 @@
+tests/e2e/takeLanesTestId.spec.ts
+  s_24b1bdbc3c31ad::t_78dc6f88446a4a 77-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2f76434a3516cc1cd6c5e871d7e4df636ce0abb0",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
