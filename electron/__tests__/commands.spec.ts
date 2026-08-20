@@ -24,7 +24,6 @@ import { describe, expect, it } from 'vitest';
 // Relative on purpose: this project resolves as Node ESM, where `#/*` is the
 // package-imports namespace, not the renderer's bundler alias.
 import { SOURDAW_COMMAND_ARGUMENTS } from '../../src/utils/sourdawCommandArguments.js';
-
 import { addonMethodName, commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS, isExposedCommand } from '../commands.js';
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8');

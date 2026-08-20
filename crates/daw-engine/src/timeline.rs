@@ -288,24 +288,29 @@ pub enum AutomationWrite {
     /// Land this change in timeline order alongside everything else queued.
     /// The form an automation lane replaying its curve uses.
     Append(AutomationEvent),
-    /// Drop everything still queued, then land this change — the cancel-and-
-    /// replace primitive, and the native form of the app's
-    /// `cancelScheduledValues` + `setValueAtTime` + `linearRampToValueAtTime`
-    /// tick.
+    /// Drop every queued change that is stale at this change's start, then
+    /// land this change — the cancel-and-replace primitive, and the native
+    /// form of the app's `cancelScheduledValues` + `setValueAtTime` +
+    /// `linearRampToValueAtTime` tick.
     ///
-    /// Dropping the whole queue is exactly `cancelScheduledValues(now)` and not
-    /// more: a queued change is by construction still ahead of the playhead,
-    /// because a change the playhead has reached has already landed and left
-    /// the queue. The replacement therefore always finds a free slot, so an
-    /// interactive stream can write on every tick forever without overflowing
-    /// and without the audio thread growing anything.
+    /// The cancel is `cancelScheduledValues(startTime)` by Web Audio's own
+    /// stamp law — see `RampedParam::cancel_stale` — and deliberately not
+    /// "drop everything". Live the two are the same set: every queued change
+    /// sits ahead of the playhead a replacing tick writes at, so a replacing
+    /// stream still always finds a free slot and an interactive drag can
+    /// write on every tick forever without the audio thread growing anything.
+    /// Offline they are not the same set: a whole batch queues before frame
+    /// zero and a strip's creation state is itself a queued write, so a law
+    /// that dropped the whole queue would erase the state a later ramp was
+    /// supposed to glide *from*.
     ///
     /// The ramp re-anchors at the value the parameter holds at its own start
     /// frame, so each tick continues the trajectory instead of compounding onto
     /// the target the previous tick aimed at.
     Replace(AutomationEvent),
-    /// Hold the parameter wherever it is at `at_frame` and drop everything
-    /// queued. Carries no value by construction: a hold that named one would be
+    /// Hold the parameter wherever it is at `at_frame` and drop what was
+    /// queued to land at or after it, by the same stamp law as `Replace`.
+    /// Carries no value by construction: a hold that named one would be
     /// a write, and would jump.
     ///
     /// This is the per-parameter form. The engine applies the same law to every
@@ -401,11 +406,11 @@ impl RampedParam {
         match write {
             AutomationWrite::Append(event) => self.schedule(event),
             AutomationWrite::Replace(event) => {
-                self.pending_len = 0;
+                self.cancel_stale(event.at_frame);
                 self.schedule(event)
             }
             AutomationWrite::Hold { at_frame } => {
-                self.pending_len = 0;
+                self.cancel_stale(at_frame);
                 self.enqueue(PendingWrite {
                     at_frame,
                     change: None,
@@ -437,6 +442,41 @@ impl RampedParam {
         self.pending[index] = write;
         self.pending_len += 1;
         true
+    }
+
+    /// Drop every queued change whose **event time** — the frame a ramp lands
+    /// on, the frame a step or hold names — sits at or after `frame`. This is
+    /// Web Audio's `cancelScheduledValues(t)` stamp law, the one the app's
+    /// cancel-and-replace write is defined against: a ramp still gliding at
+    /// `frame` is stale even though it started earlier, while a change that
+    /// has fully landed by then is history and stays. Keeping the landed
+    /// history is load-bearing when a whole window is queued at once — an
+    /// offline render maps its entire batch before frame zero, and a strip's
+    /// creation state is itself a queued write a replacing ramp must glide
+    /// *from*, not erase.
+    ///
+    /// The active ramp is deliberately untouched: a replacing ramp anchors on
+    /// it (`begin`) and a hold freezes through it, which is how both continue
+    /// the trajectory instead of jumping.
+    fn cancel_stale(&mut self, frame: u64) {
+        let mut kept = 0;
+        for index in 0..self.pending_len {
+            let write = self.pending[index];
+            let lands_at = match write.change {
+                // A Step lands instantly at its stamp in `begin`, whatever
+                // duration it carries, so it is stamped here the same way.
+                Some(event) if event.shape == RampShape::Step => event.at_frame,
+                Some(event) => event
+                    .at_frame
+                    .saturating_add(u64::from(event.duration_frames)),
+                None => write.at_frame,
+            };
+            if lands_at < frame {
+                self.pending[kept] = write;
+                kept += 1;
+            }
+        }
+        self.pending_len = kept;
     }
 
     /// Drop every queued change stamped at or after `frame` and stop a ramp
@@ -2297,6 +2337,23 @@ mod tests {
     }
 
     #[test]
+    fn a_pending_step_is_history_at_its_stamp_whatever_duration_it_carries() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(0.0);
+        // No producer stamps a duration onto a Step today, but `begin` lands
+        // one instantly at its stamp regardless — so the cancel law must read
+        // its landing the same way, or a replacing write would erase landed
+        // history it should glide from.
+        param.write(AutomationWrite::Append(ramp(2, 8, 0.5, RampShape::Step)));
+        param.write(AutomationWrite::Replace(ramp(6, 0, 1.0, RampShape::Step)));
+
+        assert_eq!(
+            walk(&mut param, 8, &mut diagnostics),
+            vec![0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0]
+        );
+    }
+
+    #[test]
     fn a_settled_parameter_resolves_once_for_the_whole_block_and_a_ramped_one_does_not() {
         let mut param = RampedParam::new(0.5);
         assert_eq!(param.block_constant(0, 8), Some(0.5));
@@ -2869,6 +2926,58 @@ mod tests {
         assert_eq!(param.value_at(4, &mut diagnostics), 0.5);
         assert_eq!(param.value_at(6, &mut diagnostics), 0.75);
         assert_eq!(param.value_at(8, &mut diagnostics), 1.0);
+    }
+
+    #[test]
+    fn a_replacing_ramp_keeps_a_change_that_lands_before_it_starts() {
+        // The offline shape: the whole window queues before the playhead
+        // moves, and the strip's creation state is itself a queued step at
+        // frame 0. A ramp replacing at frame 8 must glide *from* that state,
+        // not erase it — Web Audio's `cancelScheduledValues(startTime)` drops
+        // events by the frame they land on, and frame 0 is history at 8.
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.write(AutomationWrite::Append(ramp(0, 0, 0.5, RampShape::Step)));
+        param.write(AutomationWrite::Replace(ramp(8, 8, 1.0, RampShape::Linear)));
+
+        // Erasing the step would leave both of these flat at the 1.0 the
+        // parameter was constructed with.
+        assert_eq!(param.value_at(0, &mut diagnostics), 0.5);
+        assert_eq!(param.value_at(12, &mut diagnostics), 0.75);
+        assert_eq!(param.value_at(16, &mut diagnostics), 1.0);
+    }
+
+    #[test]
+    fn a_replacing_ramp_drops_a_pending_ramp_still_gliding_across_its_start() {
+        // The earlier ramp starts before the replacement but lands after it:
+        // stale by the stamp law even though its start frame is earlier, and
+        // gone whole rather than truncated — nothing glides toward 0.0 first.
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(0.75);
+        param.write(AutomationWrite::Append(ramp(4, 8, 0.0, RampShape::Linear)));
+        param.write(AutomationWrite::Replace(ramp(
+            8,
+            4,
+            0.25,
+            RampShape::Linear,
+        )));
+
+        assert_eq!(param.value_at(6, &mut diagnostics), 0.75);
+        assert_eq!(param.value_at(10, &mut diagnostics), 0.5);
+        assert_eq!(param.value_at(12, &mut diagnostics), 0.25);
+    }
+
+    #[test]
+    fn a_hold_keeps_a_change_that_landed_before_the_frame_it_names() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.write(AutomationWrite::Append(ramp(0, 0, 0.5, RampShape::Step)));
+        param.write(AutomationWrite::Append(ramp(8, 0, 0.9, RampShape::Step)));
+        param.write(AutomationWrite::Hold { at_frame: 4 });
+
+        // The step at 0 is history and lands; the step at 8 was aimed past
+        // the hold and dies with it.
+        assert_eq!(param.value_at(100, &mut diagnostics), 0.5);
     }
 
     #[test]

@@ -163,6 +163,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphCommand, type AudioGraphParameterWrite } from '../../../models/AudioGraphBackend';
 import { type Device } from '../../../models/TrackViewTypes';
+import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 
 import {
     createFixtureAudioBuffer,
@@ -2231,5 +2233,551 @@ describe('live/offline null test — a stretched clip', () => {
         });
 
         expectNull(await nullTestClip({ fixture: SLOWED_CLIP_FIXTURE }));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// The native backend leg (D3.b, #2215)
+// ---------------------------------------------------------------------------
+
+/**
+ * The first genuinely second renderer in the backend B slot: `daw-engine`'s
+ * timeline graph, reached through the **production** native backend —
+ * `createNativeOfflineGraphBackend`, whose serializer
+ * (`serializeAudioGraphCommandBatch`) is the unit this leg exists to prove.
+ * Only the transport differs from the desktop path: production crosses the
+ * Electron bridge to `render_graph_offline`, this leg calls the same addon
+ * method in-process. Everything law-bearing — the wire spellings, the PCM
+ * interleave, the probe, the report derivation — is the same code the app
+ * ships, so a residual here is a defect in that code or in the native render,
+ * never in a test-only reimplementation.
+ *
+ * ── The skip law ──────────────────────────────────────────────────────────
+ *
+ * The leg needs the built addon (`node scripts/buildNativeAddon.ts`), which a
+ * fresh checkout does not have, so it may skip — **observably**. Three guards
+ * keep the skip honest:
+ *
+ *   1. an always-run anchor test proves the probed path sits beside the
+ *      crate's own `Cargo.toml`, so a refactor that moves the artifact cannot
+ *      turn "present" into a permanent false "absent";
+ *   2. an always-run consistency test proves the host was constructed exactly
+ *      when the artifact exists, so a load that silently failed cannot read
+ *      as an absence;
+ *   3. the host is constructed at module scope, so an addon that is present
+ *      but broken fails the whole file rather than skipping the leg.
+ *
+ * ── Fixture scoping (AC-4) ────────────────────────────────────────────────
+ *
+ * Recorded here, where the fixtures are declared, because every constraint is
+ * a refusal or a modelling gap and not a preference:
+ *
+ *   - **Unstretched clips only** (`playbackRate: 1`). The native side refuses
+ *     any other rate with `stretched-clip-unsupported` — time-stretch is
+ *     #2219 — and the refusal is pinned below rather than worked around.
+ *   - **Device-free strips.** Knead is the only device with a native
+ *     realisation and the harness models no wasm node, so no device exists
+ *     that both legs can build. Device parity across this seam starts when
+ *     one does.
+ *   - **Programme arrives as a scheduled clip.** The native graph has no
+ *     signal-injection input; a clip is the one programme source both legs
+ *     share, so every fixture is "strip(s) + clip(s)" rather than
+ *     "strip + injected signal".
+ *   - **Times land on integral frames at 48 kHz.** The two envelope laws are
+ *     provably identical at frame boundaries; a fractional time measures the
+ *     harness's sub-frame interpolation, which is not the backend's law.
+ *   - **No `smoothed` writes.** The native automation queue has no
+ *     exponential-approach primitive and refuses them — pinned below.
+ *   - **Buses are plain** (pan 0, unmuted, unsoloed): the native bus strip
+ *     has no panner, mute gate or solo gate, and refuses a state that needs
+ *     one rather than dropping it.
+ */
+
+const { existsSync } = await import('node:fs');
+const { createRequire } = await import('node:module');
+const { dirname, join } = await import('node:path');
+const { fileURLToPath } = await import('node:url');
+const { Buffer: NodeBuffer } = await import('node:buffer');
+const { createNativeOfflineGraphBackend } =
+    await import('../../../repositories/nativeGraph/createNativeOfflineGraphBackend');
+const { NATIVE_ADDON_FILE } = await import('../../../../../../electron/native');
+
+/** The napi surface this leg drives — `SourdawNative` in `addon/mod.rs`. */
+type NativeHostAddon = {
+    registerTimelineSample: (
+        sampleId: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
+    renderGraphOffline: (batch: NativeGraphWireBatch, frames: number, sampleRate: number) => Promise<Uint8Array>;
+};
+
+const NATIVE_CRATE_DIR = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..', // __tests__
+    '..', // offlineRender
+    '..', // useCases
+    '..', // AudioEngine
+    '..', // modules
+    '..', // src
+    'crates',
+    'sourdaw-native'
+);
+/** Where `scripts/buildNativeAddon.ts` puts the artifact (`electron/native.ts` law). */
+const NATIVE_ADDON_PATH = join(NATIVE_CRATE_DIR, NATIVE_ADDON_FILE);
+
+const nativeAddonPresent = existsSync(NATIVE_ADDON_PATH);
+
+/**
+ * Constructed at module scope, deliberately: an addon that exists on disk but
+ * cannot load or instantiate fails the file here, before any `runIf` can turn
+ * that into a skip. The constructor opens no audio device — the live engine
+ * starts lazily on first `apply_graph_commands`, which this leg never calls.
+ */
+const nativeHost: NativeHostAddon | undefined = nativeAddonPresent
+    ? (() => {
+          const requireAddon = createRequire(import.meta.url);
+          const loaded = requireAddon(NATIVE_ADDON_PATH) as {
+              SourdawNative: new (onEvent: (...args: unknown[]) => void) => NativeHostAddon;
+          };
+          return new loaded.SourdawNative(() => undefined);
+      })()
+    : undefined;
+
+function requireNativeHost(): NativeHostAddon {
+    if (!nativeHost) {
+        throw new Error('native leg ran without the built addon — the skip law above is broken');
+    }
+    return nativeHost;
+}
+
+/**
+ * The in-process transport: the same three commands the desktop transport
+ * carries, minus the wire. `applyGraphCommands` throws because the offline
+ * null test must never touch the live engine — reaching it here would mean
+ * the offline backend regressed into starting CPAL, which is the exact
+ * property `createNativeOfflineGraphBackend`'s header promises it will not.
+ */
+function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
+    return {
+        async registerTimelineSample(input) {
+            return host.registerTimelineSample(
+                input.sampleId,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            );
+        },
+        async renderGraphOffline(input) {
+            return host.renderGraphOffline(input.batch, input.frames, input.sampleRate);
+        },
+        async applyGraphCommands() {
+            throw new Error('the offline null test never touches the live engine (apply_graph_commands)');
+        },
+    };
+}
+
+const NATIVE_LEG_SOURCE_ID = 'native-leg-take';
+
+function nativeLegClip(input: { trackId: string; clipGain: number; playbackRate?: number }): AudioGraphCommand {
+    return {
+        kind: 'schedule-clip',
+        playback: {
+            trackId: input.trackId,
+            source: { sourceId: NATIVE_LEG_SOURCE_ID, buffer: CLIP_MATERIAL as unknown as AudioBuffer },
+            startTime: CLIP_START_SEC,
+            sourceOffsetSeconds: 0.02,
+            durationSeconds: CLIP_DURATION_SEC,
+            playbackRate: input.playbackRate ?? 1,
+            gain: input.clipGain,
+            fade: {
+                fadeIn: { reachesFullAt: CLIP_START_SEC + 0.06 },
+                fadeOut: { beginsAt: CLIP_START_SEC + CLIP_DURATION_SEC - 0.08 },
+                microFadeSeconds: MICRO_FADE_SECONDS,
+            },
+        },
+    };
+}
+
+function nativeLegStripCommands(input: {
+    gain: number;
+    pan: number;
+    clipGain?: number;
+    faderWrites?: AudioGraphParameterWrite[];
+}): AudioGraphCommand[] {
+    return [
+        {
+            kind: 'create-track-strip',
+            trackId: FIXTURE_TRACK_ID,
+            name: 'Native leg',
+            state: { gain: input.gain, pan: input.pan, muted: false, soloGated: false, vcaMultiplier: 1 },
+            devices: [],
+            honorMuted: true,
+            contributesAudio: true,
+        },
+        { kind: 'set-track-output', trackId: FIXTURE_TRACK_ID, target: { kind: 'master' } },
+        ...(input.faderWrites ?? []).map((write): AudioGraphCommand => ({
+            kind: 'write-parameter',
+            target: { kind: 'track-fader', trackId: FIXTURE_TRACK_ID },
+            write,
+        })),
+        nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: input.clipGain ?? 0.7 }),
+    ];
+}
+
+/** `SEND_GRAPH_BASE`, device-free per the scoping note, programme clip-fed. */
+const NATIVE_SEND_GRAPH_BASE: GraphFixture = {
+    source: { name: 'Source', gain: 0.74, pan: -18, muted: false, soloGated: false, devices: [] },
+    keeper: { name: 'Keeper', gain: 0.55, pan: 22, muted: false, devices: [] },
+    bus: { name: 'Bus', gain: 0.9, pan: 0, muted: false, devices: [] },
+    sendLevel: 0.62,
+};
+
+function nativeLegSendGraphCommands(fixture: GraphFixture): AudioGraphCommand[] {
+    return [
+        ...sendGraphCommands(fixture),
+        nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: 0.7 }),
+        // The keeper's clip is quieter for the same reason `KEEPER_SIGNAL_SCALE`
+        // exists: real programme in both legs without masking the source.
+        nativeLegClip({ trackId: KEEPER_TRACK_ID, clipGain: 0.35 }),
+    ];
+}
+
+/**
+ * The post-fader tap point, made discriminating: the source's fader glides
+ * mid-render, and a post-fader send must ride that glide into the bus while a
+ * pre-fader tap would keep the bus feed steady. Web taps the strip's output
+ * node, native taps after gain, mute and pan — both after the panner, which is
+ * the contract's tap law (`AudioGraphSendTap`). Times land on integral frames
+ * at 48 kHz per the scoping note.
+ */
+function nativeLegPostFaderSendGraphCommands(fixture: GraphFixture): AudioGraphCommand[] {
+    return [
+        ...sendGraphCommands(fixture).map((command): AudioGraphCommand =>
+            command.kind === 'add-send' ? { ...command, tap: 'post-fader' } : command
+        ),
+        {
+            kind: 'write-parameter',
+            target: { kind: 'track-fader', trackId: FIXTURE_TRACK_ID },
+            write: { shape: 'ramp-to', value: 0.25, startTime: 0.1, landTime: 0.35 },
+        },
+        nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: 0.7 }),
+        nativeLegClip({ trackId: KEEPER_TRACK_ID, clipGain: 0.35 }),
+    ];
+}
+
+/**
+ * The web leg over a shared command list. `renderThroughContract` injects a
+ * signal, so it cannot serve here — the native graph has no injection input,
+ * and both legs must take their programme from the same `schedule-clip`.
+ */
+async function renderCommandsThroughWebBackend(commands: AudioGraphCommand[]): Promise<RenderedBuffer> {
+    const context = newContext({ automation: 'scheduled' });
+    const master = newMaster(context);
+    const backend = createWebAudioOfflineBackend({
+        context: context as unknown as OfflineAudioContext,
+        masterNode: master as AudioNode,
+        onWarning: throwOnDegradedDevice('web leg of the native null'),
+    });
+
+    const result = await backend.apply({ schemaVersion: 1, commands });
+    if (result.application !== 'applied') {
+        throw new Error(`web backend refused the shared batch: ${JSON.stringify(result)}`);
+    }
+    return context.startRendering();
+}
+
+async function renderCommandsThroughNativeBackend(commands: AudioGraphCommand[]): Promise<RenderedBuffer> {
+    const backend = createNativeOfflineGraphBackend({
+        sampleRate: SAMPLE_RATE,
+        transport: inProcessNativeTransport(requireNativeHost()),
+    });
+    try {
+        const result = await backend.apply({ schemaVersion: 1, commands });
+        if (result.application !== 'applied') {
+            throw new Error(`native backend refused the shared batch: ${JSON.stringify(result)}`);
+        }
+        // `result.reports` is deliberately not asserted against here: it is a
+        // TS-side restatement of this caller's own commands (`deriveStripReports`
+        // mirroring `map_device`'s knead/non-external law), so a comparison
+        // against the same command list could never fail and would only dress
+        // the restatement up as an observation. Strip presence is actually
+        // covered by the audio residual below plus the offline diagnostics
+        // backstop (`offline-render-dropped-commands` in `graph.rs`), which
+        // fails the render when the engine dropped any admitted command.
+        // Reports become a native observation when they cross the wire with
+        // the D3.c cutover (#2214), where production starts consuming them.
+        const { left, right } = await backend.render(RENDER_FRAMES);
+        return {
+            sampleRate: SAMPLE_RATE,
+            length: RENDER_FRAMES,
+            numberOfChannels: 2,
+            getChannelData: (channel: number) => (channel === 0 ? left : right),
+        };
+    } finally {
+        backend.dispose();
+    }
+}
+
+async function nullTestNativeLeg(input: {
+    commands: AudioGraphCommand[];
+    /** Handed to the native leg only, when the two must deliberately differ. */
+    nativeCommands?: AudioGraphCommand[];
+}): Promise<NullTestResult> {
+    const web = await renderCommandsThroughWebBackend(input.commands);
+    const native = await renderCommandsThroughNativeBackend(input.nativeCommands ?? input.commands);
+    return nullTest({ a: web, b: native });
+}
+
+const NATIVE_LEG_FIXTURES: Array<[string, AudioGraphCommand[]]> = [
+    ['a bare strip at unity', nativeLegStripCommands({ gain: 1, pan: 0 })],
+    ['a shaped strip, fader off unity and panned', nativeLegStripCommands({ gain: 0.8, pan: 18 })],
+    // FX-7 across the runtime boundary: web clamps in `createOfflineTrackStrip`,
+    // native in `map_batch`'s level law. Same projects carry gain > 1.
+    ['a strip whose stored gain sits above the fader ceiling', nativeLegStripCommands({ gain: 1.8, pan: 0 })],
+    ['a source feeding a bus through a pre-fader send', nativeLegSendGraphCommands(NATIVE_SEND_GRAPH_BASE)],
+    [
+        'a solo-gated source, whose send is gated with it',
+        nativeLegSendGraphCommands({
+            ...NATIVE_SEND_GRAPH_BASE,
+            source: { ...NATIVE_SEND_GRAPH_BASE.source, soloGated: true },
+        }),
+    ],
+    [
+        'a muted source, whose pre-fader send keeps feeding its bus',
+        nativeLegSendGraphCommands({
+            ...NATIVE_SEND_GRAPH_BASE,
+            source: { ...NATIVE_SEND_GRAPH_BASE.source, muted: true },
+        }),
+    ],
+    ['a post-fader send riding the source fader glide', nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE)],
+    // The automation trio, walked mid-render rather than settled: the scheduled
+    // context evaluates the web timeline per frame, and the native side walks
+    // `RampedParam` per frame, so the whole trajectory is compared — including
+    // the cancel-and-replace anchor, which both sides take from the value the
+    // parameter held before the dropped ramp ever ran.
+    [
+        'a fader glide walked across the render',
+        nativeLegStripCommands({
+            gain: 0.9,
+            pan: 0,
+            faderWrites: [{ shape: 'ramp-to', value: 0.2, startTime: 0.1, landTime: 0.3 }],
+        }),
+    ],
+    [
+        'two overlapping ramp-to writes, the second replacing the first',
+        nativeLegStripCommands({
+            gain: 0.77,
+            pan: 0,
+            faderWrites: [
+                { shape: 'ramp-to', value: 0.19, startTime: 0.1, landTime: 0.3 },
+                { shape: 'ramp-to', value: 0.42, startTime: 0.15, landTime: 0.25 },
+            ],
+        }),
+    ],
+    [
+        'a hold that drops a ramp still pending',
+        nativeLegStripCommands({
+            gain: 0.62,
+            pan: 0,
+            faderWrites: [
+                { shape: 'ramp-to', value: 0.62124, startTime: 0.2, landTime: 0.3 },
+                { shape: 'hold', time: 0.1 },
+            ],
+        }),
+    ],
+    // The fourth write shape: web lands it as `setValueAtTime`, native appends
+    // a zero-duration Step; both take the value at the stamp with no glide.
+    [
+        'a stepped fader write, landed with no glide',
+        nativeLegStripCommands({
+            gain: 0.9,
+            pan: 0,
+            faderWrites: [{ shape: 'step', value: 0.4, time: 0.2 }],
+        }),
+    ],
+];
+
+describe('live/offline null test — the native backend leg', () => {
+    /**
+     * Skip-law guard 1: the probed path is anchored to the crate that builds
+     * the artifact. If `sourdaw-native.node` moves, this fails on every
+     * machine — with or without a built addon — instead of the leg silently
+     * skipping forever because it probes a path nothing writes to anymore.
+     */
+    it('anchors the addon probe to the crate that builds the artifact', () => {
+        expect(existsSync(join(NATIVE_CRATE_DIR, 'Cargo.toml'))).toBe(true);
+    });
+
+    /** Skip-law guard 2: present on disk must mean loaded, absent must mean skipped. */
+    it('holds a live host exactly when the built addon exists', () => {
+        expect(nativeHost !== undefined).toBe(nativeAddonPresent);
+    });
+
+    /** Skip-law guard 3: the skip is a test result, not an absence of one. */
+    it.runIf(!nativeAddonPresent)(
+        'skips the native leg observably: no built addon at crates/sourdaw-native/sourdaw-native.node',
+        () => {
+            expect(nativeAddonPresent).toBe(false);
+        }
+    );
+
+    describe.runIf(nativeAddonPresent)('against the built addon', () => {
+        it.each(NATIVE_LEG_FIXTURES)('nulls %s against the native render', async (_name, commands) => {
+            expectNull(await nullTestNativeLeg({ commands }));
+        });
+
+        it('renders the same samples twice from the same batch', async () => {
+            // The premise check the determinism leg above makes for the web
+            // renderer, owed separately here: `render_graph_offline` maps a
+            // fresh registry per call and must be bit-identical run to run.
+            const commands = nativeLegStripCommands({ gain: 0.8, pan: 18 });
+            const first = await renderCommandsThroughNativeBackend(commands);
+            const second = await renderCommandsThroughNativeBackend(commands);
+            const repeat = nullTest({ a: first, b: second });
+
+            expect(repeat.signalPeakDbfs).toBeGreaterThan(-40);
+            expect(repeat.residualPeakDbfs).toBe(-Infinity);
+        });
+
+        /**
+         * The red half, native-side only: the same two magnitudes the sharpness
+         * probes prove visible, applied to the commands the *native* leg gets
+         * while the web leg keeps the truth. The controlled half re-runs the
+         * un-perturbed batch so a red cannot be attributed to the fixture.
+         */
+        it('reds when the native leg takes a fader one part in five hundred hot', async () => {
+            expectPerturbedRed({
+                result: await nullTestNativeLeg({
+                    commands: nativeLegStripCommands({ gain: 0.5, pan: 0 }),
+                    nativeCommands: nativeLegStripCommands({ gain: 0.501, pan: 0 }),
+                }),
+                band: 'inaudible',
+                leg: 'native backend',
+            });
+
+            expectNull(await nullTestNativeLeg({ commands: nativeLegStripCommands({ gain: 0.5, pan: 0 }) }));
+        });
+
+        it('reds when the native leg taps the send pre-fader instead of post', async () => {
+            // The tap-point discriminator behind the post-fader fixture above:
+            // a native leg that tapped ahead of the fader would hold the bus
+            // feed steady while the source fader glides, and the web leg rides
+            // the glide. Audible, because the whole send diverges.
+            expectPerturbedRed({
+                result: await nullTestNativeLeg({
+                    commands: nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE),
+                    nativeCommands: nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE).map(
+                        (command): AudioGraphCommand =>
+                            command.kind === 'add-send' ? { ...command, tap: 'pre-fader' } : command
+                    ),
+                }),
+                band: 'audible',
+                leg: 'native backend send tap',
+            });
+
+            expectNull(
+                await nullTestNativeLeg({ commands: nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE) })
+            );
+        });
+
+        it('reds when the native leg takes a clip gain one part in five hundred hot', async () => {
+            expectPerturbedRed({
+                result: await nullTestNativeLeg({
+                    commands: nativeLegStripCommands({ gain: 0.8, pan: 0, clipGain: 0.7 }),
+                    nativeCommands: nativeLegStripCommands({ gain: 0.8, pan: 0, clipGain: 0.7 * 1.002 }),
+                }),
+                band: 'inaudible',
+                leg: 'native backend',
+            });
+
+            expectNull(
+                await nullTestNativeLeg({ commands: nativeLegStripCommands({ gain: 0.8, pan: 0, clipGain: 0.7 }) })
+            );
+        });
+
+        /**
+         * The refusals that scope the fixture set, pinned against the real
+         * addon so the scoping note above is a measured contract rather than
+         * a comment. Each arrives as a *rejected result* — the contract's
+         * vocabulary — carrying the native side's own reason.
+         */
+        it('refuses a stretched clip with stretched-clip-unsupported (#2219)', async () => {
+            const backend = createNativeOfflineGraphBackend({
+                sampleRate: SAMPLE_RATE,
+                transport: inProcessNativeTransport(requireNativeHost()),
+            });
+            const result = await backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    ...nativeLegStripCommands({ gain: 1, pan: 0 }).slice(0, 2),
+                    nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: 0.7, playbackRate: 0.5 }),
+                ],
+            });
+            backend.dispose();
+
+            expect(result).toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: expect.stringMatching(/stretched-clip-unsupported/),
+            });
+        });
+
+        it('refuses a smoothed write with smoothed-write-unsupported', async () => {
+            const backend = createNativeOfflineGraphBackend({
+                sampleRate: SAMPLE_RATE,
+                transport: inProcessNativeTransport(requireNativeHost()),
+            });
+            const result = await backend.apply({
+                schemaVersion: 1,
+                commands: nativeLegStripCommands({
+                    gain: 0.68,
+                    pan: 0,
+                    faderWrites: [{ shape: 'smoothed', value: 0.5, time: 0.05, timeConstantSeconds: 0.01 }],
+                }),
+            });
+            backend.dispose();
+
+            expect(result).toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: expect.stringMatching(/smoothed-write-unsupported/),
+            });
+        });
+
+        it('refuses routing a bus at a track with bus-to-track-routing-unsupported', async () => {
+            const backend = createNativeOfflineGraphBackend({
+                sampleRate: SAMPLE_RATE,
+                transport: inProcessNativeTransport(requireNativeHost()),
+            });
+            const result = await backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    ...nativeLegStripCommands({ gain: 1, pan: 0 }).slice(0, 2),
+                    {
+                        kind: 'create-bus-strip',
+                        busId: SEND_BUS_ID,
+                        name: 'Bus',
+                        state: { gain: 0.9, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                        devices: [],
+                        honorMuted: true,
+                        contributesAudio: true,
+                    },
+                    {
+                        kind: 'set-track-output',
+                        trackId: SEND_BUS_ID,
+                        target: { kind: 'track', trackId: FIXTURE_TRACK_ID },
+                    },
+                ],
+            });
+            backend.dispose();
+
+            expect(result).toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: expect.stringMatching(/bus-to-track-routing-unsupported/),
+            });
+        });
     });
 });

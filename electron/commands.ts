@@ -107,10 +107,14 @@ export const EXPOSED_COMMANDS = [
  * reachable only through the narrower commands that wrap them.
  *
  * The three graph commands (`apply_graph_commands`, `register_timeline_sample`,
- * `render_graph_offline`) are denied for one release slice only: exposing a
- * command requires a production caller in `src/`, and their caller — the
- * native `AudioGraphBackend` factory — is the next D3 slice. That slice moves
- * them to `EXPOSED_COMMANDS` in the same change that adds the caller.
+ * `render_graph_offline`) stay denied as of D3.b even though their IPC
+ * transport now exists (`src/modules/AudioEngine/repositories/nativeGraph/
+ * nativeGraphTransport.ts`): nothing in `src/` reaches that transport yet —
+ * `createOfflineRenderBackend` returns the web backend unconditionally, and
+ * the null test drives the addon in-process, not over IPC. Exposing a command
+ * requires a production caller. The D3.c cutover (jcosta33/sourdaw#2214) flips
+ * the backend selection, and that same change moves these three to
+ * `EXPOSED_COMMANDS` together with their caller.
  */
 export const DENIED_COMMANDS = [
     'apply_graph_commands',

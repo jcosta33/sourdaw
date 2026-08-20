@@ -74,9 +74,16 @@
 //!   set-transport currently *resets* tempo and time signature to 120 BPM 4/4
 //!   and will fight `update_plugin_transport` the moment both paths drive one
 //!   live engine. Resolution is deferred to the live-cutover slice.
-//! - `correlation` is accepted and echoed but not yet validated against a
-//!   live document revision. The TS-side backend (D3.b) owns wiring it; until
-//!   then the native side echoes whatever it was handed.
+//! - `correlation` is accepted and echoed but not validated against a live
+//!   document revision — **decided semantics as of D3.b, not an open TODO**.
+//!   The TS-side backend forwards a batch's correlation verbatim and echoes
+//!   it in results, and the one production consumer (the offline bounce)
+//!   deliberately sends none: a render of a snapshot cannot go stale, because
+//!   no live document races it (`AudioGraphBackend.ts`, batch law). Echoing
+//!   is therefore the whole truthful behaviour for every batch that exists
+//!   today. Validation against a live revision becomes meaningful — and lands
+//!   here — with the D3.c live cutover (jcosta33/sourdaw#2214), where
+//!   `apply_graph_commands` batches race a live document.
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
@@ -553,13 +560,16 @@ impl std::fmt::Debug for MappedBatch {
 /// audio thread cannot grow a queue. This module's law is refuse-don't-drop,
 /// so the batch that would overflow a queue refuses here, whole, before
 /// anything is pushed. The ledger follows the queue's own semantics: an
-/// `Append` occupies a slot, a `Replace` or `Hold` drops everything queued
-/// first and then occupies one.
+/// `Append` occupies a slot; a `Replace` or `Hold` first drops what the
+/// queue's stamp law calls stale — every queued change whose event time (a
+/// ramp's landing frame, a step's own frame) sits at or after the new
+/// change's start (`RampedParam::cancel_stale`) — and then occupies one.
 ///
 /// [`DeviceParamQueue`]: daw_engine::timeline::DeviceParamQueue
 #[derive(Default)]
 struct QueueBudgets {
-    automation: HashMap<AutomationTarget, usize>,
+    /// Per target, the event time of every write this batch leaves queued.
+    automation: HashMap<AutomationTarget, Vec<u64>>,
     device_params: HashMap<usize, usize>,
 }
 
@@ -569,21 +579,28 @@ impl QueueBudgets {
         target: AutomationTarget,
         write: &AutomationWrite,
     ) -> Result<(), String> {
-        let depth = self.automation.entry(target).or_insert(0);
-        match write {
-            AutomationWrite::Append(_) => {
-                if *depth == AUTOMATION_QUEUE_CAPACITY {
-                    return Err(format!(
-                        "automation-queue-capacity — this batch already queues \
-                         {AUTOMATION_QUEUE_CAPACITY} unlanded writes on this parameter, all its \
-                         native queue holds; the engine would drop the rest silently, so the \
-                         batch refuses instead — split the writes across batches"
-                    ));
-                }
-                *depth += 1;
-            }
-            AutomationWrite::Replace(_) | AutomationWrite::Hold { .. } => *depth = 1,
+        let queued = self.automation.entry(target).or_default();
+        let (start, lands_at) = match write {
+            AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
+                event.at_frame,
+                event
+                    .at_frame
+                    .saturating_add(u64::from(event.duration_frames)),
+            ),
+            AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
+        };
+        if !matches!(write, AutomationWrite::Append(_)) {
+            queued.retain(|&queued_lands_at| queued_lands_at < start);
         }
+        if queued.len() == AUTOMATION_QUEUE_CAPACITY {
+            return Err(format!(
+                "automation-queue-capacity — this batch already queues \
+                 {AUTOMATION_QUEUE_CAPACITY} unlanded writes on this parameter, all its \
+                 native queue holds; the engine would drop the rest silently, so the \
+                 batch refuses instead — split the writes across batches"
+            ));
+        }
+        queued.push(lands_at);
         Ok(())
     }
 
