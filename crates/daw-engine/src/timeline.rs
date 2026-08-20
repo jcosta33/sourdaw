@@ -463,6 +463,9 @@ impl RampedParam {
         for index in 0..self.pending_len {
             let write = self.pending[index];
             let lands_at = match write.change {
+                // A Step lands instantly at its stamp in `begin`, whatever
+                // duration it carries, so it is stamped here the same way.
+                Some(event) if event.shape == RampShape::Step => event.at_frame,
                 Some(event) => event
                     .at_frame
                     .saturating_add(u64::from(event.duration_frames)),
@@ -2330,6 +2333,23 @@ mod tests {
         assert_eq!(
             walk(&mut param, 6, &mut diagnostics),
             vec![0.0, 0.0, 0.5, 0.5, 0.75, 0.75]
+        );
+    }
+
+    #[test]
+    fn a_pending_step_is_history_at_its_stamp_whatever_duration_it_carries() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(0.0);
+        // No producer stamps a duration onto a Step today, but `begin` lands
+        // one instantly at its stamp regardless — so the cancel law must read
+        // its landing the same way, or a replacing write would erase landed
+        // history it should glide from.
+        param.write(AutomationWrite::Append(ramp(2, 8, 0.5, RampShape::Step)));
+        param.write(AutomationWrite::Replace(ramp(6, 0, 1.0, RampShape::Step)));
+
+        assert_eq!(
+            walk(&mut param, 8, &mut diagnostics),
+            vec![0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0]
         );
     }
 

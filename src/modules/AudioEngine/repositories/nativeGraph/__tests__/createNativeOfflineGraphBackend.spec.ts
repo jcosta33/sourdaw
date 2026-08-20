@@ -187,6 +187,26 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(rendered.frames).toBe(4);
         expect(rendered.batch.commands).toHaveLength(1);
         expect(rendered.batch.commands[0]!.kind).toBe('create-track-strip');
+
+        // And the backend forgot material a refused batch sent ahead of its
+        // probe (a schedule-clip probe must find its sample in the pool): a
+        // retry re-registers the identity — replace-idempotent natively —
+        // rather than trusting a set the rejected batch mutated.
+        const material = stereoBuffer([0], [0]);
+        const refusedWithMaterial = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    ...clipCommand('take-2', material),
+                    playback: { ...clipCommand('take-2', material).playback, playbackRate: 0.5 },
+                },
+            ],
+        });
+        expect(refusedWithMaterial.application).toBe('not-applied');
+        expect(transport.registered).toHaveLength(1);
+        const retried = await backend.apply({ schemaVersion: 1, commands: [clipCommand('take-2', material)] });
+        expect(retried.application).toBe('applied');
+        expect(transport.registered).toHaveLength(2);
     });
 
     it('rejects when the material itself is refused at registration', async () => {
@@ -259,6 +279,36 @@ describe('createNativeOfflineGraphBackend', () => {
                 { kind: 'bus', id: 'bus-1', deviceIds: [] },
             ],
         });
+    });
+
+    it('crosses each probe under the applied batch correlation, absent when the batch carries none', async () => {
+        const transport = scriptedTransport();
+        const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
+
+        await backend.apply({
+            schemaVersion: 1,
+            correlation: { appRevision: 1, projectRevision: 'rev-1' },
+            commands: [TRACK_STRIP],
+        });
+        await backend.apply({ schemaVersion: 1, commands: [] });
+        await backend.apply({
+            schemaVersion: 1,
+            correlation: { appRevision: 2, projectRevision: 'rev-2' },
+            commands: [],
+        });
+        await backend.render(2);
+
+        // A batch's own correlation crosses on its own probe.
+        expect(transport.renders[0]!.batch.correlation).toEqual({ appRevision: 1, projectRevision: 'rev-1' });
+        // A correlation-free batch crosses with no correlation key at all,
+        // even immediately after a correlated batch was accepted — absence is
+        // meaningful (`serializeAudioGraphCommandBatch`'s law), so nothing may
+        // stick from a predecessor.
+        expect('correlation' in transport.renders[1]!.batch).toBe(false);
+        // And a later correlated batch crosses under its own key, not rev-1.
+        expect(transport.renders[2]!.batch.correlation).toEqual({ appRevision: 2, projectRevision: 'rev-2' });
+        // The render applies no batch and carries none.
+        expect('correlation' in transport.renders[3]!.batch).toBe(false);
     });
 
     it('renders the accumulated batch and hands back the planar pair', async () => {

@@ -2300,6 +2300,7 @@ const { fileURLToPath } = await import('node:url');
 const { Buffer: NodeBuffer } = await import('node:buffer');
 const { createNativeOfflineGraphBackend } =
     await import('../../../repositories/nativeGraph/createNativeOfflineGraphBackend');
+const { NATIVE_ADDON_FILE } = await import('../../../../../../electron/native');
 
 /** The napi surface this leg drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
@@ -2324,7 +2325,7 @@ const NATIVE_CRATE_DIR = join(
     'sourdaw-native'
 );
 /** Where `scripts/buildNativeAddon.ts` puts the artifact (`electron/native.ts` law). */
-const NATIVE_ADDON_PATH = join(NATIVE_CRATE_DIR, 'sourdaw-native.node');
+const NATIVE_ADDON_PATH = join(NATIVE_CRATE_DIR, NATIVE_ADDON_FILE);
 
 const nativeAddonPresent = existsSync(NATIVE_ADDON_PATH);
 
@@ -2444,6 +2445,29 @@ function nativeLegSendGraphCommands(fixture: GraphFixture): AudioGraphCommand[] 
 }
 
 /**
+ * The post-fader tap point, made discriminating: the source's fader glides
+ * mid-render, and a post-fader send must ride that glide into the bus while a
+ * pre-fader tap would keep the bus feed steady. Web taps the strip's output
+ * node, native taps after gain, mute and pan — both after the panner, which is
+ * the contract's tap law (`AudioGraphSendTap`). Times land on integral frames
+ * at 48 kHz per the scoping note.
+ */
+function nativeLegPostFaderSendGraphCommands(fixture: GraphFixture): AudioGraphCommand[] {
+    return [
+        ...sendGraphCommands(fixture).map((command): AudioGraphCommand =>
+            command.kind === 'add-send' ? { ...command, tap: 'post-fader' } : command
+        ),
+        {
+            kind: 'write-parameter',
+            target: { kind: 'track-fader', trackId: FIXTURE_TRACK_ID },
+            write: { shape: 'ramp-to', value: 0.25, startTime: 0.1, landTime: 0.35 },
+        },
+        nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: 0.7 }),
+        nativeLegClip({ trackId: KEEPER_TRACK_ID, clipGain: 0.35 }),
+    ];
+}
+
+/**
  * The web leg over a shared command list. `renderThroughContract` injects a
  * signal, so it cannot serve here — the native graph has no injection input,
  * and both legs must take their programme from the same `schedule-clip`.
@@ -2474,17 +2498,16 @@ async function renderCommandsThroughNativeBackend(commands: AudioGraphCommand[])
         if (result.application !== 'applied') {
             throw new Error(`native backend refused the shared batch: ${JSON.stringify(result)}`);
         }
-        // The presence pin, in the only vocabulary a device-free fixture has:
-        // every strip the batch created must be in the report. A backend that
-        // dropped a strip would null only against another that dropped it too.
-        const created = commands.filter(
-            (command) => command.kind === 'create-track-strip' || command.kind === 'create-bus-strip'
-        );
-        if (result.reports.length !== created.length) {
-            throw new Error(
-                `native backend reported ${result.reports.length} strips for ${created.length} create commands`
-            );
-        }
+        // `result.reports` is deliberately not asserted against here: it is a
+        // TS-side restatement of this caller's own commands (`deriveStripReports`
+        // mirroring `map_device`'s knead/non-external law), so a comparison
+        // against the same command list could never fail and would only dress
+        // the restatement up as an observation. Strip presence is actually
+        // covered by the audio residual below plus the offline diagnostics
+        // backstop (`offline-render-dropped-commands` in `graph.rs`), which
+        // fails the render when the engine dropped any admitted command.
+        // Reports become a native observation when they cross the wire with
+        // the D3.c cutover (#2214), where production starts consuming them.
         const { left, right } = await backend.render(RENDER_FRAMES);
         return {
             sampleRate: SAMPLE_RATE,
@@ -2528,6 +2551,7 @@ const NATIVE_LEG_FIXTURES: Array<[string, AudioGraphCommand[]]> = [
             source: { ...NATIVE_SEND_GRAPH_BASE.source, muted: true },
         }),
     ],
+    ['a post-fader send riding the source fader glide', nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE)],
     // The automation trio, walked mid-render rather than settled: the scheduled
     // context evaluates the web timeline per frame, and the native side walks
     // `RampedParam` per frame, so the whole trajectory is compared — including
@@ -2561,6 +2585,16 @@ const NATIVE_LEG_FIXTURES: Array<[string, AudioGraphCommand[]]> = [
                 { shape: 'ramp-to', value: 0.62124, startTime: 0.2, landTime: 0.3 },
                 { shape: 'hold', time: 0.1 },
             ],
+        }),
+    ],
+    // The fourth write shape: web lands it as `setValueAtTime`, native appends
+    // a zero-duration Step; both take the value at the stamp with no glide.
+    [
+        'a stepped fader write, landed with no glide',
+        nativeLegStripCommands({
+            gain: 0.9,
+            pan: 0,
+            faderWrites: [{ shape: 'step', value: 0.4, time: 0.2 }],
         }),
     ],
 ];
@@ -2624,6 +2658,28 @@ describe('live/offline null test — the native backend leg', () => {
             });
 
             expectNull(await nullTestNativeLeg({ commands: nativeLegStripCommands({ gain: 0.5, pan: 0 }) }));
+        });
+
+        it('reds when the native leg taps the send pre-fader instead of post', async () => {
+            // The tap-point discriminator behind the post-fader fixture above:
+            // a native leg that tapped ahead of the fader would hold the bus
+            // feed steady while the source fader glides, and the web leg rides
+            // the glide. Audible, because the whole send diverges.
+            expectPerturbedRed({
+                result: await nullTestNativeLeg({
+                    commands: nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE),
+                    nativeCommands: nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE).map(
+                        (command): AudioGraphCommand =>
+                            command.kind === 'add-send' ? { ...command, tap: 'pre-fader' } : command
+                    ),
+                }),
+                band: 'audible',
+                leg: 'native backend send tap',
+            });
+
+            expectNull(
+                await nullTestNativeLeg({ commands: nativeLegPostFaderSendGraphCommands(NATIVE_SEND_GRAPH_BASE) })
+            );
         });
 
         it('reds when the native leg takes a clip gain one part in five hundred hot', async () => {

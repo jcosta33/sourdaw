@@ -3,10 +3,16 @@
  * JSON payload `crates/sourdaw-native/src/commands/graph.rs` deserializes.
  *
  * This file is the hand-maintained TS side of that crate's wire mirror
- * (`GraphBatchPayload` and friends), which is why every field is mapped
- * explicitly rather than spread: a field the contract grows does not cross
- * this wire until someone decides it does, here, against the Rust mirror. The
- * spellings are the contract's own — kebab-case `kind`/`shape` tags,
+ * (`GraphBatchPayload` and friends). Command-level fields are mapped
+ * explicitly, so a field the contract grows does not cross this wire until
+ * someone decides it does, here, against the Rust mirror — with one deliberate
+ * exception: the leaf shapes whose contract type *is* the wire type
+ * (`command.state`, `command.target`, `command.write`, and a device's
+ * `parameterValues`) are spread. Those are primitive-valued records today, so
+ * a spread copies exactly what the Rust mirror deserializes; the hazard it
+ * leaves open is that a field grown onto one of those leaf types crosses
+ * silently until `graph.rs` (which ignores unknown fields) is taught to read
+ * it. The spellings are the contract's own — kebab-case `kind`/`shape` tags,
  * camelCase fields — because `graph.rs` was written to deserialize the
  * contract shape directly.
  *

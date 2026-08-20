@@ -35,7 +35,6 @@
  */
 export const EXPOSED_COMMANDS = [
     'analyze_pitch',
-    'apply_graph_commands',
     'arm_recording',
     'cancel_provider_gateway_request',
     'close_midi_input',
@@ -82,8 +81,6 @@ export const EXPOSED_COMMANDS = [
     'process_plugin_audio',
     'provider_gateway_request',
     'read_file_bytes',
-    'register_timeline_sample',
-    'render_graph_offline',
     'scan_plugins',
     'send_push_midi',
     'set_crumbs_mode',
@@ -110,14 +107,17 @@ export const EXPOSED_COMMANDS = [
  * reachable only through the narrower commands that wrap them.
  *
  * The three graph commands (`apply_graph_commands`, `register_timeline_sample`,
- * `render_graph_offline`) are exposed as of D3.b: their production caller is
- * the native `AudioGraphBackend` bridge
- * (`src/modules/AudioEngine/repositories/nativeGraph/`), which serves the
- * offline render path only — the shipping offline renderer stays Web Audio,
- * and live adoption of `apply_graph_commands` is gated on the D3.c cutover
- * (jcosta33/sourdaw#2214).
+ * `render_graph_offline`) stay denied as of D3.b even though their IPC
+ * transport now exists (`src/modules/AudioEngine/repositories/nativeGraph/
+ * nativeGraphTransport.ts`): nothing in `src/` reaches that transport yet —
+ * `createOfflineRenderBackend` returns the web backend unconditionally, and
+ * the null test drives the addon in-process, not over IPC. Exposing a command
+ * requires a production caller. The D3.c cutover (jcosta33/sourdaw#2214) flips
+ * the backend selection, and that same change moves these three to
+ * `EXPOSED_COMMANDS` together with their caller.
  */
 export const DENIED_COMMANDS = [
+    'apply_graph_commands',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',
     'collab_start_advertising',
@@ -130,6 +130,8 @@ export const DENIED_COMMANDS = [
     'load_whisper_model',
     'post_process_audio',
     'read_audio_file',
+    'register_timeline_sample',
+    'render_graph_offline',
     'send_plugin_midi',
     'show_all_plugin_guis',
     'update_plugin_transport',
