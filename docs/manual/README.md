@@ -22,6 +22,8 @@ Organized by what a device does, not by its name.
 
 **Amp and distortion** — [Grinder](./devices/11-grinder.md) (guitar amp and cabinet)
 
+**Tuning** — [Scoring](./devices/12-scoring.md) (tuner)
+
 ## Conventions used in this manual
 
 Sourdaw is in active development. Where a feature is incomplete, this manual says so at the point
