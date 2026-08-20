@@ -634,6 +634,34 @@ describe('resource enforcement', () => {
         }
     }, 10_000);
 
+    it.each([
+        ['admission recheck', 1],
+        ['post-admission read', 2],
+    ])('releases the admitted reservation when an injected sampler throws: %s', async (_label, throwOnSample) => {
+        // The sampler runs in a fixed order before any spawn: enterResourceSession's
+        // admission check, the loop recheck, then the post-loop pressure read. Counting
+        // from zero, the second call lands in the wrapped recheck and the third in the
+        // post-loop read; the first admission pass has already created the reservations
+        // root, so both throws must leave it empty.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let samples = 0;
+        await expect(
+            runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: ['-e', 'process.exit(0)'],
+                profile: 'focused',
+                memorySampler: () => {
+                    if (samples++ === throwOnSample) {
+                        throw new Error('injected admission sampler failure');
+                    }
+                    return abundantMemoryBytes;
+                },
+            })
+        ).rejects.toThrow('injected admission sampler failure');
+
+        expect(existsSync(reservationsRoot) ? readdirSync(reservationsRoot) : []).toEqual([]);
+    });
+
     it('keeps only the output tail', async () => {
         const result = await runIsolatedGuardedCommand({
             command: process.execPath,

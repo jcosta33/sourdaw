@@ -900,7 +900,15 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         await new Promise((resolve) => setTimeout(resolve, input.admissionWaitIntervalMs ?? 1_000));
     }
     const ownedSession = session.owned;
-    const availableBytes = readAvailableMemory();
+    let availableBytes: number | undefined;
+    try {
+        availableBytes = readAvailableMemory();
+    } catch (error) {
+        if (ownedSession) {
+            session.release();
+        }
+        throw error;
+    }
     const permittedRssBytes = availableBytes === undefined ? 0 : availableBytes - memoryReserveBytes;
     const requiredBudgetBytes = ownedSession ? maxRssBytes : minimumCommandBudgetBytes;
     if (availableBytes === undefined || permittedRssBytes < requiredBudgetBytes) {
