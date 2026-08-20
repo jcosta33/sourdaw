@@ -1,6 +1,6 @@
 //! Deterministic offline rendering: the scheduler without a device.
 //!
-//! An [`OfflineRenderer`] is the same [`AudioScheduler`] the CPAL callback
+//! An [`OfflineRenderer`] is the same [`AudioScheduler`] the render callback
 //! drives, built over the same command ring, with the caller's loop standing in
 //! for the device: no stream, no negotiation, no wall clock. That identity is
 //! the point — it makes this the null-test oracle for the native
@@ -26,7 +26,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 /// block-constant fast paths) is exercised on the same grain.
 pub const OFFLINE_BLOCK_FRAMES: usize = 512;
 
-/// The scheduler, a command ring, and a render loop — and no cpal stream.
+/// The scheduler, a command ring, and a render loop — and no audio stream.
 ///
 /// Field order is drop order and is load bearing, exactly as `AppState`'s is:
 /// the command producer must go first so the scheduler's shutdown retirement,
