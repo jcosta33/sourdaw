@@ -8,7 +8,8 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { isFaustModule } from '#/modules/PluginHost/useCases';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+import { getFaustModuleLatencyMs, isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { type DeviceRuntimeLiveFacts } from '../models/BuiltinDeviceRuntime';
@@ -1351,7 +1352,17 @@ const proofDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isProofDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         const loadingControls: {
@@ -1365,7 +1376,97 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         placeholder.nativeDspControls = loadingControls;
         placeholder.controller = loadingControls;
-        const loadPromise = createProofNode(context, undefined, signal)
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: ProofNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        let runtimeResourcesReleased = false;
+        /**
+         * Idempotent teardown for a Proof node that already reached the graph.
+         *
+         * Every exit taken after `registerProofDevice` runs this one path —
+         * rejected promotion, ordinary controller disposal, a terminal runtime
+         * fault and a failed publish alike — because each of them leaves the
+         * graph without this device. Anything left behind is inherited by the
+         * next device that takes this id: a stale reported latency skews PDC, a
+         * live control registration routes Proof writes into a node that is no
+         * longer in the signal path, and a stale meter frame paints the previous
+         * device's LUFS and gain reduction onto the replacement until its first
+         * frame arrives.
+         */
+        const releaseRuntimeResources = (result: ProofNodeResult): void => {
+            if (runtimeResourcesReleased) {
+                return;
+            }
+            runtimeResourcesReleased = true;
+            try {
+                result.destroy();
+            } catch (cleanupError) {
+                logger.warn(`[WebAudioEngine] ${deviceType} cleanup failed: ${String(cleanupError)}`);
+            }
+            clearReportedLatency(deviceId);
+            try {
+                getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
+            } catch {
+                // Intentionally empty: the device may already be unregistered
+                // from the Proof store; teardown proceeds.
+            }
+            // Separately guarded: an unregister that throws must not strand the
+            // meter telemetry it was supposed to be followed by.
+            try {
+                getAudioDeviceRuntimeSink().clearProofMeters(deviceId);
+            } catch {
+                // Intentionally empty: the instance may already be gone from the
+                // Proof store; teardown proceeds.
+            }
+        };
+        // Demotion is terminal and unrecoverable, so it must run only once the
+        // worklet has actually reported a fault. A fault raised before the node
+        // is published is held in `runtimeFailureMessage` and drained at the
+        // publish site; a healthy load never enters this body at all.
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            const terminalControls = { ready: false, setParam: () => {}, setBypass: () => {}, destroy: () => {} };
+            placeholder.nativeDspControls = terminalControls;
+            // TrackNode keeps the placeholder controller after demotion. Replace
+            // that exact write surface too: otherwise automation retains values
+            // in the pre-ready queue after this terminal no-recovery state.
+            placeholder.controller = terminalControls;
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            releaseRuntimeResources(publishedResult);
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
+        // Supplying the target fields at all selects live control. Whether the
+        // supplied values bind is `createProofNode`'s decision: it rejects an
+        // out-of-bounds id and leaves every control inert. Testing the values
+        // for truthiness here would turn an invalid target back into "no target
+        // supplied", which selects the legacy raw-param path and routes writes
+        // around the target, generation and sequence binding instead of
+        // stopping at it.
+        const controlTarget =
+            trackId !== undefined && parameterIds !== undefined
+                ? { trackId, deviceId, deviceType, parameterIds }
+                : undefined;
+        const loadPromise = createProofNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -1400,7 +1501,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     result.onMeterData((data) => {
                         runtimeSink.updateProofMeters(deviceId, data);
                     });
-                    onLoaded({
+                    const loadedNode: BuiltinDeviceNode = {
                         deviceId,
                         type: deviceType,
                         nodes: [result.workletNode],
@@ -1408,33 +1509,27 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         outputNode: result.workletNode,
                         dispose: result.destroy,
                         controller: {
+                            ready: true,
                             setParam: result.setParam,
                             setBypass: result.setBypass,
                             destroy: () => {
-                                result.destroy();
-                                clearReportedLatency(deviceId);
-                                try {
-                                    getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
-                                } catch {
-                                    // Intentionally empty: the device may already be
-                                    // unregistered from the Proof store; teardown proceeds.
-                                }
+                                releaseRuntimeResources(result);
                             },
                         },
                         nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                    });
+                    };
+                    const accepted = onLoaded(loadedNode);
+                    if (accepted === false) {
+                        // A refused promotion is a removal: the graph never took
+                        // this node, so it must leave nothing of itself behind.
+                        releaseRuntimeResources(result);
+                        return;
+                    }
+                    publishedNode = loadedNode;
+                    publishedResult = result;
+                    applyRuntimeFailure();
                 } catch (error) {
-                    try {
-                        runtimeSink.unregisterProofDevice(deviceId);
-                    } catch {
-                        // Cleanup is best-effort when registration itself failed.
-                    }
-                    clearReportedLatency(deviceId);
-                    try {
-                        result.destroy();
-                    } catch (cleanupError) {
-                        logger.warn(`[WebAudioEngine] ${deviceType} cleanup failed: ${String(cleanupError)}`);
-                    }
+                    releaseRuntimeResources(result);
                     throw error;
                 }
                 return;
@@ -1666,6 +1761,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     controls.destroy?.();
                     return;
                 }
+                // A Faust module's delay line is compiled into its source, so
+                // its latency is a constant of the module and is reported once,
+                // here, before any parameter lands. Without this the Brick-Wall
+                // Limiter's look-ahead delay was unreported and its track slid
+                // against every other one; see `getFaustModuleLatencyMs`.
+                reportLatency(deviceId, getFaustModuleLatencyMs(deviceType));
                 for (const event of pending) {
                     if (event.kind === 'param') {
                         if (event.time !== undefined) {
@@ -1696,10 +1797,14 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         // a Faust instrument was the one device kind the stop /
                         // panic sweep could not silence (audit MD-6).
                         allNotesOff: () => controls.setParam('gate', 0),
-                        destroy: controls.destroy,
+                        destroy: () => {
+                            controls.destroy?.();
+                            clearReportedLatency(deviceId);
+                        },
                     },
                 });
                 if (accepted === false) {
+                    clearReportedLatency(deviceId);
                     return;
                 }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
@@ -1848,4 +1953,11 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
     return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
+}
+
+export function findReleasedWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
+    if (!isDeviceReleaseAdmitted(deviceType)) {
+        return undefined;
+    }
+    return findWasmDescriptor(deviceType);
 }

@@ -1,80 +1,85 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_from_template, setupWorkspace } from './e2eUtils';
 
-async function openTakeLanes(page: import('@playwright/test').Page): Promise<void> {
-    // Take lanes are shown when variation lanes are toggled on a track.
-    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    const trackRow = trackList.getByRole('row').first();
-    const lanesToggle = trackRow.getByRole('button', { name: /variation lanes/i }).first();
-    if (await lanesToggle.isVisible().catch(() => false)) {
-        await lanesToggle.click();
-        await page.waitForTimeout(500);
-    }
+function bassTrackRow(page: Page) {
+    return page
+        .getByRole('grid', { name: /Track list/i })
+        .first()
+        .getByRole('row')
+        .filter({ has: page.getByText('Bass', { exact: true }) })
+        .first();
+}
+
+function variationToggle(page: Page) {
+    return bassTrackRow(page).getByRole('button', { name: 'Toggle variation lanes' });
+}
+
+async function openTakeLanes(page: Page): Promise<void> {
+    await bassTrackRow(page).scrollIntoViewIfNeeded();
+    const toggle = variationToggle(page);
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Add take' })).toBeVisible();
 }
 
 test.describe('Take lanes & comp — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'EDM' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_from_template({ page, template_name: /EDM/i });
     });
 
-    test('variation lanes toggle is present on a track', async ({ page }) => {
-        const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-        const trackRow = trackList.getByRole('row').first();
-        const lanesToggle = trackRow.getByRole('button', { name: /variation lanes/i }).first();
-        const hasToggle = await lanesToggle.isVisible().catch(() => false);
-        if (hasToggle) {
-            const before = await lanesToggle.getAttribute('aria-pressed');
-            await lanesToggle.click();
-            await page.waitForTimeout(300);
-            await expect(lanesToggle).not.toHaveAttribute('aria-pressed', before ?? '');
-        }
+    test('variation lanes toggle expands the take panel', async ({ page }) => {
+        await openTakeLanes(page);
+        await expect(page.getByText('Takes · Bass')).toBeVisible();
     });
 
     test('add take button is present when variation lanes are open', async ({ page }) => {
         await openTakeLanes(page);
-
         const addTake = page.getByTestId('take-lane-add');
-        const hasAdd = await addTake.isVisible().catch(() => false);
-        if (!hasAdd) {
-            await expect(addTake).toBeAttached({ timeout: 5000 });
-        }
+        await expect(addTake).toBeVisible();
+        await expect(addTake).toHaveAttribute('aria-label', 'Add take');
     });
 
-    test('flatten comp button is present when take lanes are open', async ({ page }) => {
+    test('flatten comp is disabled until a take lane exists', async ({ page }) => {
         await openTakeLanes(page);
+        const flatten = page.getByRole('button', { name: 'Flatten comp' });
+        await expect(flatten).toBeVisible();
+        await expect(flatten).toBeDisabled();
 
-        const flatten = page.getByRole('button', { name: /Flatten comp/i }).first();
-        const hasFlatten = await flatten.isVisible().catch(() => false);
-        // The Flatten comp button only appears when there's a comp lane — just verify it doesn't crash.
-        if (hasFlatten) {
-            const label = await flatten.getAttribute('aria-label');
-            expect(label).toContain('Flatten');
-        }
+        await page.getByRole('button', { name: 'Initialize take lane' }).click();
+        await expect(flatten).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'Initialize take lane' })).toHaveCount(0);
     });
 
-    test('add take button does not crash when clicked', async ({ page }) => {
+    test('add take creates a named take', async ({ page }) => {
         await openTakeLanes(page);
+        await expect(page.getByText('0 takes · 0 comp regions')).toBeVisible();
 
-        const addTake = page.getByTestId('take-lane-add');
-        if (await addTake.isVisible().catch(() => false)) {
-            await addTake.click();
-            await page.waitForTimeout(500);
+        await page.getByTestId('take-lane-add').click();
 
-            // Transport should still be functional.
-            await expect(page.getByTestId('transport-play')).toBeVisible();
-        }
+        await expect(page.getByText('1 take · 0 comp regions')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Promote Take 1 to main take' })).toBeVisible();
     });
 
-    test('take lanes and transport coexist', async ({ page }) => {
+    test('transport play/stop works with take lanes open', async ({ page }) => {
         await openTakeLanes(page);
 
-        await expect(page.getByTestId('transport-play')).toBeVisible({ timeout: 10_000 });
-        await expect(page.getByTestId('transport-stop')).toBeVisible({ timeout: 10_000 });
+        const playhead = page.getByTestId('transport-playhead');
+        const play = page.getByTestId('transport-play');
+        await expect(playhead).toHaveText(/1\.1\.000/);
+        await expect(play).toHaveAttribute('aria-label', 'Play');
+
+        await play.click();
+        await expect(playhead).toHaveText(/\d+\.\d+\.\d+/, { timeout: 10_000 });
+        await expect(playhead).not.toHaveText('1.1.000');
+        await expect(play).toHaveAttribute('aria-label', 'Pause');
+
+        await page.getByTestId('transport-stop').click();
+        await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Play');
     });
 });

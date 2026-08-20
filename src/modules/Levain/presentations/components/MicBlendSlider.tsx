@@ -13,6 +13,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type MicPositionState } from '../../models/LevainPatch';
 
@@ -34,11 +35,11 @@ export const MicBlendSlider = ({
     if (showFull) {
         // Full mic mixer with faders
         return (
-            <div className="space-y-3 max-w-[400px]">
+            <Stack gap={3} className="max-w-[400px]">
                 <DawPluginSectionHeader title="Mic Positions" titleClassName="text-muted-foreground" />
-                <div className="flex gap-3 items-end">
+                <Row align="end" gap={3}>
                     {micPositions.map((mic, i) => (
-                        <div key={i} className="flex flex-col items-center gap-1">
+                        <Stack align="center" gap={1} key={i}>
                             <DawPluginToggle
                                 pressed={mic.enabled}
                                 tone="amber"
@@ -85,10 +86,10 @@ export const MicBlendSlider = ({
                             <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
                                 {mic.name}
                             </span>
-                        </div>
+                        </Stack>
                     ))}
-                </div>
-            </div>
+                </Row>
+            </Stack>
         );
     }
 
@@ -105,9 +106,9 @@ export const MicBlendSlider = ({
     const blend = total === 0 ? 0.5 : roomVol / total;
 
     return (
-        <div className="space-y-1">
+        <Stack gap={1}>
             <DawPluginSectionHeader title="Space" size="xs" titleClassName="text-muted-foreground/50" />
-            <div className="flex flex-col items-center gap-0">
+            <Stack align="center">
                 <RotaryKnob
                     value={blend}
                     onChange={(v) => {
@@ -132,11 +133,11 @@ export const MicBlendSlider = ({
                     defaultValue={0.3}
                     size="md"
                 />
-                <div className="flex justify-between w-full px-1">
+                <Row align="stretch" justify="between" className="w-full px-1">
                     <span className="text-[6px] text-muted-foreground/40">Close</span>
                     <span className="text-[6px] text-muted-foreground/40">Room</span>
-                </div>
-            </div>
-        </div>
+                </Row>
+            </Stack>
+        </Stack>
     );
 };

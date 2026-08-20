@@ -63,6 +63,7 @@ const baseState: CollaborationState = {
     peers: [],
     connectionStatus: 'disconnected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 function setState(overrides: Partial<CollaborationState> = {}): void {
@@ -165,6 +166,36 @@ describe('CollaborationPanel', () => {
             setState({ error: 'Something broke' });
             render(<CollaborationPanel />);
             expect(screen.getAllByText('Something broke').length).toBeGreaterThan(0);
+        });
+
+        /**
+         * Turns red on: the `quarantinedPeerLabel` row in CollaborationPanel.
+         *
+         * The peer stays listed and connected while its edits silently stop
+         * arriving, so the panel is the only place this is visible — and it
+         * has to be visible while a transient message occupies the error row.
+         */
+        it('names a quarantined peer in its own row, alongside a transient error', () => {
+            setState({
+                isEnabled: true,
+                error: 'Could not send project changes to a peer — they may be out of date.',
+                peers: [
+                    {
+                        id: 'peer-2',
+                        name: 'Ada',
+                        color: '#ef4444',
+                        isHost: false,
+                        isConnected: true,
+                        lastSeen: 0,
+                        latencyMs: null,
+                    },
+                ],
+                quarantinedPeerIds: ['peer-2'],
+            });
+            render(<CollaborationPanel />);
+
+            expect(screen.getByText(/Stopped syncing with Ada/)).toBeInTheDocument();
+            expect(screen.getAllByText(/may be out of date/).length).toBeGreaterThan(0);
         });
     });
 

@@ -1,7 +1,7 @@
 import { getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
-import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
+import { isDeviceSupportedOnCurrentPlatform } from '../models/DeviceParameter';
 import { type SoundPreset } from '../models/SoundPreset';
 import { FACTORY_PRESETS } from '../repositories/presets/factoryPresets';
 
@@ -25,23 +25,7 @@ function currentPlatformKey(): string {
 }
 
 function isPresetCompatible(preset: SoundPreset): boolean {
-    const isNative = currentPlatformKey() === 'native';
-    return preset.devices.every((data) => {
-        const descriptor = BUILTIN_PLUGINS.find((param) => param.id === data.type);
-        if (!descriptor) {
-            return true; // unknown device types (e.g. faust-*) pass through
-        }
-        const platform = descriptor.platform ?? 'both';
-        if (platform === 'both') {
-            return true;
-        }
-        // Native app runs in WebView with Web Audio — web plugins work there too.
-        // Only hide native-only plugins on the web platform.
-        if (isNative) {
-            return true; // native can run both web and native plugins
-        }
-        return platform === 'web'; // web can only run web plugins (not native-only)
-    });
+    return preset.devices.every((device) => isDeviceSupportedOnCurrentPlatform(device.type));
 }
 
 export function getFactoryPresets(): GetFactoryPresetsOutput {

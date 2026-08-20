@@ -14,7 +14,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, supersessionCommentBody } from './prContract.ts';
 
 export type IssueComment = {
     id: string;
@@ -93,7 +93,7 @@ export function supersedePullRequest(
     const replacement = port.inspect(replacementNumber);
     assertOldBinding(before, oldNumber, expectedHead);
     assertReplacement(replacement, replacementNumber, before);
-    const body = `Superseded by #${replacementNumber}.`;
+    const body = supersessionCommentBody(replacementNumber);
     if (before.state === 'CLOSED') {
         assertCompletedSupersession(before, oldNumber, expectedHead, before.base, body);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);

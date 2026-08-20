@@ -5,6 +5,8 @@
  */
 import { type ReactElement, type KeyboardEvent, useRef } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 type Props = {
     value: number; // 0 – 18 dB
     onChange: (v: number) => void;
@@ -75,8 +77,11 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
     }
 
     return (
-        <div
-            className="flex flex-col items-center px-1.5 py-2 gap-1 select-none shrink-0"
+        <Stack
+            align="center"
+            gap={1}
+            shrink={false}
+            className="px-1.5 py-2 select-none"
             style={{
                 width: 52,
                 background: 'linear-gradient(180deg, #0A0A0C 0%, #0E0E10 100%)',
@@ -86,9 +91,12 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
             <span className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest">Gain</span>
 
             {/* Drag track */}
-            <div
+            <Row
+                align="stretch"
+                justify="center"
+                grow
+                className="relative w-full cursor-pointer"
                 ref={trackRef}
-                className="relative flex-1 w-full flex justify-center cursor-pointer"
                 style={{ minHeight: 120 }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
@@ -157,7 +165,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 >
                     <span className="text-[6px] font-mono text-muted-foreground/30">0</span>
                 </div>
-            </div>
+            </Row>
 
             {/* Numeric readout */}
             <span
@@ -169,6 +177,6 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 {value.toFixed(1)}
             </span>
             <span className="text-[6px] text-muted-foreground/30 font-mono">dB</span>
-        </div>
+        </Stack>
     );
 };

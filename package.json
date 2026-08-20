@@ -18,13 +18,16 @@
         "test:health-gates": "sh scripts/test-health-gate-scripts.sh",
         "health:web:full": "sh scripts/health-gates-web.sh",
         "health:server:full": "sh scripts/health-gates-server.sh",
-        "test:run": "vitest run",
+        "test:run": "node scripts/runVitestZeroTestGuard.ts",
         "test:collection-scope": "node scripts/checkVitestCollectionScope.ts",
         "test:command-schema": "node scripts/generateVersionedCommandArgumentSchemas.mjs --check",
         "test:release-inventory": "node scripts/checkReleaseInventory.ts",
+        "test:lgpl-runtime": "node scripts/checkLgplRuntimeProvenance.ts",
+        "test:lgpl-runtime:online": "node scripts/checkLgplRuntimeProvenance.ts --online",
         "test:barrel-mocks": "node scripts/checkBarrelMockCoverage.ts",
         "census:ui": "node scripts/uiRestatementCensus.ts",
         "test:e2e": "playwright test",
+        "test:e2e:browser-ai-webgpu-admission": "playwright test --config tests/e2e/browserAiWebGpuAdmission.playwright.config.ts",
         "deliver": "node scripts/deliverPullRequest.ts",
         "lane:open": "node scripts/openLane.ts",
         "lane:publish": "node scripts/publishLane.ts",
@@ -35,6 +38,7 @@
         "pr:supersede": "node scripts/supersedePullRequest.ts",
         "issue:file": "node scripts/fileTrackerIssue.ts",
         "audio:deadline": "node scripts/measureRenderDeadline.ts",
+        "browser-ai:model-storage": "node scripts/measureBrowserAiModelStorage.ts",
         "transport:clock": "node scripts/measureTransportClock.ts",
         "transport:yeast-drift": "node scripts/measureYeastGeneratorDrift.ts",
         "test:coverage": "vitest run --coverage",
@@ -69,8 +73,8 @@
     },
     "dependencies": {
         "@automerge/automerge": "^3.4.1",
-        "@breezystack/lamejs": "^1.2.7",
-        "@grame/faustwasm": "^0.16.7",
+        "@breezystack/lamejs": "1.2.7",
+        "@grame/faustwasm": "0.16.7",
         "@mlc-ai/web-llm": "^0.2.84",
         "@radix-ui/react-dropdown-menu": "^2.1.24",
         "@spotify/basic-pitch": "^1.0.1",
@@ -137,6 +141,7 @@
         "typescript": "npm:@typescript/typescript6@^6.0.2",
         "typescript-eslint": "^8.67.0",
         "vite": "^8.2.2",
-        "vitest": "^4.1.11"
+        "vitest": "^4.1.11",
+        "yaml": "2.9.0"
     }
 }

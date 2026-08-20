@@ -85,6 +85,7 @@ function createRestoreTrackAction(trackId: string, trackIndex: number): RestoreT
             wasSelected: false,
             routingPatches: [],
             automationLaneSnapshots: [],
+            clipSatellites: [],
             midiNotesByClipId: {},
             midiCcByClipId: {},
             midiPitchBendByClipId: {},

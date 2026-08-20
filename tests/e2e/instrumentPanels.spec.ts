@@ -12,12 +12,13 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     });
 
-    test('Browser panel lists all instrument categories', async ({ page }) => {
+    test('Browser panel lists released instruments only', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
         await expect(browser.getByText('Fermenter')).toBeVisible();
         await expect(browser.getByText('Toaster')).toBeVisible();
         await expect(browser.getByText('Levain')).toBeVisible();
-        await expect(browser.getByText('Grand Boule')).toBeVisible();
+        await expect(browser.getByText('Crumbs')).toBeVisible();
+        await expect(browser.getByRole('button', { name: /^Grand Boule/i })).toHaveCount(0);
     });
 
     test('Default MIDI track has synth device shown in inspector', async ({ page }) => {
@@ -34,8 +35,16 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
         await page.waitForTimeout(1000);
 
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const has_toaster = await inspector.getByText(/Toaster/i).first().isVisible().catch(() => false);
-        const has_synth = await inspector.getByText('Synth').first().isVisible().catch(() => false);
+        const has_toaster = await inspector
+            .getByText(/Toaster/i)
+            .first()
+            .isVisible()
+            .catch(() => false);
+        const has_synth = await inspector
+            .getByText('Synth')
+            .first()
+            .isVisible()
+            .catch(() => false);
         expect(has_toaster || has_synth).toBe(true);
     });
 

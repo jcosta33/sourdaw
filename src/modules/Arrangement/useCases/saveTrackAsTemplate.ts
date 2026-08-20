@@ -1,3 +1,6 @@
+import { findWithheldDeviceType } from '#/infra/release/deviceReleaseAdmission';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { type TrackTemplate } from '../models/TrackTemplate';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { loadTrackTemplates } from '../repositories/trackTemplate/loadTrackTemplates';
@@ -8,6 +11,14 @@ import { trackTemplateCache } from './trackTemplate';
 export function saveTrackAsTemplate(trackId: string, name: string, category?: string): TrackTemplate | null {
     const track = getTrackById(trackId);
     if (!track) {
+        return null;
+    }
+    const withheldDeviceType = findWithheldDeviceType(track.devices);
+    if (withheldDeviceType) {
+        notifyUser(
+            `Track contains withheld device "${withheldDeviceType}" and was not saved as a template.`,
+            'warning'
+        );
         return null;
     }
 

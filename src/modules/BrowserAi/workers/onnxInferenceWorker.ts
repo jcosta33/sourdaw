@@ -12,6 +12,7 @@
  */
 
 import { KOKORO_MODEL_ARTIFACT } from '../models/KokoroArtifactManifest';
+import { type ModelStorageTransferMessage } from '../models/ModelStorageWorkerProtocol';
 
 import type { OnnxExecutionProvider, WorkerRequest, WorkerResponse, TensorData } from '../models/InferenceRequest';
 
@@ -173,6 +174,25 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
 
     await evictLru();
     return entry;
+}
+
+function receiveModelData(port: MessagePort): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+        port.onmessage = (event: MessageEvent<ModelStorageTransferMessage>) => {
+            port.close();
+            const message = event.data;
+            if (message.type === 'model-data') {
+                resolve(message.modelData);
+                return;
+            }
+            reject(new Error(`${message.name}: ${message.message}`));
+        };
+        port.onmessageerror = () => {
+            port.close();
+            reject(new Error('Model storage worker returned unreadable model data'));
+        };
+        port.start();
+    });
 }
 
 // ── Tensor helpers ─────────────────────────────────────────────────────────
@@ -473,6 +493,24 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     if (req.type === 'create-session') {
         try {
             const entry = await getOrCreateSession(req.modelId, req.modelData);
+            const response: WorkerResponse = {
+                type: 'session-created',
+                requestId: req.requestId,
+                modelId: req.modelId,
+                executionProviders: entry.executionProviders,
+            };
+            self.postMessage(response);
+        } catch (error) {
+            const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
+            self.postMessage(response);
+        }
+        return;
+    }
+
+    if (req.type === 'create-session-from-model-port') {
+        try {
+            const modelData = await receiveModelData(req.modelDataPort);
+            const entry = await getOrCreateSession(req.modelId, modelData);
             const response: WorkerResponse = {
                 type: 'session-created',
                 requestId: req.requestId,

@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 
 import { setNoteProbability } from '#/modules/MIDI/useCases';
 
@@ -9,7 +9,8 @@ type ProbabilityLaneProps = {
     trackId: string;
     selectedNoteIds: Set<string>;
     beatWidth: number;
-    contentWidth: number;
+    /** Scroll container the lane is laid out inside — see `NotePropertyLane`. */
+    scrollRef: RefObject<HTMLElement | null>;
 };
 
 const getProbability = (note: { probability?: number }): number => note.probability ?? 100;

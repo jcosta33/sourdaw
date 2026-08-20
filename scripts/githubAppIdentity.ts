@@ -18,11 +18,34 @@ export function isAuthorBotLogin(login: string | undefined | null): boolean {
     return login === AUTHOR_BOT_LOGIN || login === AUTHOR_GRAPHQL_LOGIN;
 }
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
+/**
+ * The one branch a pull request may target. `lane:publish` opens every pull request against it and
+ * `deliver` merges into nothing else, so a base that is not this branch is a retarget the delivery
+ * scripts did not make.
+ */
+export const REQUIRED_BASE_BRANCH = 'main';
 export const GITHUB_HTTPS_REMOTE = `https://github.com/${REQUIRED_REPOSITORY}.git`;
 export function githubAuthenticatedRemote(token: string): string {
     return `https://x-access-token:${token}@github.com/${REQUIRED_REPOSITORY}.git`;
 }
 export const AUTHOR_LOCK_REASON = 'active:sourdaw-author';
+
+/**
+ * `removeLane` locks a lane `lane-remove:<pid>` for the length of a removal, so that reason records
+ * work in flight rather than an owner. It and `AUTHOR_LOCK_REASON` are the only lock reasons lane
+ * tooling writes, and both readers of the marker share this one definition: `removeLane` asks
+ * whether the pid is still alive, `publishLane` only needs to know the lock names nobody. A pid that
+ * is not a safe positive integer is not this marker, so it is treated as an unrecognized reason
+ * rather than handed on as a number no caller can act on.
+ */
+export function removalLockPid(lockReason: string | undefined): number | undefined {
+    const captured = /^lane-remove:(\d+)$/.exec(lockReason ?? '')?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const pid = Number(captured);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
 
 export const AUTHOR_MINT_PERMISSIONS = {
     contents: 'write',

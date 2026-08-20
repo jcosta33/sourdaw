@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { FileUp } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { projectStore } from '#/modules/Project/stores';
@@ -20,31 +21,31 @@ export const ProjectTab = (): ReactElement => {
     const keyNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
     return (
-        <div className="flex flex-col gap-4 p-3">
+        <Stack gap={4} className="p-3">
             <div>
                 <SectionHeader title="Project Meta" />
-                <div className="mt-2 space-y-1 px-1">
-                    <div className="flex justify-between text-[11px]">
+                <Stack gap={1} className="mt-2 px-1">
+                    <Row align="stretch" justify="between" className="text-[11px]">
                         <span className="text-muted-foreground">Name</span>
                         <span className="font-medium">{project.name}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px]">
+                    </Row>
+                    <Row align="stretch" justify="between" className="text-[11px]">
                         <span className="text-muted-foreground">Created</span>
                         <span className="font-medium">{new Date(project.createdAt).toLocaleDateString()}</span>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             </div>
 
             <div>
                 <SectionHeader title="Tuning & Scale" />
-                <div className="mt-2 space-y-3">
+                <Stack gap={3} className="mt-2">
                     <ChoiceCard className="flex flex-col gap-2 p-2.5">
-                        <div className="flex items-center justify-between">
+                        <Row justify="between">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-accent-orange)]">
                                 Global Tuning
                             </span>
                             <span className="text-[10px] text-muted-foreground">{project.tuning.name}</span>
-                        </div>
+                        </Row>
 
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
                             Change the project tuning and apply it to currently loaded Fermenter instruments.
@@ -63,13 +64,13 @@ export const ProjectTab = (): ReactElement => {
 
                     <div className="rounded-sm border border-border/40 bg-surface-base/40 p-2">
                         <h4 className="mb-1 text-[9px] font-semibold uppercase text-muted-foreground">Active Scale</h4>
-                        <div className="flex items-baseline gap-1.5">
+                        <Row align="baseline" gap={1.5}>
                             <span className="text-sm font-bold">{keyNames[project.keyRoot % 12]}</span>
                             <span className="text-xs text-muted-foreground">{project.scaleName}</span>
-                        </div>
+                        </Row>
                     </div>
-                </div>
+                </Stack>
             </div>
-        </div>
+        </Stack>
     );
 };

@@ -311,6 +311,7 @@ function setCollaborationAuthority({ isEnabled, isHost }: { isEnabled: boolean; 
         peers: [],
         connectionStatus: isEnabled ? 'connected' : 'disconnected',
         error: null,
+        quarantinedPeerIds: [],
     });
 }
 

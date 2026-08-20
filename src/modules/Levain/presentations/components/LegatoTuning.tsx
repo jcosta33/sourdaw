@@ -9,6 +9,7 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type LegatoConfig } from '../../models/LevainPatch';
 
@@ -112,7 +113,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
     };
 
     return (
-        <div className="space-y-3 max-w-[340px]">
+        <Stack gap={3} className="max-w-[340px]">
             {/* Header */}
             <DawPluginSectionHeader
                 title="Legato"
@@ -135,8 +136,8 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
             <LegatoDiagram slowMs={config.slowThresholdMs} fastMs={config.fastThresholdMs} />
 
             {/* Knob row */}
-            <div className="flex items-end gap-3">
-                <div className="flex flex-col items-center gap-0">
+            <Row align="end" gap={3}>
+                <Stack align="center">
                     <RotaryKnob
                         value={config.slowThresholdMs}
                         onChange={(v) => update({ slowThresholdMs: v })}
@@ -149,9 +150,9 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Slow</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.slowThresholdMs}ms</span>
-                </div>
+                </Stack>
 
-                <div className="flex flex-col items-center gap-0">
+                <Stack align="center">
                     <RotaryKnob
                         value={config.fastThresholdMs}
                         onChange={(v) => update({ fastThresholdMs: v })}
@@ -164,9 +165,9 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                     />
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Fast</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.fastThresholdMs}ms</span>
-                </div>
+                </Stack>
 
-                <div className="border-l border-border/15 pl-3 flex flex-col items-center gap-0">
+                <Stack align="center" className="border-l border-border/15 pl-3">
                     <RotaryKnob
                         value={config.portamentoVelocityThreshold}
                         onChange={(v) => update({ portamentoVelocityThreshold: Math.round(v) })}
@@ -181,8 +182,8 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         {config.portamentoVelocityThreshold}
                     </span>
-                </div>
-            </div>
-        </div>
+                </Stack>
+            </Row>
+        </Stack>
     );
 };

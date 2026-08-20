@@ -1,16 +1,19 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import {
     acquireResourceLock,
     enterResourceSession,
     hasExplicitTarget,
+    parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
+    psSamplingArgs,
+    RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
 } from '../resourceGuard';
@@ -20,7 +23,16 @@ function fixtureRoot(label: string): string {
     return mkdtempSync(join(tmpdir(), `sourdaw-resource-${label}-`));
 }
 
-const abundantMemoryBytes = 16 * 1024 ** 3;
+const abundantMemoryBytes = 128 * 1024 ** 3;
+const enforcementAdmissionRoot = fixtureRoot('enforcement');
+
+afterAll(() => rmSync(enforcementAdmissionRoot, { recursive: true, force: true }));
+
+function runIsolatedGuardedCommand(
+    input: Parameters<typeof runGuardedCommand>[0]
+): ReturnType<typeof runGuardedCommand> {
+    return runGuardedCommand({ ...input, admissionRoot: enforcementAdmissionRoot });
+}
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
@@ -66,7 +78,7 @@ async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<num
 }
 
 describe('resource admission', () => {
-    it('rejects a second owner until release', () => {
+    it('serializes admission updates', () => {
         const root = fixtureRoot('collision');
         try {
             const first = acquireResourceLock({ root, command: 'first' });
@@ -74,6 +86,139 @@ describe('resource admission', () => {
             first.release();
 
             acquireResourceLock({ root }).release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('admits concurrent validations when memory covers both reservations', async () => {
+        const root = fixtureRoot('parallel');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+            const second = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+
+            expect(first.token).not.toBe(second.token);
+            expect(readFileSync(first.reservationPath, 'utf8')).toContain(first.token);
+            expect(readFileSync(second.reservationPath, 'utf8')).toContain(second.token);
+            first.release();
+            second.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('waits until memory can cover another reservation', async () => {
+        const root = fixtureRoot('wait');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 3 * 1024 ** 3,
+            });
+            let admitted = false;
+            const waits: string[] = [];
+            const secondPromise = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 3 * 1024 ** 3,
+                waitIntervalMs: 10,
+                onWait: (message) => waits.push(message),
+            }).then((session) => {
+                admitted = true;
+                return session;
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            expect(admitted).toBe(false);
+            expect(waits).toHaveLength(1);
+            expect(waits[0]).toMatch(/need 4096 MiB, 3072 MiB available/);
+            first.release();
+
+            const second = await secondPromise;
+            expect(admitted).toBe(true);
+            second.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains a crashed owner reservation while its child is alive', async () => {
+        const root = fixtureRoot('orphan');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 3 * 1024 ** 3,
+            });
+            const owner = JSON.parse(readFileSync(first.reservationPath, 'utf8')) as Record<string, unknown>;
+            writeFileSync(
+                first.reservationPath,
+                JSON.stringify({
+                    ...owner,
+                    pid: 2_147_483_647,
+                    childPid: process.pid,
+                    childStartedAt: owner.processStartedAt,
+                })
+            );
+            let admitted = false;
+            const secondPromise = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 3 * 1024 ** 3,
+                waitIntervalMs: 10,
+            }).then((session) => {
+                admitted = true;
+                return session;
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            expect(admitted).toBe(false);
+            first.release();
+
+            const second = await secondPromise;
+            second.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains an admitted crash window through the command deadline', async () => {
+        const root = fixtureRoot('spawn-crash');
+        try {
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 3 * 1024 ** 3,
+                processToken: 'admitted-process',
+                orphanTimeoutMs: 5_000,
+            });
+            const owner = JSON.parse(readFileSync(first.reservationPath, 'utf8')) as Record<string, unknown>;
+            writeFileSync(first.reservationPath, JSON.stringify({ ...owner, pid: 2_147_483_647 }));
+            let admitted = false;
+            const secondPromise = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 3 * 1024 ** 3,
+                waitIntervalMs: 10,
+            }).then((session) => {
+                admitted = true;
+                return session;
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            expect(admitted).toBe(false);
+            first.release();
+
+            const second = await secondPromise;
+            second.release();
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -143,23 +288,30 @@ describe('resource admission', () => {
         }
     });
 
-    it('inherits the admitted session', () => {
+    it('inherits the admitted session', async () => {
         const root = fixtureRoot('inherit');
         const previous = process.env[RESOURCE_SESSION_ENV];
+        const previousRoot = process.env[RESOURCE_ROOT_ENV];
         try {
-            const first = enterResourceSession({ root });
+            const first = await enterResourceSession({ root, availableMemoryBytes: abundantMemoryBytes });
             process.env[RESOURCE_SESSION_ENV] = first.token;
-            const inherited = enterResourceSession({ root });
+            process.env[RESOURCE_ROOT_ENV] = root;
+            const inherited = await enterResourceSession({ availableMemoryBytes: abundantMemoryBytes });
 
             expect(inherited.token).toBe(first.token);
             inherited.release();
-            expect(readFileSync(join(first.lockPath, 'owner.json'), 'utf8')).toContain(first.token);
+            expect(readFileSync(first.reservationPath, 'utf8')).toContain(first.token);
             first.release();
         } finally {
             if (previous === undefined) {
                 delete process.env[RESOURCE_SESSION_ENV];
             } else {
                 process.env[RESOURCE_SESSION_ENV] = previous;
+            }
+            if (previousRoot === undefined) {
+                delete process.env[RESOURCE_ROOT_ENV];
+            } else {
+                process.env[RESOURCE_ROOT_ENV] = previousRoot;
             }
             rmSync(root, { recursive: true, force: true });
         }
@@ -180,28 +332,69 @@ describe('linux memory sampling', () => {
     it('returns undefined when MemAvailable is absent', () => {
         expect(parseMemAvailableBytes('MemTotal: 8039352 kB\nMemFree: 161184 kB\n')).toBeUndefined();
     });
+
+    it('caps host availability at the cgroup remainder', () => {
+        expect(parseCgroupAvailableBytes('8589934592', '2147483648')).toBe(6 * 1024 ** 3);
+        expect(parseCgroupAvailableBytes('max', '2147483648')).toBeUndefined();
+    });
+});
+
+describe('process table sampling', () => {
+    const psColumns = 'pid=,ppid=,pgid=,rss=,command=';
+
+    it.each([
+        ['darwin session', 'darwin', 'session-token', ['eww', '-axo', psColumns]],
+        ['non-darwin session', 'linux', 'session-token', ['eww', 'axo', psColumns]],
+        ['sessionless', 'linux', undefined, ['-axo', psColumns]],
+    ] as const)('pins the %s ps args', (_label, hostPlatform, sessionToken, expected) => {
+        expect(psSamplingArgs(hostPlatform, sessionToken)).toEqual(expected);
+    });
+
+    it('separates darwin sessions from other platforms by only the second dash', () => {
+        // Unifying the two session forms either way breaks one platform's `ps`, so they
+        // must stay distinct in exactly that argument.
+        const darwin = psSamplingArgs('darwin', 'session-token');
+        const linux = psSamplingArgs('linux', 'session-token');
+        expect(darwin).toEqual([linux[0], `-${linux[1]}`, ...linux.slice(2)]);
+    });
 });
 
 describe('resource enforcement', () => {
-    it('refuses work below the memory floor', async () => {
-        const result = await runGuardedCommand({
+    it('rechecks capacity before spawning', async () => {
+        let samples = 0;
+        const result = await runIsolatedGuardedCommand({
             command: process.execPath,
             args: ['-e', 'process.exit(0)'],
             profile: 'focused',
-            availableMemoryBytes: 0,
+            memorySampler: () => (samples++ === 1 ? 0 : abundantMemoryBytes),
+            admissionWaitIntervalMs: 1,
+        });
+
+        expect(result.code).toBe(0);
+        expect(samples).toBeGreaterThan(2);
+    });
+
+    it('refuses work below the memory floor', async () => {
+        let samples = 0;
+        const result = await runIsolatedGuardedCommand({
+            command: process.execPath,
+            args: ['-e', 'setTimeout(() => {}, 5000)'],
+            profile: 'focused',
+            memorySampler: () => (samples++ < 3 ? abundantMemoryBytes : 0),
+            hostSampleIntervalMs: 10,
+            sampleIntervalMs: 10,
         });
 
         expect(result.reason).toBe('pressure');
-        expect(result.durationMs).toBe(0);
     });
 
     it('kills commands that exceed their deadline', async () => {
-        const result = await runGuardedCommand({
+        const result = await runIsolatedGuardedCommand({
             command: process.execPath,
             args: ['-e', 'setTimeout(() => {}, 5000)'],
             profile: 'focused',
             timeoutMs: 50,
-            maxRssBytes: 1024 ** 4,
+            maxRssBytes: 2 * 1024 ** 3,
             availableMemoryBytes: abundantMemoryBytes,
             sampleIntervalMs: 20,
         });
@@ -214,7 +407,7 @@ describe('resource enforcement', () => {
         const pidPath = join(root, 'pid');
         let descendantPid: number | undefined;
         try {
-            const result = await runGuardedCommand({
+            const result = await runIsolatedGuardedCommand({
                 command: process.execPath,
                 args: [
                     '-e',
@@ -222,7 +415,7 @@ describe('resource enforcement', () => {
                 ],
                 profile: 'focused',
                 timeoutMs: 100,
-                maxRssBytes: 1024 ** 4,
+                maxRssBytes: 2 * 1024 ** 3,
                 availableMemoryBytes: abundantMemoryBytes,
                 sampleIntervalMs: 20,
             });
@@ -242,7 +435,7 @@ describe('resource enforcement', () => {
         const pidPath = join(root, 'pid');
         let childPid: number | undefined;
         try {
-            const result = await runGuardedCommand({
+            const result = await runIsolatedGuardedCommand({
                 command: process.execPath,
                 args: [
                     '-e',
@@ -268,6 +461,8 @@ describe('resource enforcement', () => {
         let guard: ChildProcess | undefined;
         let childPid: number | undefined;
         try {
+            const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
+            delete childEnv[RESOURCE_SESSION_ENV];
             guard = spawn(
                 process.execPath,
                 [
@@ -279,7 +474,7 @@ describe('resource enforcement', () => {
                     '-e',
                     `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`,
                 ],
-                { cwd: process.cwd(), stdio: 'ignore' }
+                { cwd: process.cwd(), env: childEnv, stdio: 'ignore' }
             );
             await waitUntil(() => existsSync(pidPath));
             const recordedPid = Number(readFileSync(pidPath, 'utf8'));
@@ -299,7 +494,7 @@ describe('resource enforcement', () => {
     });
 
     it('kills commands that exceed the RSS cap', async () => {
-        const result = await runGuardedCommand({
+        const result = await runIsolatedGuardedCommand({
             command: process.execPath,
             args: ['-e', 'setTimeout(() => {}, 5000)'],
             profile: 'focused',
@@ -315,11 +510,11 @@ describe('resource enforcement', () => {
 
     it('stops after repeated host-memory sampler failures', async () => {
         let samples = 0;
-        const result = await runGuardedCommand({
+        const result = await runIsolatedGuardedCommand({
             command: process.execPath,
             args: ['-e', 'setTimeout(() => {}, 5000)'],
             profile: 'focused',
-            memorySampler: () => (samples++ === 0 ? abundantMemoryBytes : undefined),
+            memorySampler: () => (samples++ < 3 ? abundantMemoryBytes : undefined),
             hostSampleIntervalMs: 10,
             sampleIntervalMs: 10,
             timeoutMs: 5_000,
@@ -328,8 +523,147 @@ describe('resource enforcement', () => {
         expect(result.reason).toBe('monitor');
     });
 
+    it('terminates the child and releases when an injected sampler throws mid-run', async () => {
+        const root = fixtureRoot('sampler-throw');
+        // The throw must land in the wrapped pre-timer sample(), so the gate has to be ordered
+        // by the guard's own code, not by child timing: setSessionProcessIdentity publishes
+        // childPid to a '<token>.state.*.json' file beside the reservation synchronously,
+        // before that sample runs. The recorded pid comes from that guard-published
+        // reservation state, parent-ordered by code; the guard's catch may SIGKILL the child
+        // before any child-written pid file would appear.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let recordedChildPid = 0;
+        const childIdentityPublished = () =>
+            existsSync(reservationsRoot) &&
+            readdirSync(reservationsRoot).some((name) => {
+                if (!name.includes('.state.') || !name.endsWith('.json')) {
+                    return false;
+                }
+                const stateMatch = /"childPid":\s*(\d+)/.exec(readFileSync(join(reservationsRoot, name), 'utf8'));
+                if (!stateMatch) {
+                    return false;
+                }
+                recordedChildPid = Number(stateMatch[1]);
+                return true;
+            });
+        let childPid: number | undefined;
+        try {
+            await expect(
+                runIsolatedGuardedCommand({
+                    command: process.execPath,
+                    args: ['-e', 'setInterval(() => {}, 1000)'],
+                    profile: 'focused',
+                    memorySampler: () => {
+                        if (childIdentityPublished()) {
+                            throw new Error('injected sampler failure');
+                        }
+                        return abundantMemoryBytes;
+                    },
+                    hostSampleIntervalMs: 10,
+                    sampleIntervalMs: 10,
+                    timeoutMs: 5_000,
+                })
+            ).rejects.toThrow('injected sampler failure');
+            const recordedPid = recordedChildPid;
+            expect(recordedPid).toBeGreaterThan(0);
+            childPid = recordedPid;
+
+            await waitUntil(() => !isAlive(recordedPid));
+            expect(() => process.kill(recordedPid, 0)).toThrow();
+            // The pre-rejection run held exactly one reservation and one state file, so an empty
+            // reservations root proves the catch released the session.
+            expect(readdirSync(reservationsRoot)).toEqual([]);
+        } finally {
+            await killAndWait(childPid);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('stops under reason monitor when an injected sampler throws on a sample tick', async () => {
+        const root = fixtureRoot('sampler-tick-throw');
+        // Mirrors the mid-run throw test, but only the first gated sampler call succeeds: every
+        // later call throws on a timer tick, which must stop the run under 'monitor' instead of
+        // escaping into setInterval and killing the guard host.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let recordedChildPid = 0;
+        const childIdentityPublished = () =>
+            existsSync(reservationsRoot) &&
+            readdirSync(reservationsRoot).some((name) => {
+                if (!name.includes('.state.') || !name.endsWith('.json')) {
+                    return false;
+                }
+                const stateMatch = /"childPid":\s*(\d+)/.exec(readFileSync(join(reservationsRoot, name), 'utf8'));
+                if (!stateMatch) {
+                    return false;
+                }
+                recordedChildPid = Number(stateMatch[1]);
+                return true;
+            });
+        let throwing = false;
+        let childPid: number | undefined;
+        try {
+            const result = await runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: ['-e', 'setInterval(() => {}, 1000)'],
+                profile: 'focused',
+                memorySampler: () => {
+                    if (!childIdentityPublished()) {
+                        return abundantMemoryBytes;
+                    }
+                    if (throwing) {
+                        throw new Error('injected sampler tick failure');
+                    }
+                    throwing = true;
+                    return abundantMemoryBytes;
+                },
+                hostSampleIntervalMs: 10,
+                sampleIntervalMs: 10,
+                timeoutMs: 5_000,
+            });
+
+            expect(result.reason).toBe('monitor');
+            const recordedPid = recordedChildPid;
+            expect(recordedPid).toBeGreaterThan(0);
+            childPid = recordedPid;
+
+            await waitUntil(() => !isAlive(recordedPid));
+            expect(() => process.kill(recordedPid, 0)).toThrow();
+        } finally {
+            await killAndWait(childPid);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it.each([
+        ['admission recheck', 1],
+        ['post-admission read', 2],
+    ])('releases the admitted reservation when an injected sampler throws: %s', async (_label, throwOnSample) => {
+        // The sampler runs in a fixed order before any spawn: enterResourceSession's
+        // admission check, the loop recheck, then the post-loop pressure read. Counting
+        // from zero, the second call lands in the wrapped recheck and the third in the
+        // post-loop read; the first admission pass has already created the reservations
+        // root, so both throws must leave it empty.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let samples = 0;
+        await expect(
+            runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: ['-e', 'process.exit(0)'],
+                profile: 'focused',
+                memorySampler: () => {
+                    if (samples++ === throwOnSample) {
+                        throw new Error('injected admission sampler failure');
+                    }
+                    return abundantMemoryBytes;
+                },
+            })
+        ).rejects.toThrow('injected admission sampler failure');
+
+        expect(existsSync(reservationsRoot) ? readdirSync(reservationsRoot) : []).toEqual([]);
+    });
+
     it('keeps only the output tail', async () => {
-        const result = await runGuardedCommand({
+        const result = await runIsolatedGuardedCommand({
             command: process.execPath,
             args: ['-e', "process.stderr.write('x'.repeat(100000)); process.exit(2)"],
             profile: 'focused',
@@ -348,7 +682,7 @@ describe('resource enforcement', () => {
     ])(
         'preserves or tightens caller limits: %s',
         async (_label, heap, cargo, rust, expectedHeap, expectedCargo, expectedRust) => {
-            const result = await runGuardedCommand({
+            const result = await runIsolatedGuardedCommand({
                 command: process.execPath,
                 args: [
                     '-e',
@@ -377,12 +711,18 @@ describe('resource CLI', () => {
         expect(parseCliArgs(['--profile', 'broad', '--require-target', '--show-output', '--', 'pnpm', 'test'])).toEqual(
             {
                 profile: 'broad',
+                maxRssBytes: undefined,
                 requireTarget: true,
                 showOutput: true,
                 command: 'pnpm',
                 args: ['test'],
             }
         );
+    });
+
+    it('parses an explicit memory estimate', () => {
+        expect(parseCliArgs(['--max-rss-mib', '6144', '--', 'pnpm', 'test']).maxRssBytes).toBe(6144 * 1024 ** 2);
+        expect(() => parseCliArgs(['--max-rss-mib', '511', '--', 'pnpm', 'test'])).toThrow(/at least 512/);
     });
 
     it('stays available as the opt-in guard script', () => {

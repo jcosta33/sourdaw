@@ -330,7 +330,7 @@ vi.mock('#/modules/ProjectVersioning/useCases', () => ({
     getVersionControlHandlers: sentinelHandlers('VersionControl'),
 }));
 
-vi.mock('#/modules/Proof/stores', () => ({ updateProofMeters: noop }));
+vi.mock('#/modules/Proof/stores', () => ({ updateProofMeters: noop, clearProofMeters: noop }));
 
 vi.mock('#/modules/Proof/useCases', () => ({
     registerProofDevice: noop,
