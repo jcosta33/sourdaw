@@ -53,6 +53,7 @@ export type AudioDeviceRuntimeSink = {
     unregisterProofDevice: (deviceId: string) => void;
     syncProofPatch: (deviceId: string) => void;
     updateProofMeters: (deviceId: string, meters: ProofMeterData) => void;
+    clearProofMeters: (deviceId: string) => void;
     updateTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
     /**
      * Perform the engine setup an instrument needs before it can render, and
@@ -117,6 +118,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     unregisterProofDevice: () => {},
     syncProofPatch: () => {},
     updateProofMeters: () => {},
+    clearProofMeters: () => {},
     updateTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
     prepareCrumbsDevice: () => Promise.resolve('failed'),

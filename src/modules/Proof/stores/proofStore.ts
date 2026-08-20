@@ -252,3 +252,29 @@ export function updateProofMeters(deviceId: string, meters: ProofMeterData): voi
         },
     });
 }
+
+/** Clear runtime telemetry without touching persistent patch/UI state. */
+export function clearProofMeters(deviceId: string): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
+    proofStore.set({
+        ...instances,
+        [deviceId]: {
+            ...state,
+            inputLufs: DEFAULT_PROOF_STATE.inputLufs,
+            outputLufs: DEFAULT_PROOF_STATE.outputLufs,
+            outputStLufs: DEFAULT_PROOF_STATE.outputStLufs,
+            integratedLufs: DEFAULT_PROOF_STATE.integratedLufs,
+            truePeakDb: DEFAULT_PROOF_STATE.truePeakDb,
+            lra: DEFAULT_PROOF_STATE.lra,
+            correlation: DEFAULT_PROOF_STATE.correlation,
+            limiterGrDb: DEFAULT_PROOF_STATE.limiterGrDb,
+            dynGr: [...DEFAULT_PROOF_STATE.dynGr],
+            tapPeaks: DEFAULT_PROOF_STATE.tapPeaks.map((peak) => ({ ...peak })),
+            latency: DEFAULT_PROOF_STATE.latency,
+        },
+    });
+}
