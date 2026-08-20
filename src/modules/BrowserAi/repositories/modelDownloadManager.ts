@@ -191,6 +191,7 @@ export const downloadModel = inject({
                         }
                         signal?.addEventListener('abort', abortWorkerWrite, { once: true });
                         let bytesDownloaded = 0;
+                        let writeCommitted = false;
 
                         try {
                             throwIfAborted(signal);
@@ -245,34 +246,46 @@ export const downloadModel = inject({
                                 );
                             }
 
-                            const committed = await modelStorageWorkerBridge.commitModelWrite({
-                                writeId,
-                                onProgress(stage) {
-                                    let progress = 0.98;
-                                    if (stage === 'verifying') {
-                                        progress = 0.95;
-                                    } else if (stage === 'extracting') {
-                                        progress = 0.97;
-                                    }
-                                    broadcast({ modelId, bytesDownloaded, totalBytes: sizeBytes, progress, stage });
-                                },
-                            });
-                            throwIfAborted(signal);
+                            const committed = await modelStorageWorkerBridge
+                                .commitModelWrite({
+                                    writeId,
+                                    onProgress(stage) {
+                                        let progress = 0.98;
+                                        if (stage === 'verifying') {
+                                            progress = 0.95;
+                                        } else if (stage === 'extracting') {
+                                            progress = 0.97;
+                                        }
+                                        broadcast({
+                                            modelId,
+                                            bytesDownloaded,
+                                            totalBytes: sizeBytes,
+                                            progress,
+                                            stage,
+                                        });
+                                    },
+                                })
+                                .then((result) => {
+                                    writeCommitted = true;
+                                    signal?.removeEventListener('abort', abortWorkerWrite);
+                                    return result;
+                                });
                             if (committed.extractedPath) {
                                 logger.info(
                                     `[ModelDownload] Extracted ${committed.extractedPath} from ZIP for ${modelId}`
                                 );
                             }
                         } catch (error) {
-                            await (abortPromise ??
-                                modelStorageWorkerBridge.abortModelWrite(writeId).catch(() => undefined));
+                            if (!writeCommitted) {
+                                await (abortPromise ??
+                                    modelStorageWorkerBridge.abortModelWrite(writeId).catch(() => undefined));
+                            }
                             throw error;
                         } finally {
                             signal?.removeEventListener('abort', abortWorkerWrite);
                         }
 
                         const storageStatus = await getStorageStatus();
-                        throwIfAborted(signal);
                         if (storageStatus.usedBytes > storageStatus.limitBytes) {
                             logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
                             // Eviction is handled by the removeModel use case

@@ -5,6 +5,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
 import { type ModelStorageWriteStage } from '../../models/ModelStorageWorkerProtocol';
+import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadModel } from '../modelDownloadManager';
 import { type ModelStoragePort } from '../modelStorageWorkerBridge';
 
@@ -120,6 +121,13 @@ beforeEach(() => {
         availableBytes: 1e12,
     });
     requestPersistentStorage.mockResolvedValue(true);
+    modelRegistryStore.set({
+        ddspInstruments: [],
+        kokoroModel: null,
+        diffSingerVoicebanks: [],
+        vocoder: null,
+        storageUsedBytes: 0,
+    });
     injectDependencies(downloadModel, {
         logger,
         getStorageStatus,
@@ -429,15 +437,39 @@ describe('downloadModel cancellation and cleanup', () => {
         expect(stages).not.toContain('complete');
     });
 
-    it('preserves the committed model when cancellation arrives during the final storage check', async () => {
+    it('finishes the committed model when cancellation arrives during the final storage check', async () => {
         const controller = new AbortController();
+        const commit = deferred<Awaited<ReturnType<typeof commitModelWrite>>>();
         const status = deferred<Awaited<ReturnType<typeof getStorageStatus>>>();
-        let committedModelPresent = false;
-        commitModelWrite.mockImplementation(() => {
-            committedModelPresent = true;
-            return Promise.resolve({ storedBytes: baseSpec.sizeBytes, extractedPath: null });
-        });
+        let committedModelPresent: boolean | undefined;
+        commitModelWrite.mockImplementation(() =>
+            commit.promise.then((result) => {
+                committedModelPresent = true;
+                return result;
+            })
+        );
         getStorageStatus.mockReturnValue(status.promise);
+        modelRegistryStore.set({
+            ddspInstruments: [
+                {
+                    ...baseSpec,
+                    id: baseSpec.modelId,
+                    family: 'ddsp',
+                    name: 'Violin',
+                    license: 'Apache-2.0',
+                    attribution: 'Test',
+                    nativeSampleRate: 48_000,
+                    status: 'not-downloaded',
+                    downloadProgress: 0,
+                    instrument: 'violin',
+                    frameRate: 250,
+                },
+            ],
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
         vi.stubGlobal(
             'fetch',
             vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
@@ -450,13 +482,21 @@ describe('downloadModel cancellation and cleanup', () => {
         });
         await vi.waitFor(() => expect(commitModelWrite).toHaveBeenCalledOnce());
 
+        commit.resolve({ storedBytes: baseSpec.sizeBytes, extractedPath: null });
+        await vi.waitFor(() => expect(getStorageStatus).toHaveBeenCalledOnce());
         controller.abort();
         status.resolve({ usedBytes: 0, limitBytes: 1, persisted: true, availableBytes: 1 });
 
-        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        await expect(promise).resolves.toBeUndefined();
         expect(committedModelPresent).toBe(true);
+        expect(abortModelWrite).not.toHaveBeenCalled();
         expect(deleteStoredModel).not.toHaveBeenCalled();
-        expect(stages).not.toContain('complete');
+        expect(stages).toContain('complete');
+        expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({
+            id: baseSpec.modelId,
+            status: 'ready',
+            downloadProgress: 1,
+        });
     });
 });
 
