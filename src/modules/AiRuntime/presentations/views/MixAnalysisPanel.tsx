@@ -6,6 +6,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
@@ -65,7 +66,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                 title="Mix Analysis"
                 titleClassName="text-xs font-medium normal-case tracking-normal text-foreground"
                 actions={
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -85,7 +86,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                         >
                             <X className="size-3" />
                         </Button>
-                    </div>
+                    </Row>
                 }
             />
             {action_error ? (
@@ -98,7 +99,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
             ) : null}
             <ScrollArea className="flex-1 max-h-[60vh]">
                 {state.result ? (
-                    <div className="space-y-3 p-3">
+                    <Stack gap={3} className="p-3">
                         <OverallLevel level={state.result.overallLevel} />
                         <FrequencyBalance bands={state.result.frequencyBalance} />
                         <TrackLevelsList trackLevels={state.result.trackLevels} />
@@ -108,7 +109,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                             title="Actions"
                             detail={`Analyzed at ${new Date(state.result.timestamp).toLocaleTimeString()}`}
                         >
-                            <div className="flex gap-2">
+                            <Row align="stretch" gap={2}>
                                 <Button
                                     variant="outline"
                                     size="xs"
@@ -132,9 +133,9 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                                     <Wrench className="size-3" />
                                     Auto-Fix
                                 </Button>
-                            </div>
+                            </Row>
                         </DawUtilitySection>
-                    </div>
+                    </Stack>
                 ) : (
                     <div className="p-3">
                         <DawEmptyState
