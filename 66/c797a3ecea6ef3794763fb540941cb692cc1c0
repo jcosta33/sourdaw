@@ -1,0 +1,33 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_a40848e8f8cca9::t_ee275b3c11eedd 24-26,33,35-57,63-69,105-106,111,122-127,237-258,260
+  s_a40848e8f8cca9::t_ca08b73b89c604 259,261-262
+scripts/resolveReviewThread.ts
+  s_a40848e8f8cca9::t_837748f7bbab01 468,485
+  s_a40848e8f8cca9::t_cb133d2907e4d5 25,33,37,88,98-99,102,111,128,140-145,152,154-155,223-240,269,289,318,324-327,340,391,452-453,455-458,464-466,470,476-477,479-482,486
+  s_a40848e8f8cca9::t_3840904b4ba2e2 467,469,471,483-484,487-488
+scripts/supersedePullRequest.ts
+  s_a40848e8f8cca9::t_11452c616e068f 158,341,352,429-430,432,438-440
+  s_a40848e8f8cca9::t_8db72e5d30aaab 153,232
+  s_a40848e8f8cca9::t_a5c3ad55b2e3c5 26,29,33,94,100,102-103,105,113,129,141-142,145,155-156
+  s_a40848e8f8cca9::t_2cbd3fe47d4294 220,222-225,233-246,249,252-253,256,294,441,443
+  s_a40848e8f8cca9::t_e0899436db923d 157,219,221,247-248,250-251,254-255,257-262,310,326,340,442,444-451
+scripts/__tests__/resolveReviewThread.spec.ts
+  s_a40848e8f8cca9::t_ee275b3c11eedd 29-30,37,52-57,63,100-101,106,117-122,150-152,156-190,314-323,331
+  s_a40848e8f8cca9::t_c9374be5e28f0b 324-330,332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "66c797a3ecea6ef3794763fb540941cb692cc1c0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

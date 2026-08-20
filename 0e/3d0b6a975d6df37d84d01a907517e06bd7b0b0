@@ -1,0 +1,30 @@
+scripts/resolveReviewThread.ts
+  s_a40848e8f8cca9::t_92ee973a68136c 435,440-443
+  s_a40848e8f8cca9::t_a492aafd31ed2b 434
+scripts/supersedePullRequest.ts
+  s_a40848e8f8cca9::t_92ee973a68136c 243,400,402-403,405-408
+  s_a40848e8f8cca9::t_a492aafd31ed2b 399
+  s_a40848e8f8cca9::t_278a4b933da4e6 96-97,229,238-241
+  s_a40848e8f8cca9::t_4f153ca1d57cf1 242
+scripts/__tests__/resolveReviewThread.spec.ts
+  s_a40848e8f8cca9::t_be94b1d910182e 11,134-138
+  s_a40848e8f8cca9::t_bf35bea1df5001 139-144
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_a40848e8f8cca9::t_be94b1d910182e 8,23,62,107-114,205-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0e3d0b6a975d6df37d84d01a907517e06bd7b0b0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
