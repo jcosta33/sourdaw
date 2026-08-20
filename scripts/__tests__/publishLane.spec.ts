@@ -106,8 +106,7 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
         { trees: [worktree(), worktree({ path: '/repo/.agents/worktrees/other', branch: 'agent/12/other' })] },
         /expected exactly one locked author lane for issue #12/,
     ],
-    ['zero ahead', { ahead: 0 }, /lane must be strictly ahead of origin\/main/],
-    ['behind', { behind: 1, ahead: 1 }, /lane must be strictly ahead of origin\/main/],
+    ['zero ahead', { ahead: 0 }, /lane must be ahead of origin\/main/],
     ['free-text subject', { subject: 'WIP' }, /pull-request title is not conventional/],
     [
         'a lane whose only commits above origin/main are merges',
@@ -150,6 +149,14 @@ describe('lane publish', () => {
 
     it('publishes a clean lane', () => {
         const { port, calls } = fakePort({ dirty: false });
+
+        publishLane(12, port);
+
+        expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('publishes a lane that is behind origin/main when it still has lane commits to publish', () => {
+        const { port, calls } = fakePort({ dirty: false, ahead: 1, behind: 1 });
 
         publishLane(12, port);
 

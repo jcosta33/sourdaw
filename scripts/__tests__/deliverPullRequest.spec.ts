@@ -213,7 +213,6 @@ function fakePort(input: FakeInput = {}) {
             return [...lastDependents];
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        remoteBranchHead: () => 'base',
         merge: (number, head) => calls.push(`merge:${number}:${head}`),
         retarget: (number, base) => {
             calls.push(`retarget:${number}:${base}`);
@@ -245,6 +244,25 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest({ headRefOid: 'moved' })] });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/headRefOid changed/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('allows base movement during delivery when the feature head and mergeability stay stable', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ baseRefOid: 'base-before' }), pullRequest({ baseRefOid: 'base-after' })],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('rejects base-branch changes during delivery', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest(), pullRequest({ baseRefName: 'release/1.0' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/baseRefName changed/);
         expect(calls).not.toContain('merge:42:head');
     });
 

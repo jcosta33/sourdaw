@@ -313,12 +313,12 @@ Affected-only is the shape of that run, not a discount on it. Resource Safety al
 outer edge, and the one condition that moves it; the obligation here is everything that can fail
 because of these changed files. They are one boundary read from both sides: a check this diff can
 break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
-lane, on the head being merged — `lane:publish` refuses a lane that is not strictly ahead of
-`origin/main`, and `deliver` refuses a pull request whose base its own fetch does not match. A
-branch-local run stands in for the merge result only while the branch is current, so merging
-`origin/main` back into the lane — the routine answer when `deliver` reports a base mismatch —
-makes a new head and stales every run that preceded it. Run them again on the head that will
-actually merge.
+lane, on the head being merged. Unrelated `origin/main` movement does not by itself stale feature
+review or affected-only evidence, and a lane may publish while behind when it still has lane
+commits to push. Re-run checks and review when the feature head changes in a way that touches the
+reviewed or tested surface, when you resolve conflicts, or when the affected surfaces changed. Base
+compatibility is GitHub's ordinary mergeability gate: if the pull request is no longer `CLEAN` or
+its base branch changes, refresh the evidence on the head that will actually merge.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That
