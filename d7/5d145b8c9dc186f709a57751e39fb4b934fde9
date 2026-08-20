@@ -1,0 +1,21 @@
+scripts/__tests__/publishLane.spec.ts
+  s_0a3429e31e555d::t_17dafde1831c33 224-235
+AGENTS.md
+  s_0a3429e31e555d::t_17dafde1831c33 181-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d75d145b8c9dc186f709a57751e39fb4b934fde9",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
