@@ -65,7 +65,7 @@ describe('drum bus provider plan conformance', () => {
             toolSchemas: tools,
         });
 
-        expect(webLlm).toEqual({ status: 'complete', toolCalls: normalizedPlan });
+        expect(webLlm).toEqual({ status: 'complete', toolCalls: normalizedPlan, proposal: null });
         expect(hosted).toEqual(normalizedPlan);
         expect(webLlm.status === 'complete' ? webLlm.toolCalls : []).toEqual(hosted);
     });

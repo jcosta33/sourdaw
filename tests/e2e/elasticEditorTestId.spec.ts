@@ -1,105 +1,96 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-test.describe('Elastic audio editor — test-id targeted', () => {
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+function buildWavBytes(): Buffer {
+    const sampleRate = 44100;
+    const samples = sampleRate;
+    const dataSize = samples * 2;
+    const buffer = Buffer.alloc(44 + dataSize);
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(36 + dataSize, 4);
+    buffer.write('WAVE', 8);
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16);
+    buffer.writeUInt16LE(1, 20);
+    buffer.writeUInt16LE(1, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(sampleRate * 2, 28);
+    buffer.writeUInt16LE(2, 32);
+    buffer.writeUInt16LE(16, 34);
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40);
+    for (let i = 0; i < samples; i += 1) {
+        buffer.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 220 * i) / sampleRate) * 6000), 44 + i * 2);
+    }
+    return buffer;
+}
+
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
+    if ((await dock.getAttribute('aria-pressed')) === 'false') {
+        await dock.click();
+    }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function openElasticEditor(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add Audio Track');
+    await page.getByRole('option', { name: 'Add Audio Track' }).click();
+
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await trackList.getByRole('row').first().waitFor({ state: 'visible' });
+    await trackList.getByRole('row').first().click({ button: 'right' });
+    await page.getByRole('menu').waitFor({ state: 'visible' });
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('menuitem', { name: /Import Audio/i }).click();
+    await (
+        await chooser
+    ).setFiles({
+        name: 'probe.wav',
+        mimeType: 'audio/wav',
+        buffer: buildWavBytes(),
+    });
+
+    await openBottomTab(page, 'Editor');
+    await expect(page.getByTestId('selected-track-clip-count')).toHaveText(/1 clip/i, { timeout: 15_000 });
+    await page.getByRole('complementary', { name: 'Inspector panel' }).getByText('probe', { exact: true }).click();
+    await openBottomTab(page, 'Elastic');
+}
+
+function elasticPanel(page: Page) {
+    return page.getByTestId('elastic-editor-panel');
+}
+
+test.describe('Elastic audio editor', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'EDM' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_new_project(page);
+        await openElasticEditor(page);
     });
 
-    test('elastic editor panel is present when elastic tab is active', async ({ page }) => {
-        // Open the bottom dock.
-        const dock = page.getByTestId('toggle-bottom-dock');
-        if ((await dock.getAttribute('aria-pressed')) === 'false') {
-            await dock.click();
-            await page.waitForTimeout(500);
-        }
-
-        // Switch to elastic tab.
-        const elasticTab = page.locator('#bottom-dock-tab-elastic');
-        if (await elasticTab.isVisible().catch(() => false)) {
-            await elasticTab.click();
-            await page.waitForTimeout(500);
-
-            const panel = page.getByTestId('elastic-editor-panel');
-            await expect(panel).toBeAttached({ timeout: 10_000 });
-        }
-    });
-
-    test('elastic tool buttons are present when panel is visible', async ({ page }) => {
-        const dock = page.getByTestId('toggle-bottom-dock');
-        if ((await dock.getAttribute('aria-pressed')) === 'false') {
-            await dock.click();
-        }
-        await page.waitForTimeout(500);
-
-        const elasticTab = page.locator('#bottom-dock-tab-elastic');
-        if (await elasticTab.isVisible().catch(() => false)) {
-            await elasticTab.click();
-            await page.waitForTimeout(500);
-
-            const panel = page.getByTestId('elastic-editor-panel');
-            if (await panel.isVisible().catch(() => false)) {
-                // At least one tool button should be present.
-                const tools = panel.locator('[data-testid^="elastic-tool-"]');
-                const count = await tools.count();
-                expect(count).toBeGreaterThan(0);
-            }
-        }
-    });
-
-    test('first elastic tool is active by default', async ({ page }) => {
-        const dock = page.getByTestId('toggle-bottom-dock');
-        if ((await dock.getAttribute('aria-pressed')) === 'false') {
-            await dock.click();
-        }
-        await page.waitForTimeout(500);
-
-        const elasticTab = page.locator('#bottom-dock-tab-elastic');
-        if (await elasticTab.isVisible().catch(() => false)) {
-            await elasticTab.click();
-            await page.waitForTimeout(500);
-
-            const panel = page.getByTestId('elastic-editor-panel');
-            if (await panel.isVisible().catch(() => false)) {
-                const firstTool = panel.locator('[data-testid^="elastic-tool-"]').first();
-                await expect(firstTool).toHaveAttribute('aria-pressed', 'true');
-            }
-        }
+    test('elastic editor panel opens with Select pressed', async ({ page }) => {
+        const panel = elasticPanel(page);
+        await expect(panel).toBeVisible();
+        await expect(panel.getByRole('button', { name: 'Select' })).toHaveAttribute('aria-pressed', 'true');
+        await expect(panel.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     test('switching elastic tools changes aria-pressed', async ({ page }) => {
-        const dock = page.getByTestId('toggle-bottom-dock');
-        if ((await dock.getAttribute('aria-pressed')) === 'false') {
-            await dock.click();
-        }
-        await page.waitForTimeout(500);
-
-        const elasticTab = page.locator('#bottom-dock-tab-elastic');
-        if (await elasticTab.isVisible().catch(() => false)) {
-            await elasticTab.click();
-            await page.waitForTimeout(500);
-
-            const panel = page.getByTestId('elastic-editor-panel');
-            if (await panel.isVisible().catch(() => false)) {
-                const tools = panel.locator('[data-testid^="elastic-tool-"]');
-                const count = await tools.count();
-                if (count > 1) {
-                    const first = tools.nth(0);
-                    const second = tools.nth(1);
-
-                    await expect(first).toHaveAttribute('aria-pressed', 'true');
-                    await second.click();
-                    await page.waitForTimeout(300);
-                    await expect(second).toHaveAttribute('aria-pressed', 'true');
-                    await expect(first).toHaveAttribute('aria-pressed', 'false');
-                }
-            }
-        }
+        const panel = elasticPanel(page);
+        await expect(panel.getByRole('button', { name: 'Select' })).toHaveAttribute('aria-pressed', 'true');
+        await panel.getByRole('button', { name: 'Add' }).click();
+        await expect(panel.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'true');
+        await expect(panel.getByRole('button', { name: 'Select' })).toHaveAttribute('aria-pressed', 'false');
+        await panel.getByRole('button', { name: 'Remove' }).click();
+        await expect(panel.getByRole('button', { name: 'Remove' })).toHaveAttribute('aria-pressed', 'true');
+        await expect(panel.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'false');
     });
 });

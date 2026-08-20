@@ -74,6 +74,7 @@ export { resumeEngine } from './engineAccess/resumeEngine';
 export { waitForDevices } from './engineAccess/waitForDevices';
 export { resetAudioGraph } from './engineAccess/resetAudioGraph';
 export { getMasterAnalyser } from './engineAccess/getMasterAnalyser';
+export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalysers';
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
