@@ -1,0 +1,29 @@
+electron/scanWorker.ts
+  s_7ba0b7bee9e951::t_db52125e85e53e 8-11
+crates/sourdaw-native/src/state.rs
+  s_7ba0b7bee9e951::t_6220b5eb349196 410,412-414,427-431,433-436
+  s_7ba0b7bee9e951::t_cd2ee039aaf95c 347
+  s_7ba0b7bee9e951::t_8f4db93a72c2f1 376-377,382-383
+electron/__tests__/scanWorker.spec.ts
+  s_7ba0b7bee9e951::t_72430cecfacd91 61-64
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_7ba0b7bee9e951::t_77411e186f2d21 65-69
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_7ba0b7bee9e951::t_aae1489a1c052a 1111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dd1075f4710d05153738bdc46fa1d10578567346",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
