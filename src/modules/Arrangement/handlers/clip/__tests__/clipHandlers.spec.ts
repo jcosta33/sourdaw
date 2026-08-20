@@ -65,6 +65,7 @@ describe('clipHandlers', () => {
             'duplicateTimeRange',
             'exportMidi',
             'stripSilence',
+            'restoreStripSilenceState',
             'arpeggiate',
         ];
 

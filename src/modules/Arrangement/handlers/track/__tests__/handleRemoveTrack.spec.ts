@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
     getAllSidechainRoutes: vi.fn(),
     midiStoreValue: { value: null } as any,
     takeLaneStoreValue: { value: null } as any,
+    readClipSatelliteEntry: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -108,6 +109,10 @@ vi.mock('../../../stores/vcaGroupStore', () => ({
     getVcaGroupsState: mocks.getVcaGroupsState,
 }));
 
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
+}));
+
 describe('handleRemoveTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -117,6 +122,11 @@ describe('handleRemoveTrack', () => {
         mocks.takeLaneStoreValue.value = null;
         mocks.getAllSidechainRoutes.mockReturnValue([]);
         mocks.getVcaGroupsState.mockReturnValue([]);
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        }));
         mocks.removeTrack.mockReturnValue({
             removed: true,
             finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
@@ -410,6 +420,37 @@ describe('handleRemoveTrack', () => {
             expect(payload.incomingModulationMappingSnapshots).toEqual([
                 { modulatorId: 'mod-survivor', mapping: incomingMapping },
             ]);
+        });
+
+        it('captures the gain envelope and warp state of every clip on the removed track (regression #2108)', () => {
+            const clipWithSatellites = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+            const clipWithoutSatellites = ClipDummy.create({ id: 'c2', trackId: 't1', type: 'midi' });
+            const track = TrackDummy.create({
+                id: 't1',
+                name: 'Vocals',
+                kind: 'midi',
+                clips: [clipWithSatellites, clipWithoutSatellites],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+            const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
+            mocks.readClipSatelliteEntry.mockImplementation((clipId: string) =>
+                clipId === 'c1'
+                    ? { clipId, gainEnvelope, warpState: null }
+                    : { clipId, gainEnvelope: null, warpState: null }
+            );
+
+            const desc = handleRemoveTrack.describe({
+                type: 'removeTrack',
+                payload: { trackId: 't1' },
+            });
+
+            const inverseAction = desc.inverseAction;
+            if (!inverseAction || inverseAction.type !== 'restoreTrack') {
+                throw new Error('expected a restoreTrack inverse action');
+            }
+            // Only the clip that actually carries a satellite is captured — a
+            // bare clip does not bloat the inverse-action payload.
+            expect(inverseAction.payload.clipSatellites).toEqual([{ clipId: 'c1', gainEnvelope, warpState: null }]);
         });
 
         it('omits clip ids that have no midi data and skips automation when the store is empty', () => {
