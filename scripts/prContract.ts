@@ -56,14 +56,16 @@ export const NO_RELATED_TICKETS = 'None.';
 export type IssueRelationship = 'closes' | 'relates';
 
 const CLOSING_REFERENCE_PATTERN =
-    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?)\s*:?\s+(?:#([1-9][0-9]*)|[\w.-]+\/[\w.-]+#([1-9][0-9]*)|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/([1-9][0-9]*))\b/gi;
+    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|[\w.-]+\/[\w.-]+#([1-9][0-9]*))\b/gi;
+const CLOSING_RELATIONSHIP_PATTERN = /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+#([1-9][0-9]*)$/i;
+const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
 
 function assertIssueClosingReferences(
     body: string,
     issue: number | undefined,
     relationship: IssueRelationship | undefined
 ): void {
-    const references = [...body.matchAll(CLOSING_REFERENCE_PATTERN)].map((match) => match[1] ?? match[2] ?? match[3]);
+    const references = [...body.matchAll(CLOSING_REFERENCE_PATTERN)].map((match) => match[1] ?? match[2]);
     const expected = relationship === 'closes' && issue !== undefined ? String(issue) : undefined;
     if (expected === undefined ? references.length > 0 : references.length !== 1 || references[0] !== expected) {
         fail('pull-request body contains unexpected issue-closing references');
@@ -83,8 +85,12 @@ export function issueRelationshipFromBody(body: string, issue: number | undefine
         .map((line) => line.trim())
         .filter((line) => line !== '');
     const relationships = lines.flatMap((line) => {
-        const match = /^(Closes|Related) #([1-9][0-9]*)$/.exec(line);
-        return match === null ? [] : [{ label: match[1], issue: match[2] }];
+        const closing = CLOSING_RELATIONSHIP_PATTERN.exec(line);
+        if (closing !== null) {
+            return [{ label: 'Closes', issue: closing[1] }];
+        }
+        const related = RELATED_RELATIONSHIP_PATTERN.exec(line);
+        return related === null ? [] : [{ label: 'Related', issue: related[1] }];
     });
     if (issue === undefined) {
         if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {

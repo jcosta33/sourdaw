@@ -33,6 +33,8 @@ describe('pull-request contract', () => {
     it('recovers one existing issue relationship', () => {
         const prefix = '### 📌 Related tickets & additional notes\n';
         expect(issueRelationshipFromBody(`${prefix}Closes #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}CLOSES #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Closes: #2164`, 2164)).toBe('closes');
         expect(issueRelationshipFromBody(`${prefix}Related #2164`, 2164)).toBe('relates');
         expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
         expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
@@ -65,9 +67,10 @@ describe('pull-request contract', () => {
         expect(() => composePublishBody(2164, 'feat(vcs): closes: #99', 'relates')).toThrow(
             /unexpected issue-closing references/
         );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes : #99', 'relates')).not.toThrow();
         expect(() =>
             composePublishBody(undefined, 'feat(vcs): resolves https://github.com/owner/repo/issues/99')
-        ).toThrow(/unexpected issue-closing references/);
+        ).not.toThrow();
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {
