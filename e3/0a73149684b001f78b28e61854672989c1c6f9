@@ -1,0 +1,38 @@
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_c4265b79e6b702 729,741
+scripts/checkLgplRuntimeProvenance.ts
+  s_0a3429e31e555d::t_9aaf0aca7912d7 8-10,169-182,184-192,194-208
+  s_0a3429e31e555d::t_fb2f4a745b72cd 209-215,351
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_0a3429e31e555d::t_9aaf0aca7912d7 140-142,298-309,321-329
+  s_0a3429e31e555d::t_f363b4cdb01be2 310-320,330
+  s_487e9aa1e46063::t_a3f37cf41444e1 138-139
+package.json
+  s_0a3429e31e555d::t_316940cf919b6a 144-145
+pnpm-lock.yaml
+  s_0a3429e31e555d::t_e41d246a381f5d 216-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e30a73149684b001f78b28e61854672989c1c6f9",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
