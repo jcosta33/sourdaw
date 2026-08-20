@@ -1,0 +1,24 @@
+tests/e2e/automation.spec.ts
+  s_24b1bdbc3c31ad::t_738418d08e4698 1,5-12,15,18,26-27,30,35,39,41,43-47,54,56-57
+  s_24b1bdbc3c31ad::t_074f4de8c6863c 49,53,55
+  s_24b1bdbc3c31ad::t_261947f4b30ae6 50-51
+tests/e2e/undo.spec.ts
+  s_24b1bdbc3c31ad::t_ce6c4af69f0a84 1,5-12,15,21-24,26-28,30-31,34
+  s_24b1bdbc3c31ad::t_21e2dc4b3e3c34 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "075765ec7a0ebe250ad8d2d219ee49ce11f2113a",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
