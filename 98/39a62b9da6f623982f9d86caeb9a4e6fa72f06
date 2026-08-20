@@ -1,0 +1,152 @@
+crates/daw-plugin-host/src/traits.rs
+  s_7ba0b7bee9e951::t_c4ed11b5bd1a0c 1-13,15-132,134-150,169-243,245-246
+src/modules/PluginHost/useCases/index.ts
+  s_7ba0b7bee9e951::t_01d2f75f8aab75 27
+crates/daw-plugin-host/src/scanner.rs
+  s_7ba0b7bee9e951::t_d0a87f7e38a5d2 134,139,188,592,1375,1394
+  s_7ba0b7bee9e951::t_b3cea0da4ee5cb 329
+  s_7ba0b7bee9e951::t_fb193923226c00 603-607
+  s_7ba0b7bee9e951::t_e842469f800904 99,133,153,180,1220,1259,1892
+  s_7ba0b7bee9e951::t_42e997265d57ed 352-359
+  s_7ba0b7bee9e951::t_c79e384ce77f82 440
+  s_7ba0b7bee9e951::t_bd97a7d0b74aa3 570-573
+  s_7ba0b7bee9e951::t_4cec9099f40601 1958-1959,1986-1987
+  s_7ba0b7bee9e951::t_3e848b44575a18 950
+  s_7ba0b7bee9e951::t_f3055ecc5c191d 191-242
+  s_7ba0b7bee9e951::t_33317c585c9dec 876-943
+  s_7ba0b7bee9e951::t_26b2a86fd6ecb5 132,1102,1340,1373,1392
+  s_7ba0b7bee9e951::t_1df45e6daf509c 80-84
+  s_7ba0b7bee9e951::t_358f1632f2fe3f 619-620,623
+  s_7ba0b7bee9e951::t_a67ad25f4892ce 189,453-464,468
+  s_7ba0b7bee9e951::t_7dfa046edf4bb4 2005
+  s_7ba0b7bee9e951::t_0628f8e3483d4d 323-328,330-351,360-399,402-406,408-410,419,422-424
+  s_7ba0b7bee9e951::t_abc8c86145d9de 485
+  s_7ba0b7bee9e951::t_fe8d211d789269 118,143,1326,1332,1931
+  s_7ba0b7bee9e951::t_7562361f04ff81 558-568
+  s_487e9aa1e46063::t_a6c67b0958ff4d 190
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_7ba0b7bee9e951::t_fd04802a3156de 1382-1463,1466-1467
+  s_7ba0b7bee9e951::t_d1f64e02b6b771 24-26
+  s_7ba0b7bee9e951::t_34cba4963a29b9 660,676
+crates/daw-plugin-host/src/lib.rs
+  s_7ba0b7bee9e951::t_42ea0826fbc773 7,9-12
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_7ba0b7bee9e951::t_b1d78b093708d8 758-761
+  s_7ba0b7bee9e951::t_b620a14ca9e8b5 648
+  s_7ba0b7bee9e951::t_f7b6b412e088e9 332-337,339,344,352-353,355-356
+  s_7ba0b7bee9e951::t_9a37f627a2c1ea 534,544,581,626
+  s_7ba0b7bee9e951::t_57a9debcc0b06a 737-738
+  s_7ba0b7bee9e951::t_007996e2b724d8 988,1003,1134,1153,1192,1255
+  s_7ba0b7bee9e951::t_0b0e75c15c43dc 20-21
+  s_7ba0b7bee9e951::t_22ea272de4fbf8 96
+  s_7ba0b7bee9e951::t_1db208658c0f74 3,9-15
+  s_7ba0b7bee9e951::t_422e8bcc40a924 726-728
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_7ba0b7bee9e951::t_6cb13c51ae92ed 32-37,39
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_7ba0b7bee9e951::t_a05c1c69223d2b 244,508,518,537
+src/modules/PluginHost/useCases/pluginScan/findSupportedPlugin.ts
+  s_7ba0b7bee9e951::t_e93e5f7ffaf643 4
+  s_7ba0b7bee9e951::t_97bb54bc137344 12
+  s_7ba0b7bee9e951::t_1e42a4dcc704bc 5,14
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_7ba0b7bee9e951::t_1b7d475ff12785 191-196,202,205-211,213,215-216,222,225,229-235
+  s_7ba0b7bee9e951::t_6ff3fe1bbc28f3 407,409-413,415,433,438,457,465,472,481-575,577,579
+  s_7ba0b7bee9e951::t_34e092f5d208a0 272-273,276-277,280-283,286-287,290-291,296-301
+  s_7ba0b7bee9e951::t_0cde90c10cc982 127-161
+  s_7ba0b7bee9e951::t_d5bbaf639254e9 2-3
+  s_7ba0b7bee9e951::t_7192a9e38a9d1d 171,189,242,250,270-271,309,408,576,578,580-581
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_7ba0b7bee9e951::t_f6825a9ce1dd25 18,118,147,432,639,678,890,1022
+  s_7ba0b7bee9e951::t_c5f58090cb57f0 62-68
+src/modules/PluginHost/useCases/pluginScan/__tests__/findSupportedPlugin.spec.ts
+  s_7ba0b7bee9e951::t_27cf0590e7bfe1 44-75
+  s_7ba0b7bee9e951::t_d1ad2142566a53 5
+  s_487e9aa1e46063::t_b7c6fa4cd9d5a2 9,28
+crates/sourdaw-native/src/shutdown.rs
+  s_7ba0b7bee9e951::t_733c5007ff698b 122
+  s_7ba0b7bee9e951::t_9f85d7351f2384 123-128,130
+src/modules/PluginHost/useCases/getAgentDeviceFactoryManifest.ts
+  s_7ba0b7bee9e951::t_f6b8f81fd21184 89-93,95-97
+  s_487e9aa1e46063::t_3052ec6d8d177e 16,88,102,254
+crates/sourdaw-native/src/commands/plugins.rs
+  s_7ba0b7bee9e951::t_33dc9a3dbb0045 553-593
+  s_7ba0b7bee9e951::t_4a75c7236fb30e 12
+  s_7ba0b7bee9e951::t_f5d87c1005f91f 613
+  s_7ba0b7bee9e951::t_ad9815cce200b8 446
+  s_7ba0b7bee9e951::t_8a0f9056b2f147 131,135,146,496,498
+  s_7ba0b7bee9e951::t_4c82110554c9b9 517-524
+  s_7ba0b7bee9e951::t_15b7f0961a5714 627,2344-2395
+  s_7ba0b7bee9e951::t_36a8d6c9a68004 2796-2801
+  s_7ba0b7bee9e951::t_98a96fc5260485 3
+  s_7ba0b7bee9e951::t_f7ae6ca0d024e5 294-299
+  s_7ba0b7bee9e951::t_c76992c8b04c63 311-313
+  s_7ba0b7bee9e951::t_229a3deec4fad8 328-331
+  s_7ba0b7bee9e951::t_42178ef03f24fc 474
+  s_7ba0b7bee9e951::t_95236fd14183fa 612,621,636,683,704,1416,1435,1819,2156,2248,2318,2343,2409,2664,2673,2731,2765,2770,2793,2795,2805,2869,2918,2938
+crates/sourdaw-native/src/state.rs
+  s_7ba0b7bee9e951::t_a827b55dd9b70b 1,70,114,313,611
+  s_7ba0b7bee9e951::t_86721511eb524d 169-171
+  s_7ba0b7bee9e951::t_12cc75aaa21d55 339-450
+  s_7ba0b7bee9e951::t_5444a2f375483c 246
+  s_7ba0b7bee9e951::t_0d84bd198c317f 17-23,27,32,37,42
+src/modules/PluginHost/useCases/pluginScan/supportedPluginFormats.ts
+  s_7ba0b7bee9e951::t_f34c4247f721c0 1-17
+crates/sourdaw-native/src/host/latency_watcher.rs
+  s_7ba0b7bee9e951::t_f5d9bcdc416c8a 11,17,60
+  s_7ba0b7bee9e951::t_d287a35e0f8f74 61-63
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_7ba0b7bee9e951::t_fed97a7c284746 61-62
+  s_7ba0b7bee9e951::t_3325f338329d16 24
+  s_7ba0b7bee9e951::t_45e2353e6a90a9 43,65-67
+src/modules/AudioEngine/presentations/views/PluginBrowser.tsx
+  s_7ba0b7bee9e951::t_24ca3e97e4fa02 45-47
+  s_7ba0b7bee9e951::t_ba21815995411e 27
+  s_7ba0b7bee9e951::t_01fe408d0298d1 81
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_7ba0b7bee9e951::t_c6388c969ba73c 187,203
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_7ba0b7bee9e951::t_2dd9b030939eff 17
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_7ba0b7bee9e951::t_a89f0d48940e47 104,141
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_7ba0b7bee9e951::t_83dff665a0ae64 50,105,188,227,271,299,366,399,451,465-469,479-500,510,526
+src/modules/PluginHost/useCases/pluginScan/__tests__/getExternalPluginContractVersionForCommand.spec.ts
+  s_7ba0b7bee9e951::t_479800b9c2affa 17
+src/modules/PluginHost/useCases/pluginScan/__tests__/queries.spec.ts
+  s_7ba0b7bee9e951::t_4535b429b06454 16
+src/modules/PluginHost/useCases/pluginScan/__tests__/startPluginScan.spec.ts
+  s_7ba0b7bee9e951::t_f14aad92b29468 37
+src/modules/PluginHost/useCases/pluginScan/getExternalPluginContractVersionForCommand.ts
+  s_7ba0b7bee9e951::t_e86b59829dac3d 11
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/scanCustomPaths.spec.ts
+  s_7ba0b7bee9e951::t_eb9084690c213b 17
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_7ba0b7bee9e951::t_2ac21771096729 17
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_7ba0b7bee9e951::t_a1613b5db3c3a6 19,416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9839a62b9da6f623982f9d86caeb9a4e6fa72f06",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
