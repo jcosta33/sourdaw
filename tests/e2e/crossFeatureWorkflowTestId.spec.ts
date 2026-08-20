@@ -126,8 +126,12 @@ test.describe('Cross-feature workflow — EDM template', () => {
         await page.keyboard.press(`${MOD}+k`);
         const palette = page.getByPlaceholder('Type a command...', { exact: true });
         await expect(palette).toBeVisible();
+        const options = page.getByRole('option');
+        await expect(options.first()).toBeVisible();
+        const unfiltered = await options.count();
         await palette.fill('track');
-        await expect(page.getByRole('option').filter({ hasText: /track/i }).first()).toBeVisible();
+        await expect.poll(() => options.count()).toBeLessThan(unfiltered);
+        await expect(page.getByRole('option', { name: 'Add MIDI Track' })).toBeVisible();
         await page.keyboard.press('Escape');
         await expect(palette).toBeHidden();
 
