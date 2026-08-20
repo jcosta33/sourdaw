@@ -1,0 +1,132 @@
+.agents/specs/node-view/spec.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 5,8,25,95,176,178,181-188,190-198,200-205,210
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 2-3,15-23,133-134,136,158,164,172,175,178,180,185,220,223-224,338,354,359
+crates/daw-plugin-host/src/scanner.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 11-14,27-43,47-69,84-87,89-90,93-95,101-145,182-187,226-228,230-238,257-283,290-305,319-324,326,329-335,340,411-417,423,431-449,452-457,468-469,474,477-478,540-541,572,577,605,609,613-614,619-743,872-874,878,898,1054-1114,1116,1143-1155,1157-1178,1254,1263,1276-1294,1457-1528,1533-1537,1540-1556,1596-1616,1623-1628,1633-1647,1650,1656,1658,1667,1683-1817
+  s_487e9aa1e46063::t_53ed4556ccf1f3 1818
+src/modules/Automation/stores/automationStore.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 95-113,228-246,298-299,384,387-389,391-393
+src/modules/Automation/useCases/automation/shiftAutomationAfterBeat.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 18-29
+src/modules/Transport/useCases/__tests__/setTempo.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 16-26,28-29
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/scanCustomPaths.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 32,54,99,126-131
+.agents/decisions/README.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 47
+AGENTS.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 264-265,269-271
+crates/sourdaw-native/src/lib.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 34,48
+scripts/__tests__/publishLane.spec.ts
+  s_487e9aa1e46063::t_36b548e4997c74 719-737
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 1-4,27,58-59,72-73,85,139-143,167,170-172,174-175,178,183,186-187,409,451-500
+scripts/uiRestatementCensus.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 1-536
+src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 3-14,171-182
+  s_487e9aa1e46063::t_93d89cebea4191 183-187
+scripts/__tests__/openLane.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 1-13,18-31,33-46,48-63,67-74,131-143,145-154,157,164-212
+src/modules/Automation/useCases/automation/__tests__/batchAddAutomationPoints.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 4,37-116,155-507
+docs/manual/02-concepts.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 76
+src/modules/PluginHost/useCases/pluginScan/__tests__/startPluginScan.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 14,72,89,109
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 59,61-69
+scripts/__tests__/uiRestatementCensus.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 1-293
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 455,1390
+.agents/decisions/0031-native-plugin-format-strategy.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 1-146
+.github/dependabot.yml
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 3,8,10,12,17,19
+crates/sourdaw-native/src/state.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 102,125,189-200,258
+.agents/specs/project-durability/spec.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 5,13-14,25,136-141,152-153
+src/modules/Automation/stores/__tests__/automationStore.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 5,242-315
+  s_487e9aa1e46063::t_84fb12dbdb4bbc 316
+src/modules/PluginHost/repositories/pluginBridge/scanPlugins.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 7-12
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 37,48,95,110,134,215,223-227,246-268
+  s_487e9aa1e46063::t_a939e44933d226 269-270
+src/modules/Automation/useCases/automation/__tests__/shiftAutomationAfterBeat.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 71-104
+src/modules/Transport/useCases/__tests__/setTempoWithTempoMap.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 17-27,29-30
+crates/sourdaw-native/src/events.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 13
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 56-62,115-124,144-147,429-432,636-639,857-904,1019-1022
+release/open-source-inventory.json
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 692,704
+scripts/openLane.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 110-129,131,136-137,146
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 16,18-27,36,128-131,148,158-160,177
+src/modules/PluginHost/useCases/pluginScan/scanning/scanCustomPaths.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 14,29,37
+src/modules/PluginHost/useCases/pluginScan/scanning/startPluginScan.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 15,27,48,57-60
+crates/sourdaw-native/src/commands/plugins.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 149-155,258,263,270,297-307,309,311-321,328,354,697-705,1152,2114-2117,2206-2211,2222,2237-2331,2582,2636-2639,2703-2710
+crates/sourdaw-native/src/addon/mod.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 16
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 32,54,104,121-166,170,192
+crates/sourdaw-native/src/commands/graph.rs
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 54
+.agents/specs/render-parity-instrumentation/spec.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 5
+docs/architecture/02-rust-backend.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 75-76,277-279,281,283-313,853
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 101-109,320-324,491-494,542,615-666,672-684,695-699,758-761,765-767,807-813
+src/modules/AudioEngine/presentations/views/PluginBrowser.tsx
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 3-14,236-246
+  s_487e9aa1e46063::t_e913801f4ea418 247-250
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 38-43,45,48-53,62-77
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 21-31,33-34
+package.json
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 26,119,134
+.agents/specs/offline-live-collapse/spec.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 5,12-14,40,47,70-71,76,81,87-92,121,124,146-150,161-173,227-228,237,296,298,310,325,350,357,517-518,533,590,699,710,738,771
+crates/sourdaw-native/AGENTS.md
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 35,55-59,61-68
+src/modules/Automation/useCases/automation/batchAddAutomationPoints.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 12-89,104-138,140-152,155-163
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 807,810-811,819,821-822
+scripts/publishLane.ts
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 42,302-307,318-319,324-326,328,415-425,480
+  s_487e9aa1e46063::t_061c182f998e71 373-378,388-391
+scripts/ui-restatement-census.json
+  s_487e9aa1e46063::t_f8b334ad4dbf8b 1-25184
+pnpm-lock.yaml
+  s_487e9aa1e46063::t_ed5a647e75c9ef 98,104,110,137,156-158,201-203,212,215,418-419,424-425,430-431,436-437,442-443,448-449,454-455,460-461,466-467,472-473,478-479,484-485,490-491,496-497,502-503,508-509,514-515,520-521,526-527,532-533,538-539,544-545,550-551,556-557,562-563,568-569,3413-3414,5187-5188,5872,5875,5878,5881,5884,5887,5890,5893,5896,5899,5902,5905,5908,5911,5914,5917,5920,5923,5926,5929,5932,5935,5938,5941,5944,5947,7205,7212,7396,7401,7457,7466,7470,7583,7932,7935,7937,7952,7963,7969,8600,8602-8627,10787,10789,10886,10892,10895,10975,10984,10987,10990,10993,11010
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5cdd04ab50e5f0de6846e3efadfca0b7f321fdd2",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
