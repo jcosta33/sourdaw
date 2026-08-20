@@ -2,16 +2,16 @@
 type: spec
 id: SPEC-offline-live-collapse
 subject: make the bounce the same program as the monitor, and prove it per device
-status: partially landed — stop condition 3 reported, AC-0 not built
+status: obsolete
 repo: sourdaw
 date: 2026-08-03
 blocked_by: SPEC-project-durability, SPEC-render-parity-instrumentation
 blocks: survey programme phase 5
 governs: ADR 0015 (every guard here), ADR 0016 ruling 3 (no legacy path)
 sources:
-  - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md §2 Phase 2, theme A
-  - .agents/decisions/0015-a-guard-must-be-able-to-fail.md
-  - .agents/decisions/0016-ultracode-session-scope-and-standard.md
+    - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md §2 Phase 2, theme A
+    - .agents/decisions/0015-a-guard-must-be-able-to-fail.md
+    - .agents/decisions/0016-ultracode-session-scope-and-standard.md
 ---
 
 # Collapse the offline path into the live path — Phase 2
@@ -37,14 +37,14 @@ builtin device types and no wasm device at all**. Live playback resolves a devic
 through `src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts`. Twelve
 device types cross between them. **Every device this phase fixes is on that side.**
 `offlineDeviceCoverage.spec.ts` guards the structural half and states its own limit in its own
-docblock — *"It does not prove the wasm module loads or renders audio."* Nothing in the tree proves
+docblock — _"It does not prove the wasm module loads or renders audio."_ Nothing in the tree proves
 the two arms produce the same audio. **AC-0 is that instrument. This spec owns it, sizes it, and
 sequences it first.**
 
 **Be precise about what the seam is, because overstating it produces a green run that proves
 nothing.** The two tables are not two implementations. `nativeDspDeviceFactories.ts:3-14` imports
 `createGlutenNode`, `createGrinderNode`, `createToasterNode` and the rest from `../../engine/*Node` —
-the *same* functions `wasmDeviceRegistry.ts` imports. Eleven of twelve types resolve to one
+the _same_ functions `wasmDeviceRegistry.ts` imports. Eleven of twelve types resolve to one
 constructor; only `grand-boule` differs, and see AC-0's exemption. What genuinely differs is (a) the
 **strip** each path builds around the device, and (b) the **state-application path**: live is
 `TrackNode.addDevice` plus the live descriptor's own setup, offline is `createNativeDspStrategy`
@@ -67,29 +67,29 @@ settles it instead.**
 
 AC-1 (worklet preparation), AC-4 (offline automation), AC-5 (Grinder's state at frame 0), AC-6 (Knead
 hydration), AC-7 (Toaster `engineParams`). Every one makes an existing project's bounce come out
-different. Without an instrument that reaches the seam, the work cannot distinguish *fixed the
-divergence* from *moved it* — a change that swaps one wrong render for another looks identical from
+different. Without an instrument that reaches the seam, the work cannot distinguish _fixed the
+divergence_ from _moved it_ — a change that swaps one wrong render for another looks identical from
 outside.
 
 Two of the nine move the monitor, not only the bounce, and the PRs must say so:
 
-- **AC-8 is a pure inversion.** Proof's dropped parameters under bypass make the *monitor* wrong and
+- **AC-8 is a pure inversion.** Proof's dropped parameters under bypass make the _monitor_ wrong and
   leave the export correct by accident, because the offline node is built fresh from
   `parameterValues`. The fix moves live onto offline. Do not describe it as an export change.
 - **AC-7 moves both legs.** Its evidence requires all three consumers of the Toaster projection to
   send `engineParams`, and one of the three is the live `audioDevice.loaded` subscriber — so a
-  reopened project *plays* differently as well as bouncing differently.
+  reopened project _plays_ differently as well as bouncing differently.
 
 AC-2, AC-3, AC-9 and AC-10 change no audio on either leg.
 
 **Ordering is mandatory, not advisory:**
 
-| Stage | Contents | Why it is here |
-| --- | --- | --- |
-| 1 | AC-0, AC-2 | The instrument, and the slot-pool leak that would otherwise cap the instrument's own run length |
-| 2 | AC-3 | The census, rewritten and landed **before** any fix, with every incapable device/parameter pair entered as a reasoned exemption |
-| 3 | AC-1, AC-4, AC-5, AC-6, AC-7, AC-8 | Each fix deletes its own census rows and produces its own per-device evidence |
-| 4 | AC-9, AC-10 | No audio change; may run in a parallel lane from stage 1 |
+| Stage | Contents                           | Why it is here                                                                                                                  |
+| ----- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | AC-0, AC-2                         | The instrument, and the slot-pool leak that would otherwise cap the instrument's own run length                                 |
+| 2     | AC-3                               | The census, rewritten and landed **before** any fix, with every incapable device/parameter pair entered as a reasoned exemption |
+| 3     | AC-1, AC-4, AC-5, AC-6, AC-7, AC-8 | Each fix deletes its own census rows and produces its own per-device evidence                                                   |
+| 4     | AC-9, AC-10                        | No audio change; may run in a parallel lane from stage 1                                                                        |
 
 A stage-3 item landing before AC-3 is proven in aggregate rather than per device, which is exactly
 what the survey put the census first to prevent.
@@ -118,10 +118,10 @@ renumber. Re-check the section against the version read.
   until `startRendering()` runs. `setTargetAtTime(v, ctx.currentTime, 0.01)` during offline graph
   construction therefore places the glide at frame 0 of the render, not before it.
 - **`AudioWorkletNode(context, name)`** — throws **`InvalidStateError`** when `name` is not a key in
-  that `BaseAudioContext`'s *node name to parameter descriptor map*. The map is populated per context
+  that `BaseAudioContext`'s _node name to parameter descriptor map_. The map is populated per context
   by `AudioWorklet.addModule()` (inherited from `Worklet`) resolving and `registerProcessor()` running
   in that context's `AudioWorkletGlobalScope`. **Registration is per-`BaseAudioContext`.** This
-  establishes that every offline context needs its own registration — it does *not* by itself argue
+  establishes that every offline context needs its own registration — it does _not_ by itself argue
   for a shared construction path; AC-1 argues that on second-source-of-truth grounds instead.
 - **`OfflineAudioContext.startRendering()`** — resolves once with the rendered `AudioBuffer`. There is
   **no abort**. The only control surface over an in-flight render is
@@ -143,11 +143,11 @@ renumber. Re-check the section against the version read.
 Three theme-A findings carry the survey's `verifierNote: "not independently verified"`. The campaign
 brief is explicit: re-derive before acting.
 
-| Finding | Where it lands | Status |
-| --- | --- | --- |
-| `grinder-offline-settargetattime-glide` | AC-5, third defect | **Must be re-derived first.** AC-5 blocks on it. |
-| `offline-render-arbitrary-wall-clock-budget` | AC-10, in full | **Must be re-derived first.** AC-10 blocks on it. |
-| `proofchamber-handrolled-block-rate-automation` | not acted on — see Ambiguities 2 | Re-derive before ruling it in or out. |
+| Finding                                         | Where it lands                   | Status                                            |
+| ----------------------------------------------- | -------------------------------- | ------------------------------------------------- |
+| `grinder-offline-settargetattime-glide`         | AC-5, third defect               | **Must be re-derived first.** AC-5 blocks on it.  |
+| `offline-render-arbitrary-wall-clock-budget`    | AC-10, in full                   | **Must be re-derived first.** AC-10 blocks on it. |
+| `proofchamber-handrolled-block-rate-automation` | not acted on — see Ambiguities 2 | Re-derive before ruling it in or out.             |
 
 Re-derivation means: reproduce the stated behaviour from the code on this branch and paste the
 output. If one fails, report it — survey stop condition 10 counts failures across the 37.
@@ -158,19 +158,19 @@ Branch `feat/offline-live-collapse-ultracode`, three commits. Full suite `--dir 
 exit 0 and exit 0, 3102 files / 19401 tests. `oxlint` 0, `eslint` 0, `typecheck` 0,
 `typecheck:test` 0, `deps:validate` 0. No Rust touched, so `cargo` was not run.
 
-| AC | State | Evidence |
-| --- | --- | --- |
-| AC-0 | **Not built.** | The browser-hosted per-device null harness. Sized below; nothing in this pass depends on it, and no claim here rests on it. |
-| AC-1 | **Landed.** | `prepareOfflineContext.ts` shared by all three render paths; `__tests__/offlineContextPreparation.spec.ts` census. Mutations verified: dropping the freeze call reds the census; disabling one prepare reds the registry count. |
-| AC-2 | **Landed.** | `destroyOfflineDeviceStrategies.ts` in a `finally` on all three paths; `TelemetryAllocator.occupiedSlotCount()` and the `releaseSlot` membership check. Mutation verified: moving teardown onto the success path reds the failure and cancellation cases and leaves the success case green. Browser leg (evidence 3) belongs to AC-0 and is not done. |
-| AC-3 | **STOP CONDITION 3 FIRED. Not built.** | Measured before writing any census: 20 asserted verdicts against **285** reasoned exemption rows, 14:1. See below. |
-| AC-4 | **Not started.** Blocked by AC-3. | The census is what makes each fix provable per device; it is the spec's own mandated ordering. |
-| AC-5 | **Not started.** | Both findings re-derived and confirmed (below). Defect 1's proof is AC-0's null. |
-| AC-6 | **Not started.** | Its time-source design question is untouched. |
-| AC-7 | **Not started.** | Its evidence 3 is an AC-0 null. |
-| AC-8 | **Landed.** | `ProofNode.setParam` forwards regardless of bypass; `ProofNodeCreate.spec.ts`. Mutation verified: restoring `!bypassed` reds two cases. The AC-0 null half is not done. |
-| AC-9 | **Landed.** | Freeze path calls `clampRenderFrameCount`; warning asserted, frame count deliberately not, per the AC's own instruction. Mutation verified with AC-1's. |
-| AC-10 | **Landed.** | Monotonic `performance.now()` no-progress watchdog replaces the total-elapsed `Date.now()` budget and the racing `setTimeout`. Mutations verified: restoring the elapsed budget reds evidences 1 and 3; removing the no-progress check reds evidence 2 and the wedge case. |
+| AC    | State                                  | Evidence                                                                                                                                                                                                                                                                                                                                              |
+| ----- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-0  | **Not built.**                         | The browser-hosted per-device null harness. Sized below; nothing in this pass depends on it, and no claim here rests on it.                                                                                                                                                                                                                           |
+| AC-1  | **Landed.**                            | `prepareOfflineContext.ts` shared by all three render paths; `__tests__/offlineContextPreparation.spec.ts` census. Mutations verified: dropping the freeze call reds the census; disabling one prepare reds the registry count.                                                                                                                       |
+| AC-2  | **Landed.**                            | `destroyOfflineDeviceStrategies.ts` in a `finally` on all three paths; `TelemetryAllocator.occupiedSlotCount()` and the `releaseSlot` membership check. Mutation verified: moving teardown onto the success path reds the failure and cancellation cases and leaves the success case green. Browser leg (evidence 3) belongs to AC-0 and is not done. |
+| AC-3  | **STOP CONDITION 3 FIRED. Not built.** | Measured before writing any census: 20 asserted verdicts against **285** reasoned exemption rows, 14:1. See below.                                                                                                                                                                                                                                    |
+| AC-4  | **Not started.** Blocked by AC-3.      | The census is what makes each fix provable per device; it is the spec's own mandated ordering.                                                                                                                                                                                                                                                        |
+| AC-5  | **Not started.**                       | Both findings re-derived and confirmed (below). Defect 1's proof is AC-0's null.                                                                                                                                                                                                                                                                      |
+| AC-6  | **Not started.**                       | Its time-source design question is untouched.                                                                                                                                                                                                                                                                                                         |
+| AC-7  | **Not started.**                       | Its evidence 3 is an AC-0 null.                                                                                                                                                                                                                                                                                                                       |
+| AC-8  | **Landed.**                            | `ProofNode.setParam` forwards regardless of bypass; `ProofNodeCreate.spec.ts`. Mutation verified: restoring `!bypassed` reds two cases. The AC-0 null half is not done.                                                                                                                                                                               |
+| AC-9  | **Landed.**                            | Freeze path calls `clampRenderFrameCount`; warning asserted, frame count deliberately not, per the AC's own instruction. Mutation verified with AC-1's.                                                                                                                                                                                               |
+| AC-10 | **Landed.**                            | Monotonic `performance.now()` no-progress watchdog replaces the total-elapsed `Date.now()` budget and the racing `setTimeout`. Mutations verified: restoring the elapsed budget reds evidences 1 and 3; removing the no-progress check reds evidence 2 and the wedge case.                                                                            |
 
 ### Re-derivations — both findings survive
 
@@ -224,8 +224,8 @@ Three further things the measurement establishes, none of which the spec anticip
 1. **The population is 13, not 12.** AC-0's enumeration omits `crust`, which is in
    `NATIVE_DSP_DEVICE_FACTORIES`. Any AC-0 population list must be re-derived from the registry.
 2. **The gaps are two structurally different classes, not one.** 265 pairs across 9 devices are
-   *device-level* — the node supplies no `scheduleParam` at all, so every automatable parameter is
-   dead, and one reason covers the whole device. The other ~106 are *parameter-level* on the three
+   _device-level_ — the node supplies no `scheduleParam` at all, so every automatable parameter is
+   dead, and one reason covers the whole device. The other ~106 are _parameter-level_ on the three
    devices the census calls capable: Fermenter covers 15 of 105, ProofChamber 2 of 17, Toaster 3 of 4.
    A census at device granularity is 13 rows with 3 capable; the per-parameter gaps inside a capable
    device are a **separate, unfiled finding** — Fermenter's 90 dead automatable parameters are not
@@ -234,7 +234,7 @@ Three further things the measurement establishes, none of which the spec anticip
    the automation population.
 
 **Recommended resolution, for the re-spec rather than decided here:** the census population should be
-the *device* (verdict `full | partial | none`, 13 rows), with the parameter-level shortfall inside a
+the _device_ (verdict `full | partial | none`, 13 rows), with the parameter-level shortfall inside a
 capable device filed as its own finding and its own AC. That keeps the enumeration registry-driven,
 keeps every row a verdict rather than an exemption, and does not bury a 90-parameter gap on the
 flagship synth inside a table nobody will read.
@@ -293,9 +293,9 @@ peak in dBFS. Budget as Phase-1 AC-1: **≤ −90 dBFS**, and **anything above �
 tolerance**. Do not widen it, do not add a per-device tolerance table, do not narrow the measured
 region.
 
-**Both legs run inside an `OfflineAudioContext`** — the live *builder* on an offline *context*, which
+**Both legs run inside an `OfflineAudioContext`** — the live _builder_ on an offline _context_, which
 is what makes the comparison deterministic. **State the limit that buys, and do not exceed it:** it
-proves the two *strips* and the two *state-application paths* agree. It does not prove the two device
+proves the two _strips_ and the two _state-application paths_ agree. It does not prove the two device
 registries are independent implementations (they are not), it does not see a defect inside a shared
 node constructor, and it says nothing about the realtime scheduler.
 
@@ -307,7 +307,7 @@ break something, that is a finding, not a place for a cast.
 **Evidence:** the harness, its per-device report, and a committed deliberately-broken fixture that
 breaks **at the state-application path** — a device whose offline hydration or parameter replay is
 disabled while the live path keeps it. Phase-1 AC-1's break (the offline registry ceasing to apply
-`device.parameterValues`) is the right *class* but was injected at a place the wasm devices never
+`device.parameterValues`) is the right _class_ but was injected at a place the wasm devices never
 reach; the new one must land on a wasm device. Mutation: restoring the break to correctness must
 return the harness to green in the same run.
 
@@ -322,7 +322,7 @@ return the harness to green in the same run.
   whose reverse check cannot be written is an exemption whose reason is wrong.
 - **`grand-boule` is exempt, and the reason is not the one the transport docs suggest.**
   `GrandBouleNode.ts:480` selects its transport by context type —
-  `ctx instanceof OfflineAudioContext` — so running the *live builder* on an *offline context* yields
+  `ctx instanceof OfflineAudioContext` — so running the _live builder_ on an _offline context_ yields
   `createInlineWorkletTransport`, the offline transport. The harness cannot obtain the worker-ring leg
   at all; a null here would compare one implementation against itself and be green by construction,
   which is ADR 0015 rule 1. Record that as the reason. The reachability half of this row is a check on
@@ -347,14 +347,14 @@ paragraph above, in full.
 
 ### AC-1 — One offline construction path, and no silent substitution behind it
 
-**State the gap accurately.** The device factories *do* register their own worklet modules on whatever
+**State the gap accurately.** The device factories _do_ register their own worklet modules on whatever
 context they are handed — every wasm node calls `ensureWorkletRegistered(ctx, url)`
 (`workletInitShared.ts`), which is per-context and cached. The two modules that are **not** registered
 that way are the sidechain compressor's key path and `bitcrusher-rate-processor`: they are prepared out
 of band by `prepareOfflineSidechainCompressor` and `prepareOfflineBitcrusherRate`, called only from
 `src/modules/AudioEngine/useCases/renderOffline.ts:136/155` (the mixdown) and
 `exportStems.ts:254/273`. `renderTrackSubgraphOffline.ts:146` — the freeze and bounce path reached
-through `src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts:125`, which is a *different*
+through `src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts:125`, which is a _different_
 file of the same name and constructs no context of its own — builds a bare
 `new OfflineAudioContext(2, frameCount, sampleRate)` and calls neither.
 
@@ -514,8 +514,8 @@ bound cannot be met, that is a stop condition, not a scope expansion.
    **State the limit:** both sides call `slewStep` and `evaluateAutomationCurve`, so this does not
    cross-check the slew or curve kernels — the existing automation curve-conformance specs do.
 3. **The binding delivers the right parameter at the right frame.** A compiled segment for parameter
-   *P* arrives at the worklet as *P*, at the frame the segment names. An inverted or off-by-one
-   mapping in a new `scheduleParam` binding produces a not-frozen render *and* a conforming value
+   _P_ arrives at the worklet as _P_, at the frame the segment names. An inverted or off-by-one
+   mapping in a new `scheduleParam` binding produces a not-frozen render _and_ a conforming value
    stream, so neither 2 nor 4 catches it. Mutation: transposing two parameter ordinals in one node's
    binding reds it.
 4. **A not-frozen assertion, per device.** Render the fixture offline with the lane, and again with the
@@ -530,7 +530,7 @@ one observable: **the head of every Grinder export renders with the wrong amp.**
 
 - **The neural patch never arrives.** `prepareOfflineDeviceSetup.ts:98` is `grinder: null`, but an
   imported profile is not a `parameterValue` — `syncGrinderPatchToAudio.ts:343-347` ships it as a port
-  patch and only `sendNumericParamToDevice` persists. `neuralEnabled` *is* persisted, so the export
+  patch and only `sendNumericParamToDevice` persists. `neuralEnabled` _is_ persisted, so the export
   renders with neural on and the **built-in** model: a plausible wrong instrument, which
   `buildDeviceChain`'s own docblock calls the unacceptable failure class.
 - **~31 of 42 params flush on `requestAnimationFrame`.** `GrinderNode.ts:114/132`. The escape hatch is
@@ -587,7 +587,7 @@ Observable behaviour: **an export of a Knead track renders the corrected vocal.*
 separate PDC finding is closed, still 2048 samples late.
 
 **Evidence:** a spec asserting the offline Knead node receives a clip table and a render-relative time
-source, and that its shift at render frame *F* equals the live shift at the corresponding transport
+source, and that its shift at render frame _F_ equals the live shift at the corresponding transport
 position over a fixture with a non-zero shift; plus AC-0's null over a Knead fixture, with a presence
 pin proving both legs are sounding. Mutation: restoring `knead: null` reds both.
 
@@ -696,7 +696,7 @@ clock adjustment changes neither verdict.**
    unchanged. Mutation: restoring `Date.now()` reds it; `performance.now()` is monotonic.
 
 **The no-progress threshold must be measured, not chosen.** Inventing a second unmeasured number is the
-defect this AC removes. The Phase-1 AC-2 cost table reports per-*quantum* device cost and a
+defect this AC removes. The Phase-1 AC-2 cost table reports per-_quantum_ device cost and a
 reference-project total; it does not report per-segment wall clock at `RENDER_SEGMENT_SECONDS`. **If no
 such figure exists, measuring it is part of this AC** — one render of the reference project,
 worst-observed segment time, times a factor the PR states. Write the number, the measurement and the
@@ -707,7 +707,7 @@ machine into the file header per Phase-1 AC-6. A threshold with no measurement b
 Recorded rather than guessed. Each names what would resolve it.
 
 1. **Is ProofChamber's hand-rolled block-rate interpolator in scope?** `dutch-oven` is ProofChamber and
-   is *not* the "Proof" in the Phase 2 list — that is `ProofNode`, the mastering suite.
+   is _not_ the "Proof" in the Phase 2 list — that is `ProofNode`, the mastering suite.
    `proofchamber-handrolled-block-rate-automation` is theme A but unnamed in Phase 2, and it carries
    `not independently verified`. **Resolution:** re-derive it, then rule. Treated as **out** here; its
    remedy — a-rate `parameterDescriptors` — is the same migration AC-4 rules out and should move with
@@ -735,7 +735,7 @@ Recorded rather than guessed. Each names what would resolve it.
   host sync, generator phase-locking. This spec constrains its fixtures around them (§3).
 - The a-rate `parameterDescriptors` migration for device-param automation — ruled out in AC-4.
 - Knead's 2048-sample PDC report (`knead-no-latency-report`) — a separate finding with its own owner
-  decision about shifting every other track. AC-6 makes the export *corrected*, not *aligned*.
+  decision about shifting every other track. AC-6 makes the export _corrected_, not _aligned_.
 - Gluten's +6.31 dB oversampler — Phase 5; ADR 0016 ruling 3 already answered its version-gate branch.
 - Crumbs' second engine, its unwired pad/slice model, and Grand Boule's unpersisted store — device-state
   findings under themes B and C, not offline/live divergence.
@@ -768,7 +768,7 @@ Report; do not design around.
   what an export sounds like; a fix without a red-first is indistinguishable from moving the defect.
 - Every guard mutation-checked with the reding assertion named, per ADR 0015. Every census enumerated
   from a registry, with a reason-bearing exemption table, a committed broken fixture, and a mutation
-  that exercises the *enumeration* and not only the verdict.
+  that exercises the _enumeration_ and not only the verdict.
 - Every `file:line` in a PR re-derived against the branch it ships from. The citations in this spec were
   checked against `docs/phase-2-spec-ultracode`; they go stale.
 - Run each affected test once through guarded package scripts; quote its exit code.

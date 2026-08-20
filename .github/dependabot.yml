@@ -1,29 +1,19 @@
 version: 2
 updates:
-  # Maintain dependencies for npm / pnpm packages
+  # Keep npm metadata for security updates; routine version PRs are disabled.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 5
-    groups:
-      dependencies:
-        patterns:
-          - "*"
+    open-pull-requests-limit: 0
     labels:
-      - "build"
-      - "priority:P3"
+      - "security"
 
-  # Maintain dependencies for Cargo / Rust workspace
+  # Keep Cargo metadata for security updates; routine version PRs are disabled.
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 5
-    groups:
-      crates:
-        patterns:
-          - "*"
+    open-pull-requests-limit: 0
     labels:
-      - "build"
-      - "priority:P3"
+      - "security"

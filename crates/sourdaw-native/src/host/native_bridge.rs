@@ -452,7 +452,7 @@ impl SharedClapPlugin {
     /// latency in **milliseconds**, or `None` when nothing was pending.
     ///
     /// Milliseconds, not samples: the plugin counts latency in frames of the rate
-    /// it was ACTIVATED with (the CPAL device rate). That is a different clock
+    /// it was ACTIVATED with (`load_plugin`'s CPAL default-output rate). That is a different clock
     /// from the webview's `AudioContext`, so a sample count must not cross the
     /// IPC boundary — `ClapWrapper::latency_ms` converts where the rate is known.
     ///
@@ -1387,7 +1387,7 @@ mod tests {
         assert_eq!(commit.sample_rate, 48_000);
     }
 
-    /// PR #564 review (blocking): the real CPAL callback interleaves bridge
+    /// PR #564 review (blocking): the real render callback interleaves bridge
     /// bursts (real audio) with standalone process_block over zeroed
     /// scratch. The record feed must be bridge-only, so the committed take
     /// contains the real frames and NOTHING from the standalone path.
