@@ -1,0 +1,30 @@
+scripts/__tests__/publishLane.spec.ts
+  s_487e9aa1e46063::t_80a8f21bf9342c 470,476-478
+  s_487e9aa1e46063::t_502fe01dadc8eb 11
+  s_487e9aa1e46063::t_f47739fbe03bb5 282-289
+  s_487e9aa1e46063::t_1ccd918c4452b1 290,428-464,466-469,471-475,479-514
+  s_487e9aa1e46063::t_8ea375397d791d 465
+  s_487e9aa1e46063::t_1218c4e894100a 24-25
+  s_487e9aa1e46063::t_f4f956683aa6c5 291
+scripts/publishLane.ts
+  s_487e9aa1e46063::t_137a5a0edfb727 194-195,200-201,203-209,213,218-219,222,226-227,229-236
+  s_487e9aa1e46063::t_5899f414ef3a22 238
+  s_487e9aa1e46063::t_cdd20e4c04822a 243-249
+  s_487e9aa1e46063::t_8f69a20adaa314 111-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3764a579c32da20af3b7354353732e4d1c285f88",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
