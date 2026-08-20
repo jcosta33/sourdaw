@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, beforeEach } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
+import { batchAddAutomationPoints } from '../../useCases/automation/batchAddAutomationPoints';
 import { type AutomationStoreState } from '../automationStore';
 import { automationStore, sanitize_automation_store_state } from '../automationStore';
 
@@ -236,6 +237,81 @@ describe('automationStore', () => {
                 },
             ],
         });
+    });
+
+    it('should sort out-of-order points ascending by beat through the real inbound sanitizer', () => {
+        // Every field on every point below is individually valid and
+        // exact-shaped — this is what an ordinary project file, a legacy
+        // import, or a same-schema peer's CRDT sync patch looks like. Only
+        // the array ORDER is wrong, which the binary searches in
+        // `addAutomationPoint.ts` and `batchAddAutomationPoints.ts` require
+        // to be ascending. This must not take a shortcut that skips
+        // normalization just because every element already validates.
+        fake_doc.automation = {
+            lanes: [
+                {
+                    id: 'lane-unsorted',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 5, value: 0.5, curve: 'linear', tension: 0 },
+                        { beat: 1, value: 0.1, curve: 'linear', tension: 0 },
+                        { beat: 3, value: 0.3, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        };
+
+        automationStore.hydrate();
+
+        const lane = automationStore.value?.lanes.find((entry) => entry.id === 'lane-unsorted');
+        expect(lane?.points.map((point) => point.beat)).toEqual([1, 3, 5]);
+    });
+
+    it('merges correctly with batchAddAutomationPoints after a lane arrives out of order via hydration', () => {
+        // Distinct id and values from the previous test's fixture — hydrate()
+        // memoizes the last-hydrated document JSON to skip redundant work, so
+        // reusing an identical payload here would short-circuit as "unchanged"
+        // and hide this test's own hydrate behind the previous test's cache.
+        fake_doc.automation = {
+            lanes: [
+                {
+                    id: 'lane-unsorted-2',
+                    trackId: 'track-2',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    points: [
+                        { beat: 8, value: 0.8, curve: 'linear', tension: 0 },
+                        { beat: 4, value: 0.4, curve: 'linear', tension: 0 },
+                        { beat: 6, value: 0.6, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        };
+
+        automationStore.hydrate();
+
+        // If the store had handed back the unsorted array verbatim, the
+        // binary search inside `batchAddAutomationPoints` would search
+        // against a sequence that is not actually ascending and could
+        // insert `beat: 5` at the wrong slot (or miss an epsilon match).
+        batchAddAutomationPoints('lane-unsorted-2', [{ beat: 5, value: 0.5, curve: 'linear', tension: 0 }]);
+
+        const lane = automationStore.value?.lanes.find((entry) => entry.id === 'lane-unsorted-2');
+        expect(lane?.points.map((point) => point.beat)).toEqual([4, 5, 6, 8]);
     });
 
     it('should preserve valid CRDT hydration without writing back', async () => {

@@ -17,10 +17,14 @@ export const DEFAULT_BEAT_MERGE_EPSILON = 0.05;
  * value, by `findClaimedMatchIndex`, since their beat may have drifted away
  * from (or into) this window.
  *
- * `sorted` must be ascending by beat — every writer of `lane.points` in this
- * module maintains that invariant (see `addAutomationPoint.ts`, which already
- * relies on it for its own binary-search insert), so this never re-sorts on
- * entry.
+ * `sorted` must be ascending by beat. That invariant is guaranteed at the
+ * store's inbound boundary — `get_normalized_points` in `automationStore.ts`
+ * sorts `points` (and `trimPoints`/`ghostPoints`) on every sanitize, which
+ * `hydrate()` re-runs on every load and every remote CRDT sync patch, not
+ * just initial project load — so a lane read from the store is never
+ * unsorted here, regardless of what order the writing peer's array was in.
+ * `addAutomationPoint.ts` relies on the same guarantee for its own
+ * binary-search insert. This function never re-sorts on entry.
  */
 function findLeftmostUnclaimedIndex(
     sorted: readonly AutomationPoint[],

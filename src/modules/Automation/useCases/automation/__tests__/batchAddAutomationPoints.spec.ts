@@ -80,29 +80,38 @@ function assertNoNearDuplicateBeats(resultPoints: readonly AutomationPoint[], me
 }
 
 /**
- * Wraps each point so every read of `.beat` increments a counter — used to
- * assert the merge's search cost stays bounded without relying on
- * wall-clock timing, which is flaky under this repo's two-worker test
- * concurrency and varies with machine load independently of whether the
- * algorithm regressed.
+ * Wraps every point of every array passed in so every read of `.beat`
+ * anywhere increments one shared counter — used to assert the merge's
+ * search cost stays bounded without relying on wall-clock timing, which is
+ * flaky under this repo's two-worker test concurrency and varies with
+ * machine load independently of whether the algorithm regressed.
+ *
+ * Takes multiple arrays (rather than one) because the merge's cost is not
+ * confined to reads of `existing`: `findClaimedMatchIndex` reads `.beat` off
+ * `claims`' values and the `pending` scan reads it off `pending`'s entries,
+ * and both pools are populated from `incoming`, not `existing`. Wrapping
+ * only `existing` would leave those two loops free to regress without this
+ * counter ever moving.
  */
-function countBeatReads(points: readonly AutomationPoint[]): {
-    proxied: AutomationPoint[];
+function countBeatReads(...pointArrays: ReadonlyArray<readonly AutomationPoint[]>): {
+    proxiedArrays: AutomationPoint[][];
     getReadCount: () => number;
 } {
     let reads = 0;
-    const proxied = points.map(
-        (original) =>
-            new Proxy(original, {
-                get(target, property, receiver) {
-                    if (property === 'beat') {
-                        reads += 1;
-                    }
-                    return Reflect.get(target, property, receiver);
-                },
-            })
+    const proxiedArrays = pointArrays.map((points) =>
+        points.map(
+            (original) =>
+                new Proxy(original, {
+                    get(target, property, receiver) {
+                        if (property === 'beat') {
+                            reads += 1;
+                        }
+                        return Reflect.get(target, property, receiver);
+                    },
+                })
+        )
     );
-    return { proxied, getReadCount: () => reads };
+    return { proxiedArrays, getReadCount: () => reads };
 }
 
 describe('batchAddAutomationPoints', () => {
@@ -391,22 +400,109 @@ describe('batchAddAutomationPoints', () => {
             const incomingCount = 1_000;
             const { existing, incoming } = buildFlushScaleInput(existingCount, incomingCount);
 
-            const { proxied, getReadCount } = countBeatReads(existing);
-            storeCell.state = { lanes: [makeLane('lane-under-test', proxied)] };
-            batchAddAutomationPoints('lane-under-test', incoming, DEFAULT_BEAT_MERGE_EPSILON);
+            const { proxiedArrays, getReadCount } = countBeatReads(existing, incoming);
+            const [proxiedExisting, proxiedIncoming] = proxiedArrays as [AutomationPoint[], AutomationPoint[]];
+            storeCell.state = { lanes: [makeLane('lane-under-test', proxiedExisting)] };
+            batchAddAutomationPoints('lane-under-test', proxiedIncoming, DEFAULT_BEAT_MERGE_EPSILON);
 
             const reads = getReadCount();
-            // A correct merge reads each existing point's `.beat` a bounded
-            // number of times: O(log n) per incoming point during the
-            // binary search, plus O(n) once during the final sort (already
-            // near-sorted, so V8's adaptive sort stays close to linear
-            // here). For n=30,000 and m=1,000 that lands in the tens of
-            // thousands of reads. A regression back to the old per-point
-            // linear scan reads roughly n*m times — on the order of tens of
-            // millions here. This bound sits comfortably between the two,
-            // so it fails deterministically if the scan regresses,
-            // independent of wall-clock speed or machine load.
-            expect(reads).toBeLessThan(500_000);
+            // Both `existing` and `incoming` are wrapped, so this counts
+            // every `.beat` read the merge makes, not just the binary
+            // search's. A correct run reads: O(log n) per incoming point for
+            // `findLeftmostUnclaimedIndex`'s binary search over `existing`;
+            // O(pending.length) per incoming point for the `pending` scan —
+            // this scenario's incoming points never match `existing` and
+            // never collide with each other (see `buildFlushScaleInput`), so
+            // every point falls through to `pending` and never finds a
+            // match there either, making that scan's own cost O(m^2) (m is
+            // the incoming batch size, bounded independent of the lane) —
+            // and finally one O((n+m) log(n+m)) sort over the merged array.
+            // Measured on this machine that lands at ~1.08M reads for
+            // n=30,000, m=1,000. A regression back to the old per-point
+            // linear scan of `existing` reads roughly n*m times — on the
+            // order of tens of millions here. This bound sits with headroom
+            // above the measured correct-run count and far below that
+            // regression floor, so it fails deterministically if the scan
+            // regresses, independent of wall-clock speed or machine load.
+            //
+            // This scenario's `claims` map stays empty throughout — see
+            // `does not regress the claim/pending merge paths back toward a
+            // lane-sized scan` below for the scenario that actually
+            // populates `claims` and exercises `findClaimedMatchIndex`.
+            expect(reads).toBeLessThan(2_000_000);
+        });
+
+        function buildReRecordScaleInput(
+            existingCount: number,
+            incomingCount: number
+        ): {
+            existing: AutomationPoint[];
+            incoming: AutomationPoint[];
+        } {
+            const existing: AutomationPoint[] = [];
+            for (let index = 0; index < existingCount; index += 1) {
+                existing.push(point(index * 0.2, (index % 100) / 100));
+            }
+
+            const incoming: AutomationPoint[] = [];
+            // A re-record pass, unlike an append-only flush, overwrites what
+            // is already there: ~90% of incoming points sit within
+            // `mergeEpsilon` of the existing point at the same index, so
+            // they claim that slot. This is what actually drives
+            // `findClaimedMatchIndex` and the `claims` map at batch scale —
+            // `buildFlushScaleInput`'s append-only tail never touches an
+            // existing point at all, so `claims` stays empty there.
+            const overwriteCount = Math.floor(incomingCount * 0.9);
+            for (let index = 0; index < overwriteCount; index += 1) {
+                const offset = (index % 2 === 0 ? 1 : -1) * DEFAULT_BEAT_MERGE_EPSILON * 0.4;
+                incoming.push(point(index * 0.2 + offset, ((index + 1) % 100) / 100));
+            }
+
+            // The rest lands in a fresh region past the recorded lane, each
+            // point within `mergeEpsilon` of the last, so consecutive
+            // incoming points collide with EACH OTHER instead of with
+            // `existing` — this is what drives the `pending` linear scan and
+            // the claimed-slot chain in `findClaimedMatchIndex` beyond a
+            // single match per point.
+            const chainStart = existingCount * 0.2 + 100;
+            for (let index = overwriteCount; index < incomingCount; index += 1) {
+                const step = (index - overwriteCount) * DEFAULT_BEAT_MERGE_EPSILON * 0.5;
+                incoming.push(point(chainStart + step, ((index + 2) % 100) / 100));
+            }
+
+            return { existing, incoming };
+        }
+
+        it('does not regress the claim/pending merge paths back toward a lane-sized scan', () => {
+            const existingCount = 30_000;
+            const incomingCount = 1_000;
+            const { existing, incoming } = buildReRecordScaleInput(existingCount, incomingCount);
+
+            const { proxiedArrays, getReadCount } = countBeatReads(existing, incoming);
+            const [proxiedExisting, proxiedIncoming] = proxiedArrays as [AutomationPoint[], AutomationPoint[]];
+            storeCell.state = { lanes: [makeLane('lane-under-test', proxiedExisting)] };
+            batchAddAutomationPoints('lane-under-test', proxiedIncoming, DEFAULT_BEAT_MERGE_EPSILON);
+
+            const reads = getReadCount();
+            // eslint-disable-next-line no-console
+            console.info(`[batchAddAutomationPoints perf] claim/pending re-record reads=${reads}`);
+
+            // Measured on this machine at n=30,000, m=1,000, ~900 claims:
+            // 572,467 reads (see the console line above; re-run to see this
+            // machine's own figure — it moves with V8 sort internals and
+            // isn't pinned bit-for-bit). Every read here is bounded by `m`,
+            // not `n`: the binary search is O(log n) per point,
+            // `findClaimedMatchIndex` is O(claims.size) <= O(m) per point,
+            // and the `pending` scan is O(pending.length) <= O(m) per point,
+            // so the whole batch is O(m log n + m^2) — independent of `n`
+            // apart from the log factor. A regression that made either the
+            // claims check or the pending scan touch something proportional
+            // to the LANE instead of the bounded batch (e.g. rescanning
+            // `existing` per incoming point, the exact shape the binary
+            // search above replaced) multiplies this by roughly n/m ≈ 30,
+            // landing in the tens of millions. 2,000,000 sits with headroom
+            // above the measured correct-run count and far below that.
+            expect(reads).toBeLessThan(2_000_000);
         });
     });
 });
