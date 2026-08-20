@@ -452,7 +452,7 @@ impl SharedClapPlugin {
     /// latency in **milliseconds**, or `None` when nothing was pending.
     ///
     /// Milliseconds, not samples: the plugin counts latency in frames of the rate
-    /// it was ACTIVATED with (the device's rate). That is a different clock
+    /// it was ACTIVATED with (`load_plugin`'s CPAL default-output rate). That is a different clock
     /// from the webview's `AudioContext`, so a sample count must not cross the
     /// IPC boundary — `ClapWrapper::latency_ms` converts where the rate is known.
     ///
