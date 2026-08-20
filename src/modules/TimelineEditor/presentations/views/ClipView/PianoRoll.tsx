@@ -113,6 +113,16 @@ export const PianoRoll = ({
     // `scrollLeft`, and the interaction handlers add that same `scrollLeft` to
     // turn a pointer position into a beat.
     const scrollRef = useRef<HTMLDivElement>(null);
+    // Scroll container for the expression view's velocity/pressure/slide/
+    // pitch-bend panel. `contentWidth` below is unbounded — it tracks the
+    // clip's real length, not a fixed zoom-independent cap — so the panel
+    // needs its own real horizontal scroll, synced to the main canvas's
+    // `scrollLeft` in the handler below, or anything past its initial width
+    // is drawn but permanently unreachable. Same pattern as AutomationLane.tsx
+    // (`scrollRef` + `overflow-x-auto`, synced from outside via
+    // ClipView.tsx's `handlePianoRollScroll`) — this one syncs internally
+    // since both scroll containers live in this component.
+    const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
     const [_scrollX, setScrollX] = useState(0);
     const setSelectedNoteIds = onSelectedNoteIdsChange;
@@ -350,6 +360,9 @@ export const PianoRoll = ({
                         const sl = (event.target as HTMLElement).scrollLeft;
                         setScrollX(sl);
                         onScrollChange?.(sl);
+                        if (expressionScrollRef.current) {
+                            expressionScrollRef.current.scrollLeft = sl;
+                        }
                     }}
                 >
                     {/* Piano keys sidebar */}
@@ -428,45 +441,51 @@ export const PianoRoll = ({
                                 {activeExpressionLane}
                             </span>
                         </div>
-                        <div className="flex-1 overflow-x-hidden">
-                            <NotePropertyLane
-                                clipId={clipId}
-                                trackId={trackId}
-                                selectedNoteIds={selectedNoteIds}
-                                beatWidth={beatWidth}
-                                contentWidth={contentWidth}
-                                getValue={(node) => {
-                                    if (activeExpressionLane === 'velocity') {
-                                        return node.velocity ?? 100;
-                                    }
-                                    if (activeExpressionLane === 'pressure') {
-                                        return node.pressure ?? 0;
-                                    }
-                                    if (activeExpressionLane === 'slide') {
-                                        return node.slide ?? 0;
-                                    }
-                                    if (activeExpressionLane === 'pitchBend') {
-                                        return (((node.pitchBend ?? 0) + 8192) / 16383) * 127;
-                                    } // Scale to 0-127
-                                    return 0;
-                                }}
-                                setValue={(cid, nid, val) => {
-                                    if (activeExpressionLane === 'velocity') {
-                                        setNoteVelocity(cid, nid, val);
-                                    }
-                                    if (activeExpressionLane === 'pressure') {
-                                        setNotePressure(cid, nid, val);
-                                    }
-                                    if (activeExpressionLane === 'slide') {
-                                        setNoteSlide(cid, nid, val);
-                                    }
-                                    if (activeExpressionLane === 'pitchBend') {
-                                        setNotePitchBend(cid, nid, Math.round((val / 127) * 16383) - 8192);
-                                    }
-                                }}
-                                label={activeExpressionLane}
-                                undoLabel={`Change ${activeExpressionLane}`}
-                            />
+                        <div
+                            ref={expressionScrollRef}
+                            className="flex-1 overflow-x-auto"
+                            style={{ scrollbarWidth: 'none' }}
+                        >
+                            <div style={{ width: contentWidth, height: '100%' }}>
+                                <NotePropertyLane
+                                    clipId={clipId}
+                                    trackId={trackId}
+                                    selectedNoteIds={selectedNoteIds}
+                                    beatWidth={beatWidth}
+                                    contentWidth={contentWidth}
+                                    getValue={(node) => {
+                                        if (activeExpressionLane === 'velocity') {
+                                            return node.velocity ?? 100;
+                                        }
+                                        if (activeExpressionLane === 'pressure') {
+                                            return node.pressure ?? 0;
+                                        }
+                                        if (activeExpressionLane === 'slide') {
+                                            return node.slide ?? 0;
+                                        }
+                                        if (activeExpressionLane === 'pitchBend') {
+                                            return (((node.pitchBend ?? 0) + 8192) / 16383) * 127;
+                                        } // Scale to 0-127
+                                        return 0;
+                                    }}
+                                    setValue={(cid, nid, val) => {
+                                        if (activeExpressionLane === 'velocity') {
+                                            setNoteVelocity(cid, nid, val);
+                                        }
+                                        if (activeExpressionLane === 'pressure') {
+                                            setNotePressure(cid, nid, val);
+                                        }
+                                        if (activeExpressionLane === 'slide') {
+                                            setNoteSlide(cid, nid, val);
+                                        }
+                                        if (activeExpressionLane === 'pitchBend') {
+                                            setNotePitchBend(cid, nid, Math.round((val / 127) * 16383) - 8192);
+                                        }
+                                    }}
+                                    label={activeExpressionLane}
+                                    undoLabel={`Change ${activeExpressionLane}`}
+                                />
+                            </div>
                         </div>
                     </div>
                 ) : null}
