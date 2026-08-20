@@ -112,6 +112,14 @@ describe('compileLoadPresetActions', () => {
         expect(compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' })).toBeNull();
     });
 
+    it('rejects a preset containing a device withheld from release', () => {
+        mocks.getFactoryPresets.mockReturnValue([
+            preset({ devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }] }),
+        ]);
+
+        expect(compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' })).toBeNull();
+    });
+
     it('rejects a caller snapshot with a missing or extra parameter before the handler writes', () => {
         const expected = preset();
         expect(

@@ -44,6 +44,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0028](0028-native-provider-credential-sessions.md)                 | Hosted provider credentials stay native behind opaque sessions                                                                          |
 | [0029](0029-electron-desktop-shell.md)                              | The desktop shell is Electron over a shell-agnostic native crate — **resolves the packaging deferral in 0012**                          |
 | [0030](0030-exact-model-release-admission.md)                       | Exact model artifacts require release admission                                                                                         |
+| [0031](0031-withhold-grand-boule-from-release.md)                   | Preserve Grand Boule but withhold it from released product paths                                                                        |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

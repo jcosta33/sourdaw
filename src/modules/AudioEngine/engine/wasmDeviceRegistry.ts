@@ -8,6 +8,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
@@ -1848,4 +1849,11 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
     return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
+}
+
+export function findReleasedWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
+    if (!isDeviceReleaseAdmitted(deviceType)) {
+        return undefined;
+    }
+    return findWasmDescriptor(deviceType);
 }

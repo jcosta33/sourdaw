@@ -454,16 +454,18 @@
             "kind": "patent-directed-component",
             "retention": "defer-behind-admission",
             "owner": "OS-05",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": ["source", "web", "desktop"],
             "paths": ["crates/daw-dsp/src/grand_boule/**"],
             "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:crates/daw-dsp/src/grand_boule"],
-            "licenses": ["pending:OS-05-patent-and-parameter-source-review"],
-            "productSurfaces": ["Grand Boule piano engine", "piano controls and presets"],
-            "evidence": ["Current research follows an active patent without a complete claim-to-code map."],
+            "licenses": ["withheld:patent-and-parameter-provenance"],
+            "productSurfaces": ["Preserved Grand Boule source and project schema"],
+            "evidence": [
+                "ADR 0031 maps the live independent-claim risk and withholds every released discovery and runtime path."
+            ],
             "obligations": [
-                "Prove independence, design around mapped overlap, or keep the component unreleased without deleting it."
+                "Re-admit only after current patent-family, claim-element, design-around, and parameter-source proof."
             ]
         },
         {

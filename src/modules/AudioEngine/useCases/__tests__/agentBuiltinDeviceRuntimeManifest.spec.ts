@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { findWasmDescriptor } from '../../engine/wasmDeviceRegistry';
+import { findReleasedWasmDescriptor } from '../../engine/wasmDeviceRegistry';
 import { getBuiltinDeviceRuntimeVersion } from '../../models/BuiltinDeviceRuntime';
 import { BUILTIN_DEVICE_NODE_FACTORIES } from '../../repositories/deviceNodeFactory';
 import { NATIVE_DSP_DEVICE_FACTORIES } from '../../repositories/deviceStrategy/nativeDspDeviceFactories';
 import { getAgentBuiltinDeviceRuntimeManifest } from '../getAgentBuiltinDeviceRuntimeManifest';
 
 describe('built-in device runtime manifest', () => {
+    it('omits devices withheld from release', () => {
+        expect(getAgentBuiltinDeviceRuntimeManifest(['grand-boule'])).toEqual([]);
+    });
+
     it('projects physical factory topology, note support, and reported latency semantics', () => {
         const runtimeByType = new Map(
             getAgentBuiltinDeviceRuntimeManifest([
@@ -78,7 +82,7 @@ describe('built-in device runtime manifest', () => {
                     BUILTIN_DEVICE_NODE_FACTORIES.find((factory) => factory.type === runtime.type)?.runtime.live
                 ).toBe(runtime.live);
             } else {
-                expect(findWasmDescriptor(runtime.type)?.runtime).toBe(runtime.live);
+                expect(findReleasedWasmDescriptor(runtime.type)?.runtime).toBe(runtime.live);
             }
 
             if (runtime.offline.source === 'AudioEngine.deviceNodeFactory') {

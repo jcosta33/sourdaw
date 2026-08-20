@@ -1,3 +1,4 @@
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { type DeviceSnapshot } from '#/utils/handlerContract';
 
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
@@ -37,7 +38,12 @@ export function materializePresetDevices(preset: SoundPreset): readonly DeviceSn
         return null;
     }
     const devices = preset.devices.map((device): DeviceSnapshot | null => {
-        if (!hasBoundedId(device.type) || !device.name.trim() || device.name.length > 256) {
+        if (
+            !hasBoundedId(device.type) ||
+            !isDeviceReleaseAdmitted(device.type) ||
+            !device.name.trim() ||
+            device.name.length > 256
+        ) {
             return null;
         }
         const parameterValues = canonicalParameters(device.type, device.parameterValues);

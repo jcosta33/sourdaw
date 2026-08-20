@@ -279,18 +279,7 @@ describe('InstrumentsTab', () => {
         expect(showToaster).toHaveBeenCalledWith('toaster-device-1');
     });
 
-    it('creates Grand Boule through the catalog action before opening its panel', async () => {
-        const showGrandBoule = vi.fn();
-        const action = {
-            type: 'loadPreset',
-            payload: { presetId: 'grand-boule-default', trackId: 'grand-track' },
-        } as const;
-        arrangementMocks.compileLoadPresetActions.mockReturnValue({
-            actions: [action],
-            deviceIds: ['grand-device-1'],
-            groupLabel: 'Load preset',
-            trackId: 'grand-track',
-        });
+    it('does not advertise a device withheld from release', () => {
         renderWithTooltip(
             <InstrumentsTab
                 selectedTrackId={mockTrack.id}
@@ -301,16 +290,10 @@ describe('InstrumentsTab', () => {
                 preview={mockPreview as any}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
-                panelActions={makePanelActions({ showGrandBoule })}
+                panelActions={makePanelActions()}
             />
         );
 
-        fireEvent.click(screen.getByRole('button', { name: /^Grand Boule/ }));
-
-        await waitFor(() =>
-            expect(arrangementMocks.compileLoadPresetActions).toHaveBeenCalledWith({ presetId: 'grand-boule-default' })
-        );
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
-        expect(showGrandBoule).toHaveBeenCalledWith('grand-device-1');
+        expect(screen.queryByRole('button', { name: /^Grand Boule/ })).not.toBeInTheDocument();
     });
 });
