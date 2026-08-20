@@ -1,0 +1,52 @@
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_0a3429e31e555d::t_fd1420e9fc8ad5 1,17-28,62-67,99,117-124,128,198-201,203-210,212-215
+  s_0a3429e31e555d::t_ab0ac5c84a8d7a 56,59-61,74-76,97,102,105-113,185,188,202,211
+  s_0a3429e31e555d::t_9f9295f3df08ea 34,37,40-54,57-58,77-84,133-162
+  s_0a3429e31e555d::t_c33002f9cce045 68-72,100
+  s_0a3429e31e555d::t_45b74f4c3965de 163
+public/legal/SOURCES.json
+  s_0a3429e31e555d::t_234437b6cd7db5 12,31,34,38,42,55,69,72
+public/legal/RELINKING.md
+  s_0a3429e31e555d::t_bc1d43e0220762 3-5
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_bc1d43e0220762 5,11-16
+scripts/checkLgplRuntimeProvenance.ts
+  s_0a3429e31e555d::t_70404662d9877d 9,13,25,40-98,116-123,141-143,147-180,256-305,317-325,328-332
+  s_0a3429e31e555d::t_d05d2b3020c460 333
+electron-builder.yml
+  s_0a3429e31e555d::t_ce90fb150a57ab 73-75
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_0a3429e31e555d::t_ce90fb150a57ab 253-264
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_0a3429e31e555d::t_ce90fb150a57ab 3,232-240
+  s_b3e68b902b6b93::t_937670d21c1c37 241-246
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_8c1f277ac97982 761-781
+  s_0a3429e31e555d::t_b6fa4a4beb90e7 729
+package.json
+  s_0a3429e31e555d::t_fcfc7a8aebb25d 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0cc7690daa762b80c76b44d2d97d6202bec88e62",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
