@@ -274,7 +274,12 @@ Heading **Crossover controls**.
 | **LR4** / **Linear**                    | those two  | **LR4**   | Crossover flavour       |
 
 Corners used as the count grows: 200 Hz, 800 Hz, 2500 Hz, 6000 Hz, 12 000 Hz. Each is 20 Hz to
-20 000 Hz.
+20 000 Hz. Band count and those corners do change the split.
+
+> [!WARNING]
+> **Not yet active.** **12 dB**–**48 dB** and **LR4** / **Linear** remember their values and do not
+> change the split. The card LED still prints `lr4` or `linear-phase`.
+> [#2400](https://github.com/jcosta33/sourdaw/issues/2400)
 
 ### Source dock
 
@@ -305,6 +310,12 @@ Heading **Routing mode**.
 
 Heading **Lane overrides**. One row per live band: **Band 1** … with **serial**, **parallel**, and
 **M/S**. Default per band is **serial**.
+
+> [!WARNING]
+> **Not yet active.** The per-band chips remember **serial** / **parallel** / **M/S** and do not
+> override **Routing mode**. Global **Serial** / **Parallel** / **Mid/side** still combine the live
+> bands.
+> [#2401](https://github.com/jcosta33/sourdaw/issues/2401)
 
 ## Lab
 
