@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
@@ -8,6 +8,7 @@ import { crumbsStore, defaultCrumbsState, ensureInstance, setActiveSample, setMo
 import { ensurePadInstance, padStore } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
 import { initCrumbsEngine } from '../../../useCases/crumbsLifecycle/initCrumbsEngine';
+import { armCrumbsRecording } from '../../../useCases/recording/armCrumbsRecording';
 import { CrumbsPanel } from '../CrumbsPanel';
 
 import type { SampleMeta } from '../../../models/CrumbsTypes';
@@ -25,8 +26,17 @@ vi.mock('../../../useCases/crumbsLifecycle/teardownCrumbsEngine', () => ({
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+// The recorder controls reach the desktop bridge too; the readout under test is
+// how the panel renders their outcome, so the outcome is what is stubbed.
+vi.mock('../../../useCases/recording/armCrumbsRecording', () => ({
+    armCrumbsRecording: vi.fn().mockResolvedValue(true),
+}));
+vi.mock('../../../useCases/recording/stopCrumbsRecording', () => ({
+    stopCrumbsRecording: vi.fn().mockResolvedValue(undefined),
+}));
 
 const initEngineMock = vi.mocked(initCrumbsEngine);
+const armRecordingMock = vi.mocked(armCrumbsRecording);
 
 const DEVICE = 'panel-test';
 
@@ -69,6 +79,8 @@ beforeEach(() => {
     ensureSliceInstance(DEVICE);
     initEngineMock.mockReset();
     initEngineMock.mockResolvedValue(undefined);
+    armRecordingMock.mockReset();
+    armRecordingMock.mockResolvedValue(true);
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
 });
 
@@ -193,6 +205,70 @@ describe('CrumbsPanel', () => {
         expect(screen.getByRole('button', { name: 'Arm' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
         expect(screen.getByText('Idle')).toBeInTheDocument();
+    });
+
+    it('reads "Recording..." once the arm is accepted', async () => {
+        setMode(DEVICE, 'record');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
+
+        expect(await screen.findByText('Recording...')).toBeInTheDocument();
+    });
+
+    it('leaves the recorder Idle when the arm is refused', async () => {
+        // The native crumbs instance is absent whenever the backend engine is
+        // not running, so `arm_recording` rejects and no take is ever opened.
+        // A readout driven by the click rather than the outcome told the
+        // musician a take was running, and the loss only surfaced at stop.
+        armRecordingMock.mockRejectedValueOnce(new Error('Crumbs instance not found'));
+        setMode(DEVICE, 'record');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
+
+        await waitFor(() => expect(armRecordingMock).toHaveBeenCalledTimes(1));
+        expect(screen.getByText('Idle')).toBeInTheDocument();
+        expect(screen.queryByText('Recording...')).not.toBeInTheDocument();
+    });
+
+    it('leaves the recorder Idle when the arm resolves without arming', async () => {
+        // The use case refuses an instance with no pads before it reaches the
+        // bridge. That resolves, so only the reported outcome distinguishes it
+        // from an open take.
+        armRecordingMock.mockResolvedValueOnce(false);
+        setMode(DEVICE, 'record');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
+
+        await waitFor(() => expect(armRecordingMock).toHaveBeenCalledTimes(1));
+        expect(screen.getByText('Idle')).toBeInTheDocument();
+        expect(screen.queryByText('Recording...')).not.toBeInTheDocument();
+    });
+
+    it('ignores an arm that resolves after Stop was pressed', async () => {
+        // The arm's IPC round trip can outlive a Stop press. The stop request
+        // leaves after the arm request, so the recorder really is stopped —
+        // a stale arm resolution writing the readout would flip the LED back
+        // to "Recording..." over a closed take.
+        let resolveArm: (armed: boolean) => void = () => undefined;
+        armRecordingMock.mockImplementationOnce(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    resolveArm = resolve;
+                })
+        );
+        setMode(DEVICE, 'record');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        resolveArm(true);
+
+        await waitFor(() => expect(armRecordingMock).toHaveBeenCalledTimes(1));
+        expect(screen.getByText('Idle')).toBeInTheDocument();
+        expect(screen.queryByText('Recording...')).not.toBeInTheDocument();
     });
 
     it('renders the slice controls when mode is slice and a sample is loaded', () => {
