@@ -11,6 +11,8 @@
  * - Audio buffers transferred via Transferable (zero-copy)
  */
 
+import { KOKORO_MODEL_ARTIFACT } from '../models/KokoroArtifactManifest';
+
 import type { OnnxExecutionProvider, WorkerRequest, WorkerResponse, TensorData } from '../models/InferenceRequest';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -396,7 +398,7 @@ async function runDiffSingerPipeline(
 
 // ── Kokoro TTS via onnxruntime-web ────────────────────────────────────────
 
-const KOKORO_SESSION_ID = 'kokoro-82m-q8';
+const KOKORO_SESSION_ID = KOKORO_MODEL_ARTIFACT.id;
 
 /**
  * Run Kokoro TTS inference using the pre-loaded ONNX session.
@@ -419,7 +421,7 @@ async function runKokoroOnnx(
     const ort = await getOrt();
     const session = sessionCache.get(KOKORO_SESSION_ID)?.session;
     if (!session) {
-        throw new Error('Kokoro ONNX session not loaded — call create-session with modelId="kokoro-82m-q8" first');
+        throw new Error(`Kokoro ONNX session not loaded: ${KOKORO_SESSION_ID}`);
     }
 
     const post = (stage: string, progress: number): void => {

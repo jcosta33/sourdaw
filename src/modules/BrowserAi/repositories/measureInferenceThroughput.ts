@@ -18,7 +18,7 @@
  *
  * The probe is the real Kokoro model
  * ----------------------------------
- * The measurement runs the shipped `kokoro-82m-q8` ONNX graph through the same
+ * The measurement runs the admitted Kokoro ONNX graph through the same
  * `inferenceWorkerBridge` and the same execution-provider selection production
  * uses. A synthetic graph would need a calibration constant to become a realtime
  * factor, and that constant would be invented — the exact defect being fixed.
@@ -49,14 +49,16 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { type InferenceThroughput } from '../models/CapabilityReport';
+import { KOKORO_MODEL_ARTIFACT } from '../models/KokoroArtifactManifest';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 
 import { inferenceWorkerBridge } from './inferenceWorkerBridge';
-import { readModel } from './readModel';
+import { readVerifiedModel } from './readVerifiedModel';
 
-const PROBE_MODEL_ID = 'kokoro-82m-q8';
+const PROBE_MODEL_ID = KOKORO_MODEL_ARTIFACT.id;
 const PROBE_MODEL_FAMILY = 'kokoro';
 
 /** Kokoro ONNX emits 24 kHz PCM — see `onnxInferenceWorker.runKokoroOnnx`. */
@@ -90,9 +92,12 @@ function buildProbeStyle(): Float32Array {
 
 type MeasureInferenceThroughputOutput = Promise<InferenceThroughput>;
 
-export const measureInferenceThroughput = inject({ logger, readModel })(
-    ({ logger, readModel }) =>
+export const measureInferenceThroughput = inject({ logger, readVerifiedModel })(
+    ({ logger, readVerifiedModel }) =>
         async function measureInferenceThroughput(): MeasureInferenceThroughputOutput {
+            if (!MODEL_RELEASE_ADMISSION.kokoro) {
+                return { status: 'not-measured', reason: 'not-requested' };
+            }
             if (!hasWebGpu()) {
                 return { status: 'not-measured', reason: 'no-webgpu' };
             }
@@ -100,7 +105,12 @@ export const measureInferenceThroughput = inject({ logger, readModel })(
             let modelData: ArrayBuffer | null;
             let executionProviders: string[];
             try {
-                modelData = await readModel({ family: PROBE_MODEL_FAMILY, modelId: PROBE_MODEL_ID });
+                modelData = await readVerifiedModel({
+                    family: PROBE_MODEL_FAMILY,
+                    modelId: PROBE_MODEL_ID,
+                    sha256: KOKORO_MODEL_ARTIFACT.sha256,
+                    sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
+                });
             } catch (error) {
                 logger.warn(`[BrowserAi] Throughput probe could not read the model: ${String(error)}`);
                 return { status: 'not-measured', reason: 'model-not-cached' };

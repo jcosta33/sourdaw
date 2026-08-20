@@ -226,8 +226,13 @@ export const downloadModel = inject({ logger })(
 
                         if (writable) {
                             try {
-                                // Streamed path: bytes already on disk, nothing to verify or extract.
                                 throwIfAborted(signal);
+                                if (bytesDownloaded !== sizeBytes) {
+                                    await (streamedAbortPromise ?? abortWritable(writable));
+                                    throw new Error(
+                                        `Size check failed for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(bytesDownloaded)}`
+                                    );
+                                }
                                 await writable.close();
                                 throwIfAborted(signal);
 
@@ -255,6 +260,11 @@ export const downloadModel = inject({ logger })(
                         }
 
                         throwIfAborted(signal);
+                        if (bytesDownloaded !== sizeBytes) {
+                            throw new Error(
+                                `Size check failed for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(bytesDownloaded)}`
+                            );
+                        }
                         // Buffered path: concatenate chunks once.
                         const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
                         const fullData = new Uint8Array(totalLength);
