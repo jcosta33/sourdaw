@@ -23,6 +23,16 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
+    adjustmentLayerStore: { value: { layers: [] }, subscribe: vi.fn() },
+    takeLaneStore: { value: { lanes: [] }, subscribe: vi.fn() },
+    deriveVcaMultiplier: vi.fn(() => 1),
+    getVcaGroupsState: vi.fn(() => ({})),
+    shouldCreateLiveTrackStrip: vi.fn(() => false),
+    deriveEffectiveAudibility: vi.fn(() => true),
+    warpStates: new Map(),
+    getWarpState: vi.fn(),
+    addWarpMarker: vi.fn(),
+    clampDeviceParamWrite: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -35,6 +45,9 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
+    actionHistoryStore: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
+    setSemanticContext: vi.fn(),
+    clearSemanticContext: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
