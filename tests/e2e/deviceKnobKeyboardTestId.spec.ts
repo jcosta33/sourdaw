@@ -38,8 +38,20 @@ async function openGlutenThreshold(page: Page): Promise<Locator> {
     return knob;
 }
 
+async function numericAttribute(knob: Locator, name: string): Promise<number> {
+    const raw = await knob.getAttribute(name);
+    if (raw === null || raw === '') {
+        throw new Error(`${name} is missing`);
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+        throw new Error(`${name} is not a finite number: ${raw}`);
+    }
+    return value;
+}
+
 async function valueNow(knob: Locator): Promise<number> {
-    return Number(await knob.getAttribute('aria-valuenow'));
+    return numericAttribute(knob, 'aria-valuenow');
 }
 
 test.describe('Device parameter knob — keyboard increment (Gluten)', () => {
@@ -76,8 +88,9 @@ test.describe('Device parameter knob — keyboard increment (Gluten)', () => {
 
     test('Home sets the knob to its minimum', async ({ page }) => {
         const knob = await openGlutenThreshold(page);
-        const min = Number(await knob.getAttribute('aria-valuemin'));
-        const max = Number(await knob.getAttribute('aria-valuemax'));
+        const min = await numericAttribute(knob, 'aria-valuemin');
+        const max = await numericAttribute(knob, 'aria-valuemax');
+        expect(min).not.toBe(max);
         await knob.focus();
 
         await page.keyboard.press('End');
@@ -90,8 +103,9 @@ test.describe('Device parameter knob — keyboard increment (Gluten)', () => {
 
     test('End sets the knob to its maximum', async ({ page }) => {
         const knob = await openGlutenThreshold(page);
-        const min = Number(await knob.getAttribute('aria-valuemin'));
-        const max = Number(await knob.getAttribute('aria-valuemax'));
+        const min = await numericAttribute(knob, 'aria-valuemin');
+        const max = await numericAttribute(knob, 'aria-valuemax');
+        expect(min).not.toBe(max);
         await knob.focus();
 
         await page.keyboard.press('Home');
