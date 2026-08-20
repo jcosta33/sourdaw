@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Staged conflict markers. Harness-agnostic: every agent and every human runs `git commit`, so this
+# is the one content gate that binds Claude, Codex, Kimi, zcode and people equally.
+#
+# Git refuses to commit a path that is still unmerged, so the only way a marker reaches history is a
+# resolution that staged the file as resolved with markers still inside it. Nothing else catches
+# that: a formatter rewrites rather than reports, so running it over a half-resolved file reformats
+# the markers and exits clean.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+#
+# Bypass for a genuine exception:  git commit --no-verify
+
+set -uo pipefail
+
+# Only the opening, closing and diff3-base markers, each anchored to column 0 and followed by the
+# label git always writes. The separator is deliberately absent: a bare row of `=` at column 0 is a
+# setext heading in Markdown, and a check that cries wolf gets turned off. Written inline rather
+# than in a heredoc so this file never carries one of these at column 0 itself.
+marker_pattern='^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>) '
+
+paths=()
+while IFS= read -r -d '' path; do
+  paths+=("$path")
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
+
+if [ ${#paths[@]} -eq 0 ]; then
+  exit 0
+fi
+
+# `git grep --cached` reads the index, so the working tree is never consulted and an unstaged marker
+# is not this hook's business. `-I` drops binary blobs.
+candidates=()
+while IFS= read -r path; do
+  [ -n "$path" ] && candidates+=("$path")
+done < <(git grep --cached -I -l -E "$marker_pattern" -- "${paths[@]}" 2>/dev/null)
+
+if [ ${#candidates[@]} -eq 0 ]; then
+  exit 0
+fi
+
+# A fenced code block is where documentation legitimately shows a marker, so Markdown gets that one
+# exemption and nothing else. An indented code block needs no rule: indentation already moves the
+# marker off column 0.
+report=''
+for path in "${candidates[@]}"; do
+  case "$path" in
+    *.md|*.mdx) fenced=1 ;;
+    *) fenced=0 ;;
+  esac
+  hits="$(git show ":$path" | awk -v fenced="$fenced" -v path="$path" '
+    fenced && /^[ \t]*(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    $0 ~ /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>) / { printf "  %s:%d: %s\n", path, FNR, $0 }
+  ')"
+  # `$(...)` eats the trailing newline, so put one back or two files report as one line.
+  [ -n "$hits" ] && report="${report}${hits}"$'\n'
+done
+
+if [ -z "$report" ]; then
+  exit 0
+fi
+
+printf 'pre-commit: staged content still contains merge-conflict markers.\n\n%s\n' "$report" >&2
+echo 'Finish the resolution, restage the file, and commit again.' >&2
+echo 'A formatter will happily reformat a marker, so it is no evidence the file is resolved.' >&2
+echo '' >&2
+echo 'Deliberate exception: git commit --no-verify' >&2
+exit 1

@@ -188,10 +188,12 @@ author lock are shared across every lane, so a global or destructive operation r
 hits all of them.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
-Removal requires a clean lane holding the merged head of exactly one pull request. Delete a leftover
-local branch after success. A superseded lane therefore cannot be removed: `pr:supersede` closes the
-old pull request unmerged, so that lane and the author lock it holds persist until the tooling gains
-a path.
+Removal requires a clean lane holding the head of exactly one pull request whose work reached
+`main`. Merging is one way there. Being superseded is the other: `pr:supersede` closes the old pull
+request unmerged but leaves a receipt naming the replacement, and removal reads that receipt and
+requires the replacement to be merged. Any other closed pull request is an abandonment and keeps its
+lane, because removing it would discard work that never landed. Delete a leftover local branch after
+success.
 
 ## Artifacts
 
@@ -343,8 +345,10 @@ test that fails when the change is reverted, a measurement at the boundary users
 proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
-pull request is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any
-other way.
+pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
+and nothing else: `lane:publish` opens every pull request there, so any other base is a retarget the
+delivery scripts did not make, and `deliver` refuses it rather than squashing onto a branch the
+change was never reviewed against. Do not merge any other way.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
 review. Enable hooks: `git config core.hooksPath .githooks`.

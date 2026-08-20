@@ -9,6 +9,8 @@ import {
     fail,
     issueRelationshipFromBody,
     laneBranchName,
+    supersessionCommentBody,
+    supersessionReplacement,
 } from '../prContract.ts';
 
 describe('pull-request contract', () => {
@@ -115,6 +117,28 @@ describe('pull-request contract', () => {
         expect(() => assertLaneSlug('2206')).toThrow(/purely numeric/);
         expect(() => assertLaneSlug('0')).toThrow(/purely numeric/);
         expect(() => assertLaneSlug('sprint-2206')).not.toThrow();
+    });
+
+    /**
+     * `pr:supersede` writes this comment and `lane:remove` reads it back to decide whether a closed
+     * lane may be deleted. The two only agree because they share this pair, so the round trip is
+     * the contract, not the literal.
+     */
+    it('round-trips the supersession receipt it writes', () => {
+        expect(supersessionCommentBody(2398)).toBe('Superseded by #2398.');
+        expect(supersessionReplacement(supersessionCommentBody(2398))).toBe(2398);
+    });
+
+    it.each([
+        ['a bare Done reply', 'Done'],
+        ['prose that merely mentions a supersession', 'This was superseded by #12, see there.'],
+        ['a receipt with trailing commentary', 'Superseded by #12. Please look there.'],
+        ['a receipt with a leading quote', '> Superseded by #12.'],
+        ['a receipt with no terminating period', 'Superseded by #12'],
+        ['a receipt naming pull request zero', 'Superseded by #0.'],
+        ['a receipt naming no pull request', 'Superseded by #.'],
+    ])('reads no replacement out of %s', (_case, body) => {
+        expect(supersessionReplacement(body)).toBeUndefined();
     });
 
     it('requires one-paragraph review comments with defect, consequence, and outcome', () => {

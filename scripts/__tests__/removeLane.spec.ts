@@ -5,13 +5,17 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
+import { supersessionCommentBody } from '../prContract.ts';
 import {
     parseWorktrees,
     removeLane,
     resolveLaneTarget,
     shellPort,
+    type IssueComment,
     type LaneRemovalPort,
     type PullRequest,
+    type ReplacementPullRequest,
     type ShellRunner,
     type Worktree,
 } from '../removeLane';
@@ -45,6 +49,19 @@ function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
     };
 }
 
+function supersessionReceipt(replacement = 99, overrides: Partial<IssueComment> = {}): IssueComment {
+    return {
+        body: supersessionCommentBody(replacement),
+        authorLogin: AUTHOR_BOT_LOGIN,
+        authorType: 'Bot',
+        ...overrides,
+    };
+}
+
+function supersededPullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
+    return pullRequest({ state: 'CLOSED', mergedAt: null, ...overrides });
+}
+
 type FakeInput = {
     lane?: Worktree;
     currentDirectory?: string;
@@ -55,6 +72,8 @@ type FakeInput = {
     operation?: string;
     remoteHead?: string | null;
     pullRequests?: PullRequest[];
+    comments?: IssueComment[];
+    replacement?: Partial<ReplacementPullRequest>;
 };
 
 function fakePort(input: FakeInput = {}) {
@@ -73,6 +92,19 @@ function fakePort(input: FakeInput = {}) {
         operation: () => input.operation,
         remoteHead: () => (input.remoteHead === null ? undefined : (input.remoteHead ?? 'head')),
         pullRequests: () => input.pullRequests ?? [pullRequest()],
+        comments: (number) => {
+            calls.push(`comments:${number}`);
+            return input.comments ?? [];
+        },
+        replacement: (number) => {
+            calls.push(`replacement:${number}`);
+            return {
+                number,
+                state: 'MERGED',
+                mergedAt: '2026-08-20T00:00:00Z',
+                ...input.replacement,
+            };
+        },
         lock: (path) => {
             calls.push(`lock:${path}`);
             locked = true;
@@ -127,6 +159,134 @@ describe('lane removal', () => {
         const { port, calls } = fakePort(input);
 
         expect(() => removeLane(path, port)).toThrow(message);
+        expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    });
+
+    /**
+     * `pr:supersede` closes the old pull request unmerged, so state alone reads the same as an
+     * abandoned lane. The receipt it leaves is the only thing that separates them, and the lane
+     * holds a share of the shared author lock until removal succeeds.
+     */
+    it('removes a superseded lane whose replacement merged', () => {
+        const { port, calls } = fakePort({
+            pullRequests: [supersededPullRequest()],
+            comments: [supersessionReceipt(99)],
+        });
+
+        let thrown: unknown;
+        try {
+            removeLane(target, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown, 'a superseded lane, and the share of the author lock it holds, stayed stranded').toBeUndefined();
+        expect(calls).toContain('comments:42');
+        expect(calls).toContain('replacement:99');
+        expect(calls).toContain(`remove:${target}`);
+    });
+
+    it.each([
+        [
+            'closed with no receipt at all',
+            { pullRequests: [supersededPullRequest()], comments: [] },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'closed carrying an unrelated author-bot comment',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99, { body: 'Done' })],
+            },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'closed carrying a receipt nobody trusted wrote',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99, { authorLogin: 'drive-by', authorType: 'User' })],
+            },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'closed carrying a receipt written by a human impersonating the bot login',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99, { authorType: 'User' })],
+            },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'closed carrying two receipts that disagree',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99), supersessionReceipt(100)],
+            },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'superseded by a pull request that never merged',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99)],
+                replacement: { state: 'CLOSED', mergedAt: null },
+            },
+            /superseded by #99, which is not merged/,
+        ],
+        [
+            'superseded by a pull request whose merge is unrecorded',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99)],
+                replacement: { state: 'MERGED', mergedAt: null },
+            },
+            /superseded by #99, which is not merged/,
+        ],
+        [
+            'superseded by a different pull request than the one GitHub answered with',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99)],
+                replacement: { number: 98 },
+            },
+            /superseded by #99, which is not merged/,
+        ],
+        [
+            'closed naming itself as its own replacement',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(42)],
+            },
+            /names itself as its replacement/,
+        ],
+    ])('refuses to remove a lane %s', (_case, input, message) => {
+        const { port, calls } = fakePort(input);
+
+        let thrown: unknown;
+        try {
+            removeLane(target, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(calls, 'a lane holding unmerged work was removed and the work discarded').not.toContainEqual(
+            expect.stringMatching(/^remove:/)
+        );
+        expect(String(thrown)).toMatch(message);
+    });
+
+    /**
+     * A supersession receipt says the work moved, not that the lane is finished. Everything a
+     * merged lane must still prove — clean tree, idle, own head — has to hold on this path too.
+     */
+    it('holds a superseded lane to every other removal condition', () => {
+        const { port, calls } = fakePort({
+            pullRequests: [supersededPullRequest()],
+            comments: [supersessionReceipt(99)],
+            dirty: true,
+        });
+
+        expect(() => removeLane(target, port)).toThrow(/dirty/);
         expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
     });
 
@@ -250,6 +410,42 @@ describe('lane-removal shell boundary', () => {
         expect(runs.at(-1)).toEqual({ command: 'git', args: ['worktree', 'remove', target] });
     });
 
+    it('reads the supersession receipt and the replacement from paginated GitHub state', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                if (args.includes('nameWithOwner')) {
+                    return 'jcosta33/sourdaw';
+                }
+                if (args.includes('repos/jcosta33/sourdaw/issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [{ body: 'Superseded by #99.', user: { login: 'jcosta33-author[bot]', type: 'Bot' } }],
+                        [{ body: 'drive by', user: null }],
+                    ]);
+                }
+                if (args.includes('repos/jcosta33/sourdaw/pulls/99')) {
+                    return JSON.stringify({ number: 99, state: 'closed', merged_at: '2026-08-20T00:00:00Z' });
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort(shell);
+
+        expect(port.comments(42)).toEqual([
+            { body: 'Superseded by #99.', authorLogin: 'jcosta33-author[bot]', authorType: 'Bot' },
+            { body: 'drive by', authorLogin: null, authorType: null },
+        ]);
+        // GitHub reports a merged pull request as `closed`; only `merged_at` says it landed.
+        expect(port.replacement(99)).toEqual({ number: 99, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' });
+        expect(
+            captures.some(
+                (entry) => entry.command === 'gh' && entry.args.includes('--paginate') && entry.args.includes('--slurp')
+            )
+        ).toBe(true);
+    });
+
     it('preserves ignored data and removes disposable output in a real worktree', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-remove-'));
         const lane = join(repository, '.agents/worktrees/feature');
@@ -281,6 +477,8 @@ describe('lane-removal shell boundary', () => {
                 operation: () => undefined,
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head })],
+                comments: () => [],
+                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
                 lock: (path) => {
                     git(['worktree', 'lock', '--reason', 'test', path]);
                 },

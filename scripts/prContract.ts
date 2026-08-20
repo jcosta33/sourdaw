@@ -205,6 +205,27 @@ export function laneBranchName(issue: number | undefined, slug: string): string 
     return issue === undefined ? `agent/${slug}` : `agent/${issue}/${slug}`;
 }
 
+/**
+ * The supersession receipt. `pr:supersede` writes exactly this comment as the author bot before it
+ * closes the old pull request, and `lane:remove` reads it back to tell a superseded lane from an
+ * abandoned one. Both sides go through this pair, so the receipt is one contract rather than two
+ * string literals that drift apart.
+ */
+export function supersessionCommentBody(replacement: number): string {
+    return `Superseded by #${replacement}.`;
+}
+
+const SUPERSESSION_COMMENT_PATTERN = /^Superseded by #([1-9][0-9]*)\.$/;
+
+export function supersessionReplacement(body: string): number | undefined {
+    const captured = SUPERSESSION_COMMENT_PATTERN.exec(body)?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const replacement = Number(captured);
+    return Number.isSafeInteger(replacement) && replacement > 0 ? replacement : undefined;
+}
+
 export function assertReviewCommentBody(body: string): void {
     const trimmed = body.trim();
     if (trimmed === '') {
