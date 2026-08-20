@@ -1,0 +1,31 @@
+AGENTS.md
+  s_0a3429e31e555d::t_bf88ff83f13513 265-266,268-272
+scripts/publishLane.ts
+  s_0a3429e31e555d::t_bf88ff83f13513 50,176-181,190-191,196-198,200,206-209,237-247,302
+.github/dependabot.yml
+  s_0a3429e31e555d::t_52f1ed4b32be54 3,8,10,12,17,19
+scripts/__tests__/openLane.spec.ts
+  s_0a3429e31e555d::t_8f8a813fca477e 1-13,18-31,33-46,48-63,67-74,131-143,145-154,157,164-212
+scripts/__tests__/publishLane.spec.ts
+  s_0a3429e31e555d::t_8b019be6ad042c 1-4,24,53-54,67-68,79,122-126,150,153-155,157-158,161,166,169-170,499,544-593
+scripts/openLane.ts
+  s_0a3429e31e555d::t_c01ba0afa4da5f 110-129,131,136-137,146
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_0a3429e31e555d::t_ddb0388aafa3fe 807,810-811,819,821-822
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f53926ccca7d7ec9d6d064ac8ab39df12eb70867",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
