@@ -61,38 +61,13 @@ describe('ModelManagerPanel', () => {
         mocks.registryState = undefined;
     });
 
-    it('should render DDSP instruments as unavailable when the registry marks them unavailable', () => {
+    it('does not expose withheld DDSP checkpoints', () => {
         mocks.registryState = create_registry_with_unavailable_ddsp();
 
         render(<ModelManagerPanel />);
 
-        expect(screen.getByText('DDSP Instruments')).toBeInTheDocument();
-        expect(screen.getAllByText('Unavailable')).toHaveLength(DDSP_INSTRUMENT_CATALOG.length);
-        expect(
-            screen.getByLabelText('Violin unavailable: DDSP browser rendering is not available in this build')
-        ).toBeInTheDocument();
-        expect(screen.getAllByText('TF.js worker unavailable in this build')).toHaveLength(
-            DDSP_INSTRUMENT_CATALOG.length
-        );
-        expect(screen.queryByText('✓ Cached')).not.toBeInTheDocument();
-        expect(screen.queryByText(/available via CDN/i)).not.toBeInTheDocument();
-        expect(screen.queryByText(/Loaded from CDN/i)).not.toBeInTheDocument();
-    });
-
-    it('should render DDSP instruments as cached when the registry marks them ready', () => {
-        mocks.registryState = {
-            ...create_base_registry(),
-            ddspInstruments: DDSP_INSTRUMENT_CATALOG.map((instrument) => ({
-                ...instrument,
-                status: 'ready',
-                downloadProgress: 1,
-            })),
-        };
-
-        render(<ModelManagerPanel />);
-
-        expect(screen.getAllByText('✓ Cached')).toHaveLength(DDSP_INSTRUMENT_CATALOG.length);
-        expect(screen.getAllByText('CDN · ~15 MB · cached by browser')).toHaveLength(DDSP_INSTRUMENT_CATALOG.length);
+        expect(screen.queryByText('DDSP Instruments')).not.toBeInTheDocument();
+        expect(screen.queryByText(/DDSP:/)).not.toBeInTheDocument();
     });
 
     it('should download the Kokoro model when not-downloaded and show its download button', () => {
@@ -107,6 +82,7 @@ describe('ModelManagerPanel', () => {
             family: KOKORO_MODEL_ENTRY.family,
             url: KOKORO_MODEL_ENTRY.url,
             sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
+            sha256: KOKORO_MODEL_ENTRY.sha256,
         });
     });
 
@@ -158,7 +134,7 @@ describe('ModelManagerPanel', () => {
             expect(logger_error_spy).toHaveBeenCalledTimes(1);
         });
         const logged = logger_error_spy.mock.calls[0]?.[0] as Error;
-        expect(logged.message).toContain('Failed to remove model "kokoro-82m-q8"');
+        expect(logged.message).toContain(`Failed to remove model "${KOKORO_MODEL_ENTRY.id}"`);
         expect(logged.cause).toBe(removal_failure);
 
         logger_error_spy.mockRestore();

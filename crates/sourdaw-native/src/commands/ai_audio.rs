@@ -27,10 +27,7 @@ pub struct DenoiseResult {
 /// same Denoise action must render the same audio in every runtime. Change
 /// them in lockstep.
 ///
-/// NOTE: This is a simple DSP fallback. The `deep_filter` Rust crate
-/// (DeepFilterNet3) is the intended replacement but is currently broken
-/// against tract 0.22+. Once upstream fixes the `symbol_table` → `symbols`
-/// API change, swap this out.
+/// A model-backed replacement requires separate artifact admission.
 pub async fn denoise_audio(request: DenoiseRequest) -> Result<DenoiseResult, String> {
     tokio::task::spawn_blocking(move || denoise_audio_blocking(request))
         .await

@@ -227,6 +227,21 @@ describe('downloadModel — streaming + single channel', () => {
         expect(lastWritable?.closed).toBe(true);
     });
 
+    it('rejects and discards a streamed artifact whose byte count does not match its manifest', async () => {
+        const bytes = new Uint8Array(3);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)))
+        );
+
+        await expect(downloadModel({ spec: { ...baseSpec, sizeBytes: bytes.length + 1 } })).rejects.toThrow(
+            'Size check failed'
+        );
+
+        expect(lastWritable?.aborted).toBe(true);
+        expect(lastWritable?.closed).toBe(false);
+    });
+
     it('constructs exactly one BroadcastChannel for the whole download and closes it', async () => {
         const chunks = Array.from({ length: 20 }, () => new Uint8Array(10));
         vi.stubGlobal(
@@ -481,6 +496,30 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
         expect(stages).not.toContain('extracting');
     });
 
+    it('rejects a verified artifact whose byte count does not match its manifest', async () => {
+        vi.useFakeTimers();
+        const bytes = new Uint8Array([1, 2, 3]);
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)));
+        vi.stubGlobal('fetch', fetchMock);
+
+        try {
+            const promise = downloadModel({
+                spec: { ...baseSpec, sizeBytes: bytes.length + 1, sha256 },
+            });
+            const errorPromise: Promise<unknown> = promise.catch((error: unknown) => error);
+            await vi.runAllTimersAsync();
+            const error = await errorPromise;
+
+            expect(error).toBeInstanceOf(Error);
+            expect(String(error)).toContain('Size check failed');
+            expect(fetchMock).toHaveBeenCalledTimes(3);
+            expect(lastWritable).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('retries and ultimately fails when the sha256 does not match', async () => {
         const bytes = new Uint8Array([9, 9, 9]);
         vi.stubGlobal(
@@ -578,7 +617,7 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
                 spec: { ...baseSpec, url: 'https://cdn.example/unsafe.zip', sizeBytes: zipped.length },
                 onProgress: (payload) => stages.push(payload.stage),
             });
-            const errorPromise: Promise<unknown> = promise.catch((reason: unknown) => reason);
+            const errorPromise: Promise<unknown> = promise.catch((error: unknown) => error);
             await vi.runAllTimersAsync();
             const error = await errorPromise;
 
