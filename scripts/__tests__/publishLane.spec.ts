@@ -12,7 +12,7 @@ import {
     issueExistsFromLookup,
     issueLookupArgs,
     laneIssueNumber,
-    matchingOpenPullRequestNumber,
+    matchingOpenPullRequest,
     parsePublishLaneArgs,
     parsePublishWorktrees,
     publishLane,
@@ -61,7 +61,9 @@ type FakeInput = {
     remoteSha?: string;
     ancestor?: boolean;
     existing?: number;
+    /** Per-lookup answers, so a pull request can close between the authorizing query and the push. */
     existingByCall?: Array<number | undefined>;
+    existingBody?: unknown;
     issueExists?: boolean;
 };
 
@@ -93,7 +95,16 @@ function fakePort(input: FakeInput = {}) {
         existingOpenPullRequest: (branch) => {
             const query = pullRequestQueries++;
             calls.push(`pr:${branch}`);
-            return input.existingByCall === undefined ? input.existing : input.existingByCall[query];
+            const number = input.existingByCall === undefined ? input.existing : input.existingByCall[query];
+            return number === undefined
+                ? undefined
+                : {
+                      number,
+                      body:
+                          input.existingBody === undefined
+                              ? '### 📌 Related tickets & additional notes\nCloses #12'
+                              : input.existingBody,
+                  };
         },
         createPullRequest: ({ title, body, branch }) => {
             bodies.push(body);
@@ -211,6 +222,126 @@ describe('lane publish', () => {
         expect(publishLane(undefined, port)).toBe(88);
         expect(calls).toContain('push:agent/12/work');
         expect(bodies.at(-1)).toContain('Closes #12');
+    });
+
+    it('references a campaign issue without closing it', () => {
+        const { port, bodies } = fakePort();
+
+        publishLane(12, port, 'relates');
+
+        expect(bodies.at(-1)).toContain('Related #12');
+        expect(bodies.at(-1)).not.toContain('Closes #12');
+    });
+
+    it('takes the related issue from the lane branch', () => {
+        const { port, bodies } = fakePort({
+            trees: [...otherAuthorLanes(), worktree()],
+            cwd: `${ISSUE_LANE}/scripts`,
+        });
+
+        publishLane(undefined, port, 'relates');
+
+        expect(bodies.at(-1)).toContain('Related #12');
+    });
+
+    it('preserves Related on a later flagless update', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nRelated #12',
+        });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain('Related #12');
+        expect(bodies.at(-1)).not.toContain('Closes #12');
+    });
+
+    it('preserves Closes on a later flagless update', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+        });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain('Closes #12');
+        expect(bodies.at(-1)).not.toContain('Related #12');
+    });
+
+    it('changes a valid existing relationship only when requested', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+        });
+
+        publishLane(12, port, 'relates');
+
+        expect(bodies.at(-1)).toContain('Related #12');
+        expect(bodies.at(-1)).not.toContain('Closes #12');
+    });
+
+    it('validates existing state before an explicit relationship change', () => {
+        const { port, calls } = fakePort({ existing: 41, existingBody: 'None.' });
+
+        expect(() => publishLane(12, port, 'relates')).toThrow(/Related tickets/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('validates existing state before a flagless update', () => {
+        const { port, calls } = fakePort({ existing: 41, existingBody: null });
+
+        expect(() => publishLane(12, port)).toThrow(/body is unreadable/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('rejects mixed None and issue relationships before mutation', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nNone.\nCloses #12',
+        });
+
+        expect(() => publishLane(12, port)).toThrow(/exactly one relationship/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('validates an existing issueless pull request', () => {
+        const { port, calls } = fakePort({
+            trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+            cwd: CLEANUP_LANE,
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+        });
+
+        expect(() => publishLane(undefined, port)).toThrow(/issueless pull-request body/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('preserves None on a later issueless update', () => {
+        const { port, bodies } = fakePort({
+            trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+            cwd: CLEANUP_LANE,
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nNone.',
+        });
+
+        publishLane(undefined, port);
+
+        expect(bodies.at(-1)).toContain('### 📌 Related tickets & additional notes\nNone.');
+        expect(bodies.at(-1)).not.toContain('Closes #');
+        expect(bodies.at(-1)).not.toContain('Related #');
+    });
+
+    it('rejects --relates on an issueless lane', () => {
+        const { port } = fakePort({
+            trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+            cwd: CLEANUP_LANE,
+        });
+
+        expect(() => publishLane(undefined, port, 'relates')).toThrow(/requires an issue lane/);
     });
 
     it('publishes the lane it is standing in even when other author lanes exist', () => {
@@ -447,9 +578,12 @@ describe('lane publish', () => {
             lockReason: AUTHOR_LOCK_REASON,
         });
         expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, help: false });
+        expect(parsePublishLaneArgs(['12', '--relates'])).toEqual({ issue: 12, relationship: 'relates', help: false });
+        expect(parsePublishLaneArgs(['--relates'])).toEqual({ relationship: 'relates', help: false });
         expect(parsePublishLaneArgs([])).toEqual({ help: false });
         expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
         expect(() => parsePublishLaneArgs(['12', '13'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
     });
 
@@ -512,7 +646,7 @@ describe('lane publish', () => {
         }
     });
 
-    it('requests headRefName and isCrossRepository so the match can be proven client-side', () => {
+    it('requests headRefName, isCrossRepository, and the body the update path must preserve', () => {
         expect(existingOpenPullRequestArgs('agent/12/work')).toEqual([
             'pr',
             'list',
@@ -523,18 +657,29 @@ describe('lane publish', () => {
             '--state',
             'open',
             '--json',
-            'number,headRefName,isCrossRepository',
+            'number,headRefName,isCrossRepository,body',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
     });
 
-    describe('matchingOpenPullRequestNumber', () => {
+    describe('matchingOpenPullRequest', () => {
         function row(overrides: Partial<OpenPullRequestRow> = {}): OpenPullRequestRow {
-            return { number: 41, headRefName: 'agent/12/work', isCrossRepository: false, ...overrides };
+            return {
+                number: 41,
+                headRefName: 'agent/12/work',
+                isCrossRepository: false,
+                body: '### 📌 Related tickets & additional notes\nCloses #12',
+                ...overrides,
+            };
         }
 
-        it('accepts an exact same-repo head match', () => {
-            expect(matchingOpenPullRequestNumber([row()], 'agent/12/work')).toBe(41);
+        it('accepts an exact same-repo head match, and carries its body forward', () => {
+            expect(matchingOpenPullRequest([row()], 'agent/12/work')).toEqual({
+                number: 41,
+                headRefName: 'agent/12/work',
+                isCrossRepository: false,
+                body: '### 📌 Related tickets & additional notes\nCloses #12',
+            });
         });
 
         it('rejects a longer branch name that merely starts with the queried one', () => {
@@ -542,18 +687,18 @@ describe('lane publish', () => {
             // not depend on that. A pull request open on `agent/12/work-extra` must never authorize
             // a push targeting `agent/12/work`.
             expect(
-                matchingOpenPullRequestNumber([row({ headRefName: 'agent/12/work-extra' })], 'agent/12/work')
+                matchingOpenPullRequest([row({ headRefName: 'agent/12/work-extra' })], 'agent/12/work')
             ).toBeUndefined();
         });
 
         it('rejects a cross-repository pull request with the identical head name', () => {
             // `--repo` scopes the base repository, not the head repository, so a fork can open a
             // pull request whose head branch happens to share the exact same name.
-            expect(matchingOpenPullRequestNumber([row({ isCrossRepository: true })], 'agent/12/work')).toBeUndefined();
+            expect(matchingOpenPullRequest([row({ isCrossRepository: true })], 'agent/12/work')).toBeUndefined();
         });
 
         it('still refuses more than one matching open pull request', () => {
-            expect(() => matchingOpenPullRequestNumber([row(), row({ number: 42 })], 'agent/12/work')).toThrow(
+            expect(() => matchingOpenPullRequest([row(), row({ number: 42 })], 'agent/12/work')).toThrow(
                 /agent\/12\/work has more than one open pull request/
             );
         });

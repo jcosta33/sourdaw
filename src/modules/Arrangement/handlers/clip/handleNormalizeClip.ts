@@ -14,6 +14,14 @@ export const handleNormalizeClip = createHandler<'normalizeClip'>({
         const clip = getTrackStoreState()
             ?.tracks.flatMap((track) => track.clips)
             .find((candidate) => candidate.id === alpha.payload.clipId);
+        // Same computation `normalizeClip` uses to pick its write target gain — reusing it here,
+        // before execute runs, lets the inverse carry the exact post-normalize gain as its replay
+        // guard, so a stale replay refuses instead of silently overwriting a diverged gain.
+        const targetGain = getClipNormalizationTargetGain(
+            alpha.payload.clipId,
+            alpha.payload.mode,
+            alpha.payload.targetDb
+        );
         const mode = alpha.payload.mode ?? 'peak';
         let label: string;
         if (mode === 'peak') {
@@ -29,9 +37,13 @@ export const handleNormalizeClip = createHandler<'normalizeClip'>({
 
         return {
             label,
-            inverseAction: clip
-                ? { type: 'setClipGain', payload: { clipId: alpha.payload.clipId, gain: clip.gain } }
-                : null,
+            inverseAction:
+                clip && targetGain !== null
+                    ? {
+                          type: 'setClipGain',
+                          payload: { clipId: alpha.payload.clipId, gain: clip.gain, expectedGain: targetGain },
+                      }
+                    : null,
         };
     },
     isNoop: (alpha) => {

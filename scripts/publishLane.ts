@@ -21,7 +21,14 @@ import {
     spawnRun,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { assertConventionalSubject, assertIssueNumber, composePublishBody, fail } from './prContract.ts';
+import {
+    assertConventionalSubject,
+    assertIssueNumber,
+    composePublishBody,
+    fail,
+    issueRelationshipFromBody,
+    type IssueRelationship,
+} from './prContract.ts';
 
 export type PublishWorktree = {
     path: string;
@@ -30,7 +37,9 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
-export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number]';
+export type ExistingPullRequest = { number: number; body: unknown };
+
+export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number] [--relates]';
 
 export type PublishLanePort = {
     fetchMain: () => void;
@@ -44,27 +53,34 @@ export type PublishLanePort = {
     remoteBranchSha: (branch: string) => string | undefined;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
     push: (lane: string, branch: string) => void;
-    existingOpenPullRequest: (branch: string) => number | undefined;
+    existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
     updatePullRequest: (number: number, input: { title: string; body: string }) => void;
     log: (message: string) => void;
 };
 
-export function parsePublishLaneArgs(args: string[]): { issue?: number; help: boolean } {
+export function parsePublishLaneArgs(args: string[]): {
+    issue?: number;
+    relationship?: IssueRelationship;
+    help: boolean;
+} {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
         return { help: true };
     }
-    const issueArg = args[0];
-    if (issueArg === undefined) {
-        return { help: false };
-    }
-    if (args.length !== 1) {
+    const relationship: IssueRelationship | undefined = args.includes('--relates') ? 'relates' : undefined;
+    const positional = args.filter((arg) => arg !== '--relates');
+    if (positional.length !== args.length - (relationship === undefined ? 0 : 1) || positional.length > 1) {
         fail(PUBLISH_LANE_USAGE);
     }
-    return { issue: assertIssueNumber(issueArg, PUBLISH_LANE_USAGE), help: false };
+    const issueArg = positional[0];
+    if (issueArg === undefined) {
+        return relationship === undefined ? { help: false } : { relationship, help: false };
+    }
+    const issue = assertIssueNumber(issueArg, PUBLISH_LANE_USAGE);
+    return relationship === undefined ? { issue, help: false } : { issue, relationship, help: false };
 }
 
 /**
@@ -226,8 +242,7 @@ function resolveLegacyCandidate(
 
 /**
  * The issue a lane branch carries, or `undefined` for an issueless lane. `lane:open <issue>` is the
- * only producer of the `agent/<issue>/<slug>` shape, so the branch is the lane's own record of
- * which issue it closes.
+ * only producer of the `agent/<issue>/<slug>` shape, so the branch records the issue it tracks.
  */
 export function laneIssueNumber(branch: string): number | undefined {
     const captured = /^agent\/(\d+)\//.exec(branch)?.[1];
@@ -316,7 +331,11 @@ export const DIRTY_LANE_FAILURE =
 export const NO_LANE_SUBJECT_FAILURE =
     'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
 
-export function publishLane(issue: number | undefined, port: PublishLanePort): number {
+export function publishLane(
+    issue: number | undefined,
+    port: PublishLanePort,
+    relationship?: IssueRelationship
+): number {
     port.fetchMain();
     const lane = resolveAuthorLane(
         issue,
@@ -342,36 +361,42 @@ export function publishLane(issue: number | undefined, port: PublishLanePort): n
     if (behind !== 0 || ahead < 1) {
         fail('lane must be strictly ahead of origin/main');
     }
-    const content = pullRequestContent(issue, lane, port);
+    const write = pullRequestWrite(issue, lane, port, relationship);
     const headSha = port.headSha(lane.path);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
     }
     port.push(lane.path, lane.branch);
-    const existing = port.existingOpenPullRequest(lane.branch);
-    const number = pullRequestNumber(lane, content, existing, port);
+    const number = pullRequestNumber(lane, write, port);
     port.log(String(number));
     return number;
 }
 
-function pullRequestNumber(
-    lane: ResolvedLane,
-    content: PullRequestContent | undefined,
-    existing: number | undefined,
-    port: PublishLanePort
-): number {
-    if (content === undefined) {
-        return legacyPullRequestNumber(lane, existing);
+/**
+ * A conforming lane's number comes from the pull request `pullRequestWrite` already read, because
+ * the relationship it must preserve and the create-vs-update decision come out of that one lookup.
+ * A legacy lane never reached that lookup, so its number comes from a second, post-push one — which
+ * is also what re-proves the pull request that authorized the push is still open.
+ */
+function pullRequestNumber(lane: ResolvedLane, write: PullRequestWrite | undefined, port: PublishLanePort): number {
+    if (write === undefined) {
+        return legacyPullRequestNumber(lane, port.existingOpenPullRequest(lane.branch));
     }
+    const { existing, ...content } = write;
     if (existing === undefined) {
         return port.createPullRequest({ branch: lane.branch, ...content });
     }
-    port.updatePullRequest(existing, content);
-    return existing;
+    port.updatePullRequest(existing.number, content);
+    return existing.number;
 }
 
-type PullRequestContent = { title: string; body: string };
+/**
+ * The title and body to write, plus the pull request they are written to. `existing` travels with
+ * them because it is read once, before the push: the relationship a flagless update must preserve
+ * and the create-vs-update decision both come out of that single read.
+ */
+type PullRequestWrite = { title: string; body: string; existing: ExistingPullRequest | undefined };
 
 /**
  * The title and body to write, or `undefined` for a legacy lane, whose pull request this script must
@@ -382,17 +407,19 @@ type PullRequestContent = { title: string; body: string };
  * out of the branch slug instead is not the fix; the slug is nobody's record, and a rename would
  * then close the wrong ticket.
  *
- * That exemption covers the lane-subject rule too, and covers it by returning first. Deriving the
- * title from the newest non-merge commit above `origin/main`, and refusing a lane that has none,
- * both exist to name a title this script is about to write; a legacy lane writes none, so the port
- * is never asked and neither rule can fire. A legacy lane carrying only merges above `origin/main`
- * therefore still publishes, because pushing is the whole of what publishing it means.
+ * That exemption covers the lane-subject and relationship rules too, and covers them by returning
+ * first. Deriving the title from the newest non-merge commit above `origin/main`, refusing a lane
+ * that has none, and carrying an existing `Closes`/`Related` line forward all exist to name a title
+ * and a body this script is about to write; a legacy lane writes neither, so the port is never asked
+ * and none of those rules can fire. A legacy lane carrying only merges above `origin/main` therefore
+ * still publishes, because pushing is the whole of what publishing it means.
  */
-function pullRequestContent(
+function pullRequestWrite(
     issue: number | undefined,
     lane: ResolvedLane,
-    port: PublishLanePort
-): PullRequestContent | undefined {
+    port: PublishLanePort,
+    relationship: IssueRelationship | undefined
+): PullRequestWrite | undefined {
     if (lane.legacy) {
         return undefined;
     }
@@ -404,7 +431,20 @@ function pullRequestContent(
     // The update path overwrites the whole body, so an argumentless run on an issue lane would
     // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
     // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
-    return { title, body: composePublishBody(issue ?? laneIssueNumber(lane.branch), title) };
+    const laneIssue = issue ?? laneIssueNumber(lane.branch);
+    if (relationship === 'relates' && laneIssue === undefined) {
+        fail('--relates requires an issue lane or issue number');
+    }
+    const existing = port.existingOpenPullRequest(lane.branch);
+    if (existing !== undefined && typeof existing.body !== 'string') {
+        fail('existing pull-request body is unreadable');
+    }
+    const existingRelationship =
+        existing === undefined
+            ? undefined
+            : issueRelationshipFromBody(existing.body as string, laneIssue, REQUIRED_REPOSITORY);
+    const resolvedRelationship = relationship ?? existingRelationship ?? 'closes';
+    return { title, body: composePublishBody(laneIssue, title, resolvedRelationship), existing };
 }
 
 /**
@@ -413,14 +453,14 @@ function pullRequestContent(
  * nothing this script may author, so it refuses rather than opening a replacement carrying a
  * regenerated body.
  */
-function legacyPullRequestNumber(lane: ResolvedLane, existing: number | undefined): number {
+function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullRequest | undefined): number {
     if (existing === undefined) {
         fail(
             `${lane.branch} no longer has an open pull request: it was pushed, but a pre-convention ` +
                 `lane's pull request is not lane:publish's to open or rewrite`
         );
     }
-    return existing;
+    return existing.number;
 }
 
 /**
@@ -518,7 +558,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
                 gh(existingOpenPullRequestArgs(branch)),
                 'open pull-request query'
             );
-            return matchingOpenPullRequestNumber(rows, branch);
+            return matchingOpenPullRequest(rows, branch);
         },
         createPullRequest: ({ branch, title, body }) => {
             const url = gh([
@@ -609,11 +649,16 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
         '--state',
         'open',
         '--json',
-        'number,headRefName,isCrossRepository',
+        'number,headRefName,isCrossRepository,body',
     ];
 }
 
-export type OpenPullRequestRow = { number: number; headRefName: string; isCrossRepository: boolean };
+export type OpenPullRequestRow = {
+    number: number;
+    headRefName: string;
+    isCrossRepository: boolean;
+    body: unknown;
+};
 
 /**
  * `--head` narrows the request server-side, but proves nothing about *how* it narrows: `gh` does not
@@ -624,14 +669,15 @@ export type OpenPullRequestRow = { number: number; headRefName: string; isCrossR
  * server-side filter: only a row whose `headRefName` is exactly `branch` and whose `isCrossRepository`
  * is `false` counts. This also gates the ordinary update-vs-create path for conforming lanes, where a
  * `lane:publish` push always targets the same repository under the exact `agent/<issue>/<slug>`
- * branch name, so the tightened match changes nothing there.
+ * branch name, so the tightened match changes nothing there — except to keep a fork's body out of
+ * the relationship a flagless update carries forward.
  */
-export function matchingOpenPullRequestNumber(rows: OpenPullRequestRow[], branch: string): number | undefined {
+export function matchingOpenPullRequest(rows: OpenPullRequestRow[], branch: string): ExistingPullRequest | undefined {
     const matches = rows.filter((row) => row.headRefName === branch && row.isCrossRepository === false);
     if (matches.length > 1) {
         fail(`branch ${branch} has more than one open pull request`);
     }
-    return matches[0]?.number;
+    return matches[0];
 }
 
 export function parsePublishWorktrees(value: string): PublishWorktree[] {
@@ -657,7 +703,7 @@ export function parsePublishWorktrees(value: string): PublishWorktree[] {
 async function main(): Promise<number> {
     const parsed = parsePublishLaneArgs(process.argv.slice(2));
     if (parsed.help) {
-        console.log('Usage: pnpm lane:publish [issue-number]');
+        console.log('Usage: pnpm lane:publish [issue-number] [--relates]');
         return 0;
     }
     const executingFile = fileURLToPath(import.meta.url);
@@ -674,7 +720,7 @@ async function main(): Promise<number> {
         if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
             fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
         }
-        publishLane(parsed.issue, shellPort(auth.session));
+        publishLane(parsed.issue, shellPort(auth.session), parsed.relationship);
         return 0;
     } finally {
         auth.session.dispose();

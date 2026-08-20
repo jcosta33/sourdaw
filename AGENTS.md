@@ -178,9 +178,10 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
 never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
 number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
-`agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
-`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
-directory is what identifies it when no issue number does. Touch only your own lane.
+`agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
+`lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`,
+and `lane:publish` must run from inside that lane because the working directory identifies it. Touch
+only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -188,7 +189,9 @@ hits all of them.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
 Removal requires a clean lane holding the merged head of exactly one pull request. Delete a leftover
-local branch after success.
+local branch after success. A superseded lane therefore cannot be removed: `pr:supersede` closes the
+old pull request unmerged, so that lane and the author lock it holds persist until the tooling gains
+a path.
 
 ## Artifacts
 
@@ -212,30 +215,41 @@ case-insensitively against **open** milestones only, so the number the tracker U
 and nothing is filed — and add the issue to the roadmap project when it is on the roadmap, leaving
 either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
 applies the template's labels and the derived priority label, and takes the milestone and the
-project, but no sanctioned script edits an issue once it exists. Read the live sets with
-`gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`;
-never from a list written down here, which drifts the day it is written.
+project. Get the metadata right there, because no sanctioned script edits an issue once it exists
+and a correction afterwards is `gh` by hand. Read the live sets with `gh label list`,
+`gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`; never from a list
+written down here, which drifts the day it is written.
 
 ## Delivery
 
-GitHub writes for agent work go through trusted `pnpm` scripts. The model never runs `gh` to write
-or `git push` at all; read-only `gh` queries are fine and are how you check live tracker state.
-Identity is the App those scripts mint, not a persona.
+GitHub writes for agent work go through trusted `pnpm` scripts. Where a script covers the action it
+is the only way to take it: identity and the delivery gates live inside those scripts, so a
+hand-rolled equivalent or a route around a gate defeats both. One exception is open, and it is
+closed by list: an issue's own state, labels, milestone, project membership, and sub-issue links may
+be corrected by hand with `gh`. Nothing else may. A pull request is not an issue, so no `gh pr`
+write ever falls inside, whatever flag or field it names. A by-hand write is attributed to the
+operator's own account rather than to a mint, and so reads as the operator acting personally; that
+is why the exception stops at issue metadata one later command puts back. `git push` has no
+exception at all: lane tooling owns every push, because a push from anywhere else destroys the
+review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
+tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                        | Command                         |
-| --------------------------- | ------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]` |
-| Push; open or update the PR | `pnpm lane:publish [issue]`     |
-| Write the review bundle     | `pnpm review:prepare <pr>`      |
-| Post `review.json`          | `pnpm review:publish <pr>`      |
-| Squash-merge                | `pnpm deliver <pr>`             |
-| Remove a spent lane         | `pnpm lane:remove <path>`       |
+| Need                        | Command                                                           |
+| --------------------------- | ----------------------------------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
+| Push; open or update the PR | `pnpm lane:publish [issue] [--relates]`                           |
+| Write the review bundle     | `pnpm review:prepare <pr>`                                        |
+| Post `review.json`          | `pnpm review:publish <pr>`                                        |
+| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
+| Squash-merge                | `pnpm deliver <pr>`                                               |
+| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>` |
+| Remove a spent lane         | `pnpm lane:remove <path>`                                         |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
-`.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for `review:prepare`
-and `review:publish`. Do not commit them. Do not load the other role's file. Author mint is
-`jcosta33-author[bot]`. Reviewer mint is `jcosta33-reviewer[bot]`. `deliver` does not mint the
-reviewer.
+`.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
+`.env.sourdaw-reviewer` for `review:prepare` and `review:publish`. Do not commit them. Do not load
+the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
+`jcosta33-reviewer[bot]`. `deliver` does not mint the reviewer.
 
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
@@ -268,11 +282,11 @@ A conforming `agent/` lane also gets a written pull request: `lane:publish` titl
 newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
 `origin/main` in never retitles it, keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
-there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
-branch carries no issue. It refuses a conforming lane carrying no non-merge commit above
-`origin/main`, for the same reason it needs one to title the pull request. It does not enable
-auto-merge or post a review.
+bytes. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
+`Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
+Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses a
+conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
+to title the pull request. It does not enable auto-merge or post a review.
 
 An author-locked, off-convention branch may also publish — but only from inside its own worktree,
 since no issue argument ever resolves one, and only once the repository already has an open pull
@@ -302,14 +316,18 @@ makes it worse. Style-guide violations block; personal style does not. Leave the
 write one sentence about the code.
 
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
-refuses to merge while one is unresolved, and no sanctioned script resolves a thread — so a note
-meant not to block is exactly what blocks. Put a non-blocking observation in the approval body,
-prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
-where the thread is meant to stop the merge and a new head clears it.
+refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying
+`Done` on it — so a note meant not to block is exactly what blocks, and clearing it asserts a repair
+that never happened. Put a non-blocking observation in the approval body, prefixed `Nit:` or
+`Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review, where the thread is
+meant to stop the merge and a new head clears it.
 
-When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
-the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
-only when the current head actually addresses it. A new head needs a new review.
+When answering, push the fix first; `review:resolve` then posts a bare `Done` as the author bot and
+resolves the thread, pinned to that head. The reply body is fixed and no script writes free-form
+thread text, so a finding you judge wrong has no route on the thread: only a new head that addresses
+it clears one, which is why a finding is validated before it is ever posted. Clarify the code, not
+the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation only when the
+current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
