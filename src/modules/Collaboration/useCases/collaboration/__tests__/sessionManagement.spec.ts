@@ -44,6 +44,7 @@ const automergeSyncMock = vi.hoisted(() => ({
         hooks: {
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
+            onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
         };
         start: ReturnType<typeof vi.fn>;
         stop: ReturnType<typeof vi.fn>;
@@ -131,6 +132,7 @@ vi.mock('../../automergeSync', () => ({
         hooks: {
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
+            onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
         }
     ) {
         const instance = {
@@ -406,6 +408,23 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestAutomergeSync().hooks.onPersistError?.(new Error('boom'));
 
             expect(collaborationStore.value?.error).toBe('Failed to save received changes locally.');
+        });
+
+        it('surfaces a store error naming rejoin when a peer sync channel is quarantined', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState());
+
+            latestAutomergeSync().hooks.onSyncQuarantine?.({
+                peerId: 'peer-2',
+                docId: 'root',
+                error: new Error('sanitation failed'),
+            });
+
+            // The quarantine does not clear itself, so the message has to name
+            // rejoining as the way out rather than reading as transient.
+            expect(collaborationStore.value?.error).toBe(
+                'Stopped accepting changes from a peer — their project data could not be read. Have them rejoin the session.'
+            );
         });
     });
 

@@ -4,7 +4,12 @@ import {
     change,
     clone,
     generateSyncMessage,
+    getHeads,
+    load,
+    receiveSyncMessage,
+    save,
     type Doc,
+    type SyncState,
 } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -17,7 +22,7 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
 } from '#/modules/CrdtDocument/useCases';
-import { bytesToBase64 } from '#/utils/base64';
+import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { AutomergeSync } from '../automergeSync';
 
@@ -111,6 +116,12 @@ describe('AutomergeSync', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         crdt_mocks.wait_for_document_transition.mockReturnValue(null);
+        // `clearAllMocks` clears calls but not queued `...Once` implementations,
+        // so an unconsumed one from an earlier test would decide whether the
+        // first message of a later exchange sanitizes. Reset to the passthrough
+        // default instead of inheriting that.
+        vi.mocked(sanitizeIncomingCrdtDocument).mockReset();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => document);
     });
 
     it('subscribes to CRDT changes on start using injected dependencies', () => {
@@ -307,19 +318,285 @@ describe('AutomergeSync', () => {
         expect(command_mocks.sync_action_replay_metadata).toHaveBeenCalledTimes(1);
     });
 
+    /**
+     * A live peer endpoint, so a sanitation failure can be driven through a
+     * real bidirectional exchange rather than a single canned message.
+     * `receiveSyncMessage` outdates the document it is handed, so the peer's
+     * copy is reloaded from bytes and never aliases a document under test.
+     */
+    function makePeerEndpoint(doc: Doc<unknown>) {
+        let peer_doc = load<unknown>(save(doc));
+        let peer_state: SyncState = initSyncState();
+        return {
+            /** The next payload this peer wants to send, or null once settled. */
+            send(): Uint8Array | null {
+                const [next_state, message] = generateSyncMessage(peer_doc, peer_state);
+                peer_state = next_state;
+                return message;
+            },
+            receive(message: Uint8Array): void {
+                [peer_doc, peer_state] = receiveSyncMessage(peer_doc, peer_state, message);
+            },
+        };
+    }
+
+    /**
+     * Installs a mutable stand-in repository around one live document and
+     * returns the handles a poisoned exchange needs: the peer, the receiver,
+     * and a way to pump the receiver's outbound sync.
+     */
+    function setupPoisonedExchange() {
+        const { live: initial_live, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initial_live;
+        const pre_sync_heads = getHeads(live);
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+
+        let changeCb: ((docId?: string) => void) | undefined;
+        vi.mocked(subscribeToCrdtChanges).mockImplementation((cb) => {
+            changeCb = cb;
+            return () => {};
+        });
+
+        const peer = makePeerEndpoint(
+            change(remoteSeed, (draft) => {
+                draft.peerProbe = 'poisoned edit';
+            })
+        );
+        const peerManager = { getConnectedPeerIds: vi.fn().mockReturnValue(['editor']), sendCrdtSync: vi.fn() };
+        const onSyncQuarantine = vi.fn();
+        const sync = new AutomergeSync(peerManager, { onSyncQuarantine });
+        sync.start();
+
+        return {
+            peer,
+            sync,
+            onSyncQuarantine,
+            peerManager,
+            preSyncHeads: pre_sync_heads,
+            currentDoc: () => live,
+            /**
+             * An ordinary local edit, the way the repository makes one. This
+             * throws on an outdated document, which is exactly the state a
+             * non-installing receiver leaves behind.
+             */
+            applyLocalEdit(value: string): void {
+                live = change(live as Doc<SeededDoc>, (draft) => {
+                    draft.peerProbe = value;
+                });
+            },
+            /**
+             * Run the receiver's outbound generation and hand the peer the
+             * reply. Returns whether anything was actually generated — a
+             * settled or closed channel produces nothing.
+             */
+            async pumpReply(): Promise<boolean> {
+                peerManager.sendCrdtSync.mockClear();
+                changeCb?.('root');
+                // Sends are queued per (peer, doc) and settle on the microtask
+                // queue, so let it drain before reading what was sent.
+                await new Promise((resolve) => {
+                    setTimeout(resolve, 0);
+                });
+                const call = peerManager.sendCrdtSync.mock.calls.at(-1) as
+                    [{ message: { docId: string; data: string } }] | undefined;
+                if (!call) {
+                    return false;
+                }
+                peer.receive(base64ToBytes(call[0].message.data));
+                return true;
+            },
+        };
+    }
+
+    /** Deliver every payload the peer has, without pumping a reply back. */
+    function deliverPoisonedPayloads(exchange: ReturnType<typeof setupPoisonedExchange>): void {
+        for (let round = 0; round < 4; round++) {
+            const message = exchange.peer.send();
+            if (!message) {
+                return;
+            }
+            exchange.sync.receiveSync({
+                peerId: 'editor',
+                docId: 'root',
+                syncMessageBase64: bytesToBase64(message),
+            });
+        }
+    }
+
     it('should abort install and persistence when CrdtDocument sanitation fails', async () => {
         const { persistCrdtProject } = await import('#/modules/CrdtDocument/useCases');
-        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
-        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementationOnce(() => {
+        const exchange = setupPoisonedExchange();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
             throw new Error('sanitation failed');
         });
-        const sync = new AutomergeSync(makePeerManager());
 
-        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+        deliverPoisonedPayloads(exchange);
 
         expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
         expect(persistCrdtProject).not.toHaveBeenCalled();
+        // The unsanitizable content never becomes project truth: the document
+        // stays at the heads it had before the peer's changes arrived.
+        expect(getHeads(exchange.currentDoc())).toEqual(exchange.preSyncHeads);
+    });
+
+    it('reports a sanitation failure as a session-level fault instead of only logging it', () => {
+        const exchange = setupPoisonedExchange();
+        const failure = new Error('sanitation failed');
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw failure;
+        });
+
+        deliverPoisonedPayloads(exchange);
+
+        expect(exchange.onSyncQuarantine).toHaveBeenCalledWith({ peerId: 'editor', docId: 'root', error: failure });
+    });
+
+    /**
+     * The retransmission proof.
+     *
+     * `receiveSyncMessage` advances the Automerge protocol state whether or
+     * not we go on to install the document, so dropping the advanced
+     * SyncState tells the peer we never received anything: it re-sends the
+     * identical payload on every exchange, fails sanitation identically, and
+     * burns bandwidth and CPU for the rest of the session. Quarantining keeps
+     * the advanced state, so the peer settles.
+     *
+     * Reverting the quarantine to the old early `return` makes this fail: the
+     * peer keeps producing a payload and never settles.
+     */
+    /**
+     * The retransmission proof.
+     *
+     * Sanitation failure is a property of the content, so a peer that keeps
+     * the channel open keeps re-delivering bytes that fail identically —
+     * every copy costing a merge, a sanitation attempt and a log line. The
+     * quarantine closes the channel instead: further payloads from that peer
+     * for that document are dropped before any Automerge work happens.
+     *
+     * Reverting the quarantine makes this fail — every later payload is
+     * merged and re-sanitized.
+     */
+    it('does no further work on a channel whose content failed sanitation', () => {
+        const exchange = setupPoisonedExchange();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw new Error('sanitation failed');
+        });
+
+        deliverPoisonedPayloads(exchange);
+        const attempts_before = vi.mocked(sanitizeIncomingCrdtDocument).mock.calls.length;
+
+        // The peer, which cannot know it was quarantined, keeps sending.
+        for (let round = 0; round < 4; round++) {
+            const message = exchange.peer.send();
+            if (!message) {
+                break;
+            }
+            exchange.sync.receiveSync({
+                peerId: 'editor',
+                docId: 'root',
+                syncMessageBase64: bytesToBase64(message),
+            });
+        }
+
+        expect(vi.mocked(sanitizeIncomingCrdtDocument).mock.calls.length).toBe(attempts_before);
+        expect(exchange.onSyncQuarantine).toHaveBeenCalledTimes(1);
+    });
+
+    /** A closed channel is closed both ways — we stop generating for it too. */
+    it('generates no further sync for a quarantined channel', async () => {
+        const exchange = setupPoisonedExchange();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw new Error('sanitation failed');
+        });
+
+        deliverPoisonedPayloads(exchange);
+        expect(exchange.onSyncQuarantine).toHaveBeenCalledTimes(1);
+        exchange.applyLocalEdit('work continues');
+        const sent = await exchange.pumpReply();
+
+        expect(sent).toBe(false);
+    });
+
+    /** Reconnecting is the recovery path, so it must lift the quarantine. */
+    it('lifts the quarantine when the peer reconnects', () => {
+        const exchange = setupPoisonedExchange();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw new Error('sanitation failed');
+        });
+        deliverPoisonedPayloads(exchange);
+
+        exchange.sync.removePeer('editor');
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => document);
+        const current = exchange.currentDoc() as Doc<SeededDoc>;
+        const rejoined = change(clone<SeededDoc>(current, 'dddddddddddddddd'), (draft) => {
+            draft.peerProbe = 'after rejoin';
+        });
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote: rejoined, local: exchange.currentDoc() })) {
+            exchange.sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64 });
+        }
+
+        expect((exchange.currentDoc() as SeededDoc).peerProbe).toBe('after rejoin');
+    });
+
+    /**
+     * The document-death proof, from the local musician's side.
+     *
+     * `receiveSyncMessage` outdates the document it is handed, so a receiver
+     * that returns without installing anything leaves the repository holding
+     * an outdated handle — and every later `change()` against it throws
+     * `RangeError: Attempting to change an outdated document`. One
+     * unsanitizable message from one peer would stop the user editing their
+     * own project.
+     */
+    it('keeps the document writable after a peer fails sanitation', () => {
+        const exchange = setupPoisonedExchange();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw new Error('sanitation failed');
+        });
+
+        deliverPoisonedPayloads(exchange);
+
+        expect(() => exchange.applyLocalEdit('still editable')).not.toThrow();
+        expect((exchange.currentDoc() as SeededDoc).peerProbe).toBe('still editable');
+    });
+
+    /**
+     * The document-death proof.
+     *
+     * `receiveSyncMessage` also *outdates* the document it is given, so a
+     * receiver that returns without installing anything leaves the repository
+     * holding an outdated handle. Every later sync for that document — from
+     * any peer, well-formed or not — then dies inside `receiveSyncMessage`
+     * with `RangeError: Attempting to change an outdated document`, and the
+     * document stops syncing for the rest of the session.
+     *
+     * Reverting the quarantine makes this fail: the second peer's sync never
+     * reaches `replaceCrdtDoc`.
+     */
+    it('keeps the document syncable after a peer fails sanitation', () => {
+        const exchange = setupPoisonedExchange();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw new Error('sanitation failed');
+        });
+
+        deliverPoisonedPayloads(exchange);
+
+        // A second, well-behaved peer now syncs the same document.
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => document);
+        const current = exchange.currentDoc() as Doc<SeededDoc>;
+        const healthy = change(clone<SeededDoc>(current, 'cccccccccccccccc'), (draft) => {
+            draft.peerProbe = 'healthy edit';
+        });
+        const before_heads = getHeads(exchange.currentDoc());
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote: healthy, local: exchange.currentDoc() })) {
+            exchange.sync.receiveSync({ peerId: 'healthy-peer', docId: 'root', syncMessageBase64 });
+        }
+
+        expect(getHeads(exchange.currentDoc())).not.toEqual(before_heads);
+        expect((exchange.currentDoc() as SeededDoc).peerProbe).toBe('healthy edit');
     });
 
     it('drops a sync the canApplySync hook rejects', () => {

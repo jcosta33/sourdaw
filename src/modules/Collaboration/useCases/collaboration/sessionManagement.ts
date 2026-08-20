@@ -351,6 +351,14 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             // looks healthy while the other side silently falls behind.
             setCollaborationError('Could not send project changes to a peer — they may be out of date.');
         },
+        onSyncQuarantine: () => {
+            // Unlike a send failure this one does not clear itself: the
+            // channel is deliberately divergent until that peer rejoins, so
+            // the message has to name rejoining as the way out.
+            setCollaborationError(
+                'Stopped accepting changes from a peer — their project data could not be read. Have them rejoin the session.'
+            );
+        },
     };
 }
 
