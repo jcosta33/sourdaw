@@ -60,7 +60,7 @@ describe('generateWebLlmToolCalls', () => {
         vi.mocked(generateWebLlmCompletion).mockResolvedValue(response);
         const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
         const result = await generateWebLlmToolCalls('sys', 'user', tools);
-        expect(result).toEqual({ status: 'complete', toolCalls });
+        expect(result).toEqual({ status: 'complete', toolCalls, proposal: null });
     });
 
     it('forwards cancellation to WebLLM completion', async () => {
