@@ -202,7 +202,7 @@ Some thought
         { content: '{"actions":[]}', toolCalls: [] },
         { content: '```json\n{"tool_calls":[]}\n```', toolCalls: [] },
     ])('accepts one fully consumed $content representation', ({ content, toolCalls }) => {
-        expect(parseToolPlanningOutcome(content)).toEqual({ status: 'complete', toolCalls });
+        expect(parseToolPlanningOutcome(content)).toEqual({ status: 'complete', toolCalls, proposal: null });
     });
 
     it.each([

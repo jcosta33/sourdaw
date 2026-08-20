@@ -177,6 +177,7 @@ function createMinimalBaseAudioContext(sampleRate: number = DEFAULT_STUB_SAMPLE_
     audioWorklet: AudioWorklet;
     createGain: () => GainNode;
     createAnalyser: () => AnalyserNode;
+    createChannelSplitter: () => ChannelSplitterNode;
     resume: () => Promise<void>;
     suspend: () => Promise<void>;
 } {
@@ -217,6 +218,16 @@ function createMinimalBaseAudioContext(sampleRate: number = DEFAULT_STUB_SAMPLE_
             },
         }) as unknown as AnalyserNode;
 
+    // The master stereo analysis tap (createWebAudioEngine's constructor)
+    // fans masterAnalyser's output through one of these into the L/R
+    // analysers. Without a stub the constructor's `new AudioContext()` call
+    // throws mid-setup and the whole singleton falls back to fallback mode.
+    const createChannelSplitter = (): ChannelSplitterNode =>
+        ({
+            connect: (dest: AudioNode) => dest,
+            disconnect: (): void => {},
+        }) as unknown as ChannelSplitterNode;
+
     const context = {
         state: 'running' as AudioContextState,
         sampleRate,
@@ -224,6 +235,7 @@ function createMinimalBaseAudioContext(sampleRate: number = DEFAULT_STUB_SAMPLE_
         audioWorklet: { addModule: async (): Promise<void> => {} },
         createGain,
         createAnalyser,
+        createChannelSplitter,
         resume: async (): Promise<void> => {},
         suspend: async (): Promise<void> => {},
     };
