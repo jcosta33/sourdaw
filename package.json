@@ -23,6 +23,7 @@
         "test:command-schema": "node scripts/generateVersionedCommandArgumentSchemas.mjs --check",
         "test:release-inventory": "node scripts/checkReleaseInventory.ts",
         "test:barrel-mocks": "node scripts/checkBarrelMockCoverage.ts",
+        "census:ui": "node scripts/uiRestatementCensus.ts",
         "test:e2e": "playwright test",
         "deliver": "node scripts/deliverPullRequest.ts",
         "lane:open": "node scripts/openLane.ts",
