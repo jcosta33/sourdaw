@@ -90,7 +90,7 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
-    /// Boot the native audio engine (spawns CPAL stream).
+    /// Boot the native audio engine (spawns the audio stream).
     ///
     /// Two attempts, the second without the negotiated buffer period — see
     /// [`spawn_with_fallback`] for why the retry exists and what it reports.
@@ -102,12 +102,13 @@ impl EngineHandle {
     ///
     /// Every channel is rebuilt per attempt because a failed stream build
     /// consumes the ends it was given: the command consumer went into the
-    /// scheduler, the scheduler and the event producer went into the cpal
-    /// callbacks, and cpal drops those callbacks along with the stream it could
-    /// not build. Reusing the producers held here would leave them writing to
-    /// ends that no longer exist. `EngineHandle` is the only place that owns
-    /// both halves of all three channels, which is why the retry lives here
-    /// rather than inside `spawn_audio_thread`.
+    /// scheduler, the scheduler and the event producer went into the render
+    /// and error callbacks, and the device backend drops those callbacks
+    /// along with the stream it could not build. Reusing the producers held
+    /// here would leave them writing to ends that no longer exist.
+    /// `EngineHandle` is the only place that owns both halves of all three
+    /// channels, which is why the retry lives here rather than inside
+    /// `spawn_audio_thread`.
     fn spawn(force_default_buffer: bool) -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
