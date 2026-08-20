@@ -62,26 +62,26 @@ and the **Legato On** / **Legato Off** toggle on **Phrase**.
 
 <!-- ac: SPEC-orchestra-progressive-disclosure-ux/AC-005 -->
 
-Strings (including **Solo Violin**) start on **Long**, keyswitch **C0**:
+Strings (including **Solo Violin**) start on **Long**, keyswitch **C1**:
 
 | Name             | Keyswitch |
 | ---------------- | --------- |
-| **Long**         | C0        |
-| **Long (nv)**    | C#0       |
-| **Tremolo**      | D0        |
-| **Trill (half)** | D#0       |
-| **Spiccato**     | E0        |
-| **Staccato**     | F0        |
-| **Pizzicato**    | F#0       |
-| **Legato**       | G0        |
-| **Portamento**   | G#0       |
-| **Con sordino**  | A0        |
-| **Flautando**    | A#0       |
-| **Col legno**    | B0        |
+| **Long**         | C1        |
+| **Long (nv)**    | C#1       |
+| **Tremolo**      | D1        |
+| **Trill (half)** | D#1       |
+| **Spiccato**     | E1        |
+| **Staccato**     | F1        |
+| **Pizzicato**    | F#1       |
+| **Legato**       | G1        |
+| **Portamento**   | G#1       |
+| **Con sordino**  | A1        |
+| **Flautando**    | A#1       |
+| **Col legno**    | B1        |
 
 Brass starts **Long**, **Long (nv)**, **Staccato**, **Marcato**, **Sforzando**, **Legato**,
-**Flutter**, **Muted** from **C0**. Woodwinds start **Long**, **Staccato**, **Legato**,
-**Trill (half)**, **Flutter** from **C0**. Percussion is a single **Hit** with no keyswitch.
+**Flutter**, **Muted** from **C1**. Woodwinds start **Long**, **Staccato**, **Legato**,
+**Trill (half)**, **Flutter** from **C1**. Percussion is a single **Hit** with no keyswitch.
 
 ## Phrase
 
