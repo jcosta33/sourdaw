@@ -7,6 +7,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { Stack } from '#/components/layout';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -36,7 +37,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
     };
 
     return (
-        <div className="flex flex-col gap-1.5 px-2">
+        <Stack gap={1.5} className="px-2">
             <DawPluginSectionHeader
                 title="Harmonic Exciter"
                 size="xs"
@@ -65,9 +66,12 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
                 {BAND_LABELS.map((label, i) => {
                     const band = patch.excBands[i]!;
                     return (
-                        <div
+                        <Stack
+                            align="center"
+                            grow
+                            gap={0.5}
+                            className="px-1 py-1 rounded bg-surface-base/50"
                             key={label}
-                            className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
                         >
                             <span className="text-[7px] text-muted-foreground">{label}</span>
 
@@ -129,10 +133,10 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
                                 tone="cyan"
                             />
                             <span className="text-[6px] text-muted-foreground">Blend</span>
-                        </div>
+                        </Stack>
                     );
                 })}
             </div>
-        </div>
+        </Stack>
     );
 };
