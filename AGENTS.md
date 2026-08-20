@@ -212,15 +212,21 @@ case-insensitively against **open** milestones only, so the number the tracker U
 and nothing is filed — and add the issue to the roadmap project when it is on the roadmap, leaving
 either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
 applies the template's labels and the derived priority label, and takes the milestone and the
-project, but no sanctioned script edits an issue once it exists. Read the live sets with
+project. Get the metadata right there, because no sanctioned script edits an issue once it exists
+and a correction afterwards is `gh` by hand. Read the live sets with
 `gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`;
 never from a list written down here, which drifts the day it is written.
 
 ## Delivery
 
-GitHub writes for agent work go through trusted `pnpm` scripts. The model never runs `gh` to write
-or `git push` at all; read-only `gh` queries are fine and are how you check live tracker state.
-Identity is the App those scripts mint, not a persona.
+GitHub writes for agent work go through trusted `pnpm` scripts. Where a script covers the action it
+is the only way to take it: identity and the delivery gates live inside those scripts, so a
+hand-rolled equivalent or a route around a gate defeats both. Where none covers it, run `gh`
+yourself, provided the write only moves tracker metadata and one later command puts it back —
+anything that lands a commit, a pull request, a review, or a merge has a script and never qualifies.
+`git push` carries no such exception: lane tooling owns every push, because a push from anywhere
+else destroys the review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how
+you check live tracker state. Identity is the App those scripts mint, not a persona.
 
 | Need                        | Command                         |
 | --------------------------- | ------------------------------- |
