@@ -767,6 +767,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             gain: 1,
+            expectedPercent: 1,
         },
         required: ['gain'],
         additionalProperties: false,

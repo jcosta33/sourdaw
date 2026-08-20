@@ -789,7 +789,17 @@ export type AppAction =
     | { type: 'togglePlayback'; payload?: undefined }
     | { type: 'stopPlayback'; payload?: undefined }
     | { type: 'toggleRecording'; payload?: undefined }
-    | { type: 'setMasterGain'; payload: { gain: number } }
+    | {
+          type: 'setMasterGain';
+          /**
+           * `expectedPercent` is the master percent the caller measured before it
+           * derived `gain`. When present the handler conflicts instead of writing
+           * if the live percent has moved, so a fader change that lands between a
+           * caller's snapshot and command admission is never silently clobbered.
+           * Omit it for a direct, absolute set that should always win.
+           */
+          payload: { gain: number; expectedPercent?: number };
+      }
     | {
           type: 'restoreMasterGain';
           payload: { expectedPercent: number; replacementPercent: number };
