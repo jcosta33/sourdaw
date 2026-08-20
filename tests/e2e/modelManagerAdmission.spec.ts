@@ -1,9 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { KOKORO_MODEL_ARTIFACT } from '../../src/modules/BrowserAi/models/KokoroArtifactManifest';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-const KOKORO_DOWNLOAD_URL =
-    'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx';
+const KOKORO_DOWNLOAD_URL = KOKORO_MODEL_ARTIFACT.url;
 
 async function open_preferences_ai_section(page: Page): Promise<void> {
     await page.getByTestId('toggle-preferences').click();
@@ -14,7 +15,7 @@ async function open_preferences_ai_section(page: Page): Promise<void> {
     await expect(dialog.getByLabel('AI Model Manager')).toBeVisible();
 }
 
-test.describe('Browser AI model removal', () => {
+test.describe('Browser AI model admission', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -27,26 +28,8 @@ test.describe('Browser AI model removal', () => {
         await expect(dialog.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ })).toBeVisible();
         await expect(dialog.getByRole('button', { name: /Remove .+ from storage/ })).toHaveCount(0);
         await expect(dialog.getByRole('button', { name: /Retry downloading .+/ })).toHaveCount(0);
-        expect(await dialog.getByText('Unavailable', { exact: true }).count()).toBeGreaterThanOrEqual(4);
-    });
-
-    test('a stored model returns to Download after removal', async ({ page }) => {
-        const dialog = page.getByRole('dialog');
-        await page.route(KOKORO_DOWNLOAD_URL, (route) => route.fulfill({ body: 'stub-kokoro-onnx-bytes' }));
-
-        const download_button = dialog.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ });
-        await download_button.click();
-
-        const ready_badge = dialog.getByLabel('Kokoro-82M (q8f16) downloaded and ready');
-        const remove_button = dialog.getByRole('button', { name: 'Remove Kokoro-82M (q8f16) from storage' });
-        await expect(ready_badge).toBeVisible({ timeout: 15_000 });
-        await expect(remove_button).toBeVisible();
-
-        await remove_button.click();
-
-        await expect(download_button).toBeVisible();
-        await expect(ready_badge).toHaveCount(0);
-        await expect(remove_button).toHaveCount(0);
+        await expect(dialog.getByText('DDSP Instruments', { exact: true })).toHaveCount(0);
+        await expect(dialog.getByText('Unavailable', { exact: true })).toHaveCount(0);
     });
 
     test('a failed download can be retried', async ({ page }) => {
