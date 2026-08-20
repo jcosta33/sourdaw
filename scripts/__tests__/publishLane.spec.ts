@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_LOCK_REASON, resolvePrimaryRoot, type GhSession } from '../githubAppIdentity.ts';
-import { PULL_REQUEST_BODY_BYTE_LIMIT, assertPullRequestBody, composePublishBody } from '../prContract.ts';
 import {
     existingOpenPullRequestArgs,
     issueExistsFromLookup,
@@ -30,27 +29,6 @@ const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
 const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
-
-const SCREENSHOTS_HEADING = '### 🖼️ Screenshots';
-const RELATED_HEADING = '### 📌 Related tickets & additional notes';
-/** The inserted block, spelled once, so byte-identity can be proven by deleting exactly it. */
-const SCREENSHOTS_INSERTION = `${SCREENSHOTS_HEADING}\nNone.\n\n`;
-
-/** A body of the shape a pull request opened before Screenshots joined the template actually has. */
-const LEGACY_BODY_WITHOUT_SCREENSHOTS = `### 🎯 What does this PR do?
-Keeps collaboration sync state consistent across reconnects.
-
-### 🧪 How to test
-pnpm test:run src/modules/collaboration/__tests__/syncState.spec.ts
-
-${RELATED_HEADING}
-Closes #2039
-`;
-
-const LEGACY_BODY = LEGACY_BODY_WITHOUT_SCREENSHOTS.replace(
-    RELATED_HEADING,
-    `${SCREENSHOTS_INSERTION}${RELATED_HEADING}`
-);
 
 function worktree(overrides: Partial<PublishWorktree> = {}): PublishWorktree {
     return {
@@ -136,12 +114,6 @@ function fakePort(input: FakeInput = {}) {
         updatePullRequest: (number, { title, body }) => {
             bodies.push(body);
             calls.push(`edit:${number}:${title}`);
-        },
-        // A body-only write is a different call from `updatePullRequest`, and the ledger keeps them
-        // apart: the whole point of the legacy path is that it can never carry a title.
-        updatePullRequestBody: (number, body) => {
-            bodies.push(body);
-            calls.push(`body:${number}`);
         },
         // Logging is ordered against the mutating calls, so it shares their ledger.
         log: (message) => {
@@ -928,19 +900,16 @@ describe('lane publish', () => {
             // `lane:publish` did not author this pull request and cannot reproduce it:
             // `laneIssueNumber` reads only the `agent/<issue>/` shape, so recomposing the body would
             // replace a hand-written `Closes #2039` with `None.` and stop the merge closing the
-            // issue. The push is the whole deliverable. This body already carries every required
-            // heading, so the completion path has nothing to add and must write nothing at all.
+            // issue. The push is the whole deliverable.
             const { port, calls, bodies } = fakePort({
                 trees: [...otherAuthorLanes(), legacyWorktree()],
                 cwd: LEGACY_LANE,
                 existing: 2275,
-                existingBody: LEGACY_BODY,
             });
 
             expect(publishLane(undefined, port)).toBe(2275);
             expect(calls).toContain(`push:${LEGACY_BRANCH}`);
             expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
-            expect(calls.some((call) => call.startsWith('body:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
             expect(bodies).toEqual([]);
         });
@@ -954,7 +923,6 @@ describe('lane publish', () => {
                 trees: [...otherAuthorLanes(), legacyWorktree()],
                 cwd: LEGACY_LANE,
                 existing: 2275,
-                existingBody: LEGACY_BODY,
                 subject: null,
             });
 
@@ -970,7 +938,6 @@ describe('lane publish', () => {
                 trees: [...otherAuthorLanes(), legacyWorktree()],
                 cwd: LEGACY_LANE,
                 existing: 2275,
-                existingBody: LEGACY_BODY,
             });
 
             publishLane(undefined, port);
@@ -994,74 +961,5 @@ describe('lane publish', () => {
             expect(() => publishLane(undefined, port)).toThrow(/no longer has an open pull request/);
             expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
         });
-
-        it('completes a body that predates a template heading, writing the body and never the title', () => {
-            // `deliver` holds a legacy body to the template current at merge time, and no other
-            // sanctioned command writes a pull-request body, so a body opened before Screenshots
-            // joined the template can otherwise never be delivered. The completion adds the heading
-            // and touches nothing else — least of all the title, which belongs to whoever opened it.
-            const { port, calls, bodies } = fakePort({
-                trees: [...otherAuthorLanes(), legacyWorktree()],
-                cwd: LEGACY_LANE,
-                existing: 2256,
-                existingBody: LEGACY_BODY_WITHOUT_SCREENSHOTS,
-            });
-
-            expect(publishLane(undefined, port)).toBe(2256);
-            expect(calls).toContain(`push:${LEGACY_BRANCH}`);
-            expect(calls).toContain('body:2256');
-            expect(calls.indexOf('body:2256')).toBeGreaterThan(calls.indexOf(`push:${LEGACY_BRANCH}`));
-            expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
-            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
-            expect(bodies).toEqual([LEGACY_BODY]);
-            // Deleting exactly the inserted block restores the original byte for byte: nothing the
-            // author wrote was reordered, reworded, or trimmed to make room.
-            expect(bodies[0]?.replace(SCREENSHOTS_INSERTION, '')).toBe(LEGACY_BODY_WITHOUT_SCREENSHOTS);
-            expect(() => assertPullRequestBody(bodies[0] ?? '', 'body')).not.toThrow();
-        });
-
-        it('refuses loudly rather than trimming when completing the body would overflow the ceiling', () => {
-            const headroom =
-                PULL_REQUEST_BODY_BYTE_LIMIT - Buffer.byteLength(LEGACY_BODY_WITHOUT_SCREENSHOTS, 'utf8') - 1;
-            const { port, calls } = fakePort({
-                trees: [...otherAuthorLanes(), legacyWorktree()],
-                cwd: LEGACY_LANE,
-                existing: 2256,
-                existingBody: LEGACY_BODY_WITHOUT_SCREENSHOTS.replace('Keeps', `${'a'.repeat(headroom)}Keeps`),
-            });
-
-            expect(() => publishLane(undefined, port)).toThrow(/cannot be completed within 4000 bytes/);
-            // The push is the legacy lane's actual deliverable and precedes the completion, so it
-            // still happened; what must not happen is a shortened body written over the original.
-            expect(calls).toContain(`push:${LEGACY_BRANCH}`);
-            expect(calls.some((call) => call.startsWith('body:'))).toBe(false);
-        });
-
-        it('refuses an unreadable legacy body instead of writing a completion over it', () => {
-            const { port, calls } = fakePort({
-                trees: [...otherAuthorLanes(), legacyWorktree()],
-                cwd: LEGACY_LANE,
-                existing: 2256,
-                existingBody: null,
-            });
-
-            expect(() => publishLane(undefined, port)).toThrow(/existing pull-request body is unreadable/);
-            expect(calls.some((call) => call.startsWith('body:'))).toBe(false);
-        });
-    });
-
-    it('never completes a conforming lane body: that path already writes the whole body', () => {
-        // Completion exists for pull requests `lane:publish` may not rewrite. A conforming lane's
-        // body is composed from scratch on every publish, so running completion there would write a
-        // second, different body over a pull request this script fully owns.
-        const { port, calls, bodies } = fakePort({
-            existing: 41,
-            existingBody: LEGACY_BODY_WITHOUT_SCREENSHOTS.replace('Closes #2039', 'Closes #12'),
-        });
-
-        expect(publishLane(12, port)).toBe(41);
-        expect(calls).toContain('edit:41:feat(vcs): add identities');
-        expect(calls.some((call) => call.startsWith('body:'))).toBe(false);
-        expect(bodies).toEqual([composePublishBody(12, DEFAULT_SUBJECT)]);
     });
 });
