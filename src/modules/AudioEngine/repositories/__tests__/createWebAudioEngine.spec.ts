@@ -325,6 +325,9 @@ function makeFallbackEngine(): AudioEngine {
             createAnalyser() {
                 return { connect: vi.fn(), disconnect: vi.fn(), frequencyBinCount: 1 };
             }
+            createChannelSplitter() {
+                return { connect: vi.fn(), disconnect: vi.fn() };
+            }
         }
     );
     const fallbackEngine = createAudioEngine();
@@ -1949,6 +1952,9 @@ describe('AudioEngine', () => {
                     }
                     createAnalyser() {
                         return { connect: vi.fn(), disconnect: vi.fn(), frequencyBinCount: 1 };
+                    }
+                    createChannelSplitter() {
+                        return { connect: vi.fn(), disconnect: vi.fn() };
                     }
                 }
             );

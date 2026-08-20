@@ -1,37 +1,83 @@
 # Sourdaw Agent Rules
 
-`CLAUDE.md` points here. Nested `AGENTS.md` files override this file inside their subtrees.
+`CLAUDE.md` points here. A nested `AGENTS.md` overrides this file inside its subtree. Read the
+local one before editing that tree.
 
 ## Ownership
 
-The top-level agent is the principal engineer and owns the codebase end to end: code,
-architecture, quality, tests, docs, tooling, tracker, and hygiene. Operate by exception: decide,
-act, and deliver; the user hears about outcomes and exceptions, never about process
+The top-level agent is the principal engineer and owns the codebase end to end: code, architecture,
+quality, tests, docs, tooling, tracker, and hygiene. Operate by exception: decide, act, deliver. The
+user hears outcomes and exceptions, never process
 ([ADR 0026](./.agents/decisions/0026-ownership-by-exception.md)).
 
 Escalate exactly one class of decision: a one-way door with product consequence — it changes what
-the product is or does for users, and reversing it later is costly. Security, data-loss, legal,
-and spend exposure are product consequence by definition. Present researched options and one
-recommendation. Everything reversible is decided here, at roughly 70% of the information you would
+the product is or does for users, and reversing it later is costly. Security, data loss, legal, and
+spend exposure are product consequence by definition. Present researched options and one
+recommendation.
+
+Decide everything else here. Take a reversible call at roughly 70% of the information you would
 like, against the live code, primary sources, standards, and established DAW practice. An
-irreversible act without product consequence is still decided here, but at full information and
-with a durable record — the 70% standard is for reversible ones. Engineering effort, schedule,
-patch breadth, delivery mechanics, and ordinary technical risk never qualify for escalation.
-Missing access is a blocker, not a question.
+irreversible act without product consequence is still yours, but at full information and with a
+durable record. Engineering effort, schedule, patch breadth, delivery mechanics, and ordinary
+technical risk never qualify for escalation. Missing access is a blocker, not a question.
 
 Encountered defects are never out of scope: existing rot measurably causes new rot, and delegated
-agents that imitate the surrounding code can be expected to amplify it. A defect is observable
-misbehavior, a broken invariant, or a contradiction with a documented contract — never style
-preference. Fix what you find: sizeable defects get their own lane; small unrelated ones batch
-into one hygiene lane; work that cannot be taken now is filed, at any size, written so a cold
-session can execute it. "Worth noting" is not an outcome — a thing worth noting is a thing worth
-fixing or filing.
+agents imitate the code around them. A defect is observable misbehavior, a broken invariant, or a
+contradiction with a documented contract — never style preference. Sizeable defects get their own
+lane; small unrelated ones batch into one hygiene lane; work you cannot take now is filed at any
+size, written so a cold session can execute it. "Worth noting" is not an outcome — a thing worth
+noting is a thing worth fixing or filing.
 
-Delegated agents are team members: they investigate or implement an assigned, precisely specified
-task and return evidence and a result. They never contact the user and never own a decision. The
-owner reviews every delegated change against its spec before merge; a reviewer's approval alone is
-weak evidence, so every consequential claim carries discriminating proof — a test that fails when
-the change is reverted, a measurement at the boundary users experience.
+## Delegation
+
+The orchestrator specifies, reviews, and delivers. It does not implement. A delegated agent takes
+one precisely specified task, returns evidence and a result, and never contacts the user or owns a
+decision.
+
+Match the model tier to the work, never to habit. The ladder is economy, standard, strongest; which
+model fills each rung is a deployment detail, and no rule here names one. Dispatch one tier below
+the orchestrator's own by default. Drop to economy for bounded mechanical work with a decisive
+oracle. Raise toward strongest for architecture, real-time audio, security, data loss, irreversible
+change, conflicting evidence, or unresolved ambiguity. Escalate a blocked or disputed step one tier,
+then return to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated
+failure. Ignore an agent's own confidence.
+
+Every dispatch carries the objective, lane, branch, scope, exclusions, dependencies, acceptance
+conditions, and checks. Require back only status, changed paths, decisive evidence, and blockers.
+
+Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
+and overlapping files.
+
+## Review
+
+Reviewers are blind. Each one gets the head, the diff, and exactly one stance — never another
+reviewer's prose, the author's transcript, or the orchestrator's reasoning. Independence is the
+entire value, and a reviewer shown prior findings anchors to them.
+
+Derive stances from the risk surface the change actually touches, and stop once every material risk
+is covered. No count is required. The recurring surfaces are correctness, module boundaries and
+contracts, real-time audio safety, project integrity and undo, security and platform boundaries,
+and test validity.
+
+Tier each reviewer by the criticality of its stance, not the size of the diff: economy for narrow
+low-risk checks, standard for behavioral and integration risk, the strongest tier for real-time
+audio, security, data loss, irreversible change, or a disputed severe finding.
+
+Review test validity as its own stance. A passing check is not evidence. Ask what would have to
+break for this check to fail, and whether it observes the thing its name claims.
+
+The orchestrator owns every finding. Validate each one against the live code before acting on it:
+discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
+the implementing agent as a precise repair task. An implementing agent never judges a finding
+against its own work, never accepts that work, and never merges it.
+
+Order matters, because the pull request is public and a posted finding is expensive to retract.
+Blind stances report to the orchestrator, never straight to GitHub. Only findings that survive
+validation are composed into `review.json` and posted by `review:publish`; a discarded one never
+reaches the pull request. Getting this backwards traps the merge: `deliver` refuses a pull request
+that carries `CHANGES_REQUESTED` or an unresolved thread, and a conversation may only be resolved
+when the head actually addresses it — so a finding posted and then judged wrong blocks delivery
+with nothing left to fix.
 
 ## Docs
 
@@ -52,31 +98,35 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 - Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
   Playwright, WASM, or measurements.
-- `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy
-  runs (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
+- `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
+  (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
   `pnpm guard --profile <focused|broad|extended> [--require-target] -- <command>`. A busy lock,
   memory refusal, timeout, or RSS kill is a stop — never bypass it by rerunning unguarded.
-- Run only checks that can fail because of the changed files. Never expand to repository-wide
-  tests, lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
+- Run only checks that can fail because of the changed files. Never expand to repository-wide tests,
+  lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
 
 ## Checks
 
-| Need                | Command                                      |
-| ------------------- | -------------------------------------------- |
-| Focused tests       | `pnpm test:run <file-or-narrow-directory>`   |
-| Focused E2E         | `pnpm test:e2e <spec>`                       |
-| Focused lint        | `pnpm lint <changed-files>`                  |
-| Focused format      | `pnpm format <changed-files>`                |
-| App types           | `pnpm typecheck`                             |
-| Test types          | `pnpm typecheck:test`                        |
-| Script types        | `pnpm typecheck:scripts`                     |
-| E2E types           | `pnpm typecheck:e2e`                         |
-| Focused Rust tests  | `pnpm cargo:test --package <crate> <filter>` |
-| Focused Rust format | `pnpm cargo:fmt --package <crate>`           |
-| Module boundaries   | `pnpm deps:validate`                         |
-| Barrel mocks        | `pnpm test:barrel-mocks`                     |
+| Need                  | Command                                      |
+| --------------------- | -------------------------------------------- |
+| Focused tests         | `pnpm test:run <file-or-narrow-directory>`   |
+| Focused E2E           | `pnpm test:e2e <spec>`                       |
+| Focused lint          | `pnpm lint <changed-files>`                  |
+| Focused format        | `pnpm format <changed-files>`                |
+| App types             | `pnpm typecheck`                             |
+| Test types            | `pnpm typecheck:test`                        |
+| Script types          | `pnpm typecheck:scripts`                     |
+| E2E types             | `pnpm typecheck:e2e`                         |
+| Focused Rust tests    | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format   | `pnpm cargo:fmt --package <crate>`           |
+| Module boundaries     | `pnpm deps:validate`                         |
+| Barrel mocks          | `pnpm test:barrel-mocks`                     |
+| Rebuild one wasm pkg  | that package's own `wasm:*` script           |
+| Rebuild every wasm    | `pnpm wasm:all`                              |
+| Rewrite wasm manifest | `pnpm wasm:manifest`                         |
+| Prove wasm freshness  | `pnpm wasm:verify`                           |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
@@ -92,9 +142,6 @@ Tests use at most two workers. Playwright uses one. See [testing](./docs/06-test
 - `.agents/worktrees/`: gitignored author lanes.
 - `.agents/review-bundles/`: gitignored review material for one PR head.
 
-Read the local `AGENTS.md` in `crates/sourdaw-native/`, `crates/daw-dsp/`, `src/components/`,
-`src/modules/AudioEngine/`, and `src/modules/Collaboration/` before editing those trees.
-
 ## Architecture
 
 - Route mutations through `executeAppAction`; register handler maps in `src/app/bootstrap.ts`.
@@ -103,7 +150,7 @@ Read the local `AGENTS.md` in `crates/sourdaw-native/`, `crates/daw-dsp/`, `src/
 - Keep direction strict: presentation -> use cases -> repositories, stores, and services.
 - Repositories own I/O. Only repository roots and `src/utils/desktopBridge.ts` may call the desktop
   bridge.
-- Foreign modules may read stores. They mutate through the owner’s use cases.
+- Foreign modules may read stores. They mutate through the owner's use cases.
 - Keep use-case types and models private. Derive public shapes from callable or event contracts.
 - Keep worklets isolated from app, helpers, and desktop IPC. Audio-thread code must not allocate,
   lock, or block.
@@ -120,32 +167,60 @@ Run `pnpm deps:validate` after cross-module changes. Full rules:
 
 ## Worktrees
 
-One change, one lane. Mutable work lives under `.agents/worktrees/`, never in the primary checkout.
-`pnpm lane:open [issue] [slug]` fetches `origin/main`, creates `agent/<issue>/<slug>` — or
-`agent/<slug>` when the work closes no issue — and locks `active:sourdaw-author`. The slug is
-`work` if omitted, and never purely numeric, because a bare number is read as the issue. Last
-stdout line is the lane path. It does not mint or spawn `gh`. Touch only that lane.
+One change, one lane, one pull request. Never edit tracked files in the primary checkout: it is the
+shared root that holds the credentials and every other lane, and an edit there belongs to no branch.
+All mutable source work lives in a lane under `.agents/worktrees/`. Its gitignored operational
+paths are the exception the delivery scripts require: `review:prepare` writes bundles to
+`.agents/review-bundles/` at that root, the caller writes `review.json` beside them, and the
+`.env.sourdaw-*` credentials live there.
+
+`pnpm lane:open [issue] [slug]` fetches `origin/main`, branches from it, and locks the lane
+`active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
+never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
+number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
+`agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
+`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
+directory is what identifies it when no issue number does. Touch only your own lane.
+
+A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
+author lock are shared across every lane, so a global or destructive operation run inside one lane
+hits all of them.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
-Removal requires exactly one merged pull request for that branch. Delete a leftover local branch
-after success.
+Removal requires a clean lane holding the merged head of exactly one pull request. Delete a leftover
+local branch after success.
 
 ## Artifacts
 
 Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
-their work is done. New planning is GitHub issues only. Durable decisions belong in
+their work is done. New planning is GitHub issues, never a plan file. Durable decisions belong in
 `.agents/decisions/` and its ADR ledger.
 
-`.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with
-`pnpm issue:file <template> --title "…" --fields <json> [--create]`. After create, attach
-parent/child issues as GitHub sub-issues.
+`.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with:
+
+```
+pnpm issue:file <template> --title "…" --fields <json> [--milestone <m>] [--project <p>] [--create]
+```
+
+After create, attach parent/child issues as GitHub sub-issues.
+
+An unlabelled issue is invisible. Every issue carries a priority label and a status label, plus the
+labels naming what it is. Set the milestone when the work belongs to one — by title, matched
+case-insensitively against **open** milestones only, so the number the tracker UI shows is rejected
+and nothing is filed — and add the issue to the roadmap project when it is on the roadmap, leaving
+either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
+applies the template's labels and the derived priority label, and takes the milestone and the
+project, but no sanctioned script edits an issue once it exists. Read the live sets with
+`gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`;
+never from a list written down here, which drifts the day it is written.
 
 ## Delivery
 
-GitHub writes for agent work go through trusted `pnpm` scripts. The model does not run `gh` or
-`git push`. Identity is the App those scripts mint, not a persona.
+GitHub writes for agent work go through trusted `pnpm` scripts. The model never runs `gh` to write
+or `git push` at all; read-only `gh` queries are fine and are how you check live tracker state.
+Identity is the App those scripts mint, not a persona.
 
 | Need                        | Command                         |
 | --------------------------- | ------------------------------- |
@@ -157,55 +232,101 @@ GitHub writes for agent work go through trusted `pnpm` scripts. The model does n
 | Remove a spent lane         | `pnpm lane:remove <path>`       |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
-`.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for
-`review:prepare` and `review:publish`. Do not commit them. Do not load the other role's file.
-Author mint is `jcosta33-author[bot]`. Reviewer mint is `jcosta33-reviewer[bot]`. `deliver` does
-not mint the reviewer.
+`.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for `review:prepare`
+and `review:publish`. Do not commit them. Do not load the other role's file. Author mint is
+`jcosta33-author[bot]`. Reviewer mint is `jcosta33-reviewer[bot]`. `deliver` does not mint the
+reviewer.
 
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
 
+Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
+account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually
+does: it blocks deletion and non-fast-forward, forces a squashed pull request, and demands resolved
+threads — it requires no status check and no approving review, so it constrains how a change lands
+and judges nothing about the change itself. The affected local checks and the review below are the
+only gate a change passes, so a check you skipped is a check nobody ran.
+
+Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
+is the list, and it carries each package's build script because that name is not derivable from the
+crate — guess it and you run a script that does not exist. A non-test edit anywhere in such a
+package's path-dependency closure, a comment included, changes its hash: run that package's own
+build script, then `pnpm wasm:manifest`, then stage the rebuilt artifacts and verify after staging
+rather than after building. Rebuilding the wrong package is worse than rebuilding nothing, because
+`wasm:manifest` preserves the recorded hash of every package the run has no evidence it rebuilt —
+the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of them when in doubt. A
+rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
+freshness.
+
 `lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
 it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
 standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, titles the PR with the HEAD subject (`type(scope): subject`), keeps the four headings in
+`--force`, titles the PR with the newest non-merge commit the lane holds above `origin/main`
+(`type(scope): subject`), so merging `origin/main` in never retitles it, keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
 bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
 there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
-branch carries no issue. It does not enable auto-merge or post a review.
+branch carries no issue. It refuses a lane with uncommitted changes, and one carrying no non-merge
+commit above `origin/main`: commit the work yourself with a conventional subject first. It does not
+enable auto-merge or post a review.
 
-`review:prepare` prints a bundle path on the primary root. The bundle is `manifest.json`,
-`diff.patch`, `pr.md`, and base-commit `contracts/`. The caller writes `review.json` for **this**
-head. A reviewer agent gets that bundle, not the author transcript. `review:publish` prints the
-review id and posts as `jcosta33-reviewer[bot]` only when GitHub's head still matches the bundle.
-
-Write the pull request for a teammate who was not in the session. Title it with the HEAD
-subject. Under the four template headings, say what changed, why, and how to test. Put
-`Closes #<issue>` in Related tickets. Leave session diaries, unpublished rounds, and mutation
+Write the pull request for a teammate who was not in the session. Under the four template headings,
+say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
 tables off the pull request.
 
-Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge,
-read the surrounding code. When something is wrong, comment on that line: what is wrong, why it
-matters, what done looks like. One problem per comment. Talk about the code, not the author.
+`review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
+and base-commit `contracts/`. The caller writes `review.json` for **this** head. A reviewer agent
+gets that bundle, not the author transcript. `review:publish` prints the review id and posts as
+`jcosta33-reviewer[bot]` only while GitHub's head still matches the bundle.
 
-Request changes when this head must not merge. Post every blocking comment with that review.
-The summary is a short pointer to those comments, not a report.
+Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
+the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
+what done looks like. One problem per comment. Talk about the code, not the author.
 
-Approve when the change improves the system, even if it is not perfect. Do not approve a change
-that makes it worse. Style-guide violations block; personal style does not. Leave the approval
-empty or write one sentence about the code. Prefix non-blocking notes `Nit:` or `Optional:` and
-put them on the approval.
+Request changes when this head must not merge, and post every blocking comment with that review. The
+summary is a short pointer to those comments, not a report.
 
-When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence.
-Clarify the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a
-conversation only when the current head actually addresses it. A new head needs a new review.
+Approve when the change improves the system, even if it is not perfect. Do not approve a change that
+makes it worse. Style-guide violations block; personal style does not. Leave the approval empty or
+write one sentence about the code.
 
-Proof that a delegated change works (a test that fails when reverted, a measurement at the user
-boundary) stays in the session. It is not the GitHub review.
+Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
+refuses to merge while one is unresolved, and no sanctioned script resolves a thread — so a note
+meant not to block is exactly what blocks. Put a non-blocking observation in the approval body,
+prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
+where the thread is meant to stop the merge and a new head clears it.
+
+When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
+the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
+only when the current head actually addresses it. A new head needs a new review.
+
+Before merge the orchestrator does its own final check on the current head: read the diff, confirm
+the change does what it was specified to do, confirm every finding it accepted is actually addressed
+there, and run the checks this diff can break. What that run leaves out, `main` absorbs. Name it
+instead of gesturing at it: the tests covering the changed files, the typecheck for every surface
+the diff touches, lint on the changed files, `pnpm deps:validate` whenever the change crosses a
+module boundary, and any other check this diff can turn red. Formatting belongs to the run but is
+not one of those checks — it rewrites rather than reports, so run it on the changed files and stage
+what it rewrote instead of reading it as a pass. The `Checks` table holds the commands.
+
+Affected-only is the shape of that run, not a discount on it. Resource Safety already sets the
+outer edge, and the one condition that moves it; the obligation here is everything that can fail
+because of these changed files. They are one boundary read from both sides: a check this diff can
+break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
+lane, on the head being merged — `lane:publish` refuses a lane that is not strictly ahead of
+`origin/main`, and `deliver` refuses a pull request whose base its own fetch does not match. A
+branch-local run stands in for the merge result only while the branch is current, so merging
+`origin/main` back into the lane — the routine answer when `deliver` reports a base mismatch —
+makes a new head and stales every run that preceded it. Run them again on the head that will
+actually merge.
+
+An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
+test that fails when the change is reverted, a measurement at the boundary users experience. That
+proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
-PR is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any other way.
-Run affected checks first.
+pull request is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any
+other way.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
 review. Enable hooks: `git config core.hooksPath .githooks`.
@@ -216,7 +337,7 @@ review. Enable hooks: `git config core.hooksPath .githooks`.
 - Never run destructive git, force-push, amend published history, or delete branches without
   explicit authority.
 - Never install packages or edit CI/build controls unless the task requires it.
-- Never widen a formatter, codemod, or autofix past the files your change owns. Always pass
-  explicit file targets to `pnpm format` and `pnpm cargo:fmt`; repository-wide formatting is
-  `format:full` and runs only when explicitly requested.
+- Never widen a formatter, codemod, or autofix past the files your change owns. Always pass explicit
+  file targets to `pnpm format` and `pnpm cargo:fmt`; repository-wide formatting is `format:full`
+  and runs only when explicitly requested.
 - Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.

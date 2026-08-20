@@ -450,6 +450,16 @@ export type AudioEngine = {
     readonly context: AudioContext;
     readonly masterGainNode: GainNode;
     readonly masterAnalyser: AnalyserNode;
+    /**
+     * Left/right halves of a genuine stereo analysis tap, branched off
+     * {@link masterAnalyser}'s (pass-through) output through a
+     * `ChannelSplitterNode(2)`. `masterAnalyser`'s own time-domain data is
+     * always down-mixed to mono per the Web Audio spec, so it cannot answer a
+     * stereo question — the goniometer and phase-correlation meter read these
+     * two nodes instead.
+     */
+    readonly masterAnalyserLeft: AnalyserNode;
+    readonly masterAnalyserRight: AnalyserNode;
     initialize(): Promise<void>;
     resume(): Promise<void>;
     suspend(): Promise<void>;
