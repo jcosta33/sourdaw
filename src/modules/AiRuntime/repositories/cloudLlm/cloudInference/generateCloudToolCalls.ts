@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { FADER_GAIN_RANGE_DESCRIPTION } from '#/utils/audioLevelLaw';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../../models/ToolDefinitions';
@@ -16,7 +17,7 @@ const CLOUD_SYSTEM_PROMPT = `You are a professional music production AI integrat
 
 Key rules:
 - Use multiple tools for complex requests (e.g. "set up a hip-hop session" = multiple addTrack + setTempo + addDevice calls)
-- gain 0.0=silence, 0.8=unity/default, 1.0=maximum
+- gain ${FADER_GAIN_RANGE_DESCRIPTION}
 - pan -50=hard left, 0=center, 50=hard right
 - Bar 1 = beat 0, bar N = beat (N-1)*4 in 4/4 time
 - MIDI: C4=60, 0.25=16th, 0.5=8th, 1=quarter, 4=whole note`;

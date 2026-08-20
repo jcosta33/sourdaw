@@ -4,6 +4,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { TOASTER_PAD_MAX_GAIN } from '../isToasterPadTrack';
 import { setTrackGain } from '../setTrackGain';
 
 const mocks = vi.hoisted(() => {
@@ -148,6 +149,49 @@ describe('setTrackGain', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('toaster-bus', 'toaster-device', 'pad_0_volume', 0.4);
         // Still no persistence — only the engine side crossed the guard.
         expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The mirror writes one value to two nodes in series, and the pad's own
+     * range stops at unity (`pad.rs`: `"volume" => value.clamp(0.0, 1.0)`).
+     * Above unity the strip and the pad would take different values — the
+     * divergence the mirror exists to prevent — so a pad-mirrored track's
+     * fader is held at the narrower range, and both writes stay identical.
+     */
+    it('holds a Toaster pad track at the pad ceiling so the mirror cannot diverge from the strip', () => {
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'toaster-bus',
+                    kind: 'bus',
+                    devices: [
+                        {
+                            id: 'toaster-device',
+                            name: 'Toaster',
+                            type: 'toaster',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                }),
+                TrackDummy.create({ id: 't1', kind: 'audio', parentId: 'toaster-bus' }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.getAllTracks.mockReturnValue(trackStore.value!.tracks);
+
+        setTrackGain('t1', 1.5);
+
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', TOASTER_PAD_MAX_GAIN);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(
+            'toaster-bus',
+            'toaster-device',
+            'pad_0_volume',
+            TOASTER_PAD_MAX_GAIN
+        );
+        const updater = mocks.updateTrack.mock.calls[0]![1] as (t: { gain: number }) => { gain: number };
+        expect(updater({ gain: 0.8 })).toEqual({ gain: TOASTER_PAD_MAX_GAIN });
     });
 
     it('records nothing from a transient change while the transport is stopped', () => {

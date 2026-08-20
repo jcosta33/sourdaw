@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, beforeEach } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { batchAddAutomationPoints } from '../../useCases/automation/batchAddAutomationPoints';
 import { type AutomationStoreState } from '../automationStore';
@@ -81,6 +82,45 @@ describe('automationStore', () => {
         expect(automationStore.value?.lanes[0]).toEqual(lane);
     });
 
+    /**
+     * `maxValue` is durable CRDT state written once, at lane creation. A
+     * project authored before the fader gained its `+6 dB` of headroom keeps
+     * `maxValue: 1` on its gain lanes while every lane created after gets
+     * `FADER_MAX_GAIN` — so one project holds two gain lanes with different
+     * ceilings and different Y-axis scales, and `paintDrawPoint`, which clamps
+     * to `lane.maxValue`, cannot draw the older one into headroom the track's
+     * own fader now reaches.
+     *
+     * The legacy state is *well formed*, so it takes the sanitizer's exact
+     * early-return path — which is why the migration cannot live in
+     * `normalize_automation_lane`.
+     */
+    it('should raise a legacy gain lane ceiling to the fader ceiling on load', () => {
+        const legacy_gain_lane = {
+            id: 'legacy-gain',
+            trackId: 'track-1',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: 0,
+            maxValue: 1,
+        } satisfies AutomationStoreState['lanes'][number];
+        const legacy_send_lane = { ...legacy_gain_lane, id: 'legacy-send', parameterId: 'send-bus-1' };
+
+        fake_doc.automation = { lanes: [legacy_gain_lane, legacy_send_lane] };
+
+        automationStore.hydrate();
+
+        expect(automationStore.value?.lanes[0]?.maxValue).toBe(FADER_MAX_GAIN);
+        // Only the fader's own lane moves: a send lane's ceiling is unity and
+        // stays there.
+        expect(automationStore.value?.lanes[1]?.maxValue).toBe(1);
+    });
+
     it('should sanitize malformed CRDT hydration to an empty automation store without throwing', () => {
         fake_doc.automation = { lanes: 'not-an-array' };
 
@@ -123,7 +163,7 @@ describe('automationStore', () => {
             enabled: true,
             collapsed: false,
             minValue: 0,
-            maxValue: 1,
+            maxValue: FADER_MAX_GAIN,
         } satisfies AutomationStoreState['lanes'][number];
 
         fake_doc.automation = {
@@ -195,7 +235,7 @@ describe('automationStore', () => {
                     enabled: true,
                     collapsed: false,
                     minValue: 0,
-                    maxValue: 1,
+                    maxValue: FADER_MAX_GAIN,
                     trimPoints: 'bad-trim',
                     ghostPoints: [{ beat: 3, value: 0.4, curve: 'step', tension: 0 }],
                     linkedLaneId: null,
@@ -231,7 +271,7 @@ describe('automationStore', () => {
                     enabled: true,
                     collapsed: false,
                     minValue: 0,
-                    maxValue: 1,
+                    maxValue: FADER_MAX_GAIN,
                     ghostPoints: [{ beat: 3, value: 0.4, curve: 'step', tension: 0 }],
                     viewMaxValue: 2,
                 },
@@ -328,7 +368,7 @@ describe('automationStore', () => {
                     enabled: true,
                     collapsed: false,
                     minValue: 0,
-                    maxValue: 1,
+                    maxValue: FADER_MAX_GAIN,
                 },
             ],
         } satisfies AutomationStoreState;

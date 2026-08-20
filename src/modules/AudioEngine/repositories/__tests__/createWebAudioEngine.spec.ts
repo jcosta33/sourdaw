@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
 
@@ -552,6 +554,26 @@ describe('AudioEngine', () => {
 
         engine.masterGainNode.gain.value = 0.5;
         expect(engine.getMasterGain()).toBe(0.5);
+    });
+
+    // The live master ceiling is the fader's `+6 dB` headroom, not unity — the
+    // same ceiling `renderOffline`'s master gain node applies, and the offline
+    // twin is the only one `renderOfflineGraph.spec.ts` pins. Left unobserved
+    // here, a revert of the live clamp back to `Math.min(1, value)` reds
+    // nothing and reintroduces live-versus-offline divergence with the offline
+    // test still green.
+    it('should clamp master gain to the fader headroom ceiling, not to unity', () => {
+        engine.setMasterGain(2.5);
+        expect(engine.masterGainNode.gain.setTargetAtTime).toHaveBeenCalledWith(
+            FADER_MAX_GAIN,
+            expect.any(Number),
+            0.01
+        );
+    });
+
+    it('should clamp a negative master gain to silence', () => {
+        engine.setMasterGain(-1);
+        expect(engine.masterGainNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), 0.01);
     });
 
     it('should ensure and remove track strips', () => {

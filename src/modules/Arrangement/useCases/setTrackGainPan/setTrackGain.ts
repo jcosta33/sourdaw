@@ -8,6 +8,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getAllTracks } from '../getAllTracks';
 
 import { syncToasterPadParam } from './helpers';
+import { isToasterPadTrack, TOASTER_PAD_MAX_GAIN } from './isToasterPadTrack';
 import { maybeRecordAutomation } from './maybeRecordAutomation';
 
 /**
@@ -37,9 +38,16 @@ import { maybeRecordAutomation } from './maybeRecordAutomation';
  * `padGain x oldTrackGain` while the thumb was down and `padGain x newTrackGain`
  * the instant it lifted: an audible step on release, about 6 dB for a
  * 0.8 -> 0.4 move. Only `updateTrack` belongs inside the guard.
+ *
+ * That series relationship is also why the ceiling is not unconditionally
+ * `FADER_MAX_GAIN`: on a pad-mirrored track the one written value lands on
+ * both nodes, so {@link TOASTER_PAD_MAX_GAIN} holds it inside the range
+ * `pad.rs` honours and keeps the two in the lockstep the mirror exists to
+ * maintain.
  */
 export function setTrackGain(trackId: string, gain: number, isTransient = false): void {
-    const clamped = clampFaderGain(gain);
+    const ceiling = isToasterPadTrack(trackId, { getAllTracks }) ? TOASTER_PAD_MAX_GAIN : Number.POSITIVE_INFINITY;
+    const clamped = Math.min(clampFaderGain(gain), ceiling);
     engineSetTrackGain(trackId, clamped);
     syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
 

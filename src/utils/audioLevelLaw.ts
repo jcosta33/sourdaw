@@ -45,19 +45,43 @@ export function gainToDb(gain: number): number {
 }
 
 /**
+ * How a dB readout renders its digits. The *law* — the conversion and the
+ * `-∞` branch — never varies; only the presentation does.
+ */
+export type GainDbFormat = {
+    /** Digits after the decimal point. Defaults to one. */
+    fractionDigits?: number;
+    /**
+     * Drop trailing zeros, so a whole number reads as prose (`0 dB`) rather
+     * than as a meter (`0.00 dB`). Defaults to `false`: a mixer readout wants
+     * the fixed width so the number does not jitter as the fader moves, while
+     * a sentence wants the short form.
+     */
+    trimTrailingZeros?: boolean;
+};
+
+/**
  * The shared fader dB readout: `-∞` at silence, one decimal everywhere else.
  * Every fader-style dB readout in the mixer (track strip, master strip)
  * formats through here rather than through its own arithmetic — a hand-rolled
  * formula per strip is how the track strip ended up reporting "0.0 dB" at a
  * gain of 0.8 (true value ≈ −1.9 dB) and the master strip disagreed with it
  * on a different wrong number.
+ *
+ * The AI confirmation prose formats through here too, at two trimmed
+ * decimals. Its own copy of this arithmetic was a fourth statement of the
+ * same law, free to drift from the three the mixer already shares — and a
+ * confirmation sentence that disagrees with the strip the user is about to
+ * look at is worse than no sentence.
  */
-export function formatGainDb(gain: number): string {
+export function formatGainDb(gain: number, format: GainDbFormat = {}): string {
+    const { fractionDigits = 1, trimTrailingZeros = false } = format;
     const db = gainToDb(gain);
     if (!Number.isFinite(db)) {
         return '-∞';
     }
-    return db.toFixed(1);
+    const fixed = db.toFixed(fractionDigits);
+    return trimTrailingZeros ? String(Number(fixed)) : fixed;
 }
 
 /**
@@ -84,6 +108,29 @@ export const FADER_HEADROOM_DB = 6;
 export const FADER_MAX_GAIN = dbToGain(FADER_HEADROOM_DB);
 
 /**
+ * {@link FADER_MAX_GAIN} as the decimal an LLM-facing schema advertises.
+ *
+ * A tool description that names a ceiling is a *contract with the model*, and
+ * the model will not ask for a value it has been told is out of range. Every
+ * such description therefore derives its number from here rather than typing
+ * one: the literals this constant replaced still read `1.0` after the ceiling
+ * moved to `+{@link FADER_HEADROOM_DB} dB`, so the widened acceptor was
+ * unreachable from the tool path — the model asked for `1.0` and got unity
+ * when the user asked for make-up gain.
+ *
+ * Three decimals, rounded down by truncation of the trailing digits, so the
+ * advertised value is always one the acceptor honours.
+ */
+export const FADER_MAX_GAIN_LABEL = (Math.floor(FADER_MAX_GAIN * 1000) / 1000).toFixed(3);
+
+/**
+ * The range clause every fader-gain tool schema advertises, stating the real
+ * contract rather than a ceiling of unity: the top of the travel, where unity
+ * sits inside it, and the default a new track carries.
+ */
+export const FADER_GAIN_RANGE_DESCRIPTION = `0.0 to about ${FADER_MAX_GAIN_LABEL} (1.0 = unity, 0.8 = default)`;
+
+/**
  * Clamp a linear amplitude to the fader's range, `[0, {@link FADER_MAX_GAIN}]`.
  * The floor is a hard 0 — negative amplitude is a phase inversion, never a
  * level — and the ceiling is the fader's headroom, not unity.
@@ -104,10 +151,10 @@ export function clampFaderGain(gain: number): number {
  * (`createOfflineTrackStrip.ts`'s `clampFaderGain(track.gain *
  * vcaMultiplier)`, `graph.rs`'s `folded.min(fader_max_gain())`). This is the
  * bound the engine's actual VCA write path enforces on the multiplier
- * itself — `setVcaGain.ts`'s `Math.min(2, gain)` — so any AI-facing check
- * of a raw VCA gain value matches it, rather than being either looser than
- * what a person can never reach or stricter than what a person's own slider
- * already allows.
+ * itself — `setVcaGain.ts` clamps to this same constant — so any AI-facing
+ * check of a raw VCA gain value matches it, rather than being either looser
+ * than what a person can never reach or stricter than what a person's own
+ * slider already allows.
  */
 export const VCA_MAX_GAIN = 2;
 

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type DawProjectParseResult } from '../dawProjectTypes';
 import { mapToProjectData } from '../mapToProjectData';
 
@@ -492,7 +494,7 @@ describe('mapToProjectData — tempo/timeSignature maps and markers', () => {
 });
 
 describe('mapToProjectData — gain/pan clamping', () => {
-    it('clamps track volume into [0, 1] and pan into [-1, 1]', () => {
+    it('clamps track volume to the fader ceiling and pan into [-1, 1]', () => {
         const data = mapToProjectData({
             parsed: minimalParsed({
                 tracks: [
@@ -515,8 +517,38 @@ describe('mapToProjectData — gain/pan clamping', () => {
             fileName: 'test.dawproject',
         });
         const track = data.arrangement.tracks.find((track) => track.id === 't1')!;
-        expect(track.gain).toBe(1);
+        expect(track.gain).toBe(FADER_MAX_GAIN);
         expect(track.pan).toBe(-1);
+    });
+
+    /**
+     * The import twin of `serializeProjectXml`'s export clamp. Pinned at unity
+     * it flattened make-up gain on the way in, so a round trip lost it even
+     * once the export carried it out.
+     */
+    it('carries an imported volume above unity through instead of flattening it', () => {
+        const data = mapToProjectData({
+            parsed: minimalParsed({
+                tracks: [
+                    {
+                        id: 't3',
+                        name: 'T3',
+                        kind: 'audio',
+                        color: '',
+                        parentId: null,
+                        volume: 1.5,
+                        pan: 0,
+                        mute: false,
+                        solo: false,
+                        clips: [],
+                        deviceTypes: [],
+                    },
+                ],
+            }),
+            bufferIdsByPath: new Map(),
+            fileName: 'test.dawproject',
+        });
+        expect(data.arrangement.tracks.find((track) => track.id === 't3')!.gain).toBe(1.5);
     });
 
     it('clamps negative volume to 0 and pan above 1 to 1', () => {

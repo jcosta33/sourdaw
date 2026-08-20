@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import {
     type AutomationCurveType,
@@ -440,6 +441,38 @@ function normalize_automation_lane(lane: AutomationLane): AutomationLane {
     return normalized_lane;
 }
 
+/** `parameterId` of a track's own fader lane. */
+const GAIN_PARAMETER_ID = 'gain';
+
+/**
+ * The ceiling a gain lane carried before the fader gained its `+6 dB` of
+ * headroom, and the only stored value this migration rewrites.
+ */
+const LEGACY_GAIN_MAX_VALUE = 1;
+
+/**
+ * Raise a gain lane's stored ceiling to the one its own fader now reaches.
+ *
+ * `maxValue` is durable CRDT state, written once when the lane is created, and
+ * it is what `paintDrawPoint` clamps a drawn point to and what the lane's
+ * Y axis is scaled by. Without this, a project made before the widening keeps
+ * `maxValue: 1` on lanes whose fader now goes to `FADER_MAX_GAIN` — so one
+ * project holds two gain lanes with different ceilings and different Y scales,
+ * and the older one cannot be drawn into headroom the track can actually
+ * produce.
+ *
+ * Only the exact legacy default is rewritten: a lane whose range came from a
+ * parameter-range resolver is left as its parameter defined it. The lane object
+ * is returned by identity when nothing changes, so a project already on the new
+ * ceiling writes nothing back.
+ */
+function migrate_gain_lane_ceiling(lane: AutomationLane): AutomationLane {
+    if (lane.parameterId !== GAIN_PARAMETER_ID || lane.maxValue !== LEGACY_GAIN_MAX_VALUE) {
+        return lane;
+    }
+    return { ...lane, maxValue: FADER_MAX_GAIN };
+}
+
 function is_exact_automation_store_state(value: unknown): value is AutomationStoreState {
     const lanes = get_lane_values(value);
 
@@ -465,6 +498,27 @@ export function sanitize_automation_store_state(value: unknown): AutomationStore
     return { lanes: lanes.filter(is_valid_automation_lane).map(normalize_automation_lane) };
 }
 
+/**
+ * The store's inbound path: sanitize, then migrate.
+ *
+ * The migration is deliberately **not** inside
+ * `sanitize_automation_store_state`. That function is also the exactness
+ * oracle two undo/restore paths depend on — `restoreAutomationSnapshot` and
+ * `prepareAutomationTimeStateRestore` both ask it whether a supplied state
+ * survives a round trip unchanged, and reject the plan when it does not. A
+ * migration folded into it turns every legacy snapshot into a rejected
+ * restore. Here it runs on inbound state only, which is the load this
+ * migration is about.
+ *
+ * The already-migrated case returns by identity, all the way up to the state
+ * object, so a hydrate that changes nothing stays the no-write it was.
+ */
+function hydrate_automation_store_state(value: unknown): AutomationStoreState {
+    const sanitized = sanitize_automation_store_state(value);
+    const lanes = sanitized.lanes.map(migrate_gain_lane_ceiling);
+    return lanes.every((lane, index) => lane === sanitized.lanes[index]) ? sanitized : { lanes };
+}
+
 export const automationStore = createStore<AutomationStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'automation', {
         // Audit CC-2 — projection default for a document without this slot, so
@@ -472,5 +526,5 @@ export const automationStore = createStore<AutomationStoreState>({
         hydrateMissing: () => defaultAutomationStoreState,
     }),
     initialData: defaultAutomationStoreState,
-    sanitize: sanitize_automation_store_state,
+    sanitize: hydrate_automation_store_state,
 });
