@@ -881,7 +881,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             processToken,
             orphanTimeoutMs: timeoutMs,
         });
-        const recheckedAvailableBytes = readAvailableMemory();
+        let recheckedAvailableBytes: number | undefined;
+        try {
+            recheckedAvailableBytes = readAvailableMemory();
+        } catch (error) {
+            candidate.release();
+            throw error;
+        }
         if (recheckedAvailableBytes !== undefined && recheckedAvailableBytes >= memoryReserveBytes + maxRssBytes) {
             session = candidate;
             break;
@@ -894,7 +900,15 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         await new Promise((resolve) => setTimeout(resolve, input.admissionWaitIntervalMs ?? 1_000));
     }
     const ownedSession = session.owned;
-    const availableBytes = readAvailableMemory();
+    let availableBytes: number | undefined;
+    try {
+        availableBytes = readAvailableMemory();
+    } catch (error) {
+        if (ownedSession) {
+            session.release();
+        }
+        throw error;
+    }
     const permittedRssBytes = availableBytes === undefined ? 0 : availableBytes - memoryReserveBytes;
     const requiredBudgetBytes = ownedSession ? maxRssBytes : minimumCommandBudgetBytes;
     if (availableBytes === undefined || permittedRssBytes < requiredBudgetBytes) {
@@ -1037,11 +1051,33 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     try {
         sample();
     } catch (error) {
+        if (child.pid !== undefined) {
+            terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+        }
+        if (ownedSession) {
+            session.release();
+        }
+        if (forceKillTimer !== undefined) {
+            clearTimeout(forceKillTimer);
+        }
         process.removeListener('SIGINT', onSigint);
         process.removeListener('SIGTERM', onSigterm);
         throw error;
     }
-    const sampleTimer = setInterval(sample, input.sampleIntervalMs ?? defaultSampleIntervalMs);
+    // A sampler that throws on a tick cannot reject the caller (the run is already awaited
+    // elsewhere), so it counts as a sampler failure and stops the run under reason 'monitor',
+    // preserving containment instead of crashing the host.
+    const sampleTick = () => {
+        try {
+            sample();
+        } catch {
+            hostSamplerFailures += 1;
+            if (hostSamplerFailures >= 3) {
+                stop('monitor');
+            }
+        }
+    };
+    const sampleTimer = setInterval(sampleTick, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
     try {
