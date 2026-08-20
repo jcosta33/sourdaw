@@ -21,9 +21,15 @@
 //! Every batch is validated and mapped control-side into a vector of
 //! [`GraphCommand`]s against a working clone of the [`GraphRegistry`] — the
 //! registry that resolves the app's string strip/device ids onto the engine's
-//! `usize` node ids. Only a batch that maps completely is pushed, and it is
-//! pushed only after checking the command ring has room for all of it, so the
-//! engine never receives half a topology. Anything this backend cannot honour
+//! `usize` node ids. Only a batch that maps completely is pushed, and it
+//! crosses the ring behind a batch fence the audio callback refuses to drain
+//! past until every command behind it is visible
+//! (`EngineHandle::send_graph_batch`), so the engine never *observes* half a
+//! topology — a block boundary between two of a batch's commands renders the
+//! pre-batch graph, never a partial one. A batch larger than the ring
+//! provisions a bigger ring first, control-side, handed over through a
+//! lock-free swap; ring capacity never bounds an admitted batch. Anything
+//! this backend cannot honour
 //! — a route it cannot carry, a device it cannot build on a contributing
 //! strip, a write shape it has no primitive for — refuses the batch with a
 //! reason naming the command, never drops the command silently.
@@ -54,6 +60,29 @@
 //! beside a lazy one is two bootstraps to keep honest instead of one.
 //! `render_graph_offline` never starts the live engine at all.
 //!
+//! ## Strip reports
+//!
+//! The result's `reports` are observations of the post-batch registry, never
+//! echoes of the request: every strip a batch creates or whose chain it
+//! touches (`insert-device`, `remove-device`) reports its realized
+//! `deviceIds` after the whole batch. A device that degraded on a
+//! non-contributing strip is therefore visibly absent, and no chain edit is
+//! silent — a degraded `insert-device` still produces a report whose ids
+//! reflect reality. The offline render wire (`render_graph_offline`) answers
+//! PCM bytes only, so these reports do not cross it; the TS offline backend
+//! restates them from its own commands (`createNativeOfflineGraphBackend.ts`),
+//! a derivation D3.c pins until reports ride a richer offline result.
+//!
+//! ## The transport ownership law
+//!
+//! Two paths write transport state into one live engine. The split is by
+//! field, not by path: the graph's `set-transport` owns `is_playing` and the
+//! song position (`GraphCommand::SetTransportPlayback`), while tempo and time
+//! signature are owned by the plugin-transport path
+//! (`update_plugin_transport`, `GraphCommand::SetTransport`). A graph
+//! transport write leaves plugin-visible tempo and time signature untouched;
+//! the engine re-derives the beat position from the tempo it already holds.
+//!
 //! ## Known deviations, recorded rather than silent
 //!
 //! - `smoothed` writes (Web Audio `setTargetAtTime`) have no native
@@ -69,11 +98,6 @@
 //! - `bus -> track` routing refuses with its own reason — the D3 obligation
 //!   named at `AudioGraphBackend.ts` (routing constraint): buses are summed
 //!   after every track, so the edge cannot carry audio today.
-//! - `set-transport` carries only `playing` + `positionSeconds`, and the
-//!   `TransportState` it assigns is built from the engine default — so a graph
-//!   set-transport currently *resets* tempo and time signature to 120 BPM 4/4
-//!   and will fight `update_plugin_transport` the moment both paths drive one
-//!   live engine. Resolution is deferred to the live-cutover slice.
 //! - `correlation` is accepted and echoed but not validated against a live
 //!   document revision — **decided semantics as of D3.b, not an open TODO**.
 //!   The TS-side backend forwards a batch's correlation verbatim and echoes
@@ -87,7 +111,6 @@
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::plugin_slot::TransportState;
 use daw_engine::scheduler::GraphCommand;
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -96,6 +119,7 @@ use daw_engine::timeline::{
     DEVICE_PARAM_QUEUE_CAPACITY, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS,
     MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
 };
+use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -448,7 +472,9 @@ struct StripEntry {
     kind: StripKind,
     vca_multiplier: f32,
     contributes_audio: bool,
-    device_count: usize,
+    /// The realized insert chain, in chain order — what the strip report
+    /// observes. A degraded device never enters it.
+    device_ids: Vec<String>,
     clip_count: usize,
     send_bus_ids: Vec<String>,
     output: StripOutput,
@@ -464,6 +490,15 @@ struct DeviceEntry {
 /// facts batch validation reads. One registry per live engine (on
 /// [`AppState`]); an offline render builds a fresh one per call, because its
 /// batch must be self-contained.
+///
+/// The registry also carries the cross-batch queue ledger (see
+/// [`QueueBudgets`]): what earlier accepted batches left queued on the
+/// engine's fixed per-parameter queues, so a later batch cannot overflow a
+/// queue an earlier one filled. The ledger is conservative — it is reduced
+/// only by the stamp laws this side can mirror (a replace's cancellation, a
+/// locate's drop), never by the playhead landing an event, so it may
+/// over-refuse but never under-refuses. An offline render's fresh registry
+/// keeps the ledger exact for its one self-contained batch.
 #[derive(Clone, Debug)]
 pub struct GraphRegistry {
     strips: HashMap<String, StripEntry>,
@@ -473,6 +508,8 @@ pub struct GraphRegistry {
     next_node_id: usize,
     next_effect_id: usize,
     runtime_revision: u64,
+    automation_pending: HashMap<AutomationTarget, Vec<PendingStamp>>,
+    device_param_pending: HashMap<usize, usize>,
 }
 
 impl Default for GraphRegistry {
@@ -485,6 +522,8 @@ impl Default for GraphRegistry {
             next_node_id: 1,
             next_effect_id: FIRST_GRAPH_EFFECT_ID,
             runtime_revision: 0,
+            automation_pending: HashMap::new(),
+            device_param_pending: HashMap::new(),
         }
     }
 }
@@ -551,7 +590,16 @@ impl std::fmt::Debug for MappedBatch {
     }
 }
 
-/// Control-side ledger of what one batch queues on the engine's fixed
+/// One write the ledger believes a queue still holds: the stamp it starts at
+/// (what a locate's `cancel_from` filters on) and the frame it lands at (what
+/// a replace's `cancel_stale` filters on). A step lands at its own stamp.
+#[derive(Clone, Copy, Debug)]
+struct PendingStamp {
+    at_frame: u64,
+    lands_at: u64,
+}
+
+/// Control-side ledger of what accepted batches queue on the engine's fixed
 /// per-parameter queues.
 ///
 /// `RampedParam` holds [`AUTOMATION_QUEUE_CAPACITY`] pending writes and a
@@ -563,17 +611,32 @@ impl std::fmt::Debug for MappedBatch {
 /// `Append` occupies a slot; a `Replace` or `Hold` first drops what the
 /// queue's stamp law calls stale — every queued change whose event time (a
 /// ramp's landing frame, a step's own frame) sits at or after the new
-/// change's start (`RampedParam::cancel_stale`) — and then occupies one.
+/// change's start (`RampedParam::cancel_stale`) — and then occupies one; a
+/// locate drops every queued change stamped at or past the target
+/// (`RampedParam::cancel_from`, mirrored by [`Self::apply_seek`]).
+///
+/// The ledger is seeded from the registry's carried state and written back
+/// on success, so it models the queues *across* batches, not one batch
+/// against an empty engine. It cannot see the playhead landing an event, so
+/// it is deliberately conservative: over-refusal is possible, silent
+/// render-side drops are not.
 ///
 /// [`DeviceParamQueue`]: daw_engine::timeline::DeviceParamQueue
 #[derive(Default)]
 struct QueueBudgets {
-    /// Per target, the event time of every write this batch leaves queued.
-    automation: HashMap<AutomationTarget, Vec<u64>>,
+    /// Per target, the stamps of every write the ledger believes is queued.
+    automation: HashMap<AutomationTarget, Vec<PendingStamp>>,
     device_params: HashMap<usize, usize>,
 }
 
 impl QueueBudgets {
+    fn seeded_from(registry: &GraphRegistry) -> Self {
+        Self {
+            automation: registry.automation_pending.clone(),
+            device_params: registry.device_param_pending.clone(),
+        }
+    }
+
     fn charge_automation(
         &mut self,
         target: AutomationTarget,
@@ -590,17 +653,20 @@ impl QueueBudgets {
             AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
         };
         if !matches!(write, AutomationWrite::Append(_)) {
-            queued.retain(|&queued_lands_at| queued_lands_at < start);
+            queued.retain(|pending| pending.lands_at < start);
         }
         if queued.len() == AUTOMATION_QUEUE_CAPACITY {
             return Err(format!(
-                "automation-queue-capacity — this batch already queues \
+                "automation-queue-capacity — accepted batches already queue \
                  {AUTOMATION_QUEUE_CAPACITY} unlanded writes on this parameter, all its \
                  native queue holds; the engine would drop the rest silently, so the \
                  batch refuses instead — split the writes across batches"
             ));
         }
-        queued.push(lands_at);
+        queued.push(PendingStamp {
+            at_frame: start,
+            lands_at,
+        });
         Ok(())
     }
 
@@ -608,7 +674,7 @@ impl QueueBudgets {
         let depth = self.device_params.entry(effect_id).or_insert(0);
         if *depth == DEVICE_PARAM_QUEUE_CAPACITY {
             return Err(format!(
-                "device-param-queue-capacity — this batch already queues \
+                "device-param-queue-capacity — accepted batches already queue \
                  {DEVICE_PARAM_QUEUE_CAPACITY} unlanded changes on this device, all its native \
                  queue holds; the engine would drop the rest silently, so the batch refuses \
                  instead — split the writes across batches"
@@ -616,6 +682,16 @@ impl QueueBudgets {
         }
         *depth += 1;
         Ok(())
+    }
+
+    /// Mirror of the engine's locate law: a seek drops every queued write
+    /// stamped at or past the target frame, so the ledger releases the same
+    /// slots. Device-param queues have no cancellation law to mirror, so
+    /// their depths deliberately stay.
+    fn apply_seek(&mut self, frame: u64) {
+        for queued in self.automation.values_mut() {
+            queued.retain(|pending| pending.at_frame < frame);
+        }
     }
 }
 
@@ -782,8 +858,16 @@ fn insert_device_op(
     }
 }
 
+/// Record a strip whose report the batch owes, once, in first-touch order.
+fn touch(touched: &mut Vec<String>, strip_id: &str) {
+    if !touched.iter().any(|id| id == strip_id) {
+        touched.push(strip_id.to_string());
+    }
+}
+
 /// Map a whole batch. `registry` is the caller's working clone; on `Err`
-/// nothing built here may be applied and the clone is discarded.
+/// nothing built here may be applied and the clone is discarded — including
+/// the queue ledger, which is written back onto the clone only on success.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
@@ -798,9 +882,9 @@ fn map_batch(
     }
 
     let mut ops = Vec::new();
-    let mut reports = Vec::new();
+    let mut touched: Vec<String> = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
-    let mut budgets = QueueBudgets::default();
+    let mut budgets = QueueBudgets::seeded_from(registry);
 
     for (index, command) in batch.commands.iter().enumerate() {
         if let Err(reason) = map_command(
@@ -810,17 +894,40 @@ fn map_batch(
             sample_rate,
             &mut budgets,
             &mut ops,
-            &mut reports,
+            &mut touched,
         ) {
             refusals.push(format!("commands[{index}]: {reason}"));
         }
     }
 
-    if refusals.is_empty() {
-        Ok(MappedBatch { ops, reports })
-    } else {
-        Err(refusals.join("; "))
+    if !refusals.is_empty() {
+        return Err(refusals.join("; "));
     }
+
+    registry.automation_pending = budgets.automation;
+    registry.device_param_pending = budgets.device_params;
+
+    // The reports are a final pass over the post-batch registry: what each
+    // touched strip's chain really holds after everything applied, never an
+    // echo of any one command's request.
+    let reports = touched
+        .iter()
+        .map(|strip_id| {
+            let entry = registry
+                .strips
+                .get(strip_id)
+                .expect("a touched strip exists in the registry");
+            StripReportPayload {
+                kind: match entry.kind {
+                    StripKind::Track => "track",
+                    StripKind::Bus => "bus",
+                },
+                id: strip_id.clone(),
+                device_ids: entry.device_ids.clone(),
+            }
+        })
+        .collect();
+    Ok(MappedBatch { ops, reports })
 }
 
 fn resolve_route_target(
@@ -860,7 +967,7 @@ fn map_command(
     sample_rate: f32,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
-    reports: &mut Vec<StripReportPayload>,
+    touched: &mut Vec<String>,
 ) -> Result<(), String> {
     match command {
         GraphCommandPayload::CreateTrackStrip {
@@ -949,18 +1056,14 @@ fn map_command(
                     kind: StripKind::Track,
                     vca_multiplier: vca,
                     contributes_audio: *contributes_audio,
-                    device_count: chain_index,
+                    device_ids: built_device_ids,
                     clip_count: 0,
                     send_bus_ids: Vec::new(),
                     output: StripOutput::Master,
                 },
             );
             registry.track_count += 1;
-            reports.push(StripReportPayload {
-                kind: "track",
-                id: track_id.clone(),
-                device_ids: built_device_ids,
-            });
+            touch(touched, track_id);
             Ok(())
         }
 
@@ -1054,18 +1157,14 @@ fn map_command(
                     kind: StripKind::Bus,
                     vca_multiplier: vca,
                     contributes_audio: *contributes_audio,
-                    device_count: chain_index,
+                    device_ids: built_device_ids,
                     clip_count: 0,
                     send_bus_ids: Vec::new(),
                     output: StripOutput::Master,
                 },
             );
             registry.bus_count += 1;
-            reports.push(StripReportPayload {
-                kind: "bus",
-                id: bus_id.clone(),
-                device_ids: built_device_ids,
-            });
+            touch(touched, bus_id);
             Ok(())
         }
 
@@ -1200,15 +1299,21 @@ fn map_command(
                 .get(track_id)
                 .ok_or_else(|| format!("insert-device: unknown strip '{track_id}'"))?
                 .clone();
-            if strip.device_count == strip_device_capacity(strip.kind) {
+            if strip.device_ids.len() == strip_device_capacity(strip.kind) {
                 return Err(format!(
                     "insert-device: the chain on '{track_id}' is at capacity"
                 ));
             }
+            // Touched before the degradation branch: a device that cannot
+            // build on a non-contributing strip is omitted from the chain,
+            // and the strip's report is exactly how that omission is
+            // observable — the command never succeeds silently.
+            touch(touched, track_id);
             let Some(effect_id) = map_device(device, registry, strip.contributes_audio, ops)?
             else {
                 return Ok(());
             };
+            let insert_at = (*index as usize).min(strip.device_ids.len());
             ops.push(insert_device_op(
                 strip.kind,
                 strip.native_id,
@@ -1216,7 +1321,7 @@ fn map_command(
                     effect_id,
                     kind: DeviceKind::Effect,
                 },
-                (*index as usize).min(strip.device_count),
+                insert_at,
             ));
             registry.devices.insert(
                 device.id.clone(),
@@ -1229,7 +1334,8 @@ fn map_command(
                 .strips
                 .get_mut(track_id)
                 .expect("strip fetched above")
-                .device_count += 1;
+                .device_ids
+                .insert(insert_at, device.id.clone());
             Ok(())
         }
 
@@ -1271,7 +1377,9 @@ fn map_command(
                 .strips
                 .get_mut(track_id)
                 .expect("strip fetched above")
-                .device_count -= 1;
+                .device_ids
+                .retain(|id| id != device_id);
+            touch(touched, track_id);
             Ok(())
         }
 
@@ -1327,16 +1435,21 @@ fn map_command(
         } => {
             let frame =
                 seconds_to_frames(*position_seconds, sample_rate, "set-transport position")?;
-            // Transport state lands before the locate: a play→stop edge holds
+            // Playback state lands before the locate: a play→stop edge holds
             // every parameter where the last rendered frame left it, and the
             // seek that follows then drops whatever the move made stale — the
-            // same order the engine's own laws compose in.
-            ops.push(GraphCommand::SetTransport(TransportState {
+            // same order the engine's own laws compose in. The write carries
+            // only what the graph owns (the transport ownership law in the
+            // module header): `is_playing` and the song position. Tempo and
+            // time signature stay with the plugin-transport path, untouched.
+            ops.push(GraphCommand::SetTransportPlayback {
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
-                ..TransportState::default()
-            }));
+            });
             ops.push(GraphCommand::SeekFrames(frame));
+            // The ledger mirrors the locate it just queued: the engine's seek
+            // drops every queued write stamped at or past the target.
+            budgets.apply_seek(frame);
             Ok(())
         }
     }
@@ -1773,26 +1886,28 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
     };
 
-    // Whole-batch admission: only this thread pushes onto the ring (the engine
-    // mutex is held), so a batch that fits now cannot stop fitting mid-push.
-    let free = engine.graph_command_slots();
-    if mapped.ops.len() > free {
-        return result_json(&GraphApplyResultPayload::rejected(format!(
-            "command-queue-full: the batch needs {} command slots and {} are free — split the \
-             batch and reapply",
-            mapped.ops.len(),
-            free
-        )));
-    }
-
-    let op_count = mapped.ops.len();
-    for (pushed, op) in mapped.ops.into_iter().enumerate() {
-        if let Err(error) = engine.send_graph_command(op) {
-            // Unreachable after the slots check, but a partial application
-            // must never report itself as whole.
+    // Whole-batch admission and visibility: `send_graph_batch` provisions a
+    // command ring large enough for the batch when the current one is too
+    // small, then publishes the batch behind a fence the audio callback
+    // refuses to drain past until every command is visible — the engine
+    // applies the batch whole or does not observe it at all. Only this
+    // thread pushes onto the ring (the engine mutex is held).
+    match engine.send_graph_batch(mapped.ops) {
+        Ok(()) => {}
+        Err(GraphBatchError::Refused(reason)) => {
+            // Nothing was pushed: a refusal here is a clean rejection.
+            return result_json(&GraphApplyResultPayload::rejected(reason));
+        }
+        Err(GraphBatchError::Partial {
+            pushed,
+            total,
+            error,
+        }) => {
+            // Unreachable after provisioning, but a partial publication must
+            // never report itself as whole.
             return result_json(&GraphApplyResultPayload::needs_reconcile(
                 format!(
-                    "the engine refused command {pushed} of {op_count} after {pushed} were \
+                    "the engine refused command {pushed} of {total} after {pushed} were \
                      already queued: {error}"
                 ),
                 correlation,
@@ -1838,10 +1953,10 @@ fn render_offline_ops(
     // unless the batch itself says otherwise (its own set-transport commands
     // are mapped after this preamble and override it).
     let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1);
-    renderer.push(GraphCommand::SetTransport(TransportState {
+    renderer.push(GraphCommand::SetTransportPlayback {
         is_playing: true,
-        ..TransportState::default()
-    }))?;
+        song_pos_seconds: 0.0,
+    })?;
     for op in ops {
         renderer.push(op)?;
     }
@@ -2060,13 +2175,15 @@ mod tests {
             .expect("the full vocabulary should map");
 
         assert!(!mapped.ops.is_empty());
+        // Reports observe the post-batch registry: the batch itself removes
+        // `d-knead` after inserting it, so `t1`'s realized chain is empty.
         assert_eq!(
             mapped.reports,
             vec![
                 StripReportPayload {
                     kind: "track",
                     id: "t1".to_string(),
-                    device_ids: vec!["d-knead".to_string()],
+                    device_ids: Vec::new(),
                 },
                 StripReportPayload {
                     kind: "bus",
@@ -2075,6 +2192,19 @@ mod tests {
                 },
             ]
         );
+        // The transport write is playback-only: the graph does not own tempo
+        // or time signature, so no whole-state assignment may cross the ring.
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::SetTransportPlayback {
+                is_playing: true,
+                song_pos_seconds,
+            } if *song_pos_seconds == 4.0
+        )));
+        assert!(!mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetTransport(_))));
         // The strip state reached the ops with the level law applied: the
         // VCA folds in before the clamp, so 0.8 * 0.5 = 0.4.
         assert!(mapped.ops.iter().any(|op| matches!(
@@ -2253,6 +2383,85 @@ mod tests {
         assert_eq!(mapped.reports[0].device_ids, vec!["d2".to_string()]);
     }
 
+    /// A chain edit is never silent: `insert-device` and `remove-device`
+    /// report the affected strip's realized chain after the whole batch. A
+    /// degraded insert (unbuildable device, non-contributing strip) still
+    /// produces the observation — the strip reports and the device is
+    /// visibly absent — and a removal reports the chain without it.
+    #[test]
+    fn insert_and_remove_device_report_the_affected_strips_realized_chain() {
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T",
+                  "state": strip_state(1.0),
+                  "devices": [ { "id": "d-knead", "type": "knead", "bypassed": false,
+                                 "parameterValues": {} } ],
+                  "honorMuted": true, "contributesAudio": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the creation batch maps");
+
+        let degraded = map_batch(
+            &batch(json!([
+                { "kind": "insert-device", "trackId": "t1", "index": 0,
+                  "device": { "id": "d-alien", "type": "dutch-oven", "bypassed": false,
+                              "parameterValues": {} } }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a degraded insert maps");
+        assert_eq!(
+            degraded.reports,
+            vec![StripReportPayload {
+                kind: "track",
+                id: "t1".to_string(),
+                device_ids: vec!["d-knead".to_string()],
+            }],
+            "the degraded insert must still produce the strip's observation"
+        );
+
+        // A built insert lands at its clamped index in the realized order.
+        let inserted = map_batch(
+            &batch(json!([
+                { "kind": "insert-device", "trackId": "t1", "index": 0,
+                  "device": { "id": "d-front", "type": "knead", "bypassed": false,
+                              "parameterValues": {} } }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a buildable insert maps");
+        assert_eq!(
+            inserted.reports[0].device_ids,
+            vec!["d-front".to_string(), "d-knead".to_string()]
+        );
+
+        let removed = map_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "t1", "deviceId": "d-knead" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the removal maps");
+        assert_eq!(
+            removed.reports,
+            vec![StripReportPayload {
+                kind: "track",
+                id: "t1".to_string(),
+                device_ids: vec!["d-front".to_string()],
+            }]
+        );
+    }
+
     #[test]
     fn an_offline_render_is_deterministic_and_a_clip_through_a_fader_is_audible() {
         let samples = sample_pool();
@@ -2399,6 +2608,56 @@ mod tests {
         )
         .expect_err("the ninth pending device write must refuse the batch");
         assert!(refusal.contains("device-param-queue-capacity"));
+    }
+
+    /// The queue ledger survives the batch: what one accepted batch leaves
+    /// queued on a parameter counts against the next batch's budget — the
+    /// engine's queue is one queue, however many batches filled it — and a
+    /// locate releases exactly what the engine's own seek law drops.
+    #[test]
+    fn the_queue_ledger_carries_across_batches_and_a_locate_releases_it() {
+        let mut registry = GraphRegistry::default();
+        let mut fill = vec![track_strip("t1")];
+        for index in 0..AUTOMATION_QUEUE_CAPACITY {
+            fill.push(pan_step("t1", 0.1, 1.0 + index as f64));
+        }
+        map_batch(
+            &batch(Value::Array(fill)),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("filling the queue in one batch maps");
+
+        // The next batch sees the queue the last one filled — modelled
+        // against an empty engine it would map, and the engine would drop it
+        // render-side with only a counter.
+        let mut working = registry.clone();
+        let refusal = map_batch(
+            &batch(json!([pan_step("t1", 0.2, 99.0)])),
+            &mut working,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("the ninth cross-batch write on one parameter must refuse");
+        assert!(
+            refusal.contains("automation-queue-capacity"),
+            "the refusal must name the queue, got: {refusal}"
+        );
+
+        // A locate drops every queued write stamped at or past its target
+        // (`RampedParam::cancel_from`); the ledger mirrors it, so the write
+        // behind the locate fits again.
+        map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+                pan_step("t1", 0.2, 1.0)
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the locate releases the ledger for the write behind it");
     }
 
     /// A payload that does not deserialize resolves to the contract's

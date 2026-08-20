@@ -15,8 +15,9 @@ use midi::diagnostics::{
     ActiveMidiRtDiagnosticsSnapshot,
 };
 use plugin_slot::NativePlugin;
-use rtrb::{Consumer, Producer, RingBuffer};
-use scheduler::GraphCommand;
+use rtrb::{Consumer, Producer, PushError, RingBuffer};
+use scheduler::{GraphCommand, RetiredGraphObjects};
+use std::sync::mpsc::Sender;
 use timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip,
@@ -48,8 +49,31 @@ fn spawn_with_fallback<T>(mut spawn: impl FnMut(bool) -> Result<T, String>) -> R
     }
 }
 
+/// How [`EngineHandle::send_graph_batch`] failed.
+///
+/// The two variants carry the one fact a caller reporting a whole-or-nothing
+/// contract needs: whether anything reached the engine.
+#[derive(Debug)]
+pub enum GraphBatchError {
+    /// The batch was refused whole; nothing was pushed.
+    Refused(String),
+    /// `pushed` of `total` commands were queued before a push failed.
+    ///
+    /// Unreachable by construction — admission verifies the whole batch fits
+    /// before the first push, and only this handle pushes — but a partial
+    /// application must never report itself as either whole or refused.
+    Partial {
+        pushed: usize,
+        total: usize,
+        error: String,
+    },
+}
+
 pub struct EngineHandle {
     command_tx: Producer<GraphCommand>,
+    /// Hands freshly provisioned retirement consumers to the reclaimer thread
+    /// when the command channel is reallocated for a large batch.
+    retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
     _audio_thread: AudioThreadHandle,
     next_plugin_id: usize,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
@@ -85,16 +109,18 @@ impl EngineHandle {
         let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let (thread_handle, sample_rate) = spawn_audio_thread_with_diagnostics(
-            rx,
-            diagnostics_tx,
-            timeline_diagnostics_tx,
-            engine_event_tx,
-            force_default_buffer,
-        )?;
+        let (thread_handle, sample_rate, retired_adoption_tx) =
+            spawn_audio_thread_with_diagnostics(
+                rx,
+                diagnostics_tx,
+                timeline_diagnostics_tx,
+                engine_event_tx,
+                force_default_buffer,
+            )?;
 
         Ok(Self {
             command_tx: tx,
+            retired_adoption_tx,
             _audio_thread: thread_handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             midi_rt_diagnostics: diagnostics_reader,
@@ -109,24 +135,107 @@ impl EngineHandle {
         self.sample_rate
     }
 
-    /// Free slots on the command ring right now.
-    ///
-    /// Only this handle pushes and only the audio thread pops, so the count can
-    /// grow under the caller but never shrink: a batch that fits when checked
-    /// still fits when pushed.
-    pub fn graph_command_slots(&self) -> usize {
-        self.command_tx.slots()
-    }
-
-    /// Push one already-built graph command.
+    /// Publish one validated batch with all-or-nothing visibility.
     ///
     /// The typed methods below stay the ordinary path; this exists for callers
     /// that validate and build a whole *batch* of commands control-side (the
-    /// `AudioGraphBackend` transport) and then apply it atomically, checking
-    /// [`EngineHandle::graph_command_slots`] first so the batch can be refused
-    /// whole instead of stranding half a topology on a full ring.
-    pub fn send_graph_command(&mut self, command: GraphCommand) -> Result<(), String> {
-        self.push(command)
+    /// `AudioGraphBackend` transport). The batch crosses the ring behind a
+    /// [`scheduler::GraphCommand::BeginBatch`] fence the audio thread's drain
+    /// respects: the callback applies either none of it or all of it between
+    /// two rendered blocks, so a live block boundary can never observe half a
+    /// topology — a strip without its frame-0 state write, a splice without
+    /// its effect registration.
+    ///
+    /// Ring capacity never bounds an admitted batch: a batch larger than the
+    /// ring — or one that finds it congested — reallocates the channel
+    /// control-side and hands the engine the new ends through a lock-free
+    /// swap fence (see [`EngineHandle::provision_command_channel`]).
+    ///
+    /// On [`GraphBatchError::Refused`] nothing of the batch was pushed. Only
+    /// this handle pushes and only the audio thread pops, so once admission
+    /// sees room for fence plus body the pushes cannot fail; the `Partial`
+    /// variant exists so that even an impossible failure never reports a
+    /// partial application as whole.
+    pub fn send_graph_batch(&mut self, ops: Vec<GraphCommand>) -> Result<(), GraphBatchError> {
+        // The fence occupies a slot of its own alongside the body.
+        let needed = ops.len() + 1;
+        if self.command_tx.slots() < needed {
+            self.provision_command_channel(needed)
+                .map_err(GraphBatchError::Refused)?;
+        }
+
+        let total = ops.len();
+        if let Err(error) = self.push(GraphCommand::BeginBatch { commands: total }) {
+            return Err(GraphBatchError::Refused(error));
+        }
+        for (pushed, op) in ops.into_iter().enumerate() {
+            if let Err(error) = self.push(op) {
+                return Err(GraphBatchError::Partial {
+                    pushed,
+                    total,
+                    error,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Reallocate the command channel to hold `needed` commands and hand the
+    /// audio thread the new ends through a swap fence on the old ring.
+    ///
+    /// Everything heavy happens on this thread: both new rings are allocated
+    /// here, and the callback's part is pointer work — pop the fence (by
+    /// construction the old ring's last element, so the old ring is already
+    /// drained dry), adopt the new consumer and retirement producer, and hand
+    /// the old consumer to the reclaimer. The happens-before is rtrb's own:
+    /// the new ends cross inside a command element, so the push that
+    /// publishes the fence is the release the adopting pop acquires.
+    ///
+    /// The retirement ring is co-sized at capacity + 1 — one retirement per
+    /// command in the worst case, plus the scheduler's reserved shutdown slot
+    /// — preserving the arithmetic behind the boot-time
+    /// `RETIREMENT_QUEUE_CAPACITY` at every size, which is what lets the
+    /// drain's batch fence never defer an admitted batch for good.
+    fn provision_command_channel(&mut self, needed: usize) -> Result<(), String> {
+        const SWAP_PUSH_ATTEMPTS: usize = 500;
+        const SWAP_PUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2);
+
+        let capacity = needed.max(self.command_tx.buffer().capacity());
+        let (command_tx, command_rx) = RingBuffer::new(capacity);
+        let (retired_tx, retired_rx) = RingBuffer::new(capacity + 1);
+        self.retired_adoption_tx
+            .send(retired_rx)
+            .map_err(|_| "engine-not-running: the retirement reclaimer is gone".to_string())?;
+
+        // The swap fence needs one slot on the old ring. The callback drains
+        // the ring every device period, so a full ring frees within
+        // milliseconds; one still full after the whole wait means the engine
+        // is not draining at all, and the batch refuses rather than blocking
+        // the control thread forever.
+        let mut swap = GraphCommand::SwapCommandChannel {
+            commands: command_rx,
+            retired_tx,
+        };
+        for _ in 0..SWAP_PUSH_ATTEMPTS {
+            match self.command_tx.push(swap) {
+                Ok(()) => {
+                    // Dropping the old producer marks the old ring abandoned,
+                    // which is what lets the reclaimer free it once the
+                    // callback hands the old consumer over.
+                    self.command_tx = command_tx;
+                    return Ok(());
+                }
+                Err(PushError::Full(returned)) => {
+                    swap = returned;
+                    std::thread::sleep(SWAP_PUSH_INTERVAL);
+                }
+            }
+        }
+        Err(
+            "command-queue-full: the engine did not drain its command ring while a channel swap \
+             waited"
+                .to_string(),
+        )
     }
 
     /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
@@ -443,15 +552,23 @@ impl EngineHandle {
 /// does not exercise: a command's whole journey is the ring between this handle
 /// and [`scheduler::AudioScheduler`], which a test can drive directly.
 #[cfg(test)]
-fn engine_handle_for_command_capture(capacity: usize) -> (EngineHandle, Consumer<GraphCommand>) {
+fn engine_handle_for_command_capture(
+    capacity: usize,
+) -> (
+    EngineHandle,
+    Consumer<GraphCommand>,
+    std::sync::mpsc::Receiver<Consumer<RetiredGraphObjects>>,
+) {
     let (command_tx, command_rx) = RingBuffer::new(capacity);
     let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+    let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
     (
         EngineHandle {
             command_tx,
+            retired_adoption_tx,
             _audio_thread: audio_thread::detached_audio_thread_handle(),
             next_plugin_id: 1000,
             midi_rt_diagnostics: diagnostics_reader,
@@ -460,6 +577,7 @@ fn engine_handle_for_command_capture(capacity: usize) -> (EngineHandle, Consumer
             sample_rate: 48_000.0,
         },
         command_rx,
+        retired_adoption_rx,
     )
 }
 
@@ -468,7 +586,8 @@ mod tests {
     use super::{engine_handle_for_command_capture, spawn_with_fallback};
     use crate::audio_bridge::create_audio_bridge;
     use crate::plugin_slot::NativePlugin;
-    use crate::scheduler::AudioScheduler;
+    use crate::scheduler::{AudioScheduler, GraphCommand};
+    use crate::timeline::TimelineTrack;
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::cell::RefCell;
@@ -503,7 +622,7 @@ mod tests {
     /// its instance and its state while its audio passes it by.
     #[test]
     fn set_bypass_reaches_the_scheduler_and_returns_bridged_audio_untouched() {
-        let (mut engine, command_rx) = engine_handle_for_command_capture(16);
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
         let (retired_tx, _retired_rx) = RingBuffer::new(16);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         let (bridge, mut bridge_handle) = create_audio_bridge(42);
@@ -536,6 +655,53 @@ mod tests {
         scheduler.process_audio_bridges(512);
         let processed = bridge_handle.pop_output().expect("the processed block");
         assert_eq!(&processed.left[..4], &[0.25; 4]);
+    }
+
+    /// A full-project sync can exceed any fixed ring, and splitting it would
+    /// surrender atomicity. Admission must provision instead of refusing: the
+    /// channel is reallocated control-side, the scheduler adopts the new ends
+    /// through the swap fence, and the whole batch — larger than the boot
+    /// ring — applies against an idle engine in one drain.
+    #[test]
+    fn a_batch_larger_than_the_command_ring_applies_whole_against_an_idle_engine() {
+        let (mut engine, command_rx, retired_adoption_rx) = engine_handle_for_command_capture(256);
+        let (retired_tx, _old_retired_rx) = RingBuffer::new(257);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+
+        // 150 add/remove pairs plus a survivor: 301 commands, over the 256
+        // boot capacity, and every removal exercises the co-sized retirement
+        // provisioning too.
+        let mut ops = Vec::new();
+        for id in 0..150usize {
+            ops.push(GraphCommand::AddTrack(TimelineTrack::new(id)));
+            ops.push(GraphCommand::RemoveTrack(id));
+        }
+        ops.push(GraphCommand::AddTrack(TimelineTrack::new(999)));
+        assert!(ops.len() + 1 > 256);
+
+        engine
+            .send_graph_batch(ops)
+            .expect("capacity must be provisioned, not refused");
+
+        // The freshly provisioned retirement ring reached the reclaimer's
+        // adoption channel before the swap was published.
+        let mut new_retired_rx = retired_adoption_rx
+            .try_recv()
+            .expect("the swapped-in retirement ring");
+
+        // One drain: swap fence, then the whole batch, atomically.
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.timeline().track_count(), 1);
+        assert!(scheduler.timeline().track(999).is_some());
+
+        // Everything the batch gave up crossed the new retirement ring: the
+        // 150 removed tracks plus the swapped-out old command consumer.
+        let mut retirements = 0;
+        while new_retired_rx.pop().is_ok() {
+            retirements += 1;
+        }
+        assert_eq!(retirements, 151);
     }
 
     #[test]
