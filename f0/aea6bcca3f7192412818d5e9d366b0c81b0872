@@ -1,0 +1,74 @@
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_7ba0b7bee9e951::t_ea37112495f584 1-11,13-277,281-293
+  s_7ba0b7bee9e951::t_f02ff8966dbf3e 12
+  s_7ba0b7bee9e951::t_f36d0fc988a52f 278-280
+  s_7ba0b7bee9e951::t_3c01c4a3359628 294-299
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_7ba0b7bee9e951::t_206fbea1185914 1-211
+src/modules/AudioEngine/useCases/offlineRender/createOfflineRenderBackend.ts
+  s_7ba0b7bee9e951::t_e758146353c48a 1-23
+  s_7ba0b7bee9e951::t_3cfd9c90a8f532 24-27
+electron/commands.ts
+  s_7ba0b7bee9e951::t_ce18dd1a4a02c5 38
+  s_7ba0b7bee9e951::t_c5b6f41a11a95f 85-86
+  s_7ba0b7bee9e951::t_b697f356c78b2d 113-118
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeGraphTransport.spec.ts
+  s_7ba0b7bee9e951::t_3f4580354d6305 1-5,7-65
+  s_7ba0b7bee9e951::t_1186c50266865f 6
+src/modules/AudioEngine/repositories/nativeGraph/interleaveAudioBufferPcm.ts
+  s_7ba0b7bee9e951::t_9ec5513a112628 1-45
+electron/__tests__/commands.spec.ts
+  s_7ba0b7bee9e951::t_e0d549023b5035 270
+  s_7ba0b7bee9e951::t_ac8bd04e377caf 317-318
+src/modules/AudioEngine/repositories/nativeGraph/deinterleaveStereoPcm.ts
+  s_7ba0b7bee9e951::t_1d34b82ef915cf 1-40
+src/modules/AudioEngine/repositories/nativeGraph/collectBufferedClipSources.ts
+  s_7ba0b7bee9e951::t_3ef5f4a83700d1 1-37
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_7ba0b7bee9e951::t_149b8d41dd2e7f 20-21
+  s_7ba0b7bee9e951::t_28571a9a32695b 163
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommandBatch.ts
+  s_7ba0b7bee9e951::t_ee8e401b2a1527 1,6-7,9,11-18
+  s_7ba0b7bee9e951::t_8b09a5a93486b7 2-5,8,10
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_7ba0b7bee9e951::t_f8cebf5a740513 16
+  s_7ba0b7bee9e951::t_9299c1ddc5b106 1-15,17-73
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_7ba0b7bee9e951::t_dbe4aa496bce24 1-12,15-278
+  s_7ba0b7bee9e951::t_e80964c021ffad 13-14
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_7ba0b7bee9e951::t_6bf52c2f455b64 1-50,54-58,60-230
+  s_7ba0b7bee9e951::t_30d0cc358d4ee7 51-53,59
+crates/daw-engine/src/timeline.rs
+  s_7ba0b7bee9e951::t_2dc5e5c5d435d2 297
+  s_7ba0b7bee9e951::t_1df5c48b2f926f 409,413
+  s_7ba0b7bee9e951::t_4c2062c3e0fbec 291-294,296,298-305,311-313
+  s_7ba0b7bee9e951::t_276d7f1957409c 2911-2956,2958-2959,2961
+  s_7ba0b7bee9e951::t_b67649bd521bec 447-476
+  s_7ba0b7bee9e951::t_d2626a8f16da09 477-478,2957,2960,2962
+src/utils/sourdawCommandArguments.ts
+  s_7ba0b7bee9e951::t_ec3db24ba6d434 23
+  s_7ba0b7bee9e951::t_5c8b307454843e 70-71
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_7ba0b7bee9e951::t_89a2482fd2b28f 2238-2727
+  s_7ba0b7bee9e951::t_7763732cea5937 166-167
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_c81a6da7f9c456 77-86
+  s_7ba0b7bee9e951::t_c6cb361df7361b 563-566,571-572,582-601,603
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f0aea6bcca3f7192412818d5e9d366b0c81b0872",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
