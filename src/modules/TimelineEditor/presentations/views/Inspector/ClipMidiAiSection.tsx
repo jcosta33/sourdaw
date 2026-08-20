@@ -182,6 +182,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             family: KOKORO_MODEL_ENTRY.family,
             url: KOKORO_MODEL_ENTRY.url,
             sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
+            sha256: KOKORO_MODEL_ENTRY.sha256,
         });
     };
 

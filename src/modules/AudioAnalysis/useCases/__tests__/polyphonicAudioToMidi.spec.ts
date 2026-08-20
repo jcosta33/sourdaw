@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { polyphonicAudioToMidi } from '../polyphonicAudioToMidi';
 
+const releaseGate = vi.hoisted(() => ({ basicPitch: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
+
 const getAllTracksMock = vi.fn(() => [] as unknown[]);
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -55,6 +59,14 @@ describe('polyphonicAudioToMidi', () => {
         getCachedAudioBufferMock.mockReset();
         loggerWarnMock.mockReset();
         basicPitchCtor.mockReset();
+        releaseGate.basicPitch = true;
+    });
+
+    it('rejects conversion while Basic Pitch artifacts are withheld', async () => {
+        releaseGate.basicPitch = false;
+
+        await expect(polyphonicAudioToMidi({ clipId: 'clip-1' })).rejects.toThrow(/not admitted in this release/);
+        expect(getAllTracksMock).not.toHaveBeenCalled();
     });
 
     it('should return null and warn when clip is not found', async () => {

@@ -17,11 +17,15 @@ const loadOnnxSession = vi.hoisted(() =>
 const runKokoroTts = vi.hoisted(() =>
     vi.fn<(input: unknown) => Promise<{ type: 'tts-result'; audio: Float32Array; samplingRate: number }>>()
 );
+const releaseGate = vi.hoisted(() => ({ kokoro: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
 vi.mock('../inferenceWorkerBridge', () => ({
     inferenceWorkerBridge: { loadOnnxSession, runKokoroTts },
 }));
 
+import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { measureInferenceThroughput } from '../measureInferenceThroughput';
 
 type LoggerMock = {
@@ -48,14 +52,17 @@ function install_no_webgpu(): void {
     Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} });
 }
 
-type InstallReadModelInput = {
+type InstallReadVerifiedModelInput = {
     result?: ArrayBuffer | null;
     error?: Error;
 };
 
-function install_read_model({ result = new ArrayBuffer(1024), error }: InstallReadModelInput = {}): void {
-    const readModel = vi.fn(() => (error ? Promise.reject(error) : Promise.resolve(result)));
-    injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readModel });
+function install_read_verified_model({
+    result = new ArrayBuffer(1024),
+    error,
+}: InstallReadVerifiedModelInput = {}): void {
+    const readVerifiedModel = vi.fn(() => (error ? Promise.reject(error) : Promise.resolve(result)));
+    injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readVerifiedModel });
 }
 
 /**
@@ -82,8 +89,9 @@ describe('measureInferenceThroughput', () => {
         vi.restoreAllMocks();
         loadOnnxSession.mockReset().mockResolvedValue(['webgpu', 'wasm']);
         runKokoroTts.mockReset();
+        releaseGate.kokoro = true;
         install_webgpu();
-        install_read_model();
+        install_read_verified_model();
     });
 
     it('should report audio seconds over wall-clock seconds as the realtime factor', async () => {
@@ -95,7 +103,7 @@ describe('measureInferenceThroughput', () => {
 
         expect(throughput).toEqual({
             status: 'measured',
-            modelId: 'kokoro-82m-q8',
+            modelId: KOKORO_MODEL_ARTIFACT.id,
             executionProviders: ['webgpu', 'wasm'],
             audioSeconds: 4,
             elapsedSeconds: 2,
@@ -158,17 +166,28 @@ describe('measureInferenceThroughput', () => {
 
     it('should refuse to measure without WebGPU and never touch storage', async () => {
         install_no_webgpu();
-        const readModel = vi.fn(() => Promise.resolve(new ArrayBuffer(8)));
-        injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readModel });
+        const readVerifiedModel = vi.fn(() => Promise.resolve(new ArrayBuffer(8)));
+        injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readVerifiedModel });
 
         const throughput = await measureInferenceThroughput();
 
         expect(throughput).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
-        expect(readModel).not.toHaveBeenCalled();
+        expect(readVerifiedModel).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to measure when the Kokoro artifact is withheld', async () => {
+        releaseGate.kokoro = false;
+        const readVerifiedModel = vi.fn(() => Promise.resolve(new ArrayBuffer(8)));
+        injectDependencies(measureInferenceThroughput, { logger: create_logger_mock(), readVerifiedModel });
+
+        const throughput = await measureInferenceThroughput();
+
+        expect(throughput).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(readVerifiedModel).not.toHaveBeenCalled();
     });
 
     it('should refuse to measure when the probe model is not in OPFS', async () => {
-        install_read_model({ result: null });
+        install_read_verified_model({ result: null });
 
         const throughput = await measureInferenceThroughput();
 
@@ -177,7 +196,7 @@ describe('measureInferenceThroughput', () => {
     });
 
     it('should refuse to measure when reading the model throws', async () => {
-        install_read_model({ error: new Error('opfs gone') });
+        install_read_verified_model({ error: new Error('opfs gone') });
 
         const throughput = await measureInferenceThroughput();
 
