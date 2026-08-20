@@ -15,4 +15,4 @@ WebAudio graph runtime: hosts every built-in device as a WASM engine node, plus 
 - Worklets stay isolated: no imports from app/helpers/desktop IPC (deps **error** rule). `worker.format: 'iife'` in `vite.config.ts` exists so worklet blob URLs can load bundles — don't change it casually.
 - One live `AudioContext` app-wide (root always-on rules). Audio-thread code must not allocate, lock, or block.
 - Faust has **two** integration points: this module and PluginHost — check both before changing Faust wiring.
-- Native-plugin bridge worklets are raw JS in `public/audio/worklets/` (3 processors), separate from the WASM glue.
+- Native-plugin bridge worklets are raw JS in `public/audio/worklets/`, separate from the WASM glue.

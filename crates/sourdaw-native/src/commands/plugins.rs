@@ -7,7 +7,7 @@ use crate::host::plugin_window::PluginWindowHost;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
-use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
+use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
@@ -988,32 +988,6 @@ pub async fn set_plugin_bypass(
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
     engine.set_bypass(engine_plugin_id, bypassed)
-}
-
-/// Update the global transport state for all native plugins (lock-free).
-pub async fn update_plugin_transport(
-    tempo: f64,
-    time_sig_num: u16,
-    time_sig_denom: u16,
-    is_playing: bool,
-    song_pos_beats: f64,
-    song_pos_seconds: f64,
-    state: &AppState,
-) -> Result<(), String> {
-    let mut engine_guard = state
-        .engine
-        .lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
-
-    engine.set_transport(TransportState {
-        tempo,
-        time_sig_num,
-        time_sig_denom,
-        is_playing,
-        song_pos_beats,
-        song_pos_seconds,
-    })
 }
 
 /// Process an audio block through a native plugin via the ring-buffer bridge.

@@ -574,31 +574,6 @@ impl SourdawNative {
     }
 
     #[napi]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn update_plugin_transport(
-        &self,
-        tempo: f64,
-        time_sig_num: u16,
-        time_sig_denom: u16,
-        is_playing: bool,
-        song_pos_beats: f64,
-        song_pos_seconds: f64,
-    ) -> Result<()> {
-        reason(
-            commands::plugins::update_plugin_transport(
-                tempo,
-                time_sig_num,
-                time_sig_denom,
-                is_playing,
-                song_pos_beats,
-                song_pos_seconds,
-                &self.singletons.app_state,
-            )
-            .await,
-        )
-    }
-
-    #[napi]
     pub async fn process_plugin_audio(
         &self,
         instance_id: String,

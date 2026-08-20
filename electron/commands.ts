@@ -116,7 +116,7 @@ export const EXPOSED_COMMANDS = [
  * `src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts`.
  * `apply_graph_commands` stays denied: it is the *live* transport's command,
  * its transport method has no production caller yet, and exposing a command
- * requires one — the live cutover (jcosta33/sourdaw#2226) moves it together
+ * requires one — the live cutover (jcosta33/sourdaw#2230) moves it together
  * with its caller.
  */
 export const DENIED_COMMANDS = [
@@ -135,7 +135,6 @@ export const DENIED_COMMANDS = [
     'read_audio_file',
     'send_plugin_midi',
     'show_all_plugin_guis',
-    'update_plugin_transport',
     'write_audio_file',
 ] as const;
 

@@ -359,13 +359,6 @@ impl EngineHandle {
             .map_err(|_| "Audio command queue full".to_string())
     }
 
-    /// Update the global transport state (lock-free).
-    pub fn set_transport(&mut self, state: plugin_slot::TransportState) -> Result<(), String> {
-        self.command_tx
-            .push(GraphCommand::SetTransport(state))
-            .map_err(|_| "Audio command queue full".to_string())
-    }
-
     /// Add a timeline track.
     ///
     /// The track is built here, on the control thread, with every buffer it
