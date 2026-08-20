@@ -451,7 +451,7 @@ describe('glueClips MIDI state integration', () => {
         expect(warpStates.has('clip-b')).toBe(false);
     });
 
-    it('does not destroy a source clip warp entry that undo just restored', () => {
+    it('does not destroy a source clip warp entry through a full apply/undo/redo round trip', () => {
         // Every entry below is content-default on purpose: `hasClipGlueDependencies`
         // gates both the apply *and* the restore direction on the same
         // `expected`/`replacement` participant set, so a genuinely non-default
@@ -489,5 +489,21 @@ describe('glueClips MIDI state integration', () => {
         // The restored clips keep whatever satellite state they had.
         expect(warpStates.has('clip-a')).toBe(true);
         expect(warpStates.has('clip-b')).toBe(true);
+
+        // Redo: the third step a user actually performs — glue, undo to hear
+        // the parts again, redo. `handleGlueClips.describe` captures
+        // `plan.previous`/`plan.next` exactly once and wires `redoAction` as
+        // the same forward direction the initial apply used, never a freshly
+        // recomputed snapshot — so this call reuses the very `previous`/`next`
+        // objects from the original `prepareClipGlue`, not a new call to it.
+        // Redo re-consumes `clip-a` and `clip-b`, so their entries (set again
+        // above, right before undo ran) must be swept a second time, landing
+        // on exactly the state the first apply produced: no entry for either
+        // source id, and none for the glued id either, since nothing wrote
+        // one for it between undo and redo.
+        expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
+        expect(warpStates.has(gluedId)).toBe(false);
+        expect(warpStates.has('clip-a')).toBe(false);
+        expect(warpStates.has('clip-b')).toBe(false);
     });
 });

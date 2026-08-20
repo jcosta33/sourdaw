@@ -14,11 +14,26 @@ export function getWarpState(clipId: string): WarpState {
 }
 
 /**
+ * Exhaustiveness anchor for `isDefaultWarpState`. `Record<keyof WarpState,
+ * true>` forces every key of `WarpState` to appear as a property here — a
+ * plain `state.someField` read below does not get this for free, since
+ * TypeScript's excess-property check only fires on object literals assigned
+ * to a typed slot, never on property reads off an already-typed parameter.
+ * Add a field to `WarpState` without adding it here and this object literal
+ * stops satisfying the annotation, so `pnpm typecheck` breaks at this line
+ * until `isDefaultWarpState` below is updated to compare it too.
+ */
+export const warpStateFieldsCheckedByIsDefaultWarpState: Record<keyof WarpState, true> = {
+    enabled: true,
+    markers: true,
+    stretchMode: true,
+    originalTempo: true,
+};
+
+/**
  * Whether a `WarpState` value actually differs from `defaultWarpState`,
- * field by field. Every field of `WarpState` is compared explicitly, so
- * adding a field here is a required edit, not a silent gap — unlike a deep
- * equality helper or a JSON comparison, this stops compiling clean the
- * moment a field is forgotten.
+ * field by field. See `warpStateFieldsCheckedByIsDefaultWarpState` above for
+ * the compile-time guarantee that a forgotten field cannot ship silently.
  */
 export function isDefaultWarpState(state: WarpState): boolean {
     return (
