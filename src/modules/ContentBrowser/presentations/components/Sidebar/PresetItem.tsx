@@ -2,6 +2,7 @@ import { type ReactElement, type MouseEvent } from 'react';
 
 import { Star, Piano, Waves } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
@@ -35,13 +36,14 @@ export const PresetItem = ({
     const chain = preset.devices.map((data) => data.name).join(' → ');
 
     return (
-        <div
-            className="group flex flex-col gap-1.5 rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 cursor-pointer mb-1.5 shadow-sm"
+        <Stack
+            gap={1.5}
+            className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 cursor-pointer mb-1.5 shadow-sm"
             onClick={onClick}
             onContextMenu={onContextMenu}
             title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
         >
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <div className="opacity-70 group-hover:opacity-100 transition-opacity">
                     <PreviewButton
                         isPlaying={preview.playingId === preset.id}
@@ -83,8 +85,8 @@ export const PresetItem = ({
                         )}
                     />
                 </button>
-            </div>
-            <div className="flex items-center gap-1.5 pl-[26px] opacity-60 group-hover:opacity-100 transition-opacity">
+            </Row>
+            <Row gap={1.5} className="pl-[26px] opacity-60 group-hover:opacity-100 transition-opacity">
                 {preset.trackKind === 'midi' ? (
                     <Piano className="size-3 text-[var(--color-accent-lavender)] shrink-0" aria-label="MIDI track" />
                 ) : (
@@ -93,7 +95,7 @@ export const PresetItem = ({
                 <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">
                     {chain}
                 </span>
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };

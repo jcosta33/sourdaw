@@ -1,6 +1,8 @@
 import { inject } from '#/infra/di/inject';
+import { findWithheldDeviceType } from '#/infra/release/deviceReleaseAdmission';
 import { duplicateClipAutomationBatch } from '#/modules/Automation/useCases';
 import { duplicateMidiClipData } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../models/Track';
 import { getTrackById } from '../repositories/track/getTrackById';
@@ -25,6 +27,11 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
         function duplicateTrack(trackId: string, options: DuplicateTrackOptions = {}): Track | null {
             const source = getTrackById(trackId);
             if (!source || source.kind === 'master') {
+                return null;
+            }
+            const withheldDeviceType = findWithheldDeviceType(source.devices);
+            if (withheldDeviceType) {
+                notifyUser(`Track contains withheld device "${withheldDeviceType}" and was not duplicated.`, 'warning');
                 return null;
             }
             const arrangementSnapshot = getTrackState();

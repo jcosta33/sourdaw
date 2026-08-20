@@ -33,10 +33,17 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     duplicateClipNotes: mocks.duplicateClipNotes,
 }));
 
-vi.mock('../../../stores/warpStates', () => ({
-    getWarpState: mocks.getWarpState,
-    setWarpState: mocks.setWarpState,
-}));
+vi.mock('../../../stores/warpStates', async (importOriginal) => {
+    // `isDefaultWarpState` is kept real (it's a pure comparison against
+    // `defaultWarpState`, not a map read) so duplicateClipCore's own
+    // write-skip guard is exercised for real rather than through a stub.
+    const actual = await importOriginal<typeof import('../../../stores/warpStates')>();
+    return {
+        ...actual,
+        getWarpState: mocks.getWarpState,
+        setWarpState: mocks.setWarpState,
+    };
+});
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
@@ -171,6 +178,38 @@ describe('duplicateClipCore', () => {
                 markers: [{ id: 'w1', originalBeat: 1, warpedBeat: 1.2 }],
             })
         );
+    });
+
+    it('does not stamp a warpStates entry when the cloned warp state is value-identical to default', () => {
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
+        mocks.getWarpState.mockReturnValue({
+            enabled: false,
+            markers: [],
+            stretchMode: 'repitch',
+            originalTempo: null,
+        });
+
+        duplicateClipCore({
+            clipId: 'c1',
+            computeStartBeat: (clip) => clip.endBeat,
+        });
+
+        expect(mocks.setWarpState).not.toHaveBeenCalled();
     });
 
     it('rejects an ineligible source before computing or publishing any effect', () => {

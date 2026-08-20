@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
         setBusGain: vi.fn(),
         wireSidechainRoutes: vi.fn(),
         restoreMidiClipData: vi.fn<(input: RestoreMidiClipDataInput) => void>(),
+        writeClipSatelliteEntry: vi.fn(),
         getTakeLaneStoreValue: vi.fn((): TakeLaneStoreState | null => takeLaneStoreState.value),
         setTakeLaneStore: vi.fn((nextState: TakeLaneStoreState): void => {
             takeLaneStoreState.value = nextState;
@@ -87,6 +88,10 @@ vi.mock('../../../stores/takeLaneStore', () => ({
     },
 }));
 
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
+}));
+
 function createRestoreTrackAction(overrides: Partial<RestoreTrackPayload> = {}): RestoreTrackAction {
     return {
         type: 'restoreTrack',
@@ -101,6 +106,7 @@ function createRestoreTrackAction(overrides: Partial<RestoreTrackPayload> = {}):
             wasSelected: false,
             routingPatches: [],
             automationLaneSnapshots: [],
+            clipSatellites: [],
             midiNotesByClipId: {},
             midiCcByClipId: {},
             midiPitchBendByClipId: {},
@@ -219,6 +225,18 @@ describe('handleRestoreTrack', () => {
         });
     });
 
+    it('restores the gain envelope and warp state of every captured clip (regression #2108)', async () => {
+        const trackState: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+        const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
+        const clipSatellites = [{ clipId: 'c1', gainEnvelope, warpState: null }];
+        const action = createRestoreTrackAction({ clipSatellites });
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        await handleRestoreTrack.execute(action);
+
+        expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledWith(clipSatellites[0]);
+    });
+
     it('should not call owners or write local state when every snapshot is empty', () => {
         void handleRestoreTrack.execute(createRestoreTrackAction());
 
@@ -228,6 +246,7 @@ describe('handleRestoreTrack', () => {
         expect(mocks.setTakeLaneStore).not.toHaveBeenCalled();
         expect(mocks.restoreTrackModulationReferences).not.toHaveBeenCalled();
         expect(mocks.restoreSidechainRoutes).not.toHaveBeenCalled();
+        expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
     });
 
     it('rebuilds only a restored track present in durable truth after an ambiguous commit', async () => {

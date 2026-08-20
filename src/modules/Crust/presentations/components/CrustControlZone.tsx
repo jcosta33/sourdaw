@@ -15,6 +15,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 
@@ -126,7 +127,7 @@ const AutoKnob = ({
     def: number;
     toggleId: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-0.5">
+    <Stack align="center" gap={0.5}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -151,7 +152,7 @@ const AutoKnob = ({
             aria-label={`${label} auto`}
             onClick={() => onAutoChange(!auto)}
         />
-    </div>
+    </Stack>
 );
 
 const SliderRow = ({
@@ -163,7 +164,7 @@ const SliderRow = ({
     value: number;
     onChange: (value: number) => void;
 }): ReactElement => (
-    <div className="flex items-center gap-2">
+    <Row gap={2}>
         <span className="w-14 shrink-0 text-[7px] text-muted-foreground/40">{label}</span>
         <Slider
             value={[value]}
@@ -180,7 +181,7 @@ const SliderRow = ({
             }}
         />
         <span className="w-8 shrink-0 text-right text-[7px] font-mono text-muted-foreground/50">{value}%</span>
-    </div>
+    </Row>
 );
 
 // ── Algorithm data ────────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ const LevelTile = ({
 );
 
 const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <div className="flex gap-2 h-full items-center px-2">
+    <Row gap={2} className="h-full px-2">
         {STYLE_TILES.map((tile) => {
             const active = patch.style === tile.id;
             return (
@@ -260,15 +261,15 @@ const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): R
                 />
             );
         })}
-    </div>
+    </Row>
 );
 
 const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <div className="flex flex-col gap-2">
+    <Stack gap={2}>
         {/* Algorithm pills */}
         <div>
             <SectionLabel>Algorithm</SectionLabel>
-            <div className="flex flex-wrap gap-1">
+            <Row align="stretch" wrap gap={1}>
                 {ALGORITHMS.map((a) => (
                     <DawPluginChip
                         key={a.id}
@@ -280,14 +281,14 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                         {a.label}
                     </DawPluginChip>
                 ))}
-            </div>
+            </Row>
             <div className="text-[7px] text-muted-foreground/40 mt-0.5 min-h-[10px]">
                 {ALGORITHMS.find((a) => a.id === patch.algorithm)?.desc ?? ''}
             </div>
         </div>
 
         {/* Timing knobs */}
-        <div className="flex gap-3 items-end">
+        <Row align="end" gap={3}>
             <Knob
                 value={patch.lookahead}
                 onChange={(v) => setParam('lookahead', v)}
@@ -322,10 +323,10 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 def={0}
                 toggleId="crust-release-auto"
             />
-        </div>
+        </Row>
 
         {/* Channel link sliders */}
-        <div className="flex flex-col gap-1">
+        <Stack gap={1}>
             <SliderRow
                 label="Link Trans"
                 value={patch.channelLinkTransient}
@@ -336,8 +337,8 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 value={patch.channelLinkRelease}
                 onChange={(value) => setParam('channelLinkRelease', value)}
             />
-        </div>
-    </div>
+        </Stack>
+    </Stack>
 );
 
 const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
@@ -358,8 +359,8 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
         className="rounded-[14px] border border-white/8 bg-[linear-gradient(180deg,rgba(212,136,58,0.12),rgba(0,0,0,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         titleClassName="text-[var(--color-accent-copper)]"
     >
-        <div className="flex items-center gap-2">
-            <div className="flex flex-wrap gap-0.5">
+        <Row gap={2}>
+            <Row align="stretch" wrap gap={0.5}>
                 {SAT_ALGORITHMS.map((a) => (
                     <DawPluginChip
                         key={a}
@@ -373,7 +374,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                         {a}
                     </DawPluginChip>
                 ))}
-            </div>
+            </Row>
 
             <div
                 className={cn(patch.satEnabled ? null : 'pointer-events-none opacity-40')}
@@ -382,8 +383,8 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 <CrustSatCurve algorithm={patch.satAlgorithm} drive={patch.satDrive} />
             </div>
 
-            <div className="flex gap-2">
-                <div className="flex flex-col items-center gap-0.5">
+            <Row align="stretch" gap={2}>
+                <Stack align="center" gap={0.5}>
                     <Knob
                         value={patch.satDrive}
                         onChange={(v) => setParam('satDrive', v)}
@@ -398,7 +399,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                     {patch.satEnabled && patch.satDrive > 6 ? (
                         <span className="text-[6px] font-bold text-[var(--color-state-danger)]">HOT</span>
                     ) : null}
-                </div>
+                </Stack>
                 <Knob
                     value={patch.satMix}
                     onChange={(v) => setParam('satMix', v)}
@@ -410,13 +411,13 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                     def={0}
                     disabled={!patch.satEnabled}
                 />
-            </div>
-        </div>
+            </Row>
+        </Row>
     </DawPluginSectionCard>
 );
 
 const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <div className="flex items-center gap-2 mt-1">
+    <Row gap={2} className="mt-1">
         <DawPluginToggle
             id="crust-delta"
             pressed={patch.deltaListen}
@@ -439,16 +440,16 @@ const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
             aria-checked={patch.unityGain}
             onClick={() => setParam('unityGain', !patch.unityGain)}
         />
-    </div>
+    </Row>
 );
 
 const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <div className="flex flex-col gap-2 mt-1 pt-1 border-t border-border/10">
-        <div className="flex gap-3 flex-wrap">
+    <Stack gap={2} className="mt-1 pt-1 border-t border-border/10">
+        <Row align="stretch" wrap gap={3}>
             {/* Multi-band mode */}
             <div>
                 <SectionLabel>Multi-band</SectionLabel>
-                <div className="flex gap-0.5">
+                <Row align="stretch" gap={0.5}>
                     {(['wideband', '3band', '5band'] as const).map((mb) => (
                         <DawPluginChip
                             key={mb}
@@ -460,13 +461,13 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             {mb === 'wideband' ? 'Wide' : mb}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
             </div>
 
             {/* Stereo mode */}
             <div>
                 <SectionLabel>Stereo</SectionLabel>
-                <div className="flex gap-0.5">
+                <Row align="stretch" gap={0.5}>
                     {(['stereo', 'ms'] as const).map((sm) => (
                         <DawPluginChip
                             key={sm}
@@ -478,13 +479,13 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             {sm.toUpperCase()}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
             </div>
 
             {/* Sidechain HPF */}
             <div>
                 <SectionLabel>SC HPF</SectionLabel>
-                <div className="flex items-center gap-1">
+                <Row gap={1}>
                     <DawPluginToggle
                         id="crust-sc-hpf"
                         pressed={patch.scHpfEnabled}
@@ -506,9 +507,9 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             def={60}
                         />
                     ) : null}
-                </div>
+                </Row>
             </div>
-        </div>
+        </Row>
 
         {/* Dithering */}
         <div>
@@ -532,7 +533,7 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                 ))}
             </DawCompactSelect>
             {patch.dither !== 'off' ? (
-                <div className="flex gap-1 mt-1">
+                <Row align="stretch" gap={1} className="mt-1">
                     {([16, 24, 32] as const).map((bd) => (
                         <DawPluginChip
                             key={bd}
@@ -544,10 +545,10 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             {bd}-bit
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
             ) : null}
         </div>
-    </div>
+    </Stack>
 );
 
 const Level5Stats = ({
@@ -616,8 +617,9 @@ export const CrustControlZone = ({
     }
 
     return (
-        <div
-            className="flex flex-col gap-2 px-2 py-1.5 overflow-y-auto animate-in fade-in duration-150"
+        <Stack
+            gap={2}
+            className="px-2 py-1.5 overflow-y-auto animate-in fade-in duration-150"
             style={{ maxHeight: '100%' }}
         >
             <Level2Core patch={patch} setParam={setParam} />
@@ -641,6 +643,6 @@ export const CrustControlZone = ({
                     grDb={grDb}
                 />
             ) : null}
-        </div>
+        </Stack>
     );
 };

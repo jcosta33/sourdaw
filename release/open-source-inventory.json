@@ -454,16 +454,18 @@
             "kind": "patent-directed-component",
             "retention": "defer-behind-admission",
             "owner": "OS-05",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": ["source", "web", "desktop"],
             "paths": ["crates/daw-dsp/src/grand_boule/**"],
             "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:crates/daw-dsp/src/grand_boule"],
-            "licenses": ["pending:OS-05-patent-and-parameter-source-review"],
-            "productSurfaces": ["Grand Boule piano engine", "piano controls and presets"],
-            "evidence": ["Current research follows an active patent without a complete claim-to-code map."],
+            "licenses": ["pending:OS-10-project-grant", "unverified:HAL-parameter-source-reuse-terms"],
+            "productSurfaces": ["Preserved Grand Boule source and project schema"],
+            "evidence": [
+                "ADR 0032 maps the live independent-claim risk and withholds every released discovery and runtime path."
+            ],
             "obligations": [
-                "Prove independence, design around mapped overlap, or keep the component unreleased without deleting it."
+                "Re-admit only after current patent-family, claim-element, design-around, and parameter-source proof."
             ]
         },
         {
@@ -474,17 +476,28 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "public/samples/levain/**",
+                "release/levain-CC0-1.0.txt",
+                "release/levain-upstream-commit.base64",
+                "release/levain-upstream-tree.tsv",
+                "scripts/checkLevainProvenance.ts",
+                "scripts/checkLevainUpstreamProof.ts",
                 "scripts/download-levain-samples-direct.ts",
-                "scripts/download-levain-samples.ts"
+                "scripts/download-levain-samples.ts",
+                "scripts/levainSource.ts"
             ],
             "sources": ["https://github.com/sgossner/VSCO-2-CE"],
-            "revisions": ["mutable master reference"],
-            "digests": ["pending:OS-06-file-level-reconciliation"],
-            "licenses": ["CC0-1.0 claim pending complete bank reconciliation"],
+            "revisions": ["440300901dfe9275fd84e0b7763af1f8443ae62e"],
+            "digests": [
+                "git-tree:0ecebcfca0c7e0fe501f71964027f8f59fa0e432",
+                "file-level:public/samples/levain/provenance.tsv"
+            ],
+            "licenses": ["CC0-1.0", "pending:OS-10-project-license"],
             "productSurfaces": ["bundled Levain orchestral sample bank"],
-            "evidence": ["One file matches CC0 VSCO-2-CE; the full bank lacks immutable file-level reconciliation."],
+            "evidence": [
+                "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
+            ],
             "obligations": [
-                "Pin one upstream revision and map every retained file by source path, hash, and license without relocating the bank."
+                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
             ]
         },
         {
@@ -591,6 +604,7 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "docs/manual/devices/11-grinder.md",
+                "docs/manual/devices/17-fermenter.md",
                 "public/faust/libfaust-wasm.js",
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
@@ -689,7 +703,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "1a11c851e7f3b61179a556c8fd2730af974532dfc8a597571e9df8913323910b"
+            "sha256": "3dff3e25cf2d460fad86c8eb91703ee27e55e553c6be3c462bb5c4f54d8db929"
         },
         {
             "path": "server/package.json",
@@ -745,24 +759,31 @@
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples-direct.ts",
-            "value": "https://github.com/sgossner/VSCO-2-CE/tree/master/${slot}",
-            "templateSha256": "bb9f3d79c590a354d37c6e61662d04001e531eb3a197a0bbd247737e6a0bafc4"
+            "value": "https://github.com/sgossner/VSCO-2-CE/tree/${slot}/${slot}",
+            "templateSha256": "0312474d5e44993f94ca1d90679a5a5f67924856de7a333ef8dff4b0d13a8ee4"
         },
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples-direct.ts",
-            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master"
+            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${slot}",
+            "templateSha256": "c1c4dd6ac9e3b00c3d2e0db33c7ebbf5330e1b17263fc32709a93adec824c655"
         },
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples.ts",
-            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${slot}",
-            "templateSha256": "df50520b0bf9a8ca498d5d68931d9545f8e2dcce0ddf9cb3a08440d6847ef4d2"
+            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${slot}?ref=${slot}",
+            "templateSha256": "c39e3dc432711c375ed9ca9c7c71dda45fdb8af88adabab878d6d067fbee4b87"
         },
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples.ts",
-            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master"
+            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${slot}",
+            "templateSha256": "c1c4dd6ac9e3b00c3d2e0db33c7ebbf5330e1b17263fc32709a93adec824c655"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/levainSource.ts",
+            "value": "https://github.com/sgossner/VSCO-2-CE"
         },
         {
             "surface": "whisper-model",
@@ -1041,6 +1062,7 @@
             "value": "Moog",
             "paths": [
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
@@ -1165,6 +1187,7 @@
         {
             "value": "MS-20",
             "paths": [
+                "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts"
@@ -1185,6 +1208,7 @@
         {
             "value": "SEM",
             "paths": [
+                "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",

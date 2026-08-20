@@ -13,6 +13,7 @@ const defaultState: CollaborationState = {
     peers: [],
     connectionStatus: 'disconnected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 function samplePeer(id: string): PeerInfo {
@@ -53,6 +54,7 @@ describe('collaborationStore writes', () => {
             peers: [samplePeer('peer-guest')],
             connectionStatus: 'connected',
             error: null,
+            quarantinedPeerIds: [],
         };
 
         collaborationStore.set(hosting);
@@ -94,6 +96,7 @@ describe('collaborationStore writes', () => {
             ...(current ?? defaultState),
             connectionStatus: 'error',
             error: 'Signaling channel closed',
+            quarantinedPeerIds: [],
         }));
 
         expect(collaborationStore.value?.connectionStatus).toBe('error');

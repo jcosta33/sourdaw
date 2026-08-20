@@ -7,6 +7,7 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../../services/reconcileRoutingAfterRemoval';
+import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -201,6 +202,10 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             }
         }
 
+        const clipSatellites = clipIds
+            .map((clipId) => readClipSatelliteEntry(clipId))
+            .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
+
         const takeLaneState = takeLaneStore.value;
         const takeLanes = takeLaneState
             ? takeLaneState.lanes.filter((length) => length.trackId === alpha.payload.trackId)
@@ -241,6 +246,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     wasSelected: trackState?.selectedTrackId === alpha.payload.trackId,
                     routingPatches,
                     automationLaneSnapshots,
+                    clipSatellites,
                     midiNotesByClipId,
                     midiCcByClipId,
                     midiPitchBendByClipId,

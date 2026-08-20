@@ -25,6 +25,19 @@ describe('package scripts and gitignore', () => {
         expect(gitignore).toContain('.agents/review-bundles/');
     });
 
+    /**
+     * `lane:publish` opens the pull request and `deliver` merges it, and a base the two disagree
+     * about is a squash onto a branch nobody reviewed against. Neither may carry its own literal.
+     */
+    it('opens and merges every pull request against the one trunk constant', () => {
+        const identity = readFileSync(join(import.meta.dirname, '../githubAppIdentity.ts'), 'utf8');
+        expect(identity).toMatch(/export const REQUIRED_BASE_BRANCH = 'main';/);
+        const publish = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
+        expect(publish).toMatch(/'--base',\s+REQUIRED_BASE_BRANCH,/);
+        const deliver = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
+        expect(deliver).toMatch(/baseRefName !== REQUIRED_BASE_BRANCH/);
+    });
+
     it('does not spawn a language-model CLI from the trusted scripts', () => {
         const files = [
             'openLane.ts',

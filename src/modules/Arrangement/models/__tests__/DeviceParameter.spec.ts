@@ -25,6 +25,10 @@ describe('isDeviceSupportedOnCurrentPlatform', () => {
         expect(isDeviceSupportedOnCurrentPlatform(first.id)).toBe(true);
     });
 
+    it('withholds devices that have not passed release admission', () => {
+        expect(isDeviceSupportedOnCurrentPlatform('grand-boule')).toBe(false);
+    });
+
     it('reports a built-in plugin as supported when running under the native desktop runtime', () => {
         // The native runtime gate is the presence of the desktop bridge the
         // Electron preload publishes as `window.sourdaw`; simulating it must let
@@ -34,6 +38,16 @@ describe('isDeviceSupportedOnCurrentPlatform', () => {
 
         try {
             expect(isDeviceSupportedOnCurrentPlatform(first.id)).toBe(true);
+        } finally {
+            delete (window as unknown as { sourdaw?: unknown }).sourdaw;
+        }
+    });
+
+    it('does not let the desktop runtime bypass release admission', () => {
+        (window as unknown as { sourdaw?: unknown }).sourdaw = {};
+
+        try {
+            expect(isDeviceSupportedOnCurrentPlatform('grand-boule')).toBe(false);
         } finally {
             delete (window as unknown as { sourdaw?: unknown }).sourdaw;
         }

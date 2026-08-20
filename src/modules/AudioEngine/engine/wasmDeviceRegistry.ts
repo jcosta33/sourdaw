@@ -8,7 +8,8 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { isFaustModule } from '#/modules/PluginHost/useCases';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+import { getFaustModuleLatencyMs, isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { type DeviceRuntimeLiveFacts } from '../models/BuiltinDeviceRuntime';
@@ -1739,6 +1740,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     controls.destroy?.();
                     return;
                 }
+                // A Faust module's delay line is compiled into its source, so
+                // its latency is a constant of the module and is reported once,
+                // here, before any parameter lands. Without this the Brick-Wall
+                // Limiter's look-ahead delay was unreported and its track slid
+                // against every other one; see `getFaustModuleLatencyMs`.
+                reportLatency(deviceId, getFaustModuleLatencyMs(deviceType));
                 for (const event of pending) {
                     if (event.kind === 'param') {
                         if (event.time !== undefined) {
@@ -1769,10 +1776,14 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         // a Faust instrument was the one device kind the stop /
                         // panic sweep could not silence (audit MD-6).
                         allNotesOff: () => controls.setParam('gate', 0),
-                        destroy: controls.destroy,
+                        destroy: () => {
+                            controls.destroy?.();
+                            clearReportedLatency(deviceId);
+                        },
                     },
                 });
                 if (accepted === false) {
+                    clearReportedLatency(deviceId);
                     return;
                 }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
@@ -1921,4 +1932,11 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
     return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
+}
+
+export function findReleasedWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
+    if (!isDeviceReleaseAdmitted(deviceType)) {
+        return undefined;
+    }
+    return findWasmDescriptor(deviceType);
 }

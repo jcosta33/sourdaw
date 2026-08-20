@@ -34,7 +34,7 @@ function makeScannedPlugin(overrides: Partial<ScannedPlugin> = {}): ScannedPlugi
         category: 'Instrument',
         path: '/plugins/synth.vst3',
         version: '1.0.0',
-        clap_id: 'com.test.plugin',
+        descriptor_id: 'com.test.plugin',
         num_inputs: 0,
         num_outputs: 2,
         num_parameters: 8,

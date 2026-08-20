@@ -8,7 +8,8 @@ import {
     type OfflineAutomationBinding,
     type OfflineAutomationSegment,
 } from './AudioDeviceStrategy';
-import { NATIVE_DSP_DEVICE_FACTORIES, type NativeDspNode } from './nativeDspDeviceFactories';
+import { findReleasedNativeDspDeviceFactory } from './findReleasedNativeDspDeviceFactory';
+import { type NativeDspNode } from './nativeDspDeviceFactories';
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
@@ -84,7 +85,7 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
 }
 
 export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Device): Promise<NativeDspDeviceStrategy> {
-    const factory = NATIVE_DSP_DEVICE_FACTORIES.find((candidate) => candidate.matches(device.type));
+    const factory = findReleasedNativeDspDeviceFactory(device.type);
     const result = factory ? await factory.create(ctx) : null;
 
     if (!result) {

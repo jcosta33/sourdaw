@@ -58,9 +58,10 @@ describe('the launch contract with the Rust policy', () => {
     });
 
     it('leaves the worker arguments to the policy', () => {
-        // The declared `args` are a prefix; the policy appends the marker and
-        // the two paths. Naming the marker here would be a second definition of
-        // it, and the argument-parsing tests already live beside it in Rust.
+        // The declared `args` are a prefix; the policy appends the marker, the
+        // format, and the two paths. Naming the marker here would be a second
+        // definition of it, and the argument-parsing tests already live beside
+        // it in Rust.
         expect(scanWorkerCommand('/electron', '/app/scanWorker.js').args).not.toContain(
             rustConstant('WORKER_ARGUMENT')
         );

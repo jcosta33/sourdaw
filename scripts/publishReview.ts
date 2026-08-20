@@ -20,6 +20,19 @@ import { reviewBundlePath } from './prepareReview.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
+/**
+ * GitHub's review-creation request and the review it hands back use two different vocabularies:
+ * the request says `APPROVE` / `REQUEST_CHANGES` / `COMMENT`, the response says `APPROVED` /
+ * `CHANGES_REQUESTED` / `COMMENTED`. GitHub can also silently coerce the requested event — most
+ * observed when the PR closed or merged between bundle prep and posting — and return 200 with a
+ * review whose recorded state does not match what was asked for. Map the two vocabularies
+ * explicitly rather than by string coincidence, so a coercion is never mistaken for success.
+ */
+export const EXPECTED_REVIEW_STATE: Record<ReviewEvent, string> = {
+    APPROVE: 'APPROVED',
+    REQUEST_CHANGES: 'CHANGES_REQUESTED',
+};
+
 export type ReviewComment = {
     path: string;
     line: number;
@@ -110,17 +123,20 @@ export function publishReview(number: number, port: PublishReviewPort): number {
     return posted.id;
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): PublishReviewPort {
+export function shellPort(
+    session: GhSession,
+    cwd: string = process.cwd(),
+    capture: typeof spawnCapture = spawnCapture
+): PublishReviewPort {
     const primaryRoot = resolvePrimaryRoot(
-        (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
+        (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
-    const gh = (args: string[], input?: string) =>
-        spawnCapture('gh', args, { cwd: primaryRoot, env: session.env, input });
+    const gh = (args: string[], input?: string) => capture('gh', args, { cwd: primaryRoot, env: session.env, input });
     return {
         primaryRoot: () => primaryRoot,
         currentHead: (number) =>
-            spawnCapture(
+            capture(
                 'gh',
                 [
                     'pr',
@@ -137,7 +153,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             ),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         postReview: ({ number, commitId, event, body, comments }) => {
-            const response = parseJson<{ id: number; user?: { login?: string } }>(
+            const response = parseJson<{ id: number; state?: string; user?: { login?: string } }>(
                 gh(
                     ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
                     JSON.stringify({
@@ -156,6 +172,12 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             );
             if (!Number.isSafeInteger(response.id) || response.id <= 0) {
                 fail('create review returned an unreadable id');
+            }
+            const expectedState = EXPECTED_REVIEW_STATE[event];
+            if (response.state !== expectedState) {
+                fail(
+                    `review ${response.id} requested ${event} but GitHub recorded ${response.state ?? 'no state'}; refusing to report success`
+                );
             }
             return { id: response.id, login: response.user?.login ?? '' };
         },

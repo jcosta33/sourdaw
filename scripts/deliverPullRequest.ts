@@ -12,6 +12,7 @@ import {
     GITHUB_HTTPS_REMOTE,
     isReviewerBotLogin,
     originMainBlob,
+    REQUIRED_BASE_BRANCH,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
@@ -51,7 +52,6 @@ export type DeliveryPort = {
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    remoteBranchHead: (branch: string) => string;
     merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
     retarget: (number: number, baseBranch: string) => void;
     log: (message: string) => void;
@@ -90,15 +90,26 @@ function validateReview(number: number, review: ReviewState): void {
     }
 }
 
-function validateRemoteBase(port: DeliveryPort, pullRequest: PullRequestSnapshot): void {
-    const remoteBase = port.remoteBranchHead(pullRequest.baseRefName);
-    if (remoteBase !== pullRequest.baseRefOid) {
-        fail(`origin/${pullRequest.baseRefName} ${remoteBase} does not match PR base ${pullRequest.baseRefOid}`);
+/**
+ * The base is what the change merges into, and nothing in a pull request's own state proves it is
+ * still the branch the reviewer approved against: a retarget moves it silently and leaves the head,
+ * the approval and the merge state untouched. Stacking does not need a non-default base here.
+ * `deliver` merges the bottom pull request of a stack and then retargets whatever was based on its
+ * head onto its own base, so the pull request being delivered always targets the trunk, and only
+ * its not-yet-delivered dependents ever carry a lane branch as a base.
+ */
+function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.baseRefName !== REQUIRED_BASE_BRANCH) {
+        fail(
+            `PR #${pullRequest.number} targets ${pullRequest.baseRefName}, not ${REQUIRED_BASE_BRANCH}; ` +
+                `deliver merges into ${REQUIRED_BASE_BRANCH} only. Deliver the pull request this one is ` +
+                `stacked on, which retargets this one.`
+        );
     }
 }
 
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'baseRefOid', 'headRefName', 'baseRefName'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
@@ -154,6 +165,7 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
 export function deliverPullRequest(number: number, port: DeliveryPort): void {
     port.fetch();
     const initial = port.pullRequest(number);
+    validateBaseBranch(initial);
     if (initial.state === 'MERGED') {
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
@@ -161,7 +173,6 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
         return;
     }
     validatePullRequest(initial);
-    validateRemoteBase(port, initial);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -174,7 +185,6 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
     const current = port.pullRequest(number);
     validatePullRequest(current);
     validateStablePullRequest(initial, current);
-    validateRemoteBase(port, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
     const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
     validateDependentSet(dependents, currentDependents);
@@ -388,7 +398,6 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        remoteBranchHead: (branch) => shell.capture('git', ['rev-parse', `refs/remotes/origin/${branch}`]),
         merge: (number, expectedHead, hasDependents) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {

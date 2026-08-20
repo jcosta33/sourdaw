@@ -16,8 +16,9 @@ const mocks = vi.hoisted(() => ({
     beginLifecycle: vi.fn<() => number | null>(),
     completeLifecycle: vi.fn<(input: { token: number; result: AnalyzeMixOutput }) => void>(),
     failLifecycle: vi.fn<(input: { token: number }) => void>(),
-    executeAppAction: vi.fn<(action: AppAction) => void | Promise<void>>(),
+    executeAppAction: vi.fn<(action: AppAction, options?: { shouldExecute?: () => boolean }) => void | Promise<void>>(),
     getTrackStoreState: vi.fn<() => TrackStateForMixAnalysis | null>(),
+    getTransportState: vi.fn<() => { masterGain: number } | null>(),
     loggerError: vi.fn(),
 }));
 
@@ -35,6 +36,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('#/modules/Transport/useCases', () => ({
+    getTransportState: mocks.getTransportState,
 }));
 
 vi.mock('../../../useCases/analyzeMix', () => ({
@@ -94,6 +99,8 @@ describe('handleAutoFixMix', () => {
         mocks.executeAppAction.mockReset();
         mocks.getTrackStoreState.mockReset();
         mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.getTransportState.mockReset();
+        mocks.getTransportState.mockReturnValue(null);
         mocks.loggerError.mockReset();
         vi.mocked(analyzeMix).mockReset();
     });
@@ -132,11 +139,16 @@ describe('handleAutoFixMix', () => {
             })
         );
 
+        // Post-correction re-read: the track is fixed but the master is still
+        // over the ceiling, so the master reduction is still warranted.
         vi.mocked(analyzeMix).mockResolvedValueOnce(
             create_analysis_result({
                 trackLevels: [create_track_level({ trackId: 't1', isClipping: false, peakDb: -6 })],
+                overallLevel: { peakDb: -1 },
             })
         );
+
+        vi.mocked(analyzeMix).mockResolvedValueOnce(create_analysis_result());
 
         await handleAutoFixMix.execute({ type: 'autoFixMix' });
 
@@ -152,11 +164,7 @@ describe('handleAutoFixMix', () => {
 
         expect(track_gain_action.payload.trackId).toBe('t1');
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            expect.objectContaining({
-                type: 'setMasterGain',
-            })
-        );
+        expect(actions.some((action) => action.type === 'setMasterGain')).toBe(true);
     });
 
     it('should reduce a clipping track relative to its current fader, not from the measured peak alone', async () => {
@@ -309,6 +317,137 @@ describe('handleAutoFixMix', () => {
         expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
         expect(mocks.loggerError).toHaveBeenCalledWith(later_failure);
         expect(isAppActionCommittedError(reported_error)).toBe(true);
+    });
+
+    it('should reduce the master fader relative to its current position, not from the measured peak alone', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.getTransportState.mockReturnValue({ masterGain: 20 }); // 20% = 0.2
+
+        // No clipping tracks, so the post-correction re-read still measures the
+        // same hot master: the reduction is driven by a live -1 dBFS peak.
+        vi.mocked(analyzeMix).mockResolvedValue(
+            create_analysis_result({
+                trackLevels: [],
+                overallLevel: { peakDb: -1 },
+            })
+        );
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        const masterCall = mocks.executeAppAction.mock.calls
+            .map(([action]) => action)
+            .find((action): action is Extract<AppAction, { type: 'setMasterGain' }> => action.type === 'setMasterGain');
+
+        if (!masterCall) {
+            throw new Error('Expected setMasterGain call');
+        }
+
+        // Overshoot = -1 - (-6) = +5 dB. Factor = 10 ** (-5 / 20) = 0.56234
+        // Expected gain = 0.2 * 0.56234 ≈ 0.112468
+        // Old bug gave 10 ** (-6 / 20) ≈ 0.501187 (which would boost a 0.2 fader)
+        expect(masterCall.payload.gain).toBeLessThan(0.2);
+        expect(masterCall.payload.gain).toBeCloseTo(0.2 * 10 ** (-5 / 20), 5);
+        // The percent the reduction was derived from rides along, so Transport
+        // can reject the write if the fader moved before admission.
+        expect(masterCall.payload.expectedPercent).toBe(20);
+    });
+
+    it('should not attenuate the master again when the track correction already brought it under target', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 0.8 }] });
+        mocks.getTransportState.mockReturnValue({ masterGain: 80 });
+
+        // The master reads -1 dBFS — over the -3 trigger — but the clipping
+        // track is what drives it there.
+        vi.mocked(analyzeMix).mockResolvedValueOnce(
+            create_analysis_result({
+                trackLevels: [create_track_level({ trackId: 't1', isClipping: true, peakDb: 2 })],
+                overallLevel: { peakDb: -1 },
+            })
+        );
+        // Attenuating that one track lands the mix at -8 dBFS, already below the
+        // -6 dBFS target. Deciding the master from the stale -1 dBFS peak would
+        // pull a further 5 dB off an already-corrected mix, landing it at -13.
+        vi.mocked(analyzeMix).mockResolvedValueOnce(
+            create_analysis_result({
+                trackLevels: [create_track_level({ trackId: 't1', isClipping: false, peakDb: -6 })],
+                overallLevel: { peakDb: -8 },
+            })
+        );
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        const actions = mocks.executeAppAction.mock.calls.map(([action]) => action);
+        expect(actions.filter((action) => action.type === 'setTrackGain')).toHaveLength(1);
+        expect(actions.some((action) => action.type === 'setMasterGain')).toBe(false);
+    });
+
+    it('should not overwrite a master fader move that lands between the snapshot and admission', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.getTransportState.mockReturnValue({ masterGain: 80 });
+        vi.mocked(analyzeMix).mockResolvedValue(create_analysis_result({ overallLevel: { peakDb: -1 } }));
+
+        let live_master_percent = 80;
+        const committed_master_percents: number[] = [];
+        mocks.executeAppAction.mockImplementation(async (action) => {
+            if (action.type !== 'setMasterGain') {
+                return;
+            }
+            // Another writer moves the fader while this command waits for
+            // admission, exactly the gap the snapshot cannot see.
+            live_master_percent = 50;
+            await Promise.resolve();
+            // Transport's guard, as `handleSetMasterGain` implements it.
+            if (
+                action.payload.expectedPercent !== undefined &&
+                action.payload.expectedPercent !== live_master_percent
+            ) {
+                throw new Error('conflict: master gain diverged');
+            }
+            committed_master_percents.push(action.payload.gain * 100);
+        });
+
+        await expect(handleAutoFixMix.execute({ type: 'autoFixMix' })).rejects.toThrow(/conflict/);
+
+        // The mover's 50% survives; the stale-derived target never lands.
+        expect(committed_master_percents).toEqual([]);
+        expect(live_master_percent).toBe(50);
+    });
+
+    it('should not commit a master write when the signal aborts during command admission', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.getTransportState.mockReturnValue({ masterGain: 80 });
+        vi.mocked(analyzeMix).mockResolvedValue(create_analysis_result({ overallLevel: { peakDb: -1 } }));
+
+        const controller = new AbortController();
+        const committed: AppAction[] = [];
+        let admission_reached = false;
+        mocks.executeAppAction.mockImplementation(async (action, options) => {
+            // Stand in for the awaited snapshot transaction inside
+            // `executeAppAction`: cancellation lands after the caller's pre-call
+            // abort check has already passed.
+            admission_reached = true;
+            controller.abort();
+            await Promise.resolve();
+            if (options?.shouldExecute && !options.shouldExecute()) {
+                return; // declined at admission: no write, and no throw
+            }
+            committed.push(action);
+        });
+
+        const action = { type: 'autoFixMix' } as const;
+        let reported_error: unknown;
+        try {
+            await handleAutoFixMix.execute(action, { actions: [action], actionIndex: 0, signal: controller.signal });
+        } catch (error) {
+            reported_error = error;
+        }
+
+        expect(admission_reached).toBe(true);
+        expect(committed).toEqual([]);
+        // Nothing was committed, so the cancellation must not be reported as a
+        // committed mutation — that is how success would get recorded.
+        expect(isAppActionCommittedError(reported_error)).toBe(false);
+        expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
     });
 
     afterEach(() => {

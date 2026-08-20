@@ -20,6 +20,8 @@
  * `WebGpuTier` is allowed to be derived from.
  */
 
+import { type WebGpuProbeResult } from './WebGpuProbe';
+
 /**
  * `not-measured` is a first-class outcome, not a failure. A report that admits
  * it could not measure is worth more than a confident wrong one — the same
@@ -27,13 +29,7 @@
  */
 export type WebGpuTier = 'webgpu-fast' | 'webgpu-slow' | 'unavailable' | 'not-measured';
 
-/**
- * Whether this runtime can host browser AI at all. There was a third verdict,
- * `'unsupported-platform'`, for the desktop app on macOS/Linux: the Tauri-era
- * webviews (WKWebView, WebKitGTK) had no WebGPU. Every shipped renderer is now
- * Chromium, so the platform the app runs on no longer decides this — the
- * browser facts do.
- */
+/** Whether this runtime exposes every capability required to host browser AI. */
 export type BrowserAiCapability = 'supported' | 'unsupported-browser';
 
 /** Why a throughput figure is absent. Each value names a distinct, actionable cause. */
@@ -71,13 +67,15 @@ export type InferenceThroughput =
 export type CapabilityReport = {
     /** Whether the browser supports browser AI features */
     capability: BrowserAiCapability;
+    /** Result of obtaining a core, non-fallback adapter and a device. */
+    webGpu: WebGpuProbeResult;
     webGpuTier: WebGpuTier;
-    /** Whether SharedArrayBuffer is available (required for multi-threaded WASM) */
-    sharedArrayBuffer: boolean;
+    /** Whether COOP/COEP isolation is active for worker-backed inference. */
+    crossOriginIsolated: boolean;
+    /** Whether module workers can host the WebGPU and inference runtimes. */
+    workerAvailable: boolean;
     /** Whether OPFS is available for model storage */
     opfsAvailable: boolean;
-    /** Chrome major version, null if not Chrome */
-    chromeVersion: number | null;
     /** Measured offline-render throughput, or the reason there is no figure. */
     inference: InferenceThroughput;
     detectedAt: number;

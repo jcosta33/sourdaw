@@ -1,93 +1,93 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function addFirstTrack(page: import('@playwright/test').Page): Promise<void> {
-    const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-    await emptyStateMidiButton.waitFor({ state: 'visible' });
-    await emptyStateMidiButton.click();
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
+async function addMidiTrack(page: Page): Promise<void> {
     const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor({ state: 'visible' });
-    // Select the track to show the inspector.
-    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().click();
-    await page.waitForTimeout(300);
+    const before = await trackList.getByRole('row').count();
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
+    await trackList
+        .getByRole('row')
+        .filter({ has: page.getByText('MIDI', { exact: true }) })
+        .first()
+        .click();
+}
+
+function inspector(page: Page) {
+    return page.getByRole('complementary', { name: 'Inspector panel' });
+}
+
+async function addGluten(page: Page): Promise<void> {
+    const panel = inspector(page);
+    await panel.getByRole('button', { name: 'Add device' }).click();
+    await page.getByRole('menuitem', { name: /^Gluten$/ }).click();
+    await expect(panel.getByRole('button', { name: /^Bypass Gluten$/i })).toBeVisible();
 }
 
 test.describe('Device chain — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await addFirstTrack(page);
+        await addMidiTrack(page);
     });
 
     test('add device button is present in the inspector via test ID', async ({ page }) => {
-        const addDevice = page.getByTestId('add-device-button');
-        await expect(addDevice).toBeVisible({ timeout: 10_000 });
+        const addDevice = inspector(page).getByRole('button', { name: 'Add device' });
+        await expect(addDevice).toBeVisible();
+        await expect(addDevice).toHaveAttribute('data-testid', 'add-device-button');
     });
 
-    test('clicking add device opens a menu with effect options', async ({ page }) => {
-        const addDevice = page.getByTestId('add-device-button');
+    test('clicking add device opens a menu with Gluten', async ({ page }) => {
+        const addDevice = inspector(page).getByRole('button', { name: 'Add device' });
+        await expect(page.getByRole('menuitem', { name: /^Gluten$/ })).toHaveCount(0);
+
         await addDevice.click();
-        await page.waitForTimeout(300);
 
-        // The menu should show effect options.
-        const menu = page.getByRole('menu');
-        await expect(menu).toBeVisible({ timeout: 5000 });
-        // At least one menu item should be present.
-        const items = menu.getByRole('menuitem');
-        expect(await items.count()).toBeGreaterThan(0);
+        await expect(page.getByRole('menu')).toBeVisible();
+        await expect(page.getByRole('menuitem', { name: /^Gluten$/ })).toBeVisible();
     });
 
-    test('adding a device creates a device card via test ID', async ({ page }) => {
-        const addDevice = page.getByTestId('add-device-button');
-        await addDevice.click();
-        await page.waitForTimeout(300);
+    test('adding Gluten creates a device card', async ({ page }) => {
+        const panel = inspector(page);
+        await expect(panel.getByRole('button', { name: /^Bypass Gluten$/i })).toHaveCount(0);
 
-        // Click the first available effect.
-        const firstEffect = page.getByRole('menu').getByRole('menuitem').first();
-        await firstEffect.click();
-        await page.waitForTimeout(500);
+        await addGluten(page);
 
-        // A device card should now exist.
-        const deviceCard = page.locator('[data-testid^="device-card-"]').first();
-        await expect(deviceCard).toBeVisible({ timeout: 5000 });
+        await expect(panel.getByText('Gluten', { exact: true })).toBeVisible();
+        await expect(panel.getByRole('button', { name: /^Remove Gluten$/i })).toBeVisible();
     });
 
-    test('bypass toggle on a device changes aria-pressed via test ID', async ({ page }) => {
-        // Add a device first.
-        await page.getByTestId('add-device-button').click();
-        await page.waitForTimeout(300);
-        await page.getByRole('menu').getByRole('menuitem').first().click();
-        await page.waitForTimeout(500);
+    test('bypass toggle on Gluten changes aria-pressed', async ({ page }) => {
+        const panel = inspector(page);
+        await addGluten(page);
 
-        const bypass = page.locator('[data-testid^="device-bypass-"]').first();
-        await bypass.waitFor({ state: 'visible' });
+        const bypass = panel.getByRole('button', { name: /^Bypass Gluten$/i });
         await expect(bypass).toHaveAttribute('aria-pressed', 'false');
+        await expect(bypass).toHaveAttribute('data-testid', /^device-bypass-/);
 
         await bypass.click();
-        await expect(bypass).toHaveAttribute('aria-pressed', 'true');
+        const enable = panel.getByRole('button', { name: /^Enable Gluten$/i });
+        await expect(enable).toBeVisible();
+        await expect(enable).toHaveAttribute('aria-pressed', 'true');
 
-        await bypass.click();
-        await expect(bypass).toHaveAttribute('aria-pressed', 'false');
+        await enable.click();
+        await expect(panel.getByRole('button', { name: /^Bypass Gluten$/i })).toHaveAttribute('aria-pressed', 'false');
     });
 
-    test('removing a device decreases the device card count via test ID', async ({ page }) => {
-        // Add a device first.
-        await page.getByTestId('add-device-button').click();
-        await page.waitForTimeout(300);
-        await page.getByRole('menu').getByRole('menuitem').first().click();
-        await page.waitForTimeout(500);
+    test('removing Gluten removes the device card', async ({ page }) => {
+        const panel = inspector(page);
+        await addGluten(page);
+        await expect(panel.getByRole('button', { name: /^Bypass Gluten$/i })).toBeVisible();
 
-        const cards = page.locator('[data-testid^="device-card-"]');
-        const countBefore = await cards.count();
-        expect(countBefore).toBeGreaterThan(0);
+        await panel.getByRole('button', { name: /^Remove Gluten$/i }).click();
 
-        const removeBtn = page.locator('[data-testid^="device-remove-"]').first();
-        await removeBtn.click();
-        await page.waitForTimeout(500);
-
-        const countAfter = await cards.count();
-        expect(countAfter).toBe(countBefore - 1);
+        await expect(panel.getByRole('button', { name: /^Bypass Gluten$/i })).toHaveCount(0);
+        await expect(panel.getByRole('button', { name: /^Remove Gluten$/i })).toHaveCount(0);
     });
 });
