@@ -2,6 +2,7 @@ import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { duplicateClipNotes } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../../models/Track';
+import { defaultWarpState } from '../../models/WarpMarker';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
@@ -91,10 +92,26 @@ export function duplicateClipCore(
     duplicateClipAutomation(clipId, newClip.id);
 
     const sourceWarp = getWarpState(clipId);
-    setWarpState(newClip.id, {
+    const clonedWarp = {
         ...sourceWarp,
         markers: sourceWarp.markers.map((marker) => ({ ...marker })),
-    });
+    };
+    // Only stamp a map entry when the source clip carries actual warp state to
+    // preserve. `getWarpState` already falls back to `defaultWarpState` for a
+    // clip with no entry, so writing an entry that is value-identical to that
+    // fallback is a no-op for every reader — except `hasClipSatelliteState`
+    // (see `isGeneratedMidiStateCurrent`), which treats *any* map entry as
+    // user-added state that must block a blind undo. Without this guard every
+    // duplicate — even of a clip with no warp markers — would poison its own
+    // undo guard the instant it is created.
+    const isDefaultWarp =
+        clonedWarp.enabled === defaultWarpState.enabled &&
+        clonedWarp.markers.length === 0 &&
+        clonedWarp.stretchMode === defaultWarpState.stretchMode &&
+        clonedWarp.originalTempo === defaultWarpState.originalTempo;
+    if (!isDefaultWarp) {
+        setWarpState(newClip.id, clonedWarp);
+    }
 
     if (clip.type === 'midi') {
         duplicateClipNotes(clipId, newClip.id);
