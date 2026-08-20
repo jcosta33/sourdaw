@@ -1,0 +1,31 @@
+AGENTS.md
+  s_8ddfabd1166b5d::t_14c4b3cb61f413 124-127,152-153,168-171,173-175
+scripts/__tests__/openLane.spec.ts
+  s_8ddfabd1166b5d::t_6f9dbaaabf8ce0 1,3-30,69-102,113-125,127-129,132-137
+scripts/__tests__/prContract.spec.ts
+  s_8ddfabd1166b5d::t_8fda2fd8381bff 25-33,49-59
+scripts/__tests__/publishLane.spec.ts
+  s_8ddfabd1166b5d::t_ac361881e15c30 1-3,6,9-10,14-15,20-23,26,34-42,45,54,60,65-69,83,87-88,91-95,97,100-112,151-152,156-237,241-268,270-272,274-371,374,390-402
+scripts/openLane.ts
+  s_8ddfabd1166b5d::t_6b02530eb08981 14-18,35,37-47,49-50,52-53,56-66,68,114
+scripts/prContract.ts
+  s_8ddfabd1166b5d::t_da6bb3cd47a2b7 52-57,68,71,77-80,82,96-98,101-102
+scripts/publishLane.ts
+  s_8ddfabd1166b5d::t_07d9c63baa5868 3-4,32-33,37-38,61-65,67,70-98,100-107,109-151,156,159-171,183-186,229-241,340-372,400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d030516a6f65fd146548c1e1414e889dc60828ed",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
