@@ -68,7 +68,7 @@ Loading a factory preset can also write **Ceiling**. Clicking a **Target** row d
 | Control                   | Range             | Default     | What it does                                                                                  |
 | ------------------------- | ----------------- | ----------- | --------------------------------------------------------------------------------------------- |
 | **Ceiling**               | −12.0 to 0.0 dBTP | −1.0 dBTP   | Limiter stop. On **Play**, **Shape**, **Check**, and **Limiter**.                             |
-| **B / wet** · **A / dry** | those two         | **B / wet** | Bypasses the whole chain at the input. Runtime only — it is not saved in the project.         |
+| **B / wet** · **A / dry** | those two         | **B / wet** | Bypasses the whole chain at the input. This choice is not saved with the project.             |
 | **Reset loudness**        | —                 | —           | Clears the integrated loudness meters. Also **Reset Integrated LUFS + True Peak** on **Lab**. |
 
 ## Shape
@@ -245,7 +245,7 @@ lanes.
 
 Target, module on/off, EQ bands, dynamics, imager, exciter, limiter Release and Lookahead, dither,
 and chain order still save with the project. Play / Shape / Build / Route / Lab is this session
-only. **Reset loudness** is an action and stores nothing. A/B is runtime only.
+only. **Reset loudness** is an action and stores nothing. A/B is not saved with the project.
 
 ## See also
 
