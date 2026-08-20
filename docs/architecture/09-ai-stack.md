@@ -6,7 +6,7 @@ It complements:
 
 - `CRDT & Collaboration Architecture` — the write path AI actions enter
 - The `llm-action-bridge` agent skill — rules for model-driven actions
-- `src-tauri/AGENTS.md` — desktop-shell boundaries
+- `crates/sourdaw-native/AGENTS.md` — native command-body boundaries
 
 ---
 
@@ -72,5 +72,5 @@ only in AudioAnalysis. Hosted provider transport lives in `sourdaw-native`.
 
 - `.agents/skills/llm-action-bridge/SKILL.md` — rules for model-driven actions
 - `.agents/decisions/0028-native-provider-credential-sessions.md` — hosted credential boundary
-- `src-tauri/AGENTS.md` — desktop-shell command inventory
+- `crates/sourdaw-native/AGENTS.md` — native command-body boundaries
 - `docs/architecture/06-crdt-collaboration.md` — the write path actions enter

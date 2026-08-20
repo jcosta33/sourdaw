@@ -1,8 +1,8 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 export async function stopRecording(instanceId: string): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('stop_recording', { instanceId });
+    await desktopInvoke('stop_recording', { instanceId });
 }

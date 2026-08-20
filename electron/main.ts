@@ -6,7 +6,7 @@
  * by the `sourdaw-native` addon, the event path, plugin scanning in its own
  * process, and an explicit quit cascade.
  *
- * The renderer's desktop seam (`src/utils/tauriBridge.ts`) answers from the
+ * The renderer's desktop seam (`src/utils/desktopBridge.ts`) answers from the
  * `window.sourdaw` bridge this shell's preload publishes, so under Electron
  * the renderer takes its native paths through the surface below.
  */
@@ -27,6 +27,13 @@ import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
+import { getWindowChromeOptions } from './windowChrome.js';
+
+// Logging must never crash the shell. When stdout or stderr is a closed pipe
+// — a packaged app whose parent went away — every console write raises EPIPE,
+// and an unhandled stream error becomes an uncaughtException dialog per write.
+process.stdout.on('error', () => undefined);
+process.stderr.on('error', () => undefined);
 
 // Before anything that can await. Chromium builds its privileged-scheme table
 // once, at `ready`; the ESM main entry resumes after `ready` at the first await,
@@ -105,8 +112,9 @@ const createWindow = (): BrowserWindow => {
         minWidth: 1024,
         minHeight: 600,
         title: 'Sourdaw',
-        backgroundColor: '#000000',
+        backgroundColor: '#0a0a0a',
         show: false,
+        ...getWindowChromeOptions(process.platform),
         webPreferences: {
             // Stated rather than inherited: these three are Electron's defaults
             // today, and each one is load-bearing. A future default change, or
@@ -325,9 +333,12 @@ const startNativeSurface = (): void => {
             `[shell] the native addon at ${addonPath} did not load: ${String(error)}. ` +
                 `Set ${NATIVE_ADDON_PATH_ENV} to a built addon; native commands are unavailable until then.`
         );
-        return;
     }
 
+    // Registration is unconditional. A known command whose backend is missing
+    // must reject through the router's native-host check; leaving the channel
+    // unregistered surfaces Electron's own error on every renderer call —
+    // once per second for the diagnostics poll.
     registerCommandRouter({
         ipcMain,
         native: () => nativeHost,
@@ -342,10 +353,12 @@ const startNativeSurface = (): void => {
     scanSupervisor = createUtilityScanSupervisor(addonPath);
     registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
 
-    registerPluginWindowHost(nativeHost, {
-        createWindow: createEditorWindow,
-        getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
-    });
+    if (nativeHost !== undefined) {
+        registerPluginWindowHost(nativeHost, {
+            createWindow: createEditorWindow,
+            getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
+        });
+    }
 };
 
 void app.whenReady().then(() => {

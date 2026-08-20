@@ -221,7 +221,7 @@ function run(): void {
     } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         console.error(`✗ wasm:verify — cannot read ${wasmArtifacts.manifestPath}: ${detail}`);
-        console.error('  Run `pnpm wasm:all` (or `node --experimental-strip-types scripts/gen-wasm-manifest.ts`).');
+        console.error('  Run `pnpm wasm:all` (or `node scripts/gen-wasm-manifest.ts`).');
         process.exit(1);
     }
 

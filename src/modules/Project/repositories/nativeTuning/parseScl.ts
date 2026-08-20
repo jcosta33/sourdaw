@@ -1,4 +1,4 @@
-import { tauriInvoke } from '#/utils/tauriBridge';
+import { desktopInvoke } from '#/utils/desktopBridge';
 
 const STANDARD_A4_ROOT_NOTE = 69;
 const STANDARD_A4_ROOT_FREQ = 440;
@@ -34,7 +34,7 @@ function isParseSclOutput(value: unknown): value is ParseSclOutput {
 }
 
 export async function parseScl(content: string): Promise<ParseSclOutput> {
-    const result = await tauriInvoke('parse_scl', {
+    const result = await desktopInvoke('parse_scl', {
         content,
         rootNote: STANDARD_A4_ROOT_NOTE,
         rootFreq: STANDARD_A4_ROOT_FREQ,

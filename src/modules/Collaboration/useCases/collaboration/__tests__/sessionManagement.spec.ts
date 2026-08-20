@@ -9,6 +9,7 @@ import {
 } from '../../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../../models/SyncChannelConstants';
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { onPresence } from '../onPresence';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
 /**
@@ -58,9 +59,11 @@ const assetTransferMock = vi.hoisted(() => ({
     instances: [] as {
         handleMessage: ReturnType<typeof vi.fn>;
         getAsset: ReturnType<typeof vi.fn>;
+        dispose: ReturnType<typeof vi.fn>;
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
+            onTransferFailed: (hash: string, reason: string) => void;
         };
     }[],
 }));
@@ -154,9 +157,10 @@ vi.mock('../../assetTransfer', () => ({
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
+            onTransferFailed: (hash: string, reason: string) => void;
         }
     ) {
-        const instance = { handleMessage: vi.fn(), getAsset: vi.fn(), options };
+        const instance = { handleMessage: vi.fn(), getAsset: vi.fn(), dispose: vi.fn(), options };
         assetTransferMock.instances.push(instance);
         return instance;
     }),
@@ -296,6 +300,20 @@ describe('sessionRuntimePrimitives', () => {
 
             expect(decompressed).toBe(payload);
         });
+
+        it('decodes a non-ASCII legacy invite exactly as the historical encoder wrote it', async () => {
+            // The invite this branch exists for was minted by
+            // `btoa(JSON.stringify(invite))`, and `btoa` writes one byte per
+            // code unit — Latin-1, not UTF-8. `atob` is its exact inverse;
+            // UTF-8-decoding those bytes would yield "Jos�".
+            const payload = JSON.stringify({ type: 'offer', peerId: 'legacy', name: 'José' });
+            const legacyInvite = btoa(payload);
+
+            const decompressed = await sessionRuntimePrimitives.decompressInvite(legacyInvite);
+
+            expect(decompressed).toBe(payload);
+            expect((JSON.parse(decompressed) as { name: string }).name).toBe('José');
+        });
     });
 
     describe('state', () => {
@@ -313,6 +331,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         peerConnectionMock.instances.length = 0;
         automergeSyncMock.instances.length = 0;
         assetTransferMock.instances.length = 0;
+        sessionRuntimePrimitives.presenceListeners.clear();
         collaborationStore.set(null);
         branchStoreMock.value = null;
         trackStoreMock.value = null;
@@ -353,6 +372,18 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
             expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        });
+
+        // Dropping the reference alone leaves in-flight transfers holding
+        // partial chunk buffers and armed stall timers that fire against a
+        // torn-down session.
+        it('disposes the asset transfer before dropping it', () => {
+            sessionRuntimePrimitives.initialize();
+            const assetTransfer = latestAssetTransfer();
+
+            sessionRuntimePrimitives.cleanup();
+
+            expect(assetTransfer.dispose).toHaveBeenCalledTimes(1);
         });
 
         it('is safe to call when no session is active', () => {
@@ -461,7 +492,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1', lastSeen: 0 })] }));
             const listener = vi.fn();
-            sessionRuntimePrimitives.state.presenceListeners.add(listener);
+            sessionRuntimePrimitives.presenceListeners.add(listener);
 
             const longName = 'x'.repeat(100);
             const message: PeerMessage = {
@@ -482,7 +513,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState({ peers: [] }));
             const listener = vi.fn();
-            sessionRuntimePrimitives.state.presenceListeners.add(listener);
+            sessionRuntimePrimitives.presenceListeners.add(listener);
 
             const message: PeerMessage = {
                 type: 'presence',
@@ -492,6 +523,34 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
 
             expect(listener).not.toHaveBeenCalled();
+        });
+
+        it('keeps a mounted presence subscriber alive across a leave→rejoin cycle (regression: cleanup cleared app-lifetime listeners)', () => {
+            const listener = vi.fn();
+            const unsubscribe = onPresence(listener);
+
+            // Session 1 ends: leave/create/join all run cleanup().
+            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.cleanup();
+
+            // Session 2: the overlay hook never re-subscribes — the same
+            // registration must still receive presence.
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1' })] }));
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-1',
+                message: { type: 'presence', data: { peerId: 'peer-1', name: 'Bob', color: '#3b82f6' } },
+            });
+
+            expect(listener).toHaveBeenCalledTimes(1);
+
+            // The subscriber still owns its registration: disposing works.
+            unsubscribe();
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-1',
+                message: { type: 'presence', data: { peerId: 'peer-1', name: 'Bob', color: '#3b82f6' } },
+            });
+            expect(listener).toHaveBeenCalledTimes(1);
         });
 
         it('adds a newly seen peer from a peer-info message without trusting its self-claimed host flag', () => {
@@ -505,6 +564,34 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(collaborationStore.value?.peers).toHaveLength(1);
             expect(collaborationStore.value?.peers[0]?.isHost).toBe(false);
+        });
+
+        it('bounds sender-controlled identity fields from a peer-info message with the presence limits', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-2',
+                message: {
+                    type: 'peer-info',
+                    peer: makePeer({ id: 'peer-2', name: 'x'.repeat(100), color: 'javascript:alert(1)' }),
+                },
+            });
+
+            expect(collaborationStore.value?.peers[0]?.name).toHaveLength(64);
+            expect(collaborationStore.value?.peers[0]?.color).toBe('#888888');
+        });
+
+        it('rejects a peer-info carrying an over-length peer id instead of storing it', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-2',
+                message: { type: 'peer-info', peer: makePeer({ id: 'x'.repeat(5000) }) },
+            });
+
+            expect(collaborationStore.value?.peers).toHaveLength(0);
         });
 
         it('adopts a host-assigned color from a peer-info message describing ourselves', () => {
@@ -525,6 +612,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(collaborationStore.value?.localColor).toBe('#ef4444');
             expect(collaborationStore.value?.peers).toHaveLength(1);
+        });
+
+        it('sanitizes a host-assigned color before adopting it as localColor', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    localColor: '#3b82f6',
+                    isHost: false,
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'host-1',
+                message: { type: 'peer-info', peer: makePeer({ id: 'local-1', color: 'url(javascript:alert(1))' }) },
+            });
+
+            expect(collaborationStore.value?.localColor).toBe('#888888');
         });
 
         it('removes a peer on a self-issued peer-leave message', () => {
@@ -647,6 +753,104 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestPeerManager().callbacks.onDisconnected('peer-1');
 
             expect(collaborationStore.value?.connectionStatus).toBe('connected');
+        });
+
+        /** A joiner whose only peer is the host, mid-session with a live broadcast. */
+        function startJoinerWithHost(): void {
+            sessionRuntimePrimitives.initialize();
+            latestPeerManager().getConnectedPeerIds.mockReturnValue(['host-1']);
+            collaborationStore.set(
+                makeState({
+                    isHost: false,
+                    localPeerId: 'local-1',
+                    connectionStatus: 'connected',
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                })
+            );
+            sessionRuntimePrimitives.startPlayheadBroadcast();
+            vi.advanceTimersByTime(250);
+        }
+
+        it('surfaces session end and stops the playhead broadcast once the HOST cleanup timer elapses', () => {
+            vi.useFakeTimers();
+            startJoinerWithHost();
+            expect(latestPeerManager().broadcastPresence.mock.calls.length).toBeGreaterThan(0);
+
+            latestPeerManager().callbacks.onDisconnected('host-1');
+
+            // Nothing is declared over yet: `disconnected` is a transient ICE
+            // state, and the grace timer is what decides the host is really gone.
+            expect(collaborationStore.value?.error).toBeNull();
+
+            vi.advanceTimersByTime(15_000);
+
+            expect(collaborationStore.value?.connectionStatus).toBe('disconnected');
+            expect(collaborationStore.value?.error).toMatch(/host disconnected/i);
+            expect(collaborationStore.value?.error).toMatch(/session has ended/i);
+            // No silent auto-leave: the session state (and the local project
+            // copy) stays until the user explicitly leaves.
+            expect(collaborationStore.value?.isEnabled).toBe(true);
+
+            // The playhead broadcast interval is stopped, not left ticking
+            // into a dead session.
+            const callsAtDeparture = latestPeerManager().broadcastPresence.mock.calls.length;
+            vi.advanceTimersByTime(1000);
+            expect(latestPeerManager().broadcastPresence).toHaveBeenCalledTimes(callsAtDeparture);
+        });
+
+        it('treats a host disconnect that recovers inside the grace period as a blip, not a session end', () => {
+            vi.useFakeTimers();
+            startJoinerWithHost();
+
+            latestPeerManager().callbacks.onDisconnected('host-1');
+            vi.advanceTimersByTime(1000);
+            latestPeerManager().callbacks.onConnected('host-1');
+            vi.advanceTimersByTime(20_000);
+
+            expect(collaborationStore.value?.connectionStatus).toBe('connected');
+            expect(collaborationStore.value?.error).toBeNull();
+            expect(collaborationStore.value?.peers.some((peer) => peer.id === 'host-1')).toBe(true);
+
+            // The broadcast never stopped, so this joiner's playhead is still
+            // reaching the other peers.
+            const callsAfterRecovery = latestPeerManager().broadcastPresence.mock.calls.length;
+            vi.advanceTimersByTime(250);
+            expect(latestPeerManager().broadcastPresence.mock.calls.length).toBeGreaterThan(callsAfterRecovery);
+        });
+
+        it('clears the session-ended error and restarts the broadcast when the host comes back after departing', () => {
+            vi.useFakeTimers();
+            startJoinerWithHost();
+
+            latestPeerManager().callbacks.onDisconnected('host-1');
+            vi.advanceTimersByTime(15_000);
+            expect(collaborationStore.value?.error).toMatch(/session has ended/i);
+            const callsWhileEnded = latestPeerManager().broadcastPresence.mock.calls.length;
+
+            latestPeerManager().callbacks.onConnected('host-1');
+
+            expect(collaborationStore.value?.connectionStatus).toBe('connected');
+            expect(collaborationStore.value?.error).toBeNull();
+
+            vi.advanceTimersByTime(250);
+            expect(latestPeerManager().broadcastPresence.mock.calls.length).toBeGreaterThan(callsWhileEnded);
+        });
+
+        it('does not declare the session ended when a non-host peer disconnects', () => {
+            vi.useFakeTimers();
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(
+                makeState({
+                    isHost: false,
+                    connectionStatus: 'connected',
+                    peers: [makePeer({ id: 'host-1', isHost: true }), makePeer({ id: 'peer-2' })],
+                })
+            );
+
+            latestPeerManager().callbacks.onDisconnected('peer-2');
+
+            expect(collaborationStore.value?.connectionStatus).toBe('connected');
+            expect(collaborationStore.value?.error).toBeNull();
         });
     });
 
@@ -901,6 +1105,45 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
     });
 
+    describe('AssetTransfer onTransferFailed hook', () => {
+        // An abandoned asset transfer used to be a logger.warn and nothing
+        // else: clips referencing the asset stayed silent with no user-visible
+        // signal anywhere in the panel.
+        it('surfaces an abandoned transfer on the store error row', () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
+
+            expect(collaborationStore.value?.error).toBe(
+                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again.'
+            );
+        });
+
+        // The retry driver is the scheduler tick, so the message must name that
+        // condition rather than promise an unconditional retry: with playback
+        // stopped, nothing re-asks for the asset.
+        it('states the condition under which the asset is asked for again', () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+
+            expect(collaborationStore.value?.error).not.toContain('It will be retried');
+            expect(collaborationStore.value?.error).toContain('Playing over the affected clips');
+        });
+
+        it('leaves the live session state alone — a failed asset is not a failed session', () => {
+            collaborationStore.set(makeState({ connectionStatus: 'connected', isEnabled: true }));
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+
+            expect(collaborationStore.value?.connectionStatus).toBe('connected');
+            expect(collaborationStore.value?.isEnabled).toBe(true);
+        });
+    });
+
     describe('resolveAssetForClips (invoked via the AssetTransfer onAssetAvailable hook)', () => {
         function makeAudioBuffer(): AudioBuffer {
             return { duration: 1 } as AudioBuffer;
@@ -951,6 +1194,27 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(decodeAudioData).toHaveBeenCalledWith(arrayBuffer);
             expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1', buffer: decodedBuffer });
+        });
+
+        // The transfer-failure row is only otherwise cleared by session
+        // lifecycle use cases, so a message about an asset that has since
+        // arrived outlived its own successful retry for the whole session.
+        it('clears a previous transfer failure once the asset resolves', async () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
+            expect(collaborationStore.value?.error).not.toBeNull();
+
+            const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };
+            latestAssetTransfer().getAsset.mockReturnValue(blob);
+            audioEngineMock.getAudioContext.mockReturnValue({
+                decodeAudioData: vi.fn().mockResolvedValue(makeAudioBuffer()),
+            });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(null);
+            trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
+
+            latestAssetTransfer().options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
         });
 
         it('skips a clip whose asset hash does not match', async () => {

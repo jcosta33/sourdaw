@@ -1,10 +1,10 @@
 pub mod ai_audio;
 pub mod audio_postprocess;
-pub mod binary_ipc;
 pub mod collab;
 pub mod crumbs;
 pub mod engine_diagnostics;
 pub mod filesystem;
+pub mod graph;
 pub mod link;
 pub mod midi;
 pub mod model_download;

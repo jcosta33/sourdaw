@@ -14,7 +14,7 @@ release/desktop/
 .env.*
 !.env.example
 
-# Rust / Tauri
+# Rust
 target/
 
 # Editor
@@ -23,6 +23,9 @@ target/
 
 # Agent worktrees
 .agents/worktrees/
+
+# Review bundles produced by `pnpm review:prepare`
+.agents/review-bundles/
 
 # Agent campaign artifacts live in the global workspace (~/.agents/artifacts/<project>/),
 # never in the repo. Promotion to repo-owned docs happens deliberately via the promote flow.
@@ -39,3 +42,7 @@ test-results/
 /*.out
 /cw.txt
 /fmt-files.txt
+
+# Native addon build artifact (produced by scripts/buildNativeAddon.ts)
+/crates/sourdaw-native/*.node
+/crates/sourdaw-native/*.dylib

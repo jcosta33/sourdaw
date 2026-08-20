@@ -52,7 +52,7 @@ function startPolling(instanceId: string): void {
         return;
     }
 
-    // Crumbs position data is sourced from the Rust audio host via Tauri IPC.
+    // Crumbs position data is sourced from the Rust audio host via native IPC.
     // On the browser build the bridge has nothing to answer with, so the 30 Hz
     // poll would otherwise spam a warn per tick — just stay idle.
     if (!isCrumbsNativeAvailable()) {

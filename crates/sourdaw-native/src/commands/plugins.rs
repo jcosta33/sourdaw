@@ -7,8 +7,7 @@ use crate::host::plugin_window::PluginWindowHost;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
-use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
-use daw_engine::EngineHandle;
+use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
@@ -788,14 +787,6 @@ pub async fn get_plugin_parameters(
     Ok(instance.parameters.clone())
 }
 
-/// Name the shell addresses `set_plugin_state_bytes` by.
-///
-/// A raw-body transport makes the state chunk the *whole* message, so the
-/// instance id cannot ride along as a sibling field — exactly the constraint
-/// that put the destination path beside the payload for `write_file_bytes`. The
-/// name is shared so both shells report the same thing when it is missing.
-pub const PLUGIN_INSTANCE_HEADER: &str = "x-sourdaw-plugin-instance";
-
 /// Read a loaded plugin instance's opaque state chunk.
 ///
 /// Shared by the command layer so the transport can change without the lookup
@@ -907,8 +898,7 @@ pub async fn get_plugin_state_bytes(
 /// The chunk arrives as bytes rather than as a JSON number array, so it crosses
 /// at exactly its byte length; the instance id travels beside it because the
 /// byte channel carries the payload and nothing else. How the shell addresses
-/// the payload is its own business — `commands::binary_ipc` owns the validation
-/// both shells share.
+/// the payload is its own business.
 pub async fn set_plugin_state_bytes(
     instance_id: String,
     plugin_state: &[u8],
@@ -918,29 +908,14 @@ pub async fn set_plugin_state_bytes(
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
-
-/// Start the native CPAL audio engine and take the engine-owned plugin path.
-///
-/// Registered and callable, but nothing in the shipped app calls it yet: the
-/// production bootstrap that decides when native processing activates is
-/// tracked separately, so `state.engine` stays `None` and `load_plugin` takes
-/// the command-owned branch. Everything reached only through `state.engine`
-/// runs today under test alone.
-pub async fn start_native_engine(state: &AppState) -> Result<String, String> {
-    let mut engine_guard = state
-        .engine
-        .lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-
-    if engine_guard.is_some() {
-        return Ok("Native engine already running".to_string());
-    }
-
-    let handle =
-        EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
-    *engine_guard = Some(handle);
-    Ok("Native engine started".to_string())
-}
+//
+// There is no explicit start command. The engine's recorded bootstrap (#1984)
+// is lazy start inside `commands::graph::apply_graph_commands`: the CPAL
+// stream spawns when the first graph batch arrives, and a machine where it
+// cannot start rejects that batch with an `engine-not-running:` reason. The
+// old `start_native_engine` command was deleted with that decision — it had
+// no caller in any shipped build, and a second unconditioned start entry
+// point beside the lazy one would be two bootstraps to keep honest.
 
 /// Send a MIDI note event to a native plugin on the audio thread (lock-free).
 pub async fn send_plugin_midi(
@@ -1013,32 +988,6 @@ pub async fn set_plugin_bypass(
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
     engine.set_bypass(engine_plugin_id, bypassed)
-}
-
-/// Update the global transport state for all native plugins (lock-free).
-pub async fn update_plugin_transport(
-    tempo: f64,
-    time_sig_num: u16,
-    time_sig_denom: u16,
-    is_playing: bool,
-    song_pos_beats: f64,
-    song_pos_seconds: f64,
-    state: &AppState,
-) -> Result<(), String> {
-    let mut engine_guard = state
-        .engine
-        .lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
-
-    engine.set_transport(TransportState {
-        tempo,
-        time_sig_num,
-        time_sig_denom,
-        is_playing,
-        song_pos_beats,
-        song_pos_seconds,
-    })
 }
 
 /// Process an audio block through a native plugin via the ring-buffer bridge.
@@ -2123,9 +2072,8 @@ mod tests {
         assert_eq!(get_result, Ok(vec![9, 8, 7]));
     }
 
-    /// The body's contract is the bytes; whether they cross the wire raw or as
-    /// a JSON number array is the shell's, and is guarded in
-    /// `src-tauri/src/commands/plugins.rs` where `IpcResponse` exists.
+    /// The body's contract is the bytes; how they cross the wire is the
+    /// shell's business.
     #[test]
     fn get_plugin_state_bytes_returns_the_stored_chunk() {
         let state = AppState::default();

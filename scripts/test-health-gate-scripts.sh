@@ -105,7 +105,7 @@ printf '%s\n' \
     'pnpm test:release-inventory' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
-    'pnpm test:full' \
+    'pnpm test:run' \
     'pnpm build' \
     > "$temp_root/expected-web-success.log"
 diff -u "$temp_root/expected-web-success.log" "$temp_root/web-success.log"
@@ -228,8 +228,8 @@ printf '%s\n' \
     'npm test' \
     'npm run build' \
     'cargo fmt --all --check' \
-    'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
-    'cargo test --workspace --exclude sourdaw --all-features' \
+    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-server-success.log"
 diff -u "$temp_root/expected-server-success.log" "$temp_root/server-success.log"
 
@@ -278,7 +278,7 @@ printf '%s\n' \
     'npm test' \
     'npm run build' \
     'cargo fmt --all --check' \
-    'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
+    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
     > "$temp_root/expected-cargo-clippy-failure.log"
 diff -u "$temp_root/expected-cargo-clippy-failure.log" "$temp_root/cargo-clippy-failure.log"
 

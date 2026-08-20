@@ -2,14 +2,6 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
-const mocks = vi.hoisted(() => ({
-    is_tauri: vi.fn(() => false),
-}));
-
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: mocks.is_tauri,
-}));
-
 import { type CapabilityReport, type InferenceThroughput } from '../../models/CapabilityReport';
 import { detectCapabilities } from '../capabilityDetector';
 
@@ -91,7 +83,6 @@ describe('detectCapabilities', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         window.localStorage.clear();
-        mocks.is_tauri.mockReturnValue(false);
         injectDependencies(detectCapabilities, {
             logger: create_logger_mock(),
             measureInferenceThroughput: vi
@@ -351,8 +342,13 @@ describe('detectCapabilities', () => {
         expect(measure).not.toHaveBeenCalled();
     });
 
-    it('should mark Tauri on macOS as an unsupported platform without probing', async () => {
-        install_supported_browser();
+    /**
+     * macOS used to be gated out wholesale, because the desktop app ran on
+     * WKWebView and WKWebView had no WebGPU. The desktop renderer is Chromium
+     * now, so the host OS decides nothing here: the browser facts do.
+     */
+    it('should measure a macOS host on its browser facts rather than gating it out', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(detected_at);
         Object.defineProperty(globalThis, 'navigator', {
             configurable: true,
             value: {
@@ -362,13 +358,26 @@ describe('detectCapabilities', () => {
                 storage: { getDirectory: vi.fn() },
             },
         });
-        mocks.is_tauri.mockReturnValue(true);
         const { measure } = install(measured(3));
 
         const report = await detectCapabilities({ measureInference: true });
 
-        expect(report.capability).toBe('unsupported-platform');
-        expect(report.webGpuTier).toBe('not-measured');
-        expect(measure).not.toHaveBeenCalled();
+        expect(report.capability).toBe('supported');
+        expect(report.webGpuTier).toBe('webgpu-fast');
+        expect(measure).toHaveBeenCalled();
+    });
+
+    it('should discard a cached report naming a capability this build cannot produce', async () => {
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({ ...valid_cached_report, capability: 'unsupported-platform' })
+        );
+        install_supported_browser();
+        install(measured(3));
+
+        const report = await detectCapabilities();
+
+        expect(report.capability).toBe('supported');
+        expect(report.detectedAt).toBe(detected_at);
     });
 });

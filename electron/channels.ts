@@ -26,7 +26,7 @@ export const DIALOG_MESSAGE_CHANNEL = 'sourdaw:dialog:message';
 export const PATHS_SAMPLES_BASE_CHANNEL = 'sourdaw:paths:samples-base';
 export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
 
-/** A filter in an open or save dialog. Mirrors the Tauri dialog plugin's shape. */
+/** A filter in an open or save dialog. */
 export type DialogFilter = {
     readonly name: string;
     readonly extensions: readonly string[];
@@ -35,9 +35,9 @@ export type DialogFilter = {
 /**
  * Open-dialog options.
  *
- * Field for field what `@tauri-apps/plugin-dialog`'s `open` accepts today
- * (`src/types/tauri-dialog.d.ts`), because the call sites are the same files in
- * both shells and a renamed option is a silently ignored one.
+ * Field for field what the Tauri dialog plugin's `open` accepted, because the
+ * call sites in `src/` predate the shell change and a renamed option is a
+ * silently ignored one.
  */
 export type OpenDialogOptions = {
     readonly multiple?: boolean;
@@ -67,7 +67,7 @@ export type MessageDialogOptions = {
  * ## Argument shape
  *
  * `args` is **positional**, in the order the addon method declares its
- * parameters — not a named object as Tauri's `invoke` takes. That is the shape
+ * parameters — not a named object as Tauri's `invoke` took. That is the shape
  * that lets the main-process router stay opaque: it forwards the array to the
  * addon and never reads inside it, so no part of the shell has to know, or keep
  * in sync, what any command's parameters are called. Naming stays where the

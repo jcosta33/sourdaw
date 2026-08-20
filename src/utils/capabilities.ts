@@ -2,21 +2,21 @@
  * Centralised runtime-capability detection.
  *
  * Per the systemic-issues audit (§10.2 item 7, §8.2 / §8.3 / §8.4 / N15), every
- * branch that asked "are we in Tauri?" / "do we have SharedArrayBuffer?" /
+ * branch that asked "are we on desktop?" / "do we have SharedArrayBuffer?" /
  * "does this model support the tools API?" lived at its own call site. That
  * scattered ownership caused three distinct production regressions, so the
  * canonical checks now live here and every runtime guard must route through
  * this module.
  *
- * All probes are cheap and synchronous — do not cache results across reloads,
- * because the Tauri webview injects `__TAURI_INTERNALS__` lazily during boot.
+ * All probes are cheap and synchronous; keep them uncached so a probe always
+ * answers for the current page state.
  */
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { isTauri } from './tauriRuntime';
+import { isDesktopRuntime } from './desktopRuntime';
 
-export { isTauri };
+export { isDesktopRuntime };
 
 /** `true` when `SharedArrayBuffer` is available at runtime. */
 export function hasSharedArrayBuffer(): boolean {
@@ -39,14 +39,14 @@ export function isCrossOriginIsolated(): boolean {
  * and the boot banner can render it without calling the probes individually.
  */
 export type RuntimeCapabilities = {
-    isTauri: boolean;
+    isDesktopRuntime: boolean;
     hasSharedArrayBuffer: boolean;
     isCrossOriginIsolated: boolean;
 };
 
 export function getRuntimeCapabilities(): RuntimeCapabilities {
     return {
-        isTauri: isTauri(),
+        isDesktopRuntime: isDesktopRuntime(),
         hasSharedArrayBuffer: hasSharedArrayBuffer(),
         isCrossOriginIsolated: isCrossOriginIsolated(),
     };
@@ -54,7 +54,7 @@ export function getRuntimeCapabilities(): RuntimeCapabilities {
 
 /**
  * Boot-time probe. Logs a single structured line at info level so the banner
- * is obvious in both web and Tauri dev consoles. Warns when
+ * is obvious in both web and desktop dev consoles. Warns when
  * `crossOriginIsolated` is false because that silently disables every
  * SAB-backed DSP plugin — historically a top source of "plugin loaded but
  * produces no sound" reports.

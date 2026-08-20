@@ -1,4 +1,4 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 export async function armRecording(
     instanceId: string,
@@ -6,8 +6,8 @@ export async function armRecording(
     targetPad: number,
     maxDurationSecs: number
 ): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('arm_recording', { instanceId, threshold, targetPad, maxDurationSecs });
+    await desktopInvoke('arm_recording', { instanceId, threshold, targetPad, maxDurationSecs });
 }

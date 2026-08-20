@@ -1,4 +1,4 @@
-import { onDictationError as onVoiceDictationError } from '../../repositories/voiceTauriAdapter/onDictationError';
+import { onDictationError as onVoiceDictationError } from '../../repositories/voiceNativeAdapter/onDictationError';
 
 export type DictationError = {
     message: string;

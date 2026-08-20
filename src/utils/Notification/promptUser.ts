@@ -5,7 +5,7 @@ import { NotificationEventBus } from './notificationEventBus';
 /**
  * Async single-field text prompt. Sibling of `confirmUser` — replaces
  * `window.prompt`, which synchronously blocks the JS event loop (audible
- * scheduler dropouts) and is unavailable in some Tauri webviews.
+ * scheduler dropouts).
  *
  * Usage:
  *

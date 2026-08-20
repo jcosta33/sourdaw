@@ -1,11 +1,11 @@
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { templates } from './helpers';
 
 import type { ProjectTemplate } from './helpers';
 
 function isNativePlatform(): boolean {
-    return isTauri();
+    return isDesktopRuntime();
 }
 
 export function getTemplates(): ProjectTemplate[] {

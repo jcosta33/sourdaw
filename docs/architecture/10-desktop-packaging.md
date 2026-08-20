@@ -29,6 +29,14 @@ has to be a real file on disk — a dylib the addon links against, a future preb
 in `asarUnpack` or `extraResources` for the same reason, and the rule is that it is listed
 explicitly rather than discovered, so adding one is a deliberate act.
 
+The addon artifact is built by the packaging chain itself: `desktop:build` and `desktop:dev` run
+`scripts/buildNativeAddon.ts`, which cargo-builds `sourdaw-native` for the host target with the
+`napi-addon` feature, copies the cdylib to `crates/sourdaw-native/sourdaw-native.node`, and fails
+the build when no artifact exists — a package can no longer ship an empty native surface silently.
+`extraResources` still globs that directory rather than the step's output, so a package run that
+bypasses the chain can carry a stale artifact, and a cross-target build must overwrite the host
+artifact with one built for `win.target.arch` (§4).
+
 The sample library ships exactly once. Vite copies `public/samples/**` into `dist/`, so
 `desktop:build` deletes `dist/samples` before packaging and the asar excludes it regardless. A
 build that ships both is not wrong so much as a gigabyte heavier for nothing.

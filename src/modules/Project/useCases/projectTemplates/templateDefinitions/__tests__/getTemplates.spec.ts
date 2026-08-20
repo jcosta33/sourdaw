@@ -1,12 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { getTemplates } from '../getTemplates';
 
 describe('getTemplates', () => {
-    afterEach(() => {
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
-    });
-
     it('excludes native-only templates in the browser', () => {
         const ids = getTemplates().map((time) => time.id);
         expect(ids).not.toContain('demo-native-showcase');

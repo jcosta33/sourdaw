@@ -4,14 +4,14 @@ const mocks = vi.hoisted(() => {
     const storeValue: { value: unknown } = { value: null };
     return {
         scanBrowserDirectory: vi.fn(),
-        scanTauriDirectory: vi.fn(),
+        scanNativeDirectory: vi.fn(),
         updateLibraryRootStatus: vi.fn(),
         storeValue,
     };
 });
 
 vi.mock('../scanBrowserDirectory', () => ({ scanBrowserDirectory: mocks.scanBrowserDirectory }));
-vi.mock('../scanTauriDirectory', () => ({ scanTauriDirectory: mocks.scanTauriDirectory }));
+vi.mock('../scanNativeDirectory', () => ({ scanNativeDirectory: mocks.scanNativeDirectory }));
 
 vi.mock('../../../stores/libraryStore', () => ({
     get libraryStore() {
@@ -24,7 +24,7 @@ import { rescanRoot } from '../rescanRoot';
 
 type TestRoot = {
     id: string;
-    provider: 'browser' | 'tauri';
+    provider: 'browser' | 'desktop';
     handle?: object;
 };
 
@@ -45,7 +45,7 @@ describe('rescanRoot', () => {
 
         expect(mocks.updateLibraryRootStatus).not.toHaveBeenCalled();
         expect(mocks.scanBrowserDirectory).not.toHaveBeenCalled();
-        expect(mocks.scanTauriDirectory).not.toHaveBeenCalled();
+        expect(mocks.scanNativeDirectory).not.toHaveBeenCalled();
     });
 
     it('does not strand a handle-less browser root on a permanent "scanning" status', async () => {
@@ -58,7 +58,7 @@ describe('rescanRoot', () => {
 
         expect(mocks.updateLibraryRootStatus).not.toHaveBeenCalled();
         expect(mocks.scanBrowserDirectory).not.toHaveBeenCalled();
-        expect(mocks.scanTauriDirectory).not.toHaveBeenCalled();
+        expect(mocks.scanNativeDirectory).not.toHaveBeenCalled();
     });
 
     it('scans a browser root that still holds a handle and marks it scanning', async () => {
@@ -69,16 +69,16 @@ describe('rescanRoot', () => {
 
         expect(mocks.updateLibraryRootStatus).toHaveBeenCalledWith('r1', 'scanning');
         expect(mocks.scanBrowserDirectory).toHaveBeenCalledTimes(1);
-        expect(mocks.scanTauriDirectory).not.toHaveBeenCalled();
+        expect(mocks.scanNativeDirectory).not.toHaveBeenCalled();
     });
 
-    it('scans a tauri root and marks it scanning', async () => {
-        seedRoots([{ id: 'r1', provider: 'tauri' }]);
+    it('scans a native root and marks it scanning', async () => {
+        seedRoots([{ id: 'r1', provider: 'desktop' }]);
 
         await rescanRoot('r1');
 
         expect(mocks.updateLibraryRootStatus).toHaveBeenCalledWith('r1', 'scanning');
-        expect(mocks.scanTauriDirectory).toHaveBeenCalledTimes(1);
+        expect(mocks.scanNativeDirectory).toHaveBeenCalledTimes(1);
         expect(mocks.scanBrowserDirectory).not.toHaveBeenCalled();
     });
 });

@@ -1,10 +1,10 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import type { CrumbsMode } from '../../models/CrumbsTypes';
 
 export async function setCrumbsMode(instanceId: string, mode: CrumbsMode): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('set_crumbs_mode', { instanceId, mode });
+    await desktopInvoke('set_crumbs_mode', { instanceId, mode });
 }

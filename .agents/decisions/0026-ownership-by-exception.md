@@ -85,8 +85,7 @@ verification, not more workers.
 
 The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the model:
 
-1. The agent is the principal engineer and owns the codebase end to end; the user is the CEO and
-   owns the product.
+1. The agent is the principal engineer and owns the codebase end to end.
 2. Management by exception: decide, act, deliver. Escalate only one-way doors with product
    consequence, as options plus a recommendation.
 3. Fix encountered defects on sight in their own lane; file only genuinely separate, sizeable
@@ -102,6 +101,6 @@ The owner stops hearing about anything reversible. Encountered rot stops accumul
 dockets and "known drift" notes — its two terminal states are fixed or filed-with-context. Doc
 sections that enumerate repository state are defects against rule 4: fix or file the underlying
 defect before the note is removed, never delete the note as compliance. A note pinning a measured,
-test-guarded, deliberately accepted state is a contract, not drift, and stays. The review-stance
-discipline in Delivery is unchanged; this ADR adds the evidence bar those reviews must clear, not
-a new process.
+test-guarded, deliberately accepted state is a contract, not drift, and stays. The GitHub review
+is the teammate review of the current head; this ADR adds the evidence bar owner scrutiny of
+delegated work must clear, not a GitHub process.

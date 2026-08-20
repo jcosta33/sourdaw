@@ -3,24 +3,27 @@
  * (AC-003).
  *
  * A list of names copied into TypeScript is only as good as the check that it
- * still matches the thing it mirrors. So nothing here trusts
- * `electron/commands.ts`: the registered surface is read out of
- * `src-tauri/src/lib.rs`'s `generate_handler!`, the allowed surface out of the
- * Tauri capability, and the addon's methods out of the addon's own Rust source.
- * A command added, removed or renamed on the Rust side fails here rather than
- * at the moment a musician invokes it.
+ * still matches the thing it mirrors. So the registered surface is not taken
+ * from `electron/commands.ts` at its word: it is re-derived from the addon's
+ * own `#[napi]` items in `crates/sourdaw-native/src/addon/mod.rs`. A command
+ * added, removed or renamed on the Rust side fails here rather than at the
+ * moment a musician invokes it.
  *
- * This is the port of `src/utils/__tests__/agentWebviewSecurity.spec.ts` to the
- * Electron shell. The Tauri spec keeps its own assertions about the Tauri
- * manifest and capability; this one covers what the Electron shell decides.
+ * Which registered commands the renderer may invoke is the product decision
+ * `EXPOSED_COMMANDS` records — there is no second manifest to derive it from.
+ * What is enforced here instead is the partition: every registered command is
+ * deliberately exposed or deliberately denied, never silently neither, and
+ * every exposed command has a production caller, so the surface never widens
+ * ahead of a real need.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { SOURDAW_COMMAND_ARGUMENTS } from '#/utils/sourdawCommandArguments';
-
+// Relative on purpose: this project resolves as Node ESM, where `#/*` is the
+// package-imports namespace, not the renderer's bundler alias.
+import { SOURDAW_COMMAND_ARGUMENTS } from '../../src/utils/sourdawCommandArguments.js';
 import { addonMethodName, commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS, isExposedCommand } from '../commands.js';
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8');
@@ -29,38 +32,6 @@ const matches = (source: string, pattern: RegExp): string[] =>
     [...source.matchAll(pattern)].flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
 
 const sorted = (names: readonly string[]): string[] => [...new Set(names)].sort();
-
-/** Every command body the product registers, from the Tauri handler list. */
-const registeredCommands = (): string[] =>
-    sorted(matches(read('src-tauri/src/lib.rs'), /^\s*commands::[\w:]+::(\w+),$/gmu));
-
-/**
- * The body of one TOML array, by key.
- *
- * Scoped rather than scanning the file, because a capability may carry both an
- * allow and a deny list — the standard Tauri shape. Reading every quoted string
- * would derive a denied command as granted, and the equality below would then
- * fail in the direction that instructs the fixer to *widen* the Electron
- * surface with commands the capability explicitly withholds.
- */
-export const tomlArray = (source: string, key: string): string | undefined => {
-    const opening = new RegExp(String.raw`^\s*${key}\s*=\s*\[`, 'mu').exec(source);
-    if (opening === null) {
-        return undefined;
-    }
-    const start = opening.index + opening[0].length;
-    const end = source.indexOf(']', start);
-    return end === -1 ? undefined : source.slice(start, end);
-};
-
-/** Every command the Tauri main webview is granted. */
-const allowedCommands = (): string[] => {
-    const block = tomlArray(read('src-tauri/permissions/sourdaw-commands.toml'), 'commands.allow');
-    if (block === undefined) {
-        throw new Error('The capability has no commands.allow array to derive the granted surface from');
-    }
-    return sorted(matches(block, /"(\w+)"/gu));
-};
 
 /** Every method the Node addon publishes, from its `#[napi]` items. */
 const addonMethods = (): string[] =>
@@ -71,20 +42,73 @@ const addonMethods = (): string[] =>
         )
     );
 
+/**
+ * `#[napi]` items that are shell plumbing, not renderer-invokable commands:
+ * the scan-worker process entry point, the engine's constructor and shutdown,
+ * and the plugin-window host registration the shell itself performs. Pinned
+ * by name so a new addon method lands in the registered set by default and
+ * must be triaged here explicitly to escape the exposed/denied partition.
+ */
+const ADDON_PLUMBING: ReadonlySet<string> = new Set([
+    'new',
+    'notify_plugin_window_closed',
+    'register_plugin_window_host',
+    'run_plugin_scan_worker',
+    'shutdown',
+]);
+
+/** Every command the product registers: the addon surface minus plumbing. */
+const registeredCommands = (): string[] => addonMethods().filter((name) => !ADDON_PLUMBING.has(name));
+
+/**
+ * Every production TypeScript source under a directory, concatenated. Specs,
+ * stories and E2E files are excluded: a command whose only mention is a test
+ * has no caller.
+ */
+const readProductionTypescript = (directory: string): string =>
+    readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.name !== '__tests__' && entry.name !== 'out')
+        .flatMap((entry) => {
+            const path = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                return [readProductionTypescript(path)];
+            }
+            if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) {
+                return [];
+            }
+            if (entry.name.includes('.spec.') || entry.name.includes('.stories.') || entry.name.includes('.e2e.')) {
+                return [];
+            }
+            return [readFileSync(path, 'utf8')];
+        })
+        .join('\n');
+
 describe('the Electron command surface', () => {
-    it('exposes exactly the commands the Tauri webview is granted', () => {
-        // Not a hand-kept number. The Tauri capability is the product's
-        // decision about what a renderer may invoke, and the Electron shell
-        // exposing a different set would make the two shells different
-        // products.
-        expect(sorted(EXPOSED_COMMANDS)).toEqual(allowedCommands());
+    it('pins only plumbing names the addon actually publishes', () => {
+        // A renamed plumbing method would otherwise fall into the registered
+        // set as a phantom new command, and the stale pin would keep excusing
+        // a name that no longer exists.
+        const published = new Set(addonMethods());
+        for (const name of ADDON_PLUMBING) {
+            expect(published.has(name)).toBe(true);
+        }
     });
 
-    it('denies exactly the registered commands the capability withholds', () => {
-        const registered = registeredCommands();
-        const allowed = new Set(allowedCommands());
-
-        expect(sorted(DENIED_COMMANDS)).toEqual(registered.filter((command) => !allowed.has(command)));
+    it('grants only commands with a production caller', () => {
+        // The capability file died with the Tauri shell, so minimality is the
+        // check that remains: an exposed command nothing in `src/` invokes is
+        // pure attack surface and fails here until a caller exists.
+        //
+        // A string mention is a weak proxy for a caller (jcosta33/sourdaw#2221):
+        // this check passes on any quoted occurrence, reachable or not. An
+        // exposure therefore also needs the call chain verified by hand and
+        // recorded in the exposing commit.
+        const productionSource = readProductionTypescript('src');
+        for (const command of EXPOSED_COMMANDS) {
+            expect(productionSource, `no production caller for '${command}'`).toMatch(
+                new RegExp(`["']${command}["']`, 'u')
+            );
+        }
     });
 
     it('accounts for every registered command exactly once', () => {
@@ -111,6 +135,17 @@ describe('the Electron command surface', () => {
         for (const command of DENIED_COMMANDS) {
             expect(exposedChannels.has(commandChannel(command))).toBe(false);
         }
+    });
+
+    it('keeps shell runtime code out of the renderer tree', () => {
+        // Only the specs may import from `src/` (this file cross-checks the
+        // renderer's seam table). `electron/tsconfig.json` maps `#/*` for that
+        // spec-only use; this pin is what keeps the mapping from becoming a
+        // runtime dependency on the renderer bundle.
+        const shellSource = readProductionTypescript('electron');
+
+        expect(shellSource).not.toMatch(/from\s+'#\//u);
+        expect(shellSource).not.toMatch(/from\s+'\.\.\/src\//u);
     });
 });
 
@@ -275,6 +310,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['list_midi_inputs', []],
     ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
+    ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
     ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
@@ -283,6 +319,8 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['scan_plugins', ['paths']],
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],
@@ -341,30 +379,5 @@ describe('positional argument contract', () => {
             .map(([name]) => name);
 
         expect(streaming).toEqual(['provider_gateway_request']);
-    });
-});
-
-describe('deriving the granted surface from the capability', () => {
-    it('reads only the allow array, so a deny array can never be read as a grant', () => {
-        const capability = [
-            '[[permission]]',
-            'identifier = "sourdaw-commands"',
-            'commands.allow = [',
-            '    "load_plugin",',
-            '    "unload_plugin",',
-            ']',
-            'commands.deny = [',
-            '    "start_native_engine",',
-            ']',
-            '',
-        ].join('\n');
-
-        expect(tomlArray(capability, 'commands.allow')).toMatch(/load_plugin/u);
-        expect(tomlArray(capability, 'commands.allow')).not.toMatch(/start_native_engine/u);
-        expect(tomlArray(capability, 'commands.deny')).toMatch(/start_native_engine/u);
-    });
-
-    it('finds no array that is not there', () => {
-        expect(tomlArray('commands.allow = [ "a" ]', 'commands.deny')).toBeUndefined();
     });
 });

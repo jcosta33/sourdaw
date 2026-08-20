@@ -2346,10 +2346,10 @@ export default defineConfig(
             'public/',
             'coverage/',
             'storybook-static/',
-            // Standalone agent helper scripts run via
-            // `node --experimental-strip-types`, not part of the `src` app tree
-            // and intentionally excluded from tsconfig.eslint.json — ignore so
-            // the type-aware parser does not fatal on files outside any project.
+            // Standalone agent helper scripts run directly under `node`, not
+            // part of the `src` app tree and intentionally excluded from
+            // tsconfig.eslint.json — ignore so the type-aware parser does not
+            // fatal on files outside any project.
             '.agents/',
             'src/routeTree.gen.ts',
             // wasm-bindgen output. Both the glue `.js` and the `.d.ts` are
@@ -2439,7 +2439,6 @@ export default defineConfig(
                     groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],
                     pathGroups: [
                         { pattern: 'react', group: 'external', position: 'before' },
-                        { pattern: '@tauri-apps/**', group: 'external', position: 'after' },
                         { pattern: 'src/**', group: 'internal', position: 'before' },
                     ],
                     pathGroupsExcludedImportTypes: ['react'],

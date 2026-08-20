@@ -3,7 +3,7 @@
 <!--
     Hardened-runtime entitlements for the packaged Electron shell.
 
-    Relocated from `src-tauri/Entitlements.plist`. Two deliberate differences,
+    Relocated from the Tauri-era `Entitlements.plist`. Two deliberate differences,
     both forced by which runtime executes the code:
 
     - `com.apple.security.cs.allow-jit` replaces

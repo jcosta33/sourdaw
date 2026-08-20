@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isTauri, tauriListen } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopListen } from '#/utils/desktopBridge';
 
 import { listenPitchAnalysisProgress } from '../listen-pitch-analysis-progress';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(() => true),
-    tauriListen: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(() => true),
+    desktopListen: vi.fn(),
 }));
 
 describe('listenPitchAnalysisProgress', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
     });
 
     it('should listen for native progress events and forward progress values', async () => {
@@ -20,7 +20,7 @@ describe('listenPitchAnalysisProgress', () => {
         const unlisten = vi.fn();
         const callbackHolder: { current: ((payload: unknown) => void) | null } = { current: null };
 
-        vi.mocked(tauriListen).mockImplementation((_event, callback) => {
+        vi.mocked(desktopListen).mockImplementation((_event, callback) => {
             callbackHolder.current = callback;
             return Promise.resolve(unlisten);
         });
@@ -45,19 +45,19 @@ describe('listenPitchAnalysisProgress', () => {
         }
         result();
 
-        expect(tauriListen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));
+        expect(desktopListen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));
         expect(onProgress).toHaveBeenCalledExactlyOnceWith(0.42);
         expect(unlisten).toHaveBeenCalledTimes(1);
     });
 
     it('should return null without subscribing outside the desktop runtime', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
         const onProgress = vi.fn();
 
         const result = await listenPitchAnalysisProgress({ analysisId: 'analysis-1', onProgress });
 
         expect(result).toBeNull();
-        expect(tauriListen).not.toHaveBeenCalled();
+        expect(desktopListen).not.toHaveBeenCalled();
         expect(onProgress).not.toHaveBeenCalled();
     });
 });

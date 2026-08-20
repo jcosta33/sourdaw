@@ -1,5 +1,5 @@
 import { basename_from_path } from '#/utils/path-basename';
-import { readFileBytes } from '#/utils/tauriBridge';
+import { readFileBytes } from '#/utils/desktopBridge';
 
 type ReadNativeAudioFileInput = {
     path: string;

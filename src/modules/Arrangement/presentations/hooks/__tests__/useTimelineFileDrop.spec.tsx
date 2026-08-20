@@ -205,7 +205,7 @@ describe('useTimelineFileDrop', () => {
 
     // Regression (risk #4): a factory sample dragged onto the timeline carries
     // no file handle and its root is the handle-less 'browser' shim with an empty
-    // rootRef, so neither the Tauri nor the browser decode branch fires. Its
+    // rootRef, so neither the native nor the browser decode branch fires. Its
     // decoded AudioBuffer already lives in audioBufferCache under the sample id;
     // the drop must resolve audioBufferId from the cache so the clip is audible in
     // playback/export instead of silent (audioBufferId === undefined).
@@ -249,11 +249,11 @@ describe('useTimelineFileDrop', () => {
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
     });
 
-    it('reads a Tauri-root sample through the SampleLibrary resolver before decoding', async () => {
+    it('reads a native-root sample through the SampleLibrary resolver before decoding', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
-        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-tauri', buffer: { duration: 2 } });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-native', buffer: { duration: 2 } });
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
 
@@ -264,7 +264,7 @@ describe('useTimelineFileDrop', () => {
                     type === 'application/x-sourdaw-sample'
                         ? JSON.stringify({
                               name: 'Kick',
-                              id: 'tauri-kick',
+                              id: 'native-kick',
                               path: 'Drums/Kick.wav',
                               libraryRootId: 'root1',
                           })
@@ -290,7 +290,7 @@ describe('useTimelineFileDrop', () => {
                 trackId: 'new-track-id',
                 name: 'Kick',
                 type: 'audio',
-                audioBufferId: 'buf-tauri',
+                audioBufferId: 'buf-native',
                 assetHash: 'hash',
             })
         );
@@ -343,10 +343,10 @@ describe('useTimelineFileDrop', () => {
         );
     });
 
-    it('warns with the decode message when a Tauri-root sample file cannot be decoded', async () => {
+    it('warns with the decode message when a native-root sample file cannot be decoded', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
-        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
         mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
         mocks.hitTestTrack.mockReturnValue('t1');
         mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
@@ -358,9 +358,9 @@ describe('useTimelineFileDrop', () => {
                     type === 'application/x-sourdaw-sample'
                         ? JSON.stringify({
                               name: 'Broken Kick',
-                              id: 'tauri-broken-kick',
+                              id: 'native-broken-kick',
                               path: 'Drums/Broken Kick.wav',
-                              libraryRootId: 'root-tauri',
+                              libraryRootId: 'root-native',
                           })
                         : '',
                 files: [],

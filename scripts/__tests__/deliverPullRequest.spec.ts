@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,6 +14,7 @@ import {
     type ShellRunner,
     type StackedPullRequest,
 } from '../deliverPullRequest';
+import { GITHUB_HTTPS_REMOTE } from '../githubAppIdentity.ts';
 
 const body = `### 🎯 What does this PR do?
 Change.
@@ -77,7 +82,14 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                         repository: {
                             pullRequest: {
                                 reviews: {
-                                    nodes: [{ state: 'COMMENTED', commit: { oid: 'head' } }],
+                                    nodes: [
+                                        {
+                                            state: 'APPROVED',
+                                            submittedAt: '2026-08-19T00:00:00Z',
+                                            author: { login: 'jcosta33-reviewer[bot]' },
+                                            commit: { oid: 'head' },
+                                        },
+                                    ],
                                     pageInfo: { hasPreviousPage: false },
                                 },
                                 reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
@@ -192,7 +204,7 @@ function fakePort(input: FakeInput = {}) {
             }
             return current;
         },
-        reviewState: () => input.review ?? { currentHeadReviews: 3, unresolvedThreads: 0 },
+        reviewState: () => input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
         dependents: () => {
             const next = dependentSets.shift();
             if (next !== undefined) {
@@ -201,8 +213,6 @@ function fakePort(input: FakeInput = {}) {
             return [...lastDependents];
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        localHead: () => 'head',
-        localDirty: () => input.dirty ?? false,
         remoteBranchHead: () => 'base',
         merge: (number, head) => calls.push(`merge:${number}:${head}`),
         retarget: (number, base) => {
@@ -239,23 +249,52 @@ describe('pull-request delivery', () => {
     });
 
     it('rejects unresolved review before merge', () => {
-        const { port, calls } = fakePort({ review: { currentHeadReviews: 3, unresolvedThreads: 1 } });
+        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 } });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review/);
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects missing current-head review activity', () => {
-        const { port, calls } = fakePort({ review: { currentHeadReviews: 0, unresolvedThreads: 0 } });
+    it('rejects missing reviewer approval on the current head', () => {
+        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: null, unresolvedThreads: 0 } });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/no current-head review activity/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/not approved by jcosta33-reviewer\[bot\]/);
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects a dirty worktree before merge', () => {
-        const { port, calls } = fakePort({ dirty: true });
+    it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
+        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: state, unresolvedThreads: 0 } });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/working tree is dirty/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/not approved/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('merges when the local working tree is unrelated to the pull-request head', () => {
+        const { port, calls } = fakePort();
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('rejects a draft pull request', () => {
+        const { port, calls } = fakePort({ primary: [pullRequest({ isDraft: true })] });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/draft/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects a blocked merge state', () => {
+        const { port, calls } = fakePort({ primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })] });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/BLOCKED/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects an aggregate CHANGES_REQUESTED decision', () => {
+        const { port, calls } = fakePort({ primary: [pullRequest({ reviewDecision: 'CHANGES_REQUESTED' })] });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/requested changes/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -348,7 +387,14 @@ describe('delivery shell boundary', () => {
                             repository: {
                                 pullRequest: {
                                     reviews: {
-                                        nodes: [{ state: 'COMMENTED', commit: { oid: 'head' } }],
+                                        nodes: [
+                                            {
+                                                state: 'APPROVED',
+                                                submittedAt: '2026-08-19T00:00:00Z',
+                                                author: { login: 'jcosta33-reviewer[bot]' },
+                                                commit: { oid: 'head' },
+                                            },
+                                        ],
                                         pageInfo: { hasPreviousPage: false },
                                     },
                                     reviewThreads: {
@@ -392,7 +438,7 @@ describe('delivery shell boundary', () => {
         };
         const port = shellPort('jcosta33/sourdaw', shell);
 
-        expect(port.reviewState(42, 'head')).toEqual({ currentHeadReviews: 1, unresolvedThreads: 0 });
+        expect(port.reviewState(42, 'head')).toEqual({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
         port.merge(42, 'head', false);
@@ -413,7 +459,7 @@ describe('delivery shell boundary', () => {
                 '-f',
                 'sha=head',
                 '-f',
-                'merge_method=merge',
+                'merge_method=squash',
             ],
         });
         expect(runs).toContainEqual({
@@ -434,24 +480,14 @@ describe('delivery shell boundary', () => {
             'squash',
         ],
         [
-            'preserves merge commits when merge is enabled',
+            'uses squash even when merge commits are enabled',
             {
                 allow_merge_commit: true,
                 allow_rebase_merge: true,
                 allow_squash_merge: true,
                 delete_branch_on_merge: false,
             },
-            'merge',
-        ],
-        [
-            'falls back to rebase when it is the only enabled method',
-            {
-                allow_merge_commit: false,
-                allow_rebase_merge: true,
-                allow_squash_merge: false,
-                delete_branch_on_merge: false,
-            },
-            'rebase',
+            'squash',
         ],
     ])('%s', (_case, settings, expectedMethod) => {
         const { captures, port } = mergePolicyPort(mergeSettings(settings));
@@ -487,7 +523,7 @@ describe('delivery shell boundary', () => {
             })
         );
 
-        expect(() => port.merge(42, 'head', false)).toThrow(/no merge method is enabled/);
+        expect(() => port.merge(42, 'head', false)).toThrow(/squash merge is not enabled/);
         expect(captures).not.toContainEqual(
             expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
         );
@@ -525,5 +561,75 @@ describe('delivery shell boundary', () => {
         expect(captures).not.toContainEqual(
             expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
         );
+    });
+
+    it('authenticates fetch by pruning all origin heads over HTTPS', () => {
+        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
+        const runs: Array<{ command: string; args: string[] }> = [];
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => '',
+                    run: (command, args) => runs.push({ command, args }),
+                },
+                { gitToken: 'ghs_minted', helperDir }
+            );
+            port.fetch();
+            expect(runs).toHaveLength(1);
+            const args = runs[0]?.args ?? [];
+            expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
+            expect(args[3]).toMatch(/^credential\.helper=\//);
+            expect(args[3]).not.toContain('ghs_minted');
+            expect(args.slice(4)).toEqual([
+                'fetch',
+                '--prune',
+                GITHUB_HTTPS_REMOTE,
+                '+refs/heads/*:refs/remotes/origin/*',
+            ]);
+            expect(args.join('\0')).not.toContain('ghs_minted');
+            expect(args).not.toContain('--force');
+            expect(args).not.toContain('+refs/heads/main:refs/remotes/origin/main');
+        } finally {
+            rmSync(helperDir, { recursive: true, force: true });
+        }
+    });
+
+    it('treats GraphQL reviewer login without [bot] as the reviewer App', () => {
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                if (args.some((arg) => arg.startsWith('query='))) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    reviews: {
+                                        nodes: [
+                                            {
+                                                state: 'APPROVED',
+                                                submittedAt: '2026-08-19T00:00:00Z',
+                                                author: { login: 'jcosta33-reviewer' },
+                                                commit: { oid: 'head' },
+                                            },
+                                        ],
+                                        pageInfo: { hasPreviousPage: false },
+                                    },
+                                    reviewThreads: {
+                                        nodes: [{ isResolved: true }],
+                                        pageInfo: { hasNextPage: false },
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 0,
+        });
     });
 });

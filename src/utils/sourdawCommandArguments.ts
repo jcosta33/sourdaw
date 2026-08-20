@@ -2,11 +2,11 @@
  * What each Electron-exposed command's positional arguments are, in order.
  *
  * `window.sourdaw.invoke` takes a positional array — not the named record
- * Tauri's `invoke` takes — so the bridge seam has to order a caller's named
- * arguments before they cross. The order here *is* the wire contract: under
- * napi-rs a transposed pair of same-typed parameters deserializes without a
- * word and surfaces as a plugin that will not load or a request signed with
- * the wrong key.
+ * shape Tauri's `invoke` took — so the bridge seam has to order a caller's
+ * named arguments before they cross. The order here *is* the wire contract:
+ * under napi-rs a transposed pair of same-typed parameters deserializes
+ * without a word and surfaces as a plugin that will not load or a request
+ * signed with the wrong key.
  *
  * Parameter names are the addon's own snake_case; the seam derives the
  * caller-facing camelCase key from each. `on_event` stream emitters are
@@ -15,7 +15,7 @@
  *
  * Two pins keep this honest: `electron/__tests__/commands.spec.ts` proves this
  * table equal to the one derived from the addon's `#[napi]` signatures, and
- * `src/utils/__tests__/tauriBridge.spec.ts` proves the seam orders arguments
+ * `src/utils/__tests__/desktopBridge.spec.ts` proves the seam orders arguments
  * by it.
  */
 export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
@@ -58,6 +58,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['list_midi_inputs', []],
     ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
+    ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
     ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
@@ -66,6 +67,8 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['scan_plugins', ['paths']],
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],

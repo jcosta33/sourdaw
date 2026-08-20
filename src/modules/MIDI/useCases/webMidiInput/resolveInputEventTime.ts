@@ -6,7 +6,7 @@ type ResolveInputEventTimeInput = {
     /**
      * `MIDIMessageEvent.timeStamp` — a DOMHighResTimeStamp sharing the time
      * origin of `performance.now()`. `undefined` when the source cannot supply
-     * one. The Tauri bridge supplies it too: it maps midir's foreign epoch onto
+     * one. The native bridge supplies it too: it maps midir's foreign epoch onto
      * this one before handing the event over, so native input reaches here on
      * the same footing as the browser's.
      */

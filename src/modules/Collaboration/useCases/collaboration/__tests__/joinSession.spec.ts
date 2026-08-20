@@ -206,6 +206,15 @@ describe('joinSession', () => {
         ]);
     });
 
+    it('truncates an oversized host name from the invite to the shared identity bound', async () => {
+        const offer = makeOffer({ name: 'h'.repeat(200) });
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(offer));
+
+        await joinSession('invite', 'Alice');
+
+        expect(collaborationStore.value?.peers[0]?.name).toBe('h'.repeat(64));
+    });
+
     it('adopts the host-minted pendingPeerId as the joiner identity (regression: dual peer id)', async () => {
         // The host creates the PeerConnection keyed by pendingPeerId and lists
         // the joiner in its store under answer.peerId. If those differ, every

@@ -3,10 +3,9 @@
  *
  * The addon owns every decision about a plugin editor — whether it may open,
  * the CLAP lifecycle, the bookkeeping, the close/hide/show semantics. This
- * module only knows how to make a bare native window on this platform, exactly
- * as `src-tauri/src/windows.rs` does for the Tauri shell: it is the JS half of
- * the `PluginWindowHost` seam, registered as threadsafe-function callbacks at
- * startup.
+ * module only knows how to make a bare native window on this platform: it is
+ * the JS half of the `PluginWindowHost` seam, registered as
+ * threadsafe-function callbacks at startup.
  *
  * Two contracts from that seam are load-bearing here:
  *
@@ -170,9 +169,9 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         },
         show: (label) => {
             withEditor(label, (window) => {
-                // Focus-free by seam parity: Tauri's `show_window` does not
-                // steal focus, and `show_all_plugin_guis` re-focusing each
-                // editor in iteration order would land focus arbitrarily.
+                // Focus-free on purpose: a shown plugin editor must not steal
+                // focus, and `show_all_plugin_guis` re-focusing each editor in
+                // iteration order would land focus arbitrarily.
                 window.showInactive();
             });
         },

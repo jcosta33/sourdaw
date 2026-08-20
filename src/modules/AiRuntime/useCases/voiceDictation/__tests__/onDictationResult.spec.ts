@@ -6,12 +6,12 @@ const mocks = vi.hoisted(() => ({
     onVoiceDictationResult: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/repositories/voiceTauriAdapter/onDictationResult', () => ({
+vi.mock('#/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationResult', () => ({
     onDictationResult: mocks.onVoiceDictationResult,
 }));
 
 describe('onDictationResult (useCase)', () => {
-    it('forwards to the voiceTauriAdapter and maps snake_case to camelCase', async () => {
+    it('forwards to the voiceNativeAdapter and maps snake_case to camelCase', async () => {
         mocks.onVoiceDictationResult.mockImplementation(
             (handler: (payload: { text: string; duration_ms: number }) => void) => {
                 handler({ text: 'test text', duration_ms: 2000 });

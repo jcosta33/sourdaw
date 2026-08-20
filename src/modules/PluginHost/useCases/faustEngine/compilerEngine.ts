@@ -20,7 +20,7 @@ export async function getFaustCompiler(): Promise<IFaustCompiler> {
     if (!compilerState.promise) {
         compilerState.promise = (async () => {
             try {
-                // Use an origin-relative path for dev, Tauri, and hosted builds.
+                // Use an origin-relative path for dev, desktop, and hosted builds.
                 const faustPath = `${window.location.origin}/faust/libfaust-wasm.js`;
                 const module = await instantiateFaustModuleFromFile(faustPath);
                 const libFaust = new LibFaust(module);

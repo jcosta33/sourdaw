@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// A single parameter exposed by a native plugin.
 /// This is the canonical DTO for plugin parameter metadata and values,
-/// shared between the plugin host internals and the Tauri command surface.
+/// shared between the plugin host internals and the native command surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginParameter {
     pub id: u32,

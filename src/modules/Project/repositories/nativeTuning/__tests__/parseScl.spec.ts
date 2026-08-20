@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
+import { desktopInvoke } from '#/utils/desktopBridge';
 
 import { parseScl } from '../parseScl';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    desktopInvoke: vi.fn(),
 }));
 
 describe('parseScl', () => {
@@ -19,11 +19,11 @@ describe('parseScl', () => {
             description: 'A test tuning',
             frequencies: [220, 440, 880],
         };
-        vi.mocked(invoke).mockResolvedValue(nativeResult);
+        vi.mocked(desktopInvoke).mockResolvedValue(nativeResult);
 
         await expect(parseScl('! scl content')).resolves.toEqual(nativeResult);
 
-        expect(invoke).toHaveBeenCalledWith('parse_scl', {
+        expect(desktopInvoke).toHaveBeenCalledWith('parse_scl', {
             content: '! scl content',
             rootNote: 69,
             rootFreq: 440,

@@ -1,21 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { desktopSaveDialog, isTauri } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { saveProjectToFile } from '../../nativeProjectFiles/saveProjectToFile';
 import { downloadProjectFile } from '../downloadProjectFile';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(),
     desktopSaveDialog: vi.fn(),
 }));
 
 vi.mock('../../nativeProjectFiles/saveProjectToFile', () => ({
     saveProjectToFile: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-    save: vi.fn(),
 }));
 
 describe('downloadProjectFile', () => {
@@ -38,8 +34,8 @@ describe('downloadProjectFile', () => {
         vi.useRealTimers();
     });
 
-    it('should use Tauri save dialog in desktop', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+    it('should use the native save dialog on desktop', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopSaveDialog).mockResolvedValue('/path/to/save.sourdaw');
 
         await downloadProjectFile(projectData);
@@ -49,7 +45,7 @@ describe('downloadProjectFile', () => {
     });
 
     it('should use showSaveFilePicker in browser if supported', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
         const mockWritable = {
             write: vi.fn(),
             close: vi.fn(),
@@ -68,7 +64,7 @@ describe('downloadProjectFile', () => {
     });
 
     it('should fallback to anchor download if picker fails or missing', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
         // Picker missing
 
         const mockAnchor = {

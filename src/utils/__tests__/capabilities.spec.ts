@@ -11,7 +11,7 @@ import { hasSharedArrayBuffer, isCrossOriginIsolated, getRuntimeCapabilities, lo
 describe('capabilities', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        Reflect.deleteProperty(window, 'sourdaw');
         loggerMock.info.mockClear();
         loggerMock.warn.mockClear();
     });
@@ -45,24 +45,24 @@ describe('capabilities', () => {
     });
 
     describe('getRuntimeCapabilities', () => {
-        it('bundles isTauri, hasSharedArrayBuffer, and isCrossOriginIsolated into one snapshot', () => {
-            Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
+        it('bundles isDesktopRuntime, hasSharedArrayBuffer, and isCrossOriginIsolated into one snapshot', () => {
+            Object.defineProperty(window, 'sourdaw', { configurable: true, value: {} });
             vi.stubGlobal('SharedArrayBuffer', class {});
             vi.stubGlobal('crossOriginIsolated', true);
 
             expect(getRuntimeCapabilities()).toEqual({
-                isTauri: true,
+                isDesktopRuntime: true,
                 hasSharedArrayBuffer: true,
                 isCrossOriginIsolated: true,
             });
         });
 
-        it('reflects a browser tab with no Tauri host and no SAB isolation', () => {
+        it('reflects a browser tab with no desktop shell and no SAB isolation', () => {
             vi.stubGlobal('SharedArrayBuffer', undefined);
             vi.stubGlobal('crossOriginIsolated', false);
 
             expect(getRuntimeCapabilities()).toEqual({
-                isTauri: false,
+                isDesktopRuntime: false,
                 hasSharedArrayBuffer: false,
                 isCrossOriginIsolated: false,
             });
@@ -78,7 +78,7 @@ describe('capabilities', () => {
 
             expect(loggerMock.info).toHaveBeenCalledExactlyOnceWith(
                 `[capabilities] ${JSON.stringify({
-                    isTauri: false,
+                    isDesktopRuntime: false,
                     hasSharedArrayBuffer: true,
                     isCrossOriginIsolated: true,
                 })}`

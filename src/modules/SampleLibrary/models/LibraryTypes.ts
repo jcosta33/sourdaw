@@ -7,7 +7,15 @@
 
 // ── File provider abstraction ────────────────────────────────────────────────
 
-export type FileProviderKind = 'browser' | 'tauri';
+/**
+ * Which file provider backs a library root: the browser's File System Access
+ * handles, or the desktop shell's native filesystem.
+ *
+ * Roots connected before the desktop shell moved off Tauri persisted this
+ * kind under the old `'tauri'` spelling. Reading that legacy value is the
+ * persistence layer's job; nothing outside it ever sees the old spelling.
+ */
+export type FileProviderKind = 'browser' | 'desktop';
 
 export type FileEntry = {
     name: string;
@@ -32,7 +40,7 @@ export type FileStat = {
  * - `scanning`         — an indexing pass is in progress.
  * - `permission_required` — a browser handle exists but read permission lapsed
  *   (re-grantable via the OS picker without re-selecting the folder).
- * - `path_missing`     — a Tauri root whose absolute path no longer resolves on
+ * - `path_missing`     — a native root whose absolute path no longer resolves on
  *   disk (folder moved/deleted); distinct from a transient access failure.
  * - `offline`          — the root cannot be reached right now for any other
  *   reason (handle lost, IO error). Catch-all not-ready state.
@@ -51,7 +59,7 @@ export type LibraryRoot = {
     id: string;
     name: string;
     provider: FileProviderKind;
-    /** Browser: serialized FileSystemDirectoryHandle key; Tauri: absolute path */
+    /** Browser: serialized FileSystemDirectoryHandle key; native: absolute path */
     rootRef: string;
     /** Browser FileSystemDirectoryHandle (runtime only, not serialized) */
     handle?: FileSystemDirectoryHandle;
@@ -225,7 +233,7 @@ export function isAudioFile(filename: string): boolean {
  * `AudioContext.decodeAudioData` frequently cannot decode (no native codec):
  * AIFF, FLAC, and AAC/M4A all depend on the platform's codec set and commonly
  * throw on decode in Chromium/Firefox. We still index these files (they are real
- * audio, and the Tauri build can decode them natively), but the preview UI uses
+ * audio, and the desktop build can decode them natively), but the preview UI uses
  * this set to badge them as "may not preview" and to explain a failed decode
  * rather than swallowing it silently.
  */

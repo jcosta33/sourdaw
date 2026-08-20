@@ -11,8 +11,9 @@ export type StorageAdapter<TData> = {
      *
      *  Implemented by adapters whose backing store can refuse a write for
      *  reasons the caller did not cause and cannot fix — a full origin quota, a
-     *  `localStorage` that throws `SecurityError` outright (Safari private
-     *  mode). `set` propagates those so a caller that can retry does; `trySet`
+     *  `localStorage` that throws `SecurityError` outright because storage
+     *  access is blocked for the origin. `set` propagates those so a caller
+     *  that can retry does; `trySet`
      *  is for callers that cannot, which is not a small set: every store
      *  declared at module scope seeds itself during module evaluation, where a
      *  throw aborts the ES module graph before any app-level catch exists.

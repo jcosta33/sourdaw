@@ -38,13 +38,6 @@ pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String>
     std::fs::write(&file_path, &data).map_err(|e| format!("Failed to write file: {}", e))
 }
 
-/// Name the shell addresses the destination path of `write_file_bytes` by.
-///
-/// The Tauri shell sends it as a percent-encoded header because the invoke body
-/// is fully occupied by the payload; the Node addon passes the path directly.
-/// The name is shared so both report the same thing when it is missing.
-pub const FILE_PATH_HEADER: &str = "x-sourdaw-path";
-
 /// Write raw bytes to a file.
 ///
 /// The payload arrives as bytes rather than as a JSON number array, so a
@@ -326,8 +319,4 @@ mod tests {
             "Path is outside allowed native file roots"
         );
     }
-
-    // The percent-decoder tests moved with the decoder itself into
-    // `commands::binary_ipc`, which now owns the one shared header-validation
-    // chain for every raw-body command.
 }

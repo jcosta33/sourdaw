@@ -394,6 +394,13 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 }
             }
 
+            // The touched-strip report law (`AudioGraphStripReport`) is
+            // satisfied here by refusal: this backend refuses `insert-device`
+            // and `remove-device` outright (above), so the only chain-touching
+            // commands it can apply are the creates — whose reports
+            // `applyCommand` answers. Widening the reports without widening
+            // the vocabulary would be dead code reporting strips no command
+            // here can touch.
             const reports: AudioGraphStripReport[] = [];
             for (const command of batch.commands) {
                 // Deliberately not caught. A device the product claims and this

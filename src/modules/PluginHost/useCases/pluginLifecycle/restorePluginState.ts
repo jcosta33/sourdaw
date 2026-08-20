@@ -11,7 +11,7 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
  * `loadPlugin` runs only once instantiation has settled. It is queued immediately
  * after instantiation, NOT synchronized with the first audio block — a running
  * native engine can process a few default-state blocks before this IPC lands. A
- * blank chunk is a no-op; the repository stubs out in browser dev mode (no Tauri).
+ * blank chunk is a no-op; the repository stubs out in browser dev mode (no desktop bridge).
  */
 export function restorePluginState(instanceId: string, stateChunk: string): Promise<void> {
     return serializePluginLifecycle(instanceId, async () => {

@@ -1,50 +1,50 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
+import { desktopInvoke } from '#/utils/desktopBridge';
 
 import { invokeAI } from '../invokeAI';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    desktopInvoke: vi.fn(),
 }));
 
 describe('invokeAI repository', () => {
-    const originalTauriDescriptor = Object.getOwnPropertyDescriptor(window, '__TAURI_INTERNALS__');
+    const originalBridgeDescriptor = Object.getOwnPropertyDescriptor(window, 'sourdaw');
 
-    function restoreTauriMarker(): void {
-        if (originalTauriDescriptor) {
-            Object.defineProperty(window, '__TAURI_INTERNALS__', originalTauriDescriptor);
+    function restoreDesktopBridge(): void {
+        if (originalBridgeDescriptor) {
+            Object.defineProperty(window, 'sourdaw', originalBridgeDescriptor);
             return;
         }
 
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        Reflect.deleteProperty(window, 'sourdaw');
     }
 
     beforeEach(() => {
-        vi.mocked(invoke).mockReset();
+        vi.mocked(desktopInvoke).mockReset();
     });
 
     afterEach(() => {
-        restoreTauriMarker();
+        restoreDesktopBridge();
     });
 
-    it('should throw error if not in a Tauri desktop environment', async () => {
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+    it('should throw error if not in a desktop environment', async () => {
+        Reflect.deleteProperty(window, 'sourdaw');
 
-        await expect(invokeAI('test_cmd')).rejects.toThrow('Native AI features require Tauri desktop environment');
-        expect(invoke).not.toHaveBeenCalled();
+        await expect(invokeAI('test_cmd')).rejects.toThrow('Native AI features require');
+        expect(desktopInvoke).not.toHaveBeenCalled();
     });
 
-    it('should call tauri invoke when the Tauri v2 runtime marker is present', async () => {
-        vi.mocked(invoke).mockResolvedValue('ok');
-        Object.defineProperty(window, '__TAURI_INTERNALS__', {
+    it('should call the desktop bridge when the preload published window.sourdaw', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue('ok');
+        Object.defineProperty(window, 'sourdaw', {
             configurable: true,
             value: {},
         });
 
         const result = await invokeAI('test_cmd', { arg: 1 });
 
-        expect(invoke).toHaveBeenCalledWith('test_cmd', { arg: 1 });
+        expect(desktopInvoke).toHaveBeenCalledWith('test_cmd', { arg: 1 });
         expect(result).toBe('ok');
     });
 });

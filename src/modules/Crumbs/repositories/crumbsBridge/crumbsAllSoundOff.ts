@@ -1,8 +1,8 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 export async function crumbsAllSoundOff(instanceId: string): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('crumbs_all_sound_off', { instanceId });
+    await desktopInvoke('crumbs_all_sound_off', { instanceId });
 }

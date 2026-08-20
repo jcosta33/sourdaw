@@ -1,4 +1,4 @@
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { BACTERIA_DESCRIPTOR } from './PluginDescriptors/BacteriaDescriptor';
@@ -173,7 +173,8 @@ export function getPluginById(pluginId: string): PluginDescriptor | undefined {
 /**
  * Check whether a device type is supported on the current runtime.
  * Returns false for native-only plugins when running on web.
- * Native (Tauri) can run both web and native plugins since it uses WebView + Web Audio.
+ * The desktop app can run both web and native plugins since it uses a Chromium
+ * renderer + Web Audio.
  */
 export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
     const descriptor = BUILTIN_PLUGINS.find((param) => param.id === deviceType);
@@ -184,7 +185,7 @@ export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean 
     if (platform === 'both') {
         return true;
     }
-    const isNativeRuntime = isTauri();
+    const isNativeRuntime = isDesktopRuntime();
     if (isNativeRuntime) {
         return true;
     } // native can run both web and native plugins

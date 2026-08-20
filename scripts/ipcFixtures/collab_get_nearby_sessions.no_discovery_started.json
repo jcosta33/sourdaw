@@ -1,7 +1,0 @@
-{
-    "args": {},
-    "case": "no_discovery_started",
-    "command": "collab_get_nearby_sessions",
-    "outcome": "ok",
-    "payload": []
-}

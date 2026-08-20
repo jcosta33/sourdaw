@@ -392,7 +392,7 @@ export const moveClip = (input: MoveClipInput): void => {
 
 - call React hooks
 - own rendering logic
-- directly contain browser/Tauri I/O if that I/O belongs in a repository/adapter
+- directly contain browser/desktop I/O if that I/O belongs in a repository/adapter
 - become generic dumping grounds for unrelated helper logic
 
 ### One function per file
@@ -582,7 +582,7 @@ A repository may access:
 - Web Audio API
 - localStorage / IndexedDB
 - fetch / WebSocket
-- Tauri `invoke` / `listen`
+- `desktopInvoke` / `desktopListen`
 - filesystem APIs
 - third-party libraries with side effects
 - plugin host bridges
@@ -720,7 +720,7 @@ Classes resolve to their registered instance in the container. Injectables resol
 | -------------------------------------- | ------- | ------------------------------------------------------------------------ |
 | Use cases                              | **Yes** | Orchestrate repos/services, need to be mockable                          |
 | Event subscribers                      | **Yes** | Need the EventBus + a service chain                                      |
-| Repositories with service dependencies | **Yes** | Logger, EventBus, Tauri shims                                            |
+| Repositories with service dependencies | **Yes** | Logger, EventBus, desktop bridge shims                                   |
 | Pure transformers                      | No      | Pure functions need nothing from the container                           |
 | Validators / services (no I/O)         | No      | Pure functions                                                           |
 | Models                                 | No      | Data                                                                     |
@@ -934,7 +934,7 @@ useCases
   -> events
 
 repositories
-  -> external APIs / metal (Tauri, FS, decode, …)
+  -> external APIs / metal (desktop bridge, FS, decode, …)
   -> same-module models, transformers, services, stores (read/write of owned store state is common)
   -> shared helpers/types if truly generic
   -> NOT useCases, handlers, presentations, events, or foreign module stores/contracts
@@ -1209,7 +1209,7 @@ AudioEngine/
 │   └── engineStatusStore.ts
 ├── repositories/
 │   ├── createWebAudioEngine.ts
-│   └── createTauriEngineAdapter.ts
+│   └── createDesktopEngineAdapter.ts
 ├── engine/
 │   ├── AudioEngine.ts
 │   ├── TrackNode.ts
@@ -1360,7 +1360,7 @@ They are the public UI surface for the module.
 | ----------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------- |
 | class-based domain models owning logic and runtime concerns | mixes truth and behavior awkwardly        | use plain types + functions                     |
 | repository emits domain events or multi-step orchestration  | I/O layer becomes business layer          | move orchestration to use case; thin store get/set for owned state may stay in-repo |
-| use case directly calls browser/Tauri APIs everywhere       | write boundary leaks I/O details          | isolate I/O in repositories                     |
+| use case directly calls browser/desktop APIs everywhere     | write boundary leaks I/O details          | isolate I/O in repositories                     |
 | presentation hook owns validation + persistence + runtime   | UI becomes business layer                 | thin hook, explicit use case                    |
 | presentation store imported cross-module                    | private UI state becomes contract surface | move to business `stores/` only if truly shared |
 | renderer mutates truth during draw                          | hot path becomes hidden write layer       | route writes through useCases                   |

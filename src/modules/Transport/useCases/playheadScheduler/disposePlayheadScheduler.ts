@@ -7,15 +7,13 @@ import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinu
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 /**
- * Tear down all process-lifetime scheduler state. `schedulerSession` and
- * `sessionState.requestedAssets` (in scheduleAudioClips) plus the GainNode pool
- * are module-level holders that otherwise survive an HMR reload or a project
- * switch — the old `tick` worker keeps running against stale closures, the
- * dedup Sets keep clips suppressed, and the pool keeps GainNodes wired into a
- * discarded AudioContext alive. Disposing terminates the worker, stops active
- * sources, clears every dedup Set and the requested-asset set, drops the stop
- * callback, and resets the change-detection signatures so a fresh session
- * starts clean.
+ * Tear down all process-lifetime scheduler state. `schedulerSession` and the
+ * GainNode pool are module-level holders that otherwise survive an HMR reload
+ * or a project switch — the old `tick` worker keeps running against stale
+ * closures, the dedup Sets keep clips suppressed, and the pool keeps GainNodes
+ * wired into a discarded AudioContext alive. Disposing terminates the worker,
+ * stops active sources, clears every dedup Set, drops the stop callback, and
+ * resets the change-detection signatures so a fresh session starts clean.
  *
  * The Vite HMR dispose hook that invokes this lives in
  * `startPlayheadScheduler.ts` — the scheduler module in the production import

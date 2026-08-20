@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
     parseWorktrees,
     removeLane,
+    resolveLaneTarget,
     shellPort,
     type LaneRemovalPort,
     type PullRequest,
@@ -138,6 +139,41 @@ describe('lane removal', () => {
         removeLane(target, port);
 
         expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+    });
+
+    it('removes an author-locked lane without dropping the lock on failure', () => {
+        const { port, calls } = fakePort({
+            lane: worktree({ locked: true, lockReason: 'active:sourdaw-author' }),
+            dirty: true,
+        });
+
+        expect(() => removeLane(target, port)).toThrow(/dirty/);
+        expect(calls).toEqual(['fetch']);
+        expect(calls.some((call) => call.startsWith('unlock:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    });
+
+    it('unlocks an author lock only after successful removal', () => {
+        const { port, calls } = fakePort({
+            lane: worktree({ locked: true, lockReason: 'active:sourdaw-author' }),
+        });
+
+        removeLane(target, port);
+
+        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`]);
+    });
+});
+
+describe('lane path resolution', () => {
+    it('resolves relative lane paths from the primary root', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-target-'));
+        try {
+            const lane = join(repository, '.agents/worktrees/feature');
+            mkdirSync(lane, { recursive: true });
+            expect(resolveLaneTarget('.agents/worktrees/feature', repository)).toBe(realpathSync(lane));
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
 });
 

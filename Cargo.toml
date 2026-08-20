@@ -9,10 +9,16 @@ members = [
     "crates/daw-plugin-host",
     "crates/proof-chamber",
     "crates/scoring",
-    "crates/sourdaw-native",
-    "src-tauri"
+    "crates/sourdaw-native"
 ]
 resolver = "2"
+
+[workspace.dependencies]
+# The Windows device layer (ADR 0027) reaches IAudioClient3 and WASAPI
+# Exclusive through the platform's own bindings. Pinned to the version
+# already present in the lockfile through cpal's Windows dependency tree,
+# so both resolve to one copy.
+windows = "0.61.3"
 
 [profile.release]
 opt-level = 3
@@ -33,7 +39,7 @@ split-debuginfo = "unpacked"
 #
 # `panic = "abort"` is deliberately NOT set on this shared release profile:
 # Cargo profiles cannot be scoped by target, so setting it here would also
-# switch the native Tauri/CPAL build from unwinding to aborting — an
-# out-of-scope change to desktop crash semantics (loss of unwind-based
-# isolation around Tauri command dispatch). The native build keeps its default
-# unwind strategy; the wasm build is abort-by-target with a loud panic hook.
+# switch the native CPAL build from unwinding to aborting — an out-of-scope
+# change to desktop crash semantics (loss of unwind-based isolation around
+# native command dispatch). The native build keeps its default unwind
+# strategy; the wasm build is abort-by-target with a loud panic hook.

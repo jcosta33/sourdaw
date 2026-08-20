@@ -4,7 +4,7 @@
  * Activation registers the caller's sink here; `watchExternalPluginLatency`
  * dispatches every runtime latency change the native host pushes to the sink for
  * that instance. Keeping the sinks in one map is what lets a single
- * `plugin-latency-changed` subscription serve every loaded plugin — the Tauri
+ * `plugin-latency-changed` subscription serve every loaded plugin — the native
  * event is a broadcast, so one listener per instance would hand every listener
  * every other plugin's changes.
  *

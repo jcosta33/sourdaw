@@ -1,4 +1,4 @@
-import { writeFileBytes } from '#/utils/tauriBridge';
+import { writeFileBytes } from '#/utils/desktopBridge';
 
 type WriteDawProjectFileInput = {
     bytes: Uint8Array;

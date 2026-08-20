@@ -18,7 +18,7 @@ import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
-import { gainNodePool, sessionState } from './audioClipSchedulingState';
+import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 
@@ -44,8 +44,8 @@ function releaseGainNode(node: GainNode, ctx: BaseAudioContext): void {
     }
 }
 
-// Vite HMR: clear the pool + asset dedup before this module is replaced so a
-// fresh AudioContext never inherits GainNodes wired into the disposed graph.
+// Vite HMR: clear the pool before this module is replaced so a fresh
+// AudioContext never inherits GainNodes wired into the disposed graph.
 import.meta.hot?.dispose(() => {
     disposeAudioClipScheduling();
 });
@@ -111,10 +111,16 @@ export function scheduleAudioClips(
                 if (!isRecordingClip) {
                     const inSession = collaborationStore.value?.isEnabled ?? false;
                     if (inSession && clip.assetHash) {
-                        if (!sessionState.requestedAssets.has(clip.assetHash)) {
-                            sessionState.requestedAssets.add(clip.assetHash);
-                            getAssetTransfer()?.requestAsset(clip.assetHash);
-                        }
+                        // Deliberately unconditional: AssetTransfer owns both the
+                        // dedup and the retry policy, because only it knows
+                        // whether a request is still alive. It drops calls while
+                        // one is outstanding or in flight, holds a cooldown after
+                        // an abort, and abandons a hash that keeps failing. A
+                        // dedup Set here instead recorded "asked once, ever":
+                        // after a corrupt chunk or a dead sender aborted the
+                        // transfer, the asset could never be re-requested for the
+                        // rest of the session and the clip stayed silent forever.
+                        getAssetTransfer()?.requestAsset(clip.assetHash);
                     } else {
                         notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
                         scheduledAudioClipsSet.add(clipKey);

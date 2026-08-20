@@ -218,8 +218,8 @@ unsafe extern "C" fn host_gui_request_resize(
     height: u32,
 ) -> bool {
     let _ = (width, height);
-    // TODO: Resize the Tauri window to match
-    // For now, accept but don't actually resize
+    // Accepted without applying: routing this to the shell window's set_size
+    // callback is #2174.
     true
 }
 

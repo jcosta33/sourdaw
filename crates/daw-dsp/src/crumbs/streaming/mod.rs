@@ -6,7 +6,7 @@
 ///   - Scheduler: priority ordering of read requests, most-starved voice first
 ///
 /// Everything here is single-threaded and synchronous. The types are driven by
-/// whichever thread the integration layer (daw-engine / src-tauri) calls them
+/// whichever thread the integration layer (daw-engine / sourdaw-native) calls them
 /// from; it owns the reader thread, the file handles, and any cross-thread
 /// handoff. Nothing in this crate is wait-free or lock-free by construction —
 /// there is not an atomic in the module — so a caller that wants an audio

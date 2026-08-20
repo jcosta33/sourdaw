@@ -9,7 +9,7 @@ import { usePromptDialog } from './usePromptDialog';
  * Async single-field text-prompt dialog. Subscribes to the `ui.prompt` event
  * bus channel; `promptUser(...)` from `#/utils/Notification/promptUser` is the
  * producer side. Themed sibling of `ConfirmDialog` — replaces `window.prompt`,
- * which blocks the JS event loop and is unavailable in some Tauri webviews.
+ * which blocks the JS event loop.
  *
  * Mounted once at the top of AppShell, next to ConfirmDialog.
  */

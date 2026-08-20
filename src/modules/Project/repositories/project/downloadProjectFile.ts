@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { desktopSaveDialog, isTauri } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
@@ -13,13 +13,13 @@ type WindowWithFilePicker = Window & {
 
 /**
  * Download a project as a .sourdaw file.
- * Uses Tauri native save for desktop, and File System Access API for web (with anchor fallback).
+ * Uses the native save dialog for desktop, and File System Access API for web (with anchor fallback).
  */
 export async function downloadProjectFile(data: ProjectData): Promise<void> {
     const safeName = data.meta.name.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${safeName}.sourdaw`;
 
-    if (isTauri()) {
+    if (isDesktopRuntime()) {
         const filePath = await desktopSaveDialog({
             defaultPath: filename,
             filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],

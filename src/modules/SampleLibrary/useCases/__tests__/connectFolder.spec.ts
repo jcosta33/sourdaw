@@ -29,7 +29,7 @@ describe('connectFolder', () => {
         vi.clearAllMocks();
     });
 
-    it('returns null when no directory picker is available (and not in Tauri)', async () => {
+    it('returns null when no directory picker is available (and not in the desktop app)', async () => {
         // jsdom does not implement showDirectoryPicker
         delete (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker;
         const result = await connectFolder();

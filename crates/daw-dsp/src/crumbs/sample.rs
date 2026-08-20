@@ -181,7 +181,7 @@ impl SamplePool {
     ///
     /// Replacing an occupied slot drops the `Arc` that was there. The command
     /// side keeps its own clone of every sample it mirrors in (`instance
-    /// .samples` in `src-tauri`), and its ids come from a monotonic counter, so
+    /// .samples` in `sourdaw-native`), and its ids come from a monotonic counter, so
     /// the audio-thread path neither reuses a slot nor holds the last
     /// reference; the free, when it comes, happens where the sample map is
     /// cleared.

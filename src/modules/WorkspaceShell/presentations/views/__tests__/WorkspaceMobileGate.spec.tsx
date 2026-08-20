@@ -134,7 +134,7 @@ describe('WorkspaceMobileGate', () => {
 
     it('preserves shell state when a desktop window is resized below the breakpoint and back', () => {
         // 200% browser zoom on a 1400px window, DevTools docked to the side, or a
-        // dragged-narrow Tauri window all put `innerWidth` under 768 mid-session.
+        // dragged-narrow desktop app window all put `innerWidth` under 768 mid-session.
         setViewportWidth(1440);
 
         render(

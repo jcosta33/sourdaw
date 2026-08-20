@@ -74,7 +74,10 @@ export const TransportBar = (): ReactElement => {
             aria-label="Transport controls"
         >
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
-            <div className="flex w-full flex-1 min-h-[40px] items-center px-2">
+            <div
+                className="desktop-titlebar-region flex w-full flex-1 min-h-[40px] items-center px-2"
+                data-testid="window-titlebar-region"
+            >
                 {/* Left wing (flex-1 basis-0 ensures the center is absolutely geometrically centered) */}
                 <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">
                     <ProjectName name={project.name} dirty={project.dirty} />

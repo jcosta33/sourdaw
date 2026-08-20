@@ -3,7 +3,7 @@
  *
  * Detection order:
  *  1. Browser SpeechRecognition API (Chrome/Edge)
- *  2. Whisper native via Tauri IPC (desktop builds, auto-downloads model)
+ *  2. Whisper native via desktop IPC (desktop builds, auto-downloads model)
  */
 
 import { useEffect, useRef, useState } from 'react';

@@ -1,6 +1,6 @@
 /**
  * Orchestrate loading a sample into the crumbs engine.
- * Calls the Tauri backend, updates stores with metadata and waveform.
+ * Calls the native backend, updates stores with metadata and waveform.
  */
 
 import { logger } from '#/infra/logger/appLogger';

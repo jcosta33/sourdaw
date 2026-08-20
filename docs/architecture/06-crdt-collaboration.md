@@ -73,7 +73,7 @@ Collaboration ships three independent connectivity paths. They share the documen
 
 1. **Serverless WebRTC.** Manual offer/answer exchange, with QR-code invites (`qrcode` dependency) for phone-to-desktop pairing. `Collaboration/repositories/peerConnection.ts` wraps raw `RTCPeerConnection`; `generateInvite.ts` / `acceptAnswer.ts` drive the handshake. No server involved — signaling is copy-paste or camera.
 2. **WebSocket relay.** A standalone package at repo-root `server/` (`sourdaw-collab-server`): a small `ws` relay on port 8787 handling session/peer registry, host migration, and the message types `join/leave/action/cursor/sync-request/sync-response/state-update`. It is deliberately *not* in the pnpm workspace (own `package-lock.json` and tsconfig); `scripts/health-gates-server.sh` builds it during explicit full validation. Startup requires a 32–128 character base64url `COLLAB_AUTH_TOKEN`; clients send `sourdaw` and that token as WebSocket subprotocols. The relay binds `127.0.0.1` unless `COLLAB_HOST` is explicitly set and applies configurable connection, session, peer, payload, rate, and outbound-buffer limits.
-3. **Native LAN.** The `daw-collab` crate advertises and browses mDNS (`_sourdaw._tcp.local.`) and exposes session management through 11 `collab_*` Tauri commands (create/save/load/merge/apply + advertising/browsing lifecycle).
+3. **Native LAN.** The `daw-collab` crate advertises and browses mDNS (`_sourdaw._tcp.local.`) and exposes session management through the `collab_*` native commands (create/save/load/merge/apply + advertising/browsing lifecycle).
 
 ## 5. Invariants
 

@@ -10,6 +10,13 @@
     // typecheck:electron` still runs the sibling project, which includes them.
     "extends": "./tsconfig.json",
     "compilerOptions": {
+        // Emit lives here, not in the sibling: the sibling is the
+        // typecheck-only project whose spec scope reaches into `src/` for the
+        // seam cross-check, and an emit-capable project would reject that
+        // reach as outside `rootDir`.
+        "noEmit": false,
+        "outDir": "./out",
+        "rootDir": ".",
         // A packaged main process is not a debugging surface; maps in the
         // asar are source disclosure plus weight.
         "sourceMap": false

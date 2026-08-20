@@ -1,11 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, libraryStore, setActiveRoot } from '../../stores/libraryStore';
-import { readTauriDirectory } from '../readTauriDirectory';
+import { readNativeDirectory } from '../readNativeDirectory';
 
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 import { ACTIVE_ROOT_KEY } from './persistSamples';
@@ -14,8 +14,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-function isRootProvider(value: unknown): value is LibraryRoot['provider'] {
-    return value === 'browser' || value === 'tauri';
+/**
+ * The spelling `'tauri'` carried on disk before the desktop shell moved off
+ * Tauri. Roots connected then are still in IndexedDB, so it is accepted on
+ * read and mapped forward to `'desktop'`. Nothing writes it anymore:
+ * `parseLibraryRoot` hands the store the normalized kind, and
+ * `persistLibraryRoots` serializes what the store holds.
+ */
+const LEGACY_DESKTOP_PROVIDER = 'tauri';
+
+/**
+ * Read a persisted provider kind, or `null` when the value is not one this
+ * build understands. A root whose provider cannot be resolved is dropped rather
+ * than restored into a state no scanner will service.
+ */
+function parseRootProvider(value: unknown): LibraryRoot['provider'] | null {
+    if (value === LEGACY_DESKTOP_PROVIDER) {
+        return 'desktop';
+    }
+    if (value === 'browser' || value === 'desktop') {
+        return value;
+    }
+    return null;
 }
 
 function isRootStatus(value: unknown): value is LibraryRoot['status'] {
@@ -58,10 +78,11 @@ function parseLibraryRoot(value: unknown): LibraryRoot | null {
     if (!isRecord(value) || !isRecord(value.settings)) {
         return null;
     }
+    const provider = parseRootProvider(value.provider);
     if (
         typeof value.id !== 'string' ||
         typeof value.name !== 'string' ||
-        !isRootProvider(value.provider) ||
+        provider === null ||
         typeof value.rootRef !== 'string' ||
         !isOptionalNonnegativeNumber(value.connectedAt) ||
         typeof value.connectedAt !== 'number' ||
@@ -78,7 +99,7 @@ function parseLibraryRoot(value: unknown): LibraryRoot | null {
     const root: LibraryRoot = {
         id: value.id,
         name: value.name,
-        provider: value.provider,
+        provider,
         rootRef: value.rootRef,
         connectedAt: value.connectedAt,
         status: value.status,
@@ -205,17 +226,17 @@ function isNativeChildListingError(error: unknown): boolean {
 }
 
 /**
- * Validate that a restored Tauri root's absolute path still resolves on disk.
+ * Validate that a restored native root's absolute path still resolves on disk.
  * Returns the status the root should take: `ready` when the path exists,
  * `path_missing` when it provably does not, and `offline` when we cannot tell
- * (not in a Tauri runtime, no path recorded, or the check itself failed).
+ * (not in a desktop runtime, no path recorded, or the check itself failed).
  */
-async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['status']> {
-    if (!isTauri() || !root.rootRef) {
+async function resolveNativeRootStatus(root: LibraryRoot): Promise<LibraryRoot['status']> {
+    if (!isDesktopRuntime() || !root.rootRef) {
         return 'offline';
     }
     try {
-        await readTauriDirectory({ path: root.rootRef });
+        await readNativeDirectory({ path: root.rootRef });
         return 'ready';
     } catch (error) {
         if (isNativeMissingDirectoryError(error)) {
@@ -289,11 +310,11 @@ export async function restoreLibrary(): Promise<string[]> {
                     root.status = 'offline';
                 }
             } else {
-                // Tauri: cheaply confirm the absolute path still resolves before
+                // Native: cheaply confirm the absolute path still resolves before
                 // claiming the root is ready. A moved/deleted folder restores as
                 // path_missing instead of a falsely-ready root that fails on first
                 // access with no explanation.
-                root.status = await resolveTauriRootStatus(root);
+                root.status = await resolveNativeRootStatus(root);
             }
         }
 

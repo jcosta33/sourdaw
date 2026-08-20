@@ -1,6 +1,6 @@
 import { isAppError } from '#/infra/errors/isAppError';
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { denoiseAudio } from '../nativeAiBridge/denoiseAudio';
@@ -29,7 +29,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
 
         let outNoiseFloor = -60;
 
-        if (isTauri()) {
+        if (isDesktopRuntime()) {
             const samples = buffer.getChannelData(0);
             const res = await denoiseAudio(samples, buffer.sampleRate, buffer.numberOfChannels, strength);
             outNoiseFloor = res.noise_floor_db;

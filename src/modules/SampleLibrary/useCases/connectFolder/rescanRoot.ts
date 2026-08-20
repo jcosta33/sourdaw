@@ -1,7 +1,7 @@
 import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
 
 import { scanBrowserDirectory } from './scanBrowserDirectory';
-import { scanTauriDirectory } from './scanTauriDirectory';
+import { scanNativeDirectory } from './scanNativeDirectory';
 
 /**
  * Rescan a library root — re-traverse and reconcile.
@@ -29,8 +29,8 @@ export async function rescanRoot(rootId: string): Promise<void> {
     if (root.provider === 'browser' && root.handle) {
         updateLibraryRootStatus(rootId, 'scanning');
         await scanBrowserDirectory(root);
-    } else if (root.provider === 'tauri') {
+    } else if (root.provider === 'desktop') {
         updateLibraryRootStatus(rootId, 'scanning');
-        await scanTauriDirectory(root);
+        await scanNativeDirectory(root);
     }
 }

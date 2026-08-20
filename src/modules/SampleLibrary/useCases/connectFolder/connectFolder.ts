@@ -1,12 +1,12 @@
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { basename_from_path } from '#/utils/path-basename';
-import { isTauri } from '#/utils/tauriRuntime';
 
 import { type LibraryRoot } from '../../models/LibraryTypes';
-import { pickTauriSampleFolder } from '../../repositories/pickTauriSampleFolder';
+import { pickNativeSampleFolder } from '../../repositories/pickNativeSampleFolder';
 import { addLibraryRoot } from '../../stores/libraryStore';
 
 import { scanBrowserDirectory } from './scanBrowserDirectory';
-import { scanTauriDirectory } from './scanTauriDirectory';
+import { scanNativeDirectory } from './scanNativeDirectory';
 
 async function connectFolderBrowser(): Promise<string | null> {
     // Check for File System Access API support
@@ -43,9 +43,9 @@ async function connectFolderBrowser(): Promise<string | null> {
     }
 }
 
-async function connectFolderTauri(): Promise<string | null> {
+async function connectFolderNative(): Promise<string | null> {
     try {
-        const selected = await pickTauriSampleFolder();
+        const selected = await pickNativeSampleFolder();
         if (!selected) {
             return null;
         }
@@ -56,7 +56,7 @@ async function connectFolderTauri(): Promise<string | null> {
         const root: LibraryRoot = {
             id,
             name: folderName,
-            provider: 'tauri',
+            provider: 'desktop',
             rootRef: selected,
             connectedAt: Date.now(),
             status: 'scanning',
@@ -67,7 +67,7 @@ async function connectFolderTauri(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        void scanTauriDirectory(root);
+        void scanNativeDirectory(root);
 
         return id;
     } catch {
@@ -80,8 +80,8 @@ async function connectFolderTauri(): Promise<string | null> {
  * Returns the root ID if successful, null if cancelled.
  */
 export async function connectFolder(): Promise<string | null> {
-    if (isTauri()) {
-        return connectFolderTauri();
+    if (isDesktopRuntime()) {
+        return connectFolderNative();
     }
 
     return connectFolderBrowser();

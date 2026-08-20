@@ -56,22 +56,22 @@ describe('getFactoryPresets platform cache', () => {
     });
 
     afterEach(() => {
-        const internalsKey = '__TAURI_INTERNALS__';
+        const bridgeKey = 'sourdaw';
         const windowRecord = globalThis.window as unknown as Record<string, unknown>;
-        if (internalsKey in windowRecord) {
-            delete windowRecord[internalsKey];
+        if (bridgeKey in windowRecord) {
+            delete windowRecord[bridgeKey];
         }
     });
 
-    it('rebuilds the cache when the runtime switches to the native (Tauri) platform', async () => {
+    it('rebuilds the cache when the runtime switches to the native desktop platform', async () => {
         const { getFactoryPresets: freshGetFactoryPresets } = await import('../soundPresetLibrary');
 
-        // Web platform (no Tauri internals): builds and caches the web catalogue.
+        // Web platform (no desktop bridge): builds and caches the web catalogue.
         const webPresets = freshGetFactoryPresets();
 
         // Switch the runtime to native — the cached platform key no longer
         // matches, so the catalogue must be rebuilt.
-        (globalThis.window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        (globalThis.window as unknown as Record<string, unknown>).sourdaw = {};
         const nativePresets = freshGetFactoryPresets();
 
         // Native rebuild invalidates the web cache entry, producing a fresh array.

@@ -17,6 +17,20 @@
     }
 }
 
+@media (display-mode: window-controls-overlay) {
+    .desktop-titlebar-region {
+        margin-left: env(titlebar-area-x, 0px);
+        width: env(titlebar-area-width, 100%);
+        -webkit-app-region: drag;
+        app-region: drag;
+    }
+
+    .desktop-titlebar-region :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
+    }
+}
+
 /* ── DAW-specific utilities ────────────────────────────────────────────── */
 @utility panel-raised {
     background: var(--color-bg-panel);
@@ -624,13 +638,6 @@
     transform: translateY(-1px);
 }
 
-/* Tauri specific font-weight compensation for Linux WebKitGTK */
-[data-platform='linux'] {
-    --weight-normal: 300;
-    --weight-medium: 400;
-    --weight-semibold: 500;
-}
-
 /* ── Global scrollbar styling ───────────────────────────────────────────── */
 /* Firefox */
 * {
@@ -638,7 +645,7 @@
     scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 
-/* Chrome / Safari / Edge (WebKit) */
+/* Chromium's scrollbar pseudo-elements; every renderer this app ships on. */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

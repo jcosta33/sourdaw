@@ -3,11 +3,7 @@ import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { createExportError } from '../errors/ExportError';
-import {
-    type AudioGraphApplyResult,
-    type AudioGraphCommand,
-    type AudioGraphRouteTarget,
-} from '../models/AudioGraphBackend';
+import { type AudioGraphApplyResult, type AudioGraphCommand } from '../models/AudioGraphBackend';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
@@ -17,17 +13,18 @@ import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
-import {
-    createWebAudioOfflineBackend,
-    type WebAudioOfflineBackend,
-} from './offlineRender/createWebAudioOfflineBackend';
+import { createOfflineRenderBackend } from './offlineRender/createOfflineRenderBackend';
+import { type WebAudioOfflineBackend } from './offlineRender/createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
+import { renderOfflineWithNativeEngine } from './offlineRender/renderOfflineWithNativeEngine';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
+import { resolveOutputTarget } from './offlineRender/resolveOutputTarget';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
+import { selectOfflineRenderEngine } from './offlineRender/selectOfflineRenderEngine';
 import { shouldCreateOfflineStrip } from './offlineRender/shouldCreateOfflineStrip';
 import {
     type OfflineBusStrip,
@@ -58,35 +55,6 @@ function assertBatchApplied(result: AudioGraphApplyResult, attempt: string): voi
         return;
     }
     throw createExportError(`The audio backend refused to ${attempt}: ${result.reason}`);
-}
-
-type ResolveOutputTargetInput = {
-    outputId: string | null | undefined;
-    busStripsById: ReadonlyMap<string, OfflineBusStrip>;
-    trackStripsById: ReadonlyMap<string, OfflineTrackStrip>;
-};
-
-/**
- * Which of the three destinations a track's stored output id names, decided
- * from the strips this render actually built: a bus first, then a track, then
- * master — including master as the fallback for an output id naming nothing
- * this render created.
- */
-function resolveOutputTarget({
-    outputId,
-    busStripsById,
-    trackStripsById,
-}: ResolveOutputTargetInput): AudioGraphRouteTarget {
-    if (outputId === 'hw_out' || !outputId) {
-        return { kind: 'master' };
-    }
-    if (busStripsById.has(outputId)) {
-        return { kind: 'bus', busId: outputId };
-    }
-    if (trackStripsById.has(outputId)) {
-        return { kind: 'track', trackId: outputId };
-    }
-    return { kind: 'master' };
 }
 
 export const renderOffline: RenderOfflineFn = async function renderOffline(
@@ -153,21 +121,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
         const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
-        const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
-        const masterGain = offlineCtx.createGain();
         // Use the project's master gain level (stored as 0-100) rather than a hardcoded value.
-        masterGain.gain.value = Math.max(0, Math.min(1, (transport?.masterGain ?? 80) / 100));
-        masterGain.connect(offlineCtx.destination);
-        // Every strip, route and send this render builds goes through the
-        // backend seam from here on. The bounce is the seam's first production
-        // consumer; the native engine becomes the second by answering the same
-        // commands (campaign D3).
-        backend = createWebAudioOfflineBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
-        // A live view of the backend's own map, not a copy: sidechain routing,
-        // Toaster routing, clip scheduling and the runtime-failure sweep all read
-        // exactly the set of devices `dispose()` will destroy, so the read model
-        // and the teardown root cannot diverge.
-        const deviceEntriesByTrack = backend.getDeviceEntriesByTrack();
+        const masterGainValue = Math.max(0, Math.min(1, (transport?.masterGain ?? 80) / 100));
 
         // Exclude muted, disabled, and structural (folder) tracks from the render.
         // We MUST include folder tracks if they contain a Toaster device, because
@@ -209,18 +164,6 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 routableSidechainTargets.add(targetDevice);
             }
         }
-        // Before any strip exists: both out-of-band devices build their worklet
-        // node synchronously inside `createOfflineTrackStrip`, so a module
-        // registered afterwards is registered too late and the device degrades
-        // to its fallback. Shared with the stem path and the freeze path — the
-        // three used to carry this ordering constraint in three copies, and the
-        // freeze path carried neither prepare at all.
-        await prepareOfflineContext({
-            offlineCtx,
-            tracks: allRenderableTracks,
-            sidechainTargetDevices: routableSidechainTargets,
-            onWarning,
-        });
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -265,15 +208,88 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         const scheduledTracks = [...sourceTracks, ...cueSendOnlyTracks];
         const scheduledTrackIds = new Set(scheduledTracks.map((track) => track.id));
 
+        // A VCA-member track plays through its group master, so the bounce has
+        // to fold the same multiplier into its fader. This is the same
+        // derivation the live path resolves through `getEffectiveGain`, and it
+        // is 1 for a track in no group. Resolved once, before either renderer,
+        // so the strips and every gain lane of one render see one snapshot.
+        const vcaMultiplierByTrackId = new Map(
+            allRenderableTracks.map((track): [string, number] => [
+                track.id,
+                deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
+            ])
+        );
+
+        // The D3.c.2 cutover (#2225): a desktop export the native engine can
+        // hold renders through it; every other outcome carries its reason, and
+        // a *degraded* one — a native engine that exists here and was passed
+        // over — is surfaced on the export's warning channel. A native attempt
+        // that declines mid-flight falls back the same observable way; a
+        // cancellation or a seam defect propagates instead of falling back.
+        const selection = await selectOfflineRenderEngine({
+            renderableTracks: allRenderableTracks,
+            scheduledTracks,
+        });
+        if (selection.engine === 'native/offline') {
+            const native = await renderOfflineWithNativeEngine({
+                transport: selection.transport,
+                sampleRate,
+                frameCount,
+                durationSeconds,
+                masterGainValue,
+                defaultTempo,
+                changes,
+                projectPpqEndpoints,
+                renderableTracks: allRenderableTracks,
+                scheduledTracks,
+                scheduledTrackIds,
+                vcaMultiplierByTrackId,
+                onWarning,
+                onProgress,
+            });
+            if (native.outcome === 'rendered') {
+                onProgress?.(1);
+                return cropHistoryFromRenderedBuffer({
+                    buffer: native.buffer,
+                    historySeconds,
+                    outputDurationSeconds,
+                });
+            }
+            onWarning?.(`The native engine declined this export (${native.reason}); rendering through Web Audio.`);
+        } else if (selection.degraded) {
+            onWarning?.(`Desktop export fell back to the Web Audio renderer: ${selection.reason}`);
+        }
+
+        const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+        const masterGain = offlineCtx.createGain();
+        masterGain.gain.value = masterGainValue;
+        masterGain.connect(offlineCtx.destination);
+        // Every strip, route and send this render builds goes through the
+        // backend seam from here on. The bounce is the seam's first production
+        // consumer; the native engine above is the second, answering the same
+        // commands (campaign D3).
+        backend = createOfflineRenderBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
+        // A live view of the backend's own map, not a copy: sidechain routing,
+        // Toaster routing, clip scheduling and the runtime-failure sweep all read
+        // exactly the set of devices `dispose()` will destroy, so the read model
+        // and the teardown root cannot diverge.
+        const deviceEntriesByTrack = backend.getDeviceEntriesByTrack();
+        // Before any strip exists: both out-of-band devices build their worklet
+        // node synchronously inside `createOfflineTrackStrip`, so a module
+        // registered afterwards is registered too late and the device degrades
+        // to its fallback. Shared with the stem path and the freeze path — the
+        // three used to carry this ordering constraint in three copies, and the
+        // freeze path carried neither prepare at all.
+        await prepareOfflineContext({
+            offlineCtx,
+            tracks: allRenderableTracks,
+            sidechainTargetDevices: routableSidechainTargets,
+            onWarning,
+        });
+
         for (const track of allRenderableTracks) {
             checkCancel();
-            // A VCA-member track plays through its group master, so the bounce
-            // has to fold the same multiplier into its fader. This is the same
-            // derivation the live path resolves through `getEffectiveGain`, and
-            // it is 1 for a track in no group. Resolved here rather than inside
-            // the strip so the strip builder stays a pure function of what it is
-            // handed.
-            const vcaMultiplier = deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups });
+            const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
             // The mixdown does not gate a soloed-off track's strip; it leaves it
             // out of `scheduledTracks` instead. Passing `soloGated: false` keeps
             // that, rather than silently taking on the pre-fader gate the
@@ -343,8 +359,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             // inline routing decided it: a bus first, then a track, then master.
             const outputTarget = resolveOutputTarget({
                 outputId: track.outputId,
-                busStripsById,
-                trackStripsById,
+                busStripIds: busStripsById,
+                trackStripIds: trackStripsById,
             });
 
             const routingResult = await backend.apply({
@@ -408,7 +424,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 regionStartBeat: 0,
                 // Same multiplier the strip was seeded with, so a gain lane on a
                 // VCA-member track rides its group instead of nullifying it.
-                vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
+                vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
             });
 
             scheduled++;

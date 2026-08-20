@@ -1,10 +1,10 @@
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 export async function invokeAI(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
-    if (!isTauri()) {
-        throw new Error('Native AI features require Tauri desktop environment');
+    if (!isDesktopRuntime()) {
+        throw new Error('Native AI features require the Sourdaw desktop app');
     }
 
-    const { tauriInvoke } = await import('#/utils/tauriBridge');
-    return tauriInvoke(cmd, args);
+    const { desktopInvoke } = await import('#/utils/desktopBridge');
+    return desktopInvoke(cmd, args);
 }

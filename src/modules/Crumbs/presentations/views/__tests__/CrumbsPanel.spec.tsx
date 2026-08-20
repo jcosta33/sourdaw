@@ -12,7 +12,7 @@ import { CrumbsPanel } from '../CrumbsPanel';
 
 import type { SampleMeta } from '../../../models/CrumbsTypes';
 
-// Engine lifecycle and position polling reach the Tauri bridge; stub them so the
+// Engine lifecycle and position polling reach the desktop bridge; stub them so the
 // render exercises real store-driven DOM without IPC. The panel still drives its
 // own `useStoreSelector` against the real signal stores.
 vi.mock('../../../useCases/crumbsLifecycle/initCrumbsEngine', () => ({

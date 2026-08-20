@@ -8,8 +8,7 @@
 //! channel, and let the JS thread answer. The JS event loop is never the
 //! waiting side, so the wait cannot deadlock it; a shell that fails to answer
 //! inside the deadline fails the open rather than wedging the app. Everything
-//! else — resize, focus, hide, show, destroy — is fire and forget, exactly as
-//! the Tauri host discards those results.
+//! else — resize, focus, hide, show, destroy — is fire and forget.
 //!
 //! Errors cross as a response field rather than a JS throw: the
 //! callee-unhandled threadsafe shape has no error channel back to the caller,
@@ -101,8 +100,8 @@ impl JsWindowHost {
 }
 
 fn fire(target: &EditorWindowLabelFn, label: &str) {
-    // Status discarded like the Tauri host discards its window-op results: a
-    // window that is already gone is not a failure of the operation.
+    // Status discarded on purpose: a window that is already gone is not a
+    // failure of the operation.
     let _ = target.call(label.to_string(), ThreadsafeFunctionCallMode::NonBlocking);
 }
 

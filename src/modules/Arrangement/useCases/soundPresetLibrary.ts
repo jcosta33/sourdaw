@@ -1,5 +1,5 @@
 import { getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 import { type SoundPreset } from '../models/SoundPreset';
@@ -21,7 +21,7 @@ type PresetCacheEntry = {
 let cachedEntry: PresetCacheEntry | null = null;
 
 function currentPlatformKey(): string {
-    return isTauri() ? 'native' : 'web';
+    return isDesktopRuntime() ? 'native' : 'web';
 }
 
 function isPresetCompatible(preset: SoundPreset): boolean {

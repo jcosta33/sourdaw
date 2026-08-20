@@ -1,26 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { isAudioAiServerRunning } from '../isAudioAiServerRunning';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(),
 }));
 
 describe('isAudioAiServerRunning', () => {
     beforeEach(() => {
-        vi.mocked(isTauri).mockReset();
+        vi.mocked(isDesktopRuntime).mockReset();
     });
 
-    it('should resolve true when Tauri is available', async () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+    it('should resolve true when the desktop runtime is available', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
 
         await expect(isAudioAiServerRunning()).resolves.toBe(true);
     });
 
-    it('should resolve false when Tauri is unavailable', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+    it('should resolve false when the desktop runtime is unavailable', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
         await expect(isAudioAiServerRunning()).resolves.toBe(false);
     });
