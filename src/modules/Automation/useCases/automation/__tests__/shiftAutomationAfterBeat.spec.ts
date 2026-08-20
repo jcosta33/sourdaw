@@ -68,4 +68,38 @@ describe('shiftAutomationAfterBeat', () => {
             ],
         });
     });
+
+    it('should re-sort points when a negative delta shifts them past an earlier point', () => {
+        automationStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    points: [
+                        { id: 'p-5', beat: 5, value: 0.1, curve: 'linear' },
+                        { id: 'p-10', beat: 10, value: 0.5, curve: 'linear' },
+                        { id: 'p-15', beat: 15, value: 0.9, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+
+        shiftAutomationAfterBeat({ atBeat: 10, deltaBeats: -8 });
+
+        expect(automationStoreSet).toHaveBeenCalledWith({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    points: [
+                        { id: 'p-10', beat: 2, value: 0.5, curve: 'linear' },
+                        { id: 'p-5', beat: 5, value: 0.1, curve: 'linear' },
+                        { id: 'p-15', beat: 7, value: 0.9, curve: 'linear' },
+                    ],
+                },
+            ],
+        });
+    });
 });

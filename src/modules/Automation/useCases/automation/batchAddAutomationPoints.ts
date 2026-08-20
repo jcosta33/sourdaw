@@ -17,14 +17,23 @@ export const DEFAULT_BEAT_MERGE_EPSILON = 0.05;
  * value, by `findClaimedMatchIndex`, since their beat may have drifted away
  * from (or into) this window.
  *
- * `sorted` must be ascending by beat. That invariant is guaranteed at the
- * store's inbound boundary — `get_normalized_points` in `automationStore.ts`
- * sorts `points` (and `trimPoints`/`ghostPoints`) on every sanitize, which
- * `hydrate()` re-runs on every load and every remote CRDT sync patch, not
- * just initial project load — so a lane read from the store is never
- * unsorted here, regardless of what order the writing peer's array was in.
- * `addAutomationPoint.ts` relies on the same guarantee for its own
- * binary-search insert. This function never re-sorts on entry.
+ * `sorted` must be ascending by beat. That is a module-wide convention, not a
+ * store-enforced invariant: every one of the roughly forty writers under
+ * `useCases/automation/` that touches `points` must re-sort, or otherwise
+ * preserve order, before calling `automationStore.set`/`update`. The store
+ * only sorts structurally on ONE path — `get_normalized_points` runs inside
+ * `sanitize_automation_store_state`, which `createStore` invokes at
+ * module-init and inside `hydrate()` (initial load and every remote CRDT
+ * sync patch). `automationStore.set` itself calls `storage.set` directly
+ * and never routes through the sanitizer, so a locally authored write —
+ * which is almost all traffic, including this file's own `automationStore.set`
+ * call below and `addAutomationPoint.ts`'s — reaches the store unsorted if
+ * its writer forgot to sort. `addAutomationPoint.ts` relies on the same
+ * convention for its own binary-search insert.
+ *
+ * If a writer ever lapses, this does not throw: the binary search below
+ * silently returns a wrong (or missed) index for the affected merge,
+ * because it never re-sorts on entry.
  */
 function findLeftmostUnclaimedIndex(
     sorted: readonly AutomationPoint[],
