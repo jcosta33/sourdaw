@@ -1,0 +1,26 @@
+src/modules/SampleLibrary/models/LibraryTypes.ts
+  s_7ba0b7bee9e951::t_c3010bcd386b40 14-15
+src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
+  s_7ba0b7bee9e951::t_57647608617ce3 18-22
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_7ba0b7bee9e951::t_f012378131fe88 71-77,83
+src/modules/BrowserAi/presentations/views/__tests__/CapabilityReportPanel.spec.tsx
+  s_7ba0b7bee9e951::t_144d431709ee01 72,75,85-96
+  s_7ba0b7bee9e951::t_cc6ccf91facef1 97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b2b4a61382a4dbabb11a5e3f6b8397eda5a18ded",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
