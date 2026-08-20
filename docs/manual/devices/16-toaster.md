@@ -33,8 +33,8 @@ view of the first.
 
 ## Kit shelf
 
-Heading **Kit shelf**. Search placeholder **Find a loaf**. The list loads a kit; the active row
-matches `kit.name`. **Find a loaf** stays with this session.
+Heading **Kit shelf**. Search placeholder **Find a loaf**. Click a row to load that kit. The loaded
+kit stays highlighted. **Find a loaf** stays with this session.
 
 A fresh Toaster is **Plain Bread**.
 
