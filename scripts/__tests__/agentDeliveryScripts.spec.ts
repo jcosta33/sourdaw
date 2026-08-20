@@ -12,6 +12,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:publish']).toBe('node scripts/publishLane.ts');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
+        expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
+        expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/deliverPullRequest.ts');
     });
@@ -30,6 +32,8 @@ describe('package scripts and gitignore', () => {
             'publishReview.ts',
             'deliverPullRequest.ts',
             'removeLane.ts',
+            'resolveReviewThread.ts',
+            'supersedePullRequest.ts',
             'githubAppIdentity.ts',
         ];
         for (const file of files) {
