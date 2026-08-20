@@ -1,0 +1,33 @@
+scripts/resolveReviewThread.ts
+  s_a40848e8f8cca9::t_32f7925b7276e8 187,189-191,377,403-405,407,414
+scripts/supersedePullRequest.ts
+  s_a40848e8f8cca9::t_32f7925b7276e8 186,188-190
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_a40848e8f8cca9::t_1db5786b70d627 32-33,51,108-129,149,263
+  s_a40848e8f8cca9::t_e58e0afa2476d3 441-450
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_a40848e8f8cca9::t_8a3981638a4014 64-69,84,162-167,188-192
+  s_a40848e8f8cca9::t_1de99faa652624 193-204
+scripts/__tests__/resolveReviewThread.spec.ts
+  s_a40848e8f8cca9::t_f5b040c7c34d1b 512-521,544-552,554
+  s_a40848e8f8cca9::t_55ae0de395a451 26-27,86-103,312
+  s_a40848e8f8cca9::t_0bb87956477f65 553
+scripts/githubAppIdentity.ts
+  s_a40848e8f8cca9::t_32f7925b7276e8 202-204,379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a07c7512d07b38fafe2ca65d7dcce96c712dddc6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
