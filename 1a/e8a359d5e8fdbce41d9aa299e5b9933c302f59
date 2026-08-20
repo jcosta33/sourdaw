@@ -1,0 +1,26 @@
+scripts/publishReview.ts
+  s_487e9aa1e46063::t_aa1637c38dd929 176-181
+  s_487e9aa1e46063::t_b3f3d499b1a80a 23-35
+  s_487e9aa1e46063::t_ed83bd94c14fad 126-130,132,135,139,156
+scripts/__tests__/publishReview.spec.ts
+  s_487e9aa1e46063::t_cdbadcf722d3ee 3
+  s_487e9aa1e46063::t_3e703fc988d6bd 108-160
+  s_487e9aa1e46063::t_68f2c176bc50c4 8
+  s_487e9aa1e46063::t_d0c4238df5e098 161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1ae8a359d5e8fdbce41d9aa299e5b9933c302f59",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
