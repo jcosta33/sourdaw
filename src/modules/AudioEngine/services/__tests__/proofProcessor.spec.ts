@@ -251,6 +251,87 @@ describe('ProofProcessor telemetry seqlock', () => {
     });
 });
 
+describe('ProofProcessor telemetry slot initialization', () => {
+    // Two whole slots, so an offset can be valid, misaligned, or run past the end.
+    const SLOT_BYTES = FLOATS_PER_SLOT * 4;
+    let sab: SharedArrayBuffer;
+    let floatView: Float32Array;
+
+    beforeEach(() => {
+        proofParamCalls.length = 0;
+        proofLatencyQueue = [256];
+        proofProcessShouldThrow = false;
+        proofInitShouldThrow = null;
+        sab = new SharedArrayBuffer(SLOT_BYTES * 2);
+        floatView = new Float32Array(sab);
+    });
+
+    // ── `typeof msg.byteOffset === 'number'` was the whole guard before
+    // `new Float32Array(msg.sab, msg.byteOffset, 32)`. A negative, fractional,
+    // misaligned or out-of-bounds offset threw into the onmessage catch, which
+    // marks the processor faulted for the rest of its life — one malformed
+    // initialization message permanently killed a device that was passing
+    // audio perfectly well. NaN did not throw at all: it coerced to 0 and
+    // silently mapped another device's slot. ──
+    it.each([
+        ['negative', -4],
+        ['fractional', 4.5],
+        ['misaligned by two bytes', 2],
+        ['misaligned by one byte', 129],
+        ['NaN', Number.NaN],
+        ['Infinity', Number.POSITIVE_INFINITY],
+        ['past the safe-integer range', Number.MAX_SAFE_INTEGER + 2],
+        ['a slot that runs past the end of the buffer', SLOT_BYTES * 2 - 4],
+        ['one whole slot past the end', SLOT_BYTES * 2],
+        ['a non-number', '0'],
+    ])('ignores a %s telemetry offset without faulting the processor', async (_label, byteOffset) => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        send(proc, { type: 'init-sab', sab, byteOffset });
+        runMeterBlock(proc);
+
+        expect(
+            vi.mocked(proc.port.postMessage).mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error')
+        ).toHaveLength(0);
+        expect(Array.from(floatView)).toEqual(Array.from(new Float32Array(FLOATS_PER_SLOT * 2)));
+
+        // Still taking work: the device kept its audio duties after refusing
+        // the malformed slot.
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -1 });
+        expect(proofParamCalls).toEqual([{ name: 'lim_ceiling', value: -1 }]);
+    });
+
+    it('maps a whole aligned slot at a non-zero offset', async () => {
+        // The counter-check: a guard that refused everything would pass all of
+        // the rejections above.
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        send(proc, { type: 'init-sab', sab, byteOffset: SLOT_BYTES });
+        runMeterBlock(proc);
+
+        expect(floatView[FLOATS_PER_SLOT + 0]).toBeCloseTo(-23, 5);
+        expect(floatView[FLOATS_PER_SLOT + 24]).toBeCloseTo(256, 5);
+        // The neighbouring slot is untouched.
+        expect(floatView[0]).toBe(0);
+    });
+
+    it('refuses a buffer too small to hold one whole slot', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        const tooSmall = new SharedArrayBuffer(SLOT_BYTES - 4);
+
+        send(proc, { type: 'init-sab', sab: tooSmall, byteOffset: 0 });
+        runMeterBlock(proc);
+
+        expect(
+            vi.mocked(proc.port.postMessage).mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error')
+        ).toHaveLength(0);
+        expect(Array.from(new Float32Array(tooSmall))).toEqual(Array.from(new Float32Array(FLOATS_PER_SLOT - 1)));
+    });
+});
+
 describe('ProofProcessor message handling & process guards', () => {
     beforeEach(() => {
         proofParamCalls.length = 0;
@@ -469,6 +550,130 @@ describe('ProofProcessor message handling & process guards', () => {
         // process() ran without throwing; the right-input view was fed in0.
         expect(rightSpy).toHaveBeenCalled();
         void input;
+    });
+
+    // ── The wire boundary validates the f32 the engine actually receives, not
+    // the JavaScript f64 the message carries, and it holds each parameter to
+    // its declared range. `Number.isFinite(msg.value)` alone accepted
+    // `Number.MAX_VALUE`, which arrives at the wasm boundary as f32 Infinity;
+    // `input_gain` then computed `10^(inf / 20)` and stored an infinite gain
+    // factor that multiplied every later sample for the life of the device. ──
+    it.each([
+        ['Number.MAX_VALUE (f32 Infinity)', Number.MAX_VALUE],
+        ['-Number.MAX_VALUE (f32 -Infinity)', -Number.MAX_VALUE],
+        ['1e39 (past the f32 maximum)', 1e39],
+        ['Infinity', Number.POSITIVE_INFINITY],
+        ['NaN', Number.NaN],
+        ['+25 dB, one dB past the declared range', 25],
+        ['-25 dB, one dB past the declared range', -25],
+        ['a non-number', '0'],
+    ])('rejects a live input_gain of %s before it reaches wasm', async (_label, value) => {
+        const proc = await loadProcessor();
+        initializeLiveProof(proc, 'track-1');
+
+        send(
+            proc,
+            liveControl('set-fallback-param', 'track-1', 1, {
+                value,
+                target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId: 'input_gain' },
+            })
+        );
+
+        expect(proofParamCalls).toEqual([]);
+    });
+
+    it('still accepts an in-range live input_gain', async () => {
+        // The counter-check for the rejections above: a boundary that dropped
+        // everything would pass them all.
+        const proc = await loadProcessor();
+        initializeLiveProof(proc, 'track-1');
+
+        send(
+            proc,
+            liveControl('set-fallback-param', 'track-1', 1, {
+                value: 24,
+                target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId: 'input_gain' },
+            })
+        );
+
+        expect(proofParamCalls).toEqual([{ name: 'input_gain', value: 24 }]);
+    });
+
+    it('leaves no live parameter without a declared range', async () => {
+        // The range check fails closed, so a namespace entry with no range
+        // would be silently unreachable rather than unchecked. Every parameter
+        // has to accept at least one of these values.
+        const proc = await loadProcessor();
+        initializeLiveProof(proc, 'track-1');
+
+        const candidates = [0, 1, 20, 100];
+        const unreachable: string[] = [];
+        let sequence = 0;
+        for (const parameterId of createProofRuntimeParameterIds()) {
+            const before = proofParamCalls.length;
+            for (const value of candidates) {
+                sequence += 1;
+                send(
+                    proc,
+                    liveControl('set-fallback-param', 'track-1', sequence, {
+                        value,
+                        target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId },
+                    })
+                );
+            }
+            if (proofParamCalls.length === before) {
+                unreachable.push(parameterId);
+            }
+        }
+
+        expect(unreachable).toEqual([]);
+    });
+
+    it('rejects a legacy param message that overflows f32 or leaves the declared range', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        send(proc, { type: 'param', name: 'input_gain', value: Number.MAX_VALUE });
+        send(proc, { type: 'param', name: 'output_gain', value: 25 });
+        send(proc, { type: 'param', name: 'lim_lookahead', value: Number.NaN });
+        expect(proofParamCalls).toEqual([]);
+
+        // In range on the same path, so the rejections above are not a blanket drop.
+        send(proc, { type: 'param', name: 'input_gain', value: -6 });
+        expect(proofParamCalls).toEqual([{ name: 'input_gain', value: -6 }]);
+    });
+
+    // ── `only()` judges a record without materializing its keys. `Object.keys`
+    // enumerated every property of every inbound record on the AudioWorklet
+    // thread before comparing any of them, so a malformed message carrying
+    // thousands of properties bought proportional work there. ──
+    it('rejects an oversized record after a bounded number of property inspections', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        const keys = Array.from({ length: 10_000 }, (_, index) => `extra${index}`);
+        let inspections = 0;
+        const hostile = new Proxy<Record<string, unknown>>(
+            {},
+            {
+                ownKeys: () => keys,
+                getOwnPropertyDescriptor: () => {
+                    inspections += 1;
+                    return { value: 1, enumerable: true, configurable: true, writable: true };
+                },
+                get: () => undefined,
+            }
+        );
+
+        send(proc, hostile);
+
+        // Enumerating the whole record costs one inspection per key; exiting on
+        // the first unexpected key costs a small constant.
+        expect(inspections).toBeLessThanOrEqual(8);
+        expect(proofParamCalls).toEqual([]);
+        expect(
+            vi.mocked(proc.port.postMessage).mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error')
+        ).toHaveLength(0);
     });
 
     // ── _passthrough mono fallback (proofProcessor.ts:113 `input[1] ?? in0`):

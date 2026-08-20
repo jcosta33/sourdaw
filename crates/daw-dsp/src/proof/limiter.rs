@@ -66,13 +66,6 @@ impl MonotonicPeakWindow {
         self.window_start = self.window_start.saturating_add(1);
     }
 
-    fn ensure_capacity(&mut self, lookahead_samples: usize) {
-        let required_capacity = lookahead_samples.saturating_add(1);
-        if self.peaks.capacity() < required_capacity {
-            self.peaks.reserve(required_capacity - self.peaks.len());
-        }
-    }
-
     /// Re-seed the window after a look-ahead resize. Only the delayed samples
     /// survive a resize, so the window restarts from their sample magnitudes;
     /// true-peak entries resume as soon as fresh samples arrive.
@@ -117,6 +110,19 @@ const TRANSIENT_DEADBAND: f32 = 0.05;
 /// the release back to the nominal setting.
 const GAIN_AVERAGE_MS: f32 = 250.0;
 
+/// Declared look-ahead range, in milliseconds. `MAX_LOOKAHEAD_MS` also sizes
+/// every buffer at construction: `lim_lookahead` is a live control that lands
+/// on the render thread, so the setter is only allowed to move indices, never
+/// to ask the allocator for room. Mirrored at the worklet wire boundary in
+/// `proofProcessor.ts`.
+const MIN_LOOKAHEAD_MS: f32 = 0.5;
+const MAX_LOOKAHEAD_MS: f32 = 10.0;
+const DEFAULT_LOOKAHEAD_MS: f32 = 5.0;
+
+fn lookahead_samples_for(ms: f32, sr: f32) -> usize {
+    (ms * 0.001 * sr) as usize
+}
+
 pub struct LookaheadLimiter {
     delay_l: VecDeque<f32>,
     delay_r: VecDeque<f32>,
@@ -136,6 +142,8 @@ pub struct LookaheadLimiter {
     gain_avg_coeff: f32,
     current_gain: f32,
     lookahead_samples: usize,
+    /// Look-ahead every buffer here has room for. Fixed at construction.
+    max_lookahead_samples: usize,
     sample_rate: f32,
     bypassed: bool,
     // Metering
@@ -145,14 +153,16 @@ pub struct LookaheadLimiter {
 
 impl LookaheadLimiter {
     pub fn new(sr: f32) -> Self {
-        let lookahead_ms = 5.0;
-        let lookahead_samples = (lookahead_ms * 0.001 * sr) as usize;
+        let lookahead_samples = lookahead_samples_for(DEFAULT_LOOKAHEAD_MS, sr);
+        // Room for the longest look-ahead the control can select, taken once
+        // here so `set_param` never allocates on the render thread.
+        let max_lookahead_samples = lookahead_samples_for(MAX_LOOKAHEAD_MS, sr);
         let release_ms = 100.0;
-        let mut delay_l = VecDeque::with_capacity(lookahead_samples.saturating_add(1));
-        let mut delay_r = VecDeque::with_capacity(lookahead_samples.saturating_add(1));
+        let mut delay_l = VecDeque::with_capacity(max_lookahead_samples.saturating_add(1));
+        let mut delay_r = VecDeque::with_capacity(max_lookahead_samples.saturating_add(1));
         delay_l.resize(lookahead_samples, 0.0);
         delay_r.resize(lookahead_samples, 0.0);
-        let mut max_peaks = MonotonicPeakWindow::new(lookahead_samples);
+        let mut max_peaks = MonotonicPeakWindow::new(max_lookahead_samples);
         max_peaks.rebuild_from_delays(&delay_l, &delay_r);
 
         Self {
@@ -169,6 +179,7 @@ impl LookaheadLimiter {
             gain_avg_coeff: release_coeff(GAIN_AVERAGE_MS, sr),
             current_gain: 1.0,
             lookahead_samples,
+            max_lookahead_samples,
             sample_rate: sr,
             bypassed: false,
             meter_gr_db: 0.0,
@@ -189,14 +200,24 @@ impl LookaheadLimiter {
                 self.release_coeff_fast = release_coeff(fast_release_ms(ms), self.sample_rate);
             }
             "lim_lookahead" => {
-                let ms = value.clamp(0.5, 10.0);
-                let new_size = (ms * 0.001 * self.sample_rate) as usize;
+                // Live control: this runs on the AudioWorklet render thread.
+                // Every buffer was built at construction with room for
+                // `max_lookahead_samples`, so `resize` only moves the logical
+                // length inside capacity already held and `rebuild_from_delays`
+                // refills a window that was never shrunk. Nothing here reaches
+                // the allocator. `min` is belt and braces: the clamp above
+                // already bounds `ms`, and exceeding capacity would reallocate
+                // and miss the deadline.
+                let ms = if value.is_nan() {
+                    DEFAULT_LOOKAHEAD_MS
+                } else {
+                    value.clamp(MIN_LOOKAHEAD_MS, MAX_LOOKAHEAD_MS)
+                };
+                let new_size =
+                    lookahead_samples_for(ms, self.sample_rate).min(self.max_lookahead_samples);
                 if new_size != self.lookahead_samples {
                     self.delay_l.resize(new_size, 0.0);
                     self.delay_r.resize(new_size, 0.0);
-                    self.delay_l.reserve(1);
-                    self.delay_r.reserve(1);
-                    self.max_peaks.ensure_capacity(new_size);
                     self.max_peaks
                         .rebuild_from_delays(&self.delay_l, &self.delay_r);
                     self.lookahead_samples = new_size;
@@ -483,6 +504,54 @@ mod tests {
             limiter.max_peaks.peaks.capacity(),
         );
         assert_eq!(final_capacities, initial_capacities);
+    }
+
+    /// `lim_lookahead` sits in the live wire namespace, so this setter runs on
+    /// the AudioWorklet render thread during an ordinary parameter change. It
+    /// used to `resize` both delay lines, `reserve(1)` on each, grow the peak
+    /// window and rebuild it — allocator work between two render quanta, which
+    /// can miss the audio deadline and drop out audibly. Every buffer is now
+    /// sized for `MAX_LOOKAHEAD_MS` at construction and the setter only moves
+    /// logical indices.
+    #[test]
+    fn changing_the_lookahead_never_allocates() {
+        let mut limiter = LookaheadLimiter::new(48_000.0);
+        // Warm the render path so nothing lazy is left inside the guard.
+        let mut left = vec![0.5_f32; 128];
+        let mut right = vec![0.5_f32; 128];
+        limiter.process(&mut left, &mut right);
+        let capacities = (
+            limiter.delay_l.capacity(),
+            limiter.delay_r.capacity(),
+            limiter.max_peaks.peaks.capacity(),
+        );
+
+        assert_no_alloc(|| {
+            // Both directions and both ends of the declared range: growing is
+            // what used to reallocate, shrinking is what has to keep working
+            // afterwards, and interleaved render blocks are how the control
+            // actually arrives.
+            for ms in [10.0_f32, 0.5, 7.5, 5.0, 10.0, 0.5] {
+                limiter.set_param("lim_lookahead", ms);
+                limiter.process(&mut left, &mut right);
+            }
+        });
+
+        assert_eq!(
+            (
+                limiter.delay_l.capacity(),
+                limiter.delay_r.capacity(),
+                limiter.max_peaks.peaks.capacity(),
+            ),
+            capacities,
+            "capacity moved, so the preallocation is not covering the range"
+        );
+        assert_eq!(
+            limiter.latency_samples(),
+            24,
+            "the 0.5 ms look-ahead must still take effect — a setter that \
+             quietly stopped resizing would also allocate nothing"
+        );
     }
 
     #[test]

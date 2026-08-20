@@ -24,18 +24,164 @@ type ProofMsg =
     | { type: 'reset_integrated' };
 type UnknownRecord = Record<string, unknown>;
 const MAX_RUNTIME_ID_LENGTH = 128;
+
+/**
+ * Telemetry slot geometry, mirroring `engine/telemetryAllocator.ts`. The slot
+ * is read as both `Float32Array` and `Int32Array`, so its start must carry
+ * 4-byte alignment and the whole slot must sit inside the shared buffer.
+ */
+const TELEMETRY_SLOT_FLOATS = 32;
+const TELEMETRY_SLOT_ALIGNMENT = Float32Array.BYTES_PER_ELEMENT;
+const TELEMETRY_SLOT_BYTES = TELEMETRY_SLOT_FLOATS * TELEMETRY_SLOT_ALIGNMENT;
+
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+/**
+ * True when `value` carries exactly `keys` as own enumerable properties.
+ *
+ * Deliberately array-free. `Object.keys(value).every(...)` materialized a key
+ * array for every inbound record, on the AudioWorklet thread, and enumerated
+ * the whole record before judging it — so a malformed message carrying
+ * thousands of properties bought proportional enumeration and allocation
+ * there, and every accepted control allocated several key arrays per change.
+ * `for…in` allocates nothing, and the first unexpected key exits, so any
+ * record costs at most `keys.length + 1` iterations however large it is. An
+ * inherited enumerable key is rejected rather than skipped, which keeps that
+ * bound true against a hostile prototype as well.
+ */
 function only(value: UnknownRecord, keys: readonly string[]): boolean {
-    const actual = Object.keys(value);
-    return actual.length === keys.length && actual.every((key) => keys.includes(key));
+    let matched = 0;
+    for (const key in value) {
+        if (!Object.hasOwn(value, key) || !keys.includes(key)) {
+            return false;
+        }
+        matched += 1;
+    }
+    return matched === keys.length;
 }
+
 function positive(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 function boundedId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= MAX_RUNTIME_ID_LENGTH;
+}
+
+type ParameterRange = readonly [min: number, max: number];
+
+const TOGGLE: ParameterRange = [0, 1];
+const AUDIO_FREQ: ParameterRange = [20, 20_000];
+const GAIN_DB: ParameterRange = [-24, 24];
+
+/**
+ * Declared inclusive range of every parameter in the live wire namespace,
+ * mirroring the clamps the Rust engine applies in `crates/daw-dsp/src/proof/`.
+ * Both sides hold the range: the wire boundary rejects an out-of-range value
+ * so it never reaches wasm, and the engine clamps so it never trusts a caller
+ * that skipped this check.
+ */
+function buildParameterRanges(): ReadonlyMap<string, ParameterRange> {
+    const ranges = new Map<string, ParameterRange>([
+        ['bypass', TOGGLE],
+        ['ab_bypass', TOGGLE],
+        ['input_gain', GAIN_DB],
+        ['output_gain', GAIN_DB],
+        ['eq_bypass', TOGGLE],
+        ['eq_linear_phase', TOGGLE],
+        ['dyn_bypass', TOGGLE],
+        ['img_bypass', TOGGLE],
+        ['img_auto_mono_bass', TOGGLE],
+        ['img_mono_bass_freq', [40, 200]],
+        ['exc_bypass', TOGGLE],
+        ['lim_bypass', TOGGLE],
+        ['lim_ceiling', [-12, 0]],
+        ['lim_release', [10, 500]],
+        ['lim_lookahead', [0.5, 10]],
+        ['dither_mode', [0, 2]],
+        ['dither_bits', [16, 24]],
+    ]);
+    for (let band = 0; band < 8; band += 1) {
+        ranges.set(`eq_band${band}_freq`, AUDIO_FREQ);
+        ranges.set(`eq_band${band}_gain`, [-18, 18]);
+        ranges.set(`eq_band${band}_q`, [0.1, 10]);
+        ranges.set(`eq_band${band}_type`, [0, 4]);
+        ranges.set(`eq_band${band}_channel`, [0, 2]);
+        ranges.set(`eq_band${band}_enabled`, TOGGLE);
+    }
+    for (let crossover = 0; crossover < 3; crossover += 1) {
+        ranges.set(`dyn_xover${crossover}`, AUDIO_FREQ);
+    }
+    for (let band = 0; band < 4; band += 1) {
+        ranges.set(`dyn_band${band}_threshold`, [-60, 0]);
+        ranges.set(`dyn_band${band}_ratio`, [1, 20]);
+        ranges.set(`dyn_band${band}_attack`, [1, 200]);
+        ranges.set(`dyn_band${band}_release`, [10, 2_000]);
+        ranges.set(`dyn_band${band}_knee`, [0, 12]);
+        ranges.set(`dyn_band${band}_makeup`, [-12, 24]);
+        ranges.set(`dyn_band${band}_auto_makeup`, TOGGLE);
+        ranges.set(`dyn_band${band}_bypass`, TOGGLE);
+        ranges.set(`img_width${band}`, [0, 2]);
+        ranges.set(`exc_band${band}_type`, [0, 3]);
+        ranges.set(`exc_band${band}_drive`, [0, 1]);
+        ranges.set(`exc_band${band}_blend`, [0, 1]);
+        ranges.set(`exc_band${band}_enabled`, TOGGLE);
+    }
+    return ranges;
+}
+const PARAMETER_RANGES = buildParameterRanges();
+
+/**
+ * True when `value` still exists as a finite number *after* the f64 → f32
+ * narrowing the wasm boundary performs.
+ *
+ * `Number.isFinite(value)` on its own validated the JavaScript f64 and not the
+ * f32 actually handed to wasm: `Number.MAX_VALUE` passed it and arrived as f32
+ * `Infinity`.
+ */
+function representableF32(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && Number.isFinite(Math.fround(value));
+}
+
+/**
+ * True when `value` is a representable f32 that also honours `parameterId`'s
+ * declared range. The range is checked against the *narrowed* value, because
+ * that is the number the engine sees.
+ *
+ * A parameter with no declared range is rejected, so a namespace entry added
+ * without a range fails closed rather than reaching wasm unchecked;
+ * `proofProcessor.spec.ts` pins that every live parameter declares one.
+ */
+function inParameterRange(parameterId: string, value: unknown): value is number {
+    if (!representableF32(value)) {
+        return false;
+    }
+    const range = PARAMETER_RANGES.get(parameterId);
+    if (range === undefined) {
+        return false;
+    }
+    const narrowed = Math.fround(value);
+    return narrowed >= range[0] && narrowed <= range[1];
+}
+
+/**
+ * The same check for the legacy `{ type: 'param' }` message, which addresses
+ * engine parameters by raw name rather than by the live namespace. A name the
+ * namespace does not declare is inert in the engine (`_ => {}` in every Rust
+ * `set_param`), so it only has to survive the f32 narrowing; a declared one
+ * carries its range here too.
+ */
+function acceptableLegacyParam(name: string, value: unknown): value is number {
+    if (!representableF32(value)) {
+        return false;
+    }
+    const range = PARAMETER_RANGES.get(name);
+    if (range === undefined) {
+        return true;
+    }
+    const narrowed = Math.fround(value);
+    return narrowed >= range[0] && narrowed <= range[1];
 }
 
 class ProofProcessor extends AudioWorkletProcessor {
@@ -75,14 +221,8 @@ class ProofProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (
-                    msg.type === 'init-sab' &&
-                    msg.sab instanceof SharedArrayBuffer &&
-                    typeof msg.byteOffset === 'number'
-                ) {
-                    this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
-                    // Int32 view over the same slot bytes for the seqlock counter.
-                    this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
+                } else if (msg.type === 'init-sab') {
+                    this._initTelemetrySlot(msg.sab, msg.byteOffset);
                 } else if (this._initializeFallbackControl(msg)) {
                     return;
                 } else if (this._instance !== null && !this._faulted) {
@@ -110,6 +250,33 @@ class ProofProcessor extends AudioWorkletProcessor {
         this._instance = new ProofInstance(sampleRate);
         this._ready = true;
         this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
+    }
+
+    /**
+     * Map the telemetry slot that starts at `byteOffset` inside `sab`.
+     *
+     * A malformed slot description is ignored, never thrown on. `typeof
+     * byteOffset === 'number'` was the whole guard, so a negative, fractional,
+     * non-finite, misaligned or out-of-bounds offset made `new Float32Array`
+     * throw into the onmessage catch — which marks the processor faulted for
+     * the rest of its life. A bad initialization message must cost telemetry,
+     * not the audio the device was passing perfectly well. Both views must fit
+     * whole, so the offset is bounded by the buffer minus one complete slot.
+     */
+    _initTelemetrySlot(sab: unknown, byteOffset: unknown): void {
+        if (
+            !(sab instanceof SharedArrayBuffer) ||
+            typeof byteOffset !== 'number' ||
+            !Number.isSafeInteger(byteOffset) ||
+            byteOffset < 0 ||
+            byteOffset % TELEMETRY_SLOT_ALIGNMENT !== 0 ||
+            byteOffset > sab.byteLength - TELEMETRY_SLOT_BYTES
+        ) {
+            return;
+        }
+        this._sabView = new Float32Array(sab, byteOffset, TELEMETRY_SLOT_FLOATS);
+        // Int32 view over the same slot bytes for the seqlock counter.
+        this._sabSeqView = new Int32Array(sab, byteOffset, TELEMETRY_SLOT_FLOATS);
     }
 
     _initializeFallbackControl(msg: UnknownRecord): boolean {
@@ -209,8 +376,7 @@ class ProofProcessor extends AudioWorkletProcessor {
                 !isRecord(msg.target) ||
                 !only(msg.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
                 !isProofRuntimeParameterId(msg.target.parameterId) ||
-                typeof msg.value !== 'number' ||
-                !Number.isFinite(msg.value) ||
+                !inParameterRange(msg.target.parameterId, msg.value) ||
                 !isRecord(msg.correlation) ||
                 !only(msg.correlation, ['workletGeneration', 'controlSequence']) ||
                 !positive(msg.correlation.workletGeneration) ||
@@ -249,12 +415,15 @@ class ProofProcessor extends AudioWorkletProcessor {
             case 'init-sab':
             case 'init':
                 break;
-            case 'param':
-                inst.set_param(
-                    (msg as Extract<ProofMsg, { type: 'param' }>).name,
-                    (msg as Extract<ProofMsg, { type: 'param' }>).value
-                );
+            case 'param': {
+                // The legacy message reaches the same wasm setter the live
+                // namespace does, so it takes the same f32 and range check.
+                const name = msg.name;
+                if (boundedId(name) && acceptableLegacyParam(name, msg.value)) {
+                    inst.set_param(name, msg.value);
+                }
                 break;
+            }
             case 'reorder':
                 {
                     const order = (msg as Extract<ProofMsg, { type: 'reorder' }>).order;
