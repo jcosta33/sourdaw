@@ -321,4 +321,72 @@ describe('runZeroTestGuard', () => {
             rmSync(fake.root, { recursive: true, force: true });
         }
     });
+
+    it('exits 1 and prints the reason when a report entry parses as JSON but an assertion result is missing status', () => {
+        const missingStatusJson = JSON.stringify({
+            success: true,
+            numTotalTests: 1,
+            testResults: [
+                {
+                    name: 'scripts/__tests__/prContract.spec.ts',
+                    status: 'passed',
+                    assertionResults: [{ title: 'no status field on this entry' }],
+                },
+            ],
+        });
+        const fake = fakeVitest('missing-status');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const status = runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['scripts/__tests__/prContract.spec.ts'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: { FAKE_VITEST_JSON: missingStatusJson, FAKE_VITEST_EXIT: '0' },
+            });
+
+            expect(status).toBe(1);
+            expect(errorSpy).toHaveBeenCalledTimes(1);
+            const [message] = errorSpy.mock.calls[0] as [string];
+            expect(message).toContain("could not read Vitest's JSON report");
+            expect(message).toContain('assertionResults[0]');
+        } finally {
+            errorSpy.mockRestore();
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
+
+    it('exits 1 and prints the reason when an assertion result has a non-string status', () => {
+        const nonStringStatusJson = JSON.stringify({
+            success: true,
+            numTotalTests: 1,
+            testResults: [
+                {
+                    name: 'scripts/__tests__/prContract.spec.ts',
+                    status: 'passed',
+                    assertionResults: [{ status: null }],
+                },
+            ],
+        });
+        const fake = fakeVitest('non-string-status');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const status = runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['scripts/__tests__/prContract.spec.ts'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: { FAKE_VITEST_JSON: nonStringStatusJson, FAKE_VITEST_EXIT: '0' },
+            });
+
+            expect(status).toBe(1);
+            expect(errorSpy).toHaveBeenCalledTimes(1);
+            const [message] = errorSpy.mock.calls[0] as [string];
+            expect(message).toContain("could not read Vitest's JSON report");
+            expect(message).toContain('assertionResults[0]');
+        } finally {
+            errorSpy.mockRestore();
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
 });

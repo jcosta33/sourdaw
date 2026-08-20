@@ -13,6 +13,15 @@
  *    run. A single deliberately-skipped spec among many passing ones must NOT
  *    fail the run — only a run that executed nothing at all does — so the
  *    count is taken across every collected file, not per file.
+ *
+ *    That whole-run boundary is a deliberate tradeoff, not an oversight: a
+ *    stale or mistyped `-t` filter that zeroes out one target file while
+ *    still matching a test in some other file leaves the run green, and the
+ *    file that produced no evidence goes unreported. This is not fixable at
+ *    file granularity — the JSON report gives no way to distinguish a
+ *    deliberate `describe.skip` from a filter that missed an entire file,
+ *    since both produce an identical shape — so the boundary stays at the
+ *    whole run.
  */
 
 export type VitestJsonAssertionResult = {
@@ -69,7 +78,7 @@ export function silentZeroExecutedAssertions(report: VitestJsonReport): boolean 
 
 export function formatZeroExecutedAssertionsFailure(report: VitestJsonReport): string {
     const fileNames = report.testResults.map((file) => file.name).sort((left, right) => left.localeCompare(right));
-    return `zero executed assertions across the run, collected but none ran (check a -t/--testNamePattern filter): ${fileNames.join('; ')}`;
+    return `zero executed assertions across the run, collected but none ran (every assertion was skipped or todo — check a -t/--testNamePattern filter, or an all-todo file): ${fileNames.join('; ')}`;
 }
 
 export function readVitestJsonReport(source: string): VitestJsonReport {
