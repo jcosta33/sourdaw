@@ -2,11 +2,10 @@ import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { duplicateClipNotes } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../../models/Track';
-import { defaultWarpState } from '../../models/WarpMarker';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { getWarpState, setWarpState } from '../../stores/warpStates';
+import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
 
 import { addClip } from './addClip';
 
@@ -96,24 +95,18 @@ export function duplicateClipCore(
         ...sourceWarp,
         markers: sourceWarp.markers.map((marker) => ({ ...marker })),
     };
-    // Only stamp a map entry when the source clip carries actual warp state to
-    // preserve. `getWarpState` already falls back to `defaultWarpState` for a
-    // clip with no entry, so writing an entry that is value-identical to that
-    // fallback is a no-op for every ordinary reader of warp state. Two readers
-    // treat presence in the map alone — regardless of content — as meaningful:
-    // `hasClipSatelliteState` (see `isGeneratedMidiStateCurrent`) would poison
-    // the duplicate's own undo guard, so `undo()` could never remove it; and
-    // `hasClipGlueDependencies` (`clipEditing/hasClipGlueDependencies.ts`)
-    // would permanently block gluing the duplicate to anything, including a
-    // duplicated MIDI clip that never had warp state to begin with. Both
-    // consequences apply to every duplicate the instant it is created, not
-    // just audio clips with real warp markers.
-    const isDefaultWarp =
-        clonedWarp.enabled === defaultWarpState.enabled &&
-        clonedWarp.markers.length === 0 &&
-        clonedWarp.stretchMode === defaultWarpState.stretchMode &&
-        clonedWarp.originalTempo === defaultWarpState.originalTempo;
-    if (!isDefaultWarp) {
+    // The readers that decide whether a clip "has warp state" —
+    // `hasClipSatelliteState` (see `isGeneratedMidiStateCurrent`) and
+    // `hasClipGlueDependencies` (`clipEditing/hasClipGlueDependencies.ts`) —
+    // call `hasNonDefaultWarpState`, which compares a clip's warp state
+    // against `defaultWarpState` by content rather than asking whether the
+    // map merely has an entry. That makes this guard no longer load-bearing
+    // for their correctness. It still matters for its own reason: skipping
+    // the write when the cloned state is value-identical to the default
+    // keeps `warpStates` from filling up with a noise entry for every plain
+    // duplicate, which matters for anything that iterates the map, such as
+    // `readClipSatelliteEntry`'s snapshots.
+    if (!isDefaultWarpState(clonedWarp)) {
         setWarpState(newClip.id, clonedWarp);
     }
 

@@ -2,13 +2,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
 import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
+import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { isGeneratedMidiStateCurrent } from '../../../handlers/isGeneratedMidiStateCurrent';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { removeWarpState, warpStates } from '../../../stores/warpStates';
 import { duplicateClipCore } from '../../clip/duplicateClipCore';
+import { addManualWarpMarker } from '../../warp/addManualWarpMarker';
+import { enableWarp } from '../../warp/enableWarp';
+import { setStretchMode } from '../../warp/setStretchMode';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 import { hasClipGlueDependencies } from '../hasClipGlueDependencies';
@@ -55,6 +61,7 @@ describe('glueClips MIDI state integration', () => {
         takeLaneStore.set({ lanes: [] });
         stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+        warpStates.clear();
     });
 
     afterEach(() => {
@@ -64,6 +71,7 @@ describe('glueClips MIDI state integration', () => {
         takeLaneStore.set({ lanes: [] });
         stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+        warpStates.clear();
     });
 
     it('projects only adjacent plain source pairs without hidden clip dependencies', () => {
@@ -364,9 +372,8 @@ describe('glueClips MIDI state integration', () => {
             })
         ).toBe(true);
 
-        // The exact presence check `hasClipGlueDependencies` performs
-        // (`warpStates.has(clipId)`, clipEditing/hasClipGlueDependencies.ts:14)
-        // must not see a map entry for a clip that never had warp state.
+        // `hasClipGlueDependencies` (clipEditing/hasClipGlueDependencies.ts)
+        // must not treat the duplicate as carrying warp state it never had.
         expect(hasClipGlueDependencies(['clip-b-copy'])).toBe(false);
 
         // And the production surface the UI uses to offer gluing must list the
@@ -375,5 +382,54 @@ describe('glueClips MIDI state integration', () => {
             ['clip-a', 'clip-b'],
             ['clip-b', 'clip-b-copy'],
         ]);
+    });
+
+    it('does not count a clip whose warp state was written but is content-identical to default as carrying satellite state', () => {
+        // A real write path — not a poke at the map — that leaves the clip's
+        // warp state value-identical to `defaultWarpState`: the clip has no
+        // prior entry, and `repitch` is already `defaultWarpState.stretchMode`.
+        setStretchMode('clip-a', 'repitch');
+        expect(warpStates.has('clip-a')).toBe(true);
+
+        // `hasClipGlueDependencies` must not block gluing a clip whose only
+        // warp-state footprint is a value-identical-to-default map entry.
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(false);
+        expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
+
+        // `isGeneratedMidiStateCurrent`'s undo guard must still admit the clip:
+        // an exact entity/MIDI match with no *real* satellite state is current.
+        const clip = trackStore.value!.tracks[0]!.clips.find((candidate) => candidate.id === 'clip-a')!;
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: 'clip-a',
+                entityType: 'clip',
+                guard: {
+                    entityJson: JSON.stringify(clip),
+                    midiByClipIdJson: serializeMidiStateForClips(['clip-a']),
+                },
+            })
+        ).toBe(true);
+    });
+
+    it('still counts a clip with a real warp marker, enabled warp, or a non-default stretch mode as carrying satellite state', () => {
+        const clip = trackStore.value!.tracks[0]!.clips.find((candidate) => candidate.id === 'clip-a')!;
+        // `clip` itself never changes across these cases — only the warp store
+        // does — so the same guard is reused for every sub-case.
+        const guard = { entityJson: JSON.stringify(clip), midiByClipIdJson: serializeMidiStateForClips(['clip-a']) };
+        const isCurrent = () => isGeneratedMidiStateCurrent({ entityId: 'clip-a', entityType: 'clip', guard });
+
+        addManualWarpMarker({ clipId: 'clip-a', beat: 1 });
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
+        expect(isCurrent()).toBe(false);
+        removeWarpState('clip-a');
+
+        enableWarp('clip-a');
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
+        expect(isCurrent()).toBe(false);
+        removeWarpState('clip-a');
+
+        setStretchMode('clip-a', 'complex');
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
+        expect(isCurrent()).toBe(false);
     });
 });
