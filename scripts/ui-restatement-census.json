@@ -200,7 +200,7 @@
   {
     "id": "ui-0189c044d30c9d76",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 201,
+    "line": 203,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -219,15 +219,6 @@
     "id": "ui-01c3e8978abe33e1",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx",
     "line": 687,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-01d6bede1307898d",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 361,
     "fingerprint": "div\tflex items-center gap-2",
     "kind": "layout",
     "mapping": "Row",
@@ -295,15 +286,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-028f82c297a3bd3f",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 125,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-029a018290b0a0f2",
@@ -888,6 +870,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-077a35cb1f0946cb",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 262,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -1557,6 +1548,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-0d94a0c6a61ca680",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 363,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0da99d58e4338104",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 308,
@@ -1577,7 +1577,7 @@
   {
     "id": "ui-0dbb6b5508d1881b",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 537,
+    "line": 538,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -2133,15 +2133,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-12d8e08caae373e0",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 261,
-    "fingerprint": "div\tflex min-h-0 flex-1 gap-2.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-130f4692cbf08647",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 719,
@@ -2207,7 +2198,7 @@
   {
     "id": "ui-13900459f4b870fd",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 300,
+    "line": 301,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -2486,7 +2477,7 @@
   {
     "id": "ui-158721e55cee5392",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 191,
+    "line": 192,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2988,6 +2979,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-1b54d66ff8abbc26",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 133,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1ba47abef3cc69b2",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 157,
@@ -3004,6 +3004,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-1c549171e4801e2e",
+    "file": "src/modules/Crust/presentations/components/CrustGainStrip.tsx",
+    "line": 94,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1c689872fda4876b",
@@ -3089,7 +3098,7 @@
   {
     "id": "ui-1d2596f97694ba22",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 471,
+    "line": 472,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -3134,7 +3143,7 @@
   {
     "id": "ui-1d82ab98c4db7c8b",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 83,
+    "line": 84,
     "fingerprint": "DawPluginSectionHeader\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
@@ -3501,6 +3510,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-206c75a37629b4d3",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 387,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-207af7f6f10d15ba",
     "file": "src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx",
     "line": 45,
@@ -3517,6 +3535,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-20a9b1de08ff0c9d",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 291,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-20b0c7073276b71a",
@@ -3908,7 +3935,7 @@
   {
     "id": "ui-24fcb02ae9692302",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 285,
+    "line": 286,
     "fingerprint": "DawPluginSectionHeader\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
@@ -3928,15 +3955,6 @@
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
     "line": 141,
     "fingerprint": "div\tflex shrink-0 justify-center items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-252b75fedc95e557",
-    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 224,
-    "fingerprint": "div\tflex items-center justify-between",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -4032,15 +4050,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-266268d766750e61",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 451,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-26660a04b1d9751c",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/MacrosPanel.tsx",
     "line": 185,
@@ -4074,15 +4083,6 @@
     "fingerprint": "label\tflex items-center gap-1 text-[10px] text-muted-foreground",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-26e5e5a6907116ce",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 292,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -4174,6 +4174,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-2797247a6f535f1e",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 251,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-27a41c3983dfff3b",
@@ -4482,6 +4491,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-2a70d70d09fe1ba9",
+    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
+    "line": 135,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-2a8d4b4988967c61",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 891,
@@ -4493,7 +4511,7 @@
   {
     "id": "ui-2aaeebd7e1e16281",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 516,
+    "line": 517,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -4772,7 +4790,7 @@
   {
     "id": "ui-2d1793fcad10ccc8",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 183,
+    "line": 185,
     "fingerprint": "DawPluginReadoutList\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginReadoutList",
@@ -4837,15 +4855,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx",
     "line": 151,
     "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-2e0d063664ae548d",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 123,
-    "fingerprint": "div\tcrust-faceplate flex h-full min-h-0 flex-col gap-2.5 overflow-hidden p-2.5 text-foreground",
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
@@ -5040,6 +5049,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-30e54fd26883be67",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 167,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-312cbe562fe8dc05",
     "file": "src/modules/Fermenter/presentations/components/MacroStrip.tsx",
     "line": 18,
@@ -5119,6 +5137,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-321d3909c75c3775",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 293,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3238801aaccf476f",
@@ -5267,7 +5294,7 @@
   {
     "id": "ui-33d26ed2f88768d1",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 404,
+    "line": 405,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -5886,15 +5913,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-3a5fe8dbe0ee2148",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 290,
-    "fingerprint": "div\tflex gap-3 items-end",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3a76f1682687c7b2",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 768,
@@ -6167,7 +6185,7 @@
   {
     "id": "ui-3caa987380289be5",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 348,
+    "line": 349,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -6291,6 +6309,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-3df5ed6c889efa5a",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 124,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3e119133da1af14e",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 316,
@@ -6309,15 +6336,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-3e52c45168dd2692",
-    "file": "src/modules/Crust/presentations/components/CrustGainStrip.tsx",
-    "line": 89,
-    "fingerprint": "div\trelative flex-1 w-full flex justify-center cursor-pointer",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3e5c5180e4c6bf38",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 196,
@@ -6325,6 +6343,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-3e981904009a25cb",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 620,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3eaf074dc7c0f94e",
@@ -6435,6 +6462,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3f74bcd3c5bf7ab5",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 420,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3f875580aa2fa85a",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 198,
@@ -6514,6 +6550,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-4082059b7fa996d2",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 362,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-40ab129de66e86dc",
@@ -6687,6 +6732,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-4247e06ec26cbc6d",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 329,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-424c7b498dc9395e",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 756,
@@ -6725,20 +6779,11 @@
   {
     "id": "ui-427bb0c8418912a8",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 364,
+    "line": 365,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-42810e46a3658651",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 362,
-    "fingerprint": "div\tflex flex-wrap gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-4292a50dcaf5931a",
@@ -6927,15 +6972,6 @@
     "fingerprint": "div\tflex items-center gap-2",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-43c97a4e4bbbc03e",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 267,
-    "fingerprint": "div\tflex flex-col gap-2",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -7166,7 +7202,7 @@
   {
     "id": "ui-45bb3aef39837b99",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 147,
+    "line": 148,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7695,15 +7731,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-4b341021cd7833ba",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 291,
-    "fingerprint": "div\tflex items-center gap-2 text-[9px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4b4418fdb1c0db70",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
     "line": 139,
@@ -7830,6 +7857,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-4cff7b4a406f4261",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 386,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-4d1a59876fa3018d",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
     "line": 228,
@@ -7842,6 +7878,24 @@
     "id": "ui-4d326f24d5393b40",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
     "line": 49,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4d6ed4ee52c80c8b",
+    "file": "src/modules/Crust/presentations/components/CrustGainStrip.tsx",
+    "line": 80,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4d7203c530f6e2cf",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 126,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -8017,6 +8071,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-4f01c868099e1b1e",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 268,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4f0bc7dcc6ede3fd",
@@ -8784,15 +8847,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-570a093958983eff",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 446,
-    "fingerprint": "div\tflex flex-col gap-2 mt-1 pt-1 border-t border-border/10",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-570abce911a5a2ac",
     "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
     "line": 328,
@@ -9047,7 +9101,7 @@
   {
     "id": "ui-5946abc4fbe333c0",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 214,
+    "line": 216,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9137,7 +9191,7 @@
   {
     "id": "ui-59fe75dfde7ae627",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 134,
+    "line": 135,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -9223,15 +9277,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-5aa09571711db213",
-    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 133,
-    "fingerprint": "div\tflex gap-1 h-16",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5b07b1e99976a51c",
@@ -9425,7 +9470,7 @@
   {
     "id": "ui-5cce727eb75ae0ee",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 142,
+    "line": 143,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -9484,6 +9529,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-5d38292230a6416b",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 447,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-5d4e76b64619b738",
@@ -9679,15 +9733,6 @@
     "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
     "line": 235,
     "fingerprint": "div\tflex w-full items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-5eff68caef371789",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 447,
-    "fingerprint": "div\tflex gap-3 flex-wrap",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -10604,7 +10649,7 @@
   {
     "id": "ui-68798e6c1fea5839",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 92,
+    "line": 93,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -10645,6 +10690,15 @@
     "kind": "generic-control",
     "mapping": "Select",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-68ba5bc03555f941",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 362,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-68cb702cf85596d1",
@@ -10944,15 +10998,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6cd979d628dac033",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 362,
-    "fingerprint": "label\tflex items-center gap-2 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6ced4feca3e0b847",
     "file": "src/components/daw/DawUtilityMetric.tsx",
     "line": 34,
@@ -11016,15 +11061,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6db3a4ec8ed72879",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 388,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6db7e263ebd12bcd",
     "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
     "line": 48,
@@ -11058,15 +11094,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-6de454896895e1f6",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 386,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -11173,15 +11200,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx",
     "line": 143,
     "fingerprint": "div\tflex h-full items-center justify-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-6ecb196f75073e8c",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 419,
-    "fingerprint": "div\tflex items-center gap-2 mt-1",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -11365,15 +11383,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-71017f63f63462cb",
-    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 225,
-    "fingerprint": "div\tflex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-710cf4d6de975504",
@@ -12125,7 +12134,7 @@
   {
     "id": "ui-783edd4e1b8ce335",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 226,
+    "line": 227,
     "fingerprint": "DawPluginChoiceRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChoiceRow",
@@ -12681,6 +12690,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7cac83076a965117",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 452,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7caf2b2fd20711dc",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx",
     "line": 97,
@@ -12845,7 +12863,7 @@
   {
     "id": "ui-7e624e7c1abdd76d",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 390,
+    "line": 391,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -12996,15 +13014,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-7fb9773fee6437d6",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 132,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7fdc75dd978a257d",
     "file": "src/modules/AiRuntime/presentations/components/ChatComposer.tsx",
     "line": 84,
@@ -13124,7 +13133,7 @@
   {
     "id": "ui-813606442eafb621",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 412,
+    "line": 413,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -13529,7 +13538,7 @@
   {
     "id": "ui-848e76f45dfcbeb5",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 453,
+    "line": 454,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -14076,15 +14085,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-89c68cda4dcc05e8",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 250,
-    "fingerprint": "div\tml-auto flex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-89c70b817415efdb",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackLevelSection.tsx",
     "line": 38,
@@ -14418,6 +14418,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-8d3b626691566185",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 130,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8d43072ec24f412a",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
     "line": 210,
@@ -14501,7 +14510,7 @@
   {
     "id": "ui-8dcff9f49dd595bb",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 273,
+    "line": 274,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -14879,7 +14888,7 @@
   {
     "id": "ui-91eb4923aa95af25",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 378,
+    "line": 379,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -14920,15 +14929,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-92ea3a9b9dd9d2c5",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 328,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-930ee1ac9b159e04",
@@ -14974,6 +14974,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-9396a0e140d8a48b",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 265,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-939985a5f89e89a0",
@@ -15055,15 +15064,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-94fb935880aa4321",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 166,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9501cbe7dcd4ab43",
@@ -15185,7 +15185,7 @@
   {
     "id": "ui-9635a5af0c47b3b7",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 293,
+    "line": 294,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -15306,6 +15306,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9797347eafd0314b",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 536,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -15858,6 +15867,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-9d589f82e85456a0",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 488,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9d5a40c7bf89c170",
     "file": "src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx",
     "line": 24,
@@ -16283,7 +16301,7 @@
   {
     "id": "ui-a1a6e15420bd79a4",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 81,
+    "line": 82,
     "fingerprint": "div\tflex flex-col items-center gap-0.5 pointer-events-none opacity-40",
     "kind": "layout",
     "mapping": "Stack",
@@ -16324,15 +16342,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-a1f6d5008b876faf",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 619,
-    "fingerprint": "div\tflex flex-col gap-2 px-2 py-1.5 overflow-y-auto animate-in fade-in duration-150",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a201365963ba1ac5",
@@ -16938,6 +16947,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-a94e9d898c113bf0",
+    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
+    "line": 227,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a95499450509cdcd",
     "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
     "line": 30,
@@ -17053,6 +17071,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-aa598a55f6eff51a",
+    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
+    "line": 149,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-aa6a2a9dbb6e47a2",
@@ -17199,6 +17226,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-abe9c02a0955f893",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 448,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-abea33ec598dc959",
     "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
     "line": 94,
@@ -17237,7 +17273,7 @@
   {
     "id": "ui-ac2abe644aea7207",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 231,
+    "line": 232,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17269,6 +17305,15 @@
     "kind": "generic-control",
     "mapping": "Select",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-ac570823d6227902",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 272,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ac5811d007b0e61c",
@@ -17613,6 +17658,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-afe6937c80776551",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 125,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-afff8a84edd42f5c",
     "file": "src/components/daw/DawBlockedState.tsx",
     "line": 41,
@@ -17656,6 +17710,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-b05b0caa1c23bfe0",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 292,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-b061cb5ea2082183",
@@ -17885,7 +17948,7 @@
   {
     "id": "ui-b262d318632dbe63",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 344,
+    "line": 345,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
@@ -17899,15 +17962,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-b2aac7f4c6533e0d",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 129,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b2c4e464475d111a",
@@ -18011,7 +18065,7 @@
   {
     "id": "ui-b3c3f0bbb162c200",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 431,
+    "line": 432,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -18522,15 +18576,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b8d2c2f2475a065e",
-    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 147,
-    "fingerprint": "div\tflex justify-between mt-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b8f0b20062b2b553",
     "file": "src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx",
     "line": 81,
@@ -18767,7 +18812,7 @@
   {
     "id": "ui-bb7d227ae96f6795",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 488,
+    "line": 489,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -18891,15 +18936,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-bcb17a1e6ff9963e",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 212,
-    "fingerprint": "div\tcrust-window daw-floating-surface absolute right-0 top-full z-50 mt-1 flex max-h-[300px] min-w-[268px] flex-col overflow-y-auto p-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-bcdbb4114691a750",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1998,
@@ -19014,6 +19050,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-be16c6ea4465e9af",
+    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
+    "line": 124,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -19240,15 +19285,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-c0ac043c4c9cfc9a",
-    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 123,
-    "fingerprint": "div\tflex flex-col gap-2 p-2 h-full",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c0b4bb19e3204aea",
@@ -19521,15 +19557,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c3656679162f3f01",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 264,
-    "fingerprint": "div\tflex min-w-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c36c42635b4d8424",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 271,
@@ -19631,7 +19658,7 @@
   {
     "id": "ui-c4aa7f9e49f17301",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 172,
+    "line": 173,
     "fingerprint": "DawPluginChoiceRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChoiceRow",
@@ -19789,15 +19816,6 @@
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-c675d26333adb2f9",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 487,
-    "fingerprint": "div\tflex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c6ae5c9539cb5eac",
@@ -20349,6 +20367,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-cc48a2cec1b657ad",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 213,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-cc513115f99eaf62",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 833,
@@ -20387,7 +20414,7 @@
   {
     "id": "ui-ccba69233c4b8852",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 420,
+    "line": 421,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -20401,6 +20428,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChoiceRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-ccc98f9acd348a93",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 404,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-cd1f4e39698aab3a",
@@ -20799,6 +20835,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-d1443f908b780b5f",
+    "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
+    "line": 226,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d144a6c20d58dee4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 543,
@@ -20927,7 +20972,7 @@
   {
     "id": "ui-d2859f8a4dbcbcab",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 191,
+    "line": 193,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -21089,7 +21134,7 @@
   {
     "id": "ui-d3ef0ee1dcae2f8c",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 251,
+    "line": 252,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -21184,6 +21229,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-d50b3a6f8ab5d429",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 285,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d532d76bc0cc9c3f",
@@ -21413,7 +21467,7 @@
   {
     "id": "ui-d73d5dd67002c38c",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 232,
+    "line": 234,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -21573,15 +21627,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d911ff435479aa32",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 361,
-    "fingerprint": "div\tcrust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d93a33a999816283",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 268,
@@ -21656,7 +21701,7 @@
   {
     "id": "ui-d9e6180b56fc398e",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 265,
+    "line": 266,
     "fingerprint": "div\tgrid shrink-0 grid-cols-4 gap-2.5",
     "kind": "layout",
     "mapping": "Grid",
@@ -21683,7 +21728,7 @@
   {
     "id": "ui-da3cccb58bd401c4",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 364,
+    "line": 365,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -21703,15 +21748,6 @@
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
     "line": 82,
     "fingerprint": "div\tflex flex-1 basis-0 justify-start items-center gap-1 min-w-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-da8c70a72140538e",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 385,
-    "fingerprint": "div\tflex gap-2",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -21883,15 +21919,6 @@
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 179,
     "fingerprint": "div\tpointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[26px] border-2 border-dashed border-[var(--color-accent-lavender)] bg-[var(--color-accent-lavender)]/5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-dcb9f8a8435b7f44",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 250,
-    "fingerprint": "div\tflex gap-2 h-full items-center px-2",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -22122,6 +22149,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-decb5cc42c3ad12b",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 164,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ded6ea70b1f49cdc",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 763,
@@ -22282,6 +22318,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e16652fd1cc74fe7",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 389,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e19bbad6f17995fb",
@@ -22610,7 +22655,7 @@
   {
     "id": "ui-e48f4ebe6de77abe",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 420,
+    "line": 421,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -22637,7 +22682,7 @@
   {
     "id": "ui-e4b60e0b98381af1",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 577,
+    "line": 578,
     "fingerprint": "div\tgrid grid-cols-2 gap-x-3 gap-y-0.5 mt-1 pt-1 border-t border-border/10",
     "kind": "layout",
     "mapping": "Grid",
@@ -22698,6 +22743,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-e57051b34e183832",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 363,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e5764c67afcacbf2",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx",
     "line": 674,
@@ -22713,15 +22767,6 @@
     "fingerprint": "div\tflex flex-wrap gap-0.5 px-2 py-1 shrink-0 border-b border-border/20",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-e5867b11748aa70b",
-    "file": "src/modules/Crust/presentations/components/CrustGainStrip.tsx",
-    "line": 78,
-    "fingerprint": "div\tflex flex-col items-center px-1.5 py-2 gap-1 select-none shrink-0",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -23373,15 +23418,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-ed0540868bab4a6d",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 403,
-    "fingerprint": "div\tml-auto flex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ed634e1047819857",
     "file": "src/modules/Routing/presentations/views/RoutingMatrix.tsx",
     "line": 152,
@@ -23402,7 +23438,7 @@
   {
     "id": "ui-ed7113c640fca26a",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
-    "line": 184,
+    "line": 186,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -23440,15 +23476,6 @@
     "file": "src/modules/Fermenter/presentations/components/SectionNav.tsx",
     "line": 24,
     "fingerprint": "div\tflex gap-0.5 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-edf368013ec09d43",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 535,
-    "fingerprint": "div\tflex gap-1 mt-1",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -23589,6 +23616,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-ef16b6803c74c79f",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 470,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ef23fcebb925f76e",
     "file": "src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx",
     "line": 94,
@@ -23631,15 +23667,6 @@
     "fingerprint": "div\tflex flex-col flex-1 min-w-0 overflow-hidden justify-center gap-1.5",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ef6ce7dcbe1635e3",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 271,
-    "fingerprint": "div\tflex flex-wrap gap-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -23766,15 +23793,6 @@
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-f0fb80e8bb6b5f0e",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 124,
-    "fingerprint": "header\tcrust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -24399,15 +24417,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-f73fc15d70e96aeb",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 284,
-    "fingerprint": "div\tcrust-window flex min-h-0 flex-1 flex-col gap-3 p-2.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f74466c336bbbfcf",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1267,
@@ -24867,15 +24876,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-fc162a5e70a017b6",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 163,
-    "fingerprint": "div\tcrust-window daw-floating-surface absolute left-0 top-full z-50 mt-1 flex max-h-[280px] min-w-[220px] flex-col overflow-y-auto p-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-fc27e35bab6acb6b",
     "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
     "line": 62,
@@ -25137,6 +25137,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-fe4e8715a0b1cf28",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 251,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fe4eb5bf8f2f4ed8",
     "file": "src/modules/TimelineEditor/presentations/components/Inspector/InspectorDetailHeader.tsx",
     "line": 20,
@@ -25166,7 +25175,7 @@
   {
     "id": "ui-feabf997477de6c7",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 583,
+    "line": 584,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -25252,15 +25261,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ffbcae44c9bc7e93",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 469,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ffc564ba15212696",
