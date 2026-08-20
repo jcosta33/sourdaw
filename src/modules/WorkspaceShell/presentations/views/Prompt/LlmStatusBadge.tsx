@@ -6,6 +6,7 @@ import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Button } from '#/components/ui/button';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 import {
     aiBackendPreferenceStore,
@@ -119,8 +120,10 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             unavailableLabel = 'Configure hosted AI';
             unavailableTitle = 'Configure a hosted AI provider in Preferences';
         } else if (backendPreference === 'webllm') {
-            unavailableLabel = 'WebGPU unavailable';
-            unavailableTitle = 'Browser WebLLM requires WebGPU support';
+            unavailableLabel = MODEL_RELEASE_ADMISSION.webLlm ? 'WebGPU unavailable' : 'Local AI unavailable';
+            unavailableTitle = MODEL_RELEASE_ADMISSION.webLlm
+                ? 'Browser WebLLM requires WebGPU support'
+                : 'No browser language model is admitted in this release';
         }
         return (
             <span className="text-[9px] text-muted-foreground/50 whitespace-nowrap" title={unavailableTitle}>

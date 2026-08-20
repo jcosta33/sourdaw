@@ -8,7 +8,7 @@ description = "Real-time thread, lock-free communication, and graph processing."
 crate-type = ["rlib"]
 
 [dependencies]
-rtrb = "0.3"
+rtrb = "0.4"
 cpal = { version = "0.18", features = [] }
 daw-dsp = { version = "0.1.0", path = "../daw-dsp" }
 triple_buffer = "9.0.0"
@@ -16,12 +16,11 @@ triple_buffer = "9.0.0"
 # The IAudioClient3/WASAPI device backend (ADR 0027). Target-gated so no
 # other platform compiles or downloads the Windows bindings.
 #
-# Cargo.lock pins windows-core to 0.61.2, which is what unifies two
-# otherwise-incompatible requirement families: cpal 0.18 accepts
-# windows-core >=0.61,<=0.62 while `windows` 0.61 re-exports 0.61.x, and
-# no manifest bound holds them together. A `cargo update` that splits the
-# graph onto two windows-core versions breaks the Windows build with
-# mismatched COM types; re-unify the lock on one 0.61.x if that happens.
+# Keep the workspace `windows` dependency on the same windows-core family that
+# cpal resolves. Splitting the graph across windows-core families breaks the
+# Windows build with mismatched COM types; after either dependency changes,
+# verify one family remains and cross-check daw-engine for
+# x86_64-pc-windows-msvc.
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",

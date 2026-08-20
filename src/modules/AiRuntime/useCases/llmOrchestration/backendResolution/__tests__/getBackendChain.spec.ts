@@ -43,6 +43,16 @@ describe('getBackendChain', () => {
         expect(getBackendChain()).toEqual([]);
     });
 
+    it('does not expose the withheld browser model when WebGPU is available', () => {
+        Object.defineProperty(globalThis, 'navigator', {
+            value: { gpu: {} },
+            configurable: true,
+            writable: true,
+        });
+
+        expect(getBackendChain()).toEqual([]);
+    });
+
     it('uses a hosted provider only after explicit selection', () => {
         mocks.preference.value = 'cloud';
 

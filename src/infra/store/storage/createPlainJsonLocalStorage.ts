@@ -7,6 +7,22 @@ import { type StorageAdapter } from './types';
 type CreatePlainJsonLocalStorageInput<TData> = {
     key: LocalStorageKey;
     decode: (value: unknown) => TData | null;
+    /**
+     * Whether a refused durable write should also remove whatever the key still
+     * holds.
+     *
+     * Off by default, because for most keys the previous value is the better of
+     * the two outcomes: settings that are one revision behind beat settings that
+     * are gone. Opt in for a key whose stored value is a SNAPSHOT of something
+     * the session has already moved past — where restoring the superseded copy
+     * on the next launch is worse than restoring nothing, because the reader
+     * cannot tell it is looking at an old one.
+     *
+     * The in-memory value is untouched either way: the cache advances before the
+     * durable write is attempted, so the session keeps working on what it just
+     * wrote and only the durable copy is discarded.
+     */
+    discardStoredValueOnRefusedWrite?: boolean;
 };
 
 const readPlainJsonValue = <TData>(input: CreatePlainJsonLocalStorageInput<TData>): TData | null => {
@@ -75,6 +91,15 @@ export const createPlainJsonLocalStorage = <TData>(
                         'The value is live for this session but will not survive a reload.',
                     error
                 );
+                if (input.discardStoredValueOnRefusedWrite) {
+                    try {
+                        // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
+                        window.localStorage.removeItem(input.key);
+                    } catch {
+                        // An origin that refuses `removeItem` refuses everything,
+                        // so there is no stored value left to be wrong about.
+                    }
+                }
                 // Same origin, same notice. Omitting this made a refused
                 // export-settings write silent even on a healthy boot.
                 reportStorageFullOnce();

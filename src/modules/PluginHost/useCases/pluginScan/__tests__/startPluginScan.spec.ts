@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
             isScanning: false,
             scannedPlugins: [],
             errors: [],
+            notices: [],
             lastScanTime: null,
         },
     };
@@ -33,7 +34,7 @@ function makeScannedPlugin(overrides: Partial<ScannedPlugin> = {}): ScannedPlugi
         category: 'Instrument',
         path: '/plugins/synth.vst3',
         version: '1.0.0',
-        clap_id: 'com.test.plugin',
+        descriptor_id: 'com.test.plugin',
         num_inputs: 0,
         num_outputs: 2,
         num_parameters: 8,
@@ -68,6 +69,7 @@ describe('startPluginScan', () => {
             isScanning: false,
             scannedPlugins: [],
             errors: [],
+            notices: [],
             lastScanTime: null,
         };
         mocks.pluginScanStoreSet.mockImplementation((value) => {
@@ -84,7 +86,7 @@ describe('startPluginScan', () => {
 
     it('sets isScanning and then updates with results', async () => {
         const mockPlugins = [makeScannedPlugin()];
-        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], scan_duration_ms: 5 });
+        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 5 });
 
         await startPluginScan();
 
@@ -104,7 +106,7 @@ describe('startPluginScan', () => {
     it('merges existing paths with default paths', async () => {
         mocks.pluginScanStoreValue.value.scanPaths = ['/custom/path'];
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
-        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], scan_duration_ms: 0 });
+        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], notices: [], scan_duration_ms: 0 });
 
         await startPluginScan();
 

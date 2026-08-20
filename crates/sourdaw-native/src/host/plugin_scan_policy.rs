@@ -13,6 +13,17 @@ impl PluginScanPolicy {
         }
     }
 
+    /// A policy over an explicit root set, for tests only.
+    ///
+    /// Test-gated on purpose: the roots are the authority, so production code
+    /// must have exactly one way to obtain a policy — the platform defaults —
+    /// and no way to widen one. Tests need it because the platform defaults are
+    /// the developer's real plugin folders, which no test may write into.
+    #[cfg(test)]
+    pub(crate) fn with_allowed_roots(allowed_roots: Vec<PathBuf>) -> Self {
+        Self { allowed_roots }
+    }
+
     pub fn allowed_roots_as_strings(&self) -> Vec<String> {
         self.allowed_roots
             .iter()

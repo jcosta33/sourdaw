@@ -30,6 +30,10 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: commandMocks.executeAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({

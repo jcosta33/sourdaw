@@ -1,32 +1,34 @@
 ---
 name: state-and-write-paths
 description: >-
-  Classify every state value and route every write through its owning boundary
-  before adding or changing state. ALWAYS apply when adding, editing, or reviewing
-  project truth, stores, selectors/projections, undo/redo, commands, events, async
-  fetch/cache state, UI state, or telemetry — even if it looks like "just one more
-  store field". Skip pure presentational props with no persistence, and
-  engine-internal RT buffers.
+    Classify every state value and route every write through its owning boundary
+    before adding or changing state. ALWAYS apply when adding, editing, or reviewing
+    project truth, stores, selectors/projections, undo/redo, commands, events, async
+    fetch/cache state, UI state, or telemetry — even if it looks like "just one more
+    store field". Skip pure presentational props with no persistence, and
+    engine-internal RT buffers.
 ---
 
 ## Purpose
 
-Unclassified state is how DAW truth corrupts: a store field that is half project / half UI, a foreign slice write that breaks undo, or a React handle sitting where serialized truth belongs. Classify first, then place the write.
+Unclassified state is how DAW truth corrupts: a store field that is half project / half UI, a foreign slice write that breaks undo, a React handle sitting where serialized truth belongs. Classify first, then place the write.
 
 ## Core rules
 
 ### 1. Classify every value into exactly one category before placing it
 
-| Category | What it is | Write path |
-|----------|------------|------------|
-| Project state | Authoritative truth (tracks, clips, routing, automation, tempo, markers, device order, saved params) | Owning domain use cases / commands; serializable, undoable |
-| Shared runtime | App-wide runtime visibility (engine ready, device lists, scan results) | Owning subsystem; not project truth |
-| Persistent UI | Local prefs (zoom, layout, sidebar) | Prefs storage — not the project file |
-| Ephemeral UI | Selection, tool, drag, hover | Feature/view; disposable |
-| Local component | Draft input, popover open | `useState` / form in that component |
-| Engine/runtime | Live graph, playhead execution, meters | Engine only — non-serializable |
-| Async fetch/cache | Server/query results | TanStack Query (or equivalent; installed, no call sites yet) — not business writes |
-| Telemetry | Logs, metrics | Side channel — never truth |
+| Category          | What it is                                                                                           | Write path                                                 |
+| ----------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Project state     | Authoritative truth (tracks, clips, routing, automation, tempo, markers, device order, saved params) | Owning domain use cases / commands; serializable, undoable |
+| Shared runtime    | App-wide runtime visibility (engine ready, device lists, scan results)                               | Owning subsystem; not project truth                        |
+| Persistent UI     | Local prefs (zoom, layout, sidebar)                                                                  | Prefs storage — not the project file                       |
+| Ephemeral UI      | Selection, tool, drag, hover                                                                         | Feature/view; disposable                                   |
+| Local component   | Draft input, popover open                                                                            | `useState` / form in that component                        |
+| Engine/runtime    | Live graph, playhead execution, meters                                                               | Engine only — non-serializable                             |
+| Async fetch/cache | Server/query results                                                                                 | TanStack Query or equivalent — not business writes         |
+| Telemetry         | Logs, metrics                                                                                        | Side channel — never truth                                 |
+
+Never invent a new category: fit the value or split it.
 
 **Why:** two categories “fitting” means the design is mixed; split the value or the owner before coding.
 
@@ -38,7 +40,7 @@ Feature A never mutates feature B’s project slice. Cross-feature intent goes t
 
 ### 3. Stores are a public read contract, not a write API for business truth
 
-Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers). Outside: use cases or `executeAppAction` (**policy**; foreign-write ESLint is **warn** only). Leaf components must not **directly** import business stores (**error** `components-no-business-store-access`).
+Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers); everyone else goes through use cases or `executeAppAction` (**policy** — the foreign-write ESLint rule is **warn** only). Leaf components must not **directly** import business stores (**error** `components-no-business-store-access`).
 
 **Why:** write discipline is what prevents global mutability.
 
@@ -50,31 +52,27 @@ Never put `AudioContext`, `AudioNode`, worklet handles, or other runtime objects
 
 ### 5. Undo/history only for intentional project writes
 
-Ephemeral UI and query-cache churn must not invent undo entries. Continuous gestures coalesce into meaningful writes.
+Ephemeral UI and query-cache churn never create undo entries. Continuous gestures coalesce into one meaningful write.
 
 **Why:** undo that rewinds hover state or network cache is unusable; missing undo on project edits is data loss.
 
 ### 6. Commands express intent; events report outcomes
 
-Events do not replace commands as the write API. Subscribers react; they do not become a second owner of truth. Event contracts stay pure (`events-are-pure`).
+Events never replace commands as the write API. Subscribers react; they do not become a second owner of truth. Event contracts stay pure (`events-are-pure`).
 
 **Why:** “notify by event” that mutates foreign state is a hidden write path.
 
 ### 7. Projections and selectors are derived and disposable
 
-Never persist derived-as-truth. Selectors stay read-only — no write side effects on read/render.
+Never persist a derivative as truth. Selectors stay read-only — no write side effects on read or render.
 
 **Why:** stored derivatives drift from source truth and become a second model.
 
 ### 8. Async fetch/cache is not editable business state
 
-Edit project truth through domain writes; invalidate or refetch the cache. Do not treat the query cache as a mutable document.
+Edit project truth through domain writes, then invalidate or refetch. The query cache is never a mutable document.
 
 **Why:** cache-as-truth reimplements a worse store without ownership or undo.
-
-## What does not belong
-
-- Inventing a ninth category instead of fitting or splitting the design.
 
 ## References
 

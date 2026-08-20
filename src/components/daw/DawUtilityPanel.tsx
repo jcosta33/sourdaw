@@ -1,5 +1,6 @@
 import { type ComponentPropsWithRef, type ReactElement } from 'react';
 
+import { Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 /**
@@ -10,7 +11,7 @@ import { cn } from '#/utils/Styles/cn';
 type DawUtilityPanelProps = ComponentPropsWithRef<'div'>;
 
 export const DawUtilityPanel = ({ className, children, ...props }: DawUtilityPanelProps): ReactElement => (
-    <div className={cn('daw-floating-surface flex flex-col overflow-hidden rounded-lg', className)} {...props}>
+    <Stack className={cn('daw-floating-surface overflow-hidden rounded-lg', className)} {...props}>
         {children}
-    </div>
+    </Stack>
 );

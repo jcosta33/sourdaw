@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap_sys::entry::clap_plugin_entry;
+use clap_sys::ext::audio_ports::{
+    clap_audio_port_info, clap_plugin_audio_ports, CLAP_EXT_AUDIO_PORTS,
+};
+use clap_sys::ext::gui::CLAP_EXT_GUI;
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
     CLAP_PARAM_IS_ENUM, CLAP_PARAM_IS_MODULATABLE, CLAP_PARAM_IS_READONLY, CLAP_PARAM_IS_STEPPED,
@@ -20,8 +24,48 @@ use std::ffi::{CStr, CString};
 const MAX_SCANNED_PARAMETER_DESCRIPTORS: u32 = 256;
 const MAX_SCANNED_PARAMETER_NAME_BYTES: usize = 128;
 const MAX_SCANNED_PARAMETER_METADATA_BYTES: usize = 32 * 1024;
+
+/// The most audio ports, per direction, the scanner will walk on one plugin.
+///
+/// `clap_plugin_audio_ports::count` is a plugin-supplied `u32`, so it is an
+/// untrusted loop bound: a plugin returning `u32::MAX` would otherwise hold the
+/// worker inside a four-billion-iteration walk until its deadline killed it, and
+/// that plugin would report as broken rather than as unusual. Real plugins
+/// declare a handful.
+const MAX_SCANNED_AUDIO_PORTS: u32 = 64;
+
+/// The most audio channels, per direction, a scanned port list may sum to.
+///
+/// Bounds `channel_count` the way the port cap bounds the port count: the sum is
+/// what reaches the browse list, and a plugin declaring an absurd channel count
+/// on a legal number of ports is describing something no host can route.
+const MAX_SCANNED_AUDIO_CHANNELS: u32 = 1024;
+
 pub const PARAMETER_METADATA_UNAVAILABLE_REASON: &str =
     "The scanner could not safely complete external parameter inspection.";
+
+/// Why a plugin's reported port counts and editor support are unqueried
+/// defaults rather than facts the scanner read from the plugin.
+///
+/// Recorded whenever the bounded worker did not inspect a live instance at all
+/// — it failed, it ran out of the scan's deadline, or the caller only needed the
+/// descriptor. Zeros with this reason attached are a stated absence of
+/// knowledge; zeros without it would be a claim.
+pub const CAPABILITY_METADATA_UNAVAILABLE_REASON: &str =
+    "The scanner did not inspect this plugin's capability extensions, so its port counts and editor support are unqueried defaults.";
+
+/// Why a plugin the scanner *did* inspect still reports no audio ports.
+///
+/// `clap.audio-ports` is the only way a CLAP plugin declares audio ports, so a
+/// plugin that does not implement it has none — a note effect, for instance.
+/// Zero is the truthful answer here, and this says why it is an answer rather
+/// than a gap.
+///
+/// It qualifies the port counts alone. An instance was inspected to learn this,
+/// so `has_custom_ui` alongside it is that instance's own answer about
+/// `clap.gui` — a queried fact, not a default.
+pub const AUDIO_PORTS_EXTENSION_ABSENT_REASON: &str =
+    "This plugin does not implement clap.audio-ports, so it declares no audio ports.";
 
 /// Metadata extracted from a single plugin bundle on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,25 +77,80 @@ pub struct ScannedPlugin {
     pub category: String,
     pub path: String,
     pub version: String,
-    /// The CLAP descriptor's own id — stable across installs and versions,
-    /// unlike `id`, which is a hash of the current file path. Empty for formats
-    /// that carry no CLAP descriptor.
-    pub clap_id: String,
+    /// The identity the plugin's own descriptor claims — stable across installs
+    /// and versions, unlike `id`, which is a hash of the current file path. Each
+    /// format has one: CLAP's reverse-DNS plugin id, VST3's class CID. Empty
+    /// when the scan of this file yielded no usable descriptor.
+    pub descriptor_id: String,
+    /// Total audio channels across the plugin's input ports, as the plugin's own
+    /// `clap.audio-ports` extension declared them during the scan. Zero when the
+    /// scanner could not ask or the plugin declares no input ports;
+    /// `capability_metadata_reason` says which.
     pub num_inputs: u32,
+    /// Total audio channels across the plugin's output ports. Same provenance
+    /// and same caveat as `num_inputs`.
     pub num_outputs: u32,
     pub num_parameters: u32,
+    /// Whether the plugin implements `clap.gui`, which is the only way a CLAP
+    /// plugin can offer its own editor. False with a
+    /// `capability_metadata_reason` means "not asked", not "no editor".
     pub has_custom_ui: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<Vec<ClapParameterDescriptor>>,
+    pub parameters: Option<Vec<ScannedParameterDescriptor>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_metadata_reason: Option<String>,
+    /// Present when any of `num_inputs`, `num_outputs`, or `has_custom_ui` is a
+    /// default rather than a queried fact. Absent means every one of them is a
+    /// queried fact.
+    ///
+    /// The reason says which fields it covers, and it is not always all three.
+    /// [`CAPABILITY_METADATA_UNAVAILABLE_REASON`] covers all of them: no
+    /// inspection ran. [`AUDIO_PORTS_EXTENSION_ABSENT_REASON`] covers the two
+    /// port counts only — an instance was inspected and `has_custom_ui` is that
+    /// instance's answer, a queried fact standing beside two defaults. Read the
+    /// reason, not just its presence, before calling a field unmeasured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_metadata_reason: Option<String>,
+}
+
+/// Audio channel counts a plugin declared through `clap.audio-ports`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ScannedAudioChannelCounts {
+    pub inputs: u32,
+    pub outputs: u32,
+}
+
+/// What one live-but-unactivated CLAP instance told the bounded scan worker
+/// about itself.
+///
+/// One instance answers all of it. The worker already created, initialized and
+/// destroyed an instance to read the parameter contract; asking the same
+/// instance for its audio ports and its editor extension adds no process, no
+/// activation, and no second load — and crash isolation already covers a plugin
+/// that misbehaves while being asked.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ScannedInstance {
+    pub parameters: Vec<ScannedParameterDescriptor>,
+    pub capabilities: ScannedInstanceCapabilities,
+}
+
+/// The capability facts a scanned instance reported.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct ScannedInstanceCapabilities {
+    /// `None` when the plugin does not implement `clap.audio-ports`. Not the
+    /// same as `Some(zero, zero)`, which is a plugin that implements the
+    /// extension and declares no ports through it.
+    pub audio_channels: Option<ScannedAudioChannelCounts>,
+    /// Whether `clap.gui` is present on the instance. Absence is an answer: a
+    /// CLAP plugin without that extension has no plugin-provided editor.
+    pub has_custom_ui: bool,
 }
 
 /// A bounded, scan-time CLAP parameter contract. Values are descriptor facts only:
 /// units, step sizes, and enum choices are not part of `clap_param_info` and stay
 /// unavailable to consumers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ClapParameterDescriptor {
+pub struct ScannedParameterDescriptor {
     pub id: u32,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,9 +177,69 @@ pub struct ClapDescriptorMetadata {
     pub version: String,
     pub features: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<Vec<ClapParameterDescriptor>>,
+    pub parameters: Option<Vec<ScannedParameterDescriptor>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_metadata_reason: Option<String>,
+    /// What the instance-inspection worker read from the plugin's capability
+    /// extensions, or `None` when that inspection did not run. `None` is what
+    /// makes an unqueried default distinguishable from a queried zero, so it may
+    /// never be filled in with a placeholder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ScannedInstanceCapabilities>,
+}
+
+/// One plugin's descriptor facts, in the vocabulary the scan speaks rather than
+/// any one format's.
+///
+/// This is what a per-format extractor produces and what [`scanned_plugin`]
+/// consumes, so adding a format adds an extractor and nothing else: the walk,
+/// the worker protocol, the registry and the DTO are already written in these
+/// terms. CLAP is the only extractor today — see
+/// [`ClapDescriptorMetadata::into_scanned_descriptor`].
+///
+/// It crosses the scan worker's process boundary, so it is the wire type too.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScannedDescriptor {
+    /// The format whose extractor produced this. Carried rather than inferred:
+    /// the wire name a scan publishes must be the one the extractor that read
+    /// the file claims, not one the consumer guessed from an extension.
+    pub format: String,
+    pub vendor: String,
+    /// Move-survivable identity from the plugin's own descriptor — CLAP's
+    /// reverse-DNS id, VST3's class CID. Empty when the format has no such id or
+    /// the descriptor did not carry one.
+    pub descriptor_id: String,
+    pub version: String,
+    /// The category string the plugin browser routes on. Derived by the
+    /// extractor, because only it knows how its format declares this.
+    pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<Vec<ScannedParameterDescriptor>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameter_metadata_reason: Option<String>,
+    /// What the instance-inspection worker read from the plugin's capability
+    /// extensions, or `None` when that inspection did not run. `None` is what
+    /// makes an unqueried default distinguishable from a queried zero, so it may
+    /// never be filled in with a placeholder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ScannedInstanceCapabilities>,
+}
+
+impl ClapDescriptorMetadata {
+    /// The CLAP extractor's half of the seam: CLAP descriptor facts rendered in
+    /// the scan's own vocabulary.
+    pub fn into_scanned_descriptor(self) -> ScannedDescriptor {
+        ScannedDescriptor {
+            format: PluginFormat::Clap.wire_name().to_string(),
+            category: category_from_clap_features(&self.features),
+            vendor: self.vendor,
+            descriptor_id: self.id,
+            version: self.version,
+            parameters: self.parameters,
+            parameter_metadata_reason: self.parameter_metadata_reason,
+            capabilities: self.capabilities,
+        }
+    }
 }
 
 /// Map a CLAP feature list onto the category string the UI routes on.
@@ -119,7 +278,19 @@ pub fn category_from_clap_features(features: &[String]) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub plugins: Vec<ScannedPlugin>,
+    /// What went wrong: a root that could not be read, a candidate the worker
+    /// failed on, a safety limit hit. A non-empty list is a scan the user has a
+    /// problem with, and every consumer renders it as one.
     pub errors: Vec<String>,
+    /// What the scan wants the user to know about a healthy run.
+    ///
+    /// Format refusals live here and not in `errors`. Sourdaw scans the VST3
+    /// roots by default on every platform, so a user who owns a single VST3
+    /// plugin gets the VST3 refusal on every scan — as an error it would make a
+    /// completely successful scan render red forever and permanently withhold
+    /// the success badge, which teaches the user to ignore the channel that
+    /// reports real failures.
+    pub notices: Vec<String>,
     pub scan_duration_ms: u64,
 }
 
@@ -138,12 +309,135 @@ pub fn stable_id(path: &Path) -> String {
     )
 }
 
-fn detect_format(path: &Path, is_dir: bool) -> Option<&'static str> {
+/// Why Sourdaw will not load a plugin of a format it recognises.
+///
+/// Each one names the format and the actual reason, because "unsupported" sends
+/// a user looking for a setting to turn on. The reasons themselves are decided
+/// in `.agents/decisions/0031-native-plugin-format-strategy.md`; this is the
+/// single place they are worded, so the scanner and `load_plugin` cannot drift
+/// into telling a user two different stories about the same file.
+pub const VST3_REFUSAL: &str = "VST3 plugins are recognised but not loaded yet: Sourdaw's VST3 host is not implemented. CLAP plugins load today.";
+pub const VST2_REFUSAL: &str = "VST2 plugins are not loaded and never will be: Steinberg stopped issuing the VST2 licence agreement in October 2018, so no host written since can ship VST2 support. Use the CLAP or VST3 build of this plugin if its vendor offers one.";
+pub const AUDIO_UNIT_REFUSAL: &str = "Audio Unit plugins are not loaded: Audio Units are macOS-only, and Sourdaw hosts the cross-platform formats instead. Use the CLAP or VST3 build of this plugin if its vendor offers one.";
+
+/// A plugin format Sourdaw recognises on disk.
+///
+/// Recognising a format is not the same as hosting it: what Sourdaw can *do*
+/// with each one is [`PluginFormat::scan_support`], and that is the single
+/// place the answer is decided. Nothing outside this file compares a format
+/// string against a literal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PluginFormat {
+    Clap,
+    Vst3,
+    Vst2,
+    AudioUnit,
+}
+
+/// What the scan can do with a recognised format.
+///
+/// The registry entry, in the only shape the walk needs: either a descriptor
+/// extractor exists for this format and the file is a candidate, or none does
+/// and the user is owed the reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatScanSupport {
+    /// A descriptor extractor is registered. The walk collects the file.
+    Extractor,
+    /// No extractor is registered for this format. The walk reports this reason
+    /// instead, once per format — see [`ScanResult::notices`].
+    NoExtractor(&'static str),
+}
+
+impl PluginFormat {
+    /// Every format `detect_format` can produce.
+    ///
+    /// Lets a caller drive a check over the whole registry rather than over the
+    /// formats it happened to think of. `every_recognised_format_is_listed`
+    /// matches exhaustively, so adding a variant without adding it here does
+    /// not compile.
+    pub const ALL: [Self; 4] = [Self::Clap, Self::Vst3, Self::Vst2, Self::AudioUnit];
+
+    /// The wire name. Crosses the worker protocol, the registry file, and the
+    /// scan DTO, so it is a contract: never rename an arm's string.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            Self::Clap => "clap",
+            Self::Vst3 => "vst3",
+            Self::Vst2 => "vst2",
+            Self::AudioUnit => "au",
+        }
+    }
+
+    /// The format a wire name denotes, or `None` for a name Sourdaw does not
+    /// recognise at all.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            "clap" => Some(Self::Clap),
+            "vst3" => Some(Self::Vst3),
+            "vst2" => Some(Self::Vst2),
+            "au" => Some(Self::AudioUnit),
+            _ => None,
+        }
+    }
+
+    /// Whether the scan has a descriptor extractor for this format, and the
+    /// reason to give the user when it has not.
+    ///
+    /// CLAP is the only format with an extractor. The reasons are decided in
+    /// `.agents/decisions/0031-native-plugin-format-strategy.md` and worded in
+    /// the constants above, so the scanner and `load_plugin` cannot drift into
+    /// telling a user two different stories about the same file.
+    pub fn scan_support(self) -> FormatScanSupport {
+        match self {
+            Self::Clap => FormatScanSupport::Extractor,
+            Self::Vst3 => FormatScanSupport::NoExtractor(VST3_REFUSAL),
+            Self::Vst2 => FormatScanSupport::NoExtractor(VST2_REFUSAL),
+            Self::AudioUnit => FormatScanSupport::NoExtractor(AUDIO_UNIT_REFUSAL),
+        }
+    }
+}
+
+/// The refusal for a recognised format Sourdaw does not load, or `None` for one
+/// it does.
+///
+/// The wire-name view of [`PluginFormat::scan_support`], for callers holding a
+/// persisted format string rather than the enum. An unrecognised name yields
+/// `None` — the caller decides what an unknown format means, and `load_plugin`
+/// says so by name.
+pub fn unsupported_format_refusal(format: &str) -> Option<&'static str> {
+    match PluginFormat::from_wire_name(format)?.scan_support() {
+        FormatScanSupport::NoExtractor(refusal) => Some(refusal),
+        FormatScanSupport::Extractor => None,
+    }
+}
+
+/// Which plugin format a path's shape says it is.
+///
+/// The formats Sourdaw refuses are recognised here rather than ignored, so the
+/// walk can say *why* it passed a file over. A user whose plugin folder is full
+/// of VST3 bundles and who sees an empty plugin list has been told nothing.
+fn detect_format(path: &Path, is_dir: bool) -> Option<PluginFormat> {
     let ext = path.extension()?.to_str()?;
     match (ext, is_dir) {
-        ("vst3", true) => Some("vst3"),
-        ("clap", false) => Some("clap"),
-        ("component", true) => Some("au"),
+        ("vst3", true) => Some(PluginFormat::Vst3),
+        ("clap", false) => Some(PluginFormat::Clap),
+        ("component", true) => Some(PluginFormat::AudioUnit),
+        // A `.vst` *directory*: the bundle shape VST2 ships in on macOS and
+        // Linux, recognised so a bundle misplaced into an authorized root is
+        // refused by name rather than passed over in silence.
+        //
+        // Windows VST2 ships as a bare `.dll`, and that extension is
+        // deliberately not recognised here. There is no way to reach a VST2
+        // folder: `PluginScanPolicy::platform_defaults` is production's only
+        // policy constructor and `authorize_scan_root` admits only descendants
+        // of its fixed roots, so a custom VST2 path cannot be granted. What a
+        // `.dll` arm would actually match is the vendor support and runtime
+        // libraries sitting inside the authorized Windows VST3 and CLAP roots,
+        // which the walk recurses into — and telling a user that a vendor's
+        // runtime DLL is a VST2 plugin Sourdaw will never load is a fabricated
+        // claim about a file that is not a plugin at all. Restore this arm only
+        // together with a production path that can authorize a VST2 root.
+        ("vst", true) => Some(PluginFormat::Vst2),
         _ => None,
     }
 }
@@ -156,16 +450,41 @@ fn plugin_name_from_path(path: &Path) -> String {
 
 // ── Directory scanning ──────────────────────────────────────────────────
 
-#[cfg(test)]
-fn scan_directory(dir: &Path, candidates: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
-    let deadline = Instant::now() + std::time::Duration::from_secs(5);
-    let _ = scan_directory_bounded(dir, candidates, errors, (usize::MAX, deadline));
+/// One file the walk recognised, and the format it was recognised as.
+///
+/// The format travels with the path because the caller has to route the file to
+/// that format's extractor. Ordered by path first so the caller's `sort`/`dedup`
+/// keeps the order it always had — a path is recognised as exactly one format,
+/// so the second field never decides a comparison.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ScanCandidate {
+    pub path: PathBuf,
+    pub format: PluginFormat,
 }
 
+#[cfg(test)]
+fn scan_directory(
+    dir: &Path,
+    candidates: &mut Vec<ScanCandidate>,
+    errors: &mut Vec<String>,
+    notices: &mut Vec<String>,
+) {
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    let _ = scan_directory_bounded(dir, candidates, errors, notices, (usize::MAX, deadline));
+}
+
+/// Walk one authorized root, collecting loadable candidates.
+///
+/// `errors` and `notices` are two channels because they mean two different
+/// things to the user: something failed, versus something the scan wants them to
+/// know. A recognised-but-unloadable format is the second — see
+/// [`ScanResult::notices`] — and routing it through `errors` makes an entirely
+/// healthy scan report as broken.
 pub fn scan_directory_bounded(
     dir: &Path,
-    candidates: &mut Vec<PathBuf>,
+    candidates: &mut Vec<ScanCandidate>,
     errors: &mut Vec<String>,
+    notices: &mut Vec<String>,
     budget: (usize, Instant),
 ) -> bool {
     if candidates.len() >= budget.0 || Instant::now() >= budget.1 {
@@ -236,13 +555,25 @@ pub fn scan_directory_bounded(
         let is_dir = entry_metadata.is_dir();
 
         if let Some(format) = detect_format(&entry_path, is_dir) {
-            if format != "clap" {
-                continue;
+            match format.scan_support() {
+                // No extractor is registered for this format, so there is
+                // nothing to ask the file. Say why, once per format and not once
+                // per bundle: a user with two hundred VST3 plugins needs the
+                // reason, not two hundred copies of it, and this list is shown to
+                // them verbatim.
+                FormatScanSupport::NoExtractor(refusal) => {
+                    if !notices.iter().any(|notice| notice == refusal) {
+                        notices.push(refusal.to_string());
+                    }
+                    continue;
+                }
+                FormatScanSupport::Extractor => candidates.push(ScanCandidate {
+                    path: entry_path,
+                    format,
+                }),
             }
-
-            candidates.push(entry_path);
         } else if is_dir {
-            if !scan_directory_bounded(&entry_path, candidates, errors, budget) {
+            if !scan_directory_bounded(&entry_path, candidates, errors, notices, budget) {
                 return false;
             }
         }
@@ -250,29 +581,57 @@ pub fn scan_directory_bounded(
     true
 }
 
-pub fn scanned_plugin(path: &Path, descriptor: ClapDescriptorMetadata) -> ScannedPlugin {
-    let category = category_from_clap_features(&descriptor.features);
+/// Why at least one of this plugin's capability fields is not a queried fact,
+/// or `None` when every one of them is.
+///
+/// Two distinguishable absences, and they are not the same claim: the scanner
+/// never asked, or the scanner asked and the plugin declares no audio ports.
+/// The second one leaves `has_custom_ui` a fact — the instance answered — so
+/// the reason a caller reads decides which fields it qualifies.
+fn capability_metadata_reason(
+    capabilities: Option<&ScannedInstanceCapabilities>,
+) -> Option<&'static str> {
+    match capabilities {
+        None => Some(CAPABILITY_METADATA_UNAVAILABLE_REASON),
+        Some(capabilities) if capabilities.audio_channels.is_none() => {
+            Some(AUDIO_PORTS_EXTENSION_ABSENT_REASON)
+        }
+        Some(_) => None,
+    }
+}
+
+/// The scan DTO for one plugin, from whichever format's extractor read it.
+///
+/// Takes the neutral descriptor, so nothing here knows which format produced
+/// it: `format` and `category` are the extractor's answers, carried through.
+pub fn scanned_plugin(path: &Path, descriptor: ScannedDescriptor) -> ScannedPlugin {
+    let capabilities = descriptor.capabilities;
+    // Flattened here and nowhere else: `num_inputs`/`num_outputs`/`has_custom_ui`
+    // are a flat wire contract, and the moment they are read apart from
+    // `capability_metadata_reason` a default becomes indistinguishable from a
+    // fact. They used to be hardcoded zeros presented as fact.
+    let audio_channels = capabilities.and_then(|capabilities| capabilities.audio_channels);
 
     ScannedPlugin {
         id: stable_id(path),
         name: plugin_name_from_path(path),
         vendor: descriptor.vendor,
-        format: "clap".to_string(),
-        category,
+        format: descriptor.format,
+        category: descriptor.category,
         path: path.to_string_lossy().into_owned(),
         version: descriptor.version,
-        clap_id: descriptor.id,
-        // Runtime capabilities require an activated live instance. Discovery
-        // only exposes the scan-time CLAP parameter contract.
-        num_inputs: 0,
-        num_outputs: 0,
+        descriptor_id: descriptor.descriptor_id,
+        num_inputs: audio_channels.map_or(0, |channels| channels.inputs),
+        num_outputs: audio_channels.map_or(0, |channels| channels.outputs),
         num_parameters: descriptor
             .parameters
             .as_ref()
             .map_or(0, |parameters| parameters.len() as u32),
-        has_custom_ui: false,
+        has_custom_ui: capabilities.is_some_and(|capabilities| capabilities.has_custom_ui),
         parameters: descriptor.parameters,
         parameter_metadata_reason: descriptor.parameter_metadata_reason,
+        capability_metadata_reason: capability_metadata_reason(capabilities.as_ref())
+            .map(str::to_string),
     }
 }
 
@@ -334,7 +693,8 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&scan_root, &mut plugins, &mut errors);
+        let mut notices = Vec::new();
+        scan_directory(&scan_root, &mut plugins, &mut errors, &mut notices);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
@@ -365,10 +725,12 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
+        let mut notices = Vec::new();
         scan_directory(
             &symlinked_scan_root.join("Vendor"),
             &mut plugins,
             &mut errors,
+            &mut notices,
         );
         let _ = std::fs::remove_dir_all(&temp_root);
 
@@ -396,19 +758,213 @@ mod tests {
             );
         let plugin_bundle = temp_root.join("Unmeasured.vst3");
         let audio_unit_bundle = temp_root.join("Unmeasured.component");
+        let vst2_bundle = temp_root.join("Unmeasured.vst");
         std::fs::create_dir_all(&plugin_bundle).expect("VST3 placeholder should be created");
         std::fs::create_dir_all(&audio_unit_bundle)
+            .expect("Audio Unit placeholder should be created");
+        std::fs::create_dir_all(&vst2_bundle).expect("VST2 placeholder should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(
+            plugins.is_empty(),
+            "unsupported VST3, VST2 and Audio Unit bundles must not appear loadable: {plugins:?}"
+        );
+        // Skipped in silence, an unloadable format is indistinguishable from an
+        // empty folder. Each refusal names the format and why.
+        assert!(notices.contains(&VST3_REFUSAL.to_string()), "{notices:?}");
+        assert!(notices.contains(&VST2_REFUSAL.to_string()), "{notices:?}");
+        assert!(
+            notices.contains(&AUDIO_UNIT_REFUSAL.to_string()),
+            "{notices:?}"
+        );
+        // The whole point of the second channel: a folder of plugins Sourdaw
+        // will not load is not a scan that went wrong.
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// One line per format, not one per plugin. A user with a folder of VST3
+    /// bundles gets the reason once; this list is shown to them verbatim, and
+    /// repeating it two hundred times buries everything else in it.
+    #[test]
+    fn a_folder_of_refused_bundles_reports_its_format_once() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-refusal-dedupe")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        for index in 0..5 {
+            std::fs::create_dir_all(temp_root.join(format!("Vendor{index}.vst3")))
+                .expect("VST3 placeholder should be created");
+        }
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(plugins.is_empty());
+        assert_eq!(notices, vec![VST3_REFUSAL.to_string()]);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// Sourdaw scans the VST3 roots by default on every platform, so this is
+    /// the *ordinary* outcome for a user who owns any VST3 plugin at all. On
+    /// the error channel it would render the scan destructively and withhold
+    /// the success badge forever, on every scan, for a run in which nothing
+    /// went wrong.
+    #[test]
+    fn a_scan_that_only_refused_formats_reports_no_error() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-refusal-not-an-error")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        std::fs::create_dir_all(temp_root.join("Vendor.vst3"))
+            .expect("VST3 placeholder should be created");
+        std::fs::create_dir_all(temp_root.join("Vendor.component"))
             .expect("Audio Unit placeholder should be created");
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&temp_root, &mut plugins, &mut errors);
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
         let _ = std::fs::remove_dir_all(&temp_root);
 
-        assert!(errors.is_empty(), "unexpected scan errors: {errors:?}");
+        assert!(plugins.is_empty());
         assert!(
-            plugins.is_empty(),
-            "unsupported VST3 and Audio Unit bundles must not appear loadable: {plugins:?}"
+            errors.is_empty(),
+            "a refusal is not a failure and may not ride the error channel: {errors:?}"
+        );
+        assert_eq!(notices.len(), 2, "{notices:?}");
+    }
+
+    /// Each refusal has to say which format it is about and why that format is
+    /// refused. "Unsupported" sends a user looking for a setting to turn on.
+    #[test]
+    fn every_refusal_names_its_format_and_its_reason() {
+        let vst3 = unsupported_format_refusal("vst3").expect("VST3 must be refused, not loaded");
+        assert!(vst3.contains("VST3"), "{vst3}");
+        assert!(vst3.contains("not implemented"), "{vst3}");
+
+        let vst2 = unsupported_format_refusal("vst2").expect("VST2 must be refused, not loaded");
+        assert!(vst2.contains("VST2"), "{vst2}");
+        assert!(vst2.contains("October 2018"), "{vst2}");
+
+        let audio_unit = unsupported_format_refusal("au").expect("AU must be refused, not loaded");
+        assert!(audio_unit.contains("Audio Unit"), "{audio_unit}");
+        assert!(audio_unit.contains("macOS-only"), "{audio_unit}");
+
+        assert_eq!(
+            unsupported_format_refusal("clap"),
+            None,
+            "the format Sourdaw does load must not carry a refusal"
+        );
+    }
+
+    /// `ALL` is what every registry-wide check iterates, so a format missing
+    /// from it is a format those checks never look at. The match is exhaustive
+    /// and has no wildcard: a new variant stops this compiling until it is
+    /// listed.
+    #[test]
+    fn every_recognised_format_is_listed() {
+        for format in PluginFormat::ALL {
+            match format {
+                PluginFormat::Clap
+                | PluginFormat::Vst3
+                | PluginFormat::Vst2
+                | PluginFormat::AudioUnit => {}
+            }
+        }
+
+        let mut wire_names: Vec<&str> = PluginFormat::ALL
+            .iter()
+            .map(|format| format.wire_name())
+            .collect();
+        wire_names.sort_unstable();
+        wire_names.dedup();
+        assert_eq!(
+            wire_names.len(),
+            PluginFormat::ALL.len(),
+            "two formats sharing a wire name would make the registry ambiguous"
+        );
+    }
+
+    /// The wire name is the only form that crosses the worker protocol and the
+    /// registry file, so a format that cannot be read back from its own name is
+    /// a row nothing can resolve.
+    #[test]
+    fn every_format_round_trips_through_its_wire_name() {
+        for format in PluginFormat::ALL {
+            assert_eq!(
+                PluginFormat::from_wire_name(format.wire_name()),
+                Some(format),
+                "{} must read back as itself",
+                format.wire_name()
+            );
+        }
+
+        assert_eq!(PluginFormat::from_wire_name("mystery"), None);
+        assert_eq!(PluginFormat::from_wire_name(""), None);
+    }
+
+    /// The one format with a scan extractor, stated as a property of the
+    /// registry rather than of any one call site. Every other recognised format
+    /// carries a refusal, so the walk can never pass a file over in silence.
+    #[test]
+    fn clap_is_the_only_format_with_a_scan_extractor() {
+        for format in PluginFormat::ALL {
+            match format.scan_support() {
+                FormatScanSupport::Extractor => assert_eq!(
+                    format,
+                    PluginFormat::Clap,
+                    "{} gained an extractor without the packet that implements one",
+                    format.wire_name()
+                ),
+                FormatScanSupport::NoExtractor(refusal) => assert!(
+                    !refusal.is_empty(),
+                    "{} has no extractor and owes the user a reason",
+                    format.wire_name()
+                ),
+            }
+        }
+    }
+
+    /// A `.vst` bundle sitting in an authorized root is plausibly a misplaced
+    /// VST2 plugin, and naming it beats passing it over.
+    #[test]
+    fn a_vst2_bundle_in_an_authorized_root_is_recognised_so_it_can_be_refused() {
+        assert_eq!(
+            detect_format(Path::new("/plugins/Vendor.vst"), true),
+            Some(PluginFormat::Vst2)
+        );
+    }
+
+    /// A bare `.dll` is not claimed as a VST2 plugin, and the reason is where
+    /// the walk actually meets one. No production path can authorize a VST2
+    /// folder — `platform_defaults` is the only policy constructor and it
+    /// authorizes the VST3, CLAP and Components roots — while the walk does
+    /// recurse into vendor subfolders of the Windows VST3 and CLAP roots, which
+    /// are full of support and runtime DLLs. Claiming those are VST2 plugins
+    /// Sourdaw will never load is a fabricated statement about a file that is
+    /// not a plugin.
+    #[test]
+    fn a_bare_dll_is_not_claimed_to_be_a_vst2_plugin() {
+        assert_eq!(detect_format(Path::new("/plugins/Vendor.dll"), false), None);
+        assert_eq!(
+            detect_format(Path::new("/plugins/Vendor Support.dll"), false),
+            None
         );
     }
 
@@ -537,14 +1093,13 @@ pub fn extract_clap_metadata(path: &Path) -> Result<ClapDescriptorMetadata, Stri
     }
 }
 
-/// Create a CLAP instance inside the scan worker, inspect `CLAP_EXT_PARAMS`, and
-/// destroy it without activation. The app process never receives the instance.
+/// Create a CLAP instance inside the scan worker, inspect the extensions
+/// discovery needs — `clap.params`, `clap.audio-ports`, `clap.gui` — and destroy
+/// it without activation. The app process never receives the instance.
 ///
 /// # Safety
 /// Calls third-party CLAP entry points and must only run in the bounded scan worker.
-pub fn extract_clap_parameter_metadata(
-    path: &Path,
-) -> Result<Vec<ClapParameterDescriptor>, String> {
+pub fn extract_clap_instance_metadata(path: &Path) -> Result<ScannedInstance, String> {
     unsafe {
         let library =
             Library::new(path).map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
@@ -564,7 +1119,7 @@ pub fn extract_clap_parameter_metadata(
             }
         }
 
-        let result = extract_parameters_from_factory(entry_ref);
+        let result = extract_instance_metadata_from_factory(entry_ref);
 
         if let Some(deinit) = entry_ref.deinit {
             deinit();
@@ -662,7 +1217,7 @@ unsafe fn bounded_parameter_module(
 unsafe fn extract_parameters_from_extension(
     plugin: *const clap_sys::plugin::clap_plugin,
     parameters: &clap_plugin_params,
-) -> Result<Vec<ClapParameterDescriptor>, String> {
+) -> Result<Vec<ScannedParameterDescriptor>, String> {
     let count = match parameters.count {
         Some(count) => count(plugin),
         None => return Err("CLAP parameter extension has no count callback".to_string()),
@@ -701,7 +1256,7 @@ unsafe fn extract_parameters_from_extension(
         if metadata_bytes > MAX_SCANNED_PARAMETER_METADATA_BYTES {
             return Err("CLAP parameter metadata exceeds scanner bounds".to_string());
         }
-        descriptors.push(ClapParameterDescriptor {
+        descriptors.push(ScannedParameterDescriptor {
             id: info.id,
             name,
             module,
@@ -720,9 +1275,69 @@ unsafe fn extract_parameters_from_extension(
     Ok(descriptors)
 }
 
-unsafe fn extract_parameters_from_factory(
+/// Sum the channels a plugin declares on one direction's audio ports.
+///
+/// Both loop bounds come from the plugin, so both are checked before they are
+/// trusted. A port the plugin refuses to describe is a failure rather than a
+/// skipped row: a partial sum reported as a channel count is the same class of
+/// fabrication as the hardcoded zero this replaces.
+unsafe fn audio_channel_count(
+    plugin: *const clap_sys::plugin::clap_plugin,
+    audio_ports: &clap_plugin_audio_ports,
+    is_input: bool,
+) -> Result<u32, String> {
+    let count = match audio_ports.count {
+        Some(count) => count(plugin, is_input),
+        None => return Err("CLAP audio-ports extension has no count callback".to_string()),
+    };
+    if count > MAX_SCANNED_AUDIO_PORTS {
+        return Err("CLAP audio port count exceeds scanner bounds".to_string());
+    }
+    let get = match audio_ports.get {
+        Some(get) => get,
+        None => return Err("CLAP audio-ports extension has no info callback".to_string()),
+    };
+
+    let mut channels: u32 = 0;
+    for index in 0..count {
+        let mut info: clap_audio_port_info = mem::zeroed();
+        if !get(plugin, index, is_input, &mut info) {
+            return Err("CLAP audio-ports extension returned incomplete port info".to_string());
+        }
+        channels = channels.saturating_add(info.channel_count);
+        if channels > MAX_SCANNED_AUDIO_CHANNELS {
+            return Err("CLAP audio channel count exceeds scanner bounds".to_string());
+        }
+    }
+    Ok(channels)
+}
+
+/// Read the plugin's declared audio channel counts, or `None` when it does not
+/// implement `clap.audio-ports` at all.
+///
+/// Queried after `init` and before any `activate`, which is where CLAP defines
+/// the port list to be stable and readable on the main thread.
+unsafe fn extract_audio_channels(
+    plugin: *const clap_sys::plugin::clap_plugin,
+    get_extension: unsafe extern "C" fn(
+        *const clap_sys::plugin::clap_plugin,
+        *const std::os::raw::c_char,
+    ) -> *const std::ffi::c_void,
+) -> Result<Option<ScannedAudioChannelCounts>, String> {
+    let extension = get_extension(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr());
+    if extension.is_null() {
+        return Ok(None);
+    }
+    let audio_ports = &*(extension as *const clap_plugin_audio_ports);
+    Ok(Some(ScannedAudioChannelCounts {
+        inputs: audio_channel_count(plugin, audio_ports, true)?,
+        outputs: audio_channel_count(plugin, audio_ports, false)?,
+    }))
+}
+
+unsafe fn extract_instance_metadata_from_factory(
     entry_ref: &clap_plugin_entry,
-) -> Result<Vec<ClapParameterDescriptor>, String> {
+) -> Result<ScannedInstance, String> {
     let factory = first_plugin_factory(entry_ref)?;
     let descriptor = first_plugin_descriptor(factory)?;
     let plugin_id = owned_c_string(descriptor.id);
@@ -749,14 +1364,42 @@ unsafe fn extract_parameters_from_factory(
         if !init(plugin) {
             return Err("CLAP metadata instance initialization failed".to_string());
         }
-        let extension = match plugin_ref.get_extension {
-            Some(get_extension) => get_extension(plugin, CLAP_EXT_PARAMS.as_ptr()),
-            None => return Ok(Vec::new()),
+        // No extension lookup at all: the plugin can declare no parameters, no
+        // audio ports and no editor, and every one of those is a fact rather
+        // than a gap — `clap.audio-ports` is reported as present-and-empty
+        // because the instance answered, which is what separates it from an
+        // inspection that never ran.
+        let Some(get_extension) = plugin_ref.get_extension else {
+            return Ok(ScannedInstance {
+                parameters: Vec::new(),
+                capabilities: ScannedInstanceCapabilities {
+                    audio_channels: None,
+                    has_custom_ui: false,
+                },
+            });
         };
-        if extension.is_null() {
-            return Ok(Vec::new());
-        }
-        extract_parameters_from_extension(plugin, &*(extension as *const clap_plugin_params))
+
+        let parameters_extension = get_extension(plugin, CLAP_EXT_PARAMS.as_ptr());
+        let parameters = if parameters_extension.is_null() {
+            Vec::new()
+        } else {
+            extract_parameters_from_extension(
+                plugin,
+                &*(parameters_extension as *const clap_plugin_params),
+            )?
+        };
+
+        Ok(ScannedInstance {
+            parameters,
+            capabilities: ScannedInstanceCapabilities {
+                audio_channels: extract_audio_channels(plugin, get_extension)?,
+                // Presence is the whole query. Nothing is called through the
+                // extension: the scan worker never creates a window, and
+                // `clap.gui` being there is exactly what the runtime host
+                // (`ClapWrapper::has_gui`) treats as "this plugin has an editor".
+                has_custom_ui: !get_extension(plugin, CLAP_EXT_GUI.as_ptr()).is_null(),
+            },
+        })
     })();
     if let Some(destroy) = destroy {
         destroy(plugin);
@@ -832,6 +1475,7 @@ unsafe fn extract_from_factory(
         features: owned_feature_list(desc_ref.features),
         parameters: None,
         parameter_metadata_reason: None,
+        capabilities: None,
     };
     if metadata.id.is_empty() {
         return Err("CLAP descriptor has no stable plugin id".to_string());
@@ -840,7 +1484,7 @@ unsafe fn extract_from_factory(
 }
 
 #[cfg(test)]
-mod parameter_metadata_tests {
+mod instance_metadata_tests {
     use super::*;
     use clap_sys::ext::params::{
         clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
@@ -853,6 +1497,25 @@ mod parameter_metadata_tests {
     use clap_sys::version::CLAP_VERSION;
     use std::ffi::{c_char, c_void, CStr};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    /// Serializes every test that drives the shared CLAP fixture.
+    ///
+    /// The call counters below are process-wide statics — a C callback has no
+    /// other way to report back — and the harness runs tests concurrently, so
+    /// two tests creating instances at once make each other's counts
+    /// unreadable. Neither resetting nor differencing fixes that on its own:
+    /// both race with the other test's increments. One lock does.
+    static FIXTURE: Mutex<()> = Mutex::new(());
+
+    /// Take the fixture lock, ignoring poisoning: a failed assertion in another
+    /// test is a reported failure already, and turning it into a cascade of
+    /// unrelated ones hides which test actually broke.
+    fn lock_fixture() -> std::sync::MutexGuard<'static, ()> {
+        FIXTURE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     static CREATE_CALLS: AtomicUsize = AtomicUsize::new(0);
     static INIT_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -1015,13 +1678,106 @@ mod parameter_metadata_tests {
         true
     }
 
+    // ── The capability fixture ──────────────────────────────────────────
+    //
+    // A plugin that implements `clap.audio-ports` and `clap.gui`: one mono
+    // sidechain input port beside a stereo main input, a stereo output, and an
+    // editor. Deliberately asymmetric and deliberately not 2/2, so a hardcoded
+    // stereo pair cannot pass for a queried answer.
+
+    static AUDIO_PORT_QUERY_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static GUI_QUERY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn test_audio_port_count(_plugin: *const clap_plugin, is_input: bool) -> u32 {
+        if is_input {
+            2
+        } else {
+            1
+        }
+    }
+
+    unsafe extern "C" fn test_audio_port_get(
+        _plugin: *const clap_plugin,
+        index: u32,
+        is_input: bool,
+        info: *mut clap_audio_port_info,
+    ) -> bool {
+        AUDIO_PORT_QUERY_CALLS.fetch_add(1, Ordering::Relaxed);
+        if info.is_null() {
+            return false;
+        }
+        let channel_count = match (is_input, index) {
+            (true, 0) => 2,
+            (true, 1) => 1,
+            (false, 0) => 2,
+            _ => return false,
+        };
+        *info = clap_audio_port_info {
+            id: index,
+            name: [0; CLAP_NAME_SIZE],
+            flags: 0,
+            channel_count,
+            port_type: std::ptr::null(),
+            in_place_pair: CLAP_INVALID_ID,
+        };
+        true
+    }
+
+    static TEST_AUDIO_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
+        count: Some(test_audio_port_count),
+        get: Some(test_audio_port_get),
+    };
+
+    /// A `clap.gui` vtable with every callback absent. The scanner must decide
+    /// "this plugin has an editor" from the extension being there and must not
+    /// call into it, so a fixture that would segfault on any call is the honest
+    /// one.
+    static TEST_GUI: clap_sys::ext::gui::clap_plugin_gui = clap_sys::ext::gui::clap_plugin_gui {
+        is_api_supported: None,
+        get_preferred_api: None,
+        create: None,
+        destroy: None,
+        set_scale: None,
+        get_size: None,
+        can_resize: None,
+        get_resize_hints: None,
+        adjust_size: None,
+        set_size: None,
+        set_parent: None,
+        set_transient: None,
+        suggest_title: None,
+        show: None,
+        hide: None,
+    };
+
     unsafe extern "C" fn test_plugin_get_extension(
         _plugin: *const clap_plugin,
         extension_id: *const c_char,
     ) -> *const c_void {
-        if !extension_id.is_null() && CStr::from_ptr(extension_id) == CLAP_EXT_PARAMS {
+        if extension_id.is_null() {
+            return std::ptr::null();
+        }
+        let extension_id = CStr::from_ptr(extension_id);
+        if extension_id == CLAP_EXT_PARAMS {
             return &raw const TEST_PARAMETERS as *const c_void;
         }
+        if extension_id == CLAP_EXT_AUDIO_PORTS {
+            return &raw const TEST_AUDIO_PORTS as *const c_void;
+        }
+        if extension_id == CLAP_EXT_GUI {
+            GUI_QUERY_CALLS.fetch_add(1, Ordering::Relaxed);
+            return &raw const TEST_GUI as *const c_void;
+        }
+        std::ptr::null()
+    }
+
+    /// A plugin that implements none of the discovery extensions — a legal
+    /// CLAP, and the case that must produce honest defaults rather than
+    /// silence.
+    unsafe extern "C" fn bare_plugin_get_extension(
+        _plugin: *const clap_plugin,
+        _extension_id: *const c_char,
+    ) -> *const c_void {
         std::ptr::null()
     }
 
@@ -1061,31 +1817,69 @@ mod parameter_metadata_tests {
         }))
     }
 
+    unsafe extern "C" fn bare_factory_create_plugin(
+        _factory: *const clap_plugin_factory,
+        _host: *const clap_host,
+        _plugin_id: *const c_char,
+    ) -> *const clap_plugin {
+        Box::into_raw(Box::new(clap_plugin {
+            desc: &raw const TEST_DESCRIPTOR,
+            plugin_data: std::ptr::null_mut(),
+            init: Some(test_plugin_init),
+            destroy: Some(test_plugin_destroy),
+            activate: Some(test_plugin_activate),
+            deactivate: None,
+            start_processing: None,
+            stop_processing: None,
+            reset: None,
+            process: None,
+            get_extension: Some(bare_plugin_get_extension),
+            on_main_thread: None,
+        }))
+    }
+
     static TEST_FACTORY: clap_plugin_factory = clap_plugin_factory {
         get_plugin_count: Some(test_factory_plugin_count),
         get_plugin_descriptor: Some(test_factory_descriptor),
         create_plugin: Some(test_factory_create_plugin),
     };
 
+    static BARE_FACTORY: clap_plugin_factory = clap_plugin_factory {
+        get_plugin_count: Some(test_factory_plugin_count),
+        get_plugin_descriptor: Some(test_factory_descriptor),
+        create_plugin: Some(bare_factory_create_plugin),
+    };
+
     unsafe extern "C" fn test_entry_factory(_factory_id: *const c_char) -> *const c_void {
         &raw const TEST_FACTORY as *const c_void
     }
 
+    unsafe extern "C" fn bare_entry_factory(_factory_id: *const c_char) -> *const c_void {
+        &raw const BARE_FACTORY as *const c_void
+    }
+
+    fn entry_over(
+        get_factory: unsafe extern "C" fn(*const c_char) -> *const c_void,
+    ) -> clap_plugin_entry {
+        clap_plugin_entry {
+            clap_version: CLAP_VERSION,
+            init: None,
+            deinit: None,
+            get_factory: Some(get_factory),
+        }
+    }
+
     #[test]
     fn scanner_creates_initializes_queries_and_destroys_parameter_metadata_without_activation() {
+        let _fixture = lock_fixture();
         CREATE_CALLS.store(0, Ordering::Relaxed);
         INIT_CALLS.store(0, Ordering::Relaxed);
         PARAM_QUERY_CALLS.store(0, Ordering::Relaxed);
         DESTROY_CALLS.store(0, Ordering::Relaxed);
         ACTIVATE_CALLS.store(0, Ordering::Relaxed);
-        let entry = clap_plugin_entry {
-            clap_version: CLAP_VERSION,
-            init: None,
-            deinit: None,
-            get_factory: Some(test_entry_factory),
-        };
+        let entry = entry_over(test_entry_factory);
 
-        let parameters = unsafe { extract_parameters_from_factory(&entry) }
+        let metadata = unsafe { extract_instance_metadata_from_factory(&entry) }
             .expect("parameter scan should succeed");
 
         assert_eq!(CREATE_CALLS.load(Ordering::Relaxed), 1);
@@ -1094,8 +1888,8 @@ mod parameter_metadata_tests {
         assert_eq!(DESTROY_CALLS.load(Ordering::Relaxed), 1);
         assert_eq!(ACTIVATE_CALLS.load(Ordering::Relaxed), 0);
         assert_eq!(
-            parameters,
-            vec![ClapParameterDescriptor {
+            metadata.parameters,
+            vec![ScannedParameterDescriptor {
                 id: 7,
                 name: "Gain".to_string(),
                 module: Some("Dynamics".to_string()),
@@ -1108,6 +1902,144 @@ mod parameter_metadata_tests {
                 is_enum: false,
             }]
         );
+    }
+
+    // ── Capabilities are queried, not assumed ───────────────────────────
+    //
+    // Every indexed plugin used to be published with `num_inputs: 0`,
+    // `num_outputs: 0` and `has_custom_ui: false`, hardcoded in `scanned_plugin`
+    // and presented to the browse list as fact. These two tests are what fails
+    // if that returns: the fixture declares 3 in / 2 out and an editor, and no
+    // hardcoded value can produce those numbers.
+
+    #[test]
+    fn a_plugin_implementing_the_capability_extensions_reports_its_own_ports_and_editor() {
+        let _fixture = lock_fixture();
+        AUDIO_PORT_QUERY_CALLS.store(0, Ordering::Relaxed);
+        GUI_QUERY_CALLS.store(0, Ordering::Relaxed);
+        ACTIVATE_CALLS.store(0, Ordering::Relaxed);
+        DESTROY_CALLS.store(0, Ordering::Relaxed);
+        let entry = entry_over(test_entry_factory);
+
+        let metadata = unsafe { extract_instance_metadata_from_factory(&entry) }
+            .expect("capability scan should succeed");
+
+        // Stereo main plus a mono sidechain in, stereo out: summed from the
+        // plugin's own port list, not from any per-plugin assumption.
+        assert_eq!(
+            metadata.capabilities.audio_channels,
+            Some(ScannedAudioChannelCounts {
+                inputs: 3,
+                outputs: 2
+            })
+        );
+        assert!(metadata.capabilities.has_custom_ui);
+        assert_eq!(
+            AUDIO_PORT_QUERY_CALLS.load(Ordering::Relaxed),
+            3,
+            "each declared port must be described by the plugin, not assumed"
+        );
+        assert_eq!(
+            GUI_QUERY_CALLS.load(Ordering::Relaxed),
+            1,
+            "editor support must come from asking the plugin"
+        );
+        // The isolation shape does not change to buy the answers: the instance
+        // is inspected without ever being activated, and it is destroyed inside
+        // the worker rather than handed back.
+        assert_eq!(ACTIVATE_CALLS.load(Ordering::Relaxed), 0);
+        assert_eq!(DESTROY_CALLS.load(Ordering::Relaxed), 1);
+
+        let scanned = scanned_plugin(
+            Path::new("/plugins/Sidechain.clap"),
+            ClapDescriptorMetadata {
+                capabilities: Some(metadata.capabilities),
+                ..ClapDescriptorMetadata::default()
+            }
+            .into_scanned_descriptor(),
+        );
+        assert_eq!(scanned.num_inputs, 3);
+        assert_eq!(scanned.num_outputs, 2);
+        assert!(scanned.has_custom_ui);
+        assert_eq!(scanned.capability_metadata_reason, None);
+    }
+
+    #[test]
+    fn a_plugin_implementing_neither_extension_gets_defaults_with_a_recorded_reason() {
+        // Held even though nothing here reads a counter: this fixture still
+        // drives the shared init/destroy callbacks, and a test that perturbs
+        // them without the lock breaks the tests that do read them.
+        let _fixture = lock_fixture();
+        let entry = entry_over(bare_entry_factory);
+
+        let metadata = unsafe { extract_instance_metadata_from_factory(&entry) }
+            .expect("a plugin with no extensions is a legal plugin, not a scan failure");
+
+        assert_eq!(metadata.capabilities.audio_channels, None);
+        assert!(!metadata.capabilities.has_custom_ui);
+
+        let scanned = scanned_plugin(
+            Path::new("/plugins/Bare.clap"),
+            ClapDescriptorMetadata {
+                capabilities: Some(metadata.capabilities),
+                ..ClapDescriptorMetadata::default()
+            }
+            .into_scanned_descriptor(),
+        );
+        assert_eq!(scanned.num_inputs, 0);
+        assert_eq!(scanned.num_outputs, 0);
+        assert!(!scanned.has_custom_ui);
+        assert_eq!(
+            scanned.capability_metadata_reason.as_deref(),
+            Some(AUDIO_PORTS_EXTENSION_ABSENT_REASON),
+            "zeros from a plugin that declares no ports must carry the declaration as their reason"
+        );
+    }
+
+    /// The worker not running at all is a third state, and it may not look like
+    /// either of the two above: nothing was measured, so nothing is claimed.
+    #[test]
+    fn a_plugin_the_scanner_never_inspected_says_so_rather_than_reporting_zeros() {
+        let scanned = scanned_plugin(
+            Path::new("/plugins/Uninspected.clap"),
+            ClapDescriptorMetadata::default().into_scanned_descriptor(),
+        );
+
+        assert_eq!(scanned.num_inputs, 0);
+        assert_eq!(scanned.num_outputs, 0);
+        assert!(!scanned.has_custom_ui);
+        assert_eq!(
+            scanned.capability_metadata_reason.as_deref(),
+            Some(CAPABILITY_METADATA_UNAVAILABLE_REASON)
+        );
+    }
+
+    /// `count` is a plugin-supplied loop bound, and the worker's deadline is not
+    /// a substitute for checking it: a plugin that claims four billion ports
+    /// would otherwise be reported as timed out rather than as malformed.
+    #[test]
+    fn an_unbounded_port_count_is_refused_rather_than_walked() {
+        // Held like every other test that drives the shared fixture. Nothing
+        // here reads a counter today only because the bound is checked before
+        // `test_audio_port_get` is ever called — that ordering is an
+        // implementation detail of `audio_channel_count`, and a refactor that
+        // moved the check after the first `get` would silently start
+        // perturbing `AUDIO_PORT_QUERY_CALLS` under the tests that do read it.
+        let _fixture = lock_fixture();
+        unsafe extern "C" fn unbounded_port_count(
+            _plugin: *const clap_plugin,
+            _is_input: bool,
+        ) -> u32 {
+            u32::MAX
+        }
+        static UNBOUNDED_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
+            count: Some(unbounded_port_count),
+            get: Some(test_audio_port_get),
+        };
+
+        let error = unsafe { audio_channel_count(std::ptr::null(), &UNBOUNDED_PORTS, true) }
+            .expect_err("an absurd port count must fail closed");
+        assert_eq!(error, "CLAP audio port count exceeds scanner bounds");
     }
 
     #[test]

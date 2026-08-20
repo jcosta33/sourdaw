@@ -13,7 +13,7 @@
 //! data plugin state and audio are made of.
 //!
 //! The event sink is a threadsafe function registered once at construction. It
-//! takes owned arguments and is never reachable from the CPAL callback.
+//! takes owned arguments and is never reachable from the render callback.
 
 mod windows;
 

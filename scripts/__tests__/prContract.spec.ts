@@ -7,6 +7,7 @@ import {
     assertReviewCommentBody,
     composePublishBody,
     fail,
+    issueRelationshipFromBody,
     laneBranchName,
 } from '../prContract.ts';
 
@@ -19,6 +20,74 @@ describe('pull-request contract', () => {
     it('composes a body with Closes and the four template headings', () => {
         const body = composePublishBody(2164, 'feat(vcs): add identities');
         expect(body).toContain('Closes #2164');
+        expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
+    it('references an umbrella issue without closing it', () => {
+        const body = composePublishBody(2164, 'feat(vcs): add identities', 'relates');
+        expect(body).toContain('Related #2164');
+        expect(body).not.toContain('Closes #2164');
+        expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
+    it('recovers one existing issue relationship', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(issueRelationshipFromBody(`${prefix}Closes #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}CLOSES #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Closes: #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Closes jcosta33/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toBe(
+            'closes'
+        );
+        expect(issueRelationshipFromBody(`${prefix}Closes JCOSTA33/SOURDAW#2164`, 2164, 'jcosta33/sourdaw')).toBe(
+            'closes'
+        );
+        expect(issueRelationshipFromBody(`${prefix}Related #2164`, 2164)).toBe('relates');
+        expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody(`${prefix}None.`, 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toThrow(
+            /exactly one relationship/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}None.\nCloses #2164`, 2164)).toThrow(
+            /exactly one relationship/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\n${prefix}Related #2164`, 2164)).toThrow(
+            /exactly one Related tickets section/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #90071992547409930`, Number.MAX_SAFE_INTEGER)).toThrow(
+            /exactly one relationship/
+        );
+        expect(() => issueRelationshipFromBody(`Fixes #99\n${prefix}Related #2164`, 2164)).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
+        expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
+            /exactly one relationship/
+        );
+    });
+
+    it('rejects hidden GitHub closing references', () => {
+        expect(() => composePublishBody(2164, 'feat(vcs): fixes #99', 'relates')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes owner/repo#99')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes: #99', 'relates')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes : #99', 'relates')).not.toThrow();
+        expect(() =>
+            composePublishBody(undefined, 'feat(vcs): resolves https://github.com/owner/repo/issues/99')
+        ).not.toThrow();
+    });
+
+    it('composes a nonempty Related tickets section when no issue is given', () => {
+        const body = composePublishBody(undefined, 'feat(vcs): add identities');
+        expect(body).not.toContain('Closes #');
+        expect(body.slice(body.indexOf('### 📌 Related tickets & additional notes')).trim()).toBe(
+            '### 📌 Related tickets & additional notes\nNone.'
+        );
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
     });
 
@@ -35,6 +104,17 @@ describe('pull-request contract', () => {
         expect(laneBranchName(12, 'work')).toBe('agent/12/work');
         expect(() => assertLaneSlug('Work')).toThrow(/slug/);
         expect(() => assertLaneSlug('agent')).not.toThrow();
+    });
+
+    it('drops the issue segment from the branch name when no issue is given', () => {
+        expect(laneBranchName(undefined, 'work')).toBe('agent/work');
+        expect(laneBranchName(undefined, 'lane-issue-optional')).toBe('agent/lane-issue-optional');
+    });
+
+    it('rejects a purely numeric slug that would be read as an issue number', () => {
+        expect(() => assertLaneSlug('2206')).toThrow(/purely numeric/);
+        expect(() => assertLaneSlug('0')).toThrow(/purely numeric/);
+        expect(() => assertLaneSlug('sprint-2206')).not.toThrow();
     });
 
     it('requires one-paragraph review comments with defect, consequence, and outcome', () => {

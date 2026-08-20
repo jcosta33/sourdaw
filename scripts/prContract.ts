@@ -49,7 +49,114 @@ export function assertPullRequestBody(body: string, label: string): void {
     }
 }
 
-export function composePublishBody(issue: number, subject: string): string {
+export const ISSUE_NUMBER_PATTERN = /^[1-9][0-9]*$/;
+
+export const NO_RELATED_TICKETS = 'None.';
+
+export type IssueRelationship = 'closes' | 'relates';
+
+const CLOSING_REFERENCE_PATTERN =
+    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))\b/gi;
+const CLOSING_RELATIONSHIP_PATTERN =
+    /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
+const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
+
+type ClosingReference = { issue: string; repository?: string };
+type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
+
+function isExpectedClosingReference(
+    reference: ClosingReference,
+    issue: number,
+    repository: string | undefined
+): boolean {
+    return (
+        reference.issue === String(issue) &&
+        (reference.repository === undefined ||
+            (repository !== undefined && reference.repository.toLowerCase() === repository.toLowerCase()))
+    );
+}
+
+function assertIssueClosingReferences(
+    body: string,
+    issue: number | undefined,
+    relationship: IssueRelationship | undefined,
+    repository?: string
+): void {
+    const references = [...body.matchAll(CLOSING_REFERENCE_PATTERN)].map<ClosingReference>((match) =>
+        match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] }
+    );
+    const expected = relationship === 'closes' ? issue : undefined;
+    if (
+        expected === undefined
+            ? references.length > 0
+            : references.length !== 1 ||
+              references[0] === undefined ||
+              !isExpectedClosingReference(references[0], expected, repository)
+    ) {
+        fail('pull-request body contains unexpected issue-closing references');
+    }
+}
+
+export function issueRelationshipFromBody(
+    body: string,
+    issue: number | undefined,
+    repository?: string
+): IssueRelationship | undefined {
+    const heading = REQUIRED_BODY_HEADINGS.at(-1);
+    const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
+    if (heading === undefined || headingIndex < 0 || headingIndex !== body.lastIndexOf(heading)) {
+        fail('pull-request body must contain exactly one Related tickets section');
+    }
+    const lines = body
+        .slice(headingIndex + heading.length)
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+    const relationships = lines.flatMap<IssueReference>((line) => {
+        const closing = CLOSING_RELATIONSHIP_PATTERN.exec(line);
+        if (closing !== null) {
+            return [
+                {
+                    label: 'Closes',
+                    repository: closing[2],
+                    issue: closing[1] ?? closing[3] ?? '',
+                },
+            ];
+        }
+        const related = RELATED_RELATIONSHIP_PATTERN.exec(line);
+        return related === null ? [] : [{ label: 'Related', issue: related[1] ?? '' }];
+    });
+    if (issue === undefined) {
+        if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {
+            fail('issueless pull-request body must start its Related tickets section with None.');
+        }
+        assertIssueClosingReferences(body, issue, undefined, repository);
+        return undefined;
+    }
+    const existing = relationships[0];
+    if (
+        relationships.length !== 1 ||
+        existing === undefined ||
+        existing.issue !== String(issue) ||
+        (existing.repository !== undefined &&
+            (repository === undefined || existing.repository.toLowerCase() !== repository.toLowerCase())) ||
+        lines.includes(NO_RELATED_TICKETS)
+    ) {
+        fail(`pull-request body must contain exactly one relationship to #${issue}`);
+    }
+    const relationship = existing.label === 'Closes' ? 'closes' : 'relates';
+    assertIssueClosingReferences(body, issue, relationship, repository);
+    return relationship;
+}
+
+export function composePublishBody(
+    issue: number | undefined,
+    subject: string,
+    relationship: IssueRelationship = 'closes'
+): string {
+    const relatedTickets =
+        issue === undefined ? NO_RELATED_TICKETS : `${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`;
     const body = `### 🎯 What does this PR do?
 ${subject}
 
@@ -60,17 +167,22 @@ pnpm test:run on the named spec files in this change.
 None.
 
 ### 📌 Related tickets & additional notes
-Closes #${issue}
+${relatedTickets}
 `;
     assertPullRequestBody(body, 'pull-request body');
-    if (!body.includes(`Closes #${issue}`)) {
-        fail('pull-request body is missing Closes #<issue-number>');
+    assertIssueClosingReferences(body, issue, issue === undefined ? undefined : relationship);
+    if (issue !== undefined && !body.includes(`${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`)) {
+        fail(`pull-request body is missing ${relationship === 'closes' ? 'Closes' : 'Related'} #<issue-number>`);
     }
     return body;
 }
 
+export function isIssueArgument(value: string): boolean {
+    return ISSUE_NUMBER_PATTERN.test(value);
+}
+
 export function assertIssueNumber(value: string, usage: string): number {
-    if (!/^[1-9][0-9]*$/.test(value)) {
+    if (!isIssueArgument(value)) {
         fail(usage);
     }
     const number = Number(value);
@@ -84,10 +196,13 @@ export function assertLaneSlug(slug: string): void {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
         fail('lane slug must match [a-z0-9]+(?:-[a-z0-9]+)*');
     }
+    if (/^[0-9]+$/.test(slug)) {
+        fail('lane slug must not be purely numeric; a bare number is read as the issue number');
+    }
 }
 
-export function laneBranchName(issue: number, slug: string): string {
-    return `agent/${issue}/${slug}`;
+export function laneBranchName(issue: number | undefined, slug: string): string {
+    return issue === undefined ? `agent/${slug}` : `agent/${issue}/${slug}`;
 }
 
 export function assertReviewCommentBody(body: string): void {

@@ -123,7 +123,7 @@ import {
     migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
-import { updateProofMeters } from '#/modules/Proof/stores';
+import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { setSetlistEventBus } from '#/modules/Setlist/useCases';
 import {
@@ -409,6 +409,7 @@ configureAudioDeviceRuntimeSink({
     unregisterProofDevice,
     syncProofPatch: syncFullPatch,
     updateProofMeters,
+    clearProofMeters,
     updateTunerTelemetry,
 });
 

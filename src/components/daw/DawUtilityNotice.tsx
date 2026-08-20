@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawUtilityNoticeProps = HTMLAttributes<HTMLDivElement> & {
@@ -19,9 +20,11 @@ export const DawUtilityNotice = ({
     children,
     ...props
 }: DawUtilityNoticeProps): ReactElement => (
-    <div
+    <Row
+        align="start"
+        gap={2}
         className={cn(
-            'flex items-start gap-2 rounded-md p-3 text-[10px] leading-relaxed text-muted-foreground',
+            'rounded-md p-3 text-[10px] leading-relaxed text-muted-foreground',
             TONE_CLASS_NAMES[tone],
             className
         )}
@@ -29,5 +32,5 @@ export const DawUtilityNotice = ({
     >
         {icon ? <div className="mt-0.5 shrink-0">{icon}</div> : null}
         <div className="min-w-0 flex-1">{children}</div>
-    </div>
+    </Row>
 );
