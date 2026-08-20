@@ -1,0 +1,66 @@
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  s_7ba0b7bee9e951::t_d01188c2386a80 117-122
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_c79c97c2d2acce 546-603
+  s_7ba0b7bee9e951::t_3ab1c4b98f9e23 1716-1723
+  s_7ba0b7bee9e951::t_8f8b59573063ad 62-65
+  s_7ba0b7bee9e951::t_e12139b4000ec3 994-999
+  s_7ba0b7bee9e951::t_6de5ee87453800 1332
+  s_7ba0b7bee9e951::t_42141b36981c4d 71-78
+  s_7ba0b7bee9e951::t_7897b1721229f2 1237-1240,1242,1246
+  s_7ba0b7bee9e951::t_41612e47b53bb2 1312-1315
+  s_7ba0b7bee9e951::t_0a6d53f3cb3ca8 1261
+  s_7ba0b7bee9e951::t_d025762a9c24d5 1612-1644
+  s_7ba0b7bee9e951::t_50f43d0a9716ca 1796-1797,1799-1802,1806,1808-1809,1811-1817,1821,1826,1830-1859
+  s_7ba0b7bee9e951::t_47c494a26cac98 2277-2411
+  s_7ba0b7bee9e951::t_1c05033616970b 12-18
+  s_7ba0b7bee9e951::t_c5e01c04eb1548 1290-1292
+  s_7ba0b7bee9e951::t_f3d199d20ce126 661-674
+  s_7ba0b7bee9e951::t_fe721791f394aa 843
+  s_7ba0b7bee9e951::t_f92528b1ea318e 2447-2476
+  s_7ba0b7bee9e951::t_9a6381c63df93f 87-89
+  s_7ba0b7bee9e951::t_ad53042a0bad79 718-726
+  s_7ba0b7bee9e951::t_2294ecdbfd342b 2507-2530
+  s_7ba0b7bee9e951::t_2507997cd916cf 1895-1905,1907-1912
+  s_7ba0b7bee9e951::t_c5e1ec1f9321ea 785,793
+  s_7ba0b7bee9e951::t_cbcf101b44e0b8 1381-1382,1392,1404-1408,1422
+  s_7ba0b7bee9e951::t_ea77fd5afb62ff 1679
+  s_7ba0b7bee9e951::t_9c9fd043e1b591 875-880,882-887
+  s_7ba0b7bee9e951::t_15a42394e68454 111-114
+  s_7ba0b7bee9e951::t_9d6ae1f1f1c05c 1471-1472
+crates/daw-engine/src/offline.rs
+  s_7ba0b7bee9e951::t_07a0fb83a7e0ba 48-59
+crates/sourdaw-native/AGENTS.md
+  s_7ba0b7bee9e951::t_d485d6bdc1364a 23
+crates/daw-engine/src/timeline.rs
+  s_7ba0b7bee9e951::t_8bed7a701e0730 111
+crates/daw-engine/src/scheduler.rs
+  s_7ba0b7bee9e951::t_3369ca9f944418 3121-3135,3141-3181
+  s_7ba0b7bee9e951::t_5de2cf7b91d62c 748-757
+  s_7ba0b7bee9e951::t_c1d60a769e0cb9 31-33,35-43
+  s_7ba0b7bee9e951::t_11d8f2d45ddf51 3136-3140
+  s_7ba0b7bee9e951::t_5db0ae7a752b87 866-892
+  s_7ba0b7bee9e951::t_0841ae5fedc0f4 538-541
+  s_7ba0b7bee9e951::t_5f5ab02e38d502 108-122
+  s_7ba0b7bee9e951::t_51611eb1a7a491 407-410,418
+  s_7ba0b7bee9e951::t_6df8e3e3a41732 135-141
+  s_7ba0b7bee9e951::t_9fddb347386fbc 714-729
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_7ba0b7bee9e951::t_54142de111e217 38-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "104abd879da60f5b56dd648705c337ca79ed765a",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
