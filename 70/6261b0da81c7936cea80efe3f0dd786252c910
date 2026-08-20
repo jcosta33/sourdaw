@@ -1,0 +1,115 @@
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_7ba0b7bee9e951::t_6bc7c08be44d1f 398-400
+  s_7ba0b7bee9e951::t_8738552dc4b285 157-160,162-163
+  s_7ba0b7bee9e951::t_c9f92897a2d275 264
+  s_7ba0b7bee9e951::t_94077cefd8da7b 459-468,481-482,484
+  s_7ba0b7bee9e951::t_4cc2ce46d3bcee 6-11
+  s_7ba0b7bee9e951::t_d3dacc8af4f084 395-397,401-458,469-480,483,485-503
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_7ba0b7bee9e951::t_ffe0d8d6286127 1-35,37-83,102-110,119-328,331,333-572
+  s_7ba0b7bee9e951::t_52bb75dadf2608 111-118
+  s_7ba0b7bee9e951::t_31eb603419fa17 36
+  s_7ba0b7bee9e951::t_683b5515c225dc 84-101
+  s_7ba0b7bee9e951::t_852bfd111e9a34 329-330,332
+  s_7ba0b7bee9e951::t_84659ce81c5f51 573-574
+electron/__tests__/commands.spec.ts
+  s_7ba0b7bee9e951::t_2a4809a6fb76bd 323-324
+  s_7ba0b7bee9e951::t_22639b37e73377 314
+  s_7ba0b7bee9e951::t_47a82220e8edd2 101-105
+  s_7ba0b7bee9e951::t_0be341923ff174 275
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_7ba0b7bee9e951::t_4f1160b8336a46 1-39,41-127
+  s_7ba0b7bee9e951::t_b23f868daecb22 40
+src/modules/AudioEngine/repositories/nativeGraph/probeNativeGraphTransport.ts
+  s_7ba0b7bee9e951::t_21ee17fe94855d 1-48
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  s_7ba0b7bee9e951::t_4110915f47f005 1-192
+src/modules/AudioEngine/useCases/offlineRender/resolveOutputTarget.ts
+  s_7ba0b7bee9e951::t_b413bc3527c99e 1-35
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_87b8cc1ccd13a8 2112-2204
+  s_7ba0b7bee9e951::t_34e2d5969fa109 3424
+  s_7ba0b7bee9e951::t_a25a0c986b1f7c 2230-2241,2246,2252-2259,2266-2290,2297-2340,2344
+  s_7ba0b7bee9e951::t_e94abdf1f63ba6 3487-3489,3491
+  s_7ba0b7bee9e951::t_fea8a42f003bbe 3438
+  s_7ba0b7bee9e951::t_729448fbb9b4ea 3387
+  s_7ba0b7bee9e951::t_d2f2b2419c2dc5 3447-3486,3490,3492-3648
+  s_7ba0b7bee9e951::t_7234e87244126d 3649-3651
+electron/commands.ts
+  s_7ba0b7bee9e951::t_1a1a6758e99265 114-120
+  s_7ba0b7bee9e951::t_f8f88dc174e28b 77
+  s_7ba0b7bee9e951::t_d59e170cb1b046 86-87
+  s_7ba0b7bee9e951::t_258fdce044cad3 38
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeGraphTransport.spec.ts
+  s_7ba0b7bee9e951::t_650dccb4c4c7e6 77-80,85,89-107
+  s_7ba0b7bee9e951::t_c08fa229161134 108
+src/modules/AudioEngine/repositories/nativeGraph/deinterleaveStereoPcm.ts
+  s_7ba0b7bee9e951::t_6c3410bb7dd4dc 13-14
+src/modules/AudioEngine/useCases/offlineRender/createAutomationRecorder.ts
+  s_7ba0b7bee9e951::t_f11b66a16ccb8f 1-60
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_7ba0b7bee9e951::t_de2e339ba9ff0f 51-52
+  s_7ba0b7bee9e951::t_c7e8273e879a54 92-111
+  s_7ba0b7bee9e951::t_7fd1e28b361abb 406-407
+  s_7ba0b7bee9e951::t_d3457b659f9d77 1-10,13-50,53-54,56-91,112-405,408-419
+  s_7ba0b7bee9e951::t_b890193fb8a1ba 55
+  s_7ba0b7bee9e951::t_43382060258f68 11-12
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_7ba0b7bee9e951::t_ee9e8de20429a1 125
+  s_7ba0b7bee9e951::t_550fa8612a41e4 362-363
+  s_7ba0b7bee9e951::t_a18f7b8ba991dd 427
+  s_7ba0b7bee9e951::t_5d91adee2c9aee 211-289,292
+  s_7ba0b7bee9e951::t_66679c5c54d6a5 6
+  s_7ba0b7bee9e951::t_a4a9684996b830 27
+  s_7ba0b7bee9e951::t_8e83ea19436bbe 21,24
+src/modules/AudioEngine/useCases/offlineRender/convertRecordedAutomationEvents.ts
+  s_7ba0b7bee9e951::t_8048a31977d5a1 1-77
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_7ba0b7bee9e951::t_42773e858f4606 2318-2323
+  s_7ba0b7bee9e951::t_74ab89faaece20 2386
+src/utils/sourdawCommandArguments.ts
+  s_7ba0b7bee9e951::t_ffce450ede2401 62
+  s_7ba0b7bee9e951::t_d19a9128e026ab 23
+  s_7ba0b7bee9e951::t_d8ee55099462a2 71-72
+crates/sourdaw-native/src/state.rs
+  s_7ba0b7bee9e951::t_15b9d9e56645bd 193-195
+  s_7ba0b7bee9e951::t_b1dd201a511bb4 152-156
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_7ba0b7bee9e951::t_68cc90cace0994 111-114
+  s_7ba0b7bee9e951::t_535f35ccdd3b3a 18-28
+  s_7ba0b7bee9e951::t_15c07a610416d2 52-53,58-66
+  s_7ba0b7bee9e951::t_5a95467868d673 29
+crates/sourdaw-native/src/addon/mod.rs
+  s_7ba0b7bee9e951::t_a7c7471b57f91c 522-525,532,535-542
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_7ba0b7bee9e951::t_f1e96dc4e5f2f1 39
+  s_7ba0b7bee9e951::t_6998769bf1e4f8 41
+  s_7ba0b7bee9e951::t_84d8e8c17e54bd 768-780,786-792,795
+  s_7ba0b7bee9e951::t_466b05835c0030 1
+src/modules/AudioEngine/useCases/offlineRender/createOfflineRenderBackend.ts
+  s_7ba0b7bee9e951::t_a731555ac1c2c8 2-3,5-7
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_7ba0b7bee9e951::t_552f27619a10ee 1-102
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_7ba0b7bee9e951::t_a1adaf8314ee1f 64-73
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_7ba0b7bee9e951::t_e628d578157294 174-178
+  s_7ba0b7bee9e951::t_2767f9abb33c12 226-241,245,248,252-284
+  s_7ba0b7bee9e951::t_fbdd757dcb3718 75-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "706261b0da81c7936cea80efe3f0dd786252c910",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
