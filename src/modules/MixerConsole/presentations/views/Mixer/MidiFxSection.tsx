@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
+import { Stack } from '#/components/layout';
 import { addMidiFx } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
 
@@ -26,7 +27,10 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
 
     return (
         <MixerSection label="MIDI FX">
-            <div className="max-h-[80px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
+            <Stack
+                gap={0.5}
+                className="max-h-[80px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10"
+            >
                 {track.midiFx.map((fx) => (
                     <div key={fx.id} className="group relative">
                         <MixerInsetButton
@@ -40,9 +44,9 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                         </MixerInsetButton>
                     </div>
                 ))}
-            </div>
+            </Stack>
             {showAdd ? (
-                <div className="space-y-0.5 mt-0.5">
+                <Stack gap={0.5} className="mt-0.5">
                     {MIDI_FX_TYPES.map((fx) => (
                         <MixerInsetButton
                             key={fx.type}
@@ -65,7 +69,7 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                     >
                         cancel
                     </button>
-                </div>
+                </Stack>
             ) : (
                 <MixerInsetButton
                     onClick={(event) => {
