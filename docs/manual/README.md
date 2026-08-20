@@ -34,6 +34,8 @@ Organized by what a device does, not by its name.
 
 **Synth** — [Fermenter](./devices/17-fermenter.md) (wavetable and analog synth)
 
+**Sample** — [Crumbs](./devices/18-crumbs.md) (drag-and-drop sampler)
+
 ## Conventions used in this manual
 
 Sourdaw is in active development. Where a feature is incomplete, this manual says so at the point
