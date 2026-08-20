@@ -15,6 +15,13 @@ triple_buffer = "9.0.0"
 
 # The IAudioClient3/WASAPI device backend (ADR 0027). Target-gated so no
 # other platform compiles or downloads the Windows bindings.
+#
+# Cargo.lock pins windows-core to 0.61.2, which is what unifies two
+# otherwise-incompatible requirement families: cpal 0.18 accepts
+# windows-core >=0.61,<=0.62 while `windows` 0.61 re-exports 0.61.x, and
+# no manifest bound holds them together. A `cargo update` that splits the
+# graph onto two windows-core versions breaks the Windows build with
+# mismatched COM types; re-unify the lock on one 0.61.x if that happens.
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",

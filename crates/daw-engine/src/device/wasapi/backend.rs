@@ -17,23 +17,29 @@ use crate::device::{
     DeviceOpenRequest, NegotiatedOutput, OpenOutput, OutputBackend, RenderFn, StreamErrorFn,
 };
 use crate::engine_events::StreamErrorKind;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use windows::core::{Interface, GUID, PCWSTR};
+use windows::core::{w, Interface, GUID, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio::{
     eConsole, eRender, IAudioClient, IAudioClient3, IAudioRenderClient, IMMDevice,
-    IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_SHAREMODE_SHARED,
-    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, WAVEFORMATEX, WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
+    IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT,
+    AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, WAVEFORMATEX,
+    WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
     COINIT_MULTITHREADED,
 };
-use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+use windows::Win32::System::Threading::{
+    AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, CreateEventW, GetCurrentThread,
+    SetThreadPriority, WaitForSingleObject, THREAD_PRIORITY_TIME_CRITICAL,
+};
 
 /// `mmreg.h` format tags and `ksmedia.h` subformat GUIDs, restated here so
 /// the crate does not pull two extra Windows feature families for three
@@ -54,9 +60,20 @@ const EVENT_WAIT_SLICE_MS: u32 = 100;
 /// Control-side recovery budget after a device invalidation: how many
 /// reopen attempts, and the pause between them. Five seconds total —
 /// enough for a default-device switch or a driver restart to settle,
-/// short enough that a truly gone device reports out promptly.
+/// short enough that a truly gone device reports out promptly. The pause
+/// is slept in slices so a shutdown mid-recovery returns inside the
+/// engine's 100 ms teardown budget instead of holding it for a full
+/// interval.
 const REOPEN_ATTEMPTS: u32 = 20;
 const REOPEN_INTERVAL: Duration = Duration::from_millis(250);
+const REOPEN_POLL_SLICE: Duration = Duration::from_millis(25);
+
+/// `E_FAIL`: the code this backend reports for a failure that has no
+/// WASAPI HRESULT of its own — a panicking render callback, a wait API
+/// refusing the buffer event handle. The taxonomy maps it to
+/// [`StreamErrorKind::BackendSpecific`], which ends the stream without
+/// the device-invalidation reopen campaign.
+const E_FAIL: i32 = 0x8000_4005_u32 as i32;
 
 pub(crate) struct WasapiOutputBackend;
 
@@ -182,6 +199,48 @@ impl ComGuard {
 impl Drop for ComGuard {
     fn drop(&mut self) {
         unsafe { CoUninitialize() };
+    }
+}
+
+/// MMCSS "Pro Audio" registration scope for the stream thread: the OS
+/// scheduling class every Windows DAW runs its render thread in. Without
+/// it the event-driven loop competes at default priority and misses
+/// periods under ordinary desktop load. Registration is control-side,
+/// before any buffer is served; a refusal degrades — time-critical
+/// priority, then default — and is reported on the same channel as the
+/// negotiated-plan report, never treated as a hard failure.
+struct MmcssGuard(Option<HANDLE>);
+
+impl MmcssGuard {
+    fn register() -> Self {
+        let mut task_index = 0u32;
+        match unsafe { AvSetMmThreadCharacteristicsW(w!("Pro Audio"), &mut task_index) } {
+            Ok(task) => Self(Some(task)),
+            Err(avrt_error) => {
+                match unsafe {
+                    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)
+                } {
+                    Ok(()) => eprintln!(
+                        "[Engine] MMCSS Pro Audio registration refused ({avrt_error}); \
+                         running the stream thread at time-critical priority instead"
+                    ),
+                    Err(priority_error) => eprintln!(
+                        "[Engine] MMCSS Pro Audio registration refused ({avrt_error}) and \
+                         SetThreadPriority refused ({priority_error}); the stream thread \
+                         runs at default priority"
+                    ),
+                }
+                Self(None)
+            }
+        }
+    }
+}
+
+impl Drop for MmcssGuard {
+    fn drop(&mut self) {
+        if let Some(task) = self.0.take() {
+            let _ = unsafe { AvRevertMmThreadCharacteristics(task) };
+        }
     }
 }
 
@@ -448,10 +507,20 @@ impl DeviceNegotiation for LiveNegotiation {
     fn init_shared_default(&mut self, candidate: &FormatCandidate) -> Result<(), i32> {
         let format = self.format_for(candidate)?;
         let client = self.activate_client()?;
+        // The engine rungs offer a non-mix format, which shared mode
+        // refuses without the system converter. Plain `Initialize` is the
+        // only shared init that may carry these flags — see
+        // `policy::shared_mode_needs_autoconvert` — which is why the
+        // ladder routes converting rungs here.
+        let mut stream_flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+        if policy::shared_mode_needs_autoconvert(candidate) {
+            stream_flags |=
+                AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+        }
         unsafe {
             client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
-                AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                stream_flags,
                 0,
                 0,
                 format.as_wave_format(),
@@ -469,15 +538,59 @@ impl DeviceNegotiation for LiveNegotiation {
 
     fn init_exclusive(&mut self, candidate: &FormatCandidate) -> Result<(), i32> {
         let format = self.format_for(candidate)?;
-        let client = self.activate_client()?;
+        let probe = self.activate_client()?;
 
         let mut default_period_hns: i64 = 0;
         let mut minimum_period_hns: i64 = 0;
         unsafe {
-            client.GetDevicePeriod(Some(&mut default_period_hns), Some(&mut minimum_period_hns))
+            probe.GetDevicePeriod(Some(&mut default_period_hns), Some(&mut minimum_period_hns))
         }
         .map_err(|error| hresult_of(&error))?;
 
+        // Exclusive is the explicit lowest-latency opt-in: the claim is at
+        // the device's minimum period, not its default. A refusal confined
+        // to the period falls back to the default period once, reported on
+        // the plan-report channel.
+        match self.init_exclusive_at_period(&format, minimum_period_hns) {
+            Ok(client) => {
+                self.initialized = Some(InitializedClient {
+                    client,
+                    format,
+                    exclusive: true,
+                });
+                Ok(())
+            }
+            Err(hresult)
+                if !policy::is_fatal_negotiation_hresult(hresult)
+                    && minimum_period_hns != default_period_hns =>
+            {
+                eprintln!(
+                    "[Engine] Exclusive minimum period refused (HRESULT {hresult:#010X}); \
+                     retrying at the default device period"
+                );
+                let client = self.init_exclusive_at_period(&format, default_period_hns)?;
+                self.initialized = Some(InitializedClient {
+                    client,
+                    format,
+                    exclusive: true,
+                });
+                Ok(())
+            }
+            Err(hresult) => Err(hresult),
+        }
+    }
+}
+
+impl LiveNegotiation {
+    /// One exclusive `Initialize` attempt at a period, with the documented
+    /// `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED` realignment retry: read the
+    /// aligned buffer size, convert it back to a period, and retry once on
+    /// a fresh client (a refused Initialize consumes the instance).
+    fn init_exclusive_at_period(
+        &self,
+        format: &DeviceFormat,
+        period_hns: i64,
+    ) -> Result<IAudioClient, i32> {
         // Event-driven exclusive requires equal buffer duration and period.
         let attempt = |client: &IAudioClient, period_hns: i64| -> Result<(), i32> {
             unsafe {
@@ -493,19 +606,10 @@ impl DeviceNegotiation for LiveNegotiation {
             .map_err(|error| hresult_of(&error))
         };
 
-        match attempt(&client, default_period_hns) {
-            Ok(()) => {
-                self.initialized = Some(InitializedClient {
-                    client,
-                    format,
-                    exclusive: true,
-                });
-                Ok(())
-            }
+        let client = self.activate_client()?;
+        match attempt(&client, period_hns) {
+            Ok(()) => Ok(client),
             Err(hresult) if hresult == policy::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED => {
-                // The documented realignment dance: read the aligned buffer
-                // size, convert it back to a period, and retry once on a
-                // fresh client (a refused Initialize consumes the instance).
                 let aligned_frames =
                     unsafe { client.GetBufferSize() }.map_err(|error| hresult_of(&error))?;
                 let aligned_period_hns = ((10_000_000.0 * f64::from(aligned_frames)
@@ -513,12 +617,7 @@ impl DeviceNegotiation for LiveNegotiation {
                     + 0.5) as i64;
                 let fresh = self.activate_client()?;
                 attempt(&fresh, aligned_period_hns)?;
-                self.initialized = Some(InitializedClient {
-                    client: fresh,
-                    format,
-                    exclusive: true,
-                });
-                Ok(())
+                Ok(fresh)
             }
             Err(hresult) => Err(hresult),
         }
@@ -566,6 +665,17 @@ impl StreamRuntime {
     }
 
     fn start(&self) -> Result<(), String> {
+        // One silent period before Start: an exclusive stream otherwise
+        // plays whatever the DMA buffer held, and a shared one opens on an
+        // underrun. SILENT zero-fills on release, so the returned pointer
+        // is never written.
+        unsafe { self.render_client.GetBuffer(self.buffer_frames) }
+            .map_err(|error| format!("Pre-fill GetBuffer failed: {error}"))?;
+        unsafe {
+            self.render_client
+                .ReleaseBuffer(self.buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT.0 as u32)
+        }
+        .map_err(|error| format!("Pre-fill ReleaseBuffer failed: {error}"))?;
         unsafe { self.client.Start() }.map_err(|error| format!("Failed to play stream: {error}"))
     }
 
@@ -622,7 +732,10 @@ impl StreamRuntime {
                 continue;
             }
             if wait != WAIT_OBJECT_0 {
-                return LoopExit::Error(policy::AUDCLNT_E_DEVICE_INVALIDATED);
+                // WAIT_FAILED / WAIT_ABANDONED are handle or programming
+                // faults, not a vanished device: report backend-specific
+                // and end the stream without the reopen campaign.
+                return LoopExit::Error(E_FAIL);
             }
 
             let frames = match self.writable_frames() {
@@ -640,7 +753,12 @@ impl StreamRuntime {
 
             let samples = frames as usize * channels;
             let interleaved = &mut self.scratch[..samples];
-            render(interleaved, channels);
+            // A panicking render callback must end the stream audibly —
+            // through the error path and its taxonomy — not by silently
+            // killing this thread while the engine believes audio flows.
+            if catch_unwind(AssertUnwindSafe(|| render(&mut *interleaved, channels))).is_err() {
+                return LoopExit::Error(E_FAIL);
+            }
 
             unsafe {
                 match self.format.layout {
@@ -766,6 +884,7 @@ fn stream_thread_main(
             return;
         }
     };
+    let _mmcss = MmcssGuard::register();
 
     let mut runtime = match open_stream_runtime(&request) {
         Ok(runtime) => runtime,
@@ -859,13 +978,33 @@ fn reopen_after_invalidation(
                     return ReopenOutcome::RateChanged;
                 }
                 if runtime.start().is_err() {
-                    thread::sleep(REOPEN_INTERVAL);
+                    if sleep_between_reopen_attempts(stop) {
+                        return ReopenOutcome::Stopped;
+                    }
                     continue;
                 }
                 return ReopenOutcome::Reopened(runtime);
             }
-            Err(_) => thread::sleep(REOPEN_INTERVAL),
+            Err(_) => {
+                if sleep_between_reopen_attempts(stop) {
+                    return ReopenOutcome::Stopped;
+                }
+            }
         }
     }
     ReopenOutcome::Gone
+}
+
+/// One reopen pause, slept in stop-checkable slices: teardown during
+/// recovery must return promptly, not after a whole interval. Returns
+/// whether the stop flag was raised while waiting.
+fn sleep_between_reopen_attempts(stop: &AtomicBool) -> bool {
+    let slices = REOPEN_INTERVAL.as_millis() / REOPEN_POLL_SLICE.as_millis();
+    for _ in 0..slices {
+        if stop.load(Ordering::Acquire) {
+            return true;
+        }
+        thread::sleep(REOPEN_POLL_SLICE);
+    }
+    stop.load(Ordering::Acquire)
 }

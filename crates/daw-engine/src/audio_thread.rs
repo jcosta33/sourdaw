@@ -31,8 +31,9 @@ pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
 /// 512 frames is the common professional default (Live, Logic, Reaper all ship
 /// a buffer of this order): low enough for playable monitoring latency, high
 /// enough that a bridged plugin chain is not woken more often than it can serve.
-#[cfg(any(not(windows), test))]
-const PREFERRED_BUFFER_FRAMES: cpal::FrameCount = 512;
+/// One constant for every backend: the cpal buffer-size negotiation and the
+/// Windows shared-period negotiation must not drift apart on this number.
+pub(crate) const PREFERRED_BUFFER_FRAMES: u32 = 512;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);

@@ -10,6 +10,7 @@
 //! with a scripted fake, which is why nothing in this file may name a
 //! `windows`-crate type.
 
+use crate::audio_thread::PREFERRED_BUFFER_FRAMES;
 use crate::engine_events::StreamErrorKind;
 
 // AUDCLNT_E_* facility codes, from `audioclient.h`:
@@ -71,8 +72,14 @@ pub(crate) struct SharedEnginePeriods {
     pub max: u32,
 }
 
-/// The period to ask `InitializeSharedAudioStream` for: the smallest the
-/// driver supports, aligned up to a multiple of the fundamental period.
+/// The period to ask `InitializeSharedAudioStream` for: the engine's
+/// preferred period ([`PREFERRED_BUFFER_FRAMES`], the same number the cpal
+/// side requests), clamped into the driver's reported `[min, max]` range —
+/// not the driver minimum. ADR 0027 commits to "a smaller period where the
+/// driver supports it", and the engine's own reason for 512 holds here too:
+/// a bridged plugin chain must not be woken more often than it can serve.
+/// The driver minimum is reserved for the future explicit low-latency
+/// opt-in and must not become the default request.
 ///
 /// The driver contract says `min` is itself a supported period, but a
 /// misaligned or zeroed report from a defective driver must not turn into
@@ -80,14 +87,22 @@ pub(crate) struct SharedEnginePeriods {
 /// fundamental multiple, and a report whose alignment lands past `max`
 /// falls back to the driver's own default period rather than asking for
 /// something the range says is impossible.
-pub(crate) fn smallest_shared_period(periods: &SharedEnginePeriods) -> u32 {
+pub(crate) fn negotiated_shared_period(periods: &SharedEnginePeriods) -> u32 {
     let fundamental = periods.fundamental.max(1);
     let minimum = periods.min.max(1);
-    let aligned = minimum.div_ceil(fundamental) * fundamental;
-    if periods.max != 0 && aligned > periods.max {
+    let aligned_minimum = minimum.div_ceil(fundamental) * fundamental;
+    if periods.max != 0 && aligned_minimum > periods.max {
         return periods.default;
     }
-    aligned
+    let preferred = PREFERRED_BUFFER_FRAMES.div_ceil(fundamental) * fundamental;
+    let floored = preferred.max(aligned_minimum);
+    if periods.max != 0 {
+        // `max` is a driver-reported supported period, so clamping onto it
+        // needs no further alignment.
+        floored.min(periods.max)
+    } else {
+        floored
+    }
 }
 
 /// The sample layouts the engine's render callback can fill without a
@@ -167,6 +182,24 @@ pub(crate) fn format_ladder(mix: &MixFormatReport) -> Vec<FormatCandidate> {
         }
     }
     candidates
+}
+
+/// Whether shared-mode initialization of this candidate must carry the
+/// system engine's format converter
+/// (`AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY`).
+///
+/// Shared mode without those flags accepts only the mix format, so the
+/// engine rungs — which exist precisely for a mix format the engine
+/// cannot fill — are unreachable without them. The flags are legal on
+/// plain `IAudioClient::Initialize` only: `InitializeSharedAudioStream`
+/// documents `AUDCLNT_STREAMFLAGS_EVENTCALLBACK` as its sole supported
+/// stream flag, so a converting candidate skips period negotiation and
+/// routes through plain shared `Initialize` instead.
+pub(crate) fn shared_mode_needs_autoconvert(candidate: &FormatCandidate) -> bool {
+    matches!(
+        candidate.source,
+        CandidateSource::EngineF32 | CandidateSource::EngineI16
+    )
 }
 
 /// Which negotiation step refused, so the record reads as a path through
@@ -333,56 +366,48 @@ pub(crate) fn negotiate_windows_stream(
     }
 
     for candidate in &candidates {
-        if force_default_period {
-            match try_shared_default(session, candidate, &mut refusals)? {
-                true => {
-                    return Ok(NegotiatedPlan {
-                        path: WindowsStreamPath::SharedDefaultPeriod,
-                        format: *candidate,
-                        refusals,
-                        exclusive_degraded,
+        // A converting candidate cannot take the IAudioClient3 path:
+        // `InitializeSharedAudioStream` supports the event-callback flag
+        // alone, so the autoconvert flags it needs only exist on plain
+        // shared `Initialize` (see `shared_mode_needs_autoconvert`).
+        if !force_default_period && !shared_mode_needs_autoconvert(candidate) {
+            match session.shared_engine_periods(candidate) {
+                Ok(periods) => {
+                    let period_frames = negotiated_shared_period(&periods);
+                    match session.init_shared_low_latency(candidate, period_frames) {
+                        Ok(()) => {
+                            return Ok(NegotiatedPlan {
+                                path: WindowsStreamPath::SharedLowLatency { period_frames },
+                                format: *candidate,
+                                refusals,
+                                exclusive_degraded,
+                            });
+                        }
+                        Err(hresult) if is_fatal_negotiation_hresult(hresult) => {
+                            return Err(NegotiationFailure::Fatal { hresult });
+                        }
+                        Err(hresult) => {
+                            refusals.push(FormatRefusal {
+                                source: candidate.source,
+                                stage: NegotiationStage::LowLatencyInitialize,
+                                hresult,
+                            });
+                        }
+                    }
+                }
+                Err(hresult) if is_fatal_negotiation_hresult(hresult) => {
+                    return Err(NegotiationFailure::Fatal { hresult });
+                }
+                Err(hresult) => {
+                    // IAudioClient3 missing (E_NOINTERFACE) or the driver
+                    // refused to negotiate a period for this format: the
+                    // fallback ADR 0027 names — plain shared Initialize.
+                    refusals.push(FormatRefusal {
+                        source: candidate.source,
+                        stage: NegotiationStage::PeriodNegotiation,
+                        hresult,
                     });
                 }
-                false => continue,
-            }
-        }
-
-        match session.shared_engine_periods(candidate) {
-            Ok(periods) => {
-                let period_frames = smallest_shared_period(&periods);
-                match session.init_shared_low_latency(candidate, period_frames) {
-                    Ok(()) => {
-                        return Ok(NegotiatedPlan {
-                            path: WindowsStreamPath::SharedLowLatency { period_frames },
-                            format: *candidate,
-                            refusals,
-                            exclusive_degraded,
-                        });
-                    }
-                    Err(hresult) if is_fatal_negotiation_hresult(hresult) => {
-                        return Err(NegotiationFailure::Fatal { hresult });
-                    }
-                    Err(hresult) => {
-                        refusals.push(FormatRefusal {
-                            source: candidate.source,
-                            stage: NegotiationStage::LowLatencyInitialize,
-                            hresult,
-                        });
-                    }
-                }
-            }
-            Err(hresult) if is_fatal_negotiation_hresult(hresult) => {
-                return Err(NegotiationFailure::Fatal { hresult });
-            }
-            Err(hresult) => {
-                // IAudioClient3 missing (E_NOINTERFACE) or the driver
-                // refused to negotiate a period for this format: the
-                // fallback ADR 0027 names — plain shared Initialize.
-                refusals.push(FormatRefusal {
-                    source: candidate.source,
-                    stage: NegotiationStage::PeriodNegotiation,
-                    hresult,
-                });
             }
         }
 
@@ -426,13 +451,13 @@ fn try_shared_default(
 #[cfg(test)]
 mod tests {
     use super::{
-        exclusive_claim_outcome, format_ladder, negotiate_windows_stream, smallest_shared_period,
-        stream_error_kind_for_hresult, CandidateSource, DeviceNegotiation, ExclusiveClaimOutcome,
-        FormatCandidate, FormatRefusal, FormatSpec, MixFormatReport, NegotiationFailure,
-        NegotiationStage, SampleLayout, SharedEnginePeriods, WindowsStreamPath,
-        AUDCLNT_E_DEVICE_INVALIDATED, AUDCLNT_E_DEVICE_IN_USE,
-        AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_E_SERVICE_NOT_RUNNING,
-        AUDCLNT_E_UNSUPPORTED_FORMAT,
+        exclusive_claim_outcome, format_ladder, negotiate_windows_stream, negotiated_shared_period,
+        shared_mode_needs_autoconvert, stream_error_kind_for_hresult, CandidateSource,
+        DeviceNegotiation, ExclusiveClaimOutcome, FormatCandidate, FormatRefusal, FormatSpec,
+        MixFormatReport, NegotiationFailure, NegotiationStage, SampleLayout, SharedEnginePeriods,
+        WindowsStreamPath, AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_DEVICE_INVALIDATED,
+        AUDCLNT_E_DEVICE_IN_USE, AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED,
+        AUDCLNT_E_SERVICE_NOT_RUNNING, AUDCLNT_E_UNSUPPORTED_FORMAT,
     };
     use crate::engine_events::StreamErrorKind;
     use std::collections::HashMap;
@@ -525,51 +550,130 @@ mod tests {
     // ---- period selection ----------------------------------------------
 
     #[test]
-    fn the_smallest_supported_period_is_chosen_when_already_aligned() {
+    fn the_preferred_period_is_chosen_when_the_range_contains_it() {
+        // Not the driver minimum: that stays reserved for the explicit
+        // low-latency opt-in. 512 sits inside [128, 1024] → 512.
         assert_eq!(
-            smallest_shared_period(&SharedEnginePeriods {
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 480,
+                fundamental: 8,
+                min: 128,
+                max: 1024,
+            }),
+            512
+        );
+    }
+
+    #[test]
+    fn the_range_edges_admit_the_preferred_period_exactly() {
+        // min == 512: the preferred period is still in range and wins.
+        assert_eq!(
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 960,
+                fundamental: 8,
+                min: 512,
+                max: 1024,
+            }),
+            512
+        );
+        // max == 512: likewise from the other edge.
+        assert_eq!(
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 480,
+                fundamental: 8,
+                min: 128,
+                max: 512,
+            }),
+            512
+        );
+    }
+
+    #[test]
+    fn a_minimum_above_the_preferred_period_wins_over_it() {
+        // One frame over: min 513 (fundamental 1) → 513, not 512.
+        assert_eq!(
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 960,
+                fundamental: 1,
+                min: 513,
+                max: 1024,
+            }),
+            513
+        );
+    }
+
+    #[test]
+    fn a_maximum_below_the_preferred_period_caps_it() {
+        // One frame under: max 511 → 511, not 512. Also the common real
+        // shape (max 480 on a 48 kHz engine) → 480.
+        assert_eq!(
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 480,
+                fundamental: 1,
+                min: 128,
+                max: 511,
+            }),
+            511
+        );
+        assert_eq!(
+            negotiated_shared_period(&SharedEnginePeriods {
                 default: 480,
                 fundamental: 8,
                 min: 128,
                 max: 480,
             }),
-            128
+            480
+        );
+    }
+
+    #[test]
+    fn a_preferred_period_off_the_fundamental_grid_is_rounded_up_to_it() {
+        // Fundamental 48 does not divide 512: 512/48 rounds up to 11 → 528.
+        assert_eq!(
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 480,
+                fundamental: 48,
+                min: 96,
+                max: 1008,
+            }),
+            528
         );
     }
 
     #[test]
     fn a_misaligned_minimum_is_rounded_up_to_the_next_fundamental_multiple() {
-        // min 130 with fundamental 8: 130/8 rounds up to 17 → 136 frames.
+        // min 600 with fundamental 16 aligns to 608, above the preferred
+        // period, so the aligned minimum is the request.
         assert_eq!(
-            smallest_shared_period(&SharedEnginePeriods {
-                default: 480,
-                fundamental: 8,
-                min: 130,
-                max: 480,
+            negotiated_shared_period(&SharedEnginePeriods {
+                default: 960,
+                fundamental: 16,
+                min: 600,
+                max: 1024,
             }),
-            136
+            608
         );
     }
 
     #[test]
-    fn a_zero_fundamental_report_does_not_divide_by_zero_and_keeps_the_minimum() {
+    fn a_zero_fundamental_report_does_not_divide_by_zero() {
         assert_eq!(
-            smallest_shared_period(&SharedEnginePeriods {
+            negotiated_shared_period(&SharedEnginePeriods {
                 default: 480,
                 fundamental: 0,
                 min: 144,
-                max: 480,
+                max: 1024,
             }),
-            144
+            512
         );
     }
 
     #[test]
     fn an_alignment_that_lands_past_the_maximum_falls_back_to_the_default_period() {
-        // min 470 aligned to fundamental 32 is 480... make it land past max:
-        // min 470, fundamental 64 → 512 > max 480 → the driver default.
+        // min 470 aligned to fundamental 64 is 512 > max 480: the range is
+        // self-contradictory, so the driver default is the request.
         assert_eq!(
-            smallest_shared_period(&SharedEnginePeriods {
+            negotiated_shared_period(&SharedEnginePeriods {
                 default: 448,
                 fundamental: 64,
                 min: 470,
@@ -580,15 +684,15 @@ mod tests {
     }
 
     #[test]
-    fn a_zeroed_minimum_is_lifted_to_one_fundamental_period_rather_than_zero_frames() {
+    fn a_zeroed_minimum_never_becomes_a_zero_frame_request() {
         assert_eq!(
-            smallest_shared_period(&SharedEnginePeriods {
+            negotiated_shared_period(&SharedEnginePeriods {
                 default: 480,
                 fundamental: 8,
                 min: 0,
-                max: 480,
+                max: 1024,
             }),
-            8
+            512
         );
     }
 
@@ -645,14 +749,16 @@ mod tests {
     // ---- shared negotiation ----------------------------------------------
 
     #[test]
-    fn a_healthy_device_negotiates_the_smallest_engine_period_on_its_mix_format() {
+    fn a_healthy_device_negotiates_the_preferred_engine_period_on_its_mix_format() {
+        // HEALTHY_PERIODS reaches [128, 480]: the preferred 512 caps at 480,
+        // and the driver minimum is not requested.
         let mut session = FakeSession::new(MIX_F32_STEREO_48K);
 
         let plan = negotiate_windows_stream(&mut session, false, false).expect("a stream");
 
         assert_eq!(
             plan.path,
-            WindowsStreamPath::SharedLowLatency { period_frames: 128 }
+            WindowsStreamPath::SharedLowLatency { period_frames: 480 }
         );
         assert_eq!(plan.format.source, CandidateSource::DeviceMix);
         assert!(plan.refusals.is_empty());
@@ -756,7 +862,49 @@ mod tests {
         let NegotiationFailure::Exhausted { refusals } = failure else {
             panic!("an exhausted ladder is not a fatal endpoint");
         };
-        assert_eq!(refusals.len(), 4);
+        // Mix rung: low-latency then plain shared. i16 rung: plain shared
+        // only — a converting rung never reaches the low-latency path.
+        assert_eq!(refusals.len(), 3);
+    }
+
+    #[test]
+    fn the_engine_rungs_carry_the_autoconvert_intent_and_the_mix_rung_does_not() {
+        // Without the system converter, shared mode accepts only the mix
+        // format: an engine rung offered without this intent is a rung the
+        // ladder can never land on.
+        let candidates = format_ladder(&MixFormatReport {
+            rate: 48_000,
+            channels: 2,
+            renderable: None,
+        });
+
+        assert!(candidates.iter().all(shared_mode_needs_autoconvert));
+
+        let mix_rung = format_ladder(&MIX_F32_STEREO_48K)[0];
+        assert_eq!(mix_rung.source, CandidateSource::DeviceMix);
+        assert!(!shared_mode_needs_autoconvert(&mix_rung));
+    }
+
+    #[test]
+    fn a_converting_rung_skips_period_negotiation_and_initializes_plain_shared() {
+        // `InitializeSharedAudioStream` supports the event-callback flag
+        // alone, so the autoconvert flags an engine rung needs can only
+        // ride plain shared `Initialize`.
+        let mut session = FakeSession::new(MixFormatReport {
+            rate: 48_000,
+            channels: 2,
+            renderable: None,
+        });
+
+        let plan = negotiate_windows_stream(&mut session, false, false).expect("a stream");
+
+        assert_eq!(plan.path, WindowsStreamPath::SharedDefaultPeriod);
+        assert_eq!(plan.format.source, CandidateSource::EngineF32);
+        assert!(!session.calls.iter().any(|call| call.starts_with("periods")));
+        assert!(!session
+            .calls
+            .iter()
+            .any(|call| call.starts_with("low_latency")));
     }
 
     #[test]
@@ -803,7 +951,7 @@ mod tests {
         assert_eq!(plan.exclusive_degraded, Some(AUDCLNT_E_DEVICE_IN_USE));
         assert_eq!(
             plan.path,
-            WindowsStreamPath::SharedLowLatency { period_frames: 128 }
+            WindowsStreamPath::SharedLowLatency { period_frames: 480 }
         );
         assert_eq!(
             plan.refusals
@@ -892,6 +1040,12 @@ mod tests {
         assert_eq!(
             stream_error_kind_for_hresult(AUDCLNT_E_SERVICE_NOT_RUNNING),
             StreamErrorKind::DeviceNotAvailable
+        );
+        // The realignment retry consumes this code inside the backend; one
+        // that still surfaces is a backend fault, not a device state.
+        assert_eq!(
+            stream_error_kind_for_hresult(AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED),
+            StreamErrorKind::BackendSpecific
         );
     }
 
