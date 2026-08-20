@@ -1,1 +1,1 @@
-export { proofStore, updateProofMeters } from './proofStore';
+export { proofStore, updateProofMeters, clearProofMeters } from './proofStore';

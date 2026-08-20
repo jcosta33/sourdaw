@@ -184,7 +184,7 @@ describe('agent tool catalog', () => {
     it('does not let a provider-selected factory read enlarge beyond its exact external type set', async () => {
         const first = {
             id: 'first',
-            clap_id: 'org.example.first',
+            descriptor_id: 'org.example.first',
             name: 'First',
             vendor: 'Example',
             format: 'clap',
@@ -200,7 +200,7 @@ describe('agent tool catalog', () => {
             ...defaultPluginScanState,
             scannedPlugins: [
                 first,
-                { ...first, id: 'second', clap_id: 'org.example.second', path: '/private/plugins/second.clap' },
+                { ...first, id: 'second', descriptor_id: 'org.example.second', path: '/private/plugins/second.clap' },
             ],
         });
         const requestTurn = vi

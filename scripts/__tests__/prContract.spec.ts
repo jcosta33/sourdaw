@@ -7,6 +7,7 @@ import {
     assertReviewCommentBody,
     composePublishBody,
     fail,
+    issueRelationshipFromBody,
     laneBranchName,
 } from '../prContract.ts';
 
@@ -20,6 +21,65 @@ describe('pull-request contract', () => {
         const body = composePublishBody(2164, 'feat(vcs): add identities');
         expect(body).toContain('Closes #2164');
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
+    it('references an umbrella issue without closing it', () => {
+        const body = composePublishBody(2164, 'feat(vcs): add identities', 'relates');
+        expect(body).toContain('Related #2164');
+        expect(body).not.toContain('Closes #2164');
+        expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
+    it('recovers one existing issue relationship', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(issueRelationshipFromBody(`${prefix}Closes #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}CLOSES #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Closes: #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Closes jcosta33/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toBe(
+            'closes'
+        );
+        expect(issueRelationshipFromBody(`${prefix}Closes JCOSTA33/SOURDAW#2164`, 2164, 'jcosta33/sourdaw')).toBe(
+            'closes'
+        );
+        expect(issueRelationshipFromBody(`${prefix}Related #2164`, 2164)).toBe('relates');
+        expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody(`${prefix}None.`, 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toThrow(
+            /exactly one relationship/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}None.\nCloses #2164`, 2164)).toThrow(
+            /exactly one relationship/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\n${prefix}Related #2164`, 2164)).toThrow(
+            /exactly one Related tickets section/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #90071992547409930`, Number.MAX_SAFE_INTEGER)).toThrow(
+            /exactly one relationship/
+        );
+        expect(() => issueRelationshipFromBody(`Fixes #99\n${prefix}Related #2164`, 2164)).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
+        expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
+            /exactly one relationship/
+        );
+    });
+
+    it('rejects hidden GitHub closing references', () => {
+        expect(() => composePublishBody(2164, 'feat(vcs): fixes #99', 'relates')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes owner/repo#99')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes: #99', 'relates')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes : #99', 'relates')).not.toThrow();
+        expect(() =>
+            composePublishBody(undefined, 'feat(vcs): resolves https://github.com/owner/repo/issues/99')
+        ).not.toThrow();
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {

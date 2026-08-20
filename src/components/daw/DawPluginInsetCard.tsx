@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 import { DawPluginSectionHeader } from './DawPluginSectionHeader';
@@ -21,8 +22,8 @@ export const DawPluginInsetCard = ({
     children,
     ...props
 }: DawPluginInsetCardProps): ReactElement => (
-    <div className={cn('flex flex-col gap-2 px-3 py-2', className)} {...props}>
+    <Stack gap={2} className={cn('px-3 py-2', className)} {...props}>
         <DawPluginSectionHeader title={title} actions={actions} titleClassName={titleClassName} size={headerSize} />
         {children}
-    </div>
+    </Stack>
 );

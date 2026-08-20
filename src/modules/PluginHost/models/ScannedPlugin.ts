@@ -29,12 +29,14 @@ export type ScannedPlugin = {
     path: string;
     version: string;
     /**
-     * The plugin's own CLAP descriptor id. Unlike `id`, which is a hash of the
-     * current file path, this survives the plugin being moved or reinstalled
-     * under a new path. Empty for formats with no CLAP descriptor (VST3, AU).
-     * The host resolves either one, so `id` remains the value to persist.
+     * The identity the plugin's own descriptor claims. Unlike `id`, which is a
+     * hash of the current file path, this survives the plugin being moved or
+     * reinstalled under a new path. Each format has one — CLAP's reverse-DNS
+     * plugin id, VST3's class CID — and it is empty when the scan read no
+     * usable descriptor. The host resolves either one, so `id` remains the
+     * value to persist.
      */
-    clap_id: string;
+    descriptor_id: string;
     /**
      * Total audio channels the plugin declared through its own
      * `clap.audio-ports` extension during the scan. Read together with
