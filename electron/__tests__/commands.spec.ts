@@ -76,7 +76,12 @@ const readProductionTypescript = (directory: string): string =>
             if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) {
                 return [];
             }
-            if (entry.name.includes('.spec.') || entry.name.includes('.stories.') || entry.name.includes('.e2e.')) {
+            if (
+                entry.name.includes('.spec.') ||
+                entry.name.includes('.stories.') ||
+                entry.name.includes('.e2e.') ||
+                entry.name === 'sourdawCommandArguments.ts'
+            ) {
                 return [];
             }
             return [readFileSync(path, 'utf8')];
@@ -293,19 +298,14 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['destroy_crumbs', ['instance_id']],
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
     ['detect_smart_loop_points', ['instance_id', 'sample_id']],
-    ['disable_link', []],
-    ['enable_link', []],
     ['engine_rt_diagnostics', []],
     ['ensure_whisper_ready', []],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
-    ['get_link_status', []],
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
     ['is_plugin_gui_supported', ['instance_id']],
-    ['link_start_playing', []],
-    ['link_stop_playing', []],
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_plugin', ['plugin_id', 'instance_id']],
@@ -325,7 +325,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],
     ['set_crumbs_param', ['instance_id', 'param', 'value']],
-    ['set_link_tempo', ['tempo']],
     ['set_plugin_bypass', ['instance_id', 'bypassed']],
     ['set_plugin_parameter', ['instance_id', 'param_id', 'value']],
     ['set_plugin_state_bytes', ['instance_id', 'plugin_state']],
