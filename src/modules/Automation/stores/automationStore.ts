@@ -92,6 +92,25 @@ function is_finite_non_negative_number(value: unknown): value is number {
     return is_finite_number(value) && value >= 0;
 }
 
+/**
+ * True when `points` is already ascending by beat. Used by the "already
+ * well-formed" exact-shape checks below so that a lane whose fields all
+ * validate but whose array order does not — e.g. a project file written by
+ * another build, or a lane a remote CRDT sync patch whole-array-replaced —
+ * still falls through to `normalize_automation_lane`'s repair path instead
+ * of taking the identity fast path in `sanitize_automation_store_state` and
+ * skipping `get_normalized_points`'s sort entirely.
+ */
+function is_sorted_by_beat(points: readonly { beat: number }[]): boolean {
+    for (let index = 1; index < points.length; index += 1) {
+        if (points[index]!.beat < points[index - 1]!.beat) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function get_lane_values(value: unknown): unknown[] | null {
     if (value === null || typeof value !== 'object') {
         return null;
@@ -206,7 +225,25 @@ function normalize_automation_point(point: AutomationPoint): AutomationPoint {
 }
 
 function get_normalized_points(points: unknown[]): AutomationPoint[] {
-    return points.filter(is_valid_automation_point).map(normalize_automation_point);
+    // Every reader of `lane.points` (and `trimPoints`/`ghostPoints`) downstream
+    // — this module's own binary-search insert in `addAutomationPoint.ts` and
+    // the batched merge in `batchAddAutomationPoints.ts` — assumes the array is
+    // ascending by beat and never re-sorts on entry. This is the only place to
+    // enforce that: it is the inbound boundary every external source of truth
+    // (a project file, a legacy import, or a remote peer's CRDT sync patch
+    // during collaboration — `AutomationPoint` carries no id, so the CRDT
+    // reconciler whole-array-replaces `points` verbatim) passes through before
+    // any reader sees it.
+    //
+    // `Array.prototype.sort` is stable (guaranteed since ES2019), so two points
+    // with an identical beat keep their original relative array order rather
+    // than being shuffled. That is safe for every current reader: both binary
+    // searches above only require non-decreasing beats and never depend on a
+    // particular tie-break among equal beats.
+    return points
+        .filter(is_valid_automation_point)
+        .map(normalize_automation_point)
+        .sort((left, right) => left.beat - right.beat);
 }
 
 function is_boolean_overrides(value: unknown): value is { [key: string]: boolean } {
@@ -258,7 +295,8 @@ function is_exact_automation_object(value: unknown): value is AutomationObject {
             required_keys: AUTOMATION_OBJECT_REQUIRED_KEYS,
             optional_keys: AUTOMATION_OBJECT_OPTIONAL_KEYS,
         }) &&
-        is_dense_array(value.points, is_exact_automation_point)
+        is_dense_array(value.points, is_exact_automation_point) &&
+        is_sorted_by_beat(value.points)
     );
 }
 
@@ -343,11 +381,16 @@ export function is_exact_automation_lane(value: unknown): value is AutomationLan
             optional_keys: AUTOMATION_LANE_OPTIONAL_KEYS,
         }) &&
         is_dense_array(value.points, is_exact_automation_point) &&
+        is_sorted_by_beat(value.points) &&
         is_dense_array(value.objects, is_exact_automation_object) &&
         (!('trimPoints' in value) ||
-            (is_unknown_array(value.trimPoints) && is_dense_array(value.trimPoints, is_exact_automation_point))) &&
+            (is_unknown_array(value.trimPoints) &&
+                is_dense_array(value.trimPoints, is_exact_automation_point) &&
+                is_sorted_by_beat(value.trimPoints))) &&
         (!('ghostPoints' in value) ||
-            (is_unknown_array(value.ghostPoints) && is_dense_array(value.ghostPoints, is_exact_automation_point)))
+            (is_unknown_array(value.ghostPoints) &&
+                is_dense_array(value.ghostPoints, is_exact_automation_point) &&
+                is_sorted_by_beat(value.ghostPoints)))
     );
 }
 

@@ -31,7 +31,7 @@ use crate::state::AppState;
 ///
 /// Field order is load bearing for the same reason `AppState`'s own field
 /// order is: drop runs
-/// top-to-bottom, so `app_state` — which owns the CPAL stream and, after it, the
+/// top-to-bottom, so `app_state` — which owns the audio stream and, after it, the
 /// retired CLAP runtimes — is released before any state that can still be
 /// holding a ring the audio thread reads. Reordering these fields reorders
 /// teardown.
@@ -45,7 +45,7 @@ pub struct NativeSingletons {
     pub crumbs: CrumbsState,
     pub provider_gateway: ProviderGatewayState,
     /// Where every pushed event goes. Registered once, at host init, and never
-    /// reachable from the CPAL callback.
+    /// reachable from the render callback.
     pub events: Arc<dyn EventSink>,
 }
 
