@@ -7,11 +7,15 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fail } from './prContract.ts';
 
 export const AUTHOR_BOT_LOGIN = 'jcosta33-author[bot]';
+export const AUTHOR_GRAPHQL_LOGIN = 'jcosta33-author';
 export const REVIEWER_BOT_LOGIN = 'jcosta33-reviewer[bot]';
 export const REVIEWER_GRAPHQL_LOGIN = 'jcosta33-reviewer';
 
 export function isReviewerBotLogin(login: string | undefined | null): boolean {
     return login === REVIEWER_BOT_LOGIN || login === REVIEWER_GRAPHQL_LOGIN;
+}
+export function isAuthorBotLogin(login: string | undefined | null): boolean {
+    return login === AUTHOR_BOT_LOGIN || login === AUTHOR_GRAPHQL_LOGIN;
 }
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
 export const GITHUB_HTTPS_REMOTE = `https://github.com/${REQUIRED_REPOSITORY}.git`;

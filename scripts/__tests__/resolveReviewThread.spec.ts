@@ -20,6 +20,7 @@ type Input = {
     heads?: string[];
     authorLogin?: string;
     throwAfterReply?: boolean;
+    concurrentReplyOnThrow?: boolean;
     throwAfterResolve?: boolean;
     failDelete?: boolean;
     rootAuthorLogin?: string | null;
@@ -59,9 +60,20 @@ function fakePort(input: Input = {}) {
                 { id: replyId, fullDatabaseId: '9223372036854775808', body: 'Done', authorLogin: AUTHOR_BOT_LOGIN },
             ];
             if (input.throwAfterReply) {
+                if (input.concurrentReplyOnThrow) {
+                    comments = [
+                        ...comments,
+                        {
+                            id: 'PRRC_concurrent',
+                            fullDatabaseId: '9223372036854775809',
+                            body: 'Done',
+                            authorLogin: AUTHOR_BOT_LOGIN,
+                        },
+                    ];
+                }
                 throw new Error('reply transport lost');
             }
-            return { id: replyId, fullDatabaseId: '9223372036854775808' };
+            return { id: replyId, fullDatabaseId: '9223372036854775808', authorLogin: AUTHOR_BOT_LOGIN };
         },
         resolve: (id) => {
             calls.push(`resolve:${id}`);
@@ -115,7 +127,9 @@ describe('review thread resolution', () => {
     });
     it('finds the requested thread on a later page and paginates its comments', () => {
         let call = 0;
-        const inspection = inspectReviewThread(42, threadId, () => {
+        const calls: string[][] = [];
+        const inspection = inspectReviewThread(42, threadId, (args) => {
+            calls.push(args);
             call += 1;
             if (call === 1) {
                 return threadPage([], true, 'threads-1');
@@ -155,7 +169,9 @@ describe('review thread resolution', () => {
             author: { login: AUTHOR_BOT_LOGIN },
         };
         let call = 0;
-        const inspection = inspectReviewThread(42, threadId, () => {
+        const calls: string[][] = [];
+        const inspection = inspectReviewThread(42, threadId, (args) => {
+            calls.push(args);
             call += 1;
             if (call === 1) {
                 return threadPage([{ id: threadId, isResolved: false }], false, null);
@@ -167,6 +183,22 @@ describe('review thread resolution', () => {
         });
         expect(inspection.thread?.comments).toHaveLength(101);
         expect(inspection.thread?.comments.at(-1)?.id).toBe(replyId);
+        expect(calls[2]).toContain('cursor=comments-1');
+    });
+    it.each([
+        ['repeated', 'comments-1'],
+        ['empty', ''],
+    ])('fails closed on a %s comment cursor', (_case, cursor) => {
+        let call = 0;
+        expect(() =>
+            inspectReviewThread(42, threadId, () => {
+                call += 1;
+                if (call === 1) {
+                    return threadPage([{ id: threadId, isResolved: false }], false, null);
+                }
+                return commentPage([], true, cursor);
+            })
+        ).toThrow(/pagination/i);
     });
     it('parses strict arguments', () => {
         expect(parseResolveReviewThreadArgs(['42', '--thread', threadId, '--head', head])).toMatchObject({
@@ -210,10 +242,13 @@ describe('review thread resolution', () => {
             `log:review-thread-resolved:42:${threadId}`,
         ]);
     });
-    it('compensates a reply that committed before its mutation threw', () => {
-        const { port, authorLogin, state } = fakePort({ throwAfterReply: true });
-        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/reply transport lost$/);
-        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
+    it('fails closed when a thrown reply mutation collides with an identical concurrent comment', () => {
+        const { port, authorLogin, state, calls } = fakePort({ throwAfterReply: true, concurrentReplyOnThrow: true });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(
+            /reply transport lost[\s\S]*ambiguous review reply mutation/i
+        );
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state().comments.map((comment) => comment.id)).toEqual([rootId, replyId, 'PRRC_concurrent']);
     });
     it('compensates a resolution that committed before its mutation threw', () => {
         const { port, authorLogin, state } = fakePort({ throwAfterResolve: true });
@@ -221,9 +256,10 @@ describe('review thread resolution', () => {
         expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
     });
     it('deletes the exact new reply when the head moves after replying', () => {
-        const { port, authorLogin, state } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
+        const { port, authorLogin, state, calls } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
         expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
+        expect(calls).toContain(`delete:${replyId}`);
     });
     it('reports original and compensation failure', () => {
         const { port, authorLogin } = fakePort({ throwAfterReply: true, failDelete: true });
