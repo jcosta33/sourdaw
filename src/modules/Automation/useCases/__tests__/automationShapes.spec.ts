@@ -118,9 +118,7 @@ describe('automationShapes', () => {
         insertAutomationShape('lane-a', 'sine', 0, 0.24, 2);
 
         const points = storeCell.state?.lanes[0]?.points ?? [];
-        expect(points.map((point) => Math.round(point.beat * 1000))).toEqual([
-            0, 30, 60, 90, 120, 150, 180, 210, 240,
-        ]);
+        expect(points.map((point) => Math.round(point.beat * 1000))).toEqual([0, 30, 60, 90, 120, 150, 180, 210, 240]);
     });
 
     // Random spaces its points an eighth-cycle apart: 0.3 beats gives 0.0375
@@ -142,9 +140,10 @@ describe('automationShapes', () => {
         insertAutomationShape('lane-a', 'triangle', 0, 4);
 
         // The triangle's beat-2 point lands within 0.05 beats of the existing
-        // 1.999 point and takes it over (the later write wins), so the lane
-        // holds 3 points, not 4.
-        expect(storeCell.state?.lanes[0]?.points.map((point) => point.beat)).toEqual([0, 1.999, 4]);
+        // 1.999 point and takes it over — the later write wins wholesale, so
+        // the surviving point carries the incoming beat 2 and the lane holds
+        // 3 points, not 4.
+        expect(storeCell.state?.lanes[0]?.points.map((point) => point.beat)).toEqual([0, 2, 4]);
         expect(storeCell.state?.lanes[0]?.points[1]?.value).toBe(10);
     });
 
