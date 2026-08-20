@@ -24,7 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { pluginScanStore, defaultPluginScanState, type PluginScanState } from '#/modules/PluginHost/stores';
-import { startPluginScan } from '#/modules/PluginHost/useCases';
+import { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat, startPluginScan } from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 
@@ -42,7 +42,9 @@ const FORMAT_COLORS: Record<string, string> = {
     clap: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
 };
 
-const FORMAT_ORDER = ['clap'];
+// Grouping follows the host's own supported set, so a format the host gains is
+// never scanned, offered, and then missing a group to appear in.
+const FORMAT_ORDER = SUPPORTED_PLUGIN_FORMATS;
 
 export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserProps): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);
@@ -76,7 +78,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
         );
     }
 
-    const supportedPlugins = state.scannedPlugins.filter((plugin) => plugin.format.toLowerCase() === 'clap');
+    const supportedPlugins = state.scannedPlugins.filter((plugin) => isSupportedPluginFormat(plugin.format));
     const query = (searchQuery || localSearch).toLowerCase().trim();
 
     const filtered = supportedPlugins.filter((param) => {

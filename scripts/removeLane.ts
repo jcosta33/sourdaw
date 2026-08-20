@@ -10,6 +10,7 @@ import {
     assertTrustedExecutingBlob,
     isAuthorBotLogin,
     originMainBlob,
+    removalLockPid,
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { supersessionReplacement } from './prContract.ts';
@@ -143,8 +144,8 @@ function identifyLane(target: string, port: LaneRemovalPort): Worktree {
         fail('worktree ownership is unknown');
     }
     if (lane.locked) {
-        const stalePid = /^lane-remove:(\d+)$/.exec(lane.lockReason ?? '')?.[1];
-        if (stalePid !== undefined && !port.processAlive(Number(stalePid))) {
+        const stalePid = removalLockPid(lane.lockReason);
+        if (stalePid !== undefined && !port.processAlive(stalePid)) {
             port.unlock(target);
             return identifyLane(target, port);
         }

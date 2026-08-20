@@ -9,6 +9,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
 import { type InferenceThroughput } from '../../models/CapabilityReport';
+import { type WebGpuUnavailableReason } from '../../models/WebGpuProbe';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { detectCapabilities } from '../../useCases/detectCapabilities';
 
@@ -22,6 +23,14 @@ const NOT_MEASURED_LABELS: Record<Extract<InferenceThroughput, { status: 'not-me
     'model-not-cached': 'Not measured — download Kokoro TTS first',
     'runtime-unavailable': 'Not measured — ONNX runtime failed to start',
     'inference-failed': 'Not measured — the probe render produced no audio',
+};
+
+const WEBGPU_UNAVAILABLE_LABELS: Record<WebGpuUnavailableReason, string> = {
+    'missing-surface': 'WebGPU is not exposed by this Chromium runtime',
+    'adapter-unavailable': 'No core WebGPU adapter is available',
+    'fallback-adapter': 'Only a software WebGPU fallback adapter is available',
+    'device-unavailable': 'The WebGPU adapter could not create a device',
+    'probe-failed': 'The WebGPU usability check could not complete',
 };
 
 export function CapabilityReportPanel(): ReactElement {
@@ -71,10 +80,14 @@ export function CapabilityReportPanel(): ReactElement {
         // Two distinct causes land here and the copy must not conflate them:
         // a Chromium renderer without WebGPU (older build, refused GPU stack,
         // desktop app on a blocked GPU) versus a genuinely non-Chrome browser.
-        const description =
-            report.chromeVersion !== null
-                ? 'WebGPU unavailable — AI features need a GPU-enabled Chromium'
-                : 'Non-Chrome browser — AI features require Chrome latest';
+        let description: string;
+        if (report.chromeVersion === null) {
+            description = 'Non-Chrome browser — AI features require Chrome latest';
+        } else if (report.webGpu.status === 'unavailable') {
+            description = WEBGPU_UNAVAILABLE_LABELS[report.webGpu.reason];
+        } else {
+            description = 'Browser AI is unavailable in this Chromium runtime';
+        }
         return (
             <DawBlockedState
                 compact
@@ -132,7 +145,11 @@ export function CapabilityReportPanel(): ReactElement {
             aria-label="Browser AI capabilities"
         >
             <div className="space-y-1">
-                <DawReadoutRow label="WebGPU" value={<DawMicroBadge tone={tierTone}>{tierLabel}</DawMicroBadge>} />
+                <DawReadoutRow label="WebGPU" value={<DawMicroBadge tone="success">Available</DawMicroBadge>} />
+                <DawReadoutRow
+                    label="Render Performance"
+                    value={<DawMicroBadge tone={tierTone}>{tierLabel}</DawMicroBadge>}
+                />
                 <DawReadoutRow label="Render Throughput" value={throughputValue} />
                 {report.inference.status === 'measured' ? (
                     <DawReadoutRow

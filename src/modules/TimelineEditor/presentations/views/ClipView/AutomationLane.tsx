@@ -83,7 +83,7 @@ export const AutomationLane = ({
                     trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
-                    contentWidth={contentWidth}
+                    scrollRef={scrollRef}
                 />
             );
         }
@@ -94,7 +94,7 @@ export const AutomationLane = ({
                     trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
-                    contentWidth={contentWidth}
+                    scrollRef={scrollRef}
                 />
             );
         }
@@ -105,7 +105,7 @@ export const AutomationLane = ({
                     trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
-                    contentWidth={contentWidth}
+                    scrollRef={scrollRef}
                 />
             );
         }
@@ -116,7 +116,7 @@ export const AutomationLane = ({
                     trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
-                    contentWidth={contentWidth}
+                    scrollRef={scrollRef}
                 />
             );
         }

@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useRef } from 'react';
 
+import { Row } from '#/components/layout';
 import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { LevelMeter } from '#/modules/Metering/presentations/views';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
@@ -101,19 +102,20 @@ export const MixerLevelReadout = ({
     return (
         <>
             <div className={cn('mt-1 flex shrink-0 flex-col items-center gap-1', clusterClassName)}>
-                <div
+                <Row
                     ref={peakTextRef}
                     onClick={handleReset}
-                    className="text-[9px] font-mono cursor-pointer text-muted-foreground/80 hover:text-text-primary transition-colors h-3 flex items-center justify-center"
+                    justify="center"
+                    className="h-3 cursor-pointer font-mono text-[9px] text-muted-foreground/80 transition-colors hover:text-text-primary"
                     title="Click to reset peak"
                 >
                     {/* Pre-tick placeholder. Nothing has been measured yet, so "-∞"
                         would claim a silent bus. The first tick overwrites this. */}
                     n/a
-                </div>
-                <div className="flex items-end justify-center h-full">
+                </Row>
+                <Row align="end" justify="center" className="h-full">
                     <LevelMeter trackId={trackId} width="w-1.5" />
-                </div>
+                </Row>
                 {control}
             </div>
             <MixerStripValue size={valueSize}>{value}</MixerStripValue>
