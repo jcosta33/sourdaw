@@ -32,7 +32,7 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 - No host seam may be called from the audio callback. Every one allocates, serializes, or reaches
   another thread.
 - Field order is drop order in `AppState` and `NativeSingletons`, and it is load bearing: the
-  engine's CPAL stream must be released before the CLAP runtimes it reads. Reordering either field
+  engine's audio stream must be released before the CLAP runtimes it reads. Reordering either field
   list reorders teardown.
 - Never final-drop a hosted plugin on the audio thread — removed CLAP runtimes go to
   `retired_engine_plugins` (`state.rs`).

@@ -99,7 +99,7 @@ pub struct EnginePluginInstanceData {
 }
 
 pub struct AppState {
-    /// Native audio engine handle (cpal thread + lock-free scheduler).
+    /// Native audio engine handle (audio-owner thread + lock-free scheduler).
     /// None until the first `apply_graph_commands` batch lazily starts it
     /// (#1984). Declared before engine-owned runtime maps so app teardown
     /// drops the stream before active CLAP runtimes.
@@ -122,7 +122,7 @@ pub struct AppState {
     /// on the audio relay path.
     pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
     /// Retired engine-owned runtimes kept alive after scheduler removal is
-    /// queued so the CPAL callback never final-drops a hosted plugin. Declared
+    /// queued so the render callback never final-drops a hosted plugin. Declared
     /// after `engine` so app teardown drops the stream before these runtimes.
     ///
     /// Entries leave only through `sweep_retired_engine_plugins`, and only once
@@ -255,7 +255,7 @@ fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtim
 /// Move every retired runtime the scheduler has already released out of the vec
 /// and hand it back to the caller — *without* dropping it.
 ///
-/// The retirement vec exists so the CPAL callback never final-drops a hosted
+/// The retirement vec exists so the render callback never final-drops a hosted
 /// plugin: removal from the scheduler is *queued*, so at the moment a runtime is
 /// retired the audio thread may still be holding — and processing — the
 /// `ClapPluginSlot` that owns the second `Arc`. Freeing then is a use-after-free

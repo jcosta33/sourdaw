@@ -1149,7 +1149,7 @@ pub async fn set_plugin_state_bytes(
 // ── Native audio engine ────────────────────────────────────────────────
 //
 // There is no explicit start command. The engine's recorded bootstrap (#1984)
-// is lazy start inside `commands::graph::apply_graph_commands`: the CPAL
+// is lazy start inside `commands::graph::apply_graph_commands`: the audio
 // stream spawns when the first graph batch arrives, and a machine where it
 // cannot start rejects that batch with an `engine-not-running:` reason. The
 // old `start_native_engine` command was deleted with that decision — it had
