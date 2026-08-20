@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -8,16 +9,20 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    authenticateTrackerAuthor,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
     isReviewerBotLogin,
     originMainBlob,
     REQUIRED_BASE_BRANCH,
+    REQUIRED_REPOSITORY,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
 } from './githubAppIdentity.ts';
-import { TITLE_PATTERN, assertPullRequestBody, fail } from './prContract.ts';
+import { TITLE_PATTERN, assertPullRequestBody, canonicalIssueReferenceFromBody, fail } from './prContract.ts';
+import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
+import { completeTrackerIssue } from './trackerIssueReconciliation.ts';
 
 export type PullRequestSnapshot = {
     number: number;
@@ -57,6 +62,10 @@ export type DeliveryPort = {
     log: (message: string) => void;
 };
 
+export type TrackerCompletionPort = {
+    complete: (issueNumber: number) => void;
+};
+
 export type ShellRunner = {
     capture: (command: string, args: string[]) => string;
     run: (command: string, args: string[]) => void;
@@ -72,13 +81,19 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    assertPullRequestBody(pullRequest.body ?? '', `PR #${pullRequest.number} body`);
     if (pullRequest.mergeStateStatus !== 'CLEAN') {
         fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
     }
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
+}
+
+function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
+    const body = pullRequest.body ?? '';
+    assertPullRequestBody(body, `PR #${pullRequest.number} body`);
+    const reference = canonicalIssueReferenceFromBody(body, REQUIRED_REPOSITORY);
+    return reference?.relationship === 'closes' ? reference.issue : undefined;
 }
 
 function validateReview(number: number, review: ReviewState): void {
@@ -109,11 +124,17 @@ function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
 }
 
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'body'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
         }
+    }
+}
+
+function validateStableTrackerTarget(number: number, before: number | undefined, after: number | undefined): void {
+    if (before !== after) {
+        fail(`PR #${number} closing target changed during delivery`);
     }
 }
 
@@ -162,13 +183,34 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
     }
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort): void {
+function completeIssueAfterMerge(
+    pullRequestNumber: number,
+    issueNumber: number | undefined,
+    tracker: TrackerCompletionPort
+): void {
+    if (issueNumber === undefined) {
+        return;
+    }
+    try {
+        tracker.complete(issueNumber);
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+            `PR #${pullRequestNumber} is already merged, but issue #${issueNumber} was not completed: ${detail}`,
+            { cause: error }
+        );
+    }
+}
+
+export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
     port.fetch();
     const initial = port.pullRequest(number);
     validateBaseBranch(initial);
+    const initialTrackerTarget = trackerCompletionTarget(initial);
     if (initial.state === 'MERGED') {
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
+        completeIssueAfterMerge(number, initialTrackerTarget, tracker);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
@@ -183,7 +225,9 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
 
     port.fetch();
     const current = port.pullRequest(number);
+    const currentTrackerTarget = trackerCompletionTarget(current);
     validatePullRequest(current);
+    validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
     validateStablePullRequest(initial, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
     const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
@@ -194,6 +238,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
 
     port.merge(number, current.headRefOid, currentDependents.length > 0);
     retargetDependents(currentDependents, current.baseRefName, port);
+    completeIssueAfterMerge(number, currentTrackerTarget, tracker);
 }
 
 function capture(command: string, args: string[]): string {
@@ -467,28 +512,49 @@ async function main(): Promise<number> {
         executingFile,
         originMainBlob('scripts/deliverPullRequest.ts', cwd)
     );
+    assertTrustedExecutingBlob(
+        'scripts/reconcileTrackerIssue.ts',
+        resolve(dirname(executingFile), 'reconcileTrackerIssue.ts'),
+        originMainBlob('scripts/reconcileTrackerIssue.ts', cwd)
+    );
+    assertTrustedExecutingBlob(
+        'scripts/trackerIssueReconciliation.ts',
+        resolve(dirname(executingFile), 'trackerIssueReconciliation.ts'),
+        originMainBlob('scripts/trackerIssueReconciliation.ts', cwd)
+    );
     const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
+    const authorAuth = await authenticateRole({ primaryRoot, role: 'author' });
+    let trackerAuth: Awaited<ReturnType<typeof authenticateTrackerAuthor>> | undefined;
     try {
-        if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        if (authorAuth.minted.login !== AUTHOR_BOT_LOGIN) {
+            fail(`minted login ${authorAuth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
         }
         const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
+            env: authorAuth.session.env,
             cwd: primaryRoot,
         });
         assertRequiredRepository(repository);
+        trackerAuth = await authenticateTrackerAuthor({ primaryRoot });
+        const trackerLogin = trackerAuth.minted.login;
+        const trackerPort = trackerIssueShellPort(trackerAuth.session, cwd);
         const shell: ShellRunner = {
-            capture: (command, args) => spawnCapture(command, args, { env: auth.session.env, cwd: primaryRoot }),
-            run: (command, args) => spawnRun(command, args, { env: auth.session.env, cwd: primaryRoot }),
+            capture: (command, args) => spawnCapture(command, args, { env: authorAuth.session.env, cwd: primaryRoot }),
+            run: (command, args) => spawnRun(command, args, { env: authorAuth.session.env, cwd: primaryRoot }),
         };
         deliverPullRequest(
             parsed.number,
-            shellPort(repository, shell, { gitToken: auth.minted.token, helperDir: auth.session.configDir })
+            shellPort(repository, shell, {
+                gitToken: authorAuth.minted.token,
+                helperDir: authorAuth.session.configDir,
+            }),
+            {
+                complete: (issueNumber) => completeTrackerIssue(issueNumber, trackerLogin, trackerPort),
+            }
         );
         return 0;
     } finally {
-        auth.session.dispose();
+        trackerAuth?.session.dispose();
+        authorAuth.session.dispose();
     }
 }
 

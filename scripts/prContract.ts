@@ -100,11 +100,17 @@ export const NO_RELATED_TICKETS = 'None.';
 
 export type IssueRelationship = 'closes' | 'relates';
 
+export type CanonicalIssueReference = {
+    issue: number;
+    relationship: IssueRelationship;
+};
+
 const CLOSING_REFERENCE_PATTERN =
     /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))\b/gi;
 const CLOSING_RELATIONSHIP_PATTERN =
     /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
 const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
+const CANONICAL_CLOSING_RELATIONSHIP_PATTERN = /^Closes (?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/;
 
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
@@ -142,22 +148,69 @@ function assertIssueClosingReferences(
     }
 }
 
-export function issueRelationshipFromBody(
-    body: string,
-    issue: number | undefined,
-    repository?: string
-): IssueRelationship | undefined {
+function relatedTicketLines(body: string): string[] {
     const heading = REQUIRED_BODY_HEADINGS.at(-1);
     const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
     if (heading === undefined || headingIndex < 0 || headingIndex !== body.lastIndexOf(heading)) {
         fail('pull-request body must contain exactly one Related tickets section');
     }
-    const lines = body
+    return body
         .slice(headingIndex + heading.length)
         .trim()
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter((line) => line !== '');
+}
+
+export function canonicalIssueReferenceFromBody(body: string, repository: string): CanonicalIssueReference | undefined {
+    const lines = relatedTicketLines(body);
+    if (lines[0] === NO_RELATED_TICKETS) {
+        if (
+            lines.some(
+                (line) => CANONICAL_CLOSING_RELATIONSHIP_PATTERN.test(line) || RELATED_RELATIONSHIP_PATTERN.test(line)
+            )
+        ) {
+            fail('pull-request body cannot combine None. with an issue relationship');
+        }
+        assertIssueClosingReferences(body, undefined, undefined, repository);
+        return undefined;
+    }
+
+    const references = lines.flatMap<ClosingReference & { relationship: IssueRelationship }>((line) => {
+        const closing = CANONICAL_CLOSING_RELATIONSHIP_PATTERN.exec(line);
+        if (closing !== null) {
+            return [
+                {
+                    relationship: 'closes',
+                    repository: closing[2],
+                    issue: closing[1] ?? closing[3] ?? '',
+                },
+            ];
+        }
+        const related = RELATED_RELATIONSHIP_PATTERN.exec(line);
+        return related === null ? [] : [{ relationship: 'relates', issue: related[1] ?? '' }];
+    });
+    const reference = references[0];
+    if (references.length !== 1 || reference === undefined || lines.includes(NO_RELATED_TICKETS)) {
+        fail('pull-request body must contain exactly one canonical issue relationship or None.');
+    }
+    if (reference.repository !== undefined && reference.repository.toLowerCase() !== repository.toLowerCase()) {
+        fail(`pull-request body issue relationship must target ${repository}`);
+    }
+    const issue = Number(reference.issue);
+    if (!Number.isSafeInteger(issue) || issue <= 0) {
+        fail('pull-request body issue relationship must use a safe positive integer');
+    }
+    assertIssueClosingReferences(body, issue, reference.relationship, repository);
+    return { issue, relationship: reference.relationship };
+}
+
+export function issueRelationshipFromBody(
+    body: string,
+    issue: number | undefined,
+    repository?: string
+): IssueRelationship | undefined {
+    const lines = relatedTicketLines(body);
     const relationships = lines.flatMap<IssueReference>((line) => {
         const closing = CLOSING_RELATIONSHIP_PATTERN.exec(line);
         if (closing !== null) {

@@ -6,6 +6,7 @@ import {
     assertLaneSlug,
     assertPullRequestBody,
     assertReviewCommentBody,
+    canonicalIssueReferenceFromBody,
     composePublishBody,
     fail,
     issueRelationshipFromBody,
@@ -92,6 +93,41 @@ describe('pull-request contract', () => {
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
         expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
             /exactly one relationship/
+        );
+    });
+
+    it('derives delivery authority only from one canonical same-repository relationship', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(canonicalIssueReferenceFromBody(`${prefix}Closes #2164`, 'jcosta33/sourdaw')).toEqual({
+            issue: 2164,
+            relationship: 'closes',
+        });
+        expect(canonicalIssueReferenceFromBody(`${prefix}Closes JCOSTA33/SOURDAW#2164`, 'jcosta33/sourdaw')).toEqual({
+            issue: 2164,
+            relationship: 'closes',
+        });
+        expect(canonicalIssueReferenceFromBody(`${prefix}Related #2164`, 'jcosta33/sourdaw')).toEqual({
+            issue: 2164,
+            relationship: 'relates',
+        });
+        expect(canonicalIssueReferenceFromBody(`${prefix}None.`, 'jcosta33/sourdaw')).toBeUndefined();
+        expect(() =>
+            canonicalIssueReferenceFromBody(`${prefix}Closes other/repository#2164`, 'jcosta33/sourdaw')
+        ).toThrow(/must target jcosta33\/sourdaw/);
+        expect(() => canonicalIssueReferenceFromBody(`${prefix}Closes #90071992547409930`, 'jcosta33/sourdaw')).toThrow(
+            /safe positive integer/
+        );
+    });
+
+    it.each(['Fixes #2164', 'closes #2164', 'Closes: #2164'])('rejects non-canonical delivery authority %s', (line) => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(() => canonicalIssueReferenceFromBody(`${prefix}${line}`, 'jcosta33/sourdaw')).toThrow(/canonical/);
+    });
+
+    it('rejects closing authority outside the canonical Related tickets section', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(() => canonicalIssueReferenceFromBody(`Fixes #99\n${prefix}Closes #2164`, 'jcosta33/sourdaw')).toThrow(
+            /unexpected issue-closing references/
         );
     });
 

@@ -126,12 +126,14 @@ export function inspectTrackerIssue(number: number, gh: Gh): TrackerIssue {
         fail(`#${number} is a pull request, not a tracker issue`);
     }
     const state = parseIssueState(issue.state);
+    const stateReason = parseIssueStateReason(issue.state_reason, state);
     if (
         typeof issue.node_id !== 'string' ||
         issue.node_id === '' ||
         issue.number !== number ||
         issue.repository_url !== `https://api.github.com/repos/${REQUIRED_REPOSITORY}` ||
         state === undefined ||
+        stateReason === undefined ||
         typeof issue.body !== 'string'
     ) {
         fail(`cannot inspect issue #${number}`);
@@ -141,6 +143,7 @@ export function inspectTrackerIssue(number: number, gh: Gh): TrackerIssue {
         number,
         repository: REQUIRED_REPOSITORY,
         state,
+        stateReason,
         body: issue.body,
         comments: inspectComments(number, gh),
     };
@@ -187,10 +190,15 @@ function updateTrackerIssue(
     input: Parameters<ReconcileTrackerIssuePort['update']>[1],
     gh: Gh
 ): TrackerIssue {
-    if ((input.body === undefined) === (input.state === undefined)) {
+    const changesBody = input.body !== undefined;
+    const changesState = input.state !== undefined;
+    if (changesBody === changesState || (changesBody && input.stateReason !== undefined)) {
         fail('tracker issue update must change exactly one field');
     }
-    const fields = input.body === undefined ? ['-f', 'state=closed'] : ['-f', `body=${input.body}`];
+    const fields =
+        input.body === undefined
+            ? ['-f', 'state=closed', ...(input.stateReason === undefined ? [] : ['-f', 'state_reason=completed'])]
+            : ['-f', `body=${input.body}`];
     const response = parseJson(gh(['api', '--method', 'PATCH', issuePath(number), ...fields]), 'update tracker issue');
     return toMutationIssue(number, response, gh);
 }
@@ -198,11 +206,13 @@ function updateTrackerIssue(
 function toMutationIssue(number: number, value: unknown, gh: Gh): TrackerIssue {
     const issue = value as Record<string, unknown>;
     const state = parseIssueState(issue.state);
+    const stateReason = parseIssueStateReason(issue.state_reason, state);
     if (
         typeof issue.node_id !== 'string' ||
         issue.number !== number ||
         issue.repository_url !== `https://api.github.com/repos/${REQUIRED_REPOSITORY}` ||
         state === undefined ||
+        stateReason === undefined ||
         typeof issue.body !== 'string'
     ) {
         fail('invalid tracker issue mutation receipt');
@@ -212,6 +222,7 @@ function toMutationIssue(number: number, value: unknown, gh: Gh): TrackerIssue {
         number,
         repository: REQUIRED_REPOSITORY,
         state,
+        stateReason,
         body: issue.body,
         comments: inspectComments(number, gh),
     };
@@ -225,18 +236,25 @@ function addComment(number: number, body: string, gh: Gh): TrackerIssueComment {
     return toComment(response);
 }
 
+export function githubTrackerIssuePort(
+    gh: Gh,
+    log: (message: string) => void = (message) => console.log(message)
+): ReconcileTrackerIssuePort {
+    return {
+        inspect: (number) => inspectTrackerIssue(number, gh),
+        update: (number, input) => updateTrackerIssue(number, input, gh),
+        comment: (number, body) => addComment(number, body, gh),
+        log,
+    };
+}
+
 export function shellPort(session: GhSession, cwd: string = process.cwd()): ReconcileTrackerIssuePort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
     );
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
-    return {
-        inspect: (number) => inspectTrackerIssue(number, gh),
-        update: (number, input) => updateTrackerIssue(number, input, gh),
-        comment: (number, body) => addComment(number, body, gh),
-        log: (message) => console.log(message),
-    };
+    return githubTrackerIssuePort(gh);
 }
 
 function parseIssueState(value: unknown): TrackerIssue['state'] | undefined {
@@ -245,6 +263,31 @@ function parseIssueState(value: unknown): TrackerIssue['state'] | undefined {
     }
     if (value === 'closed') {
         return 'CLOSED';
+    }
+    return undefined;
+}
+
+function parseIssueStateReason(
+    value: unknown,
+    state: TrackerIssue['state'] | undefined
+): TrackerIssue['stateReason'] | undefined {
+    if (state === 'OPEN' && value === null) {
+        return null;
+    }
+    if (state === 'OPEN' && value === 'reopened') {
+        return 'REOPENED';
+    }
+    if (state === 'CLOSED' && value === 'completed') {
+        return 'COMPLETED';
+    }
+    if (state === 'CLOSED' && value === 'not_planned') {
+        return 'NOT_PLANNED';
+    }
+    if (state === 'CLOSED' && value === 'duplicate') {
+        return 'DUPLICATE';
+    }
+    if (state === 'CLOSED' && value === null) {
+        return null;
     }
     return undefined;
 }

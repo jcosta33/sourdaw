@@ -17,6 +17,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    authenticateTrackerAuthor,
     createGhSession,
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
@@ -387,6 +388,28 @@ describe('installation mint', () => {
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
         expect(requests[0]?.body).not.toContain('contents');
         expect(requests[0]?.body).not.toContain('pull_requests');
+    });
+
+    it('creates an isolated issues-only tracker author session', async () => {
+        const parent: NodeJS.ProcessEnv = { PATH: '/usr/bin', GH_TOKEN: 'inherited' };
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write' },
+            token: 'ghs_tracker',
+        });
+        const auth = await authenticateTrackerAuthor({
+            primaryRoot: '/repo',
+            readFile: files(),
+            request,
+            env: parent,
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
+            expect(auth.session.env.GH_TOKEN).toBe('ghs_tracker');
+            expect(parent.GH_TOKEN).toBeUndefined();
+        } finally {
+            auth.session.dispose();
+        }
     });
 
     it('refuses extra write grants on a tracker maintenance token', async () => {

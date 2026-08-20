@@ -65,4 +65,12 @@ describe('package scripts and gitignore', () => {
         expect(source).toContain("originMainBlob('scripts/reconcileTrackerIssue.ts', cwd)");
         expect(source).toContain("originMainBlob('scripts/trackerIssueReconciliation.ts', cwd)");
     });
+
+    it('keeps delivery PR writes and tracker issue writes on separate sessions', () => {
+        const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
+        expect(source).toContain("authenticateRole({ primaryRoot, role: 'author' })");
+        expect(source).toContain('authenticateTrackerAuthor({ primaryRoot })');
+        expect(source).toContain('completeTrackerIssue(issueNumber, trackerLogin, trackerPort)');
+        expect(source).toContain('env: authorAuth.session.env');
+    });
 });

@@ -15,11 +15,16 @@ export type TrackerIssue = {
     number: number;
     repository: string;
     state: 'OPEN' | 'CLOSED';
+    stateReason: 'COMPLETED' | 'NOT_PLANNED' | 'DUPLICATE' | 'REOPENED' | null;
     body: string;
     comments: TrackerIssueComment[];
 };
 
-type TrackerIssueUpdate = { body?: string; state?: 'CLOSED' };
+type TrackerIssueUpdate = {
+    body?: string;
+    state?: 'CLOSED';
+    stateReason?: 'COMPLETED';
+};
 
 export type ReconcileTrackerIssuePort = {
     inspect: (number: number) => TrackerIssue;
@@ -78,6 +83,33 @@ export function reconcileTrackerIssue(
     return supersedeIssue(before, input.replacementNumber, port);
 }
 
+export function completeTrackerIssue(
+    issueNumber: number,
+    authorLogin: string,
+    port: ReconcileTrackerIssuePort
+): string {
+    assertAuthorLogin(authorLogin);
+    const before = port.inspect(issueNumber);
+    assertBoundIssue(before, issueNumber);
+
+    if (before.state === 'CLOSED' && !isCompletedIssue(before)) {
+        fail(`issue #${issueNumber} is already closed without a completed state reason`);
+    }
+    if (isCompletedIssue(before)) {
+        assertCompletedIssue(port.inspect(issueNumber), before);
+        return log(`tracker-issue-completed:${issueNumber}`, port);
+    }
+
+    const receipt = recoverCompletedMutation(
+        before,
+        () => port.update(issueNumber, { state: 'CLOSED', stateReason: 'COMPLETED' }),
+        port
+    );
+    assertCompletedIssue(receipt, before);
+    assertCompletedIssue(port.inspect(issueNumber), before);
+    return log(`tracker-issue-completed:${issueNumber}`, port);
+}
+
 function replaceIssueBody(before: TrackerIssue, nextBody: string, port: ReconcileTrackerIssuePort): string {
     assertOpen(before);
     if (nextBody === before.body) {
@@ -93,6 +125,48 @@ function replaceIssueBody(before: TrackerIssue, nextBody: string, port: Reconcil
     assertFinalIssue(receipt, before, nextBody, 'OPEN');
     assertFinalIssue(port.inspect(before.number), before, nextBody, 'OPEN');
     return log(`tracker-issue-updated:${before.number}`, port);
+}
+
+function assertAuthorLogin(authorLogin: string): void {
+    if (authorLogin !== AUTHOR_BOT_LOGIN) {
+        fail(`authenticated author login ${authorLogin} is not ${AUTHOR_BOT_LOGIN}`);
+    }
+}
+
+function recoverCompletedMutation(
+    before: TrackerIssue,
+    mutate: () => TrackerIssue,
+    port: ReconcileTrackerIssuePort
+): TrackerIssue {
+    try {
+        return mutate();
+    } catch (error) {
+        const recovered = port.inspect(before.number);
+        if (!isSameCompletedIssue(recovered, before)) {
+            throw error;
+        }
+        return recovered;
+    }
+}
+
+function isCompletedIssue(value: TrackerIssue): boolean {
+    return value.state === 'CLOSED' && value.stateReason === 'COMPLETED';
+}
+
+function isSameCompletedIssue(value: TrackerIssue, before: TrackerIssue): boolean {
+    return (
+        value.id === before.id &&
+        value.number === before.number &&
+        value.repository === before.repository &&
+        value.body === before.body &&
+        isCompletedIssue(value)
+    );
+}
+
+function assertCompletedIssue(value: TrackerIssue, before: TrackerIssue): void {
+    if (!isSameCompletedIssue(value, before)) {
+        fail(`issue #${before.number} changed during completion`);
+    }
 }
 
 function supersedeIssue(before: TrackerIssue, replacementNumber: number, port: ReconcileTrackerIssuePort): string {

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
-    deliverPullRequest,
+    deliverPullRequest as deliverPullRequestWithTracker,
     parseCliArgs,
     shellPort,
     type DeliveryPort,
@@ -13,17 +13,22 @@ import {
     type ReviewState,
     type ShellRunner,
     type StackedPullRequest,
+    type TrackerCompletionPort,
 } from '../deliverPullRequest';
 import { GITHUB_HTTPS_REMOTE, REQUIRED_BASE_BRANCH } from '../githubAppIdentity.ts';
 
-const body = `### 🎯 What does this PR do?
+function relationshipBody(relationship: string): string {
+    return `### 🎯 What does this PR do?
 Change.
 ### 🧪 How to test
 Run.
 ### 🖼️ Screenshots
 None.
 ### 📌 Related tickets & additional notes
-None.`;
+${relationship}`;
+}
+
+const body = relationshipBody('None.');
 
 type MergeSettings = {
     allow_merge_commit: boolean;
@@ -235,10 +240,117 @@ function fakePort(input: FakeInput = {}) {
         },
         log: (message) => calls.push(message),
     };
-    return { port, calls };
+    const tracker: TrackerCompletionPort = {
+        complete: (issueNumber: number) => {
+            calls.push(`complete:${issueNumber}`);
+        },
+    };
+    return { port, calls, tracker };
+}
+
+function deliverPullRequest(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort = {
+        complete: (issueNumber: number) => expect.fail(`unexpected issue completion: ${issueNumber}`),
+    }
+): void {
+    deliverPullRequestWithTracker(number, port, tracker);
 }
 
 describe('pull-request delivery', () => {
+    it('completes the canonical Closes issue only after merge and dependent retargeting', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2372');
+        expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('merge:42:head'));
+        expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+    });
+
+    it.each(['Related #2372', 'None.'])('does not complete an issue for %s', (relationship) => {
+        const relatedBody = relationshipBody(relationship);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: relatedBody }), pullRequest({ body: relatedBody })],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+    });
+
+    it('rejects Related-ticket body or target drift before merge', () => {
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: relationshipBody('Closes #2372') }),
+                pullRequest({ body: relationshipBody('Closes #2373') }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body|closing target.*changed/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+    });
+
+    it('rejects body drift even when the canonical closing target is unchanged', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: `${closes}\nChanged note.` })],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+    });
+
+    it('converges issue completion on an already-merged retry after dependent repair', () => {
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('Closes #2372') })],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+    });
+
+    it('reports an explicit partial state when issue completion fails after merge', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+            ],
+            dependentSets: [[child], [child], []],
+        });
+        let failOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failOnce) {
+                failOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContainEqual(expect.stringMatching(/delivered|success/i));
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
     it('merges the expected head and retargets stable dependents', () => {
         const { port, calls } = fakePort();
 

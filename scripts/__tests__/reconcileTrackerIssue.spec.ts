@@ -3,9 +3,14 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
-import { inspectTrackerIssue, parseReconcileTrackerIssueArgs } from '../reconcileTrackerIssue.ts';
+import {
+    githubTrackerIssuePort,
+    inspectTrackerIssue,
+    parseReconcileTrackerIssueArgs,
+} from '../reconcileTrackerIssue.ts';
 import {
     applyExactBodyEdits,
+    completeTrackerIssue,
     reconcileTrackerIssue,
     type ReconcileTrackerIssuePort,
     type TrackerIssue,
@@ -21,6 +26,7 @@ function issue(number: number, overrides: Partial<TrackerIssue> = {}): TrackerIs
         number,
         repository: 'jcosta33/sourdaw',
         state: 'OPEN',
+        stateReason: null,
         body,
         comments: [],
         ...overrides,
@@ -49,6 +55,10 @@ function fakePort(initial: TrackerIssue[]) {
                 ...value,
                 body: input.body ?? value.body,
                 state: input.state ?? value.state,
+                stateReason:
+                    input.body !== undefined
+                        ? value.stateReason
+                        : (input.stateReason ?? (input.state === 'CLOSED' ? 'COMPLETED' : value.stateReason)),
             };
             issues.set(value.number, updated);
             return structuredClone(updated);
@@ -138,6 +148,40 @@ describe('tracker issue reconciliation', () => {
         expect(() => inspectTrackerIssue(835, gh)).toThrow(/cannot inspect issue/i);
     });
 
+    it('writes the completed state reason through the issue-only REST adapter', () => {
+        const calls: string[][] = [];
+        const port = githubTrackerIssuePort((args) => {
+            calls.push(args);
+            if (args.includes('--paginate')) {
+                return JSON.stringify([[]]);
+            }
+            return JSON.stringify({
+                node_id: 'I_2372',
+                number: 2372,
+                repository_url: 'https://api.github.com/repos/jcosta33/sourdaw',
+                state: 'closed',
+                state_reason: 'completed',
+                body,
+            });
+        });
+
+        expect(port.update(2372, { state: 'CLOSED', stateReason: 'COMPLETED' })).toMatchObject({
+            state: 'CLOSED',
+            stateReason: 'COMPLETED',
+            body,
+        });
+        expect(calls[0]).toEqual([
+            'api',
+            '--method',
+            'PATCH',
+            'repos/jcosta33/sourdaw/issues/2372',
+            '-f',
+            'state=closed',
+            '-f',
+            'state_reason=completed',
+        ]);
+    });
+
     it('replaces an open issue body only when the expected digest matches', () => {
         const { port, inspect } = fakePort([issue(2372)]);
         expect(
@@ -169,6 +213,77 @@ describe('tracker issue reconciliation', () => {
             )
         ).toThrow(/body digest changed/i);
         expect(calls).toEqual(['inspect:2372']);
+    });
+
+    it('completes an issue while preserving its exact identity and body', () => {
+        const { port, calls, inspect } = fakePort([issue(2372)]);
+
+        expect(completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toBe('tracker-issue-completed:2372');
+        expect(inspect(2372)).toMatchObject({
+            id: 'I_2372',
+            number: 2372,
+            repository: 'jcosta33/sourdaw',
+            state: 'CLOSED',
+            stateReason: 'COMPLETED',
+            body,
+        });
+        expect(calls.at(-1)).toBe('log:tracker-issue-completed:2372');
+    });
+
+    it('treats an exactly completed issue as converged without another mutation', () => {
+        const { port, calls } = fakePort([issue(2372, { state: 'CLOSED', stateReason: 'COMPLETED' })]);
+
+        expect(completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toBe('tracker-issue-completed:2372');
+        expect(calls).toEqual(['inspect:2372', 'inspect:2372', 'log:tracker-issue-completed:2372']);
+    });
+
+    it('refuses to relabel an issue already closed for a different reason', () => {
+        const { port, calls } = fakePort([issue(2372, { state: 'CLOSED', stateReason: 'NOT_PLANNED' })]);
+
+        expect(() => completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toThrow(/without a completed state reason/);
+        expect(calls).toEqual(['inspect:2372']);
+    });
+
+    it('recovers a completion write that commits before the transport throws', () => {
+        const { port, inspect } = fakePort([issue(2372)]);
+        const update = port.update;
+        port.update = (number, input) => {
+            update(number, input);
+            throw new Error('close response lost');
+        };
+
+        expect(completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toBe('tracker-issue-completed:2372');
+        expect(inspect(2372)).toMatchObject({ state: 'CLOSED', stateReason: 'COMPLETED', body });
+    });
+
+    it.each([
+        ['node', { id: 'I_other' }],
+        ['repository', { repository: 'jcosta33/other' }],
+        ['body', { body: 'concurrent body' }],
+        ['receipt', { state: 'OPEN' as const, stateReason: null }],
+    ])('rejects a completion receipt with the wrong %s', (_case, overrides) => {
+        const { port, calls } = fakePort([issue(2372)]);
+        port.update = () => issue(2372, { state: 'CLOSED', stateReason: 'COMPLETED', ...overrides });
+
+        expect(() => completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toThrow(/changed during completion/);
+        expect(calls).not.toContain('log:tracker-issue-completed:2372');
+    });
+
+    it('propagates a completion failure when inspection proves no committed write', () => {
+        const { port, calls } = fakePort([issue(2372)]);
+        port.update = () => {
+            throw new Error('close did not commit');
+        };
+
+        expect(() => completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toThrow(/close did not commit/);
+        expect(calls).toEqual(['inspect:2372', 'inspect:2372']);
+    });
+
+    it('rejects completion by a non-bot caller before inspecting the issue', () => {
+        const { port, calls } = fakePort([issue(2372)]);
+
+        expect(() => completeTrackerIssue(2372, 'jcosta33', port)).toThrow(/authenticated author login/i);
+        expect(calls).toEqual([]);
     });
 
     it('closes a superseded issue with one canonical replacement marker', () => {
