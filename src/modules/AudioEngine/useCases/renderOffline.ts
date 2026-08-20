@@ -17,10 +17,8 @@ import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
-import {
-    createWebAudioOfflineBackend,
-    type WebAudioOfflineBackend,
-} from './offlineRender/createWebAudioOfflineBackend';
+import { createOfflineRenderBackend } from './offlineRender/createOfflineRenderBackend';
+import { type WebAudioOfflineBackend } from './offlineRender/createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
@@ -162,7 +160,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // backend seam from here on. The bounce is the seam's first production
         // consumer; the native engine becomes the second by answering the same
         // commands (campaign D3).
-        backend = createWebAudioOfflineBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
+        backend = createOfflineRenderBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
         // A live view of the backend's own map, not a copy: sidechain routing,
         // Toaster routing, clip scheduling and the runtime-failure sweep all read
         // exactly the set of devices `dispose()` will destroy, so the read model
