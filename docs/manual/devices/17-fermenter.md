@@ -288,8 +288,12 @@ readout.
 
 ## Presets
 
-The loaded patch, macros, matrix, layers, and the knobs in the tables save with the project, per
-Fermenter.
+The knobs in the tables, including **Layers** **Level** / **Pan** and the layer count, save with the
+project, per Fermenter. Moving a macro writes those knobs, so the sound you dialled in still comes
+back.
+
+**Brightness** through **Character**, **Matrix** assignments, and **Current scene** stay with this
+session. They are included when you save into **My Patches**.
 
 **Play** / **Shape** / **Build** / **Route** / **Lab**, the centre tab, **AMP** / **FILTER**,
 **Preset bench** search, category, and tag, and the **Scene morph** puck stay with this session.
