@@ -12,6 +12,7 @@ import {
     parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
+    psSamplingArgs,
     RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
@@ -335,6 +336,26 @@ describe('linux memory sampling', () => {
     it('caps host availability at the cgroup remainder', () => {
         expect(parseCgroupAvailableBytes('8589934592', '2147483648')).toBe(6 * 1024 ** 3);
         expect(parseCgroupAvailableBytes('max', '2147483648')).toBeUndefined();
+    });
+});
+
+describe('process table sampling', () => {
+    const psColumns = 'pid=,ppid=,pgid=,rss=,command=';
+
+    it.each([
+        ['darwin session', 'darwin', 'session-token', ['eww', '-axo', psColumns]],
+        ['non-darwin session', 'linux', 'session-token', ['eww', 'axo', psColumns]],
+        ['sessionless', 'linux', undefined, ['-axo', psColumns]],
+    ] as const)('pins the %s ps args', (_label, hostPlatform, sessionToken, expected) => {
+        expect(psSamplingArgs(hostPlatform, sessionToken)).toEqual(expected);
+    });
+
+    it('separates darwin sessions from other platforms by only the second dash', () => {
+        // Unifying the two session forms either way breaks one platform's `ps`, so they
+        // must stay distinct in exactly that argument.
+        const darwin = psSamplingArgs('darwin', 'session-token');
+        const linux = psSamplingArgs('linux', 'session-token');
+        expect(darwin).toEqual([linux[0], `-${linux[1]}`, ...linux.slice(2)]);
     });
 });
 

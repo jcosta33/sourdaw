@@ -662,6 +662,24 @@ type ProcessRow = {
     command: string;
 };
 
+const psColumns = 'pid=,ppid=,pgid=,rss=,command=';
+
+export function psSamplingArgs(hostPlatform: NodeJS.Platform, sessionToken: string | undefined): string[] {
+    // BSD `ps` (macOS) accepts the mixed form `eww -axo`, and that is what Darwin keeps,
+    // unchanged. procps-ng 4.x (current Linux) rejects mixing the undashed BSD prefix with
+    // dashed `-axo` — "must set personality to get -x option" — which stopped every
+    // guard-wrapped run with reason 'monitor' on such hosts before a command could start.
+    // The undashed `axo` selects the same every-process set and is accepted by procps 3.x,
+    // 4.x, and BSD alike, so every non-Darwin host samples through it.
+    if (sessionToken === undefined) {
+        return ['-axo', psColumns];
+    }
+    if (hostPlatform === 'darwin') {
+        return ['eww', '-axo', psColumns];
+    }
+    return ['eww', 'axo', psColumns];
+}
+
 function processTable(sessionToken?: string): ProcessRow[] | undefined {
     if (platform() === 'win32') {
         const result = spawnSync(
@@ -693,20 +711,7 @@ function processTable(sessionToken?: string): ProcessRow[] | undefined {
             return undefined;
         }
     }
-    // BSD `ps` (macOS) accepts the mixed form `eww -axo`, and that is what Darwin keeps,
-    // unchanged. procps-ng 4.x (current Linux) rejects mixing the undashed BSD prefix with
-    // dashed `-axo` — "must set personality to get -x option" — which stopped every
-    // guard-wrapped run with reason 'monitor' on such hosts before a command could start.
-    // The undashed `axo` selects the same every-process set and is accepted by procps 3.x,
-    // 4.x, and BSD alike, so every non-Darwin host samples through it.
-    let samplingArgs: string[];
-    if (sessionToken === undefined) {
-        samplingArgs = ['-axo', 'pid=,ppid=,pgid=,rss=,command='];
-    } else if (platform() === 'darwin') {
-        samplingArgs = ['eww', '-axo', 'pid=,ppid=,pgid=,rss=,command='];
-    } else {
-        samplingArgs = ['eww', 'axo', 'pid=,ppid=,pgid=,rss=,command='];
-    }
+    const samplingArgs = psSamplingArgs(platform(), sessionToken);
     const result = spawnSync('ps', samplingArgs, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     if (result.status !== 0) {
         return undefined;
@@ -951,6 +956,8 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             if (ownedSession) {
                 session.release();
             }
+            process.removeListener('SIGINT', onSigint);
+            process.removeListener('SIGTERM', onSigterm);
             throw new Error('validation process identity could not be published', { cause: error });
         }
     }
@@ -1027,7 +1034,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             }
         }
     };
-    sample();
+    try {
+        sample();
+    } catch (error) {
+        process.removeListener('SIGINT', onSigint);
+        process.removeListener('SIGTERM', onSigterm);
+        throw error;
+    }
     const sampleTimer = setInterval(sample, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
