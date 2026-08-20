@@ -1,0 +1,25 @@
+docs/manual/devices/10-proof.md
+  s_8ddfabd1166b5d::t_e09bb52ceafb2f 1-34,36-50,52-66,68-78,80-92,94-103,105-120,122-127,129-141,143-148,150-160,162-167,173-180,182-197,201-204,206-217,219-232,236-247
+  s_8ddfabd1166b5d::t_fabf01945404d1 218
+  s_8ddfabd1166b5d::t_7db8e74756398f 234-235
+  s_8ddfabd1166b5d::t_5af2ffda81d4b6 199-200
+  s_8ddfabd1166b5d::t_aa557d3ebe1a4b 35,51,67,79,93,104,121,128,142,149,161,168-172,181,198,205,233
+docs/manual/README.md
+  s_8ddfabd1166b5d::t_7664023a320a34 19-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "da7ed10ee9033839e8f413b9cb99084802d5407c",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
