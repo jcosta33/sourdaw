@@ -16,7 +16,7 @@ type TestPluginDescriptor = {
 } | null;
 
 type TestPluginScanViewState = {
-    scannedPlugins: Array<{ id: string; name: string; format: string; clap_id?: string }>;
+    scannedPlugins: Array<{ id: string; name: string; format: string; descriptor_id?: string }>;
 };
 
 type TestActivationState = {
@@ -413,7 +413,7 @@ describe('TrackDevicesSection', () => {
             scannedPlugins: [
                 {
                     id: 'path-hash',
-                    clap_id: 'com.vendor.persisted-clap',
+                    descriptor_id: 'com.vendor.persisted-clap',
                     name: 'Persisted CLAP',
                     format: 'clap',
                 },

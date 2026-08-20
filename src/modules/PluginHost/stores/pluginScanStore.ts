@@ -101,7 +101,7 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
         typeof value.category !== 'string' ||
         typeof value.path !== 'string' ||
         typeof value.version !== 'string' ||
-        typeof value.clap_id !== 'string' ||
+        typeof value.descriptor_id !== 'string' ||
         typeof value.num_inputs !== 'number' ||
         typeof value.num_outputs !== 'number' ||
         typeof value.num_parameters !== 'number' ||
@@ -138,7 +138,7 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
         category: value.category,
         path: value.path,
         version: value.version,
-        clap_id: value.clap_id,
+        descriptor_id: value.descriptor_id,
         num_inputs: value.num_inputs,
         num_outputs: value.num_outputs,
         num_parameters: value.num_parameters,
