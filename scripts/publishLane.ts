@@ -210,16 +210,38 @@ export function resolveAuthorLane(
         });
         // Depth is measured on the same canonical spellings containment used. Comparing the
         // recorded paths instead lets a symlinked outer lane out-rank the inner lane it contains.
-        const innermost = [...conformingEnclosing, ...legacyEnclosing].reduce<Enclosing | undefined>(
-            (deepest, candidate) =>
-                deepest === undefined || candidate.canonical.length > deepest.canonical.length ? candidate : deepest,
-            undefined
+        // Stable sort: ties keep conforming ahead of legacy, since conforming is spread first and a
+        // strictly-greater compare never displaces an equal-length earlier entry — the same
+        // tie-break the old single-candidate reduce produced.
+        const byDescendingDepth = [...conformingEnclosing, ...legacyEnclosing].sort(
+            (a, b) => b.canonical.length - a.canonical.length
         );
-        const resolved = innermost?.resolve();
-        if (resolved === undefined) {
-            fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
+        // A legacy candidate's own `.resolve()` can throw (`resolveLegacyCandidate` calls `fail` on
+        // a bad lock or a missing pull request) instead of returning `undefined`. Before this PR only
+        // one candidate was ever tried, so that throw was final. Now an enclosing conforming lane may
+        // sit shallower than a broken legacy worktree nested inside it (or, symmetrically, deeper —
+        // depth alone decides who is tried first), and a valid lane the operator is standing in
+        // should not fail because an unrelated nested worktree's lock or pull-request problem is not
+        // theirs to fix right now. So a throw is caught and resolution keeps trying shallower
+        // candidates rather than stopping outright. If nothing ever resolves, the first throw
+        // encountered (the deepest candidate's, the one closest to `cwd`) is the most specific
+        // diagnostic available and is rethrown instead of being replaced by the generic
+        // "not inside a locked author lane" message.
+        let firstError: Error | undefined;
+        for (const candidate of byDescendingDepth) {
+            try {
+                const resolved = candidate.resolve();
+                if (resolved !== undefined) {
+                    return resolved;
+                }
+            } catch (error) {
+                firstError ??= error instanceof Error ? error : new Error(String(error));
+            }
         }
-        return resolved;
+        if (firstError !== undefined) {
+            throw firstError;
+        }
+        return fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
     }
     // Deliberately no legacy fallback here. An off-convention branch carries no issue of its own
     // (`laneIssueNumber` requires the `agent/` prefix), so nothing ties a passed issue number to a
@@ -366,14 +388,11 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             );
         },
         existingOpenPullRequest: (branch) => {
-            const rows = parseJson<Array<{ number: number }>>(
+            const rows = parseJson<OpenPullRequestRow[]>(
                 gh(existingOpenPullRequestArgs(branch)),
                 'open pull-request query'
             );
-            if (rows.length > 1) {
-                fail(`branch ${branch} has more than one open pull request`);
-            }
-            return rows[0]?.number;
+            return matchingOpenPullRequestNumber(rows, branch);
         },
         createPullRequest: ({ branch, title, body }) => {
             const url = gh([
@@ -454,7 +473,39 @@ export function issueExistsFromLookup(
 }
 
 export function existingOpenPullRequestArgs(branch: string): string[] {
-    return ['pr', 'list', '--repo', REQUIRED_REPOSITORY, '--head', branch, '--state', 'open', '--json', 'number'];
+    return [
+        'pr',
+        'list',
+        '--repo',
+        REQUIRED_REPOSITORY,
+        '--head',
+        branch,
+        '--state',
+        'open',
+        '--json',
+        'number,headRefName,isCrossRepository',
+    ];
+}
+
+export type OpenPullRequestRow = { number: number; headRefName: string; isCrossRepository: boolean };
+
+/**
+ * `--head` narrows the request server-side, but proves nothing about *how* it narrows: `gh` does not
+ * document whether it matches the branch exactly or as a prefix, and `--repo` scopes the base
+ * repository, not the head repository, so a same-named branch on a fork could satisfy it too. This
+ * result gates whether an off-convention, author-locked worktree may push (`resolveLegacyCandidate`'s
+ * `hasOpenPullRequest`), so the match has to be proven client-side instead of trusted from the
+ * server-side filter: only a row whose `headRefName` is exactly `branch` and whose `isCrossRepository`
+ * is `false` counts. This also gates the ordinary update-vs-create path for conforming lanes, where a
+ * `lane:publish` push always targets the same repository under the exact `agent/<issue>/<slug>`
+ * branch name, so the tightened match changes nothing there.
+ */
+export function matchingOpenPullRequestNumber(rows: OpenPullRequestRow[], branch: string): number | undefined {
+    const matches = rows.filter((row) => row.headRefName === branch && row.isCrossRepository === false);
+    if (matches.length > 1) {
+        fail(`branch ${branch} has more than one open pull request`);
+    }
+    return matches[0]?.number;
 }
 
 export function parsePublishWorktrees(value: string): PublishWorktree[] {

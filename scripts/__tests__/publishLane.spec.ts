@@ -9,11 +9,13 @@ import {
     issueExistsFromLookup,
     issueLookupArgs,
     laneIssueNumber,
+    matchingOpenPullRequestNumber,
     parsePublishLaneArgs,
     parsePublishWorktrees,
     publishLane,
     resolveAuthorLane,
     shellPort,
+    type OpenPullRequestRow,
     type PublishLanePort,
     type PublishWorktree,
 } from '../publishLane.ts';
@@ -410,7 +412,7 @@ describe('lane publish', () => {
         expect(shellPort(session).cwd()).toBe(process.cwd());
     });
 
-    it('lists same-repo pull requests by branch name, not owner:branch', () => {
+    it('requests headRefName and isCrossRepository so the match can be proven client-side', () => {
         expect(existingOpenPullRequestArgs('agent/12/work')).toEqual([
             'pr',
             'list',
@@ -421,9 +423,40 @@ describe('lane publish', () => {
             '--state',
             'open',
             '--json',
-            'number',
+            'number,headRefName,isCrossRepository',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
+    });
+
+    describe('matchingOpenPullRequestNumber', () => {
+        function row(overrides: Partial<OpenPullRequestRow> = {}): OpenPullRequestRow {
+            return { number: 41, headRefName: 'agent/12/work', isCrossRepository: false, ...overrides };
+        }
+
+        it('accepts an exact same-repo head match', () => {
+            expect(matchingOpenPullRequestNumber([row()], 'agent/12/work')).toBe(41);
+        });
+
+        it('rejects a longer branch name that merely starts with the queried one', () => {
+            // Neither `--head` nor `gh`'s matching is documented as exact vs. prefix; the gate must
+            // not depend on that. A pull request open on `agent/12/work-extra` must never authorize
+            // a push targeting `agent/12/work`.
+            expect(
+                matchingOpenPullRequestNumber([row({ headRefName: 'agent/12/work-extra' })], 'agent/12/work')
+            ).toBeUndefined();
+        });
+
+        it('rejects a cross-repository pull request with the identical head name', () => {
+            // `--repo` scopes the base repository, not the head repository, so a fork can open a
+            // pull request whose head branch happens to share the exact same name.
+            expect(matchingOpenPullRequestNumber([row({ isCrossRepository: true })], 'agent/12/work')).toBeUndefined();
+        });
+
+        it('still refuses more than one matching open pull request', () => {
+            expect(() => matchingOpenPullRequestNumber([row(), row({ number: 42 })], 'agent/12/work')).toThrow(
+                /agent\/12\/work has more than one open pull request/
+            );
+        });
     });
 
     describe('legacy, pre-agent/ lanes', () => {
@@ -499,6 +532,31 @@ describe('lane publish', () => {
             expect(laneIssueNumber(LEGACY_BRANCH)).toBeUndefined();
             expect(laneIssueNumber('fix/proof-metering-bs1770-2039')).toBeUndefined();
             expect(laneIssueNumber('fix/arrangement-satellite-paths-2039')).toBeUndefined();
+        });
+
+        it('falls through to a valid enclosing conforming lane when a deeper legacy candidate refuses', () => {
+            // The legacy candidate is nested inside the conforming lane and is the deepest enclosing
+            // candidate, so it is tried first. Its lock is wrong (`active:collab-lane-9`, not
+            // AUTHOR_LOCK_REASON) and it does have an open pull request, so `resolveLegacyCandidate`
+            // throws the lock-migration message. Before the fix that throw ended resolution outright;
+            // now the loop must fall through to the shallower conforming lane the operator is
+            // actually standing in and resolve it instead.
+            const outer = worktree({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
+            const nestedLegacy = worktree({
+                path: '/repo/.agents/worktrees/agent--outer/legacy-nested',
+                branch: 'fix/legacy-nested',
+                lockReason: 'active:collab-lane-9',
+            });
+
+            expect(
+                resolveAuthorLane(
+                    undefined,
+                    [outer, nestedLegacy],
+                    '/repo/.agents/worktrees/agent--outer/legacy-nested/src',
+                    undefined,
+                    () => true
+                )
+            ).toEqual({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
         });
 
         it('publishes a legacy lane end to end and writes None., not Closes #2039, into the body', () => {
