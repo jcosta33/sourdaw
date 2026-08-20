@@ -16,6 +16,7 @@ import {
     useState,
 } from 'react';
 
+import { trackStore } from '#/modules/Arrangement/stores';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { stepRecordStore } from '#/modules/MIDI/stores';
@@ -77,6 +78,15 @@ function buildNoteOwnershipMaps(
         }
     }
     return { noteToClip, allNotesMap };
+}
+
+function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
+    const tracks = trackStore.value?.tracks;
+    if (!tracks) {
+        return defaultTrackId;
+    }
+    const track = tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
+    return track ? track.id : defaultTrackId;
 }
 
 type PianoRollChordType =
@@ -406,7 +416,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     _prevDeltaPitch: 0,
                 };
             } else {
-                auditionRef.current = playAuditionNote(trackId, hit.note.pitch, hit.note.velocity);
+                const auditionTrackId = resolveTrackIdForClip(hit.ownerClipId, trackId);
+                auditionRef.current = playAuditionNote(auditionTrackId, hit.note.pitch, hit.note.velocity);
                 dragRef.current = {
                     mode: event.altKey ? 'duplicate' : 'move',
                     noteId: hit.note.id,
@@ -561,7 +572,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         hoverNoteIdRef.current = hit.note.id;
                         hoverTimerRef.current = setTimeout(() => {
                             hoverTimerRef.current = null;
-                            const stopFn = playAuditionNote(trackId, hit.note.pitch, hit.note.velocity);
+                            const auditionTrackId = resolveTrackIdForClip(hit.ownerClipId, trackId);
+                            const stopFn = playAuditionNote(auditionTrackId, hit.note.pitch, hit.note.velocity);
                             // Auto-stop after 500ms to keep audition brief
                             setTimeout(() => stopFn(), 500);
                         }, 200);
@@ -1440,23 +1452,29 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             };
             const preset = velocityPresets[event.key];
             if (preset !== undefined) {
-                const origVelocities = notes
-                    .filter((node) => selectedNoteIds.has(node.id))
-                    .map((node) => ({ id: node.id, velocity: node.velocity }));
+                const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
+                const selectedNotesWithClip: Array<{ id: string; clipId: string; velocity: number }> = [];
                 for (const id of selectedNoteIds) {
-                    setNoteVelocity(clipId, id, preset);
+                    const note = allNotesMap.get(id);
+                    const ownerClip = noteToClip.get(id);
+                    if (note && ownerClip) {
+                        selectedNotesWithClip.push({ id, clipId: ownerClip, velocity: note.velocity });
+                    }
                 }
-                if (origVelocities.length > 0) {
+                for (const item of selectedNotesWithClip) {
+                    setNoteVelocity(item.clipId, item.id, preset);
+                }
+                if (selectedNotesWithClip.length > 0) {
                     pushUndoEntry(
                         'Set velocity',
                         () => {
-                            for (const output of origVelocities) {
-                                setNoteVelocity(clipId, output.id, output.velocity);
+                            for (const output of selectedNotesWithClip) {
+                                setNoteVelocity(output.clipId, output.id, output.velocity);
                             }
                         },
                         () => {
-                            for (const output of origVelocities) {
-                                setNoteVelocity(clipId, output.id, preset);
+                            for (const output of selectedNotesWithClip) {
+                                setNoteVelocity(output.clipId, output.id, preset);
                             }
                         }
                     );
