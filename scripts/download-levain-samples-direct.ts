@@ -17,7 +17,8 @@ import { existsSync } from 'node:fs';
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const RAW_BASE = 'https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master';
+const VSCO_REVISION = '440300901dfe9275fd84e0b7763af1f8443ae62e';
+const RAW_BASE = `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${VSCO_REVISION}`;
 const OUT_DIR = 'public/samples/levain';
 const PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV = 'SOURDAW_ALLOW_PUBLIC_SAMPLE_DOWNLOAD';
 const PRINT_ASSET_POLICY_FLAG = '--print-asset-policy';
@@ -239,7 +240,7 @@ async function processArt({ files, vscoPath, artType, artId, loopMode, keyRange,
 async function fetchFileList(vscoPath) {
     // SFZ-free approach: scrape the directory listing HTML from github directly.
     // This avoids the restrictive 60 req/hr API limit from api.github.com.
-    const url = `https://github.com/sgossner/VSCO-2-CE/tree/master/${vscoPath.split('/').map(encodeURIComponent).join('/')}`;
+    const url = `https://github.com/sgossner/VSCO-2-CE/tree/${VSCO_REVISION}/${vscoPath.split('/').map(encodeURIComponent).join('/')}`;
     const res = await fetch(url);
     if (!res.ok) {
         if (res.status === 429) return null; // Extreme HTTP rate limiting
@@ -247,7 +248,7 @@ async function fetchFileList(vscoPath) {
         return null;
     }
     const html = await res.text();
-    const regex = /href="\/sgossner\/VSCO-2-CE\/blob\/master\/([^"]+\.wav)"/gi;
+    const regex = new RegExp('/sgossner/VSCO-2-CE/blob/' + VSCO_REVISION + '/([^"]+\\.wav)', 'gi');
     const matches = [...html.matchAll(regex)];
     const uniqueFiles = new Set();
     for (const match of matches) {

@@ -6,6 +6,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkLevainProvenance } from './checkLevainProvenance.ts';
+
 export const RETENTION_CLASSES = [
     'keep',
     'keep-with-obligations',
@@ -563,8 +565,9 @@ export function checkReleaseInventory(root: string): void {
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
+    const levain = checkLevainProvenance(root);
     process.stdout.write(
-        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references\n`
+        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples)} Levain samples, ${String(levain.generatedFiles)} generated Levain files\n`
     );
 }
 

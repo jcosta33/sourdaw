@@ -17,7 +17,8 @@ import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const BASE_URL = 'https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master';
+const VSCO_REVISION = '440300901dfe9275fd84e0b7763af1f8443ae62e';
+const BASE_URL = `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${VSCO_REVISION}`;
 const OUT_DIR = 'public/samples/levain';
 const PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV = 'SOURDAW_ALLOW_PUBLIC_SAMPLE_DOWNLOAD';
 const PRINT_ASSET_POLICY_FLAG = '--print-asset-policy';
@@ -134,7 +135,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function listGitHubDir(path) {
     await sleep(200); // avoid GitHub API rate limiting (60 req/hr unauthenticated)
     const encoded = path.split('/').map(encodeURIComponent).join('/');
-    const apiUrl = `https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${encoded}`;
+    const apiUrl = `https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${encoded}?ref=${VSCO_REVISION}`;
     const res = await fetch(apiUrl);
     if (!res.ok) {
         const remaining = res.headers.get('x-ratelimit-remaining');
