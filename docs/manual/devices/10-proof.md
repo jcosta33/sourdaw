@@ -34,7 +34,7 @@ device opens on **Play**. The choice is this session only — it is not stored i
 | Chip      | Heading           | What you get                                                                                             |
 | --------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
 | **Play**  | **Target desk**   | Target list, Input / Output LUFS, **Ceiling**.                                                           |
-| **Shape** | **Chain shape**   | The five modules as a strip you can switch off, with **IN** meters between them, plus three macro knobs. |
+| **Shape** | **Chain shape**   | The five modules as a strip you can switch off, with **IN** meters between them, plus four knobs.        |
 | **Build** | **Module detail** | Full **EQ**, **Multiband Dynamics**, **Stereo Imager**, **Harmonic Exciter**, and **Limiter**.           |
 | **Route** | **Chain route**   | **Signal Chain Order**, **Input Gain**, **Output Gain**.                                                 |
 | **Lab**   | **Check bench**   | **Loudness History**, **Tonal Balance**, the full meter grid, and **Reset Integrated LUFS + True Peak**. |
@@ -55,9 +55,11 @@ is highlighted.
 | **Broadcast** | −23 LUFS |
 | **Podcast**   | −16 LUFS |
 
-A warning appears when integrated loudness is more than 1 LU above that goal. **CD** and **Club /
-DJ** never claim a platform will turn the master down. **Streaming**, **Podcast**, and **Broadcast**
-do, in the warning copy.
+A warning appears when integrated loudness is more than 1 LU above that goal.
+
+**Streaming**, **Podcast**, and **Broadcast** name the platform and how far it would turn the master
+down. **CD** and **Club / DJ** say that goal is one no platform normalizes. If the master is also
+louder than −14 LUFS, that same warning adds that streaming platforms would still turn it down.
 
 Loading a factory preset can also write **Ceiling**. Clicking a **Target** row does not.
 
@@ -65,7 +67,7 @@ Loading a factory preset can also write **Ceiling**. Clicking a **Target** row d
 
 | Control                   | Range             | Default     | What it does                                                                                  |
 | ------------------------- | ----------------- | ----------- | --------------------------------------------------------------------------------------------- |
-| **Ceiling**               | −12.0 to 0.0 dBTP | −1.0 dBTP   | Limiter stop. On **Play**, in **Check**, and again on **Limiter**.                            |
+| **Ceiling**               | −12.0 to 0.0 dBTP | −1.0 dBTP   | Limiter stop. On **Play**, **Shape**, **Check**, and **Limiter**.                             |
 | **B / wet** · **A / dry** | those two         | **B / wet** | Bypasses the whole chain at the input. Runtime only — it is not saved in the project.         |
 | **Reset loudness**        | —                 | —           | Clears the integrated loudness meters. Also **Reset Integrated LUFS + True Peak** on **Lab**. |
 
@@ -73,13 +75,15 @@ Loading a factory preset can also write **Ceiling**. Clicking a **Target** row d
 
 Each module name on the strip is an on/off. **Exciter** starts **OFF**; the other four start **ON**.
 
-The three knobs are macros, not the full module:
+The four knobs are not the full modules. **Threshold**, **Width**, and **Drive** are macros.
+**Ceiling** is the same limiter stop as on **Play**, **Check**, and **Limiter**.
 
-| Control                    | Range       | Default | What it does                                                                                       |
-| -------------------------- | ----------- | ------- | -------------------------------------------------------------------------------------------------- |
-| **Dynamics** **Threshold** | −60 to 0 dB | −20 dB  | Moves all four dynamics thresholds together, keeping the offsets between bands.                    |
-| **Imager** **Width**       | 0 to 2      | 1.0     | Moves **Hi-Mid** and **High** width together. **Sub** and **Low-Mid** stay put.                    |
-| **Exciter** **Drive**      | 0 to 1      | 0.2     | Moves all four drives together. If every band is off, turning Drive up also switches the bands on. |
+| Control                    | Range             | Default   | What it does                                                                                       |
+| -------------------------- | ----------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| **Dynamics** **Threshold** | −60 to 0 dB       | −20 dB    | Moves all four dynamics thresholds together, keeping the offsets between bands.                    |
+| **Imager** **Width**       | 0 to 2            | 1.0       | Moves **Hi-Mid** and **High** width together. **Sub** and **Low-Mid** stay put.                    |
+| **Exciter** **Drive**      | 0 to 1            | 0.2       | Moves all four drives together. If every band is off, turning Drive up also switches the bands on. |
+| **Limiter** **Ceiling**    | −12.0 to 0.0 dBTP | −1.0 dBTP | The same **Ceiling** as everywhere else on the desk.                                               |
 
 ## EQ
 
@@ -237,7 +241,11 @@ These panel controls have automation lanes:
 
 Play / Shape / Build / Route / Lab, Target, A/B, module on/off, EQ bands, dynamics, imager,
 exciter, limiter Release and Lookahead, dither, chain order, and Reset loudness do not appear as
-lanes. They still save with the project, except A/B.
+lanes.
+
+Target, module on/off, EQ bands, dynamics, imager, exciter, limiter Release and Lookahead, dither,
+and chain order still save with the project. Play / Shape / Build / Route / Lab is this session
+only. **Reset loudness** is an action and stores nothing. A/B is runtime only.
 
 ## See also
 
