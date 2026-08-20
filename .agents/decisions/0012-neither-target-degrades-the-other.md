@@ -94,6 +94,22 @@ accepted — packaging deferral resolved by [ADR 0029](0029-electron-desktop-she
 the desktop shell is Electron, so every shipped renderer is Chromium. The parity principle in this
 ADR stands unchanged.
 
+**2026-08-20 — the WebKit consumer is gone, and the branches went with it.** This ADR rejected
+"delete every non-Chromium branch now" on the ground that packaging was deliberately open, and that
+a branch reading as dead Safari support might be the only thing keeping the desktop build working.
+ADR 0029 closed that question: WKWebView and WebKitGTK have no consumer, so a WebKit-only branch has
+no reachable caller on either target and the objection no longer applies. Two rules govern what
+remains, and both follow from the parity principle rather than replacing it:
+
+- A branch reachable only in a WebKit engine is dead code. Deleting it costs neither target, so this
+  ADR no longer protects it.
+- A `webkit`-prefixed API is not evidence of a WebKit-only branch. Several are Chromium's own
+  spelling — `webkitSpeechRecognition` and the `::-webkit-scrollbar` pseudo-elements are the live
+  path on every renderer this app ships on. Each case is decided on whether Chromium dispatches or
+  implements the thing, never on the prefix.
+
+The parity principle, and the ban on a silent downgrade behind a probe, are untouched.
+
 ## Affected requirements
 
 - Survey theme F (16 findings) is unblocked, under the revised test above.

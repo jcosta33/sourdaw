@@ -88,7 +88,7 @@ function createNativeRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
         fileCount: 0,
         id: 'root-1',
         name: 'Samples',
-        provider: 'tauri',
+        provider: 'desktop',
         rootRef: '/Users/jose/Samples',
         settings: { recursive: true },
         status: 'scanning',

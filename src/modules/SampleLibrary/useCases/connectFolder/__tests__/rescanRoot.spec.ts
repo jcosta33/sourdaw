@@ -24,7 +24,7 @@ import { rescanRoot } from '../rescanRoot';
 
 type TestRoot = {
     id: string;
-    provider: 'browser' | 'tauri';
+    provider: 'browser' | 'desktop';
     handle?: object;
 };
 
@@ -73,7 +73,7 @@ describe('rescanRoot', () => {
     });
 
     it('scans a native root and marks it scanning', async () => {
-        seedRoots([{ id: 'r1', provider: 'tauri' }]);
+        seedRoots([{ id: 'r1', provider: 'desktop' }]);
 
         await rescanRoot('r1');
 

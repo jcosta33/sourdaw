@@ -41,7 +41,6 @@ import {
     stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -202,38 +201,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
 
-    // ── Pinch-to-zoom (macOS gesture events) ─────────────────────────
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return undefined;
-        }
-        let lastScale = 1;
-        const onGestureStart = (event: Event): void => {
-            event.preventDefault();
-            lastScale = 1;
-        };
-        const onGestureChange = (event: Event): void => {
-            event.preventDefault();
-            const ge = event as GestureEvent;
-            const delta = ge.scale - lastScale;
-            lastScale = ge.scale;
-            setZoom((prev) => Math.max(0.25, Math.min(4, prev + delta * 0.5)));
-        };
-        const onGestureEnd = (event: Event): void => {
-            event.preventDefault();
-        };
-        canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
-        canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
-        canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
-        return () => {
-            canvas.removeEventListener('gesturestart', onGestureStart);
-            canvas.removeEventListener('gesturechange', onGestureChange);
-            canvas.removeEventListener('gestureend', onGestureEnd);
-        };
-    }, [canvasRef, setZoom]);
-
-    // ── Wheel: ctrl/cmd zooms the editor ──────────────────────────────
+    // ── Wheel: ctrl/cmd zooms the editor, and carries trackpad pinch ──
+    //
+    // Chromium reports a trackpad pinch as a ctrl-modified `wheel` event, so
+    // the modifier branch below is the pinch path. The WebKit
+    // `gesturestart`/`gesturechange`/`gestureend` trio that used to sit here is
+    // never dispatched by any renderer this app ships on.
+    //
     // Registered imperatively and non-passively, mirroring `useTimelineGestures`
     // on the arrangement canvas. React attaches `wheel` at its root container
     // with `{ passive: true }`, so a `preventDefault()` inside a JSX `onWheel`

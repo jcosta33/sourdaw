@@ -6,7 +6,7 @@ import { resolveDroppedSampleFile } from '../resolveDroppedSampleFile';
 
 type TestLibraryRoot = {
     id: string;
-    provider: 'browser' | 'tauri';
+    provider: 'browser' | 'desktop';
     rootRef: string;
     handle?: TestDirectoryHandle;
 };
@@ -43,7 +43,7 @@ describe('resolveDroppedSampleFile', () => {
         injectDependencies(resolveDroppedSampleFile, {
             libraryStore: createLibraryStore({
                 id: 'root1',
-                provider: 'tauri',
+                provider: 'desktop',
                 rootRef: '/Users/jose/Samples',
             }),
             isNativeSampleLibraryRuntimeAvailable,
@@ -57,7 +57,7 @@ describe('resolveDroppedSampleFile', () => {
             fallbackName: 'Kick',
         });
 
-        expect(result).toEqual({ status: 'resolved', provider: 'tauri', file });
+        expect(result).toEqual({ status: 'resolved', provider: 'desktop', file });
         expect(readNativeLibrarySampleFile).toHaveBeenCalledWith({
             rootPath: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',
@@ -108,7 +108,7 @@ describe('resolveDroppedSampleFile', () => {
         injectDependencies(resolveDroppedSampleFile, {
             libraryStore: createLibraryStore({
                 id: 'root1',
-                provider: 'tauri',
+                provider: 'desktop',
                 rootRef: '/Users/jose/Samples',
             }),
             isNativeSampleLibraryRuntimeAvailable,

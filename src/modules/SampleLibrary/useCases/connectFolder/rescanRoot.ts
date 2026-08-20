@@ -29,7 +29,7 @@ export async function rescanRoot(rootId: string): Promise<void> {
     if (root.provider === 'browser' && root.handle) {
         updateLibraryRootStatus(rootId, 'scanning');
         await scanBrowserDirectory(root);
-    } else if (root.provider === 'tauri') {
+    } else if (root.provider === 'desktop') {
         updateLibraryRootStatus(rootId, 'scanning');
         await scanNativeDirectory(root);
     }
