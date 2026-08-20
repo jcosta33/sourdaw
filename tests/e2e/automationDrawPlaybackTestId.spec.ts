@@ -41,13 +41,17 @@ test.describe('Automation lanes on EDM template', () => {
 
     test('transport play/stop works with automation tab open', async ({ page }) => {
         const playhead = page.getByTestId('transport-playhead');
+        const play = page.getByTestId('transport-play');
         await expect(playhead).toHaveText(/1\.1\.000/);
+        await expect(play).toHaveAttribute('aria-label', 'Play');
 
-        await page.getByTestId('transport-play').click();
+        await play.click();
         await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Pause');
 
         await page.getByTestId('transport-stop').click();
         await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Play');
     });
 
     test('automation tab and mixer tab can be switched', async ({ page }) => {
