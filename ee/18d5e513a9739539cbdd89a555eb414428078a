@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/__tests__/setTempoWithTempoMap.spec.ts
+  s_24b1bdbc3c31ad::t_fee20a05b814d8 18-19
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts
+  s_24b1bdbc3c31ad::t_5f08a1e9f5b3fa 22-23
+src/modules/Transport/useCases/__tests__/setTempo.spec.ts
+  s_24b1bdbc3c31ad::t_4e0b8d4cf74e95 17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ee18d5e513a9739539cbdd89a555eb414428078a",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
