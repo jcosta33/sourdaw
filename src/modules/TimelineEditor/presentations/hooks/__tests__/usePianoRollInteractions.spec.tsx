@@ -756,6 +756,20 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+
+            // The undo/redo closures must act on each note's own owner clip, not
+            // the primary clip — invoke them and assert against the real targets.
+            mocks.setNoteVelocity.mockClear();
+            const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
+            undoFn();
+            expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n1', 100);
+            expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 80);
+
+            mocks.setNoteVelocity.mockClear();
+            const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
+            redoFn();
+            expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n1', 90);
+            expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 90);
         });
     });
 
@@ -768,6 +782,25 @@ describe('usePianoRollInteractions', () => {
             });
 
             fireEvent.mouseDown(canvas, { clientX: 180, clientY: yForPitch(65) });
+
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80);
+        });
+
+        it('hovering a secondary-clip note plays the preview through its own track instrument', () => {
+            vi.useFakeTimers();
+            const { canvas } = renderRoll({
+                notePreviewEnabled: true,
+                openedClipNotes: {
+                    'clip-2': [makeNote('n2', 65, 4, 2, 80)],
+                },
+            });
+
+            fireEvent.mouseMove(canvas, { clientX: 180, clientY: yForPitch(65) });
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+
+            act(() => {
+                vi.advanceTimersByTime(200);
+            });
 
             expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80);
         });
