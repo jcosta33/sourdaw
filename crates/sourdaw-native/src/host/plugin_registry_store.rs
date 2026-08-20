@@ -53,7 +53,13 @@ use crate::state::PluginRegistryEntry;
 /// "read nothing". A per-entry version would license a partial load, which is
 /// the half-populated registry that reports "plugin not found" for a plugin the
 /// user has already scanned.
-const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 1;
+///
+/// Bumped to 2 when the row gained the scanned capability fields. A version 1
+/// document carries no record of whether its zeros were queried or assumed, and
+/// there is no migration that can invent one: the whole document reads as
+/// absent and the next scan refills it, which is the policy every other row
+/// change here follows.
+const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 2;
 
 const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -106,6 +112,16 @@ pub struct PersistedPluginEntry {
     pub clap_id: String,
     pub format: String,
     pub name: String,
+    /// What the scan read from the plugin's own capability extensions: total
+    /// declared audio channels each way, and whether it implements `clap.gui`.
+    pub num_inputs: u32,
+    pub num_outputs: u32,
+    pub has_custom_ui: bool,
+    /// Present exactly when the three fields above are unqueried defaults.
+    /// Persisted alongside them rather than recomputed, because whether a scan
+    /// asked is a fact about that scan and cannot be rederived from its answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_metadata_reason: Option<String>,
     /// Size of the plugin file, in bytes, when it was scanned.
     pub file_size_bytes: u64,
     /// Modification time of the plugin file when it was scanned, in
@@ -125,6 +141,10 @@ impl PersistedPluginEntry {
             clap_id: self.clap_id.clone(),
             format: self.format.clone(),
             name: self.name.clone(),
+            num_inputs: self.num_inputs,
+            num_outputs: self.num_outputs,
+            has_custom_ui: self.has_custom_ui,
+            capability_metadata_reason: self.capability_metadata_reason.clone(),
         }
     }
 }
@@ -406,6 +426,10 @@ impl PluginRegistryStore {
                     clap_id: entry.clap_id.clone(),
                     format: entry.format.clone(),
                     name: entry.name.clone(),
+                    num_inputs: entry.num_inputs,
+                    num_outputs: entry.num_outputs,
+                    has_custom_ui: entry.has_custom_ui,
+                    capability_metadata_reason: entry.capability_metadata_reason.clone(),
                     file_size_bytes,
                     file_modified_ms,
                 },
@@ -609,6 +633,10 @@ mod tests {
             clap_id: "com.vendor.reverb".to_string(),
             format: "clap".to_string(),
             name: "Vendor Reverb".to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            has_custom_ui: true,
+            capability_metadata_reason: None,
         }
     }
 
@@ -826,6 +854,54 @@ mod tests {
         );
     }
 
+    /// The version 1 document this build actually has to survive, written out
+    /// literally rather than derived from a current one.
+    ///
+    /// Reading it as absent is the stated policy for the schema bump, and the
+    /// test above cannot pin it: that one takes a version 2 body and only
+    /// raises its version number, so every row still carries the capability
+    /// fields and it would keep passing even if the rejection were coming from
+    /// serde failing on missing fields rather than from the version check. A
+    /// real version 1 row has no `num_inputs`, no `num_outputs`, no
+    /// `has_custom_ui` — the fields whose absence is exactly why the document
+    /// may not be read in part.
+    #[test]
+    fn a_literal_version_one_document_reads_as_an_absent_one() {
+        let test_root = TestRegistryRoot::create("registry-schema-v1");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let metadata = fs::metadata(&plugin_path).expect("plugin metadata should be readable");
+        let size = metadata.len();
+        let modified = metadata
+            .modified()
+            .expect("plugin mtime should be readable")
+            .duration_since(UNIX_EPOCH)
+            .expect("plugin mtime should be after the unix epoch")
+            .as_millis() as u64;
+        // Fingerprinted so it would hydrate on every other ground: the file is
+        // there, unmodified, inside an authorized root. Only the schema version
+        // stops it.
+        let document = format!(
+            r#"{{"schema_version":1,"entries":{{"aaaa1111":{{"path":{},"stable_id":"aaaa1111","clap_id":"com.vendor.reverb","format":"clap","name":"Vendor Reverb","file_size_bytes":{size},"file_modified_ms":{modified}}}}}}}"#,
+            serde_json::to_string(&plugin_path.display().to_string())
+                .expect("a path should serialize as a JSON string")
+        );
+        fs::write(test_root.root.join(REGISTRY_FILE_NAME), document)
+            .expect("version 1 registry should be written");
+
+        let next_launch_registry = Mutex::new(HashMap::new());
+        test_root
+            .store()
+            .hydrate_into(&next_launch_registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .is_empty(),
+            "a version 1 document has no record of whether its zeros were queried; it must read as absent"
+        );
+    }
+
     /// The file is data, not a grant: a row naming a path outside the scan
     /// policy's roots resolves to nothing.
     #[test]
@@ -940,6 +1016,10 @@ mod tests {
                     clap_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: true,
+                    capability_metadata_reason: None,
                     file_size_bytes: 10,
                     file_modified_ms: 0,
                 },
