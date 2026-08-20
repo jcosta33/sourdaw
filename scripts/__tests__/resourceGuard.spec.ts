@@ -523,6 +523,41 @@ describe('resource enforcement', () => {
         expect(result.reason).toBe('monitor');
     });
 
+    it('terminates the child and releases when an injected sampler throws mid-run', async () => {
+        const root = fixtureRoot('sampler-throw');
+        const pidPath = join(root, 'pid');
+        let childPid: number | undefined;
+        try {
+            await expect(
+                runIsolatedGuardedCommand({
+                    command: process.execPath,
+                    args: [
+                        '-e',
+                        `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); setInterval(() => {}, 1000)`,
+                    ],
+                    profile: 'focused',
+                    memorySampler: () => {
+                        if (existsSync(pidPath)) {
+                            throw new Error('injected sampler failure');
+                        }
+                        return abundantMemoryBytes;
+                    },
+                    hostSampleIntervalMs: 10,
+                    sampleIntervalMs: 10,
+                    timeoutMs: 5_000,
+                })
+            ).rejects.toThrow('injected sampler failure');
+            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
+            childPid = recordedPid;
+
+            await waitUntil(() => !isAlive(recordedPid));
+            expect(() => process.kill(recordedPid, 0)).toThrow();
+        } finally {
+            await killAndWait(childPid);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
     it('keeps only the output tail', async () => {
         const result = await runIsolatedGuardedCommand({
             command: process.execPath,

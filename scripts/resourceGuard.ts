@@ -1037,6 +1037,12 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     try {
         sample();
     } catch (error) {
+        if (child.pid !== undefined) {
+            terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+        }
+        if (ownedSession) {
+            session.release();
+        }
         process.removeListener('SIGINT', onSigint);
         process.removeListener('SIGTERM', onSigterm);
         throw error;
