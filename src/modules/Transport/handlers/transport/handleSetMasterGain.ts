@@ -11,6 +11,12 @@ export const handleSetMasterGain = createHandler<'setMasterGain'>({
         if (currentGain === undefined) {
             return { status: 'no-write' };
         }
+        // A caller that derived `gain` from a percent it read earlier carries that
+        // percent back as `expectedPercent`. Admission is asynchronous, so the
+        // fader may have moved since — conflict rather than overwrite the mover.
+        if (action.payload.expectedPercent !== undefined && currentGain !== action.payload.expectedPercent) {
+            return { status: 'conflict' };
+        }
         return toMasterGainExecutionResult(
             replaceMasterGain({ expectedPercent: currentGain, replacementPercent: action.payload.gain * 100 })
         );
@@ -43,7 +49,15 @@ export const handleSetMasterGain = createHandler<'setMasterGain'>({
     },
     isNoop: (action) => {
         const currentGain = transportStore.value?.masterGain;
-        return currentGain !== undefined && currentGain / 100 === action.payload.gain;
+        if (currentGain === undefined) {
+            return false;
+        }
+        // A diverged guard must reach `execute` to be reported as a conflict;
+        // treating it as a no-op would swallow the divergence silently.
+        if (action.payload.expectedPercent !== undefined && currentGain !== action.payload.expectedPercent) {
+            return false;
+        }
+        return currentGain / 100 === action.payload.gain;
     },
     undoable: true,
 });

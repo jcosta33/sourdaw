@@ -53,6 +53,12 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             mixAnalysisDisplayLifecycle.complete({ token, result });
 
             const tracks = getTrackStoreState()?.tracks ?? [];
+            // `executeAppAction` waits for the pending CRDT snapshot transaction
+            // before it admits a write, and only re-checks authority *after* that
+            // wait. A `throwIfAborted` before the call therefore cannot cover the
+            // gap: cancelling during admission would still commit. The guard runs
+            // inside that window and declines the write there.
+            const admitWhileLive = { shouldExecute: () => context?.signal?.aborted !== true };
             for (const tl of result.trackLevels) {
                 context?.signal?.throwIfAborted();
                 if (tl.isClipping) {
@@ -66,38 +72,63 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                     const reductionFactor = 10 ** (-(overshootDb + SAFETY_MARGIN_DB) / 20);
                     const currentGain = tracks.find((time) => time.id === tl.trackId)?.gain ?? DEFAULT_TRACK_GAIN;
                     const newGain = Math.max(0, Math.min(1, currentGain * reductionFactor));
-                    await executeAppAction({
-                        type: 'setTrackGain',
-                        payload: { trackId: tl.trackId, gain: newGain, expectedGain: currentGain },
-                    });
+                    await executeAppAction(
+                        {
+                            type: 'setTrackGain',
+                            payload: { trackId: tl.trackId, gain: newGain, expectedGain: currentGain },
+                        },
+                        admitWhileLive
+                    );
+                    // A declined admission returns without writing and without
+                    // throwing, so re-check before recording the write as applied.
+                    context?.signal?.throwIfAborted();
                     did_apply_write = true;
                 }
             }
 
             context?.signal?.throwIfAborted();
-            if (result.overallLevel.peakDb > -3) {
+
+            // The track corrections above change the master peak: attenuating a
+            // clipping track lowers the sum it feeds. `result` was measured before
+            // them, so deciding the master reduction from it would attenuate a
+            // peak that no longer exists and land the mix far under target. The
+            // gain changes ramp over time and feed smoothed analysers, so settle
+            // first, then re-measure and decide from the corrected mix.
+            await settleDelay(ANALYSER_SETTLE_MS, context?.signal);
+            let latest = await analyzeMix(context?.signal);
+            mixAnalysisDisplayLifecycle.complete({ token, result: latest });
+
+            if (latest.overallLevel.peakDb > -3) {
                 // Reduce the master fader *relative to its current fader*, not by
                 // deriving an absolute gain from the measured peak. Lower the
                 // fader by the amount the overall peak overshoots the safe ceiling
                 // (-6 dBFS target), so the mix lands below it.
-                const overshootDb = result.overallLevel.peakDb - -6;
+                const overshootDb = latest.overallLevel.peakDb - -6;
                 const reductionFactor = 10 ** (-overshootDb / 20);
                 const currentMasterPercent = getTransportState()?.masterGain;
                 const currentMasterGain =
                     currentMasterPercent !== undefined ? currentMasterPercent / 100 : DEFAULT_MASTER_GAIN;
                 const newMasterGain = Math.max(0, Math.min(1, currentMasterGain * reductionFactor));
-                await executeAppAction({ type: 'setMasterGain', payload: { gain: newMasterGain } });
+                await executeAppAction(
+                    {
+                        type: 'setMasterGain',
+                        // Carry the percent this reduction was derived from. Admission
+                        // is asynchronous, so a fader move — local or collaborative —
+                        // can land in the gap; the guard makes that conflict instead of
+                        // silently overwriting the mover with a stale-derived target.
+                        payload: { gain: newMasterGain, expectedPercent: currentMasterPercent },
+                    },
+                    admitWhileLive
+                );
+                context?.signal?.throwIfAborted();
                 did_apply_write = true;
+
+                // Only the master write needs a further refresh; without it `latest`
+                // already reflects every correction this run made.
+                await settleDelay(ANALYSER_SETTLE_MS, context?.signal);
+                latest = await analyzeMix(context?.signal);
+                mixAnalysisDisplayLifecycle.complete({ token, result: latest });
             }
-
-            // The gain changes above ramp over time and feed smoothed
-            // analysers, so re-reading immediately would capture pre-change
-            // samples. Wait for the ramps/analysers to settle before the refresh
-            // so the snapshot reflects the corrected mix.
-            await settleDelay(ANALYSER_SETTLE_MS, context?.signal);
-
-            const refreshed = await analyzeMix(context?.signal);
-            mixAnalysisDisplayLifecycle.complete({ token, result: refreshed });
         } catch (error) {
             // Surface the failure instead of swallowing it — a thrown analysis/fix error would
             // otherwise just stop the spinner and read as "nothing to fix". Log, then reset.
