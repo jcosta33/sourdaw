@@ -5,9 +5,12 @@ import { launch_from_template, setupWorkspace } from './e2eUtils';
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 async function addMidiTrack(page: Page): Promise<void> {
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    const before = await trackList.getByRole('row').count();
     await page.keyboard.press(`${MOD}+k`);
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    await expect(trackList.getByRole('row')).not.toHaveCount(before);
 }
 
 async function openBottomTab(page: Page, name: string): Promise<void> {
@@ -76,7 +79,7 @@ test.describe('Cross-feature workflow — EDM template', () => {
 
         await openPianoRollOnNewClip(page);
         const noteCount = page.getByTestId('selected-clip-note-count');
-        await expect(noteCount).toHaveText(/0 notes/);
+        await expect(noteCount).toHaveText('0 notes');
 
         const paint = page.getByRole('button', { name: 'Toggle paint mode' });
         await expect(paint).toBeVisible();
@@ -85,12 +88,12 @@ test.describe('Cross-feature workflow — EDM template', () => {
         }
         await expect(paint).toHaveAttribute('aria-pressed', 'true');
         await page.getByLabel('Piano roll editor').click({ position: { x: 200, y: 130 } });
-        await expect(noteCount).toHaveText(/1 note/);
+        await expect(noteCount).toHaveText('1 note');
 
         const undo = page.getByTestId('transport-undo');
         await expect(undo).toBeEnabled();
         await undo.click();
-        await expect(noteCount).toHaveText(/0 notes/);
+        await expect(noteCount).toHaveText('0 notes');
 
         await mute.click();
         await expect(mute).toHaveAttribute('data-active', 'false');
@@ -123,6 +126,7 @@ test.describe('Cross-feature workflow — EDM template', () => {
         const palette = page.getByPlaceholder('Type a command...', { exact: true });
         await expect(palette).toBeVisible();
         await palette.fill('track');
+        await expect(page.getByRole('option').filter({ hasText: /track/i }).first()).toBeVisible();
         await page.keyboard.press('Escape');
         await expect(palette).toBeHidden();
 
@@ -142,10 +146,10 @@ test.describe('Cross-feature workflow — EDM template', () => {
         await expect(sip).toHaveAttribute('aria-checked', 'true');
 
         const bpm = page.getByTestId('transport-tempo-bpm').getByRole('spinbutton');
-        const before = await bpm.getAttribute('aria-valuenow');
+        const before = Number(await bpm.getAttribute('aria-valuenow'));
         await bpm.focus();
         await page.keyboard.press('ArrowUp');
-        await expect(bpm).not.toHaveAttribute('aria-valuenow', before ?? '');
+        await expect(bpm).toHaveAttribute('aria-valuenow', String(before + 1));
 
         const metronome = page.getByTestId('transport-metronome');
         await metronome.click();
