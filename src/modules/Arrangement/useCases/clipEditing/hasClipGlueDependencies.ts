@@ -1,20 +1,21 @@
-import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { hasActiveStepRecordingDependency } from '#/modules/MIDI/useCases';
 
-import { getEnvelope } from '../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { hasNonDefaultWarpState } from '../../stores/warpStates';
 import { getTrackStoreState } from '../getTrackStoreState';
 
+/**
+ * Dependencies that still make gluing unsafe to attempt at all: an active
+ * step-recording session, a take lane, or a clip linked to a source.
+ *
+ * A source clip's gain envelope, warp state, and clip-scoped automation lanes
+ * are deliberately NOT checked here — `prepareClipGlue`/`restoreClipGlueState`
+ * migrate the first source's envelope and warp state onto the glued clip and
+ * retire the rest undoably (ledger #2108), so their presence no longer blocks
+ * the glue.
+ */
 export function hasClipGlueDependencies(clipIds: readonly string[]): boolean {
     const clipIdSet = new Set(clipIds);
     if (hasActiveStepRecordingDependency(clipIds)) {
-        return true;
-    }
-    if (clipIds.some((clipId) => getEnvelope(clipId) !== undefined || hasNonDefaultWarpState(clipId))) {
-        return true;
-    }
-    if (getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId))) {
         return true;
     }
     const hasTakeLaneDependency = (takeLaneStore.value?.lanes ?? []).some((lane) =>

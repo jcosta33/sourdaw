@@ -12,6 +12,7 @@ import {
     GITHUB_HTTPS_REMOTE,
     isReviewerBotLogin,
     originMainBlob,
+    REQUIRED_BASE_BRANCH,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
@@ -89,6 +90,24 @@ function validateReview(number: number, review: ReviewState): void {
     }
 }
 
+/**
+ * The base is what the change merges into, and nothing in a pull request's own state proves it is
+ * still the branch the reviewer approved against: a retarget moves it silently and leaves the head,
+ * the approval and the merge state untouched. Stacking does not need a non-default base here.
+ * `deliver` merges the bottom pull request of a stack and then retargets whatever was based on its
+ * head onto its own base, so the pull request being delivered always targets the trunk, and only
+ * its not-yet-delivered dependents ever carry a lane branch as a base.
+ */
+function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.baseRefName !== REQUIRED_BASE_BRANCH) {
+        fail(
+            `PR #${pullRequest.number} targets ${pullRequest.baseRefName}, not ${REQUIRED_BASE_BRANCH}; ` +
+                `deliver merges into ${REQUIRED_BASE_BRANCH} only. Deliver the pull request this one is ` +
+                `stacked on, which retargets this one.`
+        );
+    }
+}
+
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
     const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName'];
     for (const field of fields) {
@@ -146,6 +165,7 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
 export function deliverPullRequest(number: number, port: DeliveryPort): void {
     port.fetch();
     const initial = port.pullRequest(number);
+    validateBaseBranch(initial);
     if (initial.state === 'MERGED') {
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);

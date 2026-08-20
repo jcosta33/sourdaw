@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 
 import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync, Settings } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { ScrollArea } from '#/components/ui/scroll-area';
@@ -171,7 +172,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                 if (libSubTab === 'mine') {
                     return (
                         <div className="px-2">
-                            <div className="flex items-center justify-between pb-1">
+                            <Row justify="between" className="pb-1">
                                 <span className="text-[9px] text-muted-foreground">
                                     {filteredSamples.length} samples
                                 </span>
@@ -195,7 +196,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                                         event.target.value = '';
                                     }}
                                 />
-                            </div>
+                            </Row>
                             <SamplesTab
                                 samples={filteredSamples}
                                 favorites={favorites}
@@ -238,12 +239,14 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
     };
 
     return (
-        <aside
-            className="contain-strict flex shrink-0 flex-col border-r border-border-hairline bg-surface-tray shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]"
+        <Stack
+            as="aside"
+            shrink={false}
+            className="contain-strict border-r border-border-hairline bg-surface-tray shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]"
             style={style}
             aria-label="Browser panel"
         >
-            <div className="flex items-center gap-1.5 border-b border-border/50 p-2 bg-surface-base px-3">
+            <Row gap={1.5} className="border-b border-border/50 p-2 bg-surface-base px-3">
                 <Search className="size-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                     type="search"
@@ -259,7 +262,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                 <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close browser">
                     <X className="size-3.5" />
                 </Button>
-            </div>
+            </Row>
             <RailTabBar
                 activeId={activeTab}
                 items={TAB_ITEMS.map(({ id, label, Icon }) => ({ id, label, icon: Icon }))}
@@ -315,6 +318,6 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                     {activeTab === 'project' ? <ProjectTab /> : null}
                 </div>
             </ScrollArea>
-        </aside>
+        </Stack>
     );
 };
