@@ -525,29 +525,33 @@ describe('resource enforcement', () => {
 
     it('terminates the child and releases when an injected sampler throws mid-run', async () => {
         const root = fixtureRoot('sampler-throw');
-        const pidPath = join(root, 'pid');
         // The throw must land in the wrapped pre-timer sample(), so the gate has to be ordered
         // by the guard's own code, not by child timing: setSessionProcessIdentity publishes
         // childPid to a '<token>.state.*.json' file beside the reservation synchronously,
-        // before that sample runs. A child-written pid file carries no such ordering.
+        // before that sample runs. The recorded pid comes from that guard-published
+        // reservation state, parent-ordered by code; the guard's catch may SIGKILL the child
+        // before any child-written pid file would appear.
         const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let recordedChildPid = 0;
         const childIdentityPublished = () =>
             existsSync(reservationsRoot) &&
-            readdirSync(reservationsRoot).some(
-                (name) =>
-                    name.includes('.state.') &&
-                    name.endsWith('.json') &&
-                    /"childPid":\s*\d+/.test(readFileSync(join(reservationsRoot, name), 'utf8'))
-            );
+            readdirSync(reservationsRoot).some((name) => {
+                if (!name.includes('.state.') || !name.endsWith('.json')) {
+                    return false;
+                }
+                const stateMatch = /"childPid":\s*(\d+)/.exec(readFileSync(join(reservationsRoot, name), 'utf8'));
+                if (!stateMatch) {
+                    return false;
+                }
+                recordedChildPid = Number(stateMatch[1]);
+                return true;
+            });
         let childPid: number | undefined;
         try {
             await expect(
                 runIsolatedGuardedCommand({
                     command: process.execPath,
-                    args: [
-                        '-e',
-                        `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); setInterval(() => {}, 1000)`,
-                    ],
+                    args: ['-e', 'setInterval(() => {}, 1000)'],
                     profile: 'focused',
                     memorySampler: () => {
                         if (childIdentityPublished()) {
@@ -560,7 +564,8 @@ describe('resource enforcement', () => {
                     timeoutMs: 5_000,
                 })
             ).rejects.toThrow('injected sampler failure');
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
+            const recordedPid = recordedChildPid;
+            expect(recordedPid).toBeGreaterThan(0);
             childPid = recordedPid;
 
             await waitUntil(() => !isAlive(recordedPid));
