@@ -45,7 +45,7 @@
  *
  * An offline backend deliberately never calls `apply_graph_commands`: that
  * command lazily starts the live CPAL engine (#1984), and a bounce must not
- * open an audio device. Live adoption is the bridge-deletion slice (#2226).
+ * open an audio device. Live adoption is the live-cutover slice (#2230).
  *
  * ── The strip reports ─────────────────────────────────────────────────────
  *

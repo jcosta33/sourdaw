@@ -96,8 +96,8 @@
 //! Two paths write transport state into one live engine. The split is by
 //! field, not by path: the graph's `set-transport` owns `is_playing` and the
 //! song position (`GraphCommand::SetTransportPlayback`), while tempo and time
-//! signature are owned by the plugin-transport path
-//! (`GraphCommand::SetTransport`). A graph
+//! signature are owned by `GraphCommand::SetTransport`, whose live producer
+//! arrives with the live cutover. A graph
 //! transport write leaves plugin-visible tempo and time signature untouched;
 //! the engine re-derives the beat position from the tempo it already holds.
 //!
@@ -1558,7 +1558,7 @@ fn map_command(
             // same order the engine's own laws compose in. The write carries
             // only what the graph owns (the transport ownership law in the
             // module header): `is_playing` and the song position. Tempo and
-            // time signature stay with the plugin-transport path, untouched.
+            // time signature stay with `GraphCommand::SetTransport`, untouched.
             ops.push(GraphCommand::SetTransportPlayback {
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
