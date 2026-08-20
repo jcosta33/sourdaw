@@ -1,0 +1,153 @@
+scripts/ui-restatement-census.json
+  s_815371b033ccf2::t_6a18833802d8b4 455,500,560-568,596-604,857-865,1028-1036,1355,1505-1513,1604-1612,1697,1730-1738,1760,1805,2597,2714,3197-3205,3236,3287-3295,3353,3587,4124-4132,4217,4244,4367-4375,4619-4636,4640,4736-4744,5006-5014,5213-5221,5429-5446,5567,5969-5977,6458,6671-6679,7016,7409-7417,7592,7790,8003-8011,8039-8047,8798,8807,8906,9230,9518,9722-9730,9815,9860,10247,10514-10522,10940,11090-11098,11666-11674,12056,12179-12187,12269-12277,12440-12448,12497,13340-13348,14099,14114-14122,14315,14492-14500,14837,15035,15041-15049,15197,15302-15310,15710,15734-15742,15782,16232,16652-16660,16799,16860-16863,16866,17318-17326,17660-17668,18059,18128-18136,18338,18500,18725,18851,18920-18928,19130,19226-19234,19361-19369,19406-19414,19472,19739-19747,20372,20525,21746-21754,22199,22349-22357,22484-22492,22835-22843,23045,23123-23131,23144,23636-23644,23888-23896,24122-24130,24170,24365-24373
+src/components/daw/DawAnalysisCard.tsx
+  s_487e9aa1e46063::t_e8ef7c35d9dd35 3,22,27,29,31
+src/components/daw/DawBlockedState.tsx
+  s_487e9aa1e46063::t_1d601aea9e612b 3,29-33,41,48,60
+src/components/daw/DawChannelStripShell.tsx
+  s_b3e68b902b6b93::t_ade38ffc943952 3,18-21,23,34
+src/components/daw/DawChooserCard.tsx
+  s_e469ec4fed6ab8::t_ac00357ef91a87 3,44,48,58,72
+src/components/daw/DawDiagramFrame.tsx
+  s_487e9aa1e46063::t_cd613d8b3488ed 3,28,30,46
+src/components/daw/DawDialogBody.tsx
+  s_b3e68b902b6b93::t_bdda123dc8c74b 3,16-18,22
+src/components/daw/DawDialogSection.tsx
+  s_487e9aa1e46063::t_2f502b0fa7628a 3,44,54
+src/components/daw/DawDisplaySurface.tsx
+  s_487e9aa1e46063::t_07ac65a5dc589d 3,16-18,20,27
+src/components/daw/DawEmptyState.tsx
+  s_487e9aa1e46063::t_7b91c2fff0d774 3,23-27,30,37,39
+src/components/daw/DawGridHeaderCell.tsx
+  s_a40848e8f8cca9::t_84d411699b95b1 3,27-29,31,38
+src/components/daw/DawHeaderBand.tsx
+  s_7ba0b7bee9e951::t_c91627d4bddf6a 3,35-39,42,55,57
+src/components/daw/DawHierarchyRow.tsx
+  s_b3e68b902b6b93::t_16555732fb6b1c 3,31,38-44,48-50,55-57
+src/components/daw/DawMenuParts.tsx
+  s_2175fca1f07426::t_f0b680f03786d9 3,36,39,61-62,64,66,75,78,82
+src/components/daw/DawPanelSurface.tsx
+  s_487e9aa1e46063::t_36ef06f8678302 3,14-16,25-29
+src/components/daw/DawPickerCard.tsx
+  s_487e9aa1e46063::t_2b0b8008719d44 3,34-35,38,44
+src/components/daw/DawPickerRow.tsx
+  s_b3e68b902b6b93::t_ec93274b06fd86 3,42,77-78,82-83,91,97-98,100-101,109,114-122,124
+src/components/daw/DawPluginChoiceRow.tsx
+  s_7ba0b7bee9e951::t_f3941ba2ff0425 3,37,44,52,59-60,62,70,75,77
+src/components/daw/DawPluginInsetCard.tsx
+  s_e469ec4fed6ab8::t_1ea7d7a694a69e 3,25,28
+src/components/daw/DawPluginMetricTile.tsx
+  s_a40848e8f8cca9::t_fd08a45b5578cd 3,25,33
+src/components/daw/DawPluginRail.tsx
+  s_487e9aa1e46063::t_28f579831efd0d 3,17-21
+src/components/daw/DawPluginReadoutList.tsx
+  s_b3e68b902b6b93::t_367b47d17ce774 3,15,17
+src/components/daw/DawPluginSectionCard.tsx
+  s_7ba0b7bee9e951::t_f38aaa55a0edb2 3,25,27,32,34,39,42
+src/components/daw/DawPluginSectionHeader.tsx
+  s_7ba0b7bee9e951::t_2fe23492ee8131 3,21,31-32
+src/components/daw/DawReadoutRow.tsx
+  s_e469ec4fed6ab8::t_7f689245f837de 3,21,24
+src/components/daw/DawSectionDivider.tsx
+  s_8ddfabd1166b5d::t_e54aa31427608f 3,21,32
+src/components/daw/DawSideRail.tsx
+  s_487e9aa1e46063::t_987945f68e7046 3,9,11
+src/components/daw/DawTransportCluster.tsx
+  s_487e9aa1e46063::t_b59d47d53e346b 3,11-12,21,23
+src/components/daw/DawUtilityListRow.tsx
+  s_8ddfabd1166b5d::t_b260fe13a34733 3,53,62,64,68-72
+src/components/daw/DawUtilityMetric.tsx
+  s_7ba0b7bee9e951::t_addb65a23654f2 3,30-31,33,36-37,46
+src/components/daw/DawUtilityNotice.tsx
+  s_487e9aa1e46063::t_6e0a828c16abc8 3,23-25,27,35
+src/components/daw/DawUtilityPanel.tsx
+  s_487e9aa1e46063::t_5d98b7b3408ee9 3,14,16
+src/components/daw/DawUtilitySection.tsx
+  s_27578aec2aab3b::t_216cd8bb4275e5 3,31,39
+src/components/daw/__tests__/DawPluginReadoutList.spec.tsx
+  s_487e9aa1e46063::t_823a719876b3bf 9
+src/components/daw/__tests__/DawPluginSectionCard.spec.tsx
+  s_7ba0b7bee9e951::t_98f0e73132a024 22
+src/components/daw/DawMenuInlineEditor.tsx
+  s_a40848e8f8cca9::t_932964753934a2 3-4,34,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ec352caf34dd36231a62b84667d5c8c8af29ae66",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_815371b033ccf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0205d-8a20-7a20-9075-f26ea79ca25d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e469ec4fed6ab8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01f52-7250-7a20-b14c-11aadfd43abe",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
