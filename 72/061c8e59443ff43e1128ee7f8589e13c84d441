@@ -1,0 +1,23 @@
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_27578aec2aab3b::t_092d1d70fb76e4 34
+  s_27578aec2aab3b::t_344b32e7c951f1 12,55
+  s_27578aec2aab3b::t_a99e69a59f6811 11,20
+  s_27578aec2aab3b::t_fa2558209ab564 24-33,35-36,54,56,58,66,70
+  s_27578aec2aab3b::t_ff68765d5b98a0 23,43-49,51-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "72061c8e59443ff43e1128ee7f8589e13c84d441",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
