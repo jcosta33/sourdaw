@@ -1,6 +1,6 @@
 use daw_plugin_host::scanner::{
-    extract_clap_metadata, extract_clap_parameter_metadata, ClapDescriptorMetadata,
-    ClapParameterDescriptor,
+    extract_clap_instance_metadata, extract_clap_metadata, ClapDescriptorMetadata,
+    ClapInstanceMetadata,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
-pub const PARAMETER_WORKER_ARGUMENT: &str = "--sourdaw-plugin-parameter-scan-worker";
+
+/// The worker that creates a live CLAP instance and inspects it.
+///
+/// One instance answers everything discovery needs from a plugin that is not
+/// merely a descriptor — its parameter contract, its declared audio ports, and
+/// whether it has an editor. Adding a query does not add a process: the
+/// isolation shape is unchanged, still one bounded child per plugin whose crash
+/// or hang is the supervisor's problem and not the app's.
+pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worker";
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 
@@ -122,9 +130,10 @@ pub fn run_from_process_args() -> Option<i32> {
 /// What a set of process arguments asks this process to be.
 #[derive(Debug, PartialEq, Eq)]
 enum WorkerRole<'args> {
-    /// Extract one plugin's descriptor, or its parameters, into a response file.
+    /// Extract one plugin's descriptor, or one live instance's parameters and
+    /// capabilities, into a response file.
     Extract {
-        scans_parameters: bool,
+        inspects_instance: bool,
         plugin_path: &'args OsString,
         response_path: &'args OsString,
     },
@@ -146,13 +155,13 @@ enum WorkerRole<'args> {
 fn worker_role(args: &[OsString]) -> Option<WorkerRole<'_>> {
     let marker_index = args.iter().skip(1).position(|argument| {
         argument == std::ffi::OsStr::new(WORKER_ARGUMENT)
-            || argument == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT)
+            || argument == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT)
     })? + 1;
     if args.len() != marker_index + 3 {
         return Some(WorkerRole::Malformed);
     }
     Some(WorkerRole::Extract {
-        scans_parameters: args[marker_index] == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT),
+        inspects_instance: args[marker_index] == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT),
         plugin_path: &args[marker_index + 1],
         response_path: &args[marker_index + 2],
     })
@@ -160,20 +169,20 @@ fn worker_role(args: &[OsString]) -> Option<WorkerRole<'_>> {
 
 fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let args: Vec<OsString> = args.into_iter().collect();
-    let (scans_parameters, plugin_path, response_path) = match worker_role(&args)? {
+    let (inspects_instance, plugin_path, response_path) = match worker_role(&args)? {
         WorkerRole::Malformed => return Some(2),
         WorkerRole::Extract {
-            scans_parameters,
+            inspects_instance,
             plugin_path,
             response_path,
-        } => (scans_parameters, plugin_path, response_path),
+        } => (inspects_instance, plugin_path, response_path),
     };
-    let result = if scans_parameters {
+    let result = if inspects_instance {
         write_response(
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: extract_clap_parameter_metadata(Path::new(plugin_path)),
+                result: extract_clap_instance_metadata(Path::new(plugin_path)),
             },
         )
     } else {
@@ -208,11 +217,11 @@ pub fn scan_clap_metadata(
     scan_clap_worker(path, timeout, WORKER_ARGUMENT)
 }
 
-pub fn scan_clap_parameter_metadata(
+pub fn scan_clap_instance_metadata(
     path: &Path,
     timeout: Duration,
-) -> Result<Vec<ClapParameterDescriptor>, String> {
-    scan_clap_worker(path, timeout, PARAMETER_WORKER_ARGUMENT)
+) -> Result<ClapInstanceMetadata, String> {
+    scan_clap_worker(path, timeout, INSTANCE_WORKER_ARGUMENT)
 }
 
 fn scan_clap_worker<T: DeserializeOwned>(
@@ -326,7 +335,7 @@ mod tests {
         assert_eq!(
             worker_role(&args(&["/app", WORKER_ARGUMENT, "/p.clap", "/out.json"])),
             Some(WorkerRole::Extract {
-                scans_parameters: false,
+                inspects_instance: false,
                 plugin_path: &OsString::from("/p.clap"),
                 response_path: &OsString::from("/out.json"),
             })
@@ -342,12 +351,12 @@ mod tests {
             worker_role(&args(&[
                 "/electron",
                 "/shell/scanWorker.js",
-                PARAMETER_WORKER_ARGUMENT,
+                INSTANCE_WORKER_ARGUMENT,
                 "/p.clap",
                 "/out.json",
             ])),
             Some(WorkerRole::Extract {
-                scans_parameters: true,
+                inspects_instance: true,
                 plugin_path: &OsString::from("/p.clap"),
                 response_path: &OsString::from("/out.json"),
             })

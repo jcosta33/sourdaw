@@ -11,7 +11,7 @@ export async function scanCustomPaths(paths: string[]): Promise<void> {
     if (state.isScanning) {
         return;
     }
-    pluginScanStore.set({ ...state, isScanning: true, errors: [] });
+    pluginScanStore.set({ ...state, isScanning: true, errors: [], notices: [] });
 
     try {
         const result = await scanPlugins(paths);
@@ -26,6 +26,7 @@ export async function scanCustomPaths(paths: string[]): Promise<void> {
                 isScanning: false,
                 lastScanTime: Date.now(),
                 errors: result.errors,
+                notices: result.notices,
             };
         });
     } catch (error) {
@@ -33,6 +34,7 @@ export async function scanCustomPaths(paths: string[]): Promise<void> {
             ...(current ?? getState()),
             isScanning: false,
             errors: [error instanceof Error ? error.message : String(error)],
+            notices: [],
         }));
     }
 }
