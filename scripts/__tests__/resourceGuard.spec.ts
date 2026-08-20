@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -521,6 +521,145 @@ describe('resource enforcement', () => {
         });
 
         expect(result.reason).toBe('monitor');
+    });
+
+    it('terminates the child and releases when an injected sampler throws mid-run', async () => {
+        const root = fixtureRoot('sampler-throw');
+        // The throw must land in the wrapped pre-timer sample(), so the gate has to be ordered
+        // by the guard's own code, not by child timing: setSessionProcessIdentity publishes
+        // childPid to a '<token>.state.*.json' file beside the reservation synchronously,
+        // before that sample runs. The recorded pid comes from that guard-published
+        // reservation state, parent-ordered by code; the guard's catch may SIGKILL the child
+        // before any child-written pid file would appear.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let recordedChildPid = 0;
+        const childIdentityPublished = () =>
+            existsSync(reservationsRoot) &&
+            readdirSync(reservationsRoot).some((name) => {
+                if (!name.includes('.state.') || !name.endsWith('.json')) {
+                    return false;
+                }
+                const stateMatch = /"childPid":\s*(\d+)/.exec(readFileSync(join(reservationsRoot, name), 'utf8'));
+                if (!stateMatch) {
+                    return false;
+                }
+                recordedChildPid = Number(stateMatch[1]);
+                return true;
+            });
+        let childPid: number | undefined;
+        try {
+            await expect(
+                runIsolatedGuardedCommand({
+                    command: process.execPath,
+                    args: ['-e', 'setInterval(() => {}, 1000)'],
+                    profile: 'focused',
+                    memorySampler: () => {
+                        if (childIdentityPublished()) {
+                            throw new Error('injected sampler failure');
+                        }
+                        return abundantMemoryBytes;
+                    },
+                    hostSampleIntervalMs: 10,
+                    sampleIntervalMs: 10,
+                    timeoutMs: 5_000,
+                })
+            ).rejects.toThrow('injected sampler failure');
+            const recordedPid = recordedChildPid;
+            expect(recordedPid).toBeGreaterThan(0);
+            childPid = recordedPid;
+
+            await waitUntil(() => !isAlive(recordedPid));
+            expect(() => process.kill(recordedPid, 0)).toThrow();
+            // The pre-rejection run held exactly one reservation and one state file, so an empty
+            // reservations root proves the catch released the session.
+            expect(readdirSync(reservationsRoot)).toEqual([]);
+        } finally {
+            await killAndWait(childPid);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('stops under reason monitor when an injected sampler throws on a sample tick', async () => {
+        const root = fixtureRoot('sampler-tick-throw');
+        // Mirrors the mid-run throw test, but only the first gated sampler call succeeds: every
+        // later call throws on a timer tick, which must stop the run under 'monitor' instead of
+        // escaping into setInterval and killing the guard host.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let recordedChildPid = 0;
+        const childIdentityPublished = () =>
+            existsSync(reservationsRoot) &&
+            readdirSync(reservationsRoot).some((name) => {
+                if (!name.includes('.state.') || !name.endsWith('.json')) {
+                    return false;
+                }
+                const stateMatch = /"childPid":\s*(\d+)/.exec(readFileSync(join(reservationsRoot, name), 'utf8'));
+                if (!stateMatch) {
+                    return false;
+                }
+                recordedChildPid = Number(stateMatch[1]);
+                return true;
+            });
+        let throwing = false;
+        let childPid: number | undefined;
+        try {
+            const result = await runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: ['-e', 'setInterval(() => {}, 1000)'],
+                profile: 'focused',
+                memorySampler: () => {
+                    if (!childIdentityPublished()) {
+                        return abundantMemoryBytes;
+                    }
+                    if (throwing) {
+                        throw new Error('injected sampler tick failure');
+                    }
+                    throwing = true;
+                    return abundantMemoryBytes;
+                },
+                hostSampleIntervalMs: 10,
+                sampleIntervalMs: 10,
+                timeoutMs: 5_000,
+            });
+
+            expect(result.reason).toBe('monitor');
+            const recordedPid = recordedChildPid;
+            expect(recordedPid).toBeGreaterThan(0);
+            childPid = recordedPid;
+
+            await waitUntil(() => !isAlive(recordedPid));
+            expect(() => process.kill(recordedPid, 0)).toThrow();
+        } finally {
+            await killAndWait(childPid);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it.each([
+        ['admission recheck', 1],
+        ['post-admission read', 2],
+    ])('releases the admitted reservation when an injected sampler throws: %s', async (_label, throwOnSample) => {
+        // The sampler runs in a fixed order before any spawn: enterResourceSession's
+        // admission check, the loop recheck, then the post-loop pressure read. Counting
+        // from zero, the second call lands in the wrapped recheck and the third in the
+        // post-loop read; the first admission pass has already created the reservations
+        // root, so both throws must leave it empty.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let samples = 0;
+        await expect(
+            runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: ['-e', 'process.exit(0)'],
+                profile: 'focused',
+                memorySampler: () => {
+                    if (samples++ === throwOnSample) {
+                        throw new Error('injected admission sampler failure');
+                    }
+                    return abundantMemoryBytes;
+                },
+            })
+        ).rejects.toThrow('injected admission sampler failure');
+
+        expect(existsSync(reservationsRoot) ? readdirSync(reservationsRoot) : []).toEqual([]);
     });
 
     it('keeps only the output tail', async () => {
