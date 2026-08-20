@@ -149,11 +149,11 @@ Header **ON / OFF**. Width 0 reads **Mono**; any other value is a percentage of 
 | **Hi-Mid**  | 100%          |
 | **High**    | 130%          |
 
-| Control                        | Range        | Default  | What it does                                       |
-| ------------------------------ | ------------ | -------- | -------------------------------------------------- |
-| Width knobs                    | 0 to 2       | per band | Stereo width of that band.                         |
-| **Auto Mono Bass**             | On / Off     | On       | Forces the lowest split to follow the Hz knob.     |
-| Hz (beside **Auto Mono Bass**) | 40 to 200 Hz | 80 Hz    | That lowest split, while **Auto Mono Bass** is on. |
+| Control                        | Range        | Default  | What it does                                               |
+| ------------------------------ | ------------ | -------- | ---------------------------------------------------------- |
+| Width knobs                    | 0 to 2       | per band | Stereo width of that band.                                 |
+| **Auto Mono Bass**             | On / Off     | On       | Lowest split follows the Hz knob after you move that knob. |
+| Hz (beside **Auto Mono Bass**) | 40 to 200 Hz | 80 Hz    | That lowest split, while **Auto Mono Bass** is on.         |
 
 **Correlation** is a meter, not a control.
 
@@ -175,7 +175,8 @@ Header **ON / OFF**. The module starts **OFF**, and every band starts disabled.
 | **Drive**   | 0 to 1                              | How hard the saturator is hit.         |
 | **Blend**   | 0 to 1                              | Mix of excited and clean in that band. |
 
-Turn the header **ON** and enable a band, or the Shape **Drive** macro will not be audible.
+Turn the header **ON** or the Shape **Drive** knob will not be audible. If every band is off,
+turning that Drive up also switches the bands on.
 
 ## Limiter
 
