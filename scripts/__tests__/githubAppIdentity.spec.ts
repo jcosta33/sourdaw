@@ -66,6 +66,7 @@ function mintClient(input: {
     permissions: Record<string, string>;
     token?: string;
     appStatus?: number;
+    mintStatus?: number;
 }): {
     requests: Array<{ url: string; body?: string }>;
     request: GitHubJsonClient;
@@ -77,7 +78,7 @@ function mintClient(input: {
             requests.push({ url, body: init.body });
             if (url.includes('/access_tokens')) {
                 return {
-                    status: 201,
+                    status: input.mintStatus ?? 201,
                     body: { token: input.token ?? 'ghs_minted', permissions: input.permissions },
                 };
             }
@@ -201,6 +202,26 @@ describe('installation mint', () => {
                 request,
             })
         ).rejects.toThrow(/failed to verify GitHub App identity/i);
+    });
+    it.each([
+        ['installation token mint', { mintStatus: 202 }, /failed to mint GitHub App installation token/],
+        ['App identity', { appStatus: 202 }, /failed to verify GitHub App identity/],
+    ])('rejects a 202 %s response with an otherwise valid payload', async (_case, statuses, expected) => {
+        const { request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write' },
+            ...statuses,
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(expected);
     });
 
     it('refuses a reviewer token with contents write before further GitHub writes', async () => {

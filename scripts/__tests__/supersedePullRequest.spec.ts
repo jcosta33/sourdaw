@@ -246,6 +246,7 @@ describe('pull-request supersession', () => {
             return JSON.stringify({
                 data: {
                     node: {
+                        id: 'PR_kwDOExample',
                         comments: {
                             nodes: firstPage ? first : [final],
                             pageInfo: { hasNextPage: firstPage, endCursor: firstPage ? 'issue-comments-1' : null },
@@ -262,7 +263,12 @@ describe('pull-request supersession', () => {
         expect(() =>
             inspectIssueComments('PR_kwDOExample', () =>
                 JSON.stringify({
-                    data: { node: { comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } },
+                    data: {
+                        node: {
+                            id: 'PR_kwDOExample',
+                            comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                        },
+                    },
                     errors: [{ message: 'partial failure' }],
                 })
             )
@@ -280,6 +286,7 @@ describe('pull-request supersession', () => {
                 return JSON.stringify({
                     data: {
                         node: {
+                            id: 'PR_kwDOExample',
                             comments: {
                                 nodes: [],
                                 pageInfo: { hasNextPage: true, endCursor: cursor },
@@ -289,6 +296,20 @@ describe('pull-request supersession', () => {
                 });
             })
         ).toThrow(/pagination/i);
+    });
+    it('rejects a valid-looking comment page for a different subject node', () => {
+        expect(() =>
+            inspectIssueComments('PR_kwDOExample', () =>
+                JSON.stringify({
+                    data: {
+                        node: {
+                            id: 'PR_other',
+                            comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                        },
+                    },
+                })
+            )
+        ).toThrow(/invalid issue comments/i);
     });
 
     it('parses strict arguments', () => {

@@ -182,7 +182,7 @@ export async function mintInstallationToken(input: {
             body: JSON.stringify({ permissions: input.permissions }),
         }
     );
-    if (minted.status < 200 || minted.status >= 300 || minted.body === null || typeof minted.body !== 'object') {
+    if (minted.status !== 201 || minted.body === null || typeof minted.body !== 'object') {
         fail('failed to mint GitHub App installation token');
     }
     const payload = minted.body as { token?: unknown; permissions?: unknown };
@@ -199,7 +199,7 @@ export async function mintInstallationToken(input: {
             'X-GitHub-Api-Version': '2022-11-28',
         },
     });
-    if (app.status < 200 || app.status >= 300) {
+    if (app.status !== 200) {
         fail('failed to verify GitHub App identity');
     }
     const slug =

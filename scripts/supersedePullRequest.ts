@@ -503,7 +503,7 @@ export function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] 
     const comments: IssueComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){id ... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `subjectId=${subjectId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -511,12 +511,17 @@ export function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] 
         const response = graphql(gh, query, fields, `issue comments for ${subjectId}`) as {
             data?: {
                 node?: {
+                    id?: unknown;
                     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
                 } | null;
             };
         };
         const node = response.data?.node;
-        if (!Array.isArray(node?.comments?.nodes) || typeof node.comments.pageInfo?.hasNextPage !== 'boolean') {
+        if (
+            node?.id !== subjectId ||
+            !Array.isArray(node.comments?.nodes) ||
+            typeof node.comments.pageInfo?.hasNextPage !== 'boolean'
+        ) {
             fail(`invalid issue comments for ${subjectId}`);
         }
         for (const value of node.comments.nodes) {
