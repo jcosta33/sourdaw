@@ -1,0 +1,127 @@
+src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts
+  s_0a3429e31e555d::t_16017105a70b41 136-139
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_0a3429e31e555d::t_5270049b4f93b6 3-4
+  s_0a3429e31e555d::t_d715ffb7c37a50 19
+  s_0a3429e31e555d::t_b0937d9e9e3c0a 20
+.agents/decisions/0031-withhold-grand-boule-from-release.md
+  s_0a3429e31e555d::t_22131334832a48 1-53
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_0a3429e31e555d::t_6d1f9a9c35c3b5 44
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/createInstrumentTrack.spec.ts
+  s_0a3429e31e555d::t_794e757f434226 19-20,23-24
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_0a3429e31e555d::t_52d4a066d90315 11-12
+  s_0a3429e31e555d::t_2b61b942fa8360 88
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_0a3429e31e555d::t_2b61b942fa8360 1,181-183
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/buildDevice.spec.ts
+  s_0a3429e31e555d::t_794e757f434226 30-35
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_0a3429e31e555d::t_e734d2c39394bb 10,94-96
+  s_487e9aa1e46063::t_5a10fb22bcf55c 97-98
+src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts
+  s_0a3429e31e555d::t_794e757f434226 1,13-16
+  s_0a3429e31e555d::t_52d4a066d90315 2
+src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts
+  s_0a3429e31e555d::t_16017105a70b41 97,99-101
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_0a3429e31e555d::t_5310a8414a1e86 88,106,115
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_0a3429e31e555d::t_9d7a7f1a8a4b44 51-54,83-84
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_0a3429e31e555d::t_0f9e95fdf90a95 39
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_0a3429e31e555d::t_44a44e28df6fc7 191
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0a3429e31e555d::t_16017105a70b41 11
+  s_0a3429e31e555d::t_bd8424b6dd4edd 1853-1854,1858
+  s_0a3429e31e555d::t_2b61b942fa8360 1855-1857
+  s_487e9aa1e46063::t_dda0b3bfb99763 1859
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_0a3429e31e555d::t_bd8424b6dd4edd 10,941
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_0a3429e31e555d::t_06a363872440dc 282,293,297
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_fc45acd93404c2 457
+  s_0a3429e31e555d::t_0a88f27d415ba2 462-466,468
+.agents/specs/piano-plugin/spec.md
+  s_0a3429e31e555d::t_22131334832a48 4-5,8,11,15-16,20,22-24,26,28-29,31,33-35,37,39-41,43,45-46,48,50-51
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/nativeDspDeviceTypeWeld.spec.ts
+  s_0a3429e31e555d::t_52d4a066d90315 5
+  s_0a3429e31e555d::t_e734d2c39394bb 55-57
+  s_27578aec2aab3b::t_fb3a2ce74bef63 58-59
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_0a3429e31e555d::t_9d7a7f1a8a4b44 57-60
+src/modules/AudioEngine/useCases/getAgentBuiltinDeviceRuntimeManifest.ts
+  s_0a3429e31e555d::t_5270049b4f93b6 1-2,17-20,23
+  s_0a3429e31e555d::t_bd8424b6dd4edd 3,22
+  s_0a3429e31e555d::t_52d4a066d90315 13
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_0a3429e31e555d::t_06a363872440dc 28-31,45-50,54
+  s_27578aec2aab3b::t_7fb41b6693c96b 51-53
+src/infra/release/__tests__/deviceReleaseAdmission.spec.ts
+  s_0a3429e31e555d::t_2b61b942fa8360 1-11
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_0a3429e31e555d::t_16017105a70b41 10,64,290,299,305-310,434-443
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_0a3429e31e555d::t_06a363872440dc 115-122
+src/modules/AudioEngine/useCases/__tests__/agentBuiltinDeviceRuntimeManifest.spec.ts
+  s_0a3429e31e555d::t_bd8424b6dd4edd 3,85
+  s_0a3429e31e555d::t_06a363872440dc 10-13
+.agents/decisions/README.md
+  s_0a3429e31e555d::t_22131334832a48 47
+src/modules/Arrangement/useCases/soundPresetLibrary.ts
+  s_0a3429e31e555d::t_2b61b942fa8360 4,28
+src/modules/Arrangement/useCases/getDeviceManifestProtocolContract.ts
+  s_0a3429e31e555d::t_5310a8414a1e86 1-2,20-28
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_0a3429e31e555d::t_16017105a70b41 245,248-250,252
+src/modules/Arrangement/useCases/preset/materializePresetDevices.ts
+  s_0a3429e31e555d::t_2b61b942fa8360 1,41-46
+src/app/__tests__/agentProtocolVersioning.spec.ts
+  s_0a3429e31e555d::t_5310a8414a1e86 23-25
+src/infra/release/deviceReleaseAdmission.ts
+  s_0a3429e31e555d::t_2b61b942fa8360 1-5
+src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts
+  s_0a3429e31e555d::t_16017105a70b41 131,133-135
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_0a3429e31e555d::t_5270049b4f93b6 1-2,78
+  s_0a3429e31e555d::t_867ebcd32d22b0 82,86
+src/modules/AudioEngine/repositories/deviceStrategy/findReleasedNativeDspDeviceFactory.ts
+  s_0a3429e31e555d::t_52d4a066d90315 1-10
+docs/manual/02-concepts.md
+  s_0a3429e31e555d::t_55b119f364f099 122-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9ef1a9751876e30dc469e78ef8b6b9675e99a9ec",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
