@@ -1,0 +1,25 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_487e9aa1e46063::t_a6e4ae71b3b3a1 455-462,475-476,478-484,490-491
+  s_487e9aa1e46063::t_94c0c3aabc8b95 21-22
+  s_487e9aa1e46063::t_baa0e19973347b 437-454,463-474,477,485-489,492
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_487e9aa1e46063::t_c0b82d87a7d4ac 7
+  s_487e9aa1e46063::t_3b7b82c044a15e 103
+  s_487e9aa1e46063::t_24e0e89cda02a4 95-102,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fae912969829a3725b3c89b4fd193fd1e2e87cbb",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
