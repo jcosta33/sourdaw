@@ -1,0 +1,30 @@
+docs/manual/devices/09-dutch-oven.md
+  s_8ddfabd1166b5d::t_4cf2a52f99460b 146
+  s_8ddfabd1166b5d::t_93fc8e5eba8426 70-74
+  s_8ddfabd1166b5d::t_627ab09538da1e 15,17
+  s_8ddfabd1166b5d::t_a587bcc2ef04d9 140
+  s_8ddfabd1166b5d::t_dec7e78f90c76e 4-5
+  s_8ddfabd1166b5d::t_6820223b63cd05 92
+  s_8ddfabd1166b5d::t_90aef2dbc9c15d 109-110
+  s_8ddfabd1166b5d::t_9d206d488324d9 122-123
+  s_8ddfabd1166b5d::t_e0bb850b944ca1 171
+  s_8ddfabd1166b5d::t_0abc0a22e4de32 186
+  s_8ddfabd1166b5d::t_2b1a4f69d7fb3f 88
+  s_8ddfabd1166b5d::t_02c651069763c6 107-108,111-112,138-139,141-142,165-170,172,180-185,187-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "52d3b1da3b0012e0cf37fa983a48240a6160645d",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
