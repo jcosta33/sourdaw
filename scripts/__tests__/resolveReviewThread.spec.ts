@@ -26,12 +26,15 @@ type Input = {
     failDelete?: boolean;
     rootAuthorLogin?: string | null;
     isResolved?: boolean;
+    resolvedByAfterResolve?: string | null;
+    deleteReplyAfterResolve?: boolean;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
     let index = 0;
     let resolved = input.isResolved ?? false;
     let resolveCalled = false;
+    let resolvedByLogin: string | null = null;
     let comments = [
         {
             id: rootId,
@@ -46,11 +49,18 @@ function fakePort(input: Input = {}) {
             if (input.throwResolveWithConcurrentState && resolveCalled) {
                 resolved = true;
             }
+            if (resolveCalled && input.resolvedByAfterResolve !== undefined) {
+                resolvedByLogin = input.resolvedByAfterResolve;
+            }
+            if (resolveCalled && input.deleteReplyAfterResolve) {
+                comments = comments.filter((comment) => comment.id !== replyId);
+            }
             return {
                 head: input.heads?.[index - 1] ?? head,
                 thread: {
                     id: threadId,
                     isResolved: resolved,
+                    resolvedByLogin,
                     rootCommentId: rootId,
                     rootCommentFullDatabaseId: '9223372036854775807',
                     rootAuthorLogin: comments[0]?.authorLogin ?? null,
@@ -87,10 +97,13 @@ function fakePort(input: Input = {}) {
                 throw new Error('resolve transport lost');
             }
             resolved = true;
+            resolvedByLogin = AUTHOR_BOT_LOGIN;
+            return { resolvedByLogin };
         },
         unresolve: (id) => {
             calls.push(`unresolve:${id}`);
             resolved = false;
+            resolvedByLogin = null;
         },
         deleteReply: (id) => {
             calls.push(`delete:${id}`);
@@ -101,7 +114,12 @@ function fakePort(input: Input = {}) {
         },
         log: (message) => calls.push(`log:${message}`),
     };
-    return { port, calls, authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN, state: () => ({ resolved, comments }) };
+    return {
+        port,
+        calls,
+        authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN,
+        state: () => ({ resolved, resolvedByLogin, comments }),
+    };
 }
 
 function threadPage(nodes: unknown[], hasNextPage: boolean, endCursor: string | null) {
@@ -129,13 +147,47 @@ describe('review thread resolution', () => {
     it('uses supported GraphQL reply and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
         expect(source).toContain('pullRequestReviewThreadId:$threadId');
-        expect(source).toContain('deletePullRequestReviewComment(input:{id:$replyId})');
+        expect(source).toContain(
+            'deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId})'
+        );
     });
     it.each([
-        ['missing', { data: { deletePullRequestReviewComment: { pullRequestReviewComment: null } } }],
         [
-            'mismatched',
-            { data: { deletePullRequestReviewComment: { pullRequestReviewComment: { id: 'PRRC_other' } } } },
+            'missing comment',
+            { data: { deletePullRequestReviewComment: { clientMutationId: replyId, pullRequestReviewComment: null } } },
+        ],
+        [
+            'mismatched comment',
+            {
+                data: {
+                    deletePullRequestReviewComment: {
+                        clientMutationId: replyId,
+                        pullRequestReviewComment: { id: 'PRRC_other' },
+                    },
+                },
+            },
+        ],
+        [
+            'missing client mutation',
+            {
+                data: {
+                    deletePullRequestReviewComment: {
+                        clientMutationId: null,
+                        pullRequestReviewComment: { id: replyId },
+                    },
+                },
+            },
+        ],
+        [
+            'mismatched client mutation',
+            {
+                data: {
+                    deletePullRequestReviewComment: {
+                        clientMutationId: 'PRRC_other',
+                        pullRequestReviewComment: { id: replyId },
+                    },
+                },
+            },
         ],
     ])('rejects a %s delete-reply receipt', (_case, response) => {
         expect(() => deleteReply(replyId, () => JSON.stringify(response))).toThrow(
@@ -258,6 +310,25 @@ describe('review thread resolution', () => {
             'inspect:3',
             `log:review-thread-resolved:42:${threadId}`,
         ]);
+    });
+    it('fails without success when the exact receipt reply disappears before final inspection', () => {
+        const { port, calls, authorLogin } = fakePort({ deleteReplyAfterResolve: true });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/reply receipt/i);
+        expect(calls).toContain(`unresolve:${threadId}`);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+    });
+    it('does not unresolve a thread whose resolution marker changed concurrently', () => {
+        const { port, calls, authorLogin, state } = fakePort({ resolvedByAfterResolve: 'other[bot]' });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/resolved by another actor/i);
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+        expect(state().resolved).toBe(true);
+    });
+    it('rolls back a successfully resolved thread when its final head check fails', () => {
+        const { port, calls, authorLogin, state } = fakePort({ heads: [head, head, movedHead, movedHead, movedHead] });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
+        expect(calls).toContain(`unresolve:${threadId}`);
+        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
     });
     it('fails closed when a thrown reply mutation collides with an identical concurrent comment', () => {
         const { port, authorLogin, state, calls } = fakePort({ throwAfterReply: true, concurrentReplyOnThrow: true });

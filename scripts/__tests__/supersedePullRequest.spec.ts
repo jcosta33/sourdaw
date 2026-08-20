@@ -21,36 +21,52 @@ type Input = {
     throwCloseWithConcurrentState?: boolean;
     failDelete?: boolean;
     returnedCommentBody?: string;
+    bases?: string[];
+    changedClosedAtAfterClose?: boolean;
+    deleteCommentAfterClose?: boolean;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
     let index = 0;
     let state = 'OPEN';
     let closeCalled = false;
+    let closedAt: string | null = null;
     let comments = [oldComment];
-    const snapshot = (number: number) =>
-        number === 2244
-            ? {
-                  number,
-                  state,
-                  head: input.heads?.[index++] ?? head,
-                  repository: 'jcosta33/sourdaw',
-                  base: 'main',
-                  comments,
-              }
-            : {
-                  number,
-                  state: input.replacementState ?? 'MERGED',
-                  head: 'c'.repeat(40),
-                  repository: 'jcosta33/sourdaw',
-                  base: 'main',
-                  comments: [],
-              };
+    const snapshot = (number: number) => {
+        if (number === 2244) {
+            const inspection = index++;
+            return {
+                number,
+                state,
+                head: input.heads?.[inspection] ?? head,
+                repository: 'jcosta33/sourdaw',
+                base: input.bases?.[inspection] ?? 'main',
+                closedAt,
+                comments,
+            };
+        }
+        return {
+            number,
+            state: input.replacementState ?? 'MERGED',
+            head: 'c'.repeat(40),
+            repository: 'jcosta33/sourdaw',
+            base: 'main',
+            closedAt: '2026-08-20T12:00:00Z',
+            comments: [],
+        };
+    };
     const port: SupersedePullRequestPort = {
         inspect: (number) => {
             calls.push(`inspect:${number}`);
             if (number === 2244 && input.throwCloseWithConcurrentState && closeCalled) {
                 state = 'CLOSED';
+                closedAt = '2026-08-20T12:00:01Z';
+            }
+            if (number === 2244 && closeCalled && input.changedClosedAtAfterClose) {
+                closedAt = '2026-08-20T12:00:02Z';
+            }
+            if (number === 2244 && closeCalled && input.deleteCommentAfterClose) {
+                comments = comments.filter((comment) => comment.id !== 'IC_new');
             }
             return snapshot(number);
         },
@@ -86,10 +102,13 @@ function fakePort(input: Input = {}) {
                 throw new Error('close transport lost');
             }
             state = 'CLOSED';
+            closedAt = '2026-08-20T12:00:00Z';
+            return { closedAt };
         },
         reopen: (number) => {
             calls.push(`reopen:${number}`);
             state = 'OPEN';
+            closedAt = null;
         },
         deleteComment: (id) => {
             calls.push(`delete:${id}`);
@@ -100,7 +119,12 @@ function fakePort(input: Input = {}) {
         },
         log: (message) => calls.push(`log:${message}`),
     };
-    return { port, calls, authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN, state: () => ({ state, comments }) };
+    return {
+        port,
+        calls,
+        authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN,
+        state: () => ({ state, closedAt, comments }),
+    };
 }
 
 describe('pull-request supersession', () => {
@@ -208,6 +232,32 @@ describe('pull-request supersession', () => {
             /add supersession comment returned an invalid result/i
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+    });
+    it('refuses a retargeted old PR before close', () => {
+        const { port, calls, authorLogin } = fakePort({ bases: ['main', 'release'] });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /changed after supersession comment/i
+        );
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+    });
+    it('fails without success when the exact receipt comment disappears before final inspection', () => {
+        const { port, calls, authorLogin } = fakePort({ deleteCommentAfterClose: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/comment receipt/i);
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual(['reopen:2244']);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+    });
+    it('does not reopen a pull request whose close marker changed concurrently', () => {
+        const { port, calls, authorLogin, state } = fakePort({ changedClosedAtAfterClose: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/closed by another actor/i);
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
+        expect(state().state).toBe('CLOSED');
+    });
+    it('rolls back a successfully closed pull request when its final head check fails', () => {
+        const { port, calls, authorLogin, state } = fakePort({ heads: [head, head, movedHead, movedHead, movedHead] });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual(['reopen:2244']);
         expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
     });
     it('fails closed when a thrown comment mutation collides with an identical concurrent comment', () => {
