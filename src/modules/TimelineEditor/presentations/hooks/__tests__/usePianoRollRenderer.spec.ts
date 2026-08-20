@@ -487,6 +487,40 @@ describe('usePianoRollRenderer', () => {
         expect(roundRect).toHaveBeenCalledWith(41, rowY(65) + 1, 18, 14, 2);
     });
 
+    it('applies drag preview offsets to secondary opened clip notes during drag', () => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        mocks.midiState = {
+            notesByClipId: {
+                'clip-2': [{ id: 'o1', pitch: 65, startBeat: 4, duration: 2, velocity: 100 }],
+            },
+        };
+        mocks.trackState = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'midi',
+                    color: 'oklch(0.5 0.1 200)',
+                    clips: [{ id: 'clip-2', type: 'midi', color: 'oklch(0.7 0.1 20)' }],
+                },
+            ],
+        };
+        const deps = buildDeps({
+            openedClipIds: ['clip-2'],
+            dragPreviewRef: {
+                current: {
+                    noteIds: new Set(['o1']),
+                    beatDelta: 2,
+                    pitchDelta: 1,
+                },
+            },
+        });
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        expect(roundRect).toHaveBeenCalledWith(61, rowY(66) + 1, 18, 14, 2);
+    });
+
     it('cancels the animation frame loop on unmount', () => {
         const deps = buildDeps();
         const { unmount } = renderHook(() => usePianoRollRenderer(deps));
