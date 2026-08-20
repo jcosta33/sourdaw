@@ -6,28 +6,34 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
 
-test('reports the live Chromium WebGPU adapter/device outcome at the Browser AI boundary', async ({
-    page,
-}, testInfo) => {
+test('admits the live Chromium runtime from required Browser AI capabilities', async ({ page }, testInfo) => {
     await setupWorkspace(page);
     await launch_new_project(page);
 
     await expect
         .poll(() => page.evaluate((key) => window.localStorage.getItem(key) !== null, CAPABILITY_STORAGE_KEY))
         .toBe(true);
-    const observedOutcome: unknown = await page.evaluate((key) => {
+    const observedReport: unknown = await page.evaluate((key) => {
         const cached = window.localStorage.getItem(key);
         if (cached === null) {
             return null;
         }
-        const report: unknown = JSON.parse(cached);
-        return typeof report === 'object' && report !== null ? Reflect.get(report, 'webGpu') : null;
+        return JSON.parse(cached) as unknown;
     }, CAPABILITY_STORAGE_KEY);
-    await testInfo.attach('webgpu-admission-outcome', {
-        body: JSON.stringify(observedOutcome),
+    await testInfo.attach('browser-ai-capability-report', {
+        body: JSON.stringify(observedReport),
         contentType: 'application/json',
     });
-    expect(observedOutcome).toEqual({ status: 'supported' });
+    expect(observedReport).toEqual(
+        expect.objectContaining({
+            capability: 'supported',
+            webGpu: { status: 'supported' },
+            crossOriginIsolated: true,
+            workerAvailable: true,
+            opfsAvailable: true,
+        })
+    );
+    expect(observedReport).not.toHaveProperty('chromeVersion');
 
     await page.getByTestId('toggle-preferences').click();
     const dialog = page.getByRole('dialog');
@@ -37,5 +43,7 @@ test('reports the live Chromium WebGPU adapter/device outcome at the Browser AI 
     await expect(capabilityStatus).toBeVisible();
     const webGpuRow = capabilityStatus.getByText('WebGPU', { exact: true }).locator('..');
     await expect(webGpuRow.getByText('Available', { exact: true })).toBeVisible();
+    await expect(capabilityStatus.getByText('Cross-Origin Isolation', { exact: true })).toBeVisible();
+    await expect(capabilityStatus.getByText('Web Workers', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Not Measured', { exact: true })).toBeVisible();
 });

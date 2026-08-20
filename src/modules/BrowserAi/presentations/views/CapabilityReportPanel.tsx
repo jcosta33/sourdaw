@@ -26,7 +26,7 @@ const NOT_MEASURED_LABELS: Record<Extract<InferenceThroughput, { status: 'not-me
 };
 
 const WEBGPU_UNAVAILABLE_LABELS: Record<WebGpuUnavailableReason, string> = {
-    'missing-surface': 'WebGPU is not exposed by this Chromium runtime',
+    'missing-surface': 'WebGPU is not exposed by this runtime',
     'adapter-unavailable': 'No core WebGPU adapter is available',
     'fallback-adapter': 'Only a software WebGPU fallback adapter is available',
     'device-unavailable': 'The WebGPU adapter could not create a device',
@@ -77,16 +77,17 @@ export function CapabilityReportPanel(): ReactElement {
     const { report } = state;
 
     if (report.capability !== 'supported') {
-        // Two distinct causes land here and the copy must not conflate them:
-        // a Chromium renderer without WebGPU (older build, refused GPU stack,
-        // desktop app on a blocked GPU) versus a genuinely non-Chrome browser.
         let description: string;
-        if (report.chromeVersion === null) {
-            description = 'Non-Chrome browser — AI features require Chrome latest';
+        if (!report.workerAvailable) {
+            description = 'Web Workers are unavailable in this runtime';
         } else if (report.webGpu.status === 'unavailable') {
             description = WEBGPU_UNAVAILABLE_LABELS[report.webGpu.reason];
+        } else if (!report.crossOriginIsolated) {
+            description = 'Cross-origin isolation is not active in this runtime';
+        } else if (!report.opfsAvailable) {
+            description = 'Origin-private model storage is unavailable in this runtime';
         } else {
-            description = 'Browser AI is unavailable in this Chromium runtime';
+            description = 'Browser AI is unavailable in this runtime';
         }
         return (
             <DawBlockedState
@@ -158,13 +159,10 @@ export function CapabilityReportPanel(): ReactElement {
                     />
                 ) : null}
                 <DawReadoutRow
-                    label="Shared Memory"
-                    value={
-                        <DawMicroBadge tone={report.sharedArrayBuffer ? 'success' : 'danger'}>
-                            {report.sharedArrayBuffer ? 'Available' : 'Unavailable'}
-                        </DawMicroBadge>
-                    }
+                    label="Cross-Origin Isolation"
+                    value={<DawMicroBadge tone="success">Available</DawMicroBadge>}
                 />
+                <DawReadoutRow label="Web Workers" value={<DawMicroBadge tone="success">Available</DawMicroBadge>} />
                 <DawReadoutRow
                     label="Model Storage (OPFS)"
                     value={
@@ -173,9 +171,6 @@ export function CapabilityReportPanel(): ReactElement {
                         </DawMicroBadge>
                     }
                 />
-                {report.chromeVersion !== null ? (
-                    <DawReadoutRow label="Chrome Version" value={String(report.chromeVersion)} />
-                ) : null}
             </div>
         </DawUtilitySection>
     );

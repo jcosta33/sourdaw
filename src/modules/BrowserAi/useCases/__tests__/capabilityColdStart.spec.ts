@@ -34,9 +34,9 @@ const supported_report: CapabilityReport = {
     capability: 'supported',
     webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
-    sharedArrayBuffer: true,
+    crossOriginIsolated: true,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: {
         status: 'measured',
         modelId: KOKORO_MODEL_ARTIFACT.id,
@@ -55,9 +55,9 @@ const regressed_report: CapabilityReport = {
     capability: 'unsupported-browser',
     webGpu: { status: 'unavailable', reason: 'device-unavailable' },
     webGpuTier: 'not-measured',
-    sharedArrayBuffer: false,
+    crossOriginIsolated: false,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: { status: 'not-measured', reason: 'no-webgpu' },
     detectedAt: 1_803_643_200_000,
 };

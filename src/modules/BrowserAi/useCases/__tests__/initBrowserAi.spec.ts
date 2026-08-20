@@ -51,9 +51,9 @@ const fresh_capability_report: CapabilityReport = {
     capability: 'supported',
     webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
-    sharedArrayBuffer: true,
+    crossOriginIsolated: true,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: {
         status: 'measured',
         modelId: KOKORO_MODEL_ARTIFACT.id,

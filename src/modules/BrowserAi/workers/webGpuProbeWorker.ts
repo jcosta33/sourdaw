@@ -46,7 +46,11 @@ self.onmessage = (event: MessageEvent<WebGpuProbeRequest>): void => {
         return;
     }
     void probeWebGpu().then((result) => {
-        const response: WebGpuProbeResponse = { type: 'webgpu-probe-result', result };
+        const response: WebGpuProbeResponse = {
+            type: 'webgpu-probe-result',
+            result,
+            workerCrossOriginIsolated: globalThis.crossOriginIsolated === true,
+        };
         self.postMessage(response);
     });
 };

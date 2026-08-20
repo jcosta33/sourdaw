@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { type CapabilityReport, type InferenceThroughput } from '../../models/CapabilityReport';
-import { type WebGpuProbeResult } from '../../models/WebGpuProbe';
+import { type WebGpuProbeObservation, type WebGpuProbeResult } from '../../models/WebGpuProbe';
 import { detectCapabilities } from '../capabilityDetector';
 
 const storage_key = 'sourdaw-browser-ai-capability';
@@ -24,8 +24,9 @@ function create_logger_mock(): LoggerMock {
 }
 
 type RequestAdapter = () => Promise<unknown>;
+type GetDirectory = () => Promise<unknown>;
 type MeasureThroughput = () => Promise<InferenceThroughput>;
-type ProbeWebGpu = () => Promise<WebGpuProbeResult>;
+type ProbeWebGpu = () => Promise<WebGpuProbeObservation>;
 
 function measured(realtimeFactor: number): InferenceThroughput {
     return {
@@ -39,6 +40,7 @@ function measured(realtimeFactor: number): InferenceThroughput {
 }
 
 type InstallSupportedBrowserOutput = {
+    get_directory: Mock<GetDirectory>;
     request_adapter: Mock<RequestAdapter>;
 };
 
@@ -47,18 +49,27 @@ type InstallSupportedBrowserOutput = {
  * produced `webgpu-fast`; it must now produce nothing on its own.
  */
 function install_supported_browser(): InstallSupportedBrowserOutput {
+    const get_directory = vi.fn<GetDirectory>().mockResolvedValue({});
     const request_adapter = vi.fn<RequestAdapter>().mockResolvedValue({});
+    Object.defineProperty(globalThis, 'crossOriginIsolated', {
+        configurable: true,
+        value: true,
+    });
+    Object.defineProperty(globalThis, 'Worker', {
+        configurable: true,
+        value: class Worker {},
+    });
     Object.defineProperty(globalThis, 'navigator', {
         configurable: true,
         value: {
             userAgent: 'Mozilla/5.0 Chrome/133.0.0.0 Safari/537.36',
             platform: 'Win32',
             gpu: { requestAdapter: request_adapter },
-            storage: { getDirectory: vi.fn() },
+            storage: { getDirectory: get_directory },
         },
     });
     vi.spyOn(Date, 'now').mockReturnValue(detected_at);
-    return { request_adapter };
+    return { get_directory, request_adapter };
 }
 
 type InstallOutput = {
@@ -66,9 +77,13 @@ type InstallOutput = {
     probe: Mock<ProbeWebGpu>;
 };
 
-function install(throughput: InferenceThroughput, webGpu: WebGpuProbeResult = { status: 'supported' }): InstallOutput {
+function install(
+    throughput: InferenceThroughput,
+    webGpu: WebGpuProbeResult = { status: 'supported' },
+    crossOriginIsolated = true
+): InstallOutput {
     const measure = vi.fn<MeasureThroughput>().mockResolvedValue(throughput);
-    const probe = vi.fn<ProbeWebGpu>().mockResolvedValue(webGpu);
+    const probe = vi.fn<ProbeWebGpu>().mockResolvedValue({ webGpu, crossOriginIsolated, workerAvailable: true });
     injectDependencies(detectCapabilities, {
         logger: create_logger_mock(),
         measureInferenceThroughput: measure,
@@ -81,9 +96,9 @@ const valid_cached_report: CapabilityReport = {
     capability: 'supported',
     webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
-    sharedArrayBuffer: true,
+    crossOriginIsolated: true,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: measured(2.5),
     detectedAt: 1_800_000_000_000,
 };
@@ -97,7 +112,11 @@ describe('detectCapabilities', () => {
             measureInferenceThroughput: vi
                 .fn<MeasureThroughput>()
                 .mockResolvedValue({ status: 'not-measured', reason: 'model-not-cached' }),
-            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockResolvedValue({ status: 'supported' }),
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockResolvedValue({
+                webGpu: { status: 'supported' },
+                crossOriginIsolated: true,
+                workerAvailable: true,
+            }),
         });
     });
 
@@ -203,7 +222,7 @@ describe('detectCapabilities', () => {
 
     it('should not carry a cached not-measured reason forward as this run’s finding', async () => {
         install_supported_browser();
-        install(measured(3));
+        const { measure } = install(measured(3));
         window.localStorage.setItem(
             storage_key,
             JSON.stringify({
@@ -215,6 +234,7 @@ describe('detectCapabilities', () => {
 
         const report = await detectCapabilities({ forceRefresh: true });
 
+        expect(measure).not.toHaveBeenCalled();
         expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
     });
 
@@ -230,6 +250,124 @@ describe('detectCapabilities', () => {
     });
 
     // ── Cache handling ───────────────────────────────────────────────────────
+
+    it('should migrate only the measured throughput from a retired supported report', async () => {
+        install_supported_browser();
+        const { measure, probe } = install(measured(3));
+        const retired_inference = measured(8.75);
+        const retired_detected_at = detected_at - 86_400_000;
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({
+                capability: 'supported',
+                webGpu: { status: 'supported' },
+                webGpuTier: 'webgpu-fast',
+                sharedArrayBuffer: true,
+                opfsAvailable: true,
+                chromeVersion: 133,
+                inference: retired_inference,
+                detectedAt: retired_detected_at,
+            })
+        );
+
+        const report = await detectCapabilities();
+        const written_report: unknown = JSON.parse(window.localStorage.getItem(storage_key) ?? 'null');
+
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(measure).not.toHaveBeenCalled();
+        expect(report.inference).toEqual(retired_inference);
+        expect(report.webGpuTier).toBe('webgpu-fast');
+        expect(report.detectedAt).toBe(detected_at);
+        expect(report.detectedAt).not.toBe(retired_detected_at);
+        expect(report).toMatchObject({
+            crossOriginIsolated: true,
+            workerAvailable: true,
+            opfsAvailable: true,
+        });
+        expect(written_report).toEqual(report);
+        expect(written_report).not.toHaveProperty('sharedArrayBuffer');
+        expect(written_report).not.toHaveProperty('chromeVersion');
+    });
+
+    it('should not reuse a malformed measured throughput from a retired report', async () => {
+        install_supported_browser();
+        install(measured(3));
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({
+                capability: 'supported',
+                webGpu: { status: 'supported' },
+                webGpuTier: 'webgpu-fast',
+                sharedArrayBuffer: true,
+                opfsAvailable: true,
+                chromeVersion: 133,
+                inference: {
+                    status: 'measured',
+                    modelId: 'kokoro-82m-q8',
+                    executionProviders: ['webgpu'],
+                    audioSeconds: 4,
+                    elapsedSeconds: 0,
+                    realtimeFactor: 'fast',
+                },
+                detectedAt: detected_at - 86_400_000,
+            })
+        );
+
+        const report = await detectCapabilities();
+
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+    });
+
+    it('should not reuse measured throughput from a retired unavailable report', async () => {
+        install_supported_browser();
+        install(measured(3));
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({
+                capability: 'unsupported-browser',
+                webGpu: { status: 'unavailable', reason: 'adapter-unavailable' },
+                webGpuTier: 'webgpu-fast',
+                sharedArrayBuffer: true,
+                opfsAvailable: true,
+                chromeVersion: 133,
+                inference: measured(8.75),
+                detectedAt: detected_at - 86_400_000,
+            })
+        );
+
+        const report = await detectCapabilities();
+
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+    });
+
+    it.each(['sharedArrayBuffer', 'opfsAvailable'] as const)(
+        'should not reuse retired measured throughput when %s was unavailable',
+        async (required_fact) => {
+            install_supported_browser();
+            install(measured(3));
+            window.localStorage.setItem(
+                storage_key,
+                JSON.stringify({
+                    capability: 'supported',
+                    webGpu: { status: 'supported' },
+                    webGpuTier: 'webgpu-fast',
+                    sharedArrayBuffer: true,
+                    opfsAvailable: true,
+                    chromeVersion: 133,
+                    inference: measured(8.75),
+                    detectedAt: detected_at - 86_400_000,
+                    [required_fact]: false,
+                })
+            );
+
+            const report = await detectCapabilities();
+
+            expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+            expect(report.webGpuTier).toBe('not-measured');
+        }
+    );
 
     it('should probe current hardware while reusing cached measured throughput', async () => {
         install_supported_browser();
@@ -429,24 +567,85 @@ describe('detectCapabilities', () => {
 
     // ── Platform gates ───────────────────────────────────────────────────────
 
-    it('should mark non-Chrome browsers as unsupported', async () => {
-        vi.spyOn(Date, 'now').mockReturnValue(detected_at);
-        Object.defineProperty(globalThis, 'navigator', {
+    it('should admit OPFS only after opening the current storage root', async () => {
+        const { get_directory } = install_supported_browser();
+        install(measured(3));
+
+        const report = await detectCapabilities({ measureInference: true });
+
+        expect(get_directory).toHaveBeenCalledTimes(1);
+        expect(report.opfsAvailable).toBe(true);
+        expect(report.capability).toBe('supported');
+    });
+
+    it('should reject OPFS when opening the storage root fails without measuring inference', async () => {
+        const { get_directory } = install_supported_browser();
+        get_directory.mockRejectedValue(new DOMException('OPFS blocked', 'SecurityError'));
+        const { measure } = install(measured(3));
+
+        const report = await detectCapabilities({ measureInference: true });
+
+        expect(get_directory).toHaveBeenCalledTimes(1);
+        expect(report.opfsAvailable).toBe(false);
+        expect(report.capability).toBe('unsupported-browser');
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
+        expect(measure).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['reduced UA', 'Mozilla/5.0 AppleWebKit/537.36 Safari/537.36'],
+        ['Electron UA', 'Sourdaw/1.0 Electron/37.0.0'],
+        ['Chromium-family UA', 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0'],
+    ])('should admit an otherwise capable runtime regardless of its %s identity', async (_label, userAgent) => {
+        install_supported_browser();
+        Object.defineProperty(globalThis.navigator, 'userAgent', {
             configurable: true,
-            value: {
-                userAgent:
-                    'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-                platform: 'MacIntel',
-                storage: { getDirectory: vi.fn() },
+            value: userAgent,
+        });
+        const { measure } = install(measured(3));
+
+        const report = await detectCapabilities({ measureInference: true });
+
+        expect(report.capability).toBe('supported');
+        expect(report.webGpuTier).toBe('webgpu-fast');
+        expect(measure).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not read navigator.userAgent while admitting a capable runtime', async () => {
+        install_supported_browser();
+        Object.defineProperty(globalThis.navigator, 'userAgent', {
+            configurable: true,
+            get: () => {
+                throw new Error('identity is not a capability');
             },
         });
         const { measure } = install(measured(3));
 
         const report = await detectCapabilities({ measureInference: true });
 
+        expect(report.capability).toBe('supported');
+        expect(measure).toHaveBeenCalledTimes(1);
+    });
+
+    it('should use the inference worker isolation fact instead of the window isolation fact', async () => {
+        install_supported_browser();
+        Object.defineProperty(globalThis, 'crossOriginIsolated', { configurable: true, value: true });
+        const measure = vi.fn<MeasureThroughput>().mockResolvedValue(measured(3));
+        injectDependencies(detectCapabilities, {
+            logger: create_logger_mock(),
+            measureInferenceThroughput: measure,
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockResolvedValue({
+                webGpu: { status: 'supported' },
+                crossOriginIsolated: false,
+                workerAvailable: true,
+            }),
+        });
+
+        const report = await detectCapabilities({ measureInference: true });
+
+        expect(report.crossOriginIsolated).toBe(false);
         expect(report.capability).toBe('unsupported-browser');
-        expect(report.chromeVersion).toBeNull();
-        expect(report.webGpuTier).toBe('not-measured');
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
         expect(measure).not.toHaveBeenCalled();
     });
 
@@ -465,7 +664,6 @@ describe('detectCapabilities', () => {
         const report = await detectCapabilities({ measureInference: true });
 
         expect(report.capability).toBe('unsupported-browser');
-        expect(report.chromeVersion).toBe(133);
         expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'missing-surface' });
         expect(report.webGpuTier).toBe('not-measured');
         expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
@@ -486,26 +684,57 @@ describe('detectCapabilities', () => {
         }
     );
 
-    it('should fail closed without measuring inference when the WebGPU worker probe rejects', async () => {
+    it.each([
+        ['cross-origin isolation', 'crossOriginIsolated'],
+        ['Web Workers', 'workerAvailable'],
+        ['OPFS model storage', 'opfsAvailable'],
+    ] as const)('should reject a runtime missing required %s', async (_label, capability) => {
+        install_supported_browser();
+        if (capability === 'workerAvailable') {
+            Object.defineProperty(globalThis, 'Worker', { configurable: true, value: undefined });
+        } else {
+            if (capability === 'opfsAvailable') {
+                Object.defineProperty(globalThis.navigator, 'storage', { configurable: true, value: {} });
+            }
+        }
+        const { measure, probe } = install(measured(3), { status: 'supported' }, capability !== 'crossOriginIsolated');
+
+        const report = await detectCapabilities({ measureInference: true });
+
+        expect(report.capability).toBe('unsupported-browser');
+        expect(Reflect.get(report, capability)).toBe(false);
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
+        expect(measure).not.toHaveBeenCalled();
+        expect(probe).toHaveBeenCalledTimes(capability === 'workerAvailable' ? 0 : 1);
+    });
+
+    it.each([
+        ['constructor throw', 'WebGPU probe worker construction failed'],
+        ['postMessage throw', 'postMessage refused'],
+        ['worker error', 'WebGPU probe worker failed'],
+        ['worker timeout', 'WebGPU probe worker timed out'],
+    ])('should report Worker unavailable when the probe bridge has a %s', async (_label, message) => {
         install_supported_browser();
         const measure = vi.fn<MeasureThroughput>().mockResolvedValue(measured(3));
         const logger = create_logger_mock();
         injectDependencies(detectCapabilities, {
             logger,
             measureInferenceThroughput: measure,
-            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockRejectedValue(new Error('WebGPU probe worker timed out')),
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockRejectedValue(new Error(message)),
         });
 
         const report = await detectCapabilities({ forceRefresh: true, measureInference: true });
 
         expect(report.capability).toBe('unsupported-browser');
+        expect(report.workerAvailable).toBe(false);
         expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'probe-failed' });
         expect(report.webGpuTier).toBe('not-measured');
-        expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
         expect(measure).not.toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
             '[BrowserAi] WebGPU usability probe failed — browser AI disabled'
         );
+        expect(logger.info).toHaveBeenCalledWith('[BrowserAi] Web Workers unavailable — browser AI disabled');
     });
 
     /**

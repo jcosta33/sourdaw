@@ -1,7 +1,7 @@
 /**
  * Repository: Browser AI capability detection.
  *
- * Reports the platform facts (Chrome, WebGPU, SharedArrayBuffer, OPFS) and
+ * Reports the runtime facts (WebGPU, cross-origin isolation, Worker, OPFS) and
  * classifies the device into a `WebGpuTier` from a measured inference
  * throughput figure.
  *
@@ -53,7 +53,7 @@ import {
     type ThroughputNotMeasuredReason,
     type WebGpuTier,
 } from '../models/CapabilityReport';
-import { type WebGpuProbeResult } from '../models/WebGpuProbe';
+import { type WebGpuProbeObservation, type WebGpuProbeResult } from '../models/WebGpuProbe';
 
 import { measureInferenceThroughput } from './measureInferenceThroughput';
 import { probeWebGpuUsability } from './probeWebGpuUsability';
@@ -64,26 +64,6 @@ const STORAGE_KEY = 'sourdaw-browser-ai-capability';
 const FAST_REALTIME_FACTOR = 1;
 /** At or above this, but below fast: `webgpu-slow`. Below it: `unavailable`. */
 const USABLE_REALTIME_FACTOR = 0.2;
-
-/**
- * Detect Chrome version from user agent.
- * Returns null if not Chrome-based.
- */
-function detectChromeVersion(): number | null {
-    if (typeof navigator === 'undefined') {
-        return null;
-    }
-    // Chrome (and Chromium-based): look for "Chrome/" in UA
-    const match = navigator.userAgent.match(/Chrome\/(\d+)/);
-    if (!match) {
-        return null;
-    }
-    // Exclude Edge and Opera which also have "Chrome/" in their UA
-    if (navigator.userAgent.includes('Edg/') || navigator.userAgent.includes('OPR/')) {
-        return null;
-    }
-    return parseInt(match[1]!, 10);
-}
 
 /**
  * The only place a `WebGpuTier` is produced. A throughput that was not measured
@@ -106,6 +86,9 @@ type UnknownRecord = {
     [key: string]: unknown;
 };
 
+type MeasuredInferenceThroughput = Extract<InferenceThroughput, { status: 'measured' }>;
+type CapabilityProbeFacts = Omit<WebGpuProbeObservation, 'workerAvailable'> & { workerAvailable: boolean };
+
 function get_capability_storage(): Storage | null {
     if (!('localStorage' in globalThis)) {
         return null;
@@ -114,6 +97,18 @@ function get_capability_storage(): Storage | null {
         return globalThis.localStorage;
     } catch {
         return null;
+    }
+}
+
+async function probe_opfs_availability(): Promise<boolean> {
+    if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
+        return false;
+    }
+    try {
+        await navigator.storage.getDirectory();
+        return true;
+    } catch {
+        return false;
     }
 }
 
@@ -172,6 +167,10 @@ function is_inference_throughput(value: unknown): value is InferenceThroughput {
     );
 }
 
+function is_measured_inference_throughput(value: unknown): value is MeasuredInferenceThroughput {
+    return is_inference_throughput(value) && value.status === 'measured';
+}
+
 function is_web_gpu_probe_result(value: unknown): value is WebGpuProbeResult {
     if (!is_plain_record(value)) {
         return false;
@@ -193,14 +192,13 @@ function is_capability_admission_pair(value: UnknownRecord): boolean {
     if (!is_browser_ai_capability(value.capability) || !is_web_gpu_probe_result(value.webGpu)) {
         return false;
     }
-    return value.capability !== 'supported' || value.webGpu.status === 'supported';
-}
-
-function is_nullable_finite_number(value: unknown): value is number | null {
-    if (value === null) {
-        return true;
-    }
-    return is_finite_number(value);
+    return (
+        value.capability !== 'supported' ||
+        (value.webGpu.status === 'supported' &&
+            value.crossOriginIsolated === true &&
+            value.workerAvailable === true &&
+            value.opfsAvailable === true)
+    );
 }
 
 function is_valid_capability_report(value: unknown): value is CapabilityReport {
@@ -210,11 +208,11 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
     return (
         is_capability_admission_pair(value) &&
         is_web_gpu_tier(value.webGpuTier) &&
-        typeof value.sharedArrayBuffer === 'boolean' &&
+        typeof value.crossOriginIsolated === 'boolean' &&
+        typeof value.workerAvailable === 'boolean' &&
         typeof value.opfsAvailable === 'boolean' &&
         typeof value.detectedAt === 'number' &&
         Number.isFinite(value.detectedAt) &&
-        is_nullable_finite_number(value.chromeVersion) &&
         is_inference_throughput(value.inference)
     );
 }
@@ -229,14 +227,51 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
  * a runtime admission fact about a past run, not a durable property, and is
  * never reusable.
  */
-function is_reusable_cached_report(value: unknown): value is CapabilityReport {
+function is_reusable_current_report(value: unknown): value is CapabilityReport & {
+    inference: MeasuredInferenceThroughput;
+} {
     if (!is_valid_capability_report(value)) {
         return false;
     }
-    return value.webGpu.status === 'supported';
+    return (
+        value.capability === 'supported' &&
+        value.webGpu.status === 'supported' &&
+        is_measured_inference_throughput(value.inference) &&
+        value.webGpuTier === classifyWebGpuTier(value.inference)
+    );
 }
 
-function read_cached_report(storage: Storage | null): CapabilityReport | null {
+/**
+ * The retired Chrome-gated report has different platform fields, but its
+ * measured inference still has valid provenance when that report's own WebGPU
+ * result was supported. Old platform facts are validated only as the retired
+ * schema; admission always comes from this run's worker, WebGPU, isolation,
+ * and OPFS probes.
+ */
+function read_reusable_legacy_inference(value: unknown): MeasuredInferenceThroughput | null {
+    if (!is_plain_record(value) || value.capability !== 'supported') {
+        return null;
+    }
+    if (!is_web_gpu_probe_result(value.webGpu) || value.webGpu.status !== 'supported') {
+        return null;
+    }
+    if (
+        !is_web_gpu_tier(value.webGpuTier) ||
+        value.sharedArrayBuffer !== true ||
+        value.opfsAvailable !== true ||
+        !is_finite_number(value.chromeVersion) ||
+        !is_finite_number(value.detectedAt) ||
+        !is_measured_inference_throughput(value.inference)
+    ) {
+        return null;
+    }
+    if (value.webGpuTier !== classifyWebGpuTier(value.inference)) {
+        return null;
+    }
+    return value.inference;
+}
+
+function read_cached_inference(storage: Storage | null): MeasuredInferenceThroughput | null {
     if (!storage) {
         return null;
     }
@@ -246,9 +281,10 @@ function read_cached_report(storage: Storage | null): CapabilityReport | null {
     }
     try {
         const parsed: unknown = JSON.parse(cached);
-        if (is_reusable_cached_report(parsed)) {
-            return parsed;
+        if (is_reusable_current_report(parsed)) {
+            return parsed.inference;
         }
+        return read_reusable_legacy_inference(parsed);
     } catch {
         // Corrupt cache — re-detect
     }
@@ -275,30 +311,49 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
             measureInference = false,
         }: DetectCapabilitiesInput = {}): DetectCapabilitiesOutput {
             const storage = get_capability_storage();
-            const cachedReport = read_cached_report(storage);
+            const cachedInference = read_cached_inference(storage);
 
-            const chromeVersion = detectChromeVersion();
-            let webGpu: WebGpuProbeResult;
-            try {
-                webGpu = await probeWebGpuUsability();
-            } catch {
-                webGpu = { status: 'unavailable', reason: 'probe-failed' };
-                logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
+            let workerProbe: CapabilityProbeFacts;
+            if (typeof Worker !== 'function') {
+                workerProbe = {
+                    webGpu: { status: 'unavailable', reason: 'probe-failed' },
+                    crossOriginIsolated: false,
+                    workerAvailable: false,
+                };
+            } else {
+                try {
+                    workerProbe = await probeWebGpuUsability();
+                } catch {
+                    workerProbe = {
+                        webGpu: { status: 'unavailable', reason: 'probe-failed' },
+                        crossOriginIsolated: false,
+                        workerAvailable: false,
+                    };
+                    logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
+                }
             }
-            const sharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
-            const opfsAvailable =
-                typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
+            const { webGpu, crossOriginIsolated, workerAvailable } = workerProbe;
+            const opfsAvailable = await probe_opfs_availability();
 
             let capability: BrowserAiCapability;
             let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };
 
-            if (!chromeVersion) {
+            if (!workerAvailable) {
                 capability = 'unsupported-browser';
-                logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');
+                inference = { status: 'not-measured', reason: 'runtime-unavailable' };
+                logger.info('[BrowserAi] Web Workers unavailable — browser AI disabled');
             } else if (webGpu.status === 'unavailable') {
                 capability = 'unsupported-browser';
                 inference = { status: 'not-measured', reason: 'no-webgpu' };
                 logger.info(`[BrowserAi] WebGPU ${webGpu.reason} — browser AI disabled`);
+            } else if (!crossOriginIsolated) {
+                capability = 'unsupported-browser';
+                inference = { status: 'not-measured', reason: 'runtime-unavailable' };
+                logger.info('[BrowserAi] Cross-origin isolation unavailable — browser AI disabled');
+            } else if (!opfsAvailable) {
+                capability = 'unsupported-browser';
+                inference = { status: 'not-measured', reason: 'runtime-unavailable' };
+                logger.info('[BrowserAi] OPFS unavailable — browser AI disabled');
             } else if (measureInference) {
                 capability = 'supported';
                 inference = await measureInferenceThroughput();
@@ -308,8 +363,8 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
                 // on a platform-only refresh. Only a `measured` figure is reusable —
                 // a stale `not-measured` reason would be a claim about a probe this
                 // run never performed.
-                if (cachedReport && cachedReport.inference.status === 'measured') {
-                    inference = cachedReport.inference;
+                if (cachedInference) {
+                    inference = cachedInference;
                 }
             }
 
@@ -319,9 +374,9 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
                 capability,
                 webGpu,
                 webGpuTier,
-                sharedArrayBuffer,
+                crossOriginIsolated,
+                workerAvailable,
                 opfsAvailable,
-                chromeVersion,
                 inference,
                 detectedAt: Date.now(),
             };
