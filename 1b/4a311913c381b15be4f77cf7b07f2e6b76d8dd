@@ -1,0 +1,23 @@
+scripts/__tests__/publishLane.spec.ts
+  s_27578aec2aab3b::t_097ec5a3276190 159,161,164-165
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_27578aec2aab3b::t_d210945abae380 167,267-278,302-313,684-716,718-719
+  s_27578aec2aab3b::t_491def823a142f 177,209-212
+  s_27578aec2aab3b::t_ce57ee90706bbd 213-214,717,720-721
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1b4a311913c381b15be4f77cf7b07f2e6b76d8dd",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.4"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
