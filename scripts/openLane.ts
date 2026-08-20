@@ -118,7 +118,7 @@ export type OpenLaneCli = {
     createPort: (cwd: string) => OpenLanePort;
 };
 
-const shellCli: OpenLaneCli = {
+export const shellCli: OpenLaneCli = {
     verifyTrustedBlob: (cwd) => {
         const executingFile = fileURLToPath(import.meta.url);
         assertTrustedExecutingBlob('scripts/openLane.ts', executingFile, originMainBlob('scripts/openLane.ts', cwd));

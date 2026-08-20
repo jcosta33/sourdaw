@@ -32,6 +32,7 @@ function create_logger_mock(): { info: (m: string) => void; warn: (m: string) =>
 
 const supported_report: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
     sharedArrayBuffer: true,
     opfsAvailable: true,
@@ -52,7 +53,8 @@ const supported_report: CapabilityReport = {
 // first-launch report.
 const regressed_report: CapabilityReport = {
     capability: 'unsupported-browser',
-    webGpuTier: 'unavailable',
+    webGpu: { status: 'unavailable', reason: 'device-unavailable' },
+    webGpuTier: 'not-measured',
     sharedArrayBuffer: false,
     opfsAvailable: true,
     chromeVersion: 133,
