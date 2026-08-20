@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
 
@@ -107,8 +108,31 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.getByRole('group', { name: 'Track 1 channel' })).not.toHaveClass('ring-1');
         expect(screen.getByText('Track 1')).toBeInTheDocument();
         expect(screen.getByText('audio')).toBeInTheDocument();
-        expect(screen.getByText('0.0 dB')).toBeInTheDocument();
+        // The real gain law (`20 * log10(gain)`), not the old hand-rolled
+        // `(gain - 0.8) * 40` formula that reported "0.0 dB" for this same
+        // 0.8 default. True unity-relative level at 0.8 is about -1.9 dB.
+        expect(screen.getByText('-1.9 dB')).toBeInTheDocument();
         expect(screen.getByText('C')).toBeInTheDocument();
+    });
+
+    it('renders 0.0 dB at unity gain', () => {
+        renderWithTooltip(
+            <ExpandedChannelStrip track={{ ...mockTrack, gain: 1 }} isSelected={false} widthClass="w-40" />
+        );
+        expect(screen.getByText('0.0 dB')).toBeInTheDocument();
+    });
+
+    it('renders the -∞ form at zero gain', () => {
+        renderWithTooltip(
+            <ExpandedChannelStrip track={{ ...mockTrack, gain: 0 }} isSelected={false} widthClass="w-40" />
+        );
+        expect(screen.getByText('-∞ dB')).toBeInTheDocument();
+    });
+
+    it('gives the fader real travel up to the +6 dB ceiling instead of dead space above unity', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
+        expect(Number(fader.getAttribute('aria-valuemax'))).toBeCloseTo(FADER_MAX_GAIN, 5);
     });
 
     // audit M-083: the gain fader is keyboard-operable now, and a keyboard write emits

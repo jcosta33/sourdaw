@@ -2,6 +2,8 @@
  * Constants for the automation lane view — curve types, shape presets,
  * and shared coordinate conversion helpers.
  */
+import { formatGainDb } from '#/utils/audioLevelLaw';
+
 import { type AutomationCurveType } from '../../models/AutomationViewTypes';
 
 type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
@@ -47,11 +49,7 @@ export const curveLabel = (curve: AutomationCurveType): string => {
 /** Format a parameter value for display, handling gain/pan specially. */
 export const formatParameterValue = (value: number, parameterId: string): string => {
     if (parameterId === 'gain') {
-        if (value <= 0) {
-            return '-∞ dB';
-        }
-        const db = 20 * Math.log10(value);
-        return `${db.toFixed(1)} dB`;
+        return `${formatGainDb(value)} dB`;
     }
     if (parameterId === 'pan') {
         if (Math.abs(value) < 0.01) {

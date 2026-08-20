@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { setTrackGain } from '../setTrackGain';
@@ -66,9 +68,14 @@ describe('setTrackGain', () => {
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.5);
     });
 
-    it('clamps gain between 0 and 1', () => {
+    it('no longer clamps 1.5 down to unity — the fader has +6 dB of real headroom', () => {
         setTrackGain('t1', 1.5);
-        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 1);
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 1.5);
+    });
+
+    it('clamps gain to the +6 dB ceiling, and floors negative gain at 0', () => {
+        setTrackGain('t1', 2.5);
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', FADER_MAX_GAIN);
 
         setTrackGain('t1', -0.5);
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0);
