@@ -612,13 +612,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
         // (#747) — a pure curve-math utility, not a device-write sink.
         'src/utils/automationCurve.ts': 1,
-        // Count provenance (#1994): lexical compile*/loadInstrument matches
-        // measured after the runtime-graph-delta split. None is a new raw store
-        // write. AiRuntime rows are compileRequest / envelope compilers.
-        // Arrangement rows are snapshot compilers used by handlers after
-        // executeAppAction. AudioEngine compileRuntimeGraphDelta is a pure
-        // delta compiler; createWebAudioEngine applies accepted deltas. UI rows
-        // name loadInstrument in menus.
+        // Count provenance (#1994): lexical compile* matches after the
+        // runtime-graph-delta split. None is a new raw store write.
+        // AiRuntime: compileRequest / command-envelope compilers (not device
+        // hydration). sendChatMessage 3→5 is the same family, documented above.
         'src/modules/AiRuntime/models/ModelProviderProtocol.ts': 1,
         'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 2,
         'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
@@ -630,6 +627,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,
         'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
+        // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
+        // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
+        // Compilers, barrel re-exports, the loadPreset handler, the file-drop
+        // hook, and projectTrackToLiveStrip all name those compilers; they do
+        // not write stores. Handlers commit through executeAppAction.
         'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 3,
         'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 3,
         'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
@@ -638,6 +640,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/index.ts': 6,
         'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 1,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
+        // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
+        // compileRuntimeGrinderNeuralPatch. Node apply sites plus the pure
+        // delta compiler; createWebAudioEngine applies accepted deltas.
         'src/modules/AudioEngine/engine/BacteriaNode.ts': 3,
         'src/modules/AudioEngine/engine/CrustNode.ts': 3,
         'src/modules/AudioEngine/engine/GlutenNode.ts': 3,
@@ -647,6 +652,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 20,
         'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
         'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
+        // UI: compileAddDeviceAction / compileLoadPresetActions /
+        // compileReorderDevicesAction / compileToasterTrackStackActions in
+        // browser, mixer, inspector, and Knead. They compile then dispatch;
+        // they do not name loadInstrument.
         'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx': 4,
         'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
         'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': 2,
