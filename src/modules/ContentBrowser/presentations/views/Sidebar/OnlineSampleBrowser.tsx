@@ -7,6 +7,7 @@ import { type ReactElement } from 'react';
 import { ExternalLink, Package, Music, Drum, Guitar, Piano, Mic2, Waves } from 'lucide-react';
 
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
+import { Row, Stack } from '#/components/layout';
 
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
@@ -221,7 +222,7 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
     }
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <p className="text-[9px] text-muted-foreground/60 leading-relaxed">
                 Free sample libraries — download and import into your project.
             </p>
@@ -238,13 +239,13 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
                     bgColor: '',
                 };
                 return (
-                    <div key={cat} className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 pt-1 px-0.5">
+                    <Stack gap={0.5} key={cat}>
+                        <Row gap={1.5} className="pt-1 px-0.5">
                             <span className={`text-[9px] font-bold uppercase tracking-widest ${meta.color}`}>
                                 {meta.label}
                             </span>
                             <div className={`flex-1 h-px ${meta.bgColor.replace('/8', '/20')}`} />
-                        </div>
+                        </Row>
                         {sources.map((source) => {
                             const Icon = source.icon;
                             return (
@@ -266,19 +267,19 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
                                     heading={source.name}
                                     description={source.description}
                                     endSlot={
-                                        <div className="flex items-center gap-1">
+                                        <Row gap={1}>
                                             <ExternalLink className="size-2 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
                                             <span className="rounded bg-[var(--color-state-success)]/10 px-1 py-0.5 text-[7px] font-medium text-[var(--color-state-success)]/70">
                                                 {source.license}
                                             </span>
-                                        </div>
+                                        </Row>
                                     }
                                 />
                             );
                         })}
-                    </div>
+                    </Stack>
                 );
             })}
-        </div>
+        </Stack>
     );
 };

@@ -13,6 +13,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { macroStore } from '#/modules/Command/stores';
 import { startMacroRecording, stopMacroRecording, executeAppAction } from '#/modules/Command/useCases';
@@ -111,20 +112,21 @@ export const MacrosPanel = (): ReactElement => {
             {/* Macro list */}
             <div className="flex-1 overflow-y-auto">
                 {state.macros.length === 0 && !state.recording ? (
-                    <div className="flex h-full items-center justify-center p-4">
+                    <Row justify="center" className="h-full p-4">
                         <DawEmptyState
                             compact
                             title="No macros yet"
                             description="Click Record to capture a repeatable command sequence."
                             className="max-w-xs"
                         />
-                    </div>
+                    </Row>
                 ) : (
-                    <div className="p-1 space-y-0.5">
+                    <Stack gap={0.5} className="p-1">
                         {state.macros.map((macro: MacroView) => (
-                            <div
+                            <Row
+                                gap={1}
+                                className="px-2 py-1 rounded hover:bg-white/5 group transition-colors"
                                 key={macro.id}
-                                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 group transition-colors"
                             >
                                 {editingId === macro.id ? (
                                     <DawCompactInput
@@ -155,7 +157,11 @@ export const MacrosPanel = (): ReactElement => {
                                 )}
 
                                 {editingId !== macro.id ? (
-                                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Row
+                                        align="stretch"
+                                        gap={0.5}
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
                                         <button
                                             type="button"
                                             className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-[var(--color-state-success)] hover:bg-[var(--color-state-success)]/10 transition-colors"
@@ -196,11 +202,11 @@ export const MacrosPanel = (): ReactElement => {
                                         >
                                             <Trash2 className="size-2.5" />
                                         </button>
-                                    </div>
+                                    </Row>
                                 ) : null}
-                            </div>
+                            </Row>
                         ))}
-                    </div>
+                    </Stack>
                 )}
             </div>
         </DawPanelSurface>
