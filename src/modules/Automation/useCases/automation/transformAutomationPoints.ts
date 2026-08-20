@@ -71,6 +71,30 @@ function mirrorBezierTimeAxis(point: { x: number; y: number } | undefined): { x:
  * predecessor) — this is a fixed permutation over the `n - 1` real segments,
  * proven self-inverse (a second reverse restores every field exactly).
  *
+ * `points` can hold two entries at the same beat — that is how this codebase
+ * writes a hard automation jump (`addAutomationPoint` lands a tie after the
+ * existing equal-beat point; `handleRemoveAutomationPoint` branches on
+ * `beatDuplicated` for undo safety). A jump's two tied points are not
+ * interchangeable: the array-earlier one is the value held *approaching* the
+ * jump, the array-later one is the value that takes over *at and after* it.
+ * Reversing time must swap which of the two plays first, exactly as it swaps
+ * every other pair of points — so point *placement* is done by physically
+ * reversing the point array (`points.slice().reverse()`) rather than by
+ * mirroring each beat in place and letting a beat-only sort settle the new
+ * order. `Array.prototype.sort` is stable: sorting by beat alone leaves tied
+ * points in their original relative order, which is correct for every
+ * distinct-beat pair (a stable sort never has to break a tie between them)
+ * but wrong for a tied pair, and silently so — beats and values still land on
+ * some point each, so nothing about the point list looks broken. A full
+ * array reversal has no such blind spot: it swaps every pair, tied or not,
+ * because it never compares beats at all.
+ *
+ * Because placement no longer depends on comparing beat values, the mirrored
+ * array is already in final sorted order on its own (mirroring is order-
+ * reversing, so reversing the array first and then mirroring produces a
+ * non-decreasing beat sequence, tied pairs included) — the trailing `.sort`
+ * is therefore a defensive no-op, not the mechanism that produces the order.
+ *
  * The very last point never owns an outgoing segment, so its curve fields are
  * inert data with nowhere principled to go; they simply ride along to
  * whichever point becomes the new terminal point (the old first point), which
@@ -78,24 +102,26 @@ function mirrorBezierTimeAxis(point: { x: number; y: number } | undefined): { x:
  * point's fields unchanged rather than folding into the same formula.
  *
  * The permutation above is exact for the *data* — every field lands back on
- * its original point after a second reverse — but data landing on the right
- * point is not the same as the audible shape being a true time-reversal.
- * `linear`, `s-curve`, and `smooth` (Catmull-Rom) satisfy `f(1-t) = 1-f(t)`,
- * so simply relocating the unmodified fields already reproduces the true
- * reversed shape. `bezier` is made exact here by transforming its data: a
- * cubic from `(0,v0)` to `(1,v1)` with controls `C1`,`C2`, traversed
- * backwards, is the cubic from `(0,v1)` to `(1,v0)` with controls
- * `(1-C2.x, C2.y)` and `(1-C1.x, C1.y)` — the two controls swap *and* their
- * `x` mirrors, `y` stays put (see `mirrorBezierTimeAxis`). `exponential`,
- * `step`, and `stairs` are **not** time-symmetric and this permutation only
- * approximates them: a reversed exponential ramp is shaped logarithmically,
- * and `AutomationCurveType` has no `logarithmic` member to hold that; a
- * reversed `step` (or `stairs`) should jump-then-hold (step-then-ramp) at the
- * *start* of the segment, not the end, which the same enum member cannot
- * express either. This is still strictly better than the pre-fix behaviour,
- * where the curve fields did not move with their span at all and an
- * unrelated segment inherited each shape — it is a known, accepted
- * approximation for these three curve types, not a regression.
+ * its original point after a second reverse, ties included, because it is a
+ * pure index permutation over the original array and never inspects a beat
+ * value to decide where data goes — but data landing on the right point is
+ * not the same as the audible shape being a true time-reversal. `linear`,
+ * `s-curve`, and `smooth` (Catmull-Rom) satisfy `f(1-t) = 1-f(t)`, so simply
+ * relocating the unmodified fields already reproduces the true reversed
+ * shape. `bezier` is made exact here by transforming its data: a cubic from
+ * `(0,v0)` to `(1,v1)` with controls `C1`,`C2`, traversed backwards, is the
+ * cubic from `(0,v1)` to `(1,v0)` with controls `(1-C2.x, C2.y)` and
+ * `(1-C1.x, C1.y)` — the two controls swap *and* their `x` mirrors, `y` stays
+ * put (see `mirrorBezierTimeAxis`). `exponential`, `step`, and `stairs` are
+ * **not** time-symmetric and this permutation only approximates them: a
+ * reversed exponential ramp is shaped logarithmically, and
+ * `AutomationCurveType` has no `logarithmic` member to hold that; a reversed
+ * `step` (or `stairs`) should jump-then-hold (step-then-ramp) at the *start*
+ * of the segment, not the end, which the same enum member cannot express
+ * either. This is still strictly better than the pre-fix behaviour, where the
+ * curve fields did not move with their span at all and an unrelated segment
+ * inherited each shape — it is a known, accepted approximation for these
+ * three curve types, not a regression.
  */
 function reversePoints(lane: AutomationLane): AutomationPoint[] {
     const points = lane.points;
@@ -125,9 +151,14 @@ function reversePoints(lane: AutomationLane): AutomationPoint[] {
                   .reverse()
                   .concat(points[count - 1]!);
 
+    // Placing points by reversing the array (rather than mirroring each
+    // beat in place and sorting) is what makes tied points swap along with
+    // everything else — see the doc comment above.
     return points
-        .map((point, index) => {
-            const curveSource = curveSources[count - 1 - index]!;
+        .slice()
+        .reverse()
+        .map((point, position) => {
+            const curveSource = curveSources[position]!;
             return {
                 ...clonePoint(point),
                 beat: minBeat + maxBeat - point.beat,

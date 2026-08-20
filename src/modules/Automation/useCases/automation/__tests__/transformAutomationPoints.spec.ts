@@ -297,6 +297,46 @@ describe('transformAutomationPoints — reverse', () => {
         const once = transformAutomationPoints(lane, { type: 'reverse' });
         const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'reverse' });
         expect(twice).toEqual(lane.points);
+
+        // A lane with a duplicate beat is how this codebase writes a hard
+        // jump (see addAutomationPoint: a tie lands after the existing
+        // equal-beat point; handleRemoveAutomationPoint branches on
+        // `beatDuplicated` for undo safety) — and it is the one case a
+        // distinct-beat lane can never exercise. `Array.prototype.sort` is
+        // stable, so relocating points by a beat-keyed sort alone leaves two
+        // tied points in their original relative order instead of swapping
+        // it; a true time-reversal of a jump must swap which point is the
+        // anchor, along with its curve data. A no-op curve permutation would
+        // pass this round trip trivially (curve never moves, so it can't
+        // land wrong) — this lane is only meaningful together with the
+        // segment-reassignment specs above, which prove curve data does move.
+        const jumpLane = makeLane([
+            { beat: 0, value: 0, curve: 'linear' },
+            { beat: 2, value: 10, curve: 'step' },
+            { beat: 2, value: 20, curve: 'exponential', tension: 0.5 },
+            { beat: 4, value: 30, curve: 's-curve' },
+        ]);
+        const jumpOnce = transformAutomationPoints(jumpLane, { type: 'reverse' });
+        const jumpTwice = transformAutomationPoints({ ...jumpLane, points: jumpOnce }, { type: 'reverse' });
+        expect(jumpTwice).toEqual(jumpLane.points);
+    });
+
+    it('reversing a lane with a duplicate beat swaps the tied points, not only their curve data', () => {
+        // The jump reads, forward, as "hold 10 up to beat 2, then jump to 20
+        // and hold to beat 4". A correct time-reversal must read as the jump
+        // played backwards: "hold 30 down to beat 4→2 [now 2→0 mirrored],
+        // land on 20, then jump down to 10 and hold to beat 0" — i.e. the
+        // *order* of the two beat-2 points must swap (20 before 10), not
+        // stay (10 before 20) as a beat-only stable sort would leave it.
+        const jumpLane = makeLane([
+            { beat: 0, value: 0, curve: 'linear' },
+            { beat: 2, value: 10, curve: 'step' },
+            { beat: 2, value: 20, curve: 'exponential', tension: 0.5 },
+            { beat: 4, value: 30, curve: 's-curve' },
+        ]);
+        const result = transformAutomationPoints(jumpLane, { type: 'reverse' });
+        expect(beats(result)).toEqual([0, 2, 2, 4]);
+        expect(values(result)).toEqual([30, 20, 10, 0]);
     });
 });
 
