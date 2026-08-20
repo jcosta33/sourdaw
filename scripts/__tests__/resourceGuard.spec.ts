@@ -570,6 +570,64 @@ describe('resource enforcement', () => {
 
             await waitUntil(() => !isAlive(recordedPid));
             expect(() => process.kill(recordedPid, 0)).toThrow();
+            // The pre-rejection run held exactly one reservation and one state file, so an empty
+            // reservations root proves the catch released the session.
+            expect(readdirSync(reservationsRoot)).toEqual([]);
+        } finally {
+            await killAndWait(childPid);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('stops under reason monitor when an injected sampler throws on a sample tick', async () => {
+        const root = fixtureRoot('sampler-tick-throw');
+        // Mirrors the mid-run throw test, but only the first gated sampler call succeeds: every
+        // later call throws on a timer tick, which must stop the run under 'monitor' instead of
+        // escaping into setInterval and killing the guard host.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        let recordedChildPid = 0;
+        const childIdentityPublished = () =>
+            existsSync(reservationsRoot) &&
+            readdirSync(reservationsRoot).some((name) => {
+                if (!name.includes('.state.') || !name.endsWith('.json')) {
+                    return false;
+                }
+                const stateMatch = /"childPid":\s*(\d+)/.exec(readFileSync(join(reservationsRoot, name), 'utf8'));
+                if (!stateMatch) {
+                    return false;
+                }
+                recordedChildPid = Number(stateMatch[1]);
+                return true;
+            });
+        let throwing = false;
+        let childPid: number | undefined;
+        try {
+            const result = await runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: ['-e', 'setInterval(() => {}, 1000)'],
+                profile: 'focused',
+                memorySampler: () => {
+                    if (!childIdentityPublished()) {
+                        return abundantMemoryBytes;
+                    }
+                    if (throwing) {
+                        throw new Error('injected sampler tick failure');
+                    }
+                    throwing = true;
+                    return abundantMemoryBytes;
+                },
+                hostSampleIntervalMs: 10,
+                sampleIntervalMs: 10,
+                timeoutMs: 5_000,
+            });
+
+            expect(result.reason).toBe('monitor');
+            const recordedPid = recordedChildPid;
+            expect(recordedPid).toBeGreaterThan(0);
+            childPid = recordedPid;
+
+            await waitUntil(() => !isAlive(recordedPid));
+            expect(() => process.kill(recordedPid, 0)).toThrow();
         } finally {
             await killAndWait(childPid);
             rmSync(root, { recursive: true, force: true });
