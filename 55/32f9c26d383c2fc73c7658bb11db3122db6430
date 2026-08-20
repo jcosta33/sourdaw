@@ -1,0 +1,60 @@
+src/modules/Automation/useCases/automation/__tests__/addAutomationLane.spec.ts
+  s_487e9aa1e46063::t_4bda811ed18fd3 3-4,7-9,24,39-68
+  s_487e9aa1e46063::t_c7727812c57504 69-70
+src/modules/Automation/handlers/automation/handleAutomateTrackGainRange.ts
+  s_487e9aa1e46063::t_2ef0fb0cbd80fc 2
+  s_487e9aa1e46063::t_13483d85b2d626 66
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_487e9aa1e46063::t_68168bfb48ca80 597
+  s_487e9aa1e46063::t_352e2d5deba5ee 30
+  s_487e9aa1e46063::t_2883e6ffb40fbe 328-334,336
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_487e9aa1e46063::t_32b8ebe0209d4a 146,148
+  s_487e9aa1e46063::t_135c8b1ab88a86 3-4
+src/modules/Automation/useCases/automation/addAutomationLane.ts
+  s_487e9aa1e46063::t_a33c5e68ecac4e 27
+  s_487e9aa1e46063::t_825b875eaa4e68 1-2
+src/modules/ControlSurface/handlers/midiLearn/__tests__/handleRestoreMidiLearnMappings.spec.ts
+  s_487e9aa1e46063::t_44f6521701966e 3-4
+  s_487e9aa1e46063::t_24720808d990c4 40
+  s_487e9aa1e46063::t_4c0f9107faa574 83,91-106
+  s_487e9aa1e46063::t_79ab78f9e46cd5 107-108
+src/modules/Automation/handlers/automation/__tests__/handleAutomateTrackGainRange.spec.ts
+  s_487e9aa1e46063::t_cbe0ef4db1f5b3 67
+  s_487e9aa1e46063::t_43b6ed90abdf1e 3,5
+  s_487e9aa1e46063::t_56665df9b3345c 80
+  s_487e9aa1e46063::t_71d864e4aba359 1-2,4,6-66,68-79,81-83
+src/modules/ControlSurface/handlers/midiLearn/handleRestoreMidiLearnMappings.ts
+  s_487e9aa1e46063::t_1bcdfba0289dc0 2
+  s_487e9aa1e46063::t_2d4701a8965448 26-27,36
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_487e9aa1e46063::t_b631e8b68a5610 169-180
+  s_487e9aa1e46063::t_2d791385eff7ec 3-4
+src/modules/Automation/services/buildTrackGainAutomationRangeLane.ts
+  s_487e9aa1e46063::t_b801c78d747270 35
+  s_487e9aa1e46063::t_b4198ff2a5cf10 1-2
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_487e9aa1e46063::t_1c6bbcf3c642f9 4
+  s_487e9aa1e46063::t_ca8f81744e56ce 889-916
+  s_487e9aa1e46063::t_bb3ca3a00181c9 265-271
+  s_487e9aa1e46063::t_79d83ca7f5f129 95
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_487e9aa1e46063::t_7bb44b74c58996 7-8
+  s_487e9aa1e46063::t_e1c0a265c41891 133-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5532f9c26d383c2fc73c7658bb11db3122db6430",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
