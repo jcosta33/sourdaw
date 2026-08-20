@@ -33,6 +33,7 @@
         "review:publish": "node scripts/publishReview.ts",
         "review:resolve": "node scripts/resolveReviewThread.ts",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
+        "issue:reconcile": "node scripts/reconcileTrackerIssue.ts",
         "issue:file": "node scripts/fileTrackerIssue.ts",
         "audio:deadline": "node scripts/measureRenderDeadline.ts",
         "transport:clock": "node scripts/measureTransportClock.ts",

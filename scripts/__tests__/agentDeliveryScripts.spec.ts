@@ -14,6 +14,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
+        expect(pkg.scripts['issue:reconcile']).toBe('node scripts/reconcileTrackerIssue.ts');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/deliverPullRequest.ts');
     });
@@ -34,6 +35,8 @@ describe('package scripts and gitignore', () => {
             'removeLane.ts',
             'resolveReviewThread.ts',
             'supersedePullRequest.ts',
+            'reconcileTrackerIssue.ts',
+            'trackerIssueReconciliation.ts',
             'githubAppIdentity.ts',
         ];
         for (const file of files) {
@@ -42,5 +45,11 @@ describe('package scripts and gitignore', () => {
             expect(source).not.toMatch(/spawnSync\(\s*['"]codex/);
             expect(source).not.toMatch(/spawnSync\(\s*['"]cursor/);
         }
+    });
+
+    it('checks both tracker reconciliation blobs against origin/main', () => {
+        const source = readFileSync(join(import.meta.dirname, '../reconcileTrackerIssue.ts'), 'utf8');
+        expect(source).toContain("originMainBlob('scripts/reconcileTrackerIssue.ts', cwd)");
+        expect(source).toContain("originMainBlob('scripts/trackerIssueReconciliation.ts', cwd)");
     });
 });
