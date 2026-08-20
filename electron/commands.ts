@@ -112,7 +112,7 @@ export const EXPOSED_COMMANDS = [
  * nativeGraphTransport.ts`): nothing in `src/` reaches that transport yet —
  * `createOfflineRenderBackend` returns the web backend unconditionally, and
  * the null test drives the addon in-process, not over IPC. Exposing a command
- * requires a production caller. The D3.c cutover (jcosta33/sourdaw#2214) flips
+ * requires a production caller. The D3.c cutover (jcosta33/sourdaw#2223) flips
  * the backend selection, and that same change moves these three to
  * `EXPOSED_COMMANDS` together with their caller.
  */

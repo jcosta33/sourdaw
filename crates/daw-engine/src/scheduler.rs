@@ -67,7 +67,56 @@ pub enum GraphCommand {
     SetMidiFxParam(usize, usize, String, f32),
 
     // Transport state (global, affects all plugins)
+    //
+    /// The plugin-transport path's write, and the **owner of tempo and time
+    /// signature**: it assigns the whole state, so it is the only command that
+    /// may carry them. The graph transport writes playback state through
+    /// [`GraphCommand::SetTransportPlayback`] instead, which leaves tempo and
+    /// time signature untouched — the two paths drive one live engine and must
+    /// not fight over fields only one of them knows.
     SetTransport(TransportState),
+    /// The graph transport's write: playback state and song position only.
+    ///
+    /// Tempo, time signature and their derived beat position belong to the
+    /// plugin-transport path ([`GraphCommand::SetTransport`]); this command
+    /// merges into the live transport rather than assigning it, so a graph
+    /// batch that starts playback can never reset a 174 BPM session to the
+    /// 120 BPM engine default. The beat position is re-derived from the
+    /// retained tempo so plugins keep a consistent (seconds, beats) pair.
+    SetTransportPlayback {
+        is_playing: bool,
+        song_pos_seconds: f64,
+    },
+
+    /// Fence announcing that the next `commands` elements on the ring are one
+    /// atomically published batch.
+    ///
+    /// rtrb publishes per element, so without a fence a callback's drain can
+    /// observe a prefix of a batch — one block rendering a new strip at its
+    /// parameter defaults because its frame-0 state write had not crossed
+    /// yet. The drain defers a fenced batch whole until every announced
+    /// command is visible and the retirement ring can absorb the batch's
+    /// worst case, then applies it between two rendered blocks
+    /// ([`AudioScheduler::update_graph`]).
+    BeginBatch {
+        commands: usize,
+    },
+    /// Adopt a new command consumer and retirement producer — the engine side
+    /// of a control-side ring reallocation ([`crate::EngineHandle`] provisions
+    /// capacity from batch size, so ring capacity never bounds an admitted
+    /// batch).
+    ///
+    /// This fence is by construction the last element the old ring ever
+    /// carries, so popping it means the old ring is drained dry. The callback
+    /// does pointer work only: both new ends were allocated control-side and
+    /// cross the ring inside this element (rtrb's own release/acquire on the
+    /// element is the happens-before), and the old consumer leaves over the
+    /// retirement channel — dropping it here would free the old ring's heap
+    /// on the audio thread.
+    SwapCommandChannel {
+        commands: Consumer<GraphCommand>,
+        retired_tx: Producer<RetiredGraphObjects>,
+    },
 
     // Timeline graph
     //
@@ -277,7 +326,12 @@ struct ActiveEffect {
 
 pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
 
-pub(crate) struct RetiredGraphObjects {
+/// Everything the audio thread gives up for reclamation off the callback.
+///
+/// Public only because [`GraphCommand::SwapCommandChannel`] carries a
+/// `Producer` of these across the public command vocabulary; the fields and
+/// constructors stay crate-private.
+pub struct RetiredGraphObjects {
     effect: Option<ActiveEffect>,
     audio_bridge: Option<PluginAudioBridge>,
     midi_fx: Option<Box<dyn MidiFx>>,
@@ -333,6 +387,15 @@ impl RetiredGraphObjects {
 
     fn midi_fx(midi_fx: Box<dyn MidiFx>) -> Self {
         Self::removed(None, None, Some(midi_fx))
+    }
+
+    /// The old command consumer a channel swap replaced. Its producer was
+    /// dropped control-side when the swap was published, so the reclaimer's
+    /// drain-until-abandoned loop terminates promptly.
+    fn swapped_consumer(command_rx: Consumer<GraphCommand>) -> Self {
+        let mut retired = Self::removed(None, None, None);
+        retired.command_rx = Some(command_rx);
+        retired
     }
 
     fn shutdown(
@@ -440,6 +503,11 @@ pub struct AudioScheduler {
     command_rx: Option<Consumer<GraphCommand>>,
     retired_tx: Producer<RetiredGraphObjects>,
     pending_retirement: Option<RetiredGraphObjects>,
+    /// A consumed [`GraphCommand::BeginBatch`] whose body is not yet fully
+    /// visible or whose retirements the ring cannot yet absorb. While this is
+    /// set the drain applies nothing, so every block renders the pre-batch
+    /// graph until the batch can land whole.
+    pending_batch: Option<usize>,
     shutdown_commands: Vec<GraphCommand>,
     retain_command_consumer: bool,
     sample_rate: f32,
@@ -493,6 +561,9 @@ impl AudioScheduler {
             command_rx: Some(command_rx),
             retired_tx,
             pending_retirement: None,
+            pending_batch: None,
+            // Sized for the boot ring; a swap can grow the live ring, so the
+            // drop-time drain re-reserves from the live ring's capacity.
             shutdown_commands: Vec::with_capacity(command_queue_capacity),
             retain_command_consumer: !cfg!(test),
             sample_rate,
@@ -526,13 +597,92 @@ impl AudioScheduler {
     }
 
     /// Process pending UI commands lock-free on the audio thread.
+    ///
+    /// Commands arrive two ways and the drain honours both:
+    ///
+    /// - Loose commands (the typed [`crate::EngineHandle`] methods) apply as
+    ///   they become visible, one at a time.
+    /// - A batch published behind a [`GraphCommand::BeginBatch`] fence applies
+    ///   all-or-nothing: until every command the fence announces is visible
+    ///   *and* the retirement ring can absorb one retirement per command, none
+    ///   of it applies and the block renders the pre-batch graph. Retirement
+    ///   backpressure therefore suspends a drain only at batch boundaries,
+    ///   never inside one.
     #[inline]
     pub fn update_graph(&mut self) {
         if !self.flush_pending_retirement() {
             return;
         }
 
-        while let Ok(cmd) = self.command_rx.as_mut().expect("command consumer").pop() {
+        loop {
+            if let Some(commands) = self.pending_batch {
+                if !self.batch_ready(commands) {
+                    return;
+                }
+                self.pending_batch = None;
+                for _ in 0..commands {
+                    let cmd = self
+                        .command_rx
+                        .as_mut()
+                        .expect("command consumer")
+                        .pop()
+                        .expect("batch_ready proved the whole batch visible");
+                    // batch_ready reserved a retirement slot per command, so
+                    // the drain cannot suspend inside the batch.
+                    let retire_ok = self.apply_and_retire(cmd);
+                    debug_assert!(retire_ok, "batch_ready reserved retirement slots");
+                }
+                continue;
+            }
+
+            let Ok(cmd) = self.command_rx.as_mut().expect("command consumer").pop() else {
+                return;
+            };
+            match cmd {
+                GraphCommand::BeginBatch { commands } => {
+                    self.pending_batch = Some(commands);
+                }
+                cmd => {
+                    if !self.apply_and_retire(cmd) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a fenced batch can apply in full right now: every announced
+    /// command is visible on the command ring, and the retirement ring can
+    /// take one retirement per command while keeping the reserved shutdown
+    /// slot. Both bounds are what the control side provisioned for
+    /// ([`crate::EngineHandle::send_graph_batch`] co-sizes the rings at
+    /// capacity and capacity + 1), so a deferral here is transient — the
+    /// producer finishes its push, the reclaimer frees slots on its next poll
+    /// — never a livelock.
+    fn batch_ready(&self, commands: usize) -> bool {
+        let command_rx = self.command_rx.as_ref().expect("command consumer");
+        debug_assert!(
+            command_rx.buffer().capacity() >= commands
+                && self.retired_tx.buffer().capacity() > commands,
+            "a fenced batch must fit the rings it was admitted against"
+        );
+        command_rx.slots() >= commands && self.retired_tx.slots() > commands
+    }
+
+    /// Apply one command and hand any retirement off the callback thread.
+    /// Returns `false` when the retirement ring could not take it; the caller
+    /// stops draining and the held retirement flushes first next callback.
+    fn apply_and_retire(&mut self, cmd: GraphCommand) -> bool {
+        match self.apply_command(cmd) {
+            Some(retired) => self.retire(retired),
+            None => true,
+        }
+    }
+
+    /// Apply one drained command to the graph, returning anything the command
+    /// gave up for reclamation off the callback thread.
+    fn apply_command(&mut self, cmd: GraphCommand) -> Option<RetiredGraphObjects> {
+        {
             let retired = match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
                     self.add_builtin_effect(id, &plugin_type, EffectPlacement::MasterChain)
@@ -646,6 +796,26 @@ impl AudioScheduler {
                         self.timeline.hold_automation(self.playhead_frames);
                     }
                     self.transport = state;
+                    None
+                }
+                GraphCommand::SetTransportPlayback {
+                    is_playing,
+                    song_pos_seconds,
+                } => {
+                    // Same stop law as `SetTransport` above; the difference is
+                    // ownership. This is the graph transport's write, and it
+                    // merges: tempo and time signature belong to the
+                    // plugin-transport path and survive untouched, so a graph
+                    // batch that starts playback never resets a session to
+                    // the 120 BPM engine default. Beats re-derive from the
+                    // retained tempo so plugins keep a consistent
+                    // (seconds, beats) pair.
+                    if self.transport.is_playing && !is_playing {
+                        self.timeline.hold_automation(self.playhead_frames);
+                    }
+                    self.transport.is_playing = is_playing;
+                    self.transport.song_pos_seconds = song_pos_seconds;
+                    self.transport.song_pos_beats = song_pos_seconds * self.transport.tempo / 60.0;
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
@@ -849,13 +1019,35 @@ impl AudioScheduler {
                     self.audio_bridges.push(bridge);
                     None
                 }
-            };
-
-            if let Some(retired) = retired {
-                if !self.retire(retired) {
-                    return;
+                GraphCommand::BeginBatch { .. } => {
+                    // A loose fence is consumed by `update_graph` before it
+                    // reaches here; a fence inside a batch body is a producer
+                    // bug (the single producer never nests them). Consuming it
+                    // as a no-op keeps the announced count honest.
+                    debug_assert!(false, "a batch fence must not nest inside a batch");
+                    None
                 }
-            }
+                GraphCommand::SwapCommandChannel {
+                    commands,
+                    retired_tx,
+                } => {
+                    // Adopt the retirement producer first so the old
+                    // consumer's retirement below crosses the *new* ring —
+                    // the old one may be full, the new one is fresh and
+                    // provisioned. Dropping the old producer here only
+                    // decrements its Arc: the reclaimer still holds the old
+                    // ring's consumer, so no heap is freed on this thread.
+                    drop(std::mem::replace(&mut self.retired_tx, retired_tx));
+                    let old_rx = self.command_rx.replace(commands).expect("command consumer");
+                    // This fence was the old ring's last element (the control
+                    // side stops pushing to a ring once it publishes the
+                    // swap), so the old ring is drained dry; only the
+                    // consumer's own heap remains, and it leaves over the
+                    // retirement channel rather than being freed here.
+                    Some(RetiredGraphObjects::swapped_consumer(old_rx))
+                }
+            };
+            retired
         }
     }
 
@@ -1399,6 +1591,17 @@ impl DeviceChain for TrackDeviceChain<'_> {
 
 impl Drop for AudioScheduler {
     fn drop(&mut self) {
+        // Drop runs control-side (`StreamWithReclaimerShutdown`), never in
+        // the audio callback, so this reserve may allocate: a ring swap can
+        // have grown the live ring past the boot capacity `shutdown_commands`
+        // was preallocated with, and the drain below must hold a full ring.
+        let live_ring_capacity = self
+            .command_rx
+            .as_ref()
+            .expect("command consumer")
+            .buffer()
+            .capacity();
+        self.shutdown_commands.reserve(live_ring_capacity);
         while let Ok(command) = self.command_rx.as_mut().expect("command consumer").pop() {
             self.shutdown_commands.push(command);
         }
@@ -3359,5 +3562,192 @@ mod timeline_tests {
         // and re-issues for the new one. Kept, frames 12 onward would drop to
         // 0.25 without anyone asking.
         assert_eq!(left, vec![0.5; 8]);
+    }
+
+    /// rtrb publishes per element, so a live block boundary can land while
+    /// only a prefix of a batch is visible. The fence must make that window
+    /// unobservable: until the whole batch is visible, the block renders the
+    /// pre-batch graph — never a new strip at its parameter defaults because
+    /// its frame-0 state write had not crossed yet.
+    #[test]
+    fn a_fenced_batch_with_a_split_visible_prefix_renders_the_pre_batch_graph() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+
+        // The batch: a track, its clip, and its frame-0 fader state (0.5).
+        // Deliberately split: the fence, the track and the clip are visible,
+        // the state write is not — the exact window where an unfenced drain
+        // rendered the strip at the RampedParam default of 1.0.
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::BeginBatch { commands: 3 })
+            .is_ok());
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+            .is_ok());
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::AddClip(
+                1,
+                TimelineClip::new(
+                    9,
+                    vec![0.5; 64],
+                    Vec::new(),
+                    placement(0, 0, 64),
+                    ClipPlayback::at_gain(1.0),
+                ),
+            ))
+            .is_ok());
+
+        harness.scheduler.update_graph();
+        let (split, _) = harness.render(4);
+        assert_eq!(
+            split,
+            vec![0.0; 4],
+            "a partially visible batch must leave the pre-batch graph rendering"
+        );
+        assert_eq!(harness.scheduler.timeline().track_count(), 0);
+
+        // The batch completes: everything applies together, and the strip is
+        // first observable with its authored state, never with the default.
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::AutomateParam {
+                target: AutomationTarget::TrackGain(1),
+                write: AutomationWrite::Replace(AutomationEvent {
+                    at_frame: 0,
+                    duration_frames: 0,
+                    value: 0.5,
+                    shape: RampShape::Step,
+                }),
+            })
+            .is_ok());
+        harness.scheduler.update_graph();
+        assert_eq!(harness.scheduler.timeline().track_count(), 1);
+
+        // The frame-0 stamp is behind the playhead now; it resolves to its
+        // end state, so the strip is first heard at its authored 0.5 fader.
+        let (complete, _) = harness.render(4);
+        assert_eq!(
+            complete,
+            vec![0.25; 4],
+            "the post-batch graph renders the authored 0.5 material * 0.5 fader"
+        );
+    }
+
+    /// Retirement backpressure used to suspend a drain mid-batch
+    /// (`flush_pending_retirement` returning early). It must now defer only
+    /// at batch boundaries: a batch whose worst-case retirements the ring
+    /// cannot absorb is deferred whole, and applies whole once the reclaimer
+    /// frees slots.
+    #[test]
+    fn retirement_backpressure_defers_a_fenced_batch_whole_at_its_boundary() {
+        let (mut command_tx, command_rx) = RingBuffer::new(16);
+        let (retired_tx, mut retired_rx) = RingBuffer::new(4);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+
+        // Occupy the retirement ring with two unreclaimed objects.
+        for id in [1, 2] {
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(id)))
+                .unwrap();
+            command_tx.push(GraphCommand::RemoveTrack(id)).unwrap();
+        }
+        scheduler.update_graph();
+        assert_eq!(scheduler.timeline().track_count(), 0);
+
+        // A three-command batch needs three retirement slots plus the
+        // reserved shutdown slot; only two are free, so the batch defers
+        // whole — the graph shows none of it.
+        command_tx
+            .push(GraphCommand::BeginBatch { commands: 3 })
+            .unwrap();
+        command_tx
+            .push(GraphCommand::AddTrack(TimelineTrack::new(7)))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::AddTrack(TimelineTrack::new(8)))
+            .unwrap();
+        command_tx.push(GraphCommand::RemoveTrack(8)).unwrap();
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.timeline().track_count(),
+            0,
+            "a batch the retirement ring cannot absorb must not partially apply"
+        );
+
+        // The reclaimer catches up; the next drain applies the batch whole.
+        while retired_rx.pop().is_ok() {}
+        scheduler.update_graph();
+        assert_eq!(scheduler.timeline().track_count(), 1);
+        assert!(scheduler.timeline().track(7).is_some());
+    }
+
+    /// The tempo-ownership law: the graph transport owns playback state and
+    /// song position; tempo and time signature belong to the plugin-transport
+    /// path and survive a graph write untouched. Before this law a graph
+    /// set-transport assigned the whole state and reset a live session to the
+    /// 120 BPM 4/4 engine default.
+    #[test]
+    fn a_graph_transport_write_preserves_plugin_visible_tempo_and_time_signature() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetTransport(TransportState {
+            tempo: 174.0,
+            time_sig_num: 7,
+            time_sig_denom: 8,
+            is_playing: true,
+            song_pos_beats: 0.0,
+            song_pos_seconds: 0.0,
+        }));
+
+        harness.send(GraphCommand::SetTransportPlayback {
+            is_playing: true,
+            song_pos_seconds: 10.0,
+        });
+
+        let transport = harness.scheduler.transport;
+        assert_eq!(transport.tempo, 174.0);
+        assert_eq!(transport.time_sig_num, 7);
+        assert_eq!(transport.time_sig_denom, 8);
+        assert!(transport.is_playing);
+        assert_eq!(transport.song_pos_seconds, 10.0);
+        // Beats re-derive from the tempo the write does not own: 10 s at
+        // 174 BPM is exactly 29 quarter-note beats.
+        assert_eq!(transport.song_pos_beats, 29.0);
+    }
+
+    /// A stop through the graph transport is still a stop: it holds every
+    /// mixer parameter and drops the automation window the stop made stale,
+    /// exactly as the plugin-transport stop does.
+    #[test]
+    fn a_graph_transport_stop_drops_the_automation_window_the_stop_made_stale() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 16);
+        harness.send(GraphCommand::AutomateParam {
+            target: AutomationTarget::TrackGain(1),
+            write: AutomationWrite::Append(AutomationEvent {
+                at_frame: 8,
+                duration_frames: 0,
+                value: 0.5,
+                shape: RampShape::Step,
+            }),
+        });
+
+        let (first, _) = harness.render(4);
+        assert_eq!(first, vec![1.0; 4]);
+
+        harness.send(GraphCommand::SetTransportPlayback {
+            is_playing: false,
+            song_pos_seconds: 0.0,
+        });
+        harness.playing();
+        let (second, _) = harness.render(8);
+        assert_eq!(
+            second,
+            vec![1.0; 8],
+            "a change stamped past the stop must not fire on its own later"
+        );
     }
 }

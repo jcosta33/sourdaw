@@ -124,30 +124,56 @@ where
     }
 }
 
+/// Spawn the thread that frees everything the audio thread hands back.
+///
+/// Returns the shutdown sender and an adoption sender: a control-side ring
+/// reallocation ([`crate::EngineHandle`] growing the command channel) creates
+/// a fresh retirement ring, and its consumer must reach this thread or the
+/// swapped-in ring would never drain. A ring whose producer is gone and whose
+/// leftovers are drained is dropped here, which keeps the old ring's free off
+/// the audio thread.
 fn spawn_retirement_reclaimer<T: Send + 'static>(
-    mut retired_rx: Consumer<T>,
-) -> Result<Sender<()>, String> {
+    retired_rx: Consumer<T>,
+) -> Result<(Sender<()>, Sender<Consumer<T>>), String> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    let (adopt_tx, adopt_rx) = mpsc::channel::<Consumer<T>>();
     thread::Builder::new()
         .name("sourdaw-plugin-reclaimer".to_string())
-        .spawn(move || loop {
-            while let Ok(retired) = retired_rx.pop() {
-                reclaim_retired(retired);
-            }
-
-            match shutdown_rx.recv_timeout(RETIREMENT_RECLAIMER_POLL_INTERVAL) {
-                Ok(()) | Err(RecvTimeoutError::Disconnected) => {
-                    while let Ok(retired) = retired_rx.pop() {
+        .spawn(move || {
+            let mut rings = vec![retired_rx];
+            loop {
+                while let Ok(adopted) = adopt_rx.try_recv() {
+                    rings.push(adopted);
+                }
+                for ring in &mut rings {
+                    while let Ok(retired) = ring.pop() {
                         reclaim_retired(retired);
                     }
-                    break;
                 }
-                Err(RecvTimeoutError::Timeout) => {}
+                // Abandonment is checked before emptiness: once the producer
+                // is gone nothing can push again, so an abandoned-and-empty
+                // ring is done for good.
+                rings.retain(|ring| !ring.is_abandoned() || ring.slots() > 0);
+
+                match shutdown_rx.recv_timeout(RETIREMENT_RECLAIMER_POLL_INTERVAL) {
+                    Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                        while let Ok(adopted) = adopt_rx.try_recv() {
+                            rings.push(adopted);
+                        }
+                        for ring in &mut rings {
+                            while let Ok(retired) = ring.pop() {
+                                reclaim_retired(retired);
+                            }
+                        }
+                        break;
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                }
             }
         })
         .map_err(|error| format!("Failed to spawn plugin reclaimer thread: {error}"))?;
 
-    Ok(shutdown_tx)
+    Ok((shutdown_tx, adopt_tx))
 }
 
 fn reclaim_retired<T>(retired: T) {
@@ -177,7 +203,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         engine_event_tx,
         false,
     )
-    .map(|(handle, _sample_rate)| handle)
+    .map(|(handle, _sample_rate, _retired_adoption_tx)| handle)
 }
 
 /// Spawn the audio thread and report the sample rate the stream actually
@@ -194,9 +220,16 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
-) -> Result<(AudioThreadHandle, f32), String> {
+) -> Result<
+    (
+        AudioThreadHandle,
+        f32,
+        Sender<Consumer<RetiredGraphObjects>>,
+    ),
+    String,
+> {
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
-    let reclaimer_shutdown_tx = spawn_retirement_reclaimer(retired_rx)?;
+    let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
 
@@ -227,7 +260,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let sample_rate = *sample_rate_cell
         .get()
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
-    Ok((handle, sample_rate))
+    Ok((handle, sample_rate, retired_adoption_tx))
 }
 
 /// Write the engine's internal stereo pair (`left`/`right`, always rendered
@@ -669,7 +702,7 @@ mod tests {
     #[test]
     fn bounded_reclaimer_does_not_delay_audio_owner_shutdown() {
         let (mut retired_tx, retired_rx) = RingBuffer::new(3);
-        let reclaimer_shutdown_tx =
+        let (reclaimer_shutdown_tx, _retired_adoption_tx) =
             spawn_retirement_reclaimer(retired_rx).expect("reclaimer should start");
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
