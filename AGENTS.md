@@ -189,7 +189,9 @@ hits all of them.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
 Removal requires a clean lane holding the merged head of exactly one pull request. Delete a leftover
-local branch after success.
+local branch after success. A superseded lane therefore cannot be removed: `pr:supersede` closes the
+old pull request unmerged, so that lane and the author lock it holds persist until the tooling gains
+a path.
 
 ## Artifacts
 
@@ -213,30 +215,41 @@ case-insensitively against **open** milestones only, so the number the tracker U
 and nothing is filed — and add the issue to the roadmap project when it is on the roadmap, leaving
 either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
 applies the template's labels and the derived priority label, and takes the milestone and the
-project, but no sanctioned script edits an issue once it exists. Read the live sets with
-`gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`;
-never from a list written down here, which drifts the day it is written.
+project. Get the metadata right there, because no sanctioned script edits an issue once it exists
+and a correction afterwards is `gh` by hand. Read the live sets with `gh label list`,
+`gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`; never from a list
+written down here, which drifts the day it is written.
 
 ## Delivery
 
-GitHub writes for agent work go through trusted `pnpm` scripts. The model never runs `gh` to write
-or `git push` at all; read-only `gh` queries are fine and are how you check live tracker state.
-Identity is the App those scripts mint, not a persona.
+GitHub writes for agent work go through trusted `pnpm` scripts. Where a script covers the action it
+is the only way to take it: identity and the delivery gates live inside those scripts, so a
+hand-rolled equivalent or a route around a gate defeats both. One exception is open, and it is
+closed by list: an issue's own state, labels, milestone, project membership, and sub-issue links may
+be corrected by hand with `gh`. Nothing else may. A pull request is not an issue, so no `gh pr`
+write ever falls inside, whatever flag or field it names. A by-hand write is attributed to the
+operator's own account rather than to a mint, and so reads as the operator acting personally; that
+is why the exception stops at issue metadata one later command puts back. `git push` has no
+exception at all: lane tooling owns every push, because a push from anywhere else destroys the
+review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
+tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                        | Command                                 |
-| --------------------------- | --------------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]`         |
-| Push; open or update the PR | `pnpm lane:publish [issue] [--relates]` |
-| Write the review bundle     | `pnpm review:prepare <pr>`              |
-| Post `review.json`          | `pnpm review:publish <pr>`              |
-| Squash-merge                | `pnpm deliver <pr>`                     |
-| Remove a spent lane         | `pnpm lane:remove <path>`               |
+| Need                        | Command                                                           |
+| --------------------------- | ----------------------------------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
+| Push; open or update the PR | `pnpm lane:publish [issue] [--relates]`                           |
+| Write the review bundle     | `pnpm review:prepare <pr>`                                        |
+| Post `review.json`          | `pnpm review:publish <pr>`                                        |
+| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
+| Squash-merge                | `pnpm deliver <pr>`                                               |
+| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>` |
+| Remove a spent lane         | `pnpm lane:remove <path>`                                         |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
-`.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for `review:prepare`
-and `review:publish`. Do not commit them. Do not load the other role's file. Author mint is
-`jcosta33-author[bot]`. Reviewer mint is `jcosta33-reviewer[bot]`. `deliver` does not mint the
-reviewer.
+`.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
+`.env.sourdaw-reviewer` for `review:prepare` and `review:publish`. Do not commit them. Do not load
+the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
+`jcosta33-reviewer[bot]`. `deliver` does not mint the reviewer.
 
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
@@ -292,14 +305,18 @@ makes it worse. Style-guide violations block; personal style does not. Leave the
 write one sentence about the code.
 
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
-refuses to merge while one is unresolved, and no sanctioned script resolves a thread — so a note
-meant not to block is exactly what blocks. Put a non-blocking observation in the approval body,
-prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
-where the thread is meant to stop the merge and a new head clears it.
+refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying
+`Done` on it — so a note meant not to block is exactly what blocks, and clearing it asserts a repair
+that never happened. Put a non-blocking observation in the approval body, prefixed `Nit:` or
+`Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review, where the thread is
+meant to stop the merge and a new head clears it.
 
-When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
-the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
-only when the current head actually addresses it. A new head needs a new review.
+When answering, push the fix first; `review:resolve` then posts a bare `Done` as the author bot and
+resolves the thread, pinned to that head. The reply body is fixed and no script writes free-form
+thread text, so a finding you judge wrong has no route on the thread: only a new head that addresses
+it clears one, which is why a finding is validated before it is ever posted. Clarify the code, not
+the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation only when the
+current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
@@ -314,12 +331,12 @@ Affected-only is the shape of that run, not a discount on it. Resource Safety al
 outer edge, and the one condition that moves it; the obligation here is everything that can fail
 because of these changed files. They are one boundary read from both sides: a check this diff can
 break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
-lane, on the head being merged — `lane:publish` refuses a lane that is not strictly ahead of
-`origin/main`, and `deliver` refuses a pull request whose base its own fetch does not match. A
-branch-local run stands in for the merge result only while the branch is current, so merging
-`origin/main` back into the lane — the routine answer when `deliver` reports a base mismatch —
-makes a new head and stales every run that preceded it. Run them again on the head that will
-actually merge.
+lane, on the head being merged. Unrelated `origin/main` movement does not by itself stale feature
+review or affected-only evidence, and a lane may publish while behind when it still has lane
+commits to push. Re-run checks and review when the feature head changes in a way that touches the
+reviewed or tested surface, when you resolve conflicts, or when the affected surfaces changed. Base
+compatibility is GitHub's ordinary mergeability gate: if the pull request is no longer `CLEAN` or
+its base branch changes, refresh the evidence on the head that will actually merge.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That

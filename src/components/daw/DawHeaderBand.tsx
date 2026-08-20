@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawHeaderBandProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
@@ -31,15 +32,14 @@ export const DawHeaderBand = ({
     }
 
     return (
-        <div
-            className={cn(
-                'daw-header-band flex min-w-0 shrink-0 items-center justify-between gap-2',
-                paddingClassName,
-                className
-            )}
+        <Row
+            justify="between"
+            gap={2}
+            shrink={false}
+            className={cn('daw-header-band min-w-0', paddingClassName, className)}
             {...props}
         >
-            <div className="flex min-w-0 items-center gap-2">
+            <Row gap={2} className="min-w-0">
                 {startSlot}
                 {title !== undefined ? (
                     <span
@@ -52,8 +52,8 @@ export const DawHeaderBand = ({
                     </span>
                 ) : null}
                 {children}
-            </div>
+            </Row>
             {actions}
-        </div>
+        </Row>
     );
 };
