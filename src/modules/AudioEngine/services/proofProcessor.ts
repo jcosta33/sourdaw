@@ -69,6 +69,45 @@ function boundedId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= MAX_RUNTIME_ID_LENGTH;
 }
 
+/** Reorderable chain modules: EQ, Dynamics, Imager, Exciter, Limiter. */
+const MODULE_COUNT = 5;
+type ModuleOrder = [number, number, number, number, number];
+
+/**
+ * True when `value` is a genuine permutation of the chain module indices —
+ * exactly `MODULE_COUNT` integer entries in `[0, MODULE_COUNT)` with no
+ * duplicate and therefore no gap.
+ *
+ * Both halves matter and for different reasons. Reading `value[0]` off a
+ * non-indexable `order` throws a `TypeError` before the call ever reaches
+ * wasm, and that throw lands in the onmessage catch, which marks the processor
+ * faulted for the rest of its life: one malformed message left the musician a
+ * dead Proof device for the session. A duplicate index needs no throw to do
+ * damage — it describes a chain with a module used twice and another dropped,
+ * which is a corrupt processing order rather than a crash.
+ *
+ * The membership test is a bitmask rather than a `Set` or an `indexOf` scan:
+ * it allocates nothing and exits on the first bad entry, which is what the
+ * render thread needs.
+ */
+function isModuleOrder(value: unknown): value is ModuleOrder {
+    if (!Array.isArray(value) || value.length !== MODULE_COUNT) {
+        return false;
+    }
+    let seen = 0;
+    for (const entry of value) {
+        if (typeof entry !== 'number' || !Number.isInteger(entry) || entry < 0 || entry >= MODULE_COUNT) {
+            return false;
+        }
+        const bit = 1 << entry;
+        if ((seen & bit) !== 0) {
+            return false;
+        }
+        seen |= bit;
+    }
+    return true;
+}
+
 type ParameterRange = readonly [min: number, max: number];
 
 const TOGGLE: ParameterRange = [0, 1];
@@ -318,7 +357,7 @@ class ProofProcessor extends AudioWorkletProcessor {
         if (this._fallbackControlGeneration !== null) {
             const target = this._fallbackControlTarget;
             const correlation = isRecord(msg.correlation) ? msg.correlation : null;
-            const order = Array.isArray(msg.order) ? msg.order : null;
+            const order = isModuleOrder(msg.order) ? msg.order : null;
             const validIdentity = (command: unknown): boolean =>
                 !!target &&
                 isRecord(msg.target) &&
@@ -352,21 +391,10 @@ class ProofProcessor extends AudioWorkletProcessor {
                 msg.command === 'reorder-modules' &&
                 only(msg, ['schemaVersion', 'command', 'target', 'order', 'correlation', 'scheduling']) &&
                 order &&
-                order.length === 5 &&
-                order.every(
-                    (value) => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 5
-                ) &&
-                order.every((value, index) => order.indexOf(value) === index) &&
                 validIdentity('reorder-modules')
             ) {
                 this._lastFallbackControlSequence = correlation!.controlSequence as number;
-                inst.reorder(
-                    order[0] as number,
-                    order[1] as number,
-                    order[2] as number,
-                    order[3] as number,
-                    order[4] as number
-                );
+                inst.reorder(order[0], order[1], order[2], order[3], order[4]);
                 return;
             }
             if (
@@ -424,12 +452,17 @@ class ProofProcessor extends AudioWorkletProcessor {
                 }
                 break;
             }
-            case 'reorder':
-                {
-                    const order = (msg as Extract<ProofMsg, { type: 'reorder' }>).order;
+            case 'reorder': {
+                // Same shape check the live namespace applies. Indexing an
+                // `order` that is missing, null or not an array threw a
+                // TypeError into the onmessage catch and faulted the device
+                // permanently.
+                const order = msg.order;
+                if (isModuleOrder(order)) {
                     inst.reorder(order[0], order[1], order[2], order[3], order[4]);
                 }
                 break;
+            }
             case 'reset_integrated':
                 inst.reset_integrated();
                 break;

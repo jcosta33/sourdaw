@@ -676,6 +676,65 @@ describe('ProofProcessor message handling & process guards', () => {
         ).toHaveLength(0);
     });
 
+    // ── The legacy `{ type: 'reorder' }` message indexed `msg.order` with no
+    // validation. A missing, null or non-indexable `order` threw a TypeError
+    // before the call reached wasm, and that throw lands in the onmessage
+    // catch — which marks the processor faulted for the rest of its life, so
+    // one malformed message left a dead Proof device for the session. A
+    // duplicate index needs no throw: it describes a chain running one module
+    // twice and dropping another. ──
+    it.each([
+        ['a missing order', undefined],
+        ['a null order', null],
+        ['a non-array order', 'abcde'],
+        ['a numeric order', 40_123],
+        ['an order that is too short', [0, 1, 2, 3]],
+        ['an order that is too long', [0, 1, 2, 3, 4, 0]],
+        ['a fractional entry', [0.5, 1, 2, 3, 4]],
+        ['a NaN entry', [Number.NaN, 1, 2, 3, 4]],
+        ['a non-number entry', ['0', 1, 2, 3, 4]],
+        ['an entry past the last module', [5, 1, 2, 3, 4]],
+        ['a negative entry', [-1, 1, 2, 3, 4]],
+        ['a duplicate entry', [0, 0, 1, 2, 3]],
+    ])('rejects a legacy reorder carrying %s and stays usable', async (_label, order) => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        send(proc, { type: 'reorder', order });
+
+        expect(proofReorderCalls).toEqual([]);
+        expect(
+            vi.mocked(proc.port.postMessage).mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error')
+        ).toHaveLength(0);
+
+        // Still taking work: a malformed message must not cost the device the
+        // rest of the session.
+        send(proc, { type: 'reorder', order: [4, 3, 2, 1, 0] });
+        expect(proofReorderCalls).toEqual([[4, 3, 2, 1, 0]]);
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -1 });
+        expect(proofParamCalls).toEqual([{ name: 'lim_ceiling', value: -1 }]);
+    });
+
+    it('rejects a live reorder-modules control whose order is not a permutation', async () => {
+        const proc = await loadProcessor();
+        initializeLiveProof(proc, 'track-1');
+
+        let sequence = 0;
+        for (const order of [undefined, null, 'abcde', [0, 1, 2, 3], [0, 0, 1, 2, 3], [5, 1, 2, 3, 4]]) {
+            sequence += 1;
+            send(proc, liveControl('reorder-modules', 'track-1', sequence, { order }));
+        }
+
+        expect(proofReorderCalls).toEqual([]);
+        expect(
+            vi.mocked(proc.port.postMessage).mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error')
+        ).toHaveLength(0);
+
+        // A genuine permutation on the same path still lands.
+        send(proc, liveControl('reorder-modules', 'track-1', sequence + 1, { order: [2, 0, 4, 1, 3] }));
+        expect(proofReorderCalls).toEqual([[2, 0, 4, 1, 3]]);
+    });
+
     // ── _passthrough mono fallback (proofProcessor.ts:113 `input[1] ?? in0`):
     // the fault path's _passthrough copies the left channel into the right output
     // when the input declares a second-channel slot that is absent (undefined). ──
