@@ -20,6 +20,7 @@ import {
     getCrdtDoc,
     createCrdtDoc,
     replaceCrdtDoc,
+    removeCrdtDoc,
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
@@ -56,6 +57,44 @@ const DOC_PREFIX_BRANCH = 'branch_';
  * other document and no other slot can invalidate a replay capability.
  */
 const ACTION_HISTORY_SLOT = 'actionHistory';
+
+/**
+ * Why sanitation gets retried at all.
+ *
+ * Sanitation failure is a property of the *moment*, not of the content.
+ * `sanitizeIncomingCrdtDocument` can only throw out of Automerge's `save`,
+ * `load` and `change`: the shape check it wraps,
+ * `sanitize_action_history_state`, contains no `throw` at all and returns a
+ * value for every hostile shape it is handed. So what fails here is a wasm
+ * allocation during a full serialize-plus-deserialize of the entire project
+ * document — a fault whose likelihood rises with project size and memory
+ * pressure, and which the same bytes can survive on a later try. Closing the
+ * channel on the first one let one allocation spike cost a peer for the rest
+ * of the session.
+ *
+ * The two bounds below cover the two shapes that has:
+ *
+ * Attempts per delivery — the merged document is already in hand, so the
+ * cheapest retry is right here. `save()` claims a buffer the size of the
+ * whole document; when that claim fails the partial work is released, so a
+ * second attempt runs against a heap the first one just freed. A third
+ * against the same bytes in the same tick buys nothing, so two.
+ */
+const SANITATION_ATTEMPTS_PER_DELIVERY = 2;
+
+/**
+ * Deliveries in a row that failed every attempt, before the channel is
+ * closed. Any delivery that sanitizes clears the streak, so faults separated
+ * by working traffic — an isolated one now and another an hour later — never
+ * add up to a close.
+ *
+ * Three, because sustained memory pressure outlives a single tick: a channel
+ * that has failed three separate merges has failed at three separate moments,
+ * which is enough to tell a spike from a document this node cannot read, and
+ * low enough that the unreadable case costs a bounded number of
+ * project-sized save/load attempts before the exchange stops.
+ */
+const MAX_SANITATION_FAILURES = 3;
 
 function haveSameHeads(left: Heads, right: Heads): boolean {
     if (left.length !== right.length) {
@@ -132,12 +171,19 @@ export type AutomergeSyncHooks = {
      */
     onSendError?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
     /**
-     * Called when one peer's sync channel for a document is quarantined
-     * because the merged document failed sanitation. The channel is
-     * knowingly divergent from that point on, so this is a session-level
-     * fault the musician has to be told about — not a log line.
+     * Called when one peer's sync channel for a document is quarantined after
+     * repeated sanitation failures. The channel is knowingly divergent from
+     * that point on and nothing short of that peer going away reopens it, so
+     * this is a session-level fault the musician has to be told about — not a
+     * log line, and not a message in a slot that routine traffic overwrites.
      */
     onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
+    /**
+     * Called when the quarantines held against a peer are lifted because the
+     * peer is really gone. Pairs with `onSyncQuarantine`: whatever the session
+     * layer put up to describe the divergence has to come down with it.
+     */
+    onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
 };
 
 /**
@@ -180,10 +226,16 @@ export class AutomergeSync {
      */
     private isApplyingRemoteSync = false;
     /**
-     * Sync channels closed because their content could not be sanitized,
-     * keyed `${peerId} ${docId}` — see `quarantineSyncChannel`.
+     * Sync channels closed after repeated sanitation failures, keyed
+     * `${peerId} ${docId}` — see `closeSyncChannel`.
      */
     private quarantinedChannels = new Set<string>();
+    /**
+     * Consecutive sanitation failures per `${peerId} ${docId}`. An entry only
+     * exists while a channel is mid-streak: any delivery that sanitizes
+     * deletes it, so faults separated by successful traffic never add up.
+     */
+    private sanitationFailures = new Map<string, number>();
 
     constructor(peerManager: PeerSyncTransport, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
@@ -226,6 +278,7 @@ export class AutomergeSync {
         this.syncStates.clear();
         this.sendQueues.clear();
         this.quarantinedChannels.clear();
+        this.sanitationFailures.clear();
     }
 
     private static channelKey(peerId: PeerId, docId: string): string {
@@ -238,7 +291,18 @@ export class AutomergeSync {
         this.sendSyncToPeer(peerId);
     }
 
-    /** Remove sync state for a disconnected peer. */
+    /**
+     * Drop the protocol state held for a peer that has stopped responding.
+     *
+     * Deliberately does **not** touch the quarantine. This runs from the
+     * immediate disconnect path, which also fires on
+     * `connectionState === 'disconnected'` — a state W3C WebRTC defines as
+     * transient and ICE recovers from without the data channel ever closing.
+     * Lifting a quarantine here meant a Wi-Fi flap replayed the whole failing
+     * exchange — a full document merge plus a project-sized save/load on the
+     * main thread — and re-armed the quarantine, on every flap. In a DAW that
+     * stall is audible. `forgetPeer` is the durable decision.
+     */
     removePeer(peerId: PeerId): void {
         this.syncStates.delete(peerId);
         for (const key of this.sendQueues.keys()) {
@@ -246,12 +310,33 @@ export class AutomergeSync {
                 this.sendQueues.delete(key);
             }
         }
-        // Reconnecting is the documented way out of a quarantine, so a
-        // disconnect must not leave the channel closed for the next session.
+    }
+
+    /**
+     * Forget everything held for a peer that is really gone.
+     *
+     * Rejoining is the way out of a quarantine, so the channel has to reopen
+     * when the peer actually leaves — but only then, which is why this is a
+     * separate entry point from `removePeer`.
+     */
+    forgetPeer(peerId: PeerId): void {
+        this.removePeer(peerId);
+
+        let lifted_any = false;
         for (const key of this.quarantinedChannels) {
             if (key.startsWith(`${peerId} `)) {
                 this.quarantinedChannels.delete(key);
+                lifted_any = true;
             }
+        }
+        for (const key of this.sanitationFailures.keys()) {
+            if (key.startsWith(`${peerId} `)) {
+                this.sanitationFailures.delete(key);
+            }
+        }
+
+        if (lifted_any) {
+            this.hooks.onSyncQuarantineLifted?.({ peerId });
         }
     }
 
@@ -322,20 +407,37 @@ export class AutomergeSync {
             return;
         }
 
-        let sanitized_doc: Doc<unknown>;
-        try {
-            sanitized_doc = sanitizeIncomingCrdtDocument(newDoc);
-        } catch (error) {
-            this.quarantineSyncChannel({
+        // A failed `sanitizeIncomingCrdtDocument` leaves `newDoc` untouched —
+        // it throws out of `save`, out of `load`, or out of a `change` against
+        // the freshly loaded copy — so the merged document in hand is still
+        // the right input for a second attempt.
+        let sanitized_doc: Doc<unknown> | null = null;
+        let sanitation_error: unknown = null;
+        for (let attempt = 0; attempt < SANITATION_ATTEMPTS_PER_DELIVERY; attempt++) {
+            try {
+                sanitized_doc = sanitizeIncomingCrdtDocument(newDoc);
+                break;
+            } catch (error) {
+                sanitation_error = error;
+            }
+        }
+
+        if (sanitized_doc === null) {
+            this.handleSanitationFailure({
                 peerId,
                 docId,
                 peerStates,
                 mergedDoc: newDoc,
                 beforeHeads: before_heads,
-                error,
+                error: sanitation_error,
             });
             return;
         }
+
+        // A delivery that sanitizes ends the streak. The bound exists for
+        // isolated allocation faults, so faults separated by working traffic
+        // must never accumulate into a close.
+        this.sanitationFailures.delete(AutomergeSync.channelKey(peerId, docId));
 
         peerStates.set(docId, newSyncState);
         this.syncStates.set(peerId, peerStates);
@@ -375,8 +477,7 @@ export class AutomergeSync {
     }
 
     /**
-     * Quarantine one (peer, document) sync channel whose merged content
-     * failed sanitation.
+     * Handle a merged document that failed sanitation.
      *
      * By the time sanitation runs, `receiveSyncMessage` has already merged
      * the peer's changes into the document's underlying handle and marked the
@@ -384,32 +485,27 @@ export class AutomergeSync {
      * rejection. It leaves the repository holding an outdated document, and
      * every later sync for that document, from any peer, then dies in the
      * malformed-message catch with `RangeError: Attempting to change an
-     * outdated document`. One unsanitizable message stops that document
-     * syncing for the rest of the session, silently.
+     * outdated document`. One failed message stops that document syncing for
+     * the rest of the session, silently.
      *
-     * Three things therefore have to happen together:
+     * So every failed delivery, retried or final, does two things:
      *
-     *  - Roll the document back to `beforeHeads`. `clone(view(...))` rebuilds
-     *    a writable document at the pre-sync state, so the unsanitizable
-     *    content never reaches project truth, the store projections or
+     *  - Roll the document back to its pre-sync state, so the content that
+     *    failed never reaches project truth, the store projections or
      *    persistence, and the repository stops holding an outdated handle.
-     *  - Close the channel. Automerge's sync protocol has no way to say "I
-     *    refuse these changes": any truthful reply advertises heads that
-     *    still lack them, which invites the peer to send them again. Since
-     *    sanitation failure is a property of the content and not of the
-     *    moment, a resend — or a reset for a full resync — re-delivers the
-     *    same bytes and fails identically. Staying in the exchange can only
-     *    repeat the failure, so this peer and this document stop exchanging
-     *    in both directions.
-     *  - Report it. The channel is knowingly divergent from here on, and a
-     *    divergence nobody is told about is the outcome this is meant to
-     *    prevent — hence `onSyncQuarantine` rather than a log line.
+     *  - Drop the channel's SyncState. It describes an exchange whose result
+     *    was thrown away, so keeping it would leave this node claiming to
+     *    hold changes it discarded. The reply generated afterwards
+     *    re-advertises the rolled-back heads, which is what tells the peer
+     *    those changes are still owed.
      *
-     * The quarantine is per (peer, document): the peer keeps syncing every
-     * other document, and every other peer keeps syncing this one.
-     * `removePeer` clears it, so reconnecting is the recovery path.
+     * Only once {@link MAX_SANITATION_FAILURES} deliveries in a row have
+     * failed every attempt is the channel closed. A rollback that itself
+     * fails skips the count and closes immediately: the repository is still
+     * holding the outdated handle, nothing here can repair that, and it must
+     * not pass as a clean rejection.
      */
-    private quarantineSyncChannel({
+    private handleSanitationFailure({
         peerId,
         docId,
         peerStates,
@@ -424,32 +520,125 @@ export class AutomergeSync {
         beforeHeads: Heads;
         error: unknown;
     }): void {
-        logger.warn('[AutomergeSync] Remote document sanitation failed; quarantining peer sync', peerId, docId, error);
+        logger.warn('[AutomergeSync] Remote document sanitation failed', peerId, docId, error);
 
-        this.quarantinedChannels.add(AutomergeSync.channelKey(peerId, docId));
-        // The SyncState describes an exchange that no longer happens.
         peerStates.delete(docId);
         this.syncStates.set(peerId, peerStates);
 
+        const rollback = this.rollBackSyncedDocument({ docId, mergedDoc, beforeHeads });
+        if (rollback.status === 'failed') {
+            logger.warn('[AutomergeSync] Could not roll back a failed document', peerId, docId, rollback.error);
+            this.closeSyncChannel({ peerId, docId, error: rollback.error });
+            return;
+        }
+
+        const key = AutomergeSync.channelKey(peerId, docId);
+        const failures = (this.sanitationFailures.get(key) ?? 0) + 1;
+        this.sanitationFailures.set(key, failures);
+
+        if (failures >= MAX_SANITATION_FAILURES) {
+            this.closeSyncChannel({ peerId, docId, error });
+            return;
+        }
+
+        // Tell the peer where this node actually stands. Without it the peer
+        // is left believing the discarded changes landed, and nothing in the
+        // protocol would ever offer them again.
+        this.queueDocSyncToPeer({ peerId, docId });
+    }
+
+    /**
+     * Put the document back the way it was before this sync merged into it.
+     *
+     * A document with no pre-sync heads held nothing, and the honest
+     * restoration of nothing is *absence*, not an empty document: this sync
+     * path mints a document for a known-but-absent id (a branch or metadata
+     * doc a peer is ahead of us on), and `clone(view(mergedDoc, []))` would
+     * install a real empty one under that id. That document shows up in
+     * `getCrdtDocIds()`, is swept out to every other peer, and is written to
+     * IndexedDB and the saved bundle by the next persist — so a branch whose
+     * content document fails on its first message would exist in the branch
+     * list, open empty, and be saved that way.
+     *
+     * The root document is excluded because it is structural: this node
+     * always holds one, so its pre-sync state is the empty document it had,
+     * never absence.
+     */
+    private rollBackSyncedDocument({
+        docId,
+        mergedDoc,
+        beforeHeads,
+    }: {
+        docId: string;
+        mergedDoc: Doc<unknown>;
+        beforeHeads: Heads;
+    }): { status: 'rolled-back' } | { status: 'failed'; error: unknown } {
+        const restore_to_absence = beforeHeads.length === 0 && docId !== DOC_PREFIX_ROOT;
+
         try {
-            const restored_doc = clone(view(mergedDoc, beforeHeads));
+            const restored_doc = restore_to_absence ? null : clone(view(mergedDoc, beforeHeads));
             // Same guard as a normal apply: installing the rollback must not
             // echo a sync back to every peer.
             this.isApplyingRemoteSync = true;
             try {
-                replaceCrdtDoc({ id: docId, doc: restored_doc });
+                if (restored_doc === null) {
+                    removeCrdtDoc(docId);
+                } else {
+                    replaceCrdtDoc({ id: docId, doc: restored_doc });
+                }
             } finally {
                 this.isApplyingRemoteSync = false;
             }
+            if (restored_doc === null) {
+                this.forgetDocumentSyncState(docId);
+            }
+            return { status: 'rolled-back' };
         } catch (rollbackError) {
-            // The document cannot be rebuilt at its pre-sync heads, so the
-            // repository is still holding the outdated handle. Nothing here
-            // can repair that, and it must not pass as a clean rejection.
-            logger.warn('[AutomergeSync] Could not roll back a quarantined document', peerId, docId, rollbackError);
-            this.hooks.onSyncQuarantine?.({ peerId, docId, error: rollbackError });
-            return;
+            return { status: 'failed', error: rollbackError };
         }
+    }
 
+    /**
+     * Drop every peer's protocol state for a document that no longer exists.
+     *
+     * A SyncState asserts that both sides already agreed on changes; keeping
+     * one for an id that has been rolled back to absence would let a later
+     * re-creation of that id skip exactly the changes it needs to be filled
+     * with. A queued generation for it would run against the same stale
+     * agreement.
+     */
+    private forgetDocumentSyncState(docId: string): void {
+        for (const peerStates of this.syncStates.values()) {
+            peerStates.delete(docId);
+        }
+        for (const key of this.sendQueues.keys()) {
+            if (key.endsWith(` ${docId}`)) {
+                this.sendQueues.delete(key);
+            }
+        }
+    }
+
+    /**
+     * Close one (peer, document) sync channel for good.
+     *
+     * Automerge's sync protocol has no way to say "I refuse these changes":
+     * any truthful reply advertises heads that still lack them, which invites
+     * the peer to send them again. Once the bound is spent, staying in the
+     * exchange can only repeat the failure, so this peer and this document
+     * stop exchanging in both directions — and the divergence is reported,
+     * because a divergence nobody is told about is the outcome this whole
+     * path exists to prevent.
+     *
+     * The quarantine is per (peer, document): the peer keeps syncing every
+     * other document, and every other peer keeps syncing this one. Only
+     * `forgetPeer` lifts it, so the peer really going away and rejoining is
+     * the recovery path.
+     */
+    private closeSyncChannel({ peerId, docId, error }: { peerId: PeerId; docId: string; error: unknown }): void {
+        const key = AutomergeSync.channelKey(peerId, docId);
+        logger.warn('[AutomergeSync] Quarantining a peer sync channel', peerId, docId, error);
+        this.quarantinedChannels.add(key);
+        this.sanitationFailures.delete(key);
         this.hooks.onSyncQuarantine?.({ peerId, docId, error });
     }
 
@@ -509,6 +698,14 @@ export class AutomergeSync {
 
     /** Generate and send a sync message for one document to one peer. */
     private async sendDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): Promise<void> {
+        // Re-checked here, not only at queue time: a generation queued while
+        // the channel was open runs a turn later, and the channel can close in
+        // between — the last failed delivery queues a reply and the next one
+        // quarantines. A closed channel must not emit that reply.
+        if (this.quarantinedChannels.has(AutomergeSync.channelKey(peerId, docId))) {
+            return;
+        }
+
         const doc = getCrdtDoc(docId);
         if (!doc) {
             return;

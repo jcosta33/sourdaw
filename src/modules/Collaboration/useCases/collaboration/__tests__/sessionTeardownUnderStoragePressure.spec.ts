@@ -72,6 +72,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             peers: [],
             connectionStatus: 'connected',
             error: null,
+            quarantinedPeerIds: [],
         });
         branchStore.set({ branches: [mainBranch, localOnlyBranch], activeBranchId: MAIN_BRANCH_ID });
 

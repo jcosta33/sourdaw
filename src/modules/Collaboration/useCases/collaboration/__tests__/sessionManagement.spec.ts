@@ -46,11 +46,13 @@ const automergeSyncMock = vi.hoisted(() => ({
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
             onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
+            onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
         };
         start: ReturnType<typeof vi.fn>;
         stop: ReturnType<typeof vi.fn>;
         addPeer: ReturnType<typeof vi.fn>;
         removePeer: ReturnType<typeof vi.fn>;
+        forgetPeer: ReturnType<typeof vi.fn>;
         handlePeerMessage: ReturnType<typeof vi.fn>;
     }[],
 }));
@@ -136,6 +138,7 @@ vi.mock('../../automergeSync', () => ({
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
             onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
+            onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
         }
     ) {
         const instance = {
@@ -144,6 +147,7 @@ vi.mock('../../automergeSync', () => ({
             stop: vi.fn(),
             addPeer: vi.fn(),
             removePeer: vi.fn(),
+            forgetPeer: vi.fn(),
             handlePeerMessage: vi.fn(),
         };
         automergeSyncMock.instances.push(instance);
@@ -232,6 +236,7 @@ function makeState(overrides: Partial<CollaborationState> = {}): CollaborationSt
         peers: [],
         connectionStatus: 'disconnected',
         error: null,
+        quarantinedPeerIds: [],
         ...overrides,
     };
 }
@@ -441,7 +446,13 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.error).toBe('Failed to save received changes locally.');
         });
 
-        it('surfaces a store error naming rejoin when a peer sync channel is quarantined', () => {
+        /**
+         * Turns red on: `setPeerSyncQuarantined(peerId, true)` in the
+         * `onSyncQuarantine` hook. Routing this through
+         * `setCollaborationError` instead puts it in the single `error` slot,
+         * which every transient writer overwrites.
+         */
+        it('records a quarantined peer in durable state rather than the transient error slot', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState());
 
@@ -451,11 +462,32 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 error: new Error('sanitation failed'),
             });
 
-            // The quarantine does not clear itself, so the message has to name
-            // rejoining as the way out rather than reading as transient.
-            expect(collaborationStore.value?.error).toBe(
-                'Stopped accepting changes from a peer — their project data could not be read. Have them rejoin the session.'
-            );
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+        });
+
+        it('lists a peer once however many of its documents are quarantined', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState());
+
+            const { onSyncQuarantine } = latestAutomergeSync().hooks;
+            onSyncQuarantine?.({ peerId: 'peer-2', docId: 'root', error: new Error('x') });
+            onSyncQuarantine?.({ peerId: 'peer-2', docId: 'branch_a', error: new Error('y') });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+        });
+
+        /**
+         * Turns red on: `setPeerSyncQuarantined(peerId, false)` in the
+         * `onSyncQuarantineLifted` hook. The row has to come down with the
+         * quarantine, or it outlives the peer it describes.
+         */
+        it('retires the durable record when the quarantine is lifted', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ quarantinedPeerIds: ['peer-2'] }));
+
+            latestAutomergeSync().hooks.onSyncQuarantineLifted?.({ peerId: 'peer-2' });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual([]);
         });
     });
 
@@ -834,6 +866,41 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             vi.advanceTimersByTime(250);
             expect(latestPeerManager().broadcastPresence.mock.calls.length).toBeGreaterThan(callsWhileEnded);
+        });
+
+        /**
+         * Turns red on: `handlePeerDisconnected` calling
+         * `automergeSync.forgetPeer` (or `removePeer` clearing quarantines
+         * again) on the immediate path. `onDisconnected` also fires on the
+         * transient ICE `disconnected` state, so lifting a quarantine there
+         * replays the failing exchange on every Wi-Fi flap.
+         */
+        it('does not forget a peer on the immediate, transient disconnect path', () => {
+            vi.useFakeTimers();
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
+
+            latestPeerManager().callbacks.onDisconnected('peer-1');
+
+            expect(latestAutomergeSync().removePeer).toHaveBeenCalledWith('peer-1');
+            expect(latestAutomergeSync().forgetPeer).not.toHaveBeenCalled();
+        });
+
+        /**
+         * Turns red on: `sessionState.automergeSync?.forgetPeer(peerId)` in
+         * the module-level `removePeer`. The cleanup timer is the only place
+         * that decides a peer really went away, so it is the only thing
+         * allowed to reopen a channel closed against it.
+         */
+        it('forgets the peer once the durable cleanup timer elapses', () => {
+            vi.useFakeTimers();
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
+
+            latestPeerManager().callbacks.onDisconnected('peer-1');
+            vi.advanceTimersByTime(15_000);
+
+            expect(latestAutomergeSync().forgetPeer).toHaveBeenCalledWith('peer-1');
         });
 
         it('does not declare the session ended when a non-host peer disconnects', () => {
@@ -1215,6 +1282,44 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             latestAssetTransfer().options.onAssetAvailable('hash-1');
             await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+        });
+
+        /**
+         * Turns red on: `quarantinedPeerIds` being a field of its own rather
+         * than a message written into `error`.
+         *
+         * `resolveAssetForClips` ends with `clearCollaborationFailure()`, which
+         * nulls `error` on any successful asset delivery — any peer, any hash.
+         * A closed sync channel is the one condition here that never resolves
+         * itself, so an unrelated audio file arriving must not erase it.
+         */
+        it('leaves a live quarantine visible after an unrelated asset resolves', async () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+            latestAutomergeSync().hooks.onSyncQuarantine?.({
+                peerId: 'peer-2',
+                docId: 'root',
+                error: new Error('sanitation failed'),
+            });
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+
+            const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };
+            latestAssetTransfer().getAsset.mockReturnValue(blob);
+            audioEngineMock.getAudioContext.mockReturnValue({
+                decodeAudioData: vi.fn().mockResolvedValue(makeAudioBuffer()),
+            });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(null);
+            trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
+
+            latestAssetTransfer().options.onAssetAvailable('hash-1');
+            await vi.waitFor(() =>
+                expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledWith({
+                    bufferId: 'buf-1',
+                    buffer: expect.anything(),
+                })
+            );
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
         });
 
         it('skips a clip whose asset hash does not match', async () => {
