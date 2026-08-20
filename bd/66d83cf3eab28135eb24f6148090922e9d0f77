@@ -1,0 +1,45 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_b3e68b902b6b93::t_c2dfe884047f3f 33-36
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_b3e68b902b6b93::t_e9ad36247987dd 65-68
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_b3e68b902b6b93::t_0504098413981e 112-115,118-121
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_b3e68b902b6b93::t_7ce83f4bcf19ee 56
+src/modules/AudioEngine/engine/__tests__/NativePluginBridgeNode.spec.ts
+  s_b3e68b902b6b93::t_0e0f4a363ffbb9 11
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_b3e68b902b6b93::t_9cd2eeee6ec57c 68-71
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_b3e68b902b6b93::t_40e655107ae18c 26-35
+  s_b3e68b902b6b93::t_5ae9144e15fb43 48-50
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_b3e68b902b6b93::t_2419ced78755d2 23
+src/app/__tests__/bootstrap.spec.ts
+  s_b3e68b902b6b93::t_5a68a1f65c7d8c 225
+  s_b3e68b902b6b93::t_9a12a988e7774e 165-167
+  s_b3e68b902b6b93::t_323bb54eae898d 142
+  s_b3e68b902b6b93::t_43db284f8a2e7b 237-240
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_b3e68b902b6b93::t_4b31ea71a2fde2 47
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_b3e68b902b6b93::t_65c940d0d39fd9 135
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_b3e68b902b6b93::t_ccb1680c0219c6 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "bd66d83cf3eab28135eb24f6148090922e9d0f77",
+  "prompts": {},
+  "sessions": {
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
