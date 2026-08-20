@@ -8,7 +8,7 @@ description = "WASM-compiled audio file decoder (wraps daw-io symphonia decoder 
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wasm-bindgen = "=0.2.126"
+wasm-bindgen = "=0.2.127"
 daw-io = { path = "../daw-io" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
