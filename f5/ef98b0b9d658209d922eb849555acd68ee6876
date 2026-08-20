@@ -1,0 +1,23 @@
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_e469ec4fed6ab8::t_cdf3213cab4ae8 279-282
+  s_e469ec4fed6ab8::t_836693135f3f41 230,261,266-278,299,339,381
+  s_e469ec4fed6ab8::t_e6ba86c6594a1f 283
+scripts/githubAppIdentity.ts
+  s_e469ec4fed6ab8::t_836693135f3f41 26,46,411-414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f5ef98b0b9d658209d922eb849555acd68ee6876",
+  "prompts": {},
+  "sessions": {
+    "s_e469ec4fed6ab8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01f52-7250-7a20-b14c-11aadfd43abe",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
