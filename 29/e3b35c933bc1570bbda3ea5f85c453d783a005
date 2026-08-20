@@ -1,0 +1,19 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_24b1bdbc3c31ad::t_ad348b126f290c 101-109,320-324,491-494,542,615-657,663-675,686-690,749-752,756-758,798-804
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "29e3b35c933bc1570bbda3ea5f85c453d783a005",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
