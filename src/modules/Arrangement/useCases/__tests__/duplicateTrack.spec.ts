@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createEventBus } from '#/infra/events/createEventBus';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track, type TrackKind } from '../../models/Track';
 import { duplicateTrack } from '../duplicateTrack';
@@ -53,6 +54,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({ duplicateMidiClipData: mocks.duplica
 vi.mock('#/modules/Automation/useCases', () => ({
     duplicateClipAutomationBatch: mocks.duplicateClipAutomationBatch,
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 function createClip(input: Partial<Clip> & Pick<Clip, 'id' | 'type'>): Clip {
     return {
@@ -179,6 +181,33 @@ describe('duplicateTrack', () => {
 
         duplicateTrack('master');
 
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('rejects tracks containing a withheld device before mutation', () => {
+        const source = createTrack({
+            id: 'track-source',
+            devices: [
+                {
+                    id: 'grand-boule-source',
+                    name: 'Grand Boule',
+                    type: 'grand-boule',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ],
+        });
+        mocks.getTrackById.mockReturnValue(source);
+
+        expect(duplicateTrack(source.id)).toBeNull();
+
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Track contains withheld device "grand-boule" and was not duplicated.',
+            'warning'
+        );
+        expect(mocks.getTrackState).not.toHaveBeenCalled();
         expect(mocks.addTrack).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
