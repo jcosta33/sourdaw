@@ -1,0 +1,22 @@
+tests/e2e/routingGraphTestId.spec.ts
+  s_24b1bdbc3c31ad::t_918cd810603a47 1,5-18,21-25,39,42-43,46-51,62-64,68,71,73-75,78
+  s_24b1bdbc3c31ad::t_d18334070a9366 27-32,34,54-57,60-61,65,69-70,77
+  s_24b1bdbc3c31ad::t_623ccccd7a115e 72
+  s_24b1bdbc3c31ad::t_96e6fa7fddbdf7 76,79-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9ac14035c63cf19603febad1af3662132473fdb8",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
