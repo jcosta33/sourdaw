@@ -52,13 +52,20 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 
 ## Constraints
 
-- Plugin hosting is CLAP only — VST3/AU are neither advertised nor loadable. Ableton Link is an
-  unsupported capability surface; no native Link library is linked. MTS-ESP host support is absent;
-  add no registration or publication until its ownership and distribution contracts are settled.
+- Plugin hosting is CLAP only. Every other format is recognised and refused by name, with the reason
+  ([ADR 0031](../../.agents/decisions/0031-native-plugin-format-strategy.md)); none is advertised or
+  loadable. Ableton Link is an unsupported capability surface; no native Link library is linked.
+  MTS-ESP host support is absent; add no registration or publication until its ownership and
+  distribution contracts are settled.
 - Plugin scanning is policy-gated (`host/plugin_scan_policy.rs`): absolute paths only, symlinks
-  rejected. CLAP descriptor extraction runs only in the bounded `plugin_scan_worker` child-process
-  mode; the application process may enumerate authorized candidates but must never load their entry
-  points during discovery.
+  rejected. Every read that touches a plugin's own code — its descriptor, its parameter contract, its
+  capability extensions — runs only in the bounded `plugin_scan_worker` child-process mode; the
+  application process may enumerate authorized candidates but must never load their entry points
+  during discovery. A new question for a plugin goes to the instance that worker already has, never
+  to another process.
+- A scanned capability the worker did not query is published as a default carrying
+  `capability_metadata_reason`. Never drop that reason while keeping the value: a default without it
+  reads downstream as a measurement.
 - Wire payload types are hand-maintained on both sides — no binding generator runs. A body's
   signature change must update the hand-written mirror types in the owning frontend module's
   `repositories/` bridge in the same change.
