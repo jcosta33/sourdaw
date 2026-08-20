@@ -233,17 +233,52 @@ describe('transformAutomationPoints — reverse', () => {
         // toward its next neighbour. The original [0,2] segment is 'bezier',
         // anchored on the point at beat 0. After reversing, that physical span
         // sits between new beats 2 and 4 (mirror(0)=4, mirror(2)=2) — its
-        // shape must move to the new segment's earlier point, beat 2.
+        // shape must move to the new segment's earlier point, beat 2. The
+        // bezier controls also swap and mirror their x (time swaps, value
+        // does not) — see the 'mirrors and swaps bezier control points' spec
+        // below for that transform in isolation.
+        // x's are dyadic fractions (0.25/0.75) so `1 - x` round-trips exactly
+        // in floating point — the assertion is about the swap/mirror, not
+        // about float precision.
         const lane = makeLane([
-            { beat: 0, value: 0, curve: 'bezier', tension: 0, cp1: { x: 0.1, y: 0.1 }, cp2: { x: 0.9, y: 0.9 } },
+            { beat: 0, value: 0, curve: 'bezier', tension: 0, cp1: { x: 0.25, y: 0.1 }, cp2: { x: 0.75, y: 0.9 } },
             { beat: 2, value: 0.5, curve: 'linear' },
             { beat: 4, value: 1, curve: 'step' },
         ]);
         const result = transformAutomationPoints(lane, { type: 'reverse' });
         const atBeat2 = result.find((p) => p.beat === 2);
         expect(atBeat2?.curve).toBe('bezier');
-        expect(atBeat2?.cp1).toEqual({ x: 0.1, y: 0.1 });
-        expect(atBeat2?.cp2).toEqual({ x: 0.9, y: 0.9 });
+        expect(atBeat2?.cp1).toEqual({ x: 0.25, y: 0.9 });
+        expect(atBeat2?.cp2).toEqual({ x: 0.75, y: 0.1 });
+    });
+
+    it('mirrors and swaps bezier control points when the curve data moves to its new segment anchor', () => {
+        // A cubic from (0,v0) to (1,v1) with controls C1,C2, traversed
+        // backwards, is the cubic from (0,v1) to (1,v0) with controls
+        // (1-C2.x, C2.y) and (1-C1.x, C1.y): time flips (x mirrors, the two
+        // controls swap slots), value does not (y stays put). x's (0.25/0.75,
+        // dyadic so `1 - x` is exact in floating point) and y's (0.2/0.8) are
+        // deliberately different so a bug that only swaps, only mirrors, or
+        // does neither is caught — a round trip alone would not catch this,
+        // since a double swap-and-mirror is an identity just like a double
+        // no-op is.
+        const lane = makeLane([
+            { beat: 0, value: 0, curve: 'bezier', cp1: { x: 0.25, y: 0.2 }, cp2: { x: 0.75, y: 0.8 } },
+            { beat: 2, value: 1, curve: 'linear' },
+        ]);
+        const once = transformAutomationPoints(lane, { type: 'reverse' });
+        // mirror(0)=2, mirror(2)=0 — the bezier's original left point (beat 0)
+        // is now the terminal point; the new anchor (new beat 0) is the old
+        // point at beat 2, which inherits the transformed bezier data.
+        const anchor = once.find((p) => p.beat === 0);
+        expect(anchor?.curve).toBe('bezier');
+        expect(anchor?.cp1).toEqual({ x: 0.25, y: 0.8 });
+        expect(anchor?.cp2).toEqual({ x: 0.75, y: 0.2 });
+
+        const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'reverse' });
+        const restoredAnchor = twice.find((p) => p.beat === 0);
+        expect(restoredAnchor?.cp1).toEqual({ x: 0.25, y: 0.2 });
+        expect(restoredAnchor?.cp2).toEqual({ x: 0.75, y: 0.8 });
     });
 
     it('double-reverse returns the exact original points, including curve fields', () => {

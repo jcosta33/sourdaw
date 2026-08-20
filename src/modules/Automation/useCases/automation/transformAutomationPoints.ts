@@ -40,6 +40,22 @@ function stretchPoints(lane: AutomationLane, factor: number, anchorBeat?: number
 }
 
 /**
+ * Mirror a single bezier control point across the segment's time axis. `x`
+ * (see `evaluateAutomationCurve`'s `cx1`/`cx2`) is a fraction of the span, 0
+ * at the segment's start and 1 at its end; traversing the span backwards
+ * flips it to `1 - x`. `y` (`cy1`/`cy2`) is an absolute value, not a time
+ * position, so reversing — which mirrors *time*, not value — leaves it
+ * untouched. `undefined` (the "use the endpoint value" default) passes
+ * through unchanged.
+ */
+function mirrorBezierTimeAxis(point: { x: number; y: number } | undefined): { x: number; y: number } | undefined {
+    if (!point) {
+        return undefined;
+    }
+    return { x: 1 - point.x, y: point.y };
+}
+
+/**
  * `evaluateAutomationCurve` (src/utils/automationCurve.ts) reads
  * `curve`/`tension`/`stairSteps`/`cp1`/`cp2` off `firstPoint` — the
  * earlier-beat point of a pair — to shape the segment toward its *next*
@@ -60,6 +76,26 @@ function stretchPoints(lane: AutomationLane, factor: number, anchorBeat?: number
  * whichever point becomes the new terminal point (the old first point), which
  * is why the very first point in `curveSources` order takes the *last*
  * point's fields unchanged rather than folding into the same formula.
+ *
+ * The permutation above is exact for the *data* — every field lands back on
+ * its original point after a second reverse — but data landing on the right
+ * point is not the same as the audible shape being a true time-reversal.
+ * `linear`, `s-curve`, and `smooth` (Catmull-Rom) satisfy `f(1-t) = 1-f(t)`,
+ * so simply relocating the unmodified fields already reproduces the true
+ * reversed shape. `bezier` is made exact here by transforming its data: a
+ * cubic from `(0,v0)` to `(1,v1)` with controls `C1`,`C2`, traversed
+ * backwards, is the cubic from `(0,v1)` to `(1,v0)` with controls
+ * `(1-C2.x, C2.y)` and `(1-C1.x, C1.y)` — the two controls swap *and* their
+ * `x` mirrors, `y` stays put (see `mirrorBezierTimeAxis`). `exponential`,
+ * `step`, and `stairs` are **not** time-symmetric and this permutation only
+ * approximates them: a reversed exponential ramp is shaped logarithmically,
+ * and `AutomationCurveType` has no `logarithmic` member to hold that; a
+ * reversed `step` (or `stairs`) should jump-then-hold (step-then-ramp) at the
+ * *start* of the segment, not the end, which the same enum member cannot
+ * express either. This is still strictly better than the pre-fix behaviour,
+ * where the curve fields did not move with their span at all and an
+ * unrelated segment inherited each shape — it is a known, accepted
+ * approximation for these three curve types, not a regression.
  */
 function reversePoints(lane: AutomationLane): AutomationPoint[] {
     const points = lane.points;
@@ -98,8 +134,8 @@ function reversePoints(lane: AutomationLane): AutomationPoint[] {
                 curve: curveSource.curve,
                 tension: curveSource.tension,
                 stairSteps: curveSource.stairSteps,
-                cp1: curveSource.cp1 ? { ...curveSource.cp1 } : undefined,
-                cp2: curveSource.cp2 ? { ...curveSource.cp2 } : undefined,
+                cp1: mirrorBezierTimeAxis(curveSource.cp2),
+                cp2: mirrorBezierTimeAxis(curveSource.cp1),
             };
         })
         .sort((alpha, beta) => alpha.beat - beta.beat);
