@@ -709,8 +709,11 @@ describe('AutomergeSync', () => {
     /**
      * A closed channel is closed both ways — we stop generating for it too.
      *
-     * Turns red on: the `if (this.quarantinedChannels.has(key)) { return; }`
-     * guard at the top of `queueDocSyncToPeer`.
+     * Turns red only when *both* quarantine guards on the outbound path are
+     * gone: the one at the top of `queueDocSyncToPeer` and the re-check at the
+     * top of `sendDocSyncToPeer`. Either alone keeps this message off the wire,
+     * so this asserts the outcome, not which guard produced it. The test below
+     * separates them.
      */
     it('generates no further sync for a quarantined channel', async () => {
         const exchange = setupLiveExchange();
@@ -741,6 +744,41 @@ describe('AutomergeSync', () => {
         await exchange.notifyLocalChange();
 
         expect(exchange.peerManager.sendCrdtSync).toHaveBeenCalled();
+    });
+
+    /**
+     * Turns red on: the `if (this.quarantinedChannels.has(key)) { return; }`
+     * guard at the top of `queueDocSyncToPeer`, and on that guard alone.
+     *
+     * `queueDocSyncToPeer` runs synchronously and the generation it schedules
+     * runs a turn later, so a quarantined channel that still gets a queue entry
+     * is only stopped by the re-check inside `sendDocSyncToPeer` — which masks
+     * a missing queue-time guard for as long as the quarantine holds. The one
+     * window it cannot cover is a quarantine lifted between the two: `addPeer`
+     * queues here while the channel is closed, and `forgetPeer` then reopens it
+     * before the queued turn arrives. Whatever the queue is holding at that
+     * point reaches the transport, so the transport seeing nothing is proof
+     * nothing was ever queued.
+     */
+    it('queues no generation for a quarantined channel, so lifting the quarantine flushes nothing to the peer', async () => {
+        const exchange = setupLiveExchange();
+        await exchange.connect();
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
+            throw new Error('sanitation failed');
+        });
+        await driveToQuarantine(exchange);
+        expect(exchange.onSyncQuarantine).toHaveBeenCalledTimes(1);
+
+        exchange.peerManager.sendCrdtSync.mockClear();
+        // An ICE flap reconnects the peer while the channel is still closed.
+        exchange.sync.addPeer('editor');
+        // ...and the peer then really goes away, which lifts the quarantine,
+        // before the turn a queued generation would have run on.
+        exchange.sync.forgetPeer('editor');
+        await settleSends();
+
+        expect(exchange.onSyncQuarantineLifted).toHaveBeenCalledWith({ peerId: 'editor' });
+        expect(exchange.peerManager.sendCrdtSync).not.toHaveBeenCalled();
     });
 
     /**

@@ -676,7 +676,7 @@ export class AutomergeSync {
      * committing the two results out of order.
      */
     private queueDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): void {
-        const key = `${peerId} ${docId}`;
+        const key = AutomergeSync.channelKey(peerId, docId);
         // Nothing is generated for a closed channel: this peer and this
         // document can no longer converge, so continuing to send is waste.
         if (this.quarantinedChannels.has(key)) {
