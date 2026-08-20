@@ -1,0 +1,21 @@
+docs/manual/devices/08-crust.md
+  s_8ddfabd1166b5d::t_52a1c2b12256c9 1-217
+docs/manual/README.md
+  s_8ddfabd1166b5d::t_66ae7f69d52096 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "882791d52b433746ebc732473b993693101632ea",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
