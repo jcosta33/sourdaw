@@ -6,6 +6,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkLevainProvenance } from './checkLevainProvenance.ts';
+
 export const RETENTION_CLASSES = [
     'keep',
     'keep-with-obligations',
@@ -563,8 +565,21 @@ export function checkReleaseInventory(root: string): void {
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
+    const levain = checkLevainProvenance(root);
+    const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
+    const levainContract = {
+        sources: [levain.source.repository],
+        revisions: [levain.source.revision],
+        digests: [`git-tree:${levain.source.tree}`, 'file-level:public/samples/levain/provenance.tsv'],
+        licenses: [levain.source.license, 'pending:OS-10-project-license'],
+    };
+    for (const [field, expected] of Object.entries(levainContract)) {
+        if (JSON.stringify(levainSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
+            throw new Error(`Levain release inventory ${field} does not match provenance`);
+        }
+    }
     process.stdout.write(
-        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references\n`
+        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
 }
 

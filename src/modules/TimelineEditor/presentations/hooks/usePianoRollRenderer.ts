@@ -380,7 +380,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                         cId,
                         openedIds,
                         selIds,
-                        view
+                        view,
+                        deps.dragPreviewRef.current
                     );
                 }
                 drawActiveNotes(
@@ -664,7 +665,8 @@ function drawOpenedClipNotes(
     primaryClipId: string,
     openedClipIds: string[],
     selectedNoteIds: Set<string>,
-    view: ViewportRange
+    view: ViewportRange,
+    dragPreview: DragPreview = null
 ): void {
     for (const openedId of openedClipIds) {
         if (openedId === primaryClipId) {
@@ -684,16 +686,33 @@ function drawOpenedClipNotes(
             }
         }
         for (const note of openedNotes) {
-            const row = pitchToRow.get(note.pitch) ?? -1;
+            let displayPitch = note.pitch;
+            let displayStartBeat = note.startBeat;
+            let displayDuration = note.duration;
+
+            if (dragPreview && dragPreview.noteIds.has(note.id)) {
+                if (dragPreview.beatOverride?.has(note.id)) {
+                    const override = dragPreview.beatOverride.get(note.id)!;
+                    displayStartBeat = override.beat;
+                    displayDuration = override.duration;
+                } else if (dragPreview.durationOverride?.has(note.id)) {
+                    displayDuration = dragPreview.durationOverride.get(note.id)!;
+                } else {
+                    displayStartBeat = Math.max(0, note.startBeat + dragPreview.beatDelta);
+                    displayPitch = Math.max(0, Math.min(127, note.pitch + dragPreview.pitchDelta));
+                }
+            }
+
+            const row = pitchToRow.get(displayPitch) ?? -1;
             if (row === -1) {
                 continue;
             }
-            if (!isSpanVisible(note.startBeat, note.duration, beatWidth, view)) {
+            if (!isSpanVisible(displayStartBeat, displayDuration, beatWidth, view)) {
                 continue;
             }
-            const x = note.startBeat * beatWidth;
+            const x = displayStartBeat * beatWidth;
             const y = row * ROW_HEIGHT;
-            const w = note.duration * beatWidth;
+            const w = displayDuration * beatWidth;
             const isSelected = selectedNoteIds.has(note.id);
             const fillAlpha = isSelected ? 0.75 : 0.5;
             const strokeAlpha = isSelected ? 0.9 : 0.65;
