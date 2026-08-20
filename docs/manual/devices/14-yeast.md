@@ -9,8 +9,9 @@ The panel is labelled **Note rack**. It opens on **Play**. The left rail heading
 
 The Effects card reads **Arpeggiator · Chord Generator · Scale Filter**.
 
-A project has one Yeast rack. The panel is empty until you add processors from **Sprout**,
-**Build**, **Route**, or **Lab**. A second Yeast on another track shows that same rack.
+A project has one Yeast rack. **Rack read** says **No processors yet** until you add processors
+from **Sprout**, **Build**, **Route**, or **Lab**. **Rack frame**, **Sprout**, **Phrase view**, and
+the selected deck stay on screen. A second Yeast on another track shows that same rack.
 
 ## At a glance
 
@@ -75,8 +76,7 @@ yet. Add one from the sprout shelf and the note lanes will wake up.**
 
 ## Play
 
-These four controls sit on **Play** whether or not an Arpeggiator is in the rack. They only write
-when **Arp On** is showing.
+**Arp On** / **Arp Off** adds or removes the first Arpeggiator.
 
 | Control                  | Range                                                                                     | Default     | What it does                          |
 | ------------------------ | ----------------------------------------------------------------------------------------- | ----------- | ------------------------------------- |
@@ -85,9 +85,12 @@ when **Arp On** is showing.
 | **Rate**                 | 1 to 32, readout `1/N`                                                                    | `1/8`       | Step rate as a note denominator       |
 | **Latch**                | on / off                                                                                  | off         | Holds the chord after you release     |
 
-## Shape
+> [!WARNING]
+> **Not yet active.** With **Arp Off**, **Mode**, **Rate**, and **Latch** still take a gesture and
+> do not write. Clicking **Arp On** after turning them still starts the compiled defaults.
+> [#2411](https://github.com/jcosta33/sourdaw/issues/2411)
 
-Same rule: knobs show the Arpeggiator values, and do nothing until **Arp On**.
+## Shape
 
 | Control      | Range       | Default | What it does                                      |
 | ------------ | ----------- | ------- | ------------------------------------------------- |
@@ -95,6 +98,11 @@ Same rule: knobs show the Arpeggiator values, and do nothing until **Arp On**.
 | **Swing**    | 0 to 100%   | 0%      | Shuffle on the arp                                |
 | **Octaves**  | 1 to 4      | 1       | How many octaves the arp spans                    |
 | **Velocity** | 1 to 127    | 100     | Fixed velocity (see **Vel Mode** on the rack row) |
+
+> [!WARNING]
+> **Not yet active.** With **Arp Off**, these four knobs still turn and do not write. **Arp On**
+> after that still starts the compiled defaults.
+> [#2411](https://github.com/jcosta33/sourdaw/issues/2411)
 
 ## Build
 
