@@ -1,0 +1,19 @@
+tests/e2e/deviceAndModulator.spec.ts
+  s_24b1bdbc3c31ad::t_ee7352eeb1980b 1-2,7-9,11-18,21-24,26-29,32-34,38,41-42,47-48,50-55,58-60,66,69,73-75,77-80,86,89,93-94,97,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3aef4fbf710755d28c4515850d54ef62b51bd5e9",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
