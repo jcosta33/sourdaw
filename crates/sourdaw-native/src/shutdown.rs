@@ -119,13 +119,15 @@ mod tests {
             .retired_engine_plugins
             .lock()
             .expect("retirement lock should be available")
-            .push(Arc::new(crate::host::native_bridge::SharedClapPlugin::new(
-                daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
-                    "Retired Fixture",
-                    Vec::new(),
-                    false,
+            .push(Arc::new(
+                crate::host::native_bridge::SharedHostedPlugin::new(
+                    daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                        "Retired Fixture",
+                        Vec::new(),
+                        false,
+                    ),
                 ),
-            )));
+            ));
     }
 
     #[test]

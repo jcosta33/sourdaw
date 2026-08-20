@@ -51,7 +51,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22.17.0
+          node-version: 24.19.0
 
       - name: Enable Corepack
         run: corepack enable
@@ -75,7 +75,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22.17.0
+          node-version: 24.19.0
           cache: npm
           cache-dependency-path: server/package-lock.json
 
@@ -129,7 +129,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22.17.0
+          node-version: 24.19.0
 
       - name: Enable Corepack
         run: corepack enable

@@ -1,6 +1,6 @@
 use daw_plugin_host::scanner::{
-    extract_clap_metadata, extract_clap_parameter_metadata, ClapDescriptorMetadata,
-    ClapParameterDescriptor,
+    extract_clap_instance_metadata, extract_clap_metadata, ClapDescriptorMetadata, PluginFormat,
+    ScannedDescriptor, ScannedInstance,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
-pub const PARAMETER_WORKER_ARGUMENT: &str = "--sourdaw-plugin-parameter-scan-worker";
+
+/// The worker that creates a live CLAP instance and inspects it.
+///
+/// One instance answers everything discovery needs from a plugin that is not
+/// merely a descriptor — its parameter contract, its declared audio ports, and
+/// whether it has an editor. Adding a query does not add a process: the
+/// isolation shape is unchanged, still one bounded child per plugin whose crash
+/// or hang is the supervisor's problem and not the app's.
+pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worker";
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 
@@ -116,15 +124,52 @@ impl Drop for ResponseDirectory {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+/// The bounded child's entries for one plugin format.
+///
+/// The registry is the format dispatch, and it is the only thing a new format
+/// adds to this file: both entries produce the scan's format-neutral types, so
+/// the worker protocol, the response envelope, and the isolation shape around
+/// them are already written in terms every format shares.
+struct FormatScanBackend {
+    /// Read the plugin's own descriptor. No instance is created.
+    descriptor: fn(&Path) -> Result<ScannedDescriptor, String>,
+    /// Create one live-but-unactivated instance and read its parameter contract
+    /// and capability extensions.
+    instance: fn(&Path) -> Result<ScannedInstance, String>,
+}
+
+/// The registered scan backend for a format, or `None` when Sourdaw has none.
+///
+/// CLAP is the only entry. A format with no backend is never scanned — the walk
+/// refuses it by name before a candidate exists — so reaching here with one is a
+/// caller error, and both sides of the protocol refuse rather than guess.
+fn scan_backend(format: PluginFormat) -> Option<FormatScanBackend> {
+    match format {
+        PluginFormat::Clap => Some(FormatScanBackend {
+            descriptor: |path| {
+                extract_clap_metadata(path).map(ClapDescriptorMetadata::into_scanned_descriptor)
+            },
+            instance: extract_clap_instance_metadata,
+        }),
+        PluginFormat::Vst3 | PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
+    }
+}
+
+fn no_scan_backend(format: PluginFormat) -> String {
+    format!("No plugin scan backend for format {}", format.wire_name())
+}
+
 pub fn run_from_process_args() -> Option<i32> {
     run_from_args(std::env::args_os())
 }
 /// What a set of process arguments asks this process to be.
 #[derive(Debug, PartialEq, Eq)]
 enum WorkerRole<'args> {
-    /// Extract one plugin's descriptor, or its parameters, into a response file.
+    /// Extract one plugin's descriptor, or one live instance's parameters and
+    /// capabilities, into a response file.
     Extract {
-        scans_parameters: bool,
+        format: PluginFormat,
+        inspects_instance: bool,
         plugin_path: &'args OsString,
         response_path: &'args OsString,
     },
@@ -141,39 +186,60 @@ enum WorkerRole<'args> {
 /// cannot claim the role.
 ///
 /// Everything strict about the fixed-index form is kept: the marker must be
-/// followed by exactly two arguments and nothing after them, so an invocation
+/// followed by exactly three arguments and nothing after them, so an invocation
 /// with a stray extra argument is refused rather than half-interpreted.
+///
+/// The first of those three is the plugin's format. It is refused unless it is
+/// UTF-8, names a format Sourdaw recognises, and that format has a registered
+/// scan backend — a worker that guessed the format would load a plugin's entry
+/// point through the wrong extractor, which is exactly the read this process
+/// exists to contain.
 fn worker_role(args: &[OsString]) -> Option<WorkerRole<'_>> {
     let marker_index = args.iter().skip(1).position(|argument| {
         argument == std::ffi::OsStr::new(WORKER_ARGUMENT)
-            || argument == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT)
+            || argument == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT)
     })? + 1;
-    if args.len() != marker_index + 3 {
+    if args.len() != marker_index + 4 {
         return Some(WorkerRole::Malformed);
     }
+    let Some(format) = args[marker_index + 1]
+        .to_str()
+        .and_then(PluginFormat::from_wire_name)
+        .filter(|format| scan_backend(*format).is_some())
+    else {
+        return Some(WorkerRole::Malformed);
+    };
     Some(WorkerRole::Extract {
-        scans_parameters: args[marker_index] == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT),
-        plugin_path: &args[marker_index + 1],
-        response_path: &args[marker_index + 2],
+        format,
+        inspects_instance: args[marker_index] == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT),
+        plugin_path: &args[marker_index + 2],
+        response_path: &args[marker_index + 3],
     })
 }
 
 fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let args: Vec<OsString> = args.into_iter().collect();
-    let (scans_parameters, plugin_path, response_path) = match worker_role(&args)? {
+    let (format, inspects_instance, plugin_path, response_path) = match worker_role(&args)? {
         WorkerRole::Malformed => return Some(2),
         WorkerRole::Extract {
-            scans_parameters,
+            format,
+            inspects_instance,
             plugin_path,
             response_path,
-        } => (scans_parameters, plugin_path, response_path),
+        } => (format, inspects_instance, plugin_path, response_path),
     };
-    let result = if scans_parameters {
+    // `worker_role` already refused a format with no backend, so this cannot be
+    // `None` — but the dispatch reads from the registry rather than assuming
+    // CLAP, which is the whole point of the argument.
+    let Some(backend) = scan_backend(format) else {
+        return Some(2);
+    };
+    let result = if inspects_instance {
         write_response(
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: extract_clap_parameter_metadata(Path::new(plugin_path)),
+                result: (backend.instance)(Path::new(plugin_path)),
             },
         )
     } else {
@@ -181,7 +247,7 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: extract_clap_metadata(Path::new(plugin_path)),
+                result: (backend.descriptor)(Path::new(plugin_path)),
             },
         )
     };
@@ -201,25 +267,38 @@ fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Re
     file.write_all(&bytes)
         .map_err(|error| format!("Cannot write plugin scan response: {error}"))
 }
-pub fn scan_clap_metadata(
+/// Read one plugin's descriptor through that format's registered backend, in a
+/// bounded child process.
+pub fn scan_descriptor_metadata(
+    format: PluginFormat,
     path: &Path,
     timeout: Duration,
-) -> Result<ClapDescriptorMetadata, String> {
-    scan_clap_worker(path, timeout, WORKER_ARGUMENT)
+) -> Result<ScannedDescriptor, String> {
+    scan_worker(format, path, timeout, WORKER_ARGUMENT)
 }
 
-pub fn scan_clap_parameter_metadata(
+/// Inspect one live instance's parameters and capabilities through that
+/// format's registered backend, in a bounded child process.
+pub fn scan_instance_metadata(
+    format: PluginFormat,
     path: &Path,
     timeout: Duration,
-) -> Result<Vec<ClapParameterDescriptor>, String> {
-    scan_clap_worker(path, timeout, PARAMETER_WORKER_ARGUMENT)
+) -> Result<ScannedInstance, String> {
+    scan_worker(format, path, timeout, INSTANCE_WORKER_ARGUMENT)
 }
 
-fn scan_clap_worker<T: DeserializeOwned>(
+fn scan_worker<T: DeserializeOwned>(
+    format: PluginFormat,
     path: &Path,
     timeout: Duration,
     worker_argument: &str,
 ) -> Result<T, String> {
+    // Refused here as well as in the child: launching a process to be told the
+    // format is unhostable spends a spawn and a deadline to reach the same
+    // answer, and the child's refusal is an exit code with no reason in it.
+    if scan_backend(format).is_none() {
+        return Err(no_scan_backend(format));
+    }
     let launcher = ScanWorkerCommand::resolve()?;
     let response_directory = ResponseDirectory::create()?;
     let response_path = response_directory.0.join("metadata.json");
@@ -227,6 +306,7 @@ fn scan_clap_worker<T: DeserializeOwned>(
     command
         .args(&launcher.args)
         .arg(worker_argument)
+        .arg(format.wire_name())
         .arg(path)
         .arg(&response_path)
         .envs(&launcher.env)
@@ -324,9 +404,16 @@ mod tests {
     #[test]
     fn the_marker_is_found_directly_after_the_executable() {
         assert_eq!(
-            worker_role(&args(&["/app", WORKER_ARGUMENT, "/p.clap", "/out.json"])),
+            worker_role(&args(&[
+                "/app",
+                WORKER_ARGUMENT,
+                "clap",
+                "/p.clap",
+                "/out.json"
+            ])),
             Some(WorkerRole::Extract {
-                scans_parameters: false,
+                format: PluginFormat::Clap,
+                inspects_instance: false,
                 plugin_path: &OsString::from("/p.clap"),
                 response_path: &OsString::from("/out.json"),
             })
@@ -342,12 +429,14 @@ mod tests {
             worker_role(&args(&[
                 "/electron",
                 "/shell/scanWorker.js",
-                PARAMETER_WORKER_ARGUMENT,
+                INSTANCE_WORKER_ARGUMENT,
+                "clap",
                 "/p.clap",
                 "/out.json",
             ])),
             Some(WorkerRole::Extract {
-                scans_parameters: true,
+                format: PluginFormat::Clap,
+                inspects_instance: true,
                 plugin_path: &OsString::from("/p.clap"),
                 response_path: &OsString::from("/out.json"),
             })
@@ -365,7 +454,7 @@ mod tests {
     #[test]
     fn the_executable_path_cannot_claim_the_worker_role() {
         assert_eq!(
-            worker_role(&args(&[WORKER_ARGUMENT, "/p.clap", "/out.json"])),
+            worker_role(&args(&[WORKER_ARGUMENT, "clap", "/p.clap", "/out.json"])),
             None
         );
     }
@@ -373,19 +462,121 @@ mod tests {
     #[test]
     fn a_worker_invocation_with_the_wrong_argument_count_is_malformed() {
         assert_eq!(
-            worker_role(&args(&["/app", WORKER_ARGUMENT, "/p.clap"])),
+            worker_role(&args(&["/app", WORKER_ARGUMENT, "clap", "/p.clap"])),
             Some(WorkerRole::Malformed)
         );
         assert_eq!(
             worker_role(&args(&[
                 "/app",
                 WORKER_ARGUMENT,
+                "clap",
                 "/p.clap",
                 "/out.json",
                 "extra"
             ])),
             Some(WorkerRole::Malformed)
         );
+    }
+
+    /// The pre-format arity, which is now one argument short. Pinned because it
+    /// is the invocation a stale host would send, and reading `/p.clap` as the
+    /// format has to fail rather than fall through to CLAP.
+    #[test]
+    fn a_worker_invocation_that_omits_the_format_is_malformed() {
+        assert_eq!(
+            worker_role(&args(&["/app", WORKER_ARGUMENT, "/p.clap", "/out.json"])),
+            Some(WorkerRole::Malformed)
+        );
+    }
+
+    /// A format value the registry does not know is refused rather than
+    /// defaulted. Defaulting would run the CLAP extractor — a dlopen and an
+    /// entry-point call — against a file nobody claimed was a CLAP plugin.
+    #[test]
+    fn a_worker_invocation_naming_an_unknown_format_is_malformed() {
+        assert_eq!(
+            worker_role(&args(&[
+                "/app",
+                WORKER_ARGUMENT,
+                "mystery",
+                "/p.clap",
+                "/out.json"
+            ])),
+            Some(WorkerRole::Malformed)
+        );
+        assert_eq!(
+            worker_role(&args(&[
+                "/app",
+                WORKER_ARGUMENT,
+                "",
+                "/p.clap",
+                "/out.json"
+            ])),
+            Some(WorkerRole::Malformed)
+        );
+    }
+
+    /// A format Sourdaw recognises but has no scan backend for. The walk refuses
+    /// these before a candidate exists, so an invocation naming one is a caller
+    /// error — and the worker must not answer it by loading the file through
+    /// some other format's extractor.
+    #[test]
+    fn a_worker_invocation_naming_a_format_with_no_backend_is_malformed() {
+        for format in ["vst3", "vst2", "au"] {
+            assert_eq!(
+                worker_role(&args(&[
+                    "/app",
+                    WORKER_ARGUMENT,
+                    format,
+                    "/p.plugin",
+                    "/out.json"
+                ])),
+                Some(WorkerRole::Malformed),
+                "{format} has no scan backend and must not reach an extractor"
+            );
+        }
+    }
+
+    /// Non-UTF-8 bytes in the format argument are refused, not lossily decoded.
+    #[cfg(unix)]
+    #[test]
+    fn a_worker_invocation_whose_format_is_not_utf8_is_malformed() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let arguments = vec![
+            OsString::from("/app"),
+            OsString::from(WORKER_ARGUMENT),
+            OsString::from_vec(vec![0x63, 0x6c, 0x61, 0xff, 0x70]),
+            OsString::from("/p.clap"),
+            OsString::from("/out.json"),
+        ];
+
+        assert_eq!(worker_role(&arguments), Some(WorkerRole::Malformed));
+    }
+
+    /// The registry is the dispatch. CLAP is the only format with entries, and
+    /// this fails the moment a second one is registered without the rest of the
+    /// packet that makes it real.
+    #[test]
+    fn clap_is_the_only_format_with_a_registered_scan_backend() {
+        assert!(scan_backend(PluginFormat::Clap).is_some());
+        assert!(scan_backend(PluginFormat::Vst3).is_none());
+        assert!(scan_backend(PluginFormat::Vst2).is_none());
+        assert!(scan_backend(PluginFormat::AudioUnit).is_none());
+    }
+
+    /// A format with no backend is refused before a process is spawned, with a
+    /// reason — the child's refusal is an exit code and carries none.
+    #[test]
+    fn scanning_a_format_with_no_backend_refuses_without_spawning_a_worker() {
+        let refusal = scan_descriptor_metadata(
+            PluginFormat::Vst3,
+            Path::new("/plugins/Vendor.vst3"),
+            Duration::from_millis(1),
+        )
+        .expect_err("a format with no scan backend must be refused");
+
+        assert_eq!(refusal, "No plugin scan backend for format vst3");
     }
 
     #[test]

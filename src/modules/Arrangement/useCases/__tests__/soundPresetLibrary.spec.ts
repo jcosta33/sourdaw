@@ -48,6 +48,10 @@ describe('soundPresetLibrary', () => {
 
         expect(second).toBe(first);
     });
+
+    it('omits presets for devices withheld from release', () => {
+        expect(getFactoryPresets().some(({ id }) => id === 'grand-boule-default')).toBe(false);
+    });
 });
 
 describe('getFactoryPresets platform cache', () => {
@@ -76,8 +80,8 @@ describe('getFactoryPresets platform cache', () => {
 
         // Native rebuild invalidates the web cache entry, producing a fresh array.
         expect(nativePresets).not.toBe(webPresets);
-        // Every builtin preset is platform:'both', so nothing is filtered out on
-        // native either — the catalogue is identical in content.
+        // Release admission does not change by runtime, so both catalogs omit
+        // the same withheld presets.
         expect(nativePresets.map((preset) => preset.id)).toEqual(webPresets.map((preset) => preset.id));
     });
 });

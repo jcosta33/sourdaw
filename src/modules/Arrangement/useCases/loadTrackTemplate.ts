@@ -1,3 +1,6 @@
+import { findWithheldDeviceType } from '#/infra/release/deviceReleaseAdmission';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { createTrack } from '../models/Track';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
@@ -14,6 +17,11 @@ export function loadTrackTemplate(templateId: string): void {
 
     const template = cachedTemplates.find((trackTemplate) => trackTemplate.id === templateId);
     if (!template) {
+        return;
+    }
+    const withheldDeviceType = findWithheldDeviceType(template.devices);
+    if (withheldDeviceType) {
+        notifyUser(`Template contains withheld device "${withheldDeviceType}" and was not loaded.`, 'warning');
         return;
     }
 

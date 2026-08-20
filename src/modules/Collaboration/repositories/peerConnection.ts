@@ -103,7 +103,7 @@ function isChannelOpen(channel: RTCDataChannel): boolean {
  * - `presence`: unreliable, unordered — for ephemeral presence data
  */
 class PeerConnection {
-    readonly peerId: PeerId;
+    peerId: PeerId;
     readonly rtc: RTCPeerConnection;
     private crdtChannel: RTCDataChannel | null = null;
     private presenceChannel: RTCDataChannel | null = null;
@@ -258,6 +258,11 @@ class PeerConnection {
         }
     }
 
+    /** Update the peer identifier after handshake completes. */
+    setPeerId(newPeerId: PeerId): void {
+        this.peerId = newPeerId;
+    }
+
     /** Check if the CRDT channel is open and ready. */
     isReady(): boolean {
         return this.crdtChannel?.readyState === 'open';
@@ -388,6 +393,24 @@ export class PeerConnectionManager {
     /** Get an existing peer connection. */
     getPeer(peerId: PeerId): PeerConnection | undefined {
         return this.peers.get(peerId);
+    }
+
+    /**
+     * Re-key an existing peer connection from a pending slot to its confirmed peer ID.
+     * Rejects collisions if `newPeerId` is already registered or matches the host's local peer ID.
+     */
+    rekeyPeer(oldPeerId: PeerId, newPeerId: PeerId, localPeerId?: PeerId | null): boolean {
+        const peer = this.peers.get(oldPeerId);
+        if (!peer || oldPeerId === newPeerId) {
+            return false;
+        }
+        if (this.peers.has(newPeerId) || (localPeerId != null && newPeerId === localPeerId)) {
+            return false;
+        }
+        this.peers.delete(oldPeerId);
+        peer.setPeerId(newPeerId);
+        this.peers.set(newPeerId, peer);
+        return true;
     }
 
     /** Remove and close a peer connection. */

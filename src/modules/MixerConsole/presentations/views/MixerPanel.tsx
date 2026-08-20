@@ -6,6 +6,7 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import {
@@ -95,7 +96,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                 title={`Mixer - ${tracks.filter((time) => time.kind !== 'folder').length} channels`}
                 titleClassName="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider"
                 actions={
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -151,7 +152,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                     className="daw-floating-surface absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg p-1"
                                 >
                                     {snapshots.map((snap) => (
-                                        <div key={snap.id} className="flex items-center gap-1">
+                                        <Row key={snap.id} gap={1}>
                                             {editingSnapshotId === snap.id ? (
                                                 <DawCompactInput
                                                     ref={renameInputRef}
@@ -195,17 +196,17 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                             >
                                                 ×
                                             </button>
-                                        </div>
+                                        </Row>
                                     ))}
                                 </div>
                             ) : null}
                         </div>
-                    </div>
+                    </Row>
                 }
             />
             <MixHealthDialog open={showMixHealth} onOpenChange={setShowMixHealth} />
             <ScrollArea className="flex-1">
-                <div className="flex h-full items-stretch gap-1 p-2">
+                <Row align="stretch" gap={1} className="h-full p-2">
                     {tracks
                         .filter((time) => time.kind !== 'folder')
                         .map((track) => (
@@ -220,7 +221,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     <MasterChannelStrip widthClass={widthClass} />
 
                     {tracks.length === 0 ? (
-                        <div className="flex flex-1 items-center justify-center">
+                        <Row grow justify="center">
                             <DawBlockedState
                                 compact
                                 eyebrow="Mixer"
@@ -229,9 +230,9 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                 description="Add a few channels to start shaping the mix."
                                 summary="Channel strips, meters, and send levels appear here once the session has tracks."
                             />
-                        </div>
+                        </Row>
                     ) : null}
-                </div>
+                </Row>
             </ScrollArea>
         </DawPanelSurface>
     );

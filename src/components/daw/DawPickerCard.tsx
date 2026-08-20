@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPickerCardProps = HTMLAttributes<HTMLDivElement> & {
@@ -30,16 +31,16 @@ export const DawPickerCard = ({
         {...props}
     >
         {media ? <div className="border-b border-white/[0.06] bg-black/[0.16]">{media}</div> : null}
-        <div className={cn('space-y-1.5 p-2', bodyClassName)}>
-            <div className="flex items-center justify-between gap-2">
+        <Stack gap={1.5} className={cn('p-2', bodyClassName)}>
+            <Row justify="between" gap={2}>
                 <div className="min-w-0 text-[11px] font-medium leading-none text-foreground/90">{heading}</div>
                 {action ? <div className="shrink-0">{action}</div> : null}
-            </div>
+            </Row>
             {meta ? <div>{meta}</div> : null}
             {description ? (
                 <div className="text-[9px] leading-tight text-muted-foreground/60">{description}</div>
             ) : null}
             {children}
-        </div>
+        </Stack>
     </div>
 );

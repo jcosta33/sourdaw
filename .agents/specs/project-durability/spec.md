@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-project-durability
 subject: stop the silent project-loss path; make every persistence write observed
-status: landed
+status: done
 repo: sourdaw
 date: 2026-08-01
 landed: 2026-08-02
@@ -10,8 +10,8 @@ governs: ADR 0013
 blocked_by: nothing
 blocks: ADR 0014 phases 1-3, and every measurement the ultracode programme depends on
 sources:
-  - .agents/decisions/0013-retire-the-flat-json-project-snapshot.md
-  - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
+    - .agents/decisions/0013-retire-the-flat-json-project-snapshot.md
+    - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
 ---
 
 # Project durability — Phase 0
@@ -22,7 +22,7 @@ measurement is taken on a store that can currently revert silently.
 
 ## Why this is first
 
-The verification loop for the entire remediation programme is *save → reopen → export → compare*.
+The verification loop for the entire remediation programme is _save → reopen → export → compare_.
 Today reopening a project can return a frozen localStorage snapshot and overwrite good CRDT state
 from it. An agent that cannot trust reload will destroy the fixtures it builds to measure with.
 
@@ -133,12 +133,12 @@ Do not widen this spec to reach them. Its value is that it is safe under every c
 
 ## Outcome — landed 2026-08-02
 
-| AC | Where |
-| --- | --- |
-| AC-1, AC-2, AC-3, AC-4, AC-6 | #962 |
-| AC-7 (also ADR 0014 gate **M9**) | #963 |
-| AC-5 | #964 |
-| AC-8 | checked, did not fire — see below |
+| AC                               | Where                             |
+| -------------------------------- | --------------------------------- |
+| AC-1, AC-2, AC-3, AC-4, AC-6     | #962                              |
+| AC-7 (also ADR 0014 gate **M9**) | #963                              |
+| AC-5                             | #964                              |
+| AC-8                             | checked, did not fire — see below |
 
 **AC-8's stop condition did not fire, for two independent reasons, each recorded in the PR that
 found it.** ADR 0016 settles the first: there are no users, so a frequently-unwritten IndexedDB
@@ -149,8 +149,8 @@ that AC-5 makes authoritative the failure mode cannot arise at all (#964).
 Three results worth carrying forward, because later phases inherit them:
 
 - **The bug was not the one the spec described.** `readNamedProjectJson` preferred localStorage
-  whenever a value was *present*, and its own docstring shows the author built the fallback for
-  *absence*. The real failure was **staleness**, not absence: a frozen snapshot overwrote good CRDT
+  whenever a value was _present_, and its own docstring shows the author built the fallback for
+  _absence_. The real failure was **staleness**, not absence: a frozen snapshot overwrote good CRDT
   state. AC-4's "resolve by provenance" is what closes it.
 - **One AC-1 guard cannot be redded and says so in place** rather than being kept as decoration. The
   60-second-stereo case does not fail under a restored dual-write, because 30 MB blows jsdom's quota,

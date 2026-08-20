@@ -98,11 +98,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // keys on. Neither identifier is called here.
         'src/modules/Arrangement/stores/clampDeviceParamWrite.ts': 3,
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
-        'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
+        // Count provenance: measured 2 — import + one afterCommit loop pushing
+        // committed parameterValues through AudioEngine `updateDeviceParam`.
+        // Project truth is written first via `writeDeviceToProject`; this is the
+        // engine half of add-device, not a foreign store write.
+        'src/modules/Arrangement/handlers/device/handleAddDevice.ts': 2,
+        // Count provenance: measured 2 — import + one afterCommit loop. Topology
+        // is applied through the device-chain runtime delta; parameter controls
+        // run only after that delta is accepted.
+        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 2,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
         'src/modules/Arrangement/useCases/index.ts': 2,
-        'src/modules/Arrangement/useCases/preset/presetLoading.ts': 3,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 2,
         'src/modules/Arrangement/useCases/setTrackGainPan/helpers.ts': 4,
         // Count provenance: was 2, measured 4 — the two unchanged mentions
@@ -256,7 +263,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 6,
         'src/modules/Levain/useCases/levainParamBridge/levainBridge.ts': 1,
         'src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts': 2,
-        'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
@@ -311,17 +317,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Tuner/useCases/setA4Reference.ts': 4,
     },
     'strip-add': {
-        'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
-        'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
-        'src/modules/Arrangement/useCases/preset/presetLoading.ts': 2,
-        'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 2,
-        'src/modules/AudioEngine/models/AudioEngineState.ts': 1,
-        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 1,
-        'src/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip.ts': 2,
-        'src/modules/AudioEngine/useCases/index.ts': 2,
-        'src/modules/GrandBoule/useCases/createGrandBouleTrack.ts': 3,
-        'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 3,
-        'src/modules/Toaster/useCases/createDrumTrackStack.ts': 2,
+        // Count provenance: measured 4 — the identifier now lives only as the
+        // engine repository's internal primitive plus the test-harness override.
+        // Production add/reorder/preset paths compile a runtime graph delta and
+        // no longer name `addDeviceToStrip`.
+        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
     },
     'direct-built-in': {
         // Count provenance: new file entry, measured 2 with `grep -o` — both
@@ -488,7 +488,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/index.ts': 2,
-        'src/modules/AiRuntime/useCases/sendChatMessage.ts': 3,
+        // Count provenance: was 3, measured 5 — `compileAgentActionExecution`
+        // import plus two calls, and `providerProtocol.compileRequest` once.
+        // Command-envelope / provider-request compilers; no device hydration.
+        'src/modules/AiRuntime/useCases/sendChatMessage.ts': 5,
         // Count provenance: the versioned-command argument compiler and its two
         // callers only project immutable envelope metadata. These are bare
         // `compileCommandArgumentMetadata` references, not device compilation,
@@ -509,8 +512,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // in the editor-readout evaluator's AU-1 delegation note (#747) — the
         // transformer computes curve values only, holds no device writes.
         'src/modules/Arrangement/transformers/automationTransformers.ts': 1,
-        'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
-        'src/modules/Arrangement/useCases/preset/presetLoading.ts': 2,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
         // in the live evaluator's AU-1 delegation note (#747) — not a sink.
         'src/modules/Automation/services/automationPointAlgorithms.ts': 1,
@@ -538,7 +539,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // its declaration; the barrel hits are its export name and module path.
         'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
-        'src/modules/AudioEngine/useCases/index.ts': 2,
+        'src/modules/AudioEngine/useCases/index.ts': 4,
         'src/modules/Bacteria/models/BacteriaPatch.ts': 3,
         'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
@@ -611,12 +612,120 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
         // (#747) — a pure curve-math utility, not a device-write sink.
         'src/utils/automationCurve.ts': 1,
+        // Count provenance (#1994): lexical compile* matches after the
+        // runtime-graph-delta split. None is a new raw store write.
+        // AiRuntime: compileRequest / command-envelope compilers (not device
+        // hydration). sendChatMessage 3→5 is the same family, documented above.
+        'src/modules/AiRuntime/models/ModelProviderProtocol.ts': 1,
+        'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 2,
+        'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
+        'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts': 1,
+        'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
+        'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 1,
+        'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
+        'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
+        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,
+        'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
+        'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
+        // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
+        // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
+        // Compilers, barrel re-exports, the loadPreset handler, the file-drop
+        // hook, and projectTrackToLiveStrip all name those compilers; they do
+        // not write stores. Handlers commit through executeAppAction.
+        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 3,
+        'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 3,
+        'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
+        'src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts': 1,
+        'src/modules/Arrangement/useCases/device/compileReorderDevicesAction.ts': 1,
+        'src/modules/Arrangement/useCases/index.ts': 6,
+        'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 1,
+        'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
+        // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
+        // compileRuntimeGrinderNeuralPatch. Node apply sites plus the pure
+        // delta compiler; createWebAudioEngine applies accepted deltas.
+        'src/modules/AudioEngine/engine/BacteriaNode.ts': 3,
+        'src/modules/AudioEngine/engine/CrustNode.ts': 3,
+        'src/modules/AudioEngine/engine/GlutenNode.ts': 3,
+        'src/modules/AudioEngine/engine/GrinderNode.ts': 6,
+        // Count provenance: new file entry, measured 3 with `grep -oE` over the
+        // family pattern — all three are `compileRuntimeDeviceControl`
+        // (`compileRuntimeGraphDelta` 0, `compileRuntimeGrinderNeuralPatch` 0),
+        // and the other three sink families score 0 here: `setParam` appears but
+        // `direct-built-in` only includes `*/useCases/` paths, and this file is
+        // under `engine/`. The 3 are the named import, the module path in that
+        // same import line (the family pattern matches inside the string too),
+        // and the single call in `postControl`.
+        //
+        // Introduced by #2240 ("harden Proof runtime controls and faults"),
+        // which added the sink and did not update this census — the same
+        // worklet-control hardening #2151/#2152/#2153 applied to Bacteria,
+        // Crust and Gluten, whose nodes sit directly above at the identical
+        // count of 3 for the identical identifier.
+        //
+        // Same family and same semantics as those three siblings.
+        // `compileRuntimeDeviceControl` is a pure validator: its only import is
+        // the `RuntimeDeviceControlCompilation` type, and it returns either
+        // `{ status: 'invalid', reason }` or a frozen control envelope. It
+        // touches no store, no Automerge document, and no `executeAppAction`
+        // path, so this row is the hydration-shaped compile step in front of a
+        // MessagePort post — `node.port.postMessage(compilation.control)` — and
+        // not a project-truth write. Proof's persistence continues to run
+        // through `proofParamBridge`, which is censused separately under
+        // 'persistence-runtime' and guard-listed below.
+        'src/modules/AudioEngine/engine/ProofNode.ts': 3,
+        'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 4,
+        'src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts': 1,
+        'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 20,
+        'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
+        'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
+        // UI: compileAddDeviceAction / compileLoadPresetActions /
+        // compileReorderDevicesAction / compileToasterTrackStackActions in
+        // browser, mixer, inspector, and Knead. They compile then dispatch;
+        // they do not name loadInstrument.
+        'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx': 4,
+        'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
+        'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': 2,
+        'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': 2,
+        'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': 2,
+        'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx': 2,
+        'src/modules/Toaster/useCases/compileToasterTrackStackActions.ts': 3,
+        'src/modules/Toaster/useCases/index.ts': 2,
     },
 };
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: measured 1 — `devices:` on the after-track snapshot
+        // the Arrangement handler commits through executeAppAction. Project
+        // writer is `writeDeviceToProject`; this is the handler's topology
+        // result, not a foreign store write.
+        'src/modules/Arrangement/handlers/device/handleAddDevice.ts': 1,
+        // Count provenance: measured 1 — `devices:` on the after-track snapshot
+        // for the registered load-external-plugin handler.
+        'src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts': 1,
+        // Count provenance: measured 10 — lexical `devices:` / `parameterValues:`
+        // in payload types, Device reconstruction, and replacement topology.
+        // Writes go through the registered loadPreset handler after
+        // executeAppAction, not a raw store write from a foreign module.
+        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 10,
         'src/modules/Arrangement/handlers/preset/handleSavePreset.ts': 2,
+        // Count provenance: was 1 in `static`, measured 2 — the row moves buckets
+        // rather than just incrementing. #2347 rewrote the template validator's
+        // `parameterValues,` shorthand — which this census's `\s*:` pattern
+        // cannot see — into
+        // `parameterValues: migrateStoredDeviceParameterValues(value.type, …)`,
+        // so the file now holds one executable device-data construction
+        // alongside the pre-existing static `const devices: Device[] = [];`
+        // accumulator. A path may carry only one classification, and recording a
+        // runtime construction under `static` would understate it, so it sits
+        // here with its twin `hydrateArrangementTracks.ts`.
+        //
+        // Read direction only. This is the repository half of template load:
+        // `validateStoredDevice` validates untrusted JSON off disk and returns a
+        // `Device`. It reaches no store, no Automerge document, and no
+        // `executeAppAction` — the migration it calls is a pure function that
+        // returns its input untouched when nothing applies.
+        'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
         'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
@@ -626,7 +735,11 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,
-        'src/modules/Arrangement/useCases/device/removeDevice.ts': 1,
+        // Count provenance: measured 2 — `devices:` on the after-track snapshot
+        // and on the live-strip projection. `removeDevice.ts` no longer exists;
+        // prepareRemoveDevice is the Arrangement-owned compiler for the
+        // registered remove handler.
+        'src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts': 2,
         // Count provenance: 0 -> 1, measured. New sink from `c7d271e15`
         // ("make device lifecycle executable"), which added `restoreDevice` as
         // the compensating action for `removeDevice`'s undo and did not update
@@ -685,10 +798,16 @@ const DEVICE_DATA_COUNTS = {
         // chain — it hands the render subgraph to the AudioEngine offline graph,
         // which owns device instantiation.
         'src/modules/Arrangement/useCases/loadTrackTemplate.ts': 1,
-        'src/modules/Arrangement/useCases/preset/presetLoading.ts': 3,
+        // Count provenance: measured 3 — `devices:` in the LoadPresetAction
+        // payload type, the action constructor, and a placeholder topology
+        // snapshot. Compiler only; the handler commits.
+        'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 3,
         'src/modules/Arrangement/useCases/preset/presetStorage/saveCurrentAsPreset.ts': 3,
         'src/modules/Arrangement/useCases/preset/presetStorage/saveUserPreset.ts': 2,
         'src/modules/Arrangement/useCases/saveTrackAsTemplate.ts': 1,
+        // Count provenance: measured 2 — type field plus a read-only Yeast-stripped
+        // projection for the runtime graph. No store write.
+        'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 2,
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
@@ -701,6 +820,14 @@ const DEVICE_DATA_COUNTS = {
     },
     static: {
         'src/modules/Arrangement/models/SoundPreset.ts': 2,
+        // Count provenance: new file entry from #2347 ("migrate stored device
+        // parameters before preset load"), measured 1 — the `parameterValues:
+        // Record<string, number>` parameter type on
+        // `migrateStoredDeviceParameterValues`. Type-only device-data shape, the
+        // same class as `trackEligibility.ts` below: a static declaration, not
+        // an executable access. The module imports nothing, holds no store or
+        // CRDT write, and returns its input untouched when no migration applies.
+        'src/modules/Arrangement/models/StoredDeviceParameterMigration.ts': 1,
         'src/modules/Arrangement/models/Track.ts': 7,
         'src/modules/Arrangement/models/TrackTemplate.ts': 1,
         'src/modules/Arrangement/repositories/presets/bassPresets.ts': 7,
@@ -727,7 +854,13 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/presets/presetHelpers/synth.ts': 1,
         'src/modules/Arrangement/repositories/presets/presetHelpers/tremolo.ts': 1,
         'src/modules/Arrangement/repositories/presets/stringsPresets.ts': 6,
-        'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 1,
+        // Count provenance: measured 1 — parameter type `devices:` on a catalog
+        // equality predicate. No write.
+        'src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts': 1,
+        // Count provenance: measured 10 — factory sidebar preset literals
+        // (`devices:` + empty `parameterValues:` per instrument). Catalog data,
+        // same class as factoryPresets.ts.
+        'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts': 10,
         // Type-only device-data shape: LiveStripTrack declares `devices` so
         // shouldCreateLiveTrackStrip can read device types for folder-strip
         // eligibility (#584) — a static declaration, not an executable access.

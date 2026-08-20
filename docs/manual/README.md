@@ -16,9 +16,21 @@ Organized by what a device does, not by its name.
 
 **Dynamics** — [Gluten](./devices/07-gluten.md) (compressor), [Crust](./devices/08-crust.md) (limiter)
 
+**Mastering** — [Proof](./devices/10-proof.md) (mastering chain)
+
 **Time & Space** — [Dutch Oven](./devices/09-dutch-oven.md) (reverb)
 
 **Amp and distortion** — [Grinder](./devices/11-grinder.md) (guitar amp and cabinet)
+
+**Tuning** — [Scoring](./devices/12-scoring.md) (tuner)
+
+**Creative multi-FX** — [Bacteria](./devices/13-bacteria.md) (multi-band mangler)
+
+**MIDI FX** — [Yeast](./devices/14-yeast.md) (MIDI rack)
+
+**Orchestra** — [Levain](./devices/15-levain.md) (sampled orchestra)
+
+**Drums** — [Toaster](./devices/16-toaster.md) (drum pads and sequencer)
 
 ## Conventions used in this manual
 

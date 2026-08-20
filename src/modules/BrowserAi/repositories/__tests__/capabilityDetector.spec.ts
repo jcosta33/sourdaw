@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { type CapabilityReport, type InferenceThroughput } from '../../models/CapabilityReport';
+import { type WebGpuProbeResult } from '../../models/WebGpuProbe';
 import { detectCapabilities } from '../capabilityDetector';
 
 const storage_key = 'sourdaw-browser-ai-capability';
@@ -24,6 +25,7 @@ function create_logger_mock(): LoggerMock {
 
 type RequestAdapter = () => Promise<unknown>;
 type MeasureThroughput = () => Promise<InferenceThroughput>;
+type ProbeWebGpu = () => Promise<WebGpuProbeResult>;
 
 function measured(realtimeFactor: number): InferenceThroughput {
     return {
@@ -61,16 +63,23 @@ function install_supported_browser(): InstallSupportedBrowserOutput {
 
 type InstallOutput = {
     measure: Mock<MeasureThroughput>;
+    probe: Mock<ProbeWebGpu>;
 };
 
-function install(throughput: InferenceThroughput): InstallOutput {
+function install(throughput: InferenceThroughput, webGpu: WebGpuProbeResult = { status: 'supported' }): InstallOutput {
     const measure = vi.fn<MeasureThroughput>().mockResolvedValue(throughput);
-    injectDependencies(detectCapabilities, { logger: create_logger_mock(), measureInferenceThroughput: measure });
-    return { measure };
+    const probe = vi.fn<ProbeWebGpu>().mockResolvedValue(webGpu);
+    injectDependencies(detectCapabilities, {
+        logger: create_logger_mock(),
+        measureInferenceThroughput: measure,
+        probeWebGpuUsability: probe,
+    });
+    return { measure, probe };
 }
 
 const valid_cached_report: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
     sharedArrayBuffer: true,
     opfsAvailable: true,
@@ -88,6 +97,7 @@ describe('detectCapabilities', () => {
             measureInferenceThroughput: vi
                 .fn<MeasureThroughput>()
                 .mockResolvedValue({ status: 'not-measured', reason: 'model-not-cached' }),
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockResolvedValue({ status: 'supported' }),
         });
     });
 
@@ -108,13 +118,14 @@ describe('detectCapabilities', () => {
         expect(report.inference).toEqual({ status: 'not-measured', reason: 'model-not-cached' });
     });
 
-    it('should never consult the WebGPU adapter to grade the device', async () => {
-        const { request_adapter } = install_supported_browser();
-        install(measured(3));
+    it('should use measured throughput rather than the admission probe to grade the device', async () => {
+        install_supported_browser();
+        const { probe } = install(measured(3));
 
-        await detectCapabilities({ forceRefresh: true, measureInference: true });
+        const report = await detectCapabilities({ forceRefresh: true, measureInference: true });
 
-        expect(request_adapter).not.toHaveBeenCalled();
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(report.webGpuTier).toBe('webgpu-fast');
     });
 
     it('should grade the same device differently when its measured throughput differs', async () => {
@@ -220,14 +231,51 @@ describe('detectCapabilities', () => {
 
     // ── Cache handling ───────────────────────────────────────────────────────
 
-    it('should return a valid cached report without fresh detection', async () => {
+    it('should probe current hardware while reusing cached measured throughput', async () => {
         install_supported_browser();
-        const { measure } = install(measured(3));
+        const { measure, probe } = install(measured(3));
         window.localStorage.setItem(storage_key, JSON.stringify(valid_cached_report));
 
         const report = await detectCapabilities();
 
-        expect(report).toEqual(valid_cached_report);
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(measure).not.toHaveBeenCalled();
+        expect(report.inference).toEqual(valid_cached_report.inference);
+        expect(report.detectedAt).toBe(detected_at);
+    });
+
+    it('should replace cached support with the current unavailable WebGPU result', async () => {
+        install_supported_browser();
+        const { measure, probe } = install(measured(3), { status: 'unavailable', reason: 'device-unavailable' });
+        window.localStorage.setItem(storage_key, JSON.stringify(valid_cached_report));
+
+        const report = await detectCapabilities();
+
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(report.capability).toBe('unsupported-browser');
+        expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'device-unavailable' });
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
+        expect(measure).not.toHaveBeenCalled();
+    });
+
+    it('should recover from cached WebGPU unavailability when the current probe succeeds', async () => {
+        install_supported_browser();
+        const { measure, probe } = install(measured(3));
+        const cached_report: CapabilityReport = {
+            ...valid_cached_report,
+            capability: 'unsupported-browser',
+            webGpu: { status: 'unavailable', reason: 'adapter-unavailable' },
+            webGpuTier: 'not-measured',
+            inference: { status: 'not-measured', reason: 'no-webgpu' },
+        };
+        window.localStorage.setItem(storage_key, JSON.stringify(cached_report));
+
+        const report = await detectCapabilities();
+
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(report.capability).toBe('supported');
+        expect(report.webGpu).toEqual({ status: 'supported' });
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
         expect(measure).not.toHaveBeenCalled();
     });
 
@@ -263,6 +311,87 @@ describe('detectCapabilities', () => {
 
         expect(report.detectedAt).toBe(detected_at);
         expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+    });
+
+    it('should discard a cached report from the property-only detector with no probe outcome', async () => {
+        install_supported_browser();
+        const { probe } = install(measured(3));
+        const stale_report: Record<string, unknown> = {
+            ...valid_cached_report,
+            detectedAt: detected_at - 86_400_000,
+            inference: measured(7.25),
+        };
+        Reflect.deleteProperty(stale_report, 'webGpu');
+        window.localStorage.setItem(storage_key, JSON.stringify(stale_report));
+
+        const report = await detectCapabilities();
+
+        expect(report.detectedAt).toBe(detected_at);
+        expect(report.webGpu).toEqual({ status: 'supported' });
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+        expect(probe).toHaveBeenCalledTimes(1);
+    });
+
+    it('should discard a cached supported verdict with an unavailable probe outcome', async () => {
+        install_supported_browser();
+        install(measured(3));
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({
+                ...valid_cached_report,
+                webGpu: { status: 'unavailable', reason: 'fallback-adapter' },
+            })
+        );
+
+        const report = await detectCapabilities();
+
+        expect(report.detectedAt).toBe(detected_at);
+        expect(report.webGpu).toEqual({ status: 'supported' });
+    });
+
+    it('should discard a cached probe failure and rerun the WebGPU probe', async () => {
+        install_supported_browser();
+        const { probe } = install(measured(3));
+        const cached_report: CapabilityReport = {
+            ...valid_cached_report,
+            capability: 'unsupported-browser',
+            webGpu: { status: 'unavailable', reason: 'probe-failed' },
+            webGpuTier: 'not-measured',
+            inference: { status: 'not-measured', reason: 'no-webgpu' },
+        };
+        window.localStorage.setItem(storage_key, JSON.stringify(cached_report));
+
+        const report = await detectCapabilities();
+
+        expect(report.capability).toBe('supported');
+        expect(report.webGpu).toEqual({ status: 'supported' });
+        expect(report.detectedAt).toBe(detected_at);
+        expect(probe).toHaveBeenCalledTimes(1);
+    });
+
+    // A measured throughput is only ever produced while that same run's webGpu
+    // probe read `supported` — a cache-reuse gate that only excludes
+    // `probe-failed` still admits any *other* unavailable reason, so a
+    // measured figure whose own record says the adapter or device was
+    // unusable would be carried forward the moment the current probe happens
+    // to succeed again. Reusability must depend on the record's own webGpu
+    // verdict, not merely on which unavailable reason it carries.
+    it('should not carry forward a cached measured throughput whose own record reports WebGPU unavailable', async () => {
+        install_supported_browser();
+        const { measure } = install(measured(3));
+        const inconsistent_cached_report: CapabilityReport = {
+            ...valid_cached_report,
+            capability: 'unsupported-browser',
+            webGpu: { status: 'unavailable', reason: 'adapter-unavailable' },
+        };
+        window.localStorage.setItem(storage_key, JSON.stringify(inconsistent_cached_report));
+
+        const report = await detectCapabilities();
+
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+        expect(measure).not.toHaveBeenCalled();
     });
 
     it('should ignore invalid cache shapes and run fresh detection', async () => {
@@ -331,15 +460,52 @@ describe('detectCapabilities', () => {
                 storage: { getDirectory: vi.fn() },
             },
         });
-        const { measure } = install(measured(3));
+        const { measure } = install(measured(3), { status: 'unavailable', reason: 'missing-surface' });
 
         const report = await detectCapabilities({ measureInference: true });
 
         expect(report.capability).toBe('unsupported-browser');
         expect(report.chromeVersion).toBe(133);
+        expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'missing-surface' });
         expect(report.webGpuTier).toBe('not-measured');
         expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
         expect(measure).not.toHaveBeenCalled();
+    });
+
+    it.each(['adapter-unavailable', 'fallback-adapter', 'device-unavailable'] as const)(
+        'should reject the explicit WebGPU admission failure: %s',
+        async (reason) => {
+            install_supported_browser();
+            const { measure } = install(measured(3), { status: 'unavailable', reason });
+
+            const report = await detectCapabilities({ forceRefresh: true });
+
+            expect(report.capability).toBe('unsupported-browser');
+            expect(report.webGpu).toEqual({ status: 'unavailable', reason });
+            expect(measure).not.toHaveBeenCalled();
+        }
+    );
+
+    it('should fail closed without measuring inference when the WebGPU worker probe rejects', async () => {
+        install_supported_browser();
+        const measure = vi.fn<MeasureThroughput>().mockResolvedValue(measured(3));
+        const logger = create_logger_mock();
+        injectDependencies(detectCapabilities, {
+            logger,
+            measureInferenceThroughput: measure,
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockRejectedValue(new Error('WebGPU probe worker timed out')),
+        });
+
+        const report = await detectCapabilities({ forceRefresh: true, measureInference: true });
+
+        expect(report.capability).toBe('unsupported-browser');
+        expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'probe-failed' });
+        expect(report.webGpuTier).toBe('not-measured');
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
+        expect(measure).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+            '[BrowserAi] WebGPU usability probe failed — browser AI disabled'
+        );
     });
 
     /**
