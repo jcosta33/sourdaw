@@ -118,6 +118,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
             fp('delay', 'faust-tape-delay', 'Delay Time', 0.01, 2, 0.3, 0.01, 's', 'log'),
             fp('feedback', 'faust-tape-delay', 'Feedback', 0, 0.95, 0.5, 0.01),
             fp('dry_wet', 'faust-tape-delay', 'Dry/Wet', 0, 1, 0.3, 0.01),
+            fp('tone', 'faust-tape-delay', 'Tone', 500, 12000, 4000, 100, 'Hz', 'log'),
         ],
     },
     {
@@ -128,8 +129,13 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
+            // Release and look-ahead are milliseconds, matching both the DSP
+            // and how every shipping limiter displays them. Release used to be
+            // declared here in seconds while nothing in the compiled node read
+            // it at all, so no stored project value ever reached the DSP.
             fp('ceiling', 'faust-brick-wall-limiter', 'Ceiling', -12, 0, -0.3, 0.1, 'dB'),
-            fp('release', 'faust-brick-wall-limiter', 'Release', 0.01, 1, 0.1, 0.01, 's', 'log'),
+            fp('release', 'faust-brick-wall-limiter', 'Release', 1, 1000, 100, 1, 'ms', 'log'),
+            fp('lookahead', 'faust-brick-wall-limiter', 'Lookahead', 0, 10, 5, 0.1, 'ms'),
         ],
     },
     {
@@ -141,7 +147,11 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         hasCustomUI: false,
         tail: { kind: 'decaySeconds', parameterId: 'decay', defaultSeconds: 2 },
         parameters: [
-            fp('decay', 'faust-spring-reverb', 'Decay', 0.1, 10, 2, 0.1, 's', 'log'),
+            // 8 s, not 10: the DSP's own `decay` slider stops at 8, so a stored
+            // 9 or 10 has always rendered as 8. Declaring 10 offered two
+            // settings that sound identical to 8.
+            fp('decay', 'faust-spring-reverb', 'Decay', 0.1, 8, 2, 0.1, 's', 'log'),
+            fp('brightness', 'faust-spring-reverb', 'Brightness', 0, 1, 0.5, 0.01),
             fp('mix', 'faust-spring-reverb', 'Mix', 0, 1, 0.3, 0.01),
         ],
     },
@@ -153,8 +163,9 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
-            fp('threshold', 'faust-noise-gate', 'Threshold', -80, 0, -40, 0.5, 'dB'),
+            fp('threshold', 'faust-noise-gate', 'Threshold', -90, 0, -40, 0.5, 'dB'),
             fp('attack', 'faust-noise-gate', 'Attack', 0.0001, 0.1, 0.001, 0.0001, 's', 'log'),
+            fp('hold', 'faust-noise-gate', 'Hold', 0, 0.5, 0.01, 0.001, 's'),
             fp('release', 'faust-noise-gate', 'Release', 0.01, 1, 0.1, 0.01, 's', 'log'),
         ],
     },
@@ -165,7 +176,17 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
-        parameters: [fp('gain', 'faust-gain-utility', 'Gain', -60, 12, 0, 0.1, 'dB')],
+        parameters: [
+            // -36..36, which is what the DSP's `gain` slider implements. The
+            // declared -60..12 was wrong at both ends: -60 delivered -36, and
+            // the top 24 dB of the DSP's range was unreachable from the UI.
+            fp('gain', 'faust-gain-utility', 'Gain', -36, 36, 0, 0.1, 'dB'),
+            // Both of these compile in the DSP and neither was declared, so
+            // neither reached the inspector — `hasCustomUI` is false, so the
+            // declared list IS the UI.
+            fp('invert_phase', 'faust-gain-utility', 'Invert Phase', 0, 1, 0, 1),
+            fp('width', 'faust-gain-utility', 'Width', 0, 2, 1, 0.01),
+        ],
     },
     {
         id: 'faust-lufs-meter',
@@ -183,7 +204,15 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
-        parameters: [fp('width', 'faust-stereo-widener', 'Width', 0, 2, 1, 0.01)],
+        parameters: [
+            // PERCENT, because that is the scale the DSP reads:
+            // `hslider("width", 100, 0, 200, 1) / 100.0`. Declaring 0..2
+            // against it meant every value the UI could write landed on a
+            // 0..200 slider, so maximum Width was an effective 0.02 and the
+            // device collapsed to near-mono at its widest setting.
+            fp('width', 'faust-stereo-widener', 'Width', 0, 200, 100, 1, '%'),
+            fp('mono_bass', 'faust-stereo-widener', 'Mono Bass', 0, 500, 0, 1, 'Hz'),
+        ],
     },
     {
         id: 'faust-de-esser',
@@ -193,9 +222,12 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
-            fp('threshold', 'faust-de-esser', 'Threshold', -40, 0, -15, 0.5, 'dB'),
+            fp('threshold', 'faust-de-esser', 'Threshold', -60, 0, -15, 0.5, 'dB'),
             fp('frequency', 'faust-de-esser', 'Frequency', 2000, 12000, 6000, 100, 'Hz', 'log'),
+            fp('bandwidth', 'faust-de-esser', 'Bandwidth', 0.5, 6, 2, 0.1),
+            fp('ratio', 'faust-de-esser', 'Ratio', 1, 20, 4, 0.5),
             fp('reduction', 'faust-de-esser', 'Reduction', 0, 20, 6, 0.5, 'dB'),
+            fp('listen', 'faust-de-esser', 'Listen', 0, 1, 0, 1),
         ],
     },
 ];
