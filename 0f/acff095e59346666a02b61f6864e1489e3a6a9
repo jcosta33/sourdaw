@@ -1,0 +1,33 @@
+src/modules/Collaboration/repositories/__tests__/peerConnection.spec.ts
+  s_27578aec2aab3b::t_e3cf60cec90ae0 549-563
+src/modules/Collaboration/repositories/peerConnection.ts
+  s_487e9aa1e46063::t_7880eda76b3c54 400,402,407-409
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_487e9aa1e46063::t_f53f0a0eba835a 52-56,221,229-256
+src/modules/Collaboration/useCases/collaboration/acceptAnswer.ts
+  s_27578aec2aab3b::t_2786272fa90d42 76-82,85-91,94-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0facff095e59346666a02b61f6864e1489e3a6a9",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
