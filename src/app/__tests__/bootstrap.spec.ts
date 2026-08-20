@@ -139,6 +139,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependencies: setVcaRuntimeProjectionDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
+    runtimeGraphTopology: { matchesCurrentProject: noop },
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
@@ -161,6 +162,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureOfflinePpqEndpointProjection: noop,
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
+    compileAudioGraphTopology: noop,
+    configureRuntimeGraphProjectRevisionValidator: noop,
+    configureRuntimeGraphTopologyValidator: noop,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -218,6 +222,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
+    captureCommandTargetFingerprints: noop,
 }));
 
 vi.mock('#/modules/ControlRoom/useCases', () => ({
@@ -229,7 +234,10 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
     setMidiLearnDependencies: noop,
 }));
 
-vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    actionHistoryStore: actionHistoryStoreMock,
+    agentProjectRepairStateStore: { value: null, subscribe: vi.fn() },
+}));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
