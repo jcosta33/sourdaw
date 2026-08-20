@@ -1,0 +1,121 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_34757e3d7ba874 14,50,167,192-195,198,212,320,344-352,374,482,506-514,554,587-595,608,668-676,686-703,824,839-847,860,932,938-946,1091-1099,1136-1144,1148,1184,1220,1229,1271-1279,1298-1306,1328,1409,1454,1505-1513,1544,1634,1652,1661,1688,1724,1733,1895,1991-1999,2028-2039,2057,2102,2120,2246,2309,2336,2345,2417,2630-2638,2651,2747-2755,2783-2791,2891-2899,2903,2990-2998,3035-3043,3053-3061,3146,3188-3196,3272,3314-3322,3350-3358,3389,3407,3449-3457,3542,3593-3601,3785,3812,3974,4001,4037,4172,4296-4311,4394-4411,4430-4438,4595,4673-4690,4745-4753,4775,4856,4880-4888,4973,5045,5052-5055,5058,5069-5077,5126,5135,5252,5495,5555-5563,5654-5662,5727-5730,5732-5733,5756,5826-5829,5832,5879-5887,5891,6224,6266-6274,6323,6329-6337,6440,6456-6459,6461-6462,6476,6545-6553,6608-6616,6692,6779-6787,6827,6842-6850,6872,6923-6931,6935,6959-6967,6989,6998,7211-7219,7268,7322,7571-7579,7589-7597,7619,7625-7633,7754,7772,7832-7849,7889,8003-8020,8033,8039-8047,8051,8066-8074,8150,8177,8202-8205,8208,8240,8249,8345-8353,8375,8438,8447,8552-8560,8564,8759-8767,8960,9059,9075-9078,9080-9081,9194,9212,9236-9244,9257,9284,9446,9578-9586,9590,9596-9604,9626,9659-9667,9671,9698,9707,9716,9743,9824,9995,10073-10081,10085,10118-10126,10164-10167,10169-10170,10310,10355,10406-10414,10436,10454,10523-10531,10605-10608,10610-10611,10778,10812-10815,10817-10818,10838-10846,10859,10868,10895,10922,10991-10999,11093,11108-11116,11237,11243-11251,11298-11301,11304,11336,11351-11359,11363,11417,11462,11540-11548,11558-11575,11624,11630-11638,11703-11706,11709,11729-11737,11774-11782,11858,11882-11890,11894,11900-11908,12008-12016,12155,12188-12196,12308,12317,12371,12404-12412,12425,12548-12556,12575-12583,12668,12695,12713,12740,12773-12781,12785,12791-12799,12821,12857,12954-12965,12972-12975,12977-12978,12989-12997,13013,13214-13222,13241-13249,13262,13271,13289,13412-13420,13451,13514,13523,13541,13577,13658,13685,13829,13934-13942,13955,13973,14000,14036,14081,14189,14234,14330-14347,14495,14636-14644,14663-14671,14693,14756,14765,14801,14855,14906-14914,14918,14952-14961,14963-14964,14967,15050-15058,15062,15089,15104-15112,15125,15215,15251,15284-15292,15338-15355,15431,15449,15512,15584,15773,15809,15887-15895,15980,16016,16079,16088,16205,16304,16310-16318,16401-16404,16407,16610,16682,16706-16714,16733-16741,16787-16795,16859-16867,16913-16921,16941-16944,16946-16947,17006,17021-17029,17033,17147-17155,17165-17173,17249,17348,17390-17398,17418-17421,17424,17510,17519,17600,17654,17696-17704,17858-17866,17906,17930-17938,17957-17965,17993-18001,18005,18167,18257,18266,18299-18307,18347,18437,18452-18460,18488-18496,18533-18541,18623-18631,18662,18797,18828-18837,19040,19082-19090,19388-19396,19568-19576,19605-19608,19611,19614-19617,19625,19658-19666,19712-19720,19866-19868,19875-19878,19880-19881,19904,20057,20063-20071,20075,20147,20162-20170,20174,20180-20188,20198-20206,20216-20224,20234-20242,20291,20315-20323,20342-20350,20405-20413,20444,20534,20630-20638,20711-20719,20936-20944,20975,20993,21065,21110,21173,21233-21241,21389,21452,21611-21619,21641,21647-21655,21713,21731,21938,22016-22024,22136,22226,22431-22434,22436-22437,22442,22514,22604,22622,22709-22717,22737-22739,22746-22749,22751-22752,22775,22826-22834,22898-22906,22943-22951,22973,22988-23005,23060-23068,23162,23171,23369,23423,23441,23531,23560-23562,23630,23789-23797,23898-23901,23903-23904,23918,23969-23977,23997-24000,24003,24053,24059-24067,24125,24140-24148,24161,24195-24197,24204-24207,24210,24293-24301,24509-24517,24674,24683,24809,24825-24828,24830-24831,24851-24859,24863,24872,24980,25088,25106,25112-25120,25223,25256-25264,25286
+src/modules/TimelineEditor/presentations/components/Inspector/InspectorDetailHeader.tsx
+  s_b3e68b902b6b93::t_324d08967a7e26 5,21-26,37,39
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_b3e68b902b6b93::t_32d189822d85d4 12,194,196,201,204,206,234,262-263,447-449,479-482,484,496-499,501,521
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_b3e68b902b6b93::t_d886716543d5a5 9,102,105,175,184,191,198,252,255,259-262,266,294-295,304,309,314,322
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_2175fca1f07426::t_4bfb3b5b079632 4,144,153,213,215
+src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx
+  s_2175fca1f07426::t_365447b7838939 4,145,154,223,227
+src/modules/TimelineEditor/presentations/views/AutomationView.tsx
+  s_2175fca1f07426::t_3fb8facc5a2f32 6,50,63,71,88
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneControls.tsx
+  s_2175fca1f07426::t_67c833aabced5b 8-9,25,52
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneHeader.tsx
+  s_2175fca1f07426::t_4c483ccf1185c2 7,38,61
+src/modules/TimelineEditor/presentations/views/AutomationView/TrackAutomationSection.tsx
+  s_b3e68b902b6b93::t_5e390ebd2ad8c8 5,67,70,102-104,121
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  s_b3e68b902b6b93::t_b623b60e66f69e 7,52,65,96,113,141,148,186,198,202-204
+src/modules/TimelineEditor/presentations/views/ClipView/AutomationLane.tsx
+  s_b3e68b902b6b93::t_d59d58957e85f4 4,138-139,156-157,171-172
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_b3e68b902b6b93::t_a3cb2e66ef2998 6,646-650,668,679-683,685,689-694,700,710-712,719-723,726,739,743,747,774,783-784,798-799,817,820,840-841,852
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_b3e68b902b6b93::t_4c73de7ef8da16 16,321,357-361,438,442-443,447,494,496,508
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_2175fca1f07426::t_f9e509b4d69906 9,143,159,165,181,268,295
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_2175fca1f07426::t_6fb18591d075b3 12,40,428,470,483,515,517,606
+src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx
+  s_2175fca1f07426::t_aec4d745aab699 6,116-118,121,150,152-153,163,181,183,206,208-209,212,233,235-236,239,263-264
+src/modules/TimelineEditor/presentations/views/Inspector/ClipGainEnvelopeSection.tsx
+  s_2175fca1f07426::t_c500dd641c0247 7,43-44,49,79-80,84,101,105
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_2175fca1f07426::t_864ccbb7dc4c26 7,52,113,143,148,187,212,227,235,273,295
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_2175fca1f07426::t_6e41768199c951 11,390,409,436-437,448-449,458-459,476,497,510,512,544,563,568,575,603,616,625-626,642-643,654-655,678,680,693,713,729,762
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  s_2175fca1f07426::t_cccd50bf0f549f 4,112,127
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_2175fca1f07426::t_312e9425fe6312 4,351,355,386-387,389,399,426-427
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_2175fca1f07426::t_a97f1cbe258551 8,50,56,81,86,99-100
+src/modules/TimelineEditor/presentations/views/Inspector/TakesSection.tsx
+  s_2175fca1f07426::t_84dea9c1a74ce6 5,74,86
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAlternativesSection.tsx
+  s_2175fca1f07426::t_47477b61924ed0 7,58,60,79-80
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_2175fca1f07426::t_6a8963b581e65a 8,165,192
+src/modules/TimelineEditor/presentations/views/Inspector/TrackClipsSection.tsx
+  s_2175fca1f07426::t_29f700c7f760c2 8,40,66,71,94
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_2175fca1f07426::t_e17f38bbdf12ac 8,295,300,304,312-313,404
+src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx
+  s_b3e68b902b6b93::t_e1527dd508e4f0 7,50-51,58,72,99-102,107,136,143,174-175,178,181,183,185,201-202,204
+src/modules/TimelineEditor/presentations/views/Inspector/TrackInspector.tsx
+  s_2175fca1f07426::t_3e19ca8e6880be 3-4,38,55
+src/modules/TimelineEditor/presentations/views/Inspector/TrackLatencySection.tsx
+  s_2175fca1f07426::t_8db20f7cdfca5d 6,24,37
+src/modules/TimelineEditor/presentations/views/Inspector/TrackLevelSection.tsx
+  s_2175fca1f07426::t_084affb57a8094 5,41,47,52,56,77-78,81-82,85,87-89,107-108
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx
+  s_2175fca1f07426::t_0aa53bebbd7ccd 7,50,65,68,71-72,75-76,93-94,97,100,109-110,124,129,138-139,148,152,161,163,166
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiOutputSection.tsx
+  s_2175fca1f07426::t_6814fa261887c8 6,52,59
+src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx
+  s_2175fca1f07426::t_bd4cdeeff60fd8 7,49,70
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx
+  s_2175fca1f07426::t_5ed0977369a508 15,103,108,117,123,132,138,148,160,163,169,179,182,187,189
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/ChorusLayout.tsx
+  s_2175fca1f07426::t_e72321940fd388 6-7,49,51,53,61
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx
+  s_b3e68b902b6b93::t_d50527a7005e81 7,37,39,49,66
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx
+  s_b3e68b902b6b93::t_403abc5cbce438 7,37,39,48,63
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx
+  s_2175fca1f07426::t_2d015f4f6b71fd 7,37,39,48,60
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx
+  s_2175fca1f07426::t_ba7485b2ac409f 8,38,40,55,83
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx
+  s_2175fca1f07426::t_6245e40e32fd06 11,116,121,131,137,146,152,162,168,177,193
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx
+  s_b3e68b902b6b93::t_925ded0daad3c7 3,35-36,38-42,46,71,74-75,77,86,88
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx
+  s_2175fca1f07426::t_85cb090e16bc92 7,33,35,44,61
+src/modules/TimelineEditor/presentations/views/InspectorPanel.tsx
+  s_2175fca1f07426::t_a31e4ec75a9491 8,84,92
+src/modules/TimelineEditor/presentations/views/TempoEditor.tsx
+  s_b3e68b902b6b93::t_8d0b58aa714acb 8,56,98-101,106,150,186,218,220-222,287,289,292,338,341
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_b3e68b902b6b93::t_5c8243797dc42f 23,454-456,464,522,589,591,631,659,661,689,710,723,734
+src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx
+  s_b3e68b902b6b93::t_202bb743533d0e 20,118-119,123,186,191,195,197,207,209,211,249,252,274,287,324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6309f6d52b87c1d27bb31182888d07a6dbea6415",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
