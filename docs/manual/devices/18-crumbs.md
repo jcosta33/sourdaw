@@ -107,7 +107,7 @@ this session.
 
 > [!WARNING]
 > **Not yet active.** Clicking a pad flashes the button. It does not send a note into the track.
-> Play MIDI on the track instead. Owner: [#2456](https://github.com/jcosta33/sourdaw/issues/2456).
+> Play MIDI on the track instead.
 
 ## Slices
 
@@ -117,7 +117,6 @@ session.
 
 > [!WARNING]
 > **Not yet active.** The markers are a picture. They do not change which region a MIDI note plays.
-> Owner: [#2454](https://github.com/jcosta33/sourdaw/issues/2454).
 
 ## Loop
 
@@ -125,7 +124,7 @@ Visible when a sample is loaded. Heading **Loop**. **Detect loop points**.
 
 > [!WARNING]
 > **Not yet active.** The button does not change what the track plays, and the loop does not save
-> with the project. Owner: [#2455](https://github.com/jcosta33/sourdaw/issues/2455).
+> with the project.
 
 <!-- ac: SPEC-unified-sampler-suite/AC-020 -->
 
