@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
         id: string;
         kind: string;
         color: string;
-        clips: Array<{ id: string; type: string; color: string }>;
+        clips: Array<{ id: string; type: string; color: string; startBeat?: number; endBeat?: number }>;
     };
     return {
         midiState: { notesByClipId: {} },
@@ -40,7 +40,10 @@ type RendererDeps = Parameters<typeof usePianoRollRenderer>[0];
 
 // ── Geometry ─────────────────────────────────────────────────────────────
 // chromatic + unfolded → 60 rows, pitches 83..24 top-to-bottom.
-// beatWidth 10 → totalWidth = GRID_BEATS(32) * 10 = 320 (canvas has no parent).
+// No track/clip in the store for clipId/trackId → clip length 0, no notes →
+// extentBeats = getPianoRollExtentBeats(0, []) = GRID_BEATS(32) floor,
+// already a bar boundary, + 1 trailing bar (4 beats) = 36.
+// beatWidth 10 → totalWidth = 36 * 10 = 360 (canvas has no parent).
 // height = 60 * 16 + RULER(22) = 982. Note x = startBeat * 10, y = (83 - pitch) * 16.
 const BEAT_W = 10;
 
@@ -126,10 +129,36 @@ describe('usePianoRollRenderer', () => {
         runTick();
 
         const canvas = deps.canvasRef.current!;
-        expect(canvas.width).toBe(320);
+        expect(canvas.width).toBe(360);
         expect(canvas.height).toBe(982);
-        expect(canvas.style.width).toBe('320px');
+        expect(canvas.style.width).toBe('360px');
         expect(canvas.style.height).toBe('982px');
+    });
+
+    // Issue #2299: the renderer used to size the canvas from the fixed
+    // GRID_BEATS constant alone, so a clip longer than the floor had its
+    // tail drawn outside the canvas backing store. The extent must be looked
+    // up from the clip owning `clipId`/`trackId`, not just the note list.
+    it("sizes the canvas to the clip's own extent when it is longer than the GRID_BEATS floor", () => {
+        mocks.trackState = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'midi',
+                    color: 'oklch(0.5 0.1 200)',
+                    clips: [{ id: 'clip-1', type: 'midi', color: '', startBeat: 0, endBeat: 40 }],
+                },
+            ],
+        };
+        const deps = buildDeps();
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        // clip length 40, no notes, GRID_BEATS floor 32 → max is 40, already
+        // a bar boundary, + 1 trailing bar (4) = 44 beats. beatWidth 10 → 440.
+        const canvas = deps.canvasRef.current!;
+        expect(canvas.width).toBe(440);
     });
 
     it('blits the cached grid on a repaint and skips repainting when nothing changed', () => {
@@ -261,7 +290,7 @@ describe('usePianoRollRenderer', () => {
         // Column fill: x = stepBeat * beatWidth, width = gridSnap * beatWidth, full note area
         expect(fillRect).toHaveBeenCalledWith(40, 0, 10, 960);
         // Row highlight for the step pitch
-        expect(fillRect).toHaveBeenCalledWith(0, rowY(60), 320, 16);
+        expect(fillRect).toHaveBeenCalledWith(0, rowY(60), 360, 16);
     });
 
     it('draws ghost notes from other MIDI tracks only when the toggle is on', () => {

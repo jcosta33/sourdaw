@@ -38,12 +38,12 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {
     NOTE_NAMES,
-    GRID_BEATS,
     ROW_HEIGHT,
     RULER_HEIGHT,
     SCALES,
     EMPTY_NOTES,
     getVisiblePitches,
+    getPianoRollExtentBeats,
     colorWithAlpha,
     brightenColor,
 } from '../helpers/pianoRollConstants';
@@ -176,8 +176,14 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-            const containerW = canvas.parentElement?.clientWidth ?? GRID_BEATS * bw;
-            const totalWidth = Math.max(containerW, GRID_BEATS * bw);
+            // Extent is derived from the clip being edited (see
+            // `getPianoRollExtentBeats`), not a fixed constant — this must
+            // stay in lock-step with the same call in PianoRoll.tsx.
+            const clip = tracks?.find((time) => time.id === tId)?.clips.find((context) => context.id === cId);
+            const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
+            const extentBeats = getPianoRollExtentBeats(clipLengthBeats, notes);
+            const containerW = canvas.parentElement?.clientWidth ?? extentBeats * bw;
+            const totalWidth = Math.max(containerW, extentBeats * bw);
             const height = noteAreaHeight + RULER_HEIGHT;
 
             // Resize canvas backing store only when dimensions change

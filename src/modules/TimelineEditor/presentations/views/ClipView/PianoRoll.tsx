@@ -15,6 +15,7 @@ import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     setNoteVelocity,
@@ -30,7 +31,13 @@ import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
-import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, EMPTY_NOTES, getVisiblePitches } from '../../helpers/pianoRollConstants';
+import {
+    ROW_HEIGHT,
+    RULER_HEIGHT,
+    EMPTY_NOTES,
+    getVisiblePitches,
+    getPianoRollExtentBeats,
+} from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
@@ -126,6 +133,16 @@ export const PianoRoll = ({
                 : undefined,
         areOpenedClipNotesEqual
     );
+    // Length of the clip being edited, read from the Arrangement module's own
+    // store (foreign modules may read another module's store directly — see
+    // AGENTS.md §Architecture). Drives the grid extent below so the piano
+    // roll spans the clip it is editing instead of a fixed constant.
+    const clipLengthBeats = useStoreSelector(trackStore, (state) => {
+        const track = state?.tracks.find((candidate) => candidate.id === trackId);
+        const clip = track?.clips.find((candidate) => candidate.id === clipId);
+        return clip ? clip.endBeat - clip.startBeat : 0;
+    });
+    const extentBeats = getPianoRollExtentBeats(clipLengthBeats, notes);
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {
@@ -140,14 +157,14 @@ export const PianoRoll = ({
         }
         const report = (): void => {
             const parentWidth = parent.clientWidth;
-            const totalWidth = Math.max(parentWidth, GRID_BEATS * beatWidth);
+            const totalWidth = Math.max(parentWidth, extentBeats * beatWidth);
             onContentWidthChange?.(totalWidth);
         };
         report();
         const ro = new ResizeObserver(report);
         ro.observe(parent);
         return () => ro.disconnect();
-    }, [beatWidth, onContentWidthChange]);
+    }, [beatWidth, onContentWidthChange, extentBeats]);
 
     // ── Refs shared with interactions ────────────────────────────────
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
@@ -337,7 +354,7 @@ export const PianoRoll = ({
                                 trackId={trackId}
                                 selectedNoteIds={selectedNoteIds}
                                 beatWidth={beatWidth}
-                                contentWidth={GRID_BEATS * beatWidth}
+                                contentWidth={extentBeats * beatWidth}
                                 getValue={(node) => {
                                     if (activeExpressionLane === 'velocity') {
                                         return node.velocity ?? 100;

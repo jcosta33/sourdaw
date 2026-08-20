@@ -23,8 +23,56 @@ export const SCALE_ROOT_LABELS = KEY_NAMES;
 export const TOTAL_ROWS = 60;
 export const BASE_PITCH = 24;
 export const ROW_HEIGHT = 16;
+/** Minimum grid span, in beats, so an empty or very short clip still opens on a usable grid. */
 export const GRID_BEATS = 32;
 export const RULER_HEIGHT = 22;
+
+/**
+ * Bar length used to round the grid extent, matching the ruler and grid's
+ * existing 4/4 assumption (`beat % 4 === 0` in `usePianoRollRenderer`'s bar
+ * markers). The piano roll does not yet read the project's actual time
+ * signature anywhere else, so this mirrors what the grid already draws
+ * rather than introducing a second, inconsistent notion of "a bar".
+ */
+const EXTENT_BEATS_PER_BAR = 4;
+
+/**
+ * Bars of scratch room appended past the last bar of real content. Every
+ * established DAW (Ableton, Logic, FL Studio, Cubase) lets you draw or drag a
+ * note somewhat past the clip's end without first resizing the clip — the
+ * editor never stops exactly at the boundary.
+ */
+const TRAILING_BARS = 1;
+
+/**
+ * Beats the piano roll's scrollable canvas must span.
+ *
+ * Sized from the material being edited, not a fixed constant: takes the
+ * larger of the clip's own length and the end of its furthest note
+ * (`startBeat + duration`), floors it at `GRID_BEATS` so an empty or very
+ * short clip still opens on a usable grid, rounds up to a whole bar, then
+ * appends `TRAILING_BARS` of room past that boundary so the user can draw or
+ * drag past the end.
+ *
+ * This is the single source of truth for the grid's beat span — both
+ * `PianoRoll.tsx` (scroll container + expression-lane width) and
+ * `usePianoRollRenderer.ts` (canvas backing store + grid cache) must call
+ * this instead of recomputing the rule themselves. Two independent copies of
+ * this formula is how a MIDI clip longer than eight bars ends up with its
+ * tail undrawn, unscrollable, and unselectable again.
+ */
+export const getPianoRollExtentBeats = (clipLengthBeats: number, notes: readonly MidiNote[]): number => {
+    let furthestNoteEndBeat = 0;
+    for (const note of notes) {
+        const endBeat = note.startBeat + note.duration;
+        if (endBeat > furthestNoteEndBeat) {
+            furthestNoteEndBeat = endBeat;
+        }
+    }
+    const contentBeats = Math.max(clipLengthBeats, furthestNoteEndBeat, GRID_BEATS);
+    const barBeats = Math.ceil(contentBeats / EXTENT_BEATS_PER_BAR) * EXTENT_BEATS_PER_BAR;
+    return barBeats + TRAILING_BARS * EXTENT_BEATS_PER_BAR;
+};
 
 export type DragMode =
     'none' | 'move' | 'duplicate' | 'resize-left' | 'resize-right' | 'draw' | 'rubber-band' | 'paint' | 'lasso';
