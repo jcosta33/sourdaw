@@ -75,7 +75,7 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
 
     it('interpolates a linear segment exactly at its midpoint via binary search', () => {
         // 0 -> 8 over beat 0..4: midpoint beat 2 is the linear midpoint 4.
-        automationStore.set({ lanes: [lane('l1', [point(0, 0), point(4, 8)])] });
+        automationStore.set({ lanes: [lane('l1', [point(0, 0), point(4, 8)], { maxValue: 8 })] });
         expect(getAutomationValueAtBeat('l1', 2)).toBeCloseTo(4, 10);
         expect(getAutomationValueAtBeat('l1', 1)).toBeCloseTo(2, 10);
         expect(getAutomationValueAtBeat('l1', 3)).toBeCloseTo(6, 10);
@@ -85,20 +85,20 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
         // Two adjacent segments with different slopes; the beat must resolve to
         // segment [10,20] (slope 1), not [0,10] (slope 2).
         // 0->20 over 0..10, then 20->30 over 10..20.
-        automationStore.set({ lanes: [lane('l1', [point(0, 0), point(10, 20), point(20, 30)])] });
+        automationStore.set({ lanes: [lane('l1', [point(0, 0), point(10, 20), point(20, 30)], { maxValue: 30 })] });
         // beat 15 → segment [10,20], fraction 0.5 → 20 + (30-20)*0.5 = 25.
         expect(getAutomationValueAtBeat('l1', 15)).toBeCloseTo(25, 10);
     });
 
     it('holds the first value across a step segment', () => {
-        automationStore.set({ lanes: [lane('l1', [point(0, 3, 'step'), point(4, 9, 'step')])] });
+        automationStore.set({ lanes: [lane('l1', [point(0, 3, 'step'), point(4, 9, 'step')], { maxValue: 9 })] });
         // A step curve holds the first value for the whole segment.
         expect(getAutomationValueAtBeat('l1', 3.9)).toBeCloseTo(3, 10);
     });
 
     it('quantizes a stairs segment into the default 4 steps', () => {
         // 0 -> 8 over beat 0..8, 4 steps: steps land at 0,2,4,6,8.
-        automationStore.set({ lanes: [lane('l1', [point(0, 0, 'stairs'), point(8, 8, 'stairs')])] });
+        automationStore.set({ lanes: [lane('l1', [point(0, 0, 'stairs'), point(8, 8, 'stairs')], { maxValue: 8 })] });
         // beat 1 → fraction 0.125 → floor(0.5)/4 = 0 → 0.
         expect(getAutomationValueAtBeat('l1', 1)).toBeCloseTo(0, 10);
         // beat 2 → fraction 0.25 → floor(1)/4 = 0.25 → 2.
@@ -110,7 +110,11 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
     it('applies exponential tension as a slow-attack curve (positive tension holds back near the start)', () => {
         // 0 -> 8 over beat 0..4, tension 1: midpoint collapses toward 0.
         automationStore.set({
-            lanes: [lane('l1', [point(0, 0, 'exponential', { tension: 1 }), point(4, 8, 'exponential')])],
+            lanes: [
+                lane('l1', [point(0, 0, 'exponential', { tension: 1 }), point(4, 8, 'exponential')], {
+                    maxValue: 8,
+                }),
+            ],
         });
         // 0.5 ** (2**(1*3)=8) = 0.00390625 → 8 * 0.00390625 = 0.03125.
         expect(getAutomationValueAtBeat('l1', 2)).toBeCloseTo(0.03125, 5);
@@ -119,7 +123,11 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
     it('degrades an exponential curve to linear inside the tension deadzone', () => {
         // tension 0 is within the +/-0.01 deadzone → plain linear midpoint 4.
         automationStore.set({
-            lanes: [lane('l1', [point(0, 0, 'exponential', { tension: 0 }), point(4, 8, 'exponential')])],
+            lanes: [
+                lane('l1', [point(0, 0, 'exponential', { tension: 0 }), point(4, 8, 'exponential')], {
+                    maxValue: 8,
+                }),
+            ],
         });
         expect(getAutomationValueAtBeat('l1', 2)).toBeCloseTo(4, 10);
     });
@@ -127,7 +135,7 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
     it('eases an s-curve toward full smoothstep at tension 1', () => {
         // 0 -> 8 over beat 0..4, tension 1, beat 1 → fraction 0.25.
         automationStore.set({
-            lanes: [lane('l1', [point(0, 0, 's-curve', { tension: 1 }), point(4, 8, 's-curve')])],
+            lanes: [lane('l1', [point(0, 0, 's-curve', { tension: 1 }), point(4, 8, 's-curve')], { maxValue: 8 })],
         });
         // smoothstep(0.25) = 0.15625 → 8 * 0.15625 = 1.25.
         expect(getAutomationValueAtBeat('l1', 1)).toBeCloseTo(1.25, 10);
@@ -136,7 +144,12 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
     it('passes the interior neighbors to a smooth (Catmull-Rom) segment so it keeps its curvature', () => {
         // Four points; the segment [4,8] has interior neighbors at beat 0 and 12.
         automationStore.set({
-            lanes: [lane('l1', [point(0, -10), point(4, 2, 'smooth'), point(8, 8), point(12, 20)])],
+            lanes: [
+                lane('l1', [point(0, -10), point(4, 2, 'smooth'), point(8, 8), point(12, 20)], {
+                    minValue: -20,
+                    maxValue: 30,
+                }),
+            ],
         });
         // beat 5 → fraction 0.25 of the [4,8] segment. Catmull-Rom with the
         // neighbors v0=-10,v1=2,v2=8,v3=20 = 3.78125 — distinct from the
@@ -161,7 +174,7 @@ describe('getAutomationValueAtBeat — linked-lane resolution and scale', () => 
         automationStore.set({
             lanes: [
                 lane('follower', [point(0, 0.1), point(10, 0.9)], { linkedLaneId: 'source' }),
-                lane('source', [point(0, 0), point(4, 8)]),
+                lane('source', [point(0, 0), point(4, 8)], { maxValue: 8 }),
             ],
         });
         // The follower reports the source's linear midpoint (4), never 0.5.
@@ -222,5 +235,36 @@ describe('getAutomationValueAtBeat — linked-lane resolution and scale', () => 
         });
         // Before beat 5 the source holds 0.2; scaled by 2 → 0.4.
         expect(getAutomationValueAtBeat('follower', 0)).toBeCloseTo(0.4, 10);
+    });
+});
+
+describe('getAutomationValueAtBeat — declared-range clamp', () => {
+    beforeEach(() => {
+        automationStore.set({ lanes: [] });
+    });
+    afterEach(() => {
+        automationStore.set({ lanes: [] });
+    });
+
+    it('clamps a smooth-curve overshoot to the lane declared maxValue', () => {
+        // Points chosen so the Catmull-Rom curve through the [2,4] segment
+        // overshoots above the lane's declared maxValue of 1. Sampling the
+        // segment (fraction 0..1 in 0.0002 steps) found the peak at beat
+        // ~3.173 with a raw (pre-clamp) value of ~1.0749 — an overshoot of
+        // ~0.075 above maxValue. Beat 3.2 sits on that overshooting shoulder
+        // with a raw value of 1.0748 (measured against the unmodified
+        // evaluator), safely past maxValue.
+        automationStore.set({
+            lanes: [lane('l1', [point(0, 0.2), point(2, 0.95, 'smooth'), point(4, 1.0), point(6, 0.2)])],
+        });
+        const value = getAutomationValueAtBeat('l1', 3.2);
+        expect(value).not.toBeNull();
+        expect(value!).toBeLessThanOrEqual(1);
+        expect(value!).toBeGreaterThanOrEqual(0);
+    });
+
+    it('does not clamp a value that is genuinely inside the declared range', () => {
+        automationStore.set({ lanes: [lane('l1', [point(0, 0.2), point(4, 0.8)])] });
+        expect(getAutomationValueAtBeat('l1', 2)).toBeCloseTo(0.5, 10);
     });
 });

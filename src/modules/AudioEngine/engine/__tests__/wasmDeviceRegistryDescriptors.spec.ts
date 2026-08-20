@@ -16,6 +16,7 @@ import { type GrinderNodeResult } from '../GrinderNode';
 import { type KneadNodeResult } from '../KneadNode';
 import { type LevainNodeResult } from '../LevainNode';
 import { type ProofChamberNodeResult } from '../ProofChamberNode';
+import { type ProofNodeResult } from '../ProofNode';
 import { type ScoringNodeResult } from '../ScoringNode';
 import { type ToasterNodeResult } from '../ToasterNode';
 import { findWasmDescriptor, type WasmDeviceCreateDeps } from '../wasmDeviceRegistry';
@@ -26,6 +27,7 @@ const factoryMocks = vi.hoisted(() => ({
     createLevainNode: vi.fn(),
     createCrumbsNode: vi.fn(),
     createProofChamberNode: vi.fn(),
+    createProofNode: vi.fn(),
     createGlutenNode: vi.fn(),
     createCrustNode: vi.fn(),
     createBacteriaNode: vi.fn(),
@@ -58,6 +60,10 @@ vi.mock('../CrumbsNode', async (importOriginal) => ({
 vi.mock('../ProofChamberNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../ProofChamberNode')>()),
     createProofChamberNode: factoryMocks.createProofChamberNode,
+}));
+vi.mock('../ProofNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../ProofNode')>()),
+    createProofNode: factoryMocks.createProofNode,
 }));
 vi.mock('../GlutenNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GlutenNode')>()),
@@ -729,6 +735,121 @@ describe('wasmDeviceRegistry descriptors', () => {
             await requireDescriptor('dutch-oven').create(deps).loadPromise;
             expect(result.destroy).toHaveBeenCalledTimes(1);
             expect(externalLatencyRegistry.has('oven-1')).toBe(false);
+        });
+    });
+
+    describe('proof', () => {
+        it('keeps a healthy loaded Proof device ready and controllable until its runtime callback reports a fault', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const replaceRuntimeFailure = vi.fn(() => true);
+            const unregisterProofDevice = vi.fn();
+            setAudioDeviceRuntimeSink({ unregisterProofDevice });
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'proof',
+                deviceId: 'proof-healthy',
+                onRuntimeFailure: replaceRuntimeFailure,
+            });
+
+            await requireDescriptor('proof').create(deps).loadPromise;
+
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(loaded.controller?.ready).toBe(true);
+            loaded.controller?.setParam('lim_ceiling', -1);
+            expect(result.setParam).toHaveBeenCalledWith('lim_ceiling', -1);
+            expect(result.destroy).not.toHaveBeenCalled();
+            expect(replaceRuntimeFailure).not.toHaveBeenCalled();
+            expect(unregisterProofDevice).not.toHaveBeenCalled();
+            expect(externalLatencyRegistry.has('proof-healthy')).toBe(true);
+        });
+
+        it('preserves an explicit invalid live target so Proof fails closed instead of selecting legacy raw controls', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 0 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const parameterIds = Object.freeze(['lim_ceiling']);
+            const deps = createDeps({
+                trackId: '',
+                deviceType: 'proof',
+                deviceId: 'proof-invalid-live-target',
+                parameterIds,
+            });
+
+            await requireDescriptor('proof').create(deps).loadPromise;
+
+            expect(factoryMocks.createProofNode).toHaveBeenCalledWith(
+                deps.context,
+                undefined,
+                deps.signal,
+                {
+                    trackId: '',
+                    deviceId: 'proof-invalid-live-target',
+                    deviceType: 'proof',
+                    parameterIds,
+                },
+                expect.any(Function)
+            );
+        });
+
+        it('replaces the TrackNode-facing controller after a terminal runtime fault so later writes cannot grow the loading queue', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const onRuntimeFailure = vi.fn(() => true);
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'proof',
+                deviceId: 'proof-fault',
+                onRuntimeFailure,
+            });
+            const { placeholder, loadPromise } = requireDescriptor('proof').create(deps);
+            const loadingController = placeholder.controller;
+            await loadPromise;
+            const reportRuntimeFailure = factoryMocks.createProofNode.mock.calls[0]?.[4];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected ProofNode to receive a post-ready runtime failure callback');
+            }
+            reportRuntimeFailure('processor trapped');
+            expect(placeholder.controller).not.toBe(loadingController);
+            expect(placeholder.controller?.ready).toBe(false);
+            placeholder.controller?.setParam('lim_ceiling', -1);
+            placeholder.controller?.setParam('input_gain', 2);
+            expect(result.setParam).not.toHaveBeenCalled();
         });
     });
 

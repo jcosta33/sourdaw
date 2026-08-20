@@ -1,7 +1,9 @@
 //! Engine events published from real-time-adjacent callbacks.
 //!
-//! A cpal stream error arrives on a callback the host owns: it may run on the
-//! audio thread itself, so publishing it must not allocate, lock, or block.
+//! A stream error arrives on the backend's error callback. The backend may
+//! call it from the real-time thread — ALSA reports from its xrun path and
+//! WASAPI from inside the output run loop — so publishing it must not
+//! allocate, lock, or block.
 //! Every event here is therefore a fixed-size `Copy` value pushed into a
 //! bounded SPSC ring; the non-real-time side drains it through
 //! `EngineHandle::drain_engine_events`, and everything that costs anything to
@@ -19,8 +21,9 @@ pub const ENGINE_EVENT_QUEUE_CAPACITY: usize = 64;
 
 /// Why the audio backend reported a stream error.
 ///
-/// A fixed enum rather than the cpal error's message: the message is an owned
-/// string, and building one on the error callback would allocate.
+/// A fixed enum rather than the backend's own error report — an owned
+/// message string on cpal, a raw HRESULT on WASAPI — so every report is a
+/// fixed-size `Copy` value the ring can hold without allocating.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum StreamErrorKind {
     /// The device went away — unplugged, or removed by the OS.

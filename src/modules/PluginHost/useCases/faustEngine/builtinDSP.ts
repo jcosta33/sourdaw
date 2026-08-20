@@ -245,8 +245,8 @@ export function registerBuiltinFaustDSP(): void {
     registerFaustDSP('Brick-Wall Limiter', brickWallLimiterDsp, [
         {
             address: '/limiter/ceiling',
-            label: 'Ceiling',
-            min: -6,
+            label: 'Ceiling (dB)',
+            min: -12,
             max: 0,
             defaultValue: -0.3,
             step: 0.1,
@@ -254,9 +254,9 @@ export function registerBuiltinFaustDSP(): void {
         },
         {
             address: '/limiter/release',
-            label: 'Release',
-            min: 10,
-            max: 500,
+            label: 'Release (ms)',
+            min: 1,
+            max: 1000,
             defaultValue: 100,
             step: 1,
             type: 'hslider',
@@ -268,7 +268,7 @@ export function registerBuiltinFaustDSP(): void {
             min: 0,
             max: 10,
             defaultValue: 5,
-            step: 0.5,
+            step: 0.1,
             type: 'hslider',
         },
     ]);

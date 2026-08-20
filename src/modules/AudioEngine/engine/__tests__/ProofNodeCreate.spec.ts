@@ -174,6 +174,49 @@ describe('createProofNode', () => {
         expect(port.postMessage).toHaveBeenNthCalledWith(2, { type: 'reset_integrated' });
     });
 
+    it('admits the real Proof scalar namespace and rejects synthetic parameters in live mode', async () => {
+        const node = await createProofNode(makeContext(), undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'proof-1',
+            deviceType: 'proof',
+            parameterIds: [],
+        });
+        const { port } = lastWorklet();
+        port.postMessage.mockClear();
+        node.setParam('lim_ceiling', -1);
+        node.setParam('not-a-proof-param', 1);
+        const controls = port.postMessage.mock.calls
+            .map((call) => call[0])
+            .filter((message) => (message as { command?: string }).command === 'set-fallback-param');
+        expect(controls).toEqual([
+            expect.objectContaining({
+                target: expect.objectContaining({
+                    trackId: 'track-1',
+                    deviceId: 'proof-1',
+                    deviceType: 'proof',
+                    parameterId: 'lim_ceiling',
+                }),
+                correlation: expect.objectContaining({ controlSequence: 1 }),
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            }),
+        ]);
+    });
+
+    it.each(['', 'x'.repeat(129)])('does not downgrade an invalid live %j target to raw controls', async (trackId) => {
+        const node = await createProofNode(makeContext(), undefined, undefined, {
+            trackId,
+            deviceId: 'proof-1',
+            deviceType: 'proof',
+            parameterIds: [],
+        });
+        const { port } = lastWorklet();
+        port.postMessage.mockClear();
+        node.setParam('lim_ceiling', -1);
+        node.reorderModules([0, 1, 2, 3, 4]);
+        node.resetIntegrated();
+        expect(port.postMessage).not.toHaveBeenCalled();
+    });
+
     it('initializes SAB telemetry on ready and polls torn-free meter snapshots into the callback', async () => {
         const slot = makeSlot();
         mocks.allocateSlot.mockReturnValue(slot);
