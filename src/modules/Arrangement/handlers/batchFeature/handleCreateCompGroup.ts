@@ -7,5 +7,5 @@ export const handleCreateCompGroup = createHandler<'createCompGroup'>({
         createCompGroup(alpha.payload.name, alpha.payload.trackIds);
     },
     describe: () => ({ label: 'Create Comp Group' }),
-    undoable: true,
+    undoable: false,
 });

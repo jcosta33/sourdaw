@@ -7,5 +7,5 @@ export const handleGroupTracks = createHandler<'groupTracks'>({
         groupTracks(action.payload.trackIds, action.payload.name);
     },
     describe: (alpha) => ({ label: `Group tracks: "${alpha.payload.name}"` }),
-    undoable: true,
+    undoable: false,
 });

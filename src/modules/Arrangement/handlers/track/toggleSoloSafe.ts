@@ -6,6 +6,13 @@ export const handleToggleSoloSafe = createHandler<'toggleSoloSafe'>({
     execute: (action) => {
         toggleSoloSafe(action.payload.trackId);
     },
-    describe: () => ({ label: 'Toggle solo safe' }),
+    describe: (action) => ({
+        label: 'Toggle solo safe',
+        inverseAction: {
+            type: 'toggleSoloSafe',
+            payload: { trackId: action.payload.trackId },
+        },
+        redoAction: action,
+    }),
     undoable: true,
 });

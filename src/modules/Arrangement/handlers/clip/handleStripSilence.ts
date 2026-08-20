@@ -9,5 +9,5 @@ export const handleStripSilence = createHandler<'stripSilence'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: () => ({ label: 'Strip silence' }),
-    undoable: true,
+    undoable: false,
 });

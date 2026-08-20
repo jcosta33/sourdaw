@@ -7,5 +7,5 @@ export const handleDuplicateTimeRange = createHandler<'duplicateTimeRange'>({
         duplicateTimeRange(alpha.payload.startBeat, alpha.payload.endBeat);
     },
     describe: () => ({ label: 'Duplicate time range' }),
-    undoable: true,
+    undoable: false,
 });

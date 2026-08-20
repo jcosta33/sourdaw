@@ -16,5 +16,5 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
         }
     },
     describe: () => ({ label: 'Consolidate all tracks' }),
-    undoable: true,
+    undoable: false,
 });

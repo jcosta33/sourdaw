@@ -8,5 +8,5 @@ export const handleCutClip = createHandler<'cutClip'>({
         return toHandlerExecutionResult(cutSelectedClip());
     },
     describe: () => ({ label: 'Cut clip' }),
-    undoable: true,
+    undoable: false,
 });

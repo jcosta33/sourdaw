@@ -6,6 +6,13 @@ export const handleToggleAdjustmentLayer = createHandler<'toggleAdjustmentLayer'
     execute: (a) => {
         toggleAdjustmentLayer(a.payload.layerId);
     },
-    describe: () => ({ label: 'Toggle Adjustment Layer' }),
+    describe: (a) => ({
+        label: 'Toggle Adjustment Layer',
+        inverseAction: {
+            type: 'toggleAdjustmentLayer',
+            payload: { layerId: a.payload.layerId },
+        },
+        redoAction: a,
+    }),
     undoable: true,
 });

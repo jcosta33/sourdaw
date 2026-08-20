@@ -7,5 +7,5 @@ export const handleZoomTracksVertical = createHandler<'zoomTracksVertical'>({
         zoomTracksVertical(action.payload.delta);
     },
     describe: (alpha) => ({ label: `Zoom tracks vertical ${alpha.payload.delta > 0 ? 'in' : 'out'}` }),
-    undoable: true,
+    undoable: false,
 });

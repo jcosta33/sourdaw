@@ -8,6 +8,13 @@ export const handleReverseClip = createHandler<'reverseClip'>({
         const didWrite = reverseClip(alpha.payload.clipId);
         return toHandlerExecutionResult(didWrite);
     },
-    describe: () => ({ label: 'Reverse clip' }),
+    describe: (alpha) => ({
+        label: 'Reverse clip',
+        inverseAction: {
+            type: 'reverseClip',
+            payload: { clipId: alpha.payload.clipId },
+        },
+        redoAction: alpha,
+    }),
     undoable: true,
 });

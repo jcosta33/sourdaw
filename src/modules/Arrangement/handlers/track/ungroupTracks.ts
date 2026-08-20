@@ -7,5 +7,5 @@ export const handleUngroupTracks = createHandler<'ungroupTracks'>({
         ungroupTracks(action.payload.groupId);
     },
     describe: () => ({ label: 'Ungroup tracks' }),
-    undoable: true,
+    undoable: false,
 });

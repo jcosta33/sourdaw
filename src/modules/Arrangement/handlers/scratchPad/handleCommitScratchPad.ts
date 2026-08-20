@@ -7,5 +7,5 @@ export const handleCommitScratchPad = createHandler<'commitScratchPad'>({
         commitScratchPadToArrangement();
     },
     describe: () => ({ label: 'Apply Scratch Pad to Arrangement' }),
-    undoable: true,
+    undoable: false,
 });

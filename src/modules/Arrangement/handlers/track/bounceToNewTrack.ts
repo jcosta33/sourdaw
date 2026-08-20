@@ -9,5 +9,5 @@ export const handleBounceToNewTrack = createHandler<'bounceToNewTrack'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: () => ({ label: 'Bounce to new track' }),
-    undoable: true,
+    undoable: false,
 });

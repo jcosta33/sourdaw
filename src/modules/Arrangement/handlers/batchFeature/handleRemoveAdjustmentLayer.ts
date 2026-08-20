@@ -7,5 +7,5 @@ export const handleRemoveAdjustmentLayer = createHandler<'removeAdjustmentLayer'
         removeAdjustmentLayer(a.payload.layerId);
     },
     describe: () => ({ label: 'Remove Adjustment Layer' }),
-    undoable: true,
+    undoable: false,
 });

@@ -8,6 +8,13 @@ export const handleFreezeTrack = createHandler<'freezeTrack'>({
         const didWrite = await freezeTrack(action.payload.trackId);
         return toHandlerExecutionResult(didWrite);
     },
-    describe: () => ({ label: 'Freeze track' }),
+    describe: (action) => ({
+        label: 'Freeze track',
+        inverseAction: {
+            type: 'unfreezeTrack',
+            payload: { trackId: action.payload.trackId },
+        },
+        redoAction: action,
+    }),
     undoable: true,
 });

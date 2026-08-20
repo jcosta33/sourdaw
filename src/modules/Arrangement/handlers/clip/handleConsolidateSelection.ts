@@ -15,5 +15,5 @@ export const handleConsolidateSelection = createHandler<'consolidateSelection'>(
         return toHandlerExecutionResult(didWrite);
     },
     describe: () => ({ label: 'Consolidate selection' }),
-    undoable: true,
+    undoable: false,
 });

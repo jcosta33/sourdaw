@@ -7,5 +7,5 @@ export const handleDeleteTime = createHandler<'deleteTime'>({
         deleteTime(alpha.payload.startBeat, alpha.payload.endBeat);
     },
     describe: () => ({ label: 'Delete time' }),
-    undoable: true,
+    undoable: false,
 });

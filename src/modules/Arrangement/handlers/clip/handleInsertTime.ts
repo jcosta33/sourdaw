@@ -7,5 +7,5 @@ export const handleInsertTime = createHandler<'insertTime'>({
         insertTime(alpha.payload.atBeat, alpha.payload.durationBeats);
     },
     describe: () => ({ label: 'Insert time' }),
-    undoable: true,
+    undoable: false,
 });

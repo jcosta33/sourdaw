@@ -7,5 +7,5 @@ export const handleClearScratchPad = createHandler<'clearScratchPad'>({
         clearScratchPad();
     },
     describe: () => ({ label: 'Clear Scratch Pad' }),
-    undoable: true,
+    undoable: false,
 });

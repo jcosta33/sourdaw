@@ -13,5 +13,5 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
         }
     },
     describe: () => ({ label: 'Remove all tracks' }),
-    undoable: true,
+    undoable: false,
 });

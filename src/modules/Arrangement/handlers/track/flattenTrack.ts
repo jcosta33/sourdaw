@@ -9,5 +9,5 @@ export const handleFlattenTrack = createHandler<'flattenTrack'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: () => ({ label: 'Flatten track' }),
-    undoable: true,
+    undoable: false,
 });

@@ -7,5 +7,5 @@ export const handleLoadTrackTemplate = createHandler<'loadTrackTemplate'>({
         loadTrackTemplate(alpha.payload.templateId);
     },
     describe: () => ({ label: 'Load Track Template' }),
-    undoable: true,
+    undoable: false,
 });

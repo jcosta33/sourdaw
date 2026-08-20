@@ -110,5 +110,5 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
         return toHandlerExecutionResult(true);
     },
     describe: () => ({ label: 'Delete Alternative' }),
-    undoable: true,
+    undoable: false,
 });

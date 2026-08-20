@@ -8,5 +8,5 @@ export const handlePasteClip = createHandler<'pasteClip'>({
         return toHandlerExecutionResult(pasteClip());
     },
     describe: () => ({ label: 'Paste clip' }),
-    undoable: true,
+    undoable: false,
 });

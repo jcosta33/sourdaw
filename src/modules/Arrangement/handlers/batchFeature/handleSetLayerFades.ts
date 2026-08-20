@@ -7,5 +7,5 @@ export const handleSetLayerFades = createHandler<'setLayerFades'>({
         setLayerFades(a.payload.regionId, a.payload.fadeInBeats, a.payload.fadeOutBeats);
     },
     describe: () => ({ label: 'Set Layer Fades' }),
-    undoable: true,
+    undoable: false,
 });
