@@ -15,10 +15,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The spelling `'desktop'` carried on disk before the desktop shell moved off
- * Tauri. Roots connected then are still in IndexedDB, so it is accepted on read
- * and mapped forward. Nothing writes it: `parseLibraryRoot` hands the store the
- * normalized kind, and `persistLibraryRoots` serializes what the store holds.
+ * The spelling `'tauri'` carried on disk before the desktop shell moved off
+ * Tauri. Roots connected then are still in IndexedDB, so it is accepted on
+ * read and mapped forward to `'desktop'`. Nothing writes it anymore:
+ * `parseLibraryRoot` hands the store the normalized kind, and
+ * `persistLibraryRoots` serializes what the store holds.
  */
 const LEGACY_DESKTOP_PROVIDER = 'tauri';
 

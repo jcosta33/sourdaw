@@ -68,12 +68,19 @@ export function CapabilityReportPanel(): ReactElement {
     const { report } = state;
 
     if (report.capability !== 'supported') {
+        // Two distinct causes land here and the copy must not conflate them:
+        // a Chromium renderer without WebGPU (older build, refused GPU stack,
+        // desktop app on a blocked GPU) versus a genuinely non-Chrome browser.
+        const description =
+            report.chromeVersion !== null
+                ? 'WebGPU unavailable — AI features need a GPU-enabled Chromium'
+                : 'Non-Chrome browser — AI features require Chrome latest';
         return (
             <DawBlockedState
                 compact
                 eyebrow="Browser AI"
                 title="Browser AI Unavailable"
-                description="Non-Chrome browser — AI features require Chrome latest"
+                description={description}
                 action={<DawMicroBadge tone="danger">Unsupported</DawMicroBadge>}
             />
         );
