@@ -3,6 +3,7 @@ pub mod audio_thread;
 pub mod engine_events;
 pub mod midi;
 pub mod midi_fx;
+pub mod offline;
 pub mod plugin_slot;
 pub mod scheduler;
 pub mod timeline;
@@ -54,6 +55,9 @@ pub struct EngineHandle {
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     engine_events: Consumer<EngineEvent>,
+    /// The rate the stream actually opened at. Every command that names a time
+    /// in seconds is converted to frames against this and nothing else.
+    sample_rate: f32,
 }
 
 impl EngineHandle {
@@ -81,7 +85,7 @@ impl EngineHandle {
         let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let thread_handle = spawn_audio_thread_with_diagnostics(
+        let (thread_handle, sample_rate) = spawn_audio_thread_with_diagnostics(
             rx,
             diagnostics_tx,
             timeline_diagnostics_tx,
@@ -96,7 +100,33 @@ impl EngineHandle {
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             engine_events: engine_event_rx,
+            sample_rate,
         })
+    }
+
+    /// The sample rate the running stream renders at.
+    pub const fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    /// Free slots on the command ring right now.
+    ///
+    /// Only this handle pushes and only the audio thread pops, so the count can
+    /// grow under the caller but never shrink: a batch that fits when checked
+    /// still fits when pushed.
+    pub fn graph_command_slots(&self) -> usize {
+        self.command_tx.slots()
+    }
+
+    /// Push one already-built graph command.
+    ///
+    /// The typed methods below stay the ordinary path; this exists for callers
+    /// that validate and build a whole *batch* of commands control-side (the
+    /// `AudioGraphBackend` transport) and then apply it atomically, checking
+    /// [`EngineHandle::graph_command_slots`] first so the batch can be refused
+    /// whole instead of stranding half a topology on a full ring.
+    pub fn send_graph_command(&mut self, command: GraphCommand) -> Result<(), String> {
+        self.push(command)
     }
 
     /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
@@ -427,6 +457,7 @@ fn engine_handle_for_command_capture(capacity: usize) -> (EngineHandle, Consumer
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             engine_events: engine_event_rx,
+            sample_rate: 48_000.0,
         },
         command_rx,
     )

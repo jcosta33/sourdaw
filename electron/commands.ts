@@ -105,8 +105,15 @@ export const EXPOSED_COMMANDS = [
  * to the exit cascade rather than to a page, LAN discovery is not
  * renderer-driven, and the raw audio-file and whisper-model paths are
  * reachable only through the narrower commands that wrap them.
+ *
+ * The three graph commands (`apply_graph_commands`, `register_timeline_sample`,
+ * `render_graph_offline`) are denied for one release slice only: exposing a
+ * command requires a production caller in `src/`, and their caller — the
+ * native `AudioGraphBackend` factory — is the next D3 slice. That slice moves
+ * them to `EXPOSED_COMMANDS` in the same change that adds the caller.
  */
 export const DENIED_COMMANDS = [
+    'apply_graph_commands',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',
     'collab_start_advertising',
@@ -119,9 +126,10 @@ export const DENIED_COMMANDS = [
     'load_whisper_model',
     'post_process_audio',
     'read_audio_file',
+    'register_timeline_sample',
+    'render_graph_offline',
     'send_plugin_midi',
     'show_all_plugin_guis',
-    'start_native_engine',
     'update_plugin_transport',
     'write_audio_file',
 ] as const;

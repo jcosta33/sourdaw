@@ -8,7 +8,6 @@ use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
-use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
@@ -909,29 +908,14 @@ pub async fn set_plugin_state_bytes(
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
-
-/// Start the native CPAL audio engine and take the engine-owned plugin path.
-///
-/// Registered and callable, but nothing in the shipped app calls it yet: the
-/// production bootstrap that decides when native processing activates is
-/// tracked separately, so `state.engine` stays `None` and `load_plugin` takes
-/// the command-owned branch. Everything reached only through `state.engine`
-/// runs today under test alone.
-pub async fn start_native_engine(state: &AppState) -> Result<String, String> {
-    let mut engine_guard = state
-        .engine
-        .lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-
-    if engine_guard.is_some() {
-        return Ok("Native engine already running".to_string());
-    }
-
-    let handle =
-        EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
-    *engine_guard = Some(handle);
-    Ok("Native engine started".to_string())
-}
+//
+// There is no explicit start command. The engine's recorded bootstrap (#1984)
+// is lazy start inside `commands::graph::apply_graph_commands`: the CPAL
+// stream spawns when the first graph batch arrives, and a machine where it
+// cannot start rejects that batch with an `engine-not-running:` reason. The
+// old `start_native_engine` command was deleted with that decision — it had
+// no caller in any shipped build, and a second unconditioned start entry
+// point beside the lazy one would be two bootstraps to keep honest.
 
 /// Send a MIDI note event to a native plugin on the audio thread (lock-free).
 pub async fn send_plugin_midi(

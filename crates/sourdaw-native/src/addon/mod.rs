@@ -456,9 +456,62 @@ impl SourdawNative {
         )
     }
 
+    // The native engine has no explicit start command: `apply_graph_commands`
+    // lazily starts it on the first batch (#1984), and a machine where it
+    // cannot start rejects that batch observably. The old `start_native_engine`
+    // method was deleted with that decision.
+
+    /// Apply one `AudioGraphCommandBatch` (the AudioGraphBackend.ts wire
+    /// shape) to the live native engine. Returns the apply-result mirror of
+    /// `AudioGraphApplyResult`; a refusal is a `rejected` result, not a
+    /// transport error.
     #[napi]
-    pub async fn start_native_engine(&self) -> Result<String> {
-        reason(commands::plugins::start_native_engine(&self.singletons.app_state).await)
+    pub async fn apply_graph_commands(&self, batch: Value) -> Result<Value> {
+        reason(commands::graph::apply_graph_commands(batch, &self.singletons.app_state).await)
+    }
+
+    /// Register decoded timeline material for `schedule-clip` to reference by
+    /// source id. `pcm` is interleaved f32 little-endian at `sample_rate`,
+    /// `channels` 1 or 2. Returns `{ "frames": n }`.
+    #[napi]
+    pub async fn register_timeline_sample(
+        &self,
+        sample_id: String,
+        sample_rate: f64,
+        channels: u32,
+        pcm: Buffer,
+    ) -> Result<Value> {
+        reason(
+            commands::graph::register_timeline_sample(
+                sample_id,
+                sample_rate,
+                channels,
+                pcm.to_vec(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    /// Render a command batch deterministically with no audio device: the
+    /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
+    /// PCM; a refused batch is an error carrying the batch's refusal reasons.
+    #[napi]
+    pub async fn render_graph_offline(
+        &self,
+        batch: Value,
+        frames: u32,
+        sample_rate: f64,
+    ) -> Result<Buffer> {
+        Ok(Buffer::from(reason(
+            commands::graph::render_graph_offline(
+                batch,
+                frames,
+                sample_rate,
+                &self.singletons.app_state,
+            )
+            .await,
+        )?))
     }
 
     #[napi]
