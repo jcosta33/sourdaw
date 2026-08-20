@@ -1,0 +1,61 @@
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_2175fca1f07426::t_469b9d283ce0f8 110,280
+  s_2175fca1f07426::t_2d1bee8d522965 100
+  s_2175fca1f07426::t_7df63144665718 202,320,333
+  s_2175fca1f07426::t_9740a06fbc4f1d 11
+src/modules/MixerConsole/presentations/views/MixerPanel.tsx
+  s_2175fca1f07426::t_df8d9ac111fccc 224,233,235
+  s_2175fca1f07426::t_1b1ab260320ab8 199
+  s_2175fca1f07426::t_4a656536dea1b2 9
+  s_2175fca1f07426::t_ad76825b6ce972 204
+  s_2175fca1f07426::t_4aca521e8dd6b6 155
+  s_2175fca1f07426::t_383663075bfe19 209
+  s_2175fca1f07426::t_d36e5f339b0f21 99
+src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx
+  s_2175fca1f07426::t_9dd48fe392b5bd 28
+  s_2175fca1f07426::t_9a7561428c3657 29-31,99,101,149
+  s_2175fca1f07426::t_0fc3ceccea2b3b 3
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_2175fca1f07426::t_f2dbb4caa83ac2 3
+  s_2175fca1f07426::t_ac2a090cacff36 105,108-109,115-116
+  s_2175fca1f07426::t_f702e5fce3f92e 118
+src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx
+  s_2175fca1f07426::t_5e76e7d8a45f6c 31
+  s_2175fca1f07426::t_985d8c93e1d682 59
+  s_2175fca1f07426::t_61d4b3ce6c1ab5 4
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_018925e9353dac 92-100,131,770,1769,2615,2711-2719,2849,3179-3187,3605,4250-4258,4595,5882,7121-7129,7169,7592,7709,7850-7858,8123,10553,10982-10990,11228,11768,12362,12584-12592,12857,14522,14774,15647,15716-15724,15869-15877,16106,17006,17363-17380,18092-18100,19292,19370-19378,20849,21431-21439,21839,22010,24593,25133
+  s_487e9aa1e46063::t_8177e24ac5e119 176,500,536,1688,2093,2579,2696,3236,3317,3341-3349,3371,3470,3596,4262,4802,4901,5240-5248,5585,5702,5855,6476,6638,7016,7898,8816,8825,8861,8924,9536,9770,9833,9878,9968,10256,10571,12533,13406,13685,14639,16259,16583,16709,16817,17690,17960,18770,18959,19517,19940,20138,20165,20417,20561,20993,22901,23090,23144,23180,23297,23315,23819,23945
+  s_2175fca1f07426::t_e91883ca8942cb 6242,10913,18014,22613
+src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx
+  s_2175fca1f07426::t_97671f055d9d84 10
+  s_2175fca1f07426::t_f71a5f88c1aa57 150,153
+src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx
+  s_2175fca1f07426::t_a884290450b93e 3
+  s_2175fca1f07426::t_ab9ad157b83afe 31-33,47,49,72
+  s_2175fca1f07426::t_d3a712e7dbdf2a 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "88d8be3ec3a1635c54a1c616b897d6232faaca59",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
