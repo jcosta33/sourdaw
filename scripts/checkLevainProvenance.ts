@@ -1,6 +1,10 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { LEVAIN_SOURCE } from './levainSource.ts';
 
 export type LevainProvenance = {
     schemaVersion: number;
@@ -17,6 +21,7 @@ export type LevainProvenance = {
         sourcePath: string;
         gitBlob: string;
         sha256: string;
+        license: string;
     }>;
     generatedFiles: Array<{
         path: string;
@@ -30,6 +35,9 @@ const provenancePath = 'public/samples/levain/provenance.tsv';
 const sampleRoot = 'public/samples/levain';
 const columns = ['kind', 'path', 'source', 'gitBlob', 'sha256', 'license'];
 
+type UpstreamCommit = { sha: string; commit: { tree: { sha: string } } };
+type UpstreamTree = { truncated: boolean; tree: Array<{ path: string; type: string; sha: string }> };
+
 function sha256(contents: Buffer): string {
     return createHash('sha256').update(contents).digest('hex');
 }
@@ -41,11 +49,20 @@ function gitBlob(contents: Buffer): string {
         .digest('hex');
 }
 
-function filesBelow(root: string, directory: string): string[] {
-    return readdirSync(resolve(root, directory), { recursive: true, withFileTypes: true })
-        .filter((entry) => entry.isFile())
-        .map((entry) => relative(root, resolve(entry.parentPath, entry.name)).replaceAll('\\', '/'))
-        .sort();
+function entriesBelow(root: string, directory: string): { files: string[]; symlinks: string[] } {
+    const entries = readdirSync(resolve(root, directory), { recursive: true, withFileTypes: true });
+    const pathFor = (entry: (typeof entries)[number]): string =>
+        relative(root, resolve(entry.parentPath, entry.name)).replaceAll('\\', '/');
+    return {
+        files: entries
+            .filter((entry) => entry.isFile())
+            .map(pathFor)
+            .sort(),
+        symlinks: entries
+            .filter((entry) => entry.isSymbolicLink())
+            .map(pathFor)
+            .sort(),
+    };
 }
 
 function duplicateValues(values: string[]): string[] {
@@ -96,7 +113,7 @@ export function parseLevainProvenance(contents: string): LevainProvenance {
             throw new Error(`Malformed Levain provenance row: ${line}`);
         }
         if (kind === 'sample') {
-            provenance.samples.push({ path, sourcePath: source, gitBlob: blob, sha256: fileSha256 });
+            provenance.samples.push({ path, sourcePath: source, gitBlob: blob, sha256: fileSha256, license });
         } else if (kind === 'generated') {
             provenance.generatedFiles.push({ path, source, license, sha256: fileSha256 });
         } else {
@@ -111,23 +128,10 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
     if (provenance.schemaVersion !== 1) {
         errors.push('Levain provenance schemaVersion must be 1');
     }
-    if (provenance.source.repository !== 'https://github.com/sgossner/VSCO-2-CE') {
-        errors.push('Levain provenance repository is not VSCO-2-CE');
-    }
-    if (!/^[0-9a-f]{40}$/.test(provenance.source.revision)) {
-        errors.push('Levain source revision must be a commit');
-    }
-    if (!/^[0-9a-f]{40}$/.test(provenance.source.tree)) {
-        errors.push('Levain source tree must be a Git tree');
-    }
-    if (provenance.source.license !== 'CC0-1.0') {
-        errors.push('Levain source license must be CC0-1.0');
-    }
-    if (provenance.source.licensePath !== 'LICENSE') {
-        errors.push('Levain source licensePath must be LICENSE');
-    }
-    if (!/^[0-9a-f]{40}$/.test(provenance.source.licenseBlob)) {
-        errors.push('Levain source licenseBlob must be a Git blob');
+    for (const key of ['repository', 'revision', 'tree', 'license', 'licensePath', 'licenseBlob'] as const) {
+        if (provenance.source[key] !== LEVAIN_SOURCE[key]) {
+            errors.push(`Levain source ${key} does not match the release pin`);
+        }
     }
 
     const entries = [...provenance.samples, ...provenance.generatedFiles];
@@ -137,7 +141,11 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
         errors.push(`duplicate Levain provenance paths:\n${duplicates.join('\n')}`);
     }
 
-    const actualPaths = filesBelow(root, sampleRoot).filter((path) => path !== provenancePath);
+    const discovered = entriesBelow(root, sampleRoot);
+    if (discovered.symlinks.length > 0) {
+        errors.push(`Levain symlinks are forbidden:\n${discovered.symlinks.join('\n')}`);
+    }
+    const actualPaths = discovered.files.filter((path) => path !== provenancePath);
     const missing = actualPaths.filter((path) => !paths.includes(path));
     const stale = paths.filter((path) => !actualPaths.includes(path));
     if (missing.length > 0) {
@@ -154,8 +162,8 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
         if (!validRelativePath(sample.sourcePath) || !sample.sourcePath.endsWith('.wav')) {
             errors.push(`${sample.path}: sourcePath must be a relative WAV path`);
         }
-        if (provenance.source.license !== 'CC0-1.0') {
-            errors.push(`${sample.path}: source license must be CC0-1.0`);
+        if (sample.license !== LEVAIN_SOURCE.license) {
+            errors.push(`${sample.path}: license must be ${LEVAIN_SOURCE.license}`);
         }
         if (!/^[0-9a-f]{40}$/.test(sample.gitBlob)) {
             errors.push(`${sample.path}: gitBlob must be a Git blob`);
@@ -180,9 +188,6 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
         if (!generated.path.startsWith(`${sampleRoot}/`) || !generated.path.endsWith('/manifest.json')) {
             errors.push(`${generated.path}: generated path must be a Levain manifest`);
         }
-        if (!/^git:[0-9a-f]{40}$/.test(generated.source) && !existsSync(resolve(root, generated.source))) {
-            errors.push(`${generated.path}: source must exist`);
-        }
         if (generated.license !== 'project-source') {
             errors.push(`${generated.path}: license must be project-source`);
         }
@@ -193,16 +198,104 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
         if (existsSync(absolutePath) && sha256(readFileSync(absolutePath)) !== generated.sha256) {
             errors.push(`${generated.path}: SHA-256 drifted`);
         }
+        const sourceCommit = /^git:([0-9a-f]{40})$/.exec(generated.source)?.[1];
+        if (sourceCommit === undefined) {
+            errors.push(`${generated.path}: source must be an immutable Git commit`);
+        } else {
+            try {
+                const sourceContents = execFileSync('git', ['show', `${sourceCommit}:${generated.path}`], {
+                    cwd: root,
+                });
+                if (sha256(sourceContents) !== generated.sha256) {
+                    errors.push(`${generated.path}: immutable source does not match SHA-256`);
+                }
+            } catch {
+                errors.push(`${generated.path}: immutable source cannot be read`);
+            }
+        }
     }
 
     return errors;
 }
 
-export function checkLevainProvenance(root: string): { samples: number; generatedFiles: number } {
-    const provenance = parseLevainProvenance(readFileSync(resolve(root, provenancePath), 'utf8'));
+export function levainRecordsSha256(contents: string): string {
+    const marker = `${columns.join('\t')}\n`;
+    const start = contents.indexOf(marker);
+    if (start === -1) {
+        throw new Error('Malformed Levain provenance columns');
+    }
+    return sha256(Buffer.from(contents.slice(start + marker.length)));
+}
+
+export function validateLevainUpstream(
+    provenance: LevainProvenance,
+    commit: UpstreamCommit,
+    tree: UpstreamTree
+): string[] {
+    const errors: string[] = [];
+    if (commit.sha !== provenance.source.revision) {
+        errors.push('upstream commit does not match the release pin');
+    }
+    if (commit.commit.tree.sha !== provenance.source.tree) {
+        errors.push('upstream commit tree does not match the release pin');
+    }
+    if (tree.truncated) {
+        errors.push('upstream tree response is truncated');
+    }
+    const blobs = new Map(tree.tree.filter((entry) => entry.type === 'blob').map((entry) => [entry.path, entry.sha]));
+    if (blobs.get(provenance.source.licensePath) !== provenance.source.licenseBlob) {
+        errors.push('upstream license blob does not match the release pin');
+    }
+    for (const sample of provenance.samples) {
+        if (blobs.get(sample.sourcePath) !== sample.gitBlob) {
+            errors.push(`${sample.path}: upstream path does not match Git blob`);
+        }
+    }
+    return errors;
+}
+
+export async function verifyLevainUpstream(provenance: LevainProvenance): Promise<void> {
+    const api = 'https://api.github.com/repos/sgossner/VSCO-2-CE';
+    const [commitResponse, treeResponse] = await Promise.all([
+        fetch(`${api}/commits/${provenance.source.revision}`),
+        fetch(`${api}/git/trees/${provenance.source.revision}?recursive=1`),
+    ]);
+    if (!commitResponse.ok || !treeResponse.ok) {
+        throw new Error(
+            `Levain upstream verification failed: commit ${commitResponse.status}, tree ${treeResponse.status}`
+        );
+    }
+    const errors = validateLevainUpstream(
+        provenance,
+        (await commitResponse.json()) as UpstreamCommit,
+        (await treeResponse.json()) as UpstreamTree
+    );
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+}
+
+export function checkLevainProvenance(root: string): LevainProvenance {
+    const contents = readFileSync(resolve(root, provenancePath), 'utf8');
+    const provenance = parseLevainProvenance(contents);
     const errors = validateLevainProvenance(root, provenance);
+    if (levainRecordsSha256(contents) !== LEVAIN_SOURCE.recordsSha256) {
+        errors.push('Levain provenance record set does not match the release pin');
+    }
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
-    return { samples: provenance.samples.length, generatedFiles: provenance.generatedFiles.length };
+    return provenance;
+}
+
+const entry = process.argv[1];
+if (entry !== undefined && import.meta.url === new URL(`file://${resolve(entry)}`).href) {
+    const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+    const provenance = checkLevainProvenance(root);
+    if (process.argv.includes('--verify-upstream')) {
+        await verifyLevainUpstream(provenance);
+    }
+    process.stdout.write(
+        `Levain provenance valid: ${String(provenance.samples.length)} samples, ${String(provenance.generatedFiles.length)} generated files\n`
+    );
 }

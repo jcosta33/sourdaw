@@ -17,7 +17,9 @@ import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const VSCO_REVISION = '440300901dfe9275fd84e0b7763af1f8443ae62e';
+import { LEVAIN_SOURCE } from './levainSource.ts';
+
+const VSCO_REVISION = LEVAIN_SOURCE.revision;
 const BASE_URL = `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${VSCO_REVISION}`;
 const OUT_DIR = 'public/samples/levain';
 const PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV = 'SOURDAW_ALLOW_PUBLIC_SAMPLE_DOWNLOAD';

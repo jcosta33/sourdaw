@@ -478,7 +478,8 @@
                 "public/samples/levain/**",
                 "scripts/checkLevainProvenance.ts",
                 "scripts/download-levain-samples-direct.ts",
-                "scripts/download-levain-samples.ts"
+                "scripts/download-levain-samples.ts",
+                "scripts/levainSource.ts"
             ],
             "sources": ["https://github.com/sgossner/VSCO-2-CE"],
             "revisions": ["440300901dfe9275fd84e0b7763af1f8443ae62e"],
@@ -778,6 +779,11 @@
         {
             "surface": "levain-sample-bank",
             "file": "scripts/checkLevainProvenance.ts",
+            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/levainSource.ts",
             "value": "https://github.com/sgossner/VSCO-2-CE"
         },
         {
