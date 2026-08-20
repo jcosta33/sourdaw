@@ -32,6 +32,7 @@ type Input = {
     foreignLowerCommentBeforeConvergence?: boolean;
     closeBeforeConvergence?: boolean;
     throwCloseWithConcurrentState?: boolean;
+    throwCloseOnceWithoutState?: boolean;
     failDelete?: boolean;
     returnedCommentBody?: string;
     bases?: string[];
@@ -48,6 +49,7 @@ function fakePort(input: Input = {}) {
     let index = 0;
     let state = input.initialState ?? 'OPEN';
     let closeCalled = false;
+    let closeFailures = 0;
     let commentCalled = false;
     let concurrentCommentAdded = false;
     let closedAt: string | null = null;
@@ -179,6 +181,10 @@ function fakePort(input: Input = {}) {
             calls.push(`close:${number}`);
             closeCalled = true;
             if (input.throwCloseWithConcurrentState) {
+                throw new Error('close transport lost');
+            }
+            if (input.throwCloseOnceWithoutState && closeFailures === 0) {
+                closeFailures += 1;
                 throw new Error('close transport lost');
             }
             state = 'CLOSED';
@@ -411,6 +417,16 @@ describe('pull-request supersession', () => {
         );
         expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
         expect(state().state).toBe('CLOSED');
+    });
+    it('preserves a comment after an open close throw, then reuses it on retry', () => {
+        const { port, authorLogin, state, calls } = fakePort({ throwCloseOnceWithoutState: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /close transport lost[\s\S]*attempted[\s\S]*durable evidence/i
+        );
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment, { id: 'IC_new' }] });
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(supersedePullRequest(2244, head, 2246, authorLogin, port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('comment:'))).toEqual(['comment:2244:Superseded by #2246.']);
     });
     it('rolls back after a post-comment head move', () => {
         const { port, authorLogin, state, calls } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });

@@ -26,6 +26,7 @@ type Input = {
     foreignLowerReplyBeforeConvergence?: boolean;
     resolveBeforeConvergence?: boolean;
     throwResolveWithConcurrentState?: boolean;
+    throwResolveOnceWithoutState?: boolean;
     failDelete?: boolean;
     rootAuthorLogin?: string | null;
     rootAuthorType?: string | null;
@@ -40,12 +41,15 @@ type Input = {
     replyClientMutationId?: string;
     replyAuthorType?: string;
     resolveClientMutationId?: string;
+    resolveReceiptLogin?: string;
+    resolveReceiptType?: string;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
     let index = 0;
     let resolved = input.isResolved ?? false;
     let resolveCalled = false;
+    let resolveFailures = 0;
     let resolvedByLogin: string | null = input.initialResolvedByLogin ?? null;
     let resolvedByType: string | null = input.initialResolvedByType ?? null;
     let concurrentReplyAdded = false;
@@ -99,14 +103,14 @@ function fakePort(input: Input = {}) {
             if (input.resolveBeforeConvergence && index === 2) {
                 resolved = true;
                 resolvedByLogin = AUTHOR_BOT_LOGIN;
-                resolvedByType = 'Bot';
+                resolvedByType = 'User';
             }
             if (input.throwResolveWithConcurrentState && resolveCalled) {
                 resolved = true;
             }
             if (resolveCalled && input.resolvedByAfterResolve !== undefined) {
                 resolvedByLogin = input.resolvedByAfterResolve;
-                resolvedByType = input.resolvedByTypeAfterResolve ?? 'Bot';
+                resolvedByType = input.resolvedByTypeAfterResolve ?? 'User';
             }
             if (resolveCalled && input.deleteReplyAfterResolve) {
                 comments = comments.filter((comment) => comment.id !== replyId);
@@ -172,12 +176,16 @@ function fakePort(input: Input = {}) {
             if (input.throwResolveWithConcurrentState) {
                 throw new Error('resolve transport lost');
             }
+            if (input.throwResolveOnceWithoutState && resolveFailures === 0) {
+                resolveFailures += 1;
+                throw new Error('resolve transport lost');
+            }
             resolved = true;
             resolvedByLogin = AUTHOR_BOT_LOGIN;
-            resolvedByType = 'Bot';
+            resolvedByType = 'User';
             return {
-                resolvedByLogin,
-                resolvedByType,
+                resolvedByLogin: input.resolveReceiptLogin ?? resolvedByLogin,
+                resolvedByType: input.resolveReceiptType ?? resolvedByType,
                 clientMutationId: input.resolveClientMutationId ?? `review-resolve:${id}`,
             };
         },
@@ -426,6 +434,16 @@ describe('review thread resolution', () => {
         );
         expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
     });
+    it.each([
+        ['wrong typename', { resolveReceiptType: 'Bot' }],
+        ['wrong login', { resolveReceiptLogin: 'other[bot]' }],
+    ])('rejects a resolve receipt with %s before success', (_case, input) => {
+        const { port, calls, authorLogin } = fakePort(input);
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(
+            /resolve review thread returned an invalid/i
+        );
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+    });
     it('fails without success when the exact receipt reply disappears before final inspection', () => {
         const { port, calls, authorLogin } = fakePort({ deleteReplyAfterResolve: true });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/reply receipt/i);
@@ -477,6 +495,18 @@ describe('review thread resolution', () => {
         expect(state().comments.find((comment) => comment.id === replyId)?.body).toBe('Done');
         expect(state().resolved).toBe(true);
     });
+    it('preserves a marker after an unresolved resolve throw, then reuses it on retry', () => {
+        const { port, authorLogin, state, calls } = fakePort({ throwResolveOnceWithoutState: true });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(
+            /resolve transport lost[\s\S]*attempted[\s\S]*durable evidence/i
+        );
+        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }, { id: replyId, body: 'Done' }] });
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(resolveReviewThread(42, threadId, head, authorLogin, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([`reply:${threadId}`]);
+    });
     it('deletes the exact new reply when the head moves after replying', () => {
         const { port, authorLogin, state, calls } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
@@ -519,11 +549,11 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([]);
         expect(state().comments.map((comment) => comment.id)).toEqual([rootId, 'PRRC_foreign']);
     });
-    it('returns completed success without mutation only for one exact Bot Done marker', () => {
+    it('returns completed success for one exact Bot Done marker resolved by the documented User actor', () => {
         const { port, calls, authorLogin } = fakePort({
             isResolved: true,
             initialResolvedByLogin: AUTHOR_BOT_LOGIN,
-            initialResolvedByType: 'Bot',
+            initialResolvedByType: 'User',
             existingReplyCount: 1,
         });
         expect(resolveReviewThread(42, threadId, head, authorLogin, port)).toBe(
@@ -531,11 +561,21 @@ describe('review thread resolution', () => {
         );
         expect(calls).toEqual(['inspect:1', `log:review-thread-resolved:42:${threadId}`]);
     });
-    it('fails closed for a completed thread with multiple Done markers', () => {
+    it('rejects a completed resolution with the wrong resolvedBy typename', () => {
         const { port, calls, authorLogin } = fakePort({
             isResolved: true,
             initialResolvedByLogin: AUTHOR_BOT_LOGIN,
             initialResolvedByType: 'Bot',
+            existingReplyCount: 1,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/not resolved by/i);
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
+    });
+    it('fails closed for a completed thread with multiple Done markers', () => {
+        const { port, calls, authorLogin } = fakePort({
+            isResolved: true,
+            initialResolvedByLogin: AUTHOR_BOT_LOGIN,
+            initialResolvedByType: 'User',
             existingReplyCount: 2,
         });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/exactly one/i);
@@ -545,7 +585,7 @@ describe('review thread resolution', () => {
         const { port, calls, authorLogin } = fakePort({
             isResolved: true,
             initialResolvedByLogin: AUTHOR_BOT_LOGIN,
-            initialResolvedByType: 'Bot',
+            initialResolvedByType: 'User',
             existingReplyCount: 1,
             rootAuthorType: 'User',
         });

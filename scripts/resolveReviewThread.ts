@@ -175,9 +175,9 @@ function compensateResolution(
     if (current === undefined || current.thread === null || before.thread === null) {
         failures.push('cannot determine ambiguous review transaction state');
     } else {
-        const stateMayHaveMutated = resolutionReceipt !== undefined || (resolveAttempted && current.thread.isResolved);
+        const stateMayHaveMutated = resolutionReceipt !== undefined || resolveAttempted;
         if (stateMayHaveMutated) {
-            failures.push('review-thread resolution may have succeeded; preserving Done reply as durable evidence');
+            failures.push('review-thread resolution was attempted; preserving Done reply as durable evidence');
         }
         if (!resolveAttempted && current.thread.isResolved && replyCreated && createdReplyId !== undefined) {
             deleteCreatedNoncanonicalReply(current.thread, createdReplyId, port, failures);
@@ -263,6 +263,9 @@ function authorBotLogin(value: unknown): string {
 function isAuthorBotActor(login: unknown, type: unknown): boolean {
     return type === 'Bot' && typeof login === 'string' && isAuthorBotLogin(login);
 }
+function isAuthorResolutionActor(login: unknown, type: unknown): boolean {
+    return type === 'User' && typeof login === 'string' && isAuthorBotLogin(login);
+}
 function isReviewerBotActor(login: unknown, type: unknown): boolean {
     return type === 'Bot' && typeof login === 'string' && isReviewerBotLogin(login);
 }
@@ -285,7 +288,7 @@ function assertReply(reply: ReviewReply, expectedClientMutationId: string): void
 }
 function assertResolutionReceipt(receipt: ReviewResolutionReceipt, expectedClientMutationId: string): void {
     if (
-        !isAuthorBotActor(receipt.resolvedByLogin, receipt.resolvedByType) ||
+        !isAuthorResolutionActor(receipt.resolvedByLogin, receipt.resolvedByType) ||
         receipt.clientMutationId !== expectedClientMutationId
     ) {
         fail('resolve review thread returned an invalid result');
@@ -375,7 +378,7 @@ function deleteCreatedNoncanonicalReply(
 }
 function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
     assertRootReviewer(thread, threadId);
-    if (!isAuthorBotActor(thread.resolvedByLogin, thread.resolvedByType)) {
+    if (!isAuthorResolutionActor(thread.resolvedByLogin, thread.resolvedByType)) {
         fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
     }
     requireOneReplyMarker(thread, threadId);
@@ -384,7 +387,7 @@ function assertFinalResolution(thread: ReviewThread | null, threadId: string, re
     if (
         thread?.id !== threadId ||
         !thread.isResolved ||
-        !isAuthorBotActor(thread.resolvedByLogin, thread.resolvedByType)
+        !isAuthorResolutionActor(thread.resolvedByLogin, thread.resolvedByType)
     ) {
         fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
     }
@@ -666,7 +669,7 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
         fail(`resolveReviewThread returned an invalid result for ${threadId}`);
     }
     const resolvedByType = receipt?.thread?.resolvedBy?.__typename;
-    if (typeof resolvedByType !== 'string' || !isAuthorBotActor(resolvedByLogin, resolvedByType)) {
+    if (typeof resolvedByType !== 'string' || !isAuthorResolutionActor(resolvedByLogin, resolvedByType)) {
         fail(`resolveReviewThread returned an invalid result for ${threadId}`);
     }
     return {

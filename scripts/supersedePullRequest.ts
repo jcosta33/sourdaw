@@ -172,11 +172,9 @@ function compensateSupersession(
     if (current === undefined) {
         failures.push('cannot determine ambiguous supersession transaction state');
     } else {
-        const stateMayHaveMutated = closeReceipt !== undefined || (closeAttempted && current.state === 'CLOSED');
+        const stateMayHaveMutated = closeReceipt !== undefined || closeAttempted;
         if (stateMayHaveMutated) {
-            failures.push(
-                'pull-request closure may have succeeded; preserving supersession comment as durable evidence'
-            );
+            failures.push('pull-request closure was attempted; preserving supersession comment as durable evidence');
         }
         if (!closeAttempted && current.state === 'CLOSED' && commentCreated && createdCommentId !== undefined) {
             deleteCreatedNoncanonicalComment(current.comments, expectedCommentBody, createdCommentId, port, failures);
