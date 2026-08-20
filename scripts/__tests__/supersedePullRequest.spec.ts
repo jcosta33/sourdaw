@@ -14,7 +14,13 @@ import {
 
 const head = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
-const oldComment = { id: 'IC_old', fullDatabaseId: '9223372036854775807', body: 'old', authorLogin: 'reviewer[bot]' };
+const oldComment = {
+    id: 'IC_old',
+    fullDatabaseId: '9223372036854775807',
+    body: 'old',
+    authorLogin: 'reviewer[bot]',
+    authorType: 'Bot',
+};
 type Input = {
     heads?: string[];
     authorLogin?: string;
@@ -29,6 +35,9 @@ type Input = {
     deleteCommentAfterClose?: boolean;
     editCommentAfterComment?: boolean;
     returnedCommentClientMutationId?: string;
+    returnedCommentAuthorType?: string;
+    existingCommentCount?: number;
+    existingCommentAuthorType?: string;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -37,6 +46,15 @@ function fakePort(input: Input = {}) {
     let closeCalled = false;
     let closedAt: string | null = null;
     let comments = [oldComment];
+    for (let commentIndex = 0; commentIndex < (input.existingCommentCount ?? 0); commentIndex += 1) {
+        comments.push({
+            id: commentIndex === 0 ? 'IC_new' : `IC_existing_${commentIndex}`,
+            fullDatabaseId: String(9223372036854775808 + commentIndex),
+            body: 'Superseded by #2246.',
+            authorLogin: AUTHOR_BOT_LOGIN,
+            authorType: input.existingCommentAuthorType ?? 'Bot',
+        });
+    }
     const snapshot = (number: number) => {
         if (number === 2244) {
             const inspection = index++;
@@ -87,6 +105,7 @@ function fakePort(input: Input = {}) {
                 fullDatabaseId: '9223372036854775808',
                 body: input.returnedCommentBody ?? body,
                 authorLogin: AUTHOR_BOT_LOGIN,
+                authorType: input.returnedCommentAuthorType ?? 'Bot',
             };
             comments = [...comments, created];
             if (input.throwAfterComment) {
@@ -98,6 +117,7 @@ function fakePort(input: Input = {}) {
                             fullDatabaseId: '9223372036854775809',
                             body,
                             authorLogin: AUTHOR_BOT_LOGIN,
+                            authorType: 'Bot',
                         },
                     ];
                 }
@@ -259,6 +279,12 @@ describe('pull-request supersession', () => {
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
     });
+    it('rejects a User-typed comment receipt before close or success', () => {
+        const { port, calls, authorLogin } = fakePort({ returnedCommentAuthorType: 'User' });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/invalid result/i);
+        expect(calls.filter((call) => call.startsWith('close:') || call.startsWith('log:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+    });
     it('refuses a retargeted old PR before close', () => {
         const { port, calls, authorLogin } = fakePort({ bases: ['main', 'release'] });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
@@ -277,6 +303,8 @@ describe('pull-request supersession', () => {
         const { port, calls, authorLogin, state } = fakePort({ changedClosedAtAfterClose: true });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/closed by another actor/i);
         expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state().comments.find((comment) => comment.id === 'IC_new')?.body).toBe('Superseded by #2246.');
         expect(state().state).toBe('CLOSED');
     });
     it('does not reopen a same-marker close when its final head check fails', () => {
@@ -317,7 +345,7 @@ describe('pull-request supersession', () => {
     it('does not reopen a concurrent state after close throws without a receipt', () => {
         const { port, authorLogin, state, calls } = fakePort({ throwCloseWithConcurrentState: true });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
-            /close transport lost[\s\S]*ambiguous PR closure/i
+            /close transport lost[\s\S]*durable evidence/i
         );
         expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
         expect(state().state).toBe('CLOSED');
@@ -327,6 +355,22 @@ describe('pull-request supersession', () => {
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
         expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
         expect(calls).toContain('delete:IC_new');
+    });
+    it('reuses one exact existing supersession comment and performs the missing close', () => {
+        const { port, calls, authorLogin } = fakePort({ existingCommentCount: 1 });
+        expect(supersedePullRequest(2244, head, 2246, authorLogin, port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('rejects multiple existing supersession comments before any mutation', () => {
+        const { port, calls, authorLogin } = fakePort({ existingCommentCount: 2 });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/ambiguous/i);
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
+    });
+    it('rejects a User-typed existing supersession comment before any mutation', () => {
+        const { port, calls, authorLogin } = fakePort({ existingCommentCount: 1, existingCommentAuthorType: 'User' });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/exact author-bot/i);
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
     it('surfaces compensation failure', () => {
         const { port, authorLogin } = fakePort({ throwAfterComment: true, failDelete: true });

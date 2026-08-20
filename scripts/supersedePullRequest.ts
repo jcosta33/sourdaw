@@ -16,7 +16,13 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
-export type IssueComment = { id: string; fullDatabaseId: string; body: string; authorLogin: string | null };
+export type IssueComment = {
+    id: string;
+    fullDatabaseId: string;
+    body: string;
+    authorLogin: string | null;
+    authorType: string | null;
+};
 export type SupersededPullRequest = {
     number: number;
     state: string;
@@ -89,14 +95,21 @@ export function supersedePullRequest(
     assertReplacement(replacement, replacementNumber, before);
     const body = `Superseded by #${replacementNumber}.`;
     let commentAttempted = false;
+    let commentCreated = false;
     let commentId: string | undefined;
     let closeAttempted = false;
     let closeReceipt: PullRequestCloseReceipt | undefined;
     try {
-        commentAttempted = true;
-        const comment = port.comment(oldNumber, body);
-        commentId = assertCommentReceipt(comment, commentClientMutationId(oldNumber, body));
-        assertCommentBody(comment, body);
+        const existingComment = findReusableComment(before.comments, body);
+        if (existingComment === undefined) {
+            commentAttempted = true;
+            const comment = port.comment(oldNumber, body);
+            commentId = assertCommentReceipt(comment, commentClientMutationId(oldNumber, body));
+            assertCommentBody(comment, body);
+            commentCreated = true;
+        } else {
+            commentId = existingComment.id;
+        }
         assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead, before.base);
         closeAttempted = true;
         const receipt = port.close(oldNumber);
@@ -110,6 +123,7 @@ export function supersedePullRequest(
             before,
             body,
             commentAttempted,
+            commentCreated,
             commentId,
             closeAttempted,
             closeReceipt,
@@ -127,6 +141,7 @@ function compensateSupersession(
     before: SupersededPullRequest,
     expectedCommentBody: string,
     commentAttempted: boolean,
+    commentCreated: boolean,
     commentId: string | undefined,
     closeAttempted: boolean,
     closeReceipt: PullRequestCloseReceipt | undefined,
@@ -141,16 +156,17 @@ function compensateSupersession(
     if (current === undefined) {
         failures.push('cannot determine ambiguous supersession transaction state');
     } else {
-        if (closeReceipt !== undefined && current.state !== before.state) {
-            failures.push('pull-request closure was receipted but is not rollback-safe; refusing to reopen');
-        } else if (closeAttempted && current.state !== before.state) {
-            failures.push(`ambiguous PR closure for #${number}; refusing to reopen an unverified transition`);
+        const stateMayHaveMutated = closeReceipt !== undefined || (closeAttempted && current.state === 'CLOSED');
+        if (stateMayHaveMutated) {
+            failures.push(
+                'pull-request closure may have succeeded; preserving supersession comment as durable evidence'
+            );
         }
-        if (commentAttempted) {
+        if (commentAttempted && !commentCreated) {
+            failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
+        } else if (commentCreated && !stateMayHaveMutated && current.state === before.state) {
             if (commentId === undefined) {
                 failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
-            } else if (closeReceipt !== undefined) {
-                failures.push('supersession comment is durable evidence for a receipted close; refusing to delete it');
             } else if (hasExpectedComment(current.comments, commentId, expectedCommentBody)) {
                 attempt(failures, 'delete supersession comment', () => port.deleteComment(commentId));
             } else {
@@ -160,15 +176,14 @@ function compensateSupersession(
             }
         }
     }
-    attempt(failures, 'verify supersession compensation', () => {
-        const verified = port.inspect(number);
-        if (
-            closeReceipt === undefined &&
-            (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments))
-        ) {
-            fail(`PR #${number} compensation was not verified`);
-        }
-    });
+    if (current !== undefined && current.state === before.state && closeReceipt === undefined) {
+        attempt(failures, 'verify supersession compensation', () => {
+            const verified = port.inspect(number);
+            if (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments)) {
+                fail(`PR #${number} compensation was not verified`);
+            }
+        });
+    }
     throwWithCompensation(original, failures);
 }
 function sameCommentIds(left: IssueComment[], right: IssueComment[]): boolean {
@@ -244,10 +259,25 @@ function commentClientMutationId(number: number, body: string): string {
 function closeClientMutationId(pullRequestId: string): string {
     return `supersede-close:${pullRequestId}`;
 }
+function isAuthorBotActor(login: unknown, type: unknown): boolean {
+    return type === 'Bot' && typeof login === 'string' && isAuthorBotLogin(login);
+}
 function hasExpectedComment(comments: IssueComment[], id: string, body: string): boolean {
     return comments.some(
-        (comment) => comment.id === id && comment.body === body && isAuthorBotLogin(comment.authorLogin)
+        (comment) =>
+            comment.id === id && comment.body === body && isAuthorBotActor(comment.authorLogin, comment.authorType)
     );
+}
+function findReusableComment(comments: IssueComment[], body: string): IssueComment | undefined {
+    const owned = comments.filter((comment) => isAuthorBotLogin(comment.authorLogin));
+    if (owned.length === 0) {
+        return undefined;
+    }
+    const [comment] = owned;
+    if (comment === undefined || owned.length !== 1 || !hasExpectedComment(comments, comment.id, body)) {
+        fail('existing supersession comment is ambiguous or not an exact author-bot receipt');
+    }
+    return comment;
 }
 function assertFinalSupersession(
     value: SupersededPullRequest,
@@ -279,7 +309,7 @@ function assertCommentReceipt(value: AddedIssueCommentReceipt, expectedClientMut
         typeof value.id !== 'string' ||
         value.id === '' ||
         !isDecimalId(value.fullDatabaseId) ||
-        !isAuthorBotLogin(value.authorLogin) ||
+        !isAuthorBotActor(value.authorLogin, value.authorType) ||
         value.clientMutationId !== expectedClientMutationId
     ) {
         fail('add supersession comment returned an invalid result');
@@ -370,7 +400,7 @@ export function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] 
     const comments: IssueComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `subjectId=${subjectId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -409,7 +439,7 @@ function toIssueComment(value: unknown): IssueComment {
         id?: unknown;
         fullDatabaseId?: unknown;
         body?: unknown;
-        author?: { login?: unknown } | null;
+        author?: { login?: unknown; __typename?: unknown } | null;
     };
     if (typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId) || typeof comment.body !== 'string') {
         fail('invalid issue comment');
@@ -419,11 +449,12 @@ function toIssueComment(value: unknown): IssueComment {
         fullDatabaseId: comment.fullDatabaseId,
         body: comment.body,
         authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
+        authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
     };
 }
 function addComment(subjectId: string, body: string, clientMutationId: string, gh: Gh): AddedIssueCommentReceipt {
     const query =
-        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{login}}}}}';
+        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{login __typename}}}}}';
     const response = graphql(
         gh,
         query,

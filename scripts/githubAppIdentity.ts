@@ -413,6 +413,11 @@ function assertMintedPermissions(requested: MintPermissions, granted: Record<str
     if (granted.contents !== requested.contents) {
         fail(`installation token contents is ${granted.contents ?? '<missing>'}; expected ${requested.contents}`);
     }
+    if (granted.pull_requests !== requested.pull_requests) {
+        fail(
+            `installation token pull_requests is ${granted.pull_requests ?? '<missing>'}; expected ${requested.pull_requests}`
+        );
+    }
     const requestedNames = new Set(Object.keys(requested));
     for (const [key, level] of Object.entries(granted)) {
         if (level === 'write' && !requestedNames.has(key)) {

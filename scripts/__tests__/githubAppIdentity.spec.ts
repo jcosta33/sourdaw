@@ -207,6 +207,24 @@ describe('installation mint', () => {
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
+    it.each([
+        ['missing', { contents: 'read' }],
+        ['downgraded', { contents: 'read', pull_requests: 'read' }],
+    ])('refuses a reviewer token with %s pull_requests before further GitHub writes', async (_case, permissions) => {
+        const { requests, request } = mintClient({ login: REVIEWER_BOT_LOGIN, permissions });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/pull_requests is (?:<missing>|read)/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
     it('refuses extra write grants on a minted token before further GitHub writes', async () => {
         const { requests, request } = mintClient({
             login: REVIEWER_BOT_LOGIN,
