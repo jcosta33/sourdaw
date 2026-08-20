@@ -43,6 +43,7 @@ function create_logger_mock(): LoggerMock {
 
 const fresh_capability_report: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
     sharedArrayBuffer: true,
     opfsAvailable: true,

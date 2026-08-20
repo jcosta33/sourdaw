@@ -52,8 +52,10 @@ import {
     type ThroughputNotMeasuredReason,
     type WebGpuTier,
 } from '../models/CapabilityReport';
+import { type WebGpuProbeResult } from '../models/WebGpuProbe';
 
 import { measureInferenceThroughput } from './measureInferenceThroughput';
+import { probeWebGpuUsability } from './probeWebGpuUsability';
 
 const STORAGE_KEY = 'sourdaw-browser-ai-capability';
 
@@ -169,6 +171,29 @@ function is_inference_throughput(value: unknown): value is InferenceThroughput {
     );
 }
 
+function is_web_gpu_probe_result(value: unknown): value is WebGpuProbeResult {
+    if (!is_plain_record(value)) {
+        return false;
+    }
+    if (value.status === 'supported') {
+        return true;
+    }
+    return (
+        value.status === 'unavailable' &&
+        (value.reason === 'missing-surface' ||
+            value.reason === 'adapter-unavailable' ||
+            value.reason === 'fallback-adapter' ||
+            value.reason === 'device-unavailable')
+    );
+}
+
+function is_capability_admission_pair(value: UnknownRecord): boolean {
+    if (!is_browser_ai_capability(value.capability) || !is_web_gpu_probe_result(value.webGpu)) {
+        return false;
+    }
+    return value.capability !== 'supported' || value.webGpu.status === 'supported';
+}
+
 function is_nullable_finite_number(value: unknown): value is number | null {
     if (value === null) {
         return true;
@@ -181,7 +206,7 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
         return false;
     }
     return (
-        is_browser_ai_capability(value.capability) &&
+        is_capability_admission_pair(value) &&
         is_web_gpu_tier(value.webGpuTier) &&
         typeof value.sharedArrayBuffer === 'boolean' &&
         typeof value.opfsAvailable === 'boolean' &&
@@ -224,8 +249,8 @@ type DetectCapabilitiesInput = {
 
 type DetectCapabilitiesOutput = Promise<CapabilityReport>;
 
-export const detectCapabilities = inject({ logger, measureInferenceThroughput })(
-    ({ logger, measureInferenceThroughput }) =>
+export const detectCapabilities = inject({ logger, measureInferenceThroughput, probeWebGpuUsability })(
+    ({ logger, measureInferenceThroughput, probeWebGpuUsability }) =>
         async function detectCapabilities({
             forceRefresh = false,
             measureInference = false,
@@ -239,7 +264,7 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
             }
 
             const chromeVersion = detectChromeVersion();
-            const webGpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator;
+            const webGpu = await probeWebGpuUsability();
             const sharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
             const opfsAvailable =
                 typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
@@ -250,10 +275,10 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
             if (!chromeVersion) {
                 capability = 'unsupported-browser';
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');
-            } else if (!webGpuAvailable) {
+            } else if (webGpu.status === 'unavailable') {
                 capability = 'unsupported-browser';
                 inference = { status: 'not-measured', reason: 'no-webgpu' };
-                logger.info('[BrowserAi] WebGPU not available — browser AI disabled');
+                logger.info(`[BrowserAi] WebGPU ${webGpu.reason} — browser AI disabled`);
             } else if (measureInference) {
                 capability = 'supported';
                 inference = await measureInferenceThroughput();
@@ -272,6 +297,7 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
 
             const report: CapabilityReport = {
                 capability,
+                webGpu,
                 webGpuTier,
                 sharedArrayBuffer,
                 opfsAvailable,
