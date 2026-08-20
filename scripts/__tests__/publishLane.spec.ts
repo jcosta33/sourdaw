@@ -156,11 +156,13 @@ describe('lane publish', () => {
     });
 
     it('publishes a lane that is behind origin/main when it still has lane commits to publish', () => {
-        const { port, calls } = fakePort({ dirty: false, ahead: 1, behind: 1 });
+        const { port, calls } = fakePort({ dirty: false, ahead: 1, behind: 1, existing: 41 });
 
-        publishLane(12, port);
+        expect(publishLane(12, port)).toBe(41);
 
         expect(calls).toContain('push:agent/12/work');
+        expect(calls).toContain('edit:41:feat(vcs): add identities');
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
     it('names the resolved lane before it pushes or opens a pull request', () => {

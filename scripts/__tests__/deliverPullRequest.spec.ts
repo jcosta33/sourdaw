@@ -164,6 +164,7 @@ function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullReques
 type FakeInput = {
     primary?: PullRequestSnapshot[];
     review?: ReviewState;
+    reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
     deletesMergedBranches?: boolean;
@@ -173,6 +174,7 @@ type FakeInput = {
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
+    const reviewStates = [...(input.reviewStates ?? [])];
     const dependentSets = input.dependentSets?.map((set) => [...set]) ?? [[stacked()], [stacked()]];
     const pullRequests = new Map<number, PullRequestSnapshot>();
     for (const set of dependentSets) {
@@ -204,7 +206,12 @@ function fakePort(input: FakeInput = {}) {
             }
             return current;
         },
-        reviewState: () => input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+        reviewState: (number, expectedHead) => {
+            calls.push(`review:${number}:${expectedHead}`);
+            return (
+                reviewStates.shift() ?? input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
+            );
+        },
         dependents: () => {
             const next = dependentSets.shift();
             if (next !== undefined) {
@@ -257,6 +264,18 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge:42:head');
     });
 
+    it('rejects mergeability drift after harmless base movement', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeStateStatus: 'CLEAN', baseRefOid: 'base-before' }),
+                pullRequest({ mergeStateStatus: 'BLOCKED', baseRefOid: 'base-after' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/BLOCKED/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
     it('rejects base-branch changes during delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(), pullRequest({ baseRefName: 'release/1.0' })],
@@ -275,6 +294,18 @@ describe('pull-request delivery', () => {
 
     it('rejects missing reviewer approval on the current head', () => {
         const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: null, unresolvedThreads: 0 } });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/not approved by jcosta33-reviewer\[bot\]/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects reviewer approval drift between the first and second pre-merge checks', () => {
+        const { port, calls } = fakePort({
+            reviewStates: [
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+            ],
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved by jcosta33-reviewer\[bot\]/);
         expect(calls).not.toContain('merge:42:head');
@@ -647,6 +678,44 @@ describe('delivery shell boundary', () => {
         };
         expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
             latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 0,
+        });
+    });
+
+    it('ignores reviewer approvals that target a different commit than the expected head', () => {
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                if (args.some((arg) => arg.startsWith('query='))) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    reviews: {
+                                        nodes: [
+                                            {
+                                                state: 'APPROVED',
+                                                submittedAt: '2026-08-19T00:00:00Z',
+                                                author: { login: 'jcosta33-reviewer[bot]' },
+                                                commit: { oid: 'other-head' },
+                                            },
+                                        ],
+                                        pageInfo: { hasPreviousPage: false },
+                                    },
+                                    reviewThreads: {
+                                        nodes: [{ isResolved: true }],
+                                        pageInfo: { hasNextPage: false },
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
     });
