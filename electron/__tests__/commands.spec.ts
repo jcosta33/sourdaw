@@ -272,7 +272,6 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
  */
 const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['analyze_pitch', ['analysis_id', 'audio_path']],
-    ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],

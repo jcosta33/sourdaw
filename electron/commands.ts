@@ -35,7 +35,6 @@
  */
 export const EXPOSED_COMMANDS = [
     'analyze_pitch',
-    'apply_graph_commands',
     'arm_recording',
     'cancel_provider_gateway_request',
     'close_midi_input',
@@ -110,16 +109,18 @@ export const EXPOSED_COMMANDS = [
  * renderer-driven, and the raw audio-file and whisper-model paths are
  * reachable only through the narrower commands that wrap them.
  *
- * The graph commands (`apply_graph_commands`, `map_graph_batch`,
- * `register_timeline_sample`, `render_graph_offline`) are exposed as of the
- * D3.c.2 cutover (jcosta33/sourdaw#2225): desktop offline export selects the
- * native engine in `createOfflineRenderBackend`, which reaches them through
+ * The offline graph commands (`map_graph_batch`, `register_timeline_sample`,
+ * `render_graph_offline`) are exposed as of the D3.c.2 cutover
+ * (jcosta33/sourdaw#2225): desktop offline export selects the native engine in
+ * `selectOfflineRenderEngine`, which reaches them through
  * `src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts`.
- * They moved to `EXPOSED_COMMANDS` as one unit — they are one renderer-facing
- * capability (drive the native graph over IPC), and splitting the set would
- * leave a half-usable surface.
+ * `apply_graph_commands` stays denied: it is the *live* transport's command,
+ * its transport method has no production caller yet, and exposing a command
+ * requires one — the live cutover (jcosta33/sourdaw#2226) moves it together
+ * with its caller.
  */
 export const DENIED_COMMANDS = [
+    'apply_graph_commands',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',
     'collab_start_advertising',
