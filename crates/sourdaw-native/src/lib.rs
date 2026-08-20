@@ -52,7 +52,7 @@ pub struct NativeSingletons {
 impl NativeSingletons {
     pub fn new(events: Arc<dyn EventSink>) -> Self {
         Self {
-            app_state: AppState::default(),
+            app_state: AppState::with_persisted_plugin_registry(),
             collab: CollabState::default(),
             link: LinkState::default(),
             midi: MidiState::default(),
