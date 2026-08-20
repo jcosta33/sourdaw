@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch } from 'lucide-react';
 
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
+import { Stack } from '#/components/layout';
 import { compileAddDeviceAction, compileLoadPresetActions, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -238,7 +239,7 @@ export const EffectsTab = ({
         const total = filteredEffects.length + filteredFxPresets.length + filteredMidi.length;
 
         return (
-            <div className="flex flex-col gap-1 animate-in fade-in duration-150">
+            <Stack gap={1} className="animate-in fade-in duration-150">
                 <SearchSummary count={total} query={query} />
                 {total === 0 ? <EmptyState message="No effects found." /> : null}
                 {filteredEffects.length > 0 ? (
@@ -248,7 +249,7 @@ export const EffectsTab = ({
                             className="mt-1 px-1.5 py-0.5"
                             lineClassName="bg-border/15"
                         />
-                        <div className="flex flex-col">
+                        <Stack>
                             {filteredEffects.map((plugin) => {
                                 const card = renderPremiumCard(plugin.id);
                                 if (card) {
@@ -260,7 +261,7 @@ export const EffectsTab = ({
                                 }
                                 return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                             })}
-                        </div>
+                        </Stack>
                     </>
                 ) : null}
                 {filteredFxPresets.length > 0 ? (
@@ -271,7 +272,7 @@ export const EffectsTab = ({
                             className="mt-2 px-1.5 py-0.5"
                             lineClassName="bg-border/15"
                         />
-                        <div className="flex flex-col gap-[2px]">
+                        <Stack className="gap-[2px]">
                             {filteredFxPresets.map((preset) => (
                                 <PresetItem
                                     key={preset.id}
@@ -283,19 +284,19 @@ export const EffectsTab = ({
                                     preview={preview}
                                 />
                             ))}
-                        </div>
+                        </Stack>
                     </>
                 ) : null}
                 <div className="px-1.5 mt-2">
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
                 </div>
-            </div>
+            </Stack>
         );
     }
 
     if (currentRoute.id === 'effects-fxpresets') {
         return (
-            <div className="flex flex-col gap-1.5 animate-in fade-in duration-100">
+            <Stack gap={1.5} className="animate-in fade-in duration-100">
                 {fxPresets.length > 0 ? (
                     fxPresets.map((preset) => (
                         <PresetItem
@@ -311,16 +312,16 @@ export const EffectsTab = ({
                 ) : (
                     <EmptyState message="No FX chain presets." />
                 )}
-            </div>
+            </Stack>
         );
     }
 
     if (currentRoute.id === 'effects-midifx') {
         return (
-            <div className="flex flex-col gap-[2px] animate-in fade-in duration-100">
+            <Stack className="gap-[2px] animate-in fade-in duration-100">
                 <div className="mb-2 px-1.5">{renderPremiumCard('yeast')}</div>
                 <EmptyState message="No native MIDI effects available yet." />
-            </div>
+            </Stack>
         );
     }
 
@@ -342,7 +343,7 @@ export const EffectsTab = ({
         });
 
         return (
-            <div className="flex flex-col gap-[2px] animate-in fade-in duration-100">
+            <Stack className="gap-[2px] animate-in fade-in duration-100">
                 {sortedItems.length === 0 ? <EmptyState message="Empty category." /> : null}
                 {sortedItems.map((plugin) => {
                     const card = renderPremiumCard(plugin.id);
@@ -355,13 +356,13 @@ export const EffectsTab = ({
                     }
                     return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                 })}
-            </div>
+            </Stack>
         );
     }
 
     if (currentRoute.id === 'effects-audiofx') {
         return (
-            <div className="flex flex-col gap-1.5 animate-in fade-in duration-100 px-1.5">
+            <Stack gap={1.5} className="animate-in fade-in duration-100 px-1.5">
                 {visibleEffectGroups.map((group) => {
                     const count = (groupedEffects.get(group.id) ?? []).length;
                     return (
@@ -389,12 +390,12 @@ export const EffectsTab = ({
                 <div className="pt-1 border-t border-border/20 mt-1">
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
                 </div>
-            </div>
+            </Stack>
         );
     }
 
     return (
-        <div className="flex flex-col gap-.75 px-1.5 pb-4 animate-in fade-in duration-100">
+        <Stack className="gap-.75 px-1.5 pb-4 animate-in fade-in duration-100">
             <DawSectionDivider
                 label="Seeds & Spores"
                 className="mb-1 px-1 mt-1"
@@ -442,6 +443,6 @@ export const EffectsTab = ({
             <div className="border-t border-border/20 pt-2 mt-1">
                 <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
             </div>
-        </div>
+        </Stack>
     );
 };

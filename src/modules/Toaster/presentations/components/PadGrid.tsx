@@ -1,5 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { type PadState } from '../../models/ToasterKit';
 
 type PadGridProps = {
@@ -104,8 +106,8 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                         }}
                     >
                         <div className="absolute inset-[1px] rounded-[14px] bg-black/30" />
-                        <div className="relative z-10 flex h-full flex-col justify-between px-2 py-2">
-                            <div className="flex items-start justify-between gap-2">
+                        <Stack justify="between" className="relative z-10 h-full px-2 py-2">
+                            <Row align="start" justify="between" gap={2}>
                                 <span
                                     className="text-[10px] font-semibold leading-tight tracking-[0.02em]"
                                     style={{ color: isFlashing ? '#fff' : `${pad.color}ee` }}
@@ -120,13 +122,17 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                                         C{pad.chokeGroup}
                                     </span>
                                 ) : null}
-                            </div>
+                            </Row>
 
-                            <div className="space-y-1">
-                                <div className="flex items-center justify-between gap-2 text-[7px] uppercase tracking-[0.18em] text-white/45">
+                            <Stack gap={1}>
+                                <Row
+                                    justify="between"
+                                    gap={2}
+                                    className="text-[7px] uppercase tracking-[0.18em] text-white/45"
+                                >
                                     <span>{pad.engineType.replace(/^(kick|snare|hihat|modal)-/, '').slice(0, 8)}</span>
                                     <span>{Math.round(pad.volume * 100)}%</span>
-                                </div>
+                                </Row>
                                 <div className="h-1.5 rounded-full bg-white/8">
                                     <div
                                         className="h-full rounded-full"
@@ -137,15 +143,15 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                                         }}
                                     />
                                 </div>
-                            </div>
-                        </div>
+                            </Stack>
+                        </Stack>
 
                         {pad.muted ? (
-                            <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[16px] bg-black/56">
+                            <Row justify="center" className="absolute inset-0 z-20 rounded-[16px] bg-black/56">
                                 <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/55">
                                     Mute
                                 </span>
-                            </div>
+                            </Row>
                         ) : null}
                     </button>
                 );

@@ -1,11 +1,13 @@
 import { type ReactElement } from 'react';
 
+import { Stack } from '#/components/layout';
+
 type EmptyStateProps = {
     message: string;
 };
 
 export const EmptyState = ({ message }: EmptyStateProps): ReactElement => (
-    <div className="flex flex-col items-center justify-center py-10 opacity-60">
+    <Stack align="center" justify="center" className="py-10 opacity-60">
         <span className="text-xs text-muted-foreground">{message}</span>
-    </div>
+    </Stack>
 );
