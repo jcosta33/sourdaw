@@ -1,0 +1,31 @@
+docs/manual/README.md
+  s_27578aec2aab3b::t_76ff2d8ba200f4 33-34
+docs/manual/coverage-exceptions.json
+  s_27578aec2aab3b::t_674370f196ce8d 105-128,214-261
+docs/manual/devices/16-toaster.md
+  s_8ddfabd1166b5d::t_34d2b50a4c2841 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1b0d00e372de36c432e2a1bf03505f512bf77942",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
