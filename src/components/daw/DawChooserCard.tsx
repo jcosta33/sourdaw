@@ -1,5 +1,6 @@
 import { type ButtonHTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawChooserCardProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title'> & {
@@ -40,11 +41,11 @@ export const DawChooserCard = ({
         )}
         {...props}
     >
-        <div className="flex items-start gap-2.5">
+        <Row align="start" gap={2.5}>
             {startSlot ? <div className="shrink-0">{startSlot}</div> : null}
 
             <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
+                <Row gap={1.5}>
                     <span
                         className={cn(
                             'leading-tight',
@@ -54,7 +55,7 @@ export const DawChooserCard = ({
                         {title}
                     </span>
                     {badge}
-                </div>
+                </Row>
                 {description ? (
                     <div
                         className={cn(
@@ -68,7 +69,7 @@ export const DawChooserCard = ({
             </div>
 
             {endSlot ? <div className="shrink-0">{endSlot}</div> : null}
-        </div>
+        </Row>
         {children ? <div className="mt-1.5">{children}</div> : null}
     </button>
 );

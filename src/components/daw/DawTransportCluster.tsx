@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawTransportClusterProps = HTMLAttributes<HTMLDivElement> & {
@@ -7,8 +8,8 @@ type DawTransportClusterProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 const TONE_CLASS_NAMES: Record<NonNullable<DawTransportClusterProps['tone']>, string> = {
-    well: 'daw-readout-well gap-1 rounded-sm px-1.5 py-1',
-    strip: 'daw-control-strip gap-0.5 rounded-sm px-1 py-0.5',
+    well: 'daw-readout-well rounded-sm px-1.5 py-1',
+    strip: 'daw-control-strip rounded-sm px-1 py-0.5',
 };
 
 export const DawTransportCluster = ({
@@ -17,7 +18,7 @@ export const DawTransportCluster = ({
     children,
     ...props
 }: DawTransportClusterProps): ReactElement => (
-    <div className={cn('flex min-w-0 shrink-0 items-center', TONE_CLASS_NAMES[tone], className)} {...props}>
+    <Row shrink={false} gap={tone === 'well' ? 1 : 0.5} className={cn(TONE_CLASS_NAMES[tone], className)} {...props}>
         {children}
-    </div>
+    </Row>
 );
