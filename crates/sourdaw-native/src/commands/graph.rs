@@ -40,7 +40,7 @@
 //! pitch-at-speed semantics). The contract's own `playbackRate` must be `1`
 //! in this slice: `TimelineClip` has nowhere to carry a stretch, so a
 //! stretched clip is refused rather than played at unity behind the user's
-//! back.
+//! back. Native varispeed is tracked in jcosta33/sourdaw#2219.
 //!
 //! ## Engine bootstrap (#1984)
 //!

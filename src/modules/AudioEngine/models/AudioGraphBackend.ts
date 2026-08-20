@@ -296,7 +296,7 @@ export type AudioGraphClipPlayback = Readonly<{
     source: AudioGraphClipSource;
     /** Absolute time on the backend's clock at which the first frame is heard. */
     startTime: number;
-    /** Where playback enters the source material. */
+    /** Where playback enters the source material, in the source's own time. */
     sourceOffsetSeconds: number;
     /**
      * How long the clip sounds, on the **destination** timeline: a stretched

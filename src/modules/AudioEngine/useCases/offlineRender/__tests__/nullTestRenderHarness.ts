@@ -28,15 +28,16 @@
  * differently* is implemented for real:
  *
  *   - `GainNode`               multiplies.
- *   - `StereoPannerNode`       the spec's stereo equal-power law (§1.14.1).
- *   - `BiquadFilterNode`       the spec's transfer functions (§1.7.1), running
+ *   - `StereoPannerNode`       the spec's stereo equal-power law.
+ *   - `BiquadFilterNode`       the spec's transfer functions, running
  *                              direct-form-1 with per-node state across quanta.
  *   - `WaveShaperNode`         the spec's curve lookup with linear interpolation.
  *   - `AnalyserNode`           pass-through, which is what it is.
  *   - `AudioWorkletNode`       runs the real registered processor's `process()`.
  *   - `AudioBufferSourceNode`  starts when it was told to, reads from the offset
  *                              it was given, stops once it has consumed the
- *                              source duration it was handed (§1.24 — so `d / r`
+ *                              source duration it was handed (the spec's
+ *                              playback algorithm — so `d / r`
  *                              of the timeline at rate `r`), and interpolates
  *                              between frames at a non-unity rate. Only on a
  *                              `scheduled` context — see the automation
@@ -167,7 +168,8 @@ class HarnessAudioParam {
     }
 
     /**
-     * Drop every event at or after `time`, per Web Audio §1.6.3 — **not** every
+     * Drop every event at or after `time`, per the spec's
+     * `AudioParam.cancelScheduledValues` — **not** every
      * event.
      *
      * The difference is the whole content of the contract's cancel-and-replace
@@ -252,7 +254,8 @@ class HarnessAudioParam {
                     if (event.kind === 'linear') {
                         return from + (event.target - from) * fraction;
                     }
-                    // Web Audio §1.6.3 refuses an exponential ramp through zero;
+                    // The spec's `exponentialRampToValueAtTime` refuses a ramp
+                    // through zero;
                     // a from-value of zero degrades to the linear reading rather
                     // than producing a NaN the render would carry everywhere.
                     if (from === 0 || event.target === 0 || from * event.target < 0) {
@@ -453,7 +456,7 @@ class HarnessGainNode extends HarnessAudioNode {
     }
 }
 
-/** Web Audio §1.14.1, the stereo-input branch. */
+/** The spec's `StereoPannerNode` panning algorithm, the stereo-input branch. */
 class HarnessStereoPannerNode extends HarnessAudioNode {
     constructor(
         readonly pan: HarnessAudioParam,
@@ -490,7 +493,8 @@ class HarnessStereoPannerNode extends HarnessAudioNode {
 type BiquadCoefficients = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
 /**
- * Web Audio §1.7.1. `Q` is interpreted in dB for lowpass/highpass, as the spec
+ * The spec's `BiquadFilterNode` filter characteristics. `Q` is interpreted in
+ * dB for lowpass/highpass, as the spec
  * requires, and linearly elsewhere — the two are different numbers and a
  * harness that used one everywhere would be insensitive to `filter-resonance`
  * on exactly the device most likely to carry it.
@@ -601,7 +605,7 @@ class HarnessBiquadFilterNode extends HarnessAudioNode {
     }
 }
 
-/** Web Audio §1.13.1. `oversample` is ignored; see the module header. */
+/** The spec's `WaveShaperNode`. `oversample` is ignored; see the module header. */
 class HarnessWaveShaperNode extends HarnessAudioNode {
     curve: Float32Array | null = null;
     oversample = 'none';
@@ -803,7 +807,8 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
      * the offset it was given, and stops once it has consumed the *source*
      * duration it was handed.
      *
-     * The unit of that third argument is the whole of Web Audio §1.24: `start`'s
+     * The unit of that third argument is the whole of the spec's
+     * `AudioBufferSourceNode.start(when, offset, duration)` contract: `start`'s
      * `duration` is measured in the buffer's own time, so a clip handed `d` at
      * rate `r` sounds for `d / r` of the destination timeline. Modelling it as a
      * destination span reads the same at rate 1 — every fixture here would stay

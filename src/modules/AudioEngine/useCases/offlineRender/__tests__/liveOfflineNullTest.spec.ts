@@ -1954,10 +1954,15 @@ const CLIP_FIXTURE: ClipFixture = {
  * one a runtime hands over. Hand the wrong one here and the clip sounds for
  * `duration / rate` — half of its region, or twice it.
  *
- * Both directions are fixtured because they fail in opposite directions and a
- * single rate leaves one of them unmeasured: too slow overruns the region,
- * where the clip's own fade out can mask it, and too fast falls silent inside
- * the region, where nothing masks it at all.
+ * Both directions are fixtured, but only the sped-up one can red at the
+ * rendered-frame level today: too fast falls silent inside the region, where
+ * nothing masks it. Too slow overruns the region, and the clip's own fade out
+ * ramps the gain to zero at the region end — so an over-long half-speed
+ * source is fully masked on its final iteration and the slowed fixture's span
+ * assertions pass even against the pre-fix scheduler. It stays fixtured for
+ * the unmasked failure modes (rate misread, source-time duration misread) and
+ * so a future looped-clip fixture, where non-final iterations get no fade
+ * out, inherits it (see #2217).
  */
 const SLOWED_CLIP_FIXTURE: ClipFixture = {
     ...CLIP_FIXTURE,
