@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { KOKORO_VOICE_CATALOG } from '../../../models/DdspInstrumentCatalog';
+import { KOKORO_VOICE_ARTIFACTS } from '../../../models/KokoroArtifactManifest';
 import { KokoroVoiceSelector } from '../KokoroVoiceSelector';
 
 describe('KokoroVoiceSelector', () => {
@@ -10,7 +10,7 @@ describe('KokoroVoiceSelector', () => {
 
         const select = screen.getByLabelText('Kokoro TTS voice');
         expect(select).toBeInstanceOf(HTMLSelectElement);
-        expect(screen.getAllByRole('option')).toHaveLength(KOKORO_VOICE_CATALOG.length);
+        expect(screen.getAllByRole('option')).toHaveLength(KOKORO_VOICE_ARTIFACTS.length);
 
         const americanFemaleGroup = screen.getByRole('group', { name: 'American English · Female' });
         expect(americanFemaleGroup).toBeInTheDocument();

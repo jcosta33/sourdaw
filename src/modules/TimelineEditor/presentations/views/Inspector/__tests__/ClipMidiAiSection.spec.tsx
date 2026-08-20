@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { modelRegistryStore } from '#/modules/BrowserAi/stores';
-import { renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { downloadModel, KOKORO_MODEL_ENTRY, renderKokoroTts } from '#/modules/BrowserAi/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
@@ -72,6 +72,7 @@ vi.mock('#/modules/BrowserAi/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/BrowserAi/useCases')>();
     return {
         ...actual,
+        downloadModel: vi.fn(),
         renderKokoroTts: vi.fn(),
     };
 });
@@ -340,6 +341,20 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
     // A→B→A round trip re-enables a button whose first job is still running. Every absence
     // assertion below is pinned by a positive twin, so "never write anything back" would red the
     // pair rather than pass it.
+
+    it('downloads Kokoro through its exact artifact manifest', () => {
+        render(<ClipMidiAiSection clip={clipA} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Download Voice Model/ }));
+
+        expect(vi.mocked(downloadModel)).toHaveBeenCalledWith({
+            modelId: KOKORO_MODEL_ENTRY.id,
+            family: KOKORO_MODEL_ENTRY.family,
+            url: KOKORO_MODEL_ENTRY.url,
+            sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
+            sha256: KOKORO_MODEL_ENTRY.sha256,
+        });
+    });
 
     it('discards a TTS render that resolves after a clip switch (audit M-250)', async () => {
         setKokoroReadyRegistry();
