@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
+
 import { type GrinderImportedNeuralModel } from '../../models/GrinderPatch';
 
 type ImportedNeuralLibraryCardProps = {
@@ -27,23 +29,23 @@ export function ImportedNeuralLibraryCard({
                     : 'border-white/8 bg-black/20'
             }`}
         >
-            <div className="flex items-start justify-between gap-3">
+            <Row align="start" justify="between" gap={3}>
                 <button
                     type="button"
                     aria-pressed={selected}
                     className="min-w-0 flex-1 text-left"
                     onClick={() => on_select(entry)}
                 >
-                    <div className="flex items-center justify-between gap-3">
+                    <Row justify="between" gap={3}>
                         <span className="text-sm font-medium text-white/88">{entry.name}</span>
                         <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">
                             {entry.profile.sourceSampleRate} Hz
                         </span>
-                    </div>
+                    </Row>
                     <div className="mt-1 text-xs text-white/44">{entry.family}</div>
                     <div className="mt-2 text-[11px] text-white/34">{entry.description}</div>
                 </button>
-                <div className="flex shrink-0 gap-2">
+                <Row align="stretch" gap={2} shrink={false}>
                     {has_library_source ? (
                         <>
                             <button
@@ -66,8 +68,8 @@ export function ImportedNeuralLibraryCard({
                             Patch only
                         </span>
                     )}
-                </div>
-            </div>
+                </Row>
+            </Row>
         </div>
     );
 }

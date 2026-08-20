@@ -283,9 +283,11 @@ conventional subject first.
 
 A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
 newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
-`origin/main` in never retitles it, keeps the four headings in
+`origin/main` in never retitles it, keeps the required headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
+bytes. Screenshots is offered rather than required: it is written, and the template keeps it, but a
+body without it still merges, because a section whose canonical content is `None.` gates nothing.
+Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
 `Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
 Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses a
 conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
@@ -298,7 +300,7 @@ rather than one locked for an unrelated purpose. That path never writes a title 
 the whole of what publishing it means, so it leaves the pull request exactly as its owner wrote it,
 and it refuses outright if that pull request is no longer open by the time the push lands.
 
-Write the pull request for a teammate who was not in the session. Under the four template headings,
+Write the pull request for a teammate who was not in the session. Under the template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
 tables off the pull request.
 

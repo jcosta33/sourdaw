@@ -14,6 +14,7 @@ const baseState: CollaborationState = {
     peers: [],
     connectionStatus: 'connected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 describe('recordCollaborationFailure', () => {
