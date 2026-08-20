@@ -306,7 +306,7 @@ describe('detectCapabilities', () => {
         expect(report.webGpu).toEqual({ status: 'supported' });
     });
 
-    it('should reuse a cached unsupported report with an explicit probe failure', async () => {
+    it('should discard a cached probe failure and rerun the WebGPU probe', async () => {
         install_supported_browser();
         const { probe } = install(measured(3));
         const cached_report: CapabilityReport = {
@@ -320,8 +320,10 @@ describe('detectCapabilities', () => {
 
         const report = await detectCapabilities();
 
-        expect(report).toEqual(cached_report);
-        expect(probe).not.toHaveBeenCalled();
+        expect(report.capability).toBe('supported');
+        expect(report.webGpu).toEqual({ status: 'supported' });
+        expect(report.detectedAt).toBe(detected_at);
+        expect(probe).toHaveBeenCalledTimes(1);
     });
 
     it('should ignore invalid cache shapes and run fresh detection', async () => {

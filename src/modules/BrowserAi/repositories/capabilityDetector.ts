@@ -218,6 +218,14 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
     );
 }
 
+/** A bridge failure is truthful for its run but cannot stand in for a later hardware probe. */
+function is_reusable_cached_report(value: unknown): value is CapabilityReport {
+    if (!is_valid_capability_report(value)) {
+        return false;
+    }
+    return value.webGpu.status !== 'unavailable' || value.webGpu.reason !== 'probe-failed';
+}
+
 function read_cached_report(storage: Storage | null): CapabilityReport | null {
     if (!storage) {
         return null;
@@ -228,7 +236,7 @@ function read_cached_report(storage: Storage | null): CapabilityReport | null {
     }
     try {
         const parsed: unknown = JSON.parse(cached);
-        if (is_valid_capability_report(parsed)) {
+        if (is_reusable_cached_report(parsed)) {
             return parsed;
         }
     } catch {
