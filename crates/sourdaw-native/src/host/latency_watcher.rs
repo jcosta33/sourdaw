@@ -8,13 +8,13 @@
 //!
 //! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
 //! plugin actually flags, then performs the deactivate / reactivate / re-query
-//! through the `SharedClapPlugin` control seam and emits `plugin-latency-changed`
+//! through the `SharedHostedPlugin` control seam and emits `plugin-latency-changed`
 //! to the webview. Nothing polls: an idle session does no work at all, and a
 //! plugin that changes latency mid-session reaches the frontend without the UI
 //! having to ask.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::SharedClapPlugin;
+use crate::host::native_bridge::SharedHostedPlugin;
 use crate::state::EnginePluginInstanceData;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -57,7 +57,10 @@ pub fn notify_latency_change(instance_id: &str) {
     }
 }
 
-fn runtime_for(engine_plugins: &EnginePlugins, instance_id: &str) -> Option<Arc<SharedClapPlugin>> {
+fn runtime_for(
+    engine_plugins: &EnginePlugins,
+    instance_id: &str,
+) -> Option<Arc<SharedHostedPlugin>> {
     let guard = match engine_plugins.lock() {
         Ok(guard) => guard,
         Err(error) => {

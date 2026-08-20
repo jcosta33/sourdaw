@@ -7,6 +7,7 @@ export { registerFaustDSP } from './faustEngine/registerFaustDSP';
 export { compileFaustDSP } from './faustEngine/compileFaustDSP';
 export { createFaustNode } from './faustEngine/createFaustNode';
 export { isFaustModule } from './faustEngine/isFaustModule';
+export { getFaustModuleLatencyMs } from './faustEngine/getFaustModuleLatencyMs';
 export { isFaustInstrumentModule } from './faustEngine/isFaustInstrumentModule';
 
 export { getPluginHostHandlers } from './getPluginHostHandlers';
@@ -24,6 +25,7 @@ export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExterna
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';
+export { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat } from './pluginScan/supportedPluginFormats';
 export { getExternalPluginContractVersionForCommand } from './pluginScan/getExternalPluginContractVersionForCommand';
 export { getAgentDeviceFactoryManifest } from './getAgentDeviceFactoryManifest';
 

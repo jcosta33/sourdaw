@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { defaultWarpState } from '../../models/WarpMarker';
-import { addWarpMarker, getWarpState, removeWarpState, setWarpState, warpStates } from '../warpStates';
+import { createWarpMarker, defaultWarpState, type WarpState } from '../../models/WarpMarker';
+import {
+    addWarpMarker,
+    getWarpState,
+    hasNonDefaultWarpState,
+    isDefaultWarpState,
+    removeWarpState,
+    setWarpState,
+    warpStates,
+} from '../warpStates';
 
 describe('warpStates', () => {
     beforeEach(() => {
@@ -39,5 +47,54 @@ describe('warpStates', () => {
         addWarpMarker('c1', 1, 1.2);
         expect(() => removeWarpState('nope')).not.toThrow();
         expect(getWarpState('c1').markers).toHaveLength(1);
+    });
+
+    describe('isDefaultWarpState', () => {
+        it('is true for a state value-identical to defaultWarpState', () => {
+            expect(isDefaultWarpState({ ...defaultWarpState })).toBe(true);
+            expect(
+                isDefaultWarpState({ enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null })
+            ).toBe(true);
+        });
+
+        it.each<[string, Partial<WarpState>]>([
+            ['enabled true', { enabled: true }],
+            ['a marker present', { markers: [createWarpMarker(1, 1.2)] }],
+            ['a non-default stretch mode', { stretchMode: 'complex' }],
+            ['a non-null originalTempo', { originalTempo: 120 }],
+        ])('is false when the state differs by %s', (_label, overrides) => {
+            expect(isDefaultWarpState({ ...defaultWarpState, ...overrides })).toBe(false);
+        });
+    });
+
+    describe('hasNonDefaultWarpState', () => {
+        it('is false for a clip with no map entry', () => {
+            expect(hasNonDefaultWarpState('missing-clip')).toBe(false);
+        });
+
+        it('is false for a clip whose entry is value-identical to default (the presence trap)', () => {
+            // Mirrors what a write path like `setStretchMode` produces when it
+            // writes the mode a clip already has: a map entry exists, but it
+            // carries no state a user would recognize as "satellite state".
+            setWarpState('c1', { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null });
+
+            expect(warpStates.has('c1')).toBe(true);
+            expect(hasNonDefaultWarpState('c1')).toBe(false);
+        });
+
+        it('is true for a clip with a real warp marker', () => {
+            addWarpMarker('c1', 1, 1.2);
+            expect(hasNonDefaultWarpState('c1')).toBe(true);
+        });
+
+        it('is true for a clip with enabled: true', () => {
+            setWarpState('c1', { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null });
+            expect(hasNonDefaultWarpState('c1')).toBe(true);
+        });
+
+        it('is true for a clip with a non-default stretch mode', () => {
+            setWarpState('c1', { enabled: false, markers: [], stretchMode: 'complex', originalTempo: null });
+            expect(hasNonDefaultWarpState('c1')).toBe(true);
+        });
     });
 });
