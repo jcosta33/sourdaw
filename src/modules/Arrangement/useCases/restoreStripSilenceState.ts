@@ -17,11 +17,17 @@ type RestoreStripSilenceStateInput = {
 /**
  * Apply (or, called with the arguments swapped, undo) one strip-silence
  * transition: `expected` is the snapshot the stores must currently hold and
- * `replacement` is the snapshot they hold afterward. Rejects without writing
- * anything if the live stores have drifted from `expected` along any
- * dimension the transition touches — the clip rectangles, the gain
- * envelope/warp state satellites, or the clip-scoped automation lanes
- * (ledger #2108).
+ * `replacement` is the snapshot they hold afterward. Rejects if the live
+ * stores have drifted from `expected` along any dimension the transition
+ * touches — the clip rectangles, the gain envelope/warp state satellites, or
+ * the clip-scoped automation lanes (ledger #2108).
+ *
+ * Every rejection leaves the stores as it found them. The guards are hoisted
+ * above the writes so most of them refuse before anything lands, and the one
+ * call that can refuse after the satellites have migrated reverts them on the
+ * way out. That rollback carries real weight: the caller answers a rejection
+ * by aborting the Automerge transaction, and `warpStates` is a plain
+ * module-level `Map` that is not in it.
  */
 export function restoreStripSilenceState({ expected, replacement }: RestoreStripSilenceStateInput): boolean {
     if (expected.trackId !== replacement.trackId) {
@@ -122,8 +128,9 @@ export function restoreStripSilenceState({ expected, replacement }: RestoreStrip
     // Clip-scoped automation lanes: each lane is re-keyed to the segment
     // whose beat window holds its points; points falling in stripped silence
     // have nowhere to live and retire (and on undo the original lane comes
-    // back). This is the last store the transition touches, so a `false`
-    // here means the automation store itself refused the write.
+    // back). A `false` here means the automation store refused the write, and
+    // `applyClipAutomationLaneTransition` is atomic, so it wrote nothing —
+    // but the satellite `apply()` above did, and only `revert()` undoes that.
     if (
         !applyClipAutomationLaneTransition(
             affectedClipIds,
@@ -131,6 +138,9 @@ export function restoreStripSilenceState({ expected, replacement }: RestoreStrip
             replacement.clipAutomationLanes
         )
     ) {
+        if (clipSatellitePreparation.hasChanges) {
+            clipSatellitePreparation.revert();
+        }
         return false;
     }
 

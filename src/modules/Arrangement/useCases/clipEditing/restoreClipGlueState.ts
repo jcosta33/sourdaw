@@ -31,6 +31,17 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     // them — `restoreMidiClipGlueState` and `setTrackState` below have no
     // rollback, so a guard that fails after one of them has already written
     // would leave the transaction half-applied.
+    //
+    // The pre-flight covers the GUARDS, not the writes. `restoreMidiClipGlue
+    // State` and `applyClipAutomationLaneTransition` can still refuse after
+    // an earlier call committed, so every rejection below the satellite
+    // `apply()` reverts it first. The division of labour is what makes that
+    // necessary: the caller answers a rejection by aborting the Automerge
+    // transaction, which rewinds the MIDI, track, gain-envelope and
+    // automation stores — but `warpStates` is a plain module-level `Map` that
+    // is not in that transaction and nothing else can put it back. Without
+    // the revert, warp markers stay attached to the id this call was
+    // migrating them to while every other store rewinds around them.
     const clipSatellitePreparation = prepareClipSatelliteStateRestore({
         version: 1,
         expected: { version: 1, entries: expected.clipSatellites },
@@ -70,7 +81,9 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     // Clip-scoped automation lanes: every source's lanes are re-keyed onto
     // the glued clip (or back onto their sources, on undo). Points stay in
     // the absolute timeline frame they were authored in, so playback is
-    // unchanged either way.
+    // unchanged either way. `applyClipAutomationLaneTransition` is atomic on
+    // the automation store, so a `false` here means it wrote nothing — but
+    // the satellite `apply()` above did, and only `revert()` undoes that.
     if (
         !applyClipAutomationLaneTransition(
             affectedClipIds,
@@ -78,6 +91,9 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
             replacement.clipAutomationLanes
         )
     ) {
+        if (clipSatellitePreparation.hasChanges) {
+            clipSatellitePreparation.revert();
+        }
         return false;
     }
 

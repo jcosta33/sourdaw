@@ -20,13 +20,22 @@ import { clipAutomationLaneTransitionMatchesStore } from './clipAutomationLaneTr
  * Symmetric by construction: undo calls this again with the two lane
  * arguments swapped, which is exactly the inverse transition.
  *
- * Rejects (returns `false`) when that pre-flight fails, before writing
- * anything. It also returns `false` — after writing — when `restoreAutomation
- * Lanes` did not actually take: that call is void and silently drops the whole
- * batch when the automation store is null or any snapshot fails the store's
- * own exactness check, so the outcome is verified by re-reading the store
- * rather than assumed. Reporting success there would lose the very lane this
- * transition exists to carry.
+ * Atomic on the automation store: every `false` it returns leaves that store
+ * exactly as it found it. Two things can fail, and they are ordered so the
+ * fallible one runs first. `restoreAutomationLanes` is void and silently drops
+ * the WHOLE batch when the automation store is null or any snapshot fails the
+ * store's own exactness check, so its outcome is verified by re-reading the
+ * store rather than assumed; reporting success there would lose the very lane
+ * this transition exists to carry. Because that call is all-or-nothing, doing
+ * it before the `removeAutomationLane` sweep means a failed restore has
+ * written nothing and has nothing to roll back. Removing first and restoring
+ * second would instead retire lanes and then refuse, destroying automation the
+ * caller was told was untouched.
+ *
+ * The two id sets never overlap — `lanesToRestore` is exactly the replacement
+ * ids absent from `expectedLanes`, and the pre-flight already proved none of
+ * them collide with a live lane — so the intermediate state where both
+ * coexist cannot lose or shadow either side.
  */
 export function applyClipAutomationLaneTransition(
     affectedClipIds: readonly string[],
@@ -39,16 +48,18 @@ export function applyClipAutomationLaneTransition(
 
     const expectedIds = new Set(expectedLanes.map((lane) => lane.id));
     const replacementIds = new Set(replacementLanes.map((lane) => lane.id));
+    const lanesToRestore = replacementLanes.filter((lane) => !expectedIds.has(lane.id));
+    if (lanesToRestore.length > 0) {
+        restoreAutomationLanes(lanesToRestore);
+        const liveLaneIds = new Set(getAutomationLanes().map((lane) => lane.id));
+        if (!lanesToRestore.every((lane) => liveLaneIds.has(lane.id))) {
+            return false;
+        }
+    }
     for (const lane of expectedLanes) {
         if (!replacementIds.has(lane.id)) {
             removeAutomationLane(lane.id);
         }
     }
-    const lanesToRestore = replacementLanes.filter((lane) => !expectedIds.has(lane.id));
-    if (lanesToRestore.length === 0) {
-        return true;
-    }
-    restoreAutomationLanes(lanesToRestore);
-    const liveLaneIds = new Set(getAutomationLanes().map((lane) => lane.id));
-    return lanesToRestore.every((lane) => liveLaneIds.has(lane.id));
+    return true;
 }

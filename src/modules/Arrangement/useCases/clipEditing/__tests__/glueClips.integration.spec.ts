@@ -6,6 +6,7 @@ import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { handleRestoreClipGlueState } from '../../../handlers/clip/handleRestoreClipGlueState';
 import { isGeneratedMidiStateCurrent } from '../../../handlers/isGeneratedMidiStateCurrent';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
@@ -595,5 +596,19 @@ describe('glueClips MIDI state integration', () => {
         expect(restoreClipGlueState({ expected: next, replacement: previous })).toBe(false);
         expect(warpStates.has(gluedId)).toBe(true);
         expect(warpStates.has('clip-a')).toBe(true);
+
+        // Not clobbering is only half of it. What the rejection COSTS decides
+        // whether the glue is still undoable: `executeAppAction` answers
+        // `no-write` by aborting and returning normally, which `executeUndo`
+        // reads as success and `undoImpl` answers by moving the entry off
+        // `past` — the two source clips would be gone with no entry left to
+        // retry. Only `conflict` throws `AppActionConflictError`, which is the
+        // one outcome that keeps the entry on the stack.
+        expect(
+            handleRestoreClipGlueState.execute({
+                type: 'restoreClipGlueState',
+                payload: { expected: next, replacement: previous },
+            })
+        ).toEqual({ status: 'conflict' });
     });
 });
