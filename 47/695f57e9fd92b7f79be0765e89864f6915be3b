@@ -1,0 +1,35 @@
+package.json
+  s_8ddfabd1166b5d::t_4e4ddc41d82479 119,134
+pnpm-lock.yaml
+  s_8ddfabd1166b5d::t_ee6a7d1cf046bf 98,104,110,137,156-158,201-203,212,215,418-419,424-425,430-431,436-437,442-443,448-449,454-455,460-461,466-467,472-473,478-479,484-485,490-491,496-497,502-503,508-509,514-515,520-521,526-527,532-533,538-539,544-545,550-551,556-557,562-563,568-569,3413-3414,5187-5188,5872,5875,5878,5881,5884,5887,5890,5893,5896,5899,5902,5905,5908,5911,5914,5917,5920,5923,5926,5929,5932,5935,5938,5941,5944,5947,7205,7212,7396,7401,7457,7466,7470,7583,7932,7935,7937,7952,7963,7969,8600,8602-8627,10787,10789,10886,10892,10895,10975,10984,10987,10990,10993,11010
+release/open-source-inventory.json
+  s_8ddfabd1166b5d::t_4e57b16373eed8 692,704
+src/modules/Automation/stores/__tests__/automationStore.spec.ts
+  s_8ddfabd1166b5d::t_3a05a7658b4627 5,242-316
+src/modules/Automation/stores/automationStore.ts
+  s_8ddfabd1166b5d::t_b42ef3a22271e3 95-113,228-246,298-299,384,387-389,391-393
+src/modules/Automation/useCases/automation/__tests__/batchAddAutomationPoints.spec.ts
+  s_8ddfabd1166b5d::t_ab2741e342047c 4,37-116,155-507
+src/modules/Automation/useCases/automation/__tests__/shiftAutomationAfterBeat.spec.ts
+  s_8ddfabd1166b5d::t_bfdf03b24695aa 71-104
+src/modules/Automation/useCases/automation/batchAddAutomationPoints.ts
+  s_8ddfabd1166b5d::t_732cbe94d9ea83 12-89,104-138,140-152,155-163
+src/modules/Automation/useCases/automation/shiftAutomationAfterBeat.ts
+  s_8ddfabd1166b5d::t_edfd713c9cb6b6 18-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "47695f57e9fd92b7f79be0765e89864f6915be3b",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
