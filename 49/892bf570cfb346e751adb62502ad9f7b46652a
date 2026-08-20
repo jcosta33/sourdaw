@@ -1,0 +1,35 @@
+src/modules/Proof/stores/__tests__/proofStore.spec.ts
+  s_487e9aa1e46063::t_81945b6898219e 177-182,201-202,204-235,239-252,259-285
+  s_487e9aa1e46063::t_737bee0e457cab 236-238
+  s_487e9aa1e46063::t_d883ae8b70da6e 253-258
+  s_487e9aa1e46063::t_865823c7ac7913 11-12
+  s_487e9aa1e46063::t_dbea79b51e583f 183-200,203
+src/modules/AudioEngine/engine/__tests__/ProofNode.spec.ts
+  s_487e9aa1e46063::t_6cf60b4b24adf3 1,5-80
+  s_487e9aa1e46063::t_c6824a67f34a36 131-208
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_487e9aa1e46063::t_a0ecf2c37035a7 1523-1525,1532
+  s_487e9aa1e46063::t_71f2ecef82a9b1 1383-1422
+  s_487e9aa1e46063::t_c715e99c413fbc 1516
+  s_487e9aa1e46063::t_8abd91bd1eeeb7 1448
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_487e9aa1e46063::t_9b57348d33d9b7 20
+  s_487e9aa1e46063::t_9c5a5dea1b0453 855-982
+  s_487e9aa1e46063::t_20be45b39d5679 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "49892bf570cfb346e751adb62502ad9f7b46652a",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
