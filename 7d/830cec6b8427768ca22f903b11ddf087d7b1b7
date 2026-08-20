@@ -1,0 +1,29 @@
+crates/daw-engine/src/plugin_slot.rs
+  s_7ba0b7bee9e951::t_4dbf0bab67958d 23-24
+src/modules/AudioEngine/AGENTS.md
+  s_7ba0b7bee9e951::t_cdc539e6fe90c2 18
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_309c4443b84b00 100
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_7ba0b7bee9e951::t_50330c7e78f1f6 541-543
+  s_7ba0b7bee9e951::t_9acf6a56bc0a1e 1671-1672
+  s_7ba0b7bee9e951::t_c865b66d027c9a 5
+crates/sourdaw-native/src/commands/plugins.rs
+  s_7ba0b7bee9e951::t_bdb60345126478 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7d830cec6b8427768ca22f903b11ddf087d7b1b7",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
