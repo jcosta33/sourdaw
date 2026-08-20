@@ -114,13 +114,14 @@ export const PianoRoll = ({
     // turn a pointer position into a beat.
     const scrollRef = useRef<HTMLDivElement>(null);
     // Scroll container for the expression view's velocity/pressure/slide/
-    // pitch-bend panel. `contentWidth` below is unbounded — it tracks the
-    // clip's real length, not a fixed zoom-independent cap — so the panel
-    // needs its own real horizontal scroll, synced to the main canvas's
-    // `scrollLeft` in the handler below, or anything past its initial width
-    // is drawn but permanently unreachable. Same pattern as AutomationLane.tsx
-    // (`scrollRef` + `overflow-x-auto`, synced from outside via
-    // ClipView.tsx's `handlePianoRollScroll`) — this one syncs internally
+    // pitch-bend panel, and the panel's viewport in exactly the sense
+    // `scrollRef` is the roll's: `NotePropertyLane` sizes its backing store
+    // from this element's `clientWidth` and draws from its `scrollLeft`. It is
+    // a real scroll container, synced to the main canvas's `scrollLeft` in the
+    // handler below, because `contentWidth` is unbounded — it tracks the clip's
+    // real length, not a fixed zoom-independent cap. Same pattern as
+    // AutomationLane.tsx (`scrollRef` + `overflow-x-auto`, synced from outside
+    // via ClipView.tsx's `handlePianoRollScroll`) — this one syncs internally
     // since both scroll containers live in this component.
     const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
@@ -452,7 +453,7 @@ export const PianoRoll = ({
                                     trackId={trackId}
                                     selectedNoteIds={selectedNoteIds}
                                     beatWidth={beatWidth}
-                                    contentWidth={contentWidth}
+                                    scrollRef={expressionScrollRef}
                                     getValue={(node) => {
                                         if (activeExpressionLane === 'velocity') {
                                             return node.velocity ?? 100;

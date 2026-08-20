@@ -1,21 +1,24 @@
 /**
- * PR review (piano-roll-grid-extent, PianoRoll.tsx:207): this lane made the
- * layout `contentWidth` track the clip's real length instead of a fixed
- * GRID_BEATS cap. `NotePropertyLane` — the velocity/pressure/slide/pitch-bend
- * panel behind "Show Expression View" — receives that same `contentWidth`
- * and sizes its canvas to it, but its wrapper in `PianoRoll.tsx` was plain
- * `overflow-x-hidden` with no scrollbar and no `scrollLeft` sync to the main
- * canvas. Before this lane `contentWidth` was capped near 1280px, so the
- * clipping was invisible; once it tracks a clip's real length, any note past
- * the panel's initial width becomes permanently unreachable — not drawn
- * off-screen, but undraggable and unclickable with no way to scroll to it.
+ * Reachability of the expression panel (velocity/pressure/slide/pitch-bend,
+ * behind "Show Expression View") once the layout `contentWidth` tracks a clip's
+ * real length instead of a fixed GRID_BEATS cap.
+ *
+ * Two things have to hold together, and each one alone leaves a note past the
+ * panel's initial width unreachable:
+ *
+ * 1. The wrapper is a real horizontal scroll container whose `scrollLeft`
+ *    follows the main piano roll's (AutomationLane.tsx's existing pattern),
+ *    rather than one that clips with no way for the user to scroll.
+ * 2. `NotePropertyLane` sizes its backing store from that container's viewport
+ *    and draws from its `scrollLeft`. Sizing it to `contentWidth` instead makes
+ *    the reachable beat count inversely proportional to zoom by construction —
+ *    a canvas dimension is finite, so at the toolbar's 400% on a 3x display the
+ *    browser stops allocating around beat 68 and the panel goes blank while the
+ *    scrollbar keeps scrolling into the blank region.
  *
  * This file exercises the *real* `NotePropertyLane` (unlike PianoRoll.spec.tsx
- * and PianoRollGridExtent.spec.tsx, which both stub it out) so it can prove
- * the fix two ways: the wrapper is a real horizontal scroll container synced
- * to the main piano roll's `scrollLeft` (AutomationLane.tsx's existing
- * pattern), and a note far past the initial width is still hit-testable once
- * scrolled to.
+ * and PianoRollGridExtent.spec.tsx, which both stub it out), so it is where the
+ * two halves are proven to be wired to each other.
  */
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -185,6 +188,7 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
     // beatWidth = 40 (zoom=1). Far past any viewport the panel could plausibly
     // start at, and past the pre-fix content-width cap of 32 beats (1280px).
     const FAR_NOTE: ProbeNote = { id: 'n-far', pitch: 60, startBeat: 200, duration: 2, velocity: 100 };
+    const VIEWPORT_WIDTH = 300;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -198,10 +202,17 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
                 clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 256 }],
             },
         ];
-        // Deterministic geometry for the property lane's own pointer math —
-        // same fixed rect NotePropertyLane.spec.tsx uses. `.left` is 0, so a
-        // clientX is directly the canvas-local x the render loop drew at.
-        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 131));
+        // Deterministic geometry for the property lane's own pointer math. The
+        // lane's canvas is `position: sticky`, so `.left` of 0 is what it really
+        // reports at any scroll offset: a clientX is a *viewport*-local x, and
+        // the scroll offset is what the lane has to add back to reach a beat.
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+            new DOMRect(0, 0, VIEWPORT_WIDTH, 131)
+        );
+        // jsdom lays nothing out, so every element reports clientWidth 0. The
+        // lane sizes its backing store from its scroll container's clientWidth,
+        // and a zero-width viewport has no slice to draw at all.
+        vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(VIEWPORT_WIDTH);
     });
 
     it('gives the expression lane a real horizontal scroll container synced to the main scroll, not a clipped one', () => {
@@ -238,29 +249,41 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
         expect(scrollWrapper.scrollLeft).toBe(8000);
     });
 
-    it('keeps a note past the panel initial width present and hit-testable once scrolled to', () => {
+    it('keeps a note past the panel initial width hit-testable once scrolled to, on a viewport-sized canvas', () => {
         render(<PianoRoll {...defaultProps} />);
         act(() => {
             invokeToolbarHandler('onToggleExpressionView');
         });
 
+        const mainScrollContainer = screen.getByLabelText('Piano roll editor').closest('.overflow-auto');
+        if (!mainScrollContainer) {
+            throw new Error('Expected the piano roll scroll container');
+        }
         const laneCanvas = screen.getByLabelText('velocity lane').querySelector('canvas');
         if (!laneCanvas) {
             throw new Error('Expected the expression lane canvas');
         }
 
-        // The canvas backing store must actually cover the far note — this is
-        // NotePropertyLane's own `Math.max(containerWidth, contentWidth)`
-        // sizing, unaffected by the wrapper fix but the other half of
-        // "present": a canvas capped at viewport width would never draw the
-        // bar at all, scroll sync or not.
-        const noteX = FAR_NOTE.startBeat * 40; // beatWidth
-        const barW = Math.max(3, FAR_NOTE.duration * 40 - 2);
-        expect(laneCanvas.style.width.replace('px', '')).toMatch(/^\d+$/);
-        expect(parseFloat(laneCanvas.style.width)).toBeGreaterThanOrEqual(noteX + barW);
+        // The backing store is the viewport, not the clip. At 256 beats and a
+        // 40px beat the old sizing made this 10,240 CSS px; at the toolbar's
+        // 400% on a 3x display the same rule asks for 491,520 device px, which
+        // no browser will allocate.
+        expect(parseFloat(laneCanvas.style.width)).toBe(VIEWPORT_WIDTH);
 
-        // clientY 2 → top of the usable (h=131) range → value 127.
-        fireEvent.pointerDown(laneCanvas, { pointerId: 1, clientX: noteX + 1, clientY: 2 });
+        // Unscrolled, beat 200 is nowhere near the visible slice, so a press
+        // inside that slice writes nothing.
+        fireEvent.pointerDown(laneCanvas, { pointerId: 1, clientX: 100, clientY: 2 });
+        expect(setNoteVelocity).not.toHaveBeenCalled();
+
+        // Scrolling the main roll drags the panel with it, putting the far
+        // note 100px into the visible slice.
+        const noteX = FAR_NOTE.startBeat * 40; // beatWidth
+        Object.defineProperty(mainScrollContainer, 'scrollLeft', { value: noteX - 100, configurable: true });
+        fireEvent.scroll(mainScrollContainer);
+
+        // clientY 2 → top of the usable (h=131) range → value 127. clientX 102
+        // is a viewport-local position: the lane owes the scroll offset back.
+        fireEvent.pointerDown(laneCanvas, { pointerId: 2, clientX: 102, clientY: 2 });
 
         expect(setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n-far', 127);
     });
