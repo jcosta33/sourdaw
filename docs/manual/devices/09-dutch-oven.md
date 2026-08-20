@@ -67,15 +67,16 @@ Picking an algorithm writes only the algorithm. It does not reset Mix, Decay, or
 
 ## Space tray
 
-Eight rows, each with a short mood line. Clicking a row replaces the whole patch with the module
-defaults, then that row's own **Size**, **Decay**, **Damp**, **Diffuse**, **Depth**, and **Pre**.
+Eight rows, each with a short mood line. Clicking a row replaces the whole patch with Dutch Oven's
+default settings, then that row's own **Size**, **Decay**, **Damp**, **Diffuse**, **Depth**, and
+**Pre**.
 **Shimmer** also turns **Shimmer** on. **Spring** also switches **Algorithm** to **Spring**.
 **Infinite** pushes **Decay** to the top of the Plate range, which silences **Decay EQ** until you
 turn Decay down.
 
-A new device highlights **Hall** and **Live**, and still uses the module defaults below until you
-click a row. Clicking **Hall** then writes a longer decay and a 20 ms pre-delay, which is not what
-the fresh insert was already doing.
+A new device highlights **Hall** and **Live**, and still uses Dutch Oven's default settings below
+until you click a row. Clicking **Hall** then writes a longer decay and a 20 ms pre-delay, which is
+not what the fresh insert was already doing.
 
 Space itself has no automation lane. The knobs it writes do.
 
