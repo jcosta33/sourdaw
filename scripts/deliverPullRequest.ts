@@ -103,8 +103,7 @@ function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
         fail(
             `PR #${pullRequest.number} targets ${pullRequest.baseRefName}, not ${REQUIRED_BASE_BRANCH}; ` +
                 `deliver merges into ${REQUIRED_BASE_BRANCH} only. Deliver the pull request this one is ` +
-                `stacked on, which retargets this one, or reopen it against ${REQUIRED_BASE_BRANCH} and review ` +
-                `it there.`
+                `stacked on, which retargets this one.`
         );
     }
 }

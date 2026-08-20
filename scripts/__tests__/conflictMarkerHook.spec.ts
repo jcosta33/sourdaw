@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { accessSync, constants, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -32,8 +32,13 @@ function stage(path: string, content: string): void {
     git(['add', '--', path]);
 }
 
-function runHook(): { status: number | null; stderr: string } {
-    const result = spawnSync(hook, [], { cwd: repository, encoding: 'utf8', shell: false });
+function runHook(env?: Record<string, string>): { status: number | null; stderr: string } {
+    const result = spawnSync(hook, [], {
+        cwd: repository,
+        encoding: 'utf8',
+        shell: false,
+        env: env === undefined ? undefined : { ...process.env, ...env },
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -46,6 +51,11 @@ const separator = '='.repeat(7);
 const close = `${'>'.repeat(7)} topic`;
 const base = `${'|'.repeat(7)} merged common ancestors`;
 
+/** Fence delimiter runs, assembled by length so their intent (3 vs 4, `` ` `` vs `~`) reads plainly. */
+const backtick3 = '`'.repeat(3);
+const backtick4 = '`'.repeat(4);
+const tilde3 = '~'.repeat(3);
+
 beforeEach(() => {
     repository = mkdtempSync(join(tmpdir(), 'sourdaw-conflict-hook-'));
     git(['init', '-q', '-b', 'main', '.']);
@@ -54,7 +64,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    rmSync(repository, { recursive: true, force: true });
+    // `runHook` and `git commit` both fork children that can still be releasing file handles in the
+    // repository when this runs; a single-shot `rmSync` occasionally loses that race with `ENOTEMPTY`
+    // and reds an otherwise-passing suite. Retry rather than widen the race window with a sleep.
+    rmSync(repository, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 describe('staged conflict-marker hook', () => {
@@ -135,6 +148,78 @@ describe('staged conflict-marker hook', () => {
     });
 
     /**
+     * CommonMark's own way to show a fence nested inside a fence: a longer outer run wraps a
+     * shorter inner run of the *same* character. A hook that toggles `fence` on any run of
+     * backticks, without recording which character opened it or how long the run was, sees three
+     * toggles here instead of two and is left stuck "inside a fence" for the rest of the file — so
+     * it stops seeing conflict markers in ordinary prose past this point, not just inside the fence.
+     */
+    it('refuses a real conflict in prose after a 4-backtick fence containing a 3-backtick line', () => {
+        stage(
+            'doc.md',
+            `${backtick4}\nsome code\n${backtick3}\nmore code\n${backtick4}\n\nIntro\n\n${open}\nours\n${separator}\ntheirs\n${close}\n`
+        );
+
+        const { status, stderr } = runHook();
+
+        expect(
+            status,
+            'a 3-backtick line inside a 4-backtick fence toggled `fence` a third time, hiding every later marker'
+        ).toBe(1);
+        expect(stderr).toMatch(/doc\.md:9:/);
+    });
+
+    /** Same defect, the other direction: the nested line uses the other delimiter character. */
+    it('refuses a real conflict in prose after a triple-backtick fence containing a triple-tilde line', () => {
+        stage(
+            'doc.md',
+            `${backtick3}\nsome code\n${tilde3}\nmore code\n${backtick3}\n\nIntro\n\n${open}\nours\n${separator}\ntheirs\n${close}\n`
+        );
+
+        const { status, stderr } = runHook();
+
+        expect(status, 'a ~~~ content line inside a ``` fence toggled `fence` on the wrong delimiter character').toBe(
+            1
+        );
+        expect(stderr).toMatch(/doc\.md:9:/);
+    });
+
+    /**
+     * Regression guard: the simple, single fenced example the hook already exempted correctly must
+     * keep working once fence state is tracked by character and run length instead of a bare toggle.
+     * This passes both before and after the fix — that is the point of a regression guard.
+     */
+    it.each([
+        ['backtick', backtick3],
+        ['tilde', tilde3],
+    ])('accepts a marker genuinely inside a %s-fenced block', (_label, fence) => {
+        stage('doc.md', `Resolving:\n\n${fence}\n${open}\nours\n${separator}\ntheirs\n${close}\n${fence}\n`);
+
+        expect(runHook().status).toBe(0);
+    });
+
+    /**
+     * A closing run only needs to be at least as long as the opener, not exactly equal — CommonMark
+     * lets `````` close ```. A minimal file with only these two fence-looking lines cannot by itself
+     * distinguish this from a hook that blindly toggles on any run: the parity of two toggles is the
+     * same either way. Threading a mismatched-character line between them forces the two
+     * implementations to disagree: the naive toggle counts it as a third flip and ends up "still
+     * fenced" at the marker, while correct tracking recognizes it as content (wrong character) and
+     * still closes on the final run because it is `>=` the opening length, not `==` it.
+     */
+    it('closes on a closing run longer than the opening run (```` closes ```)', () => {
+        stage('doc.md', `${backtick3}\n${tilde3}\n${backtick4}\n\n${open}\n`);
+
+        const { status, stderr } = runHook();
+
+        expect(
+            status,
+            'a 4-backtick line failed to close a 3-backtick fence once a mismatched-character line came between them'
+        ).toBe(1);
+        expect(stderr).toMatch(/doc\.md:5:/);
+    });
+
+    /**
      * The working tree is not this hook's business: only what was staged can reach history, and a
      * hook that scanned the tree would block a commit for a conflict the author left aside.
      */
@@ -173,6 +258,46 @@ describe('staged conflict-marker hook', () => {
 
         expect(stderr).toMatch(/Finish the resolution, restage the file, and commit again\./);
         expect(stderr).toMatch(/git commit --no-verify/);
+    });
+
+    /**
+     * `git grep` failing is not the same thing as `git grep` finding nothing. The hook used to send
+     * this stderr to `/dev/null` and read the resulting empty candidate list as "clean" — the
+     * plausible real trigger is a pathspec big enough to overflow argv, but any `git grep` failure
+     * reproduces the same fail-open shape. A `git` shim on `PATH` that only intercepts the `grep`
+     * subcommand forces that failure deterministically without needing a multi-hundred-thousand-byte
+     * fixture, and forwards every other subcommand (`diff`, `show`, ...) to the real binary so the
+     * rest of the hook runs unmodified.
+     */
+    it('fails loud rather than passing when git grep itself errors', () => {
+        stage('clean.ts', 'export const value = 1;\n');
+
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const shimDir = mkdtempSync(join(tmpdir(), 'sourdaw-conflict-hook-git-shim-'));
+        const shimPath = join(shimDir, 'git');
+        writeFileSync(
+            shimPath,
+            [
+                '#!/usr/bin/env bash',
+                'if [ "$1" = "grep" ]; then',
+                "  echo 'boom: simulated grep failure' >&2",
+                '  exit 2',
+                'fi',
+                `exec "${realGit}" "$@"`,
+                '',
+            ].join('\n')
+        );
+        chmodSync(shimPath, 0o755);
+
+        try {
+            const { status, stderr } = runHook({ PATH: `${shimDir}:${process.env.PATH ?? ''}` });
+
+            expect(status, 'a git grep failure (exit 2) was read as a clean commit').toBe(1);
+            expect(stderr).toMatch(/git grep failed/);
+            expect(stderr).toMatch(/exit 2/);
+        } finally {
+            rmSync(shimDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+        }
     });
 
     /**

@@ -30,10 +30,41 @@ fi
 
 # `git grep --cached` reads the index, so the working tree is never consulted and an unstaged marker
 # is not this hook's business. `-I` drops binary blobs.
+#
+# The paths are never handed to `git grep` as argv: a repo-wide commit's tracked-path total already
+# sits within ~1.5x of ARG_MAX, and a pathspec list that overflows it makes `git grep` fail. The old
+# code sent that failure's stderr to `/dev/null` and read the resulting empty candidate list as
+# "clean" — an argv overflow read as a pass. Scanning the whole cached index instead has no argv
+# ceiling, and intersecting the hits with the staged paths below keeps the same "staged files only"
+# result. `git grep`'s own exit status is checked directly: 0 is hits, 1 is no hits, anything else is
+# an error this hook must not swallow.
+grep_stderr_file="$(mktemp)"
+grep_output="$(git grep --cached -I -l -E "$marker_pattern" 2>"$grep_stderr_file")"
+grep_status=$?
+grep_stderr="$(cat "$grep_stderr_file")"
+rm -f "$grep_stderr_file"
+
+if [ "$grep_status" -gt 1 ]; then
+  printf 'pre-commit: git grep failed while scanning the index for merge-conflict markers (exit %d).\n' \
+    "$grep_status" >&2
+  if [ -n "$grep_stderr" ]; then
+    printf '%s\n' "$grep_stderr" >&2
+  fi
+  echo '' >&2
+  echo 'Refusing rather than passing silently: an unreadable index is not evidence the commit is clean.' >&2
+  echo '' >&2
+  echo 'Deliberate exception: git commit --no-verify' >&2
+  exit 1
+fi
+
 candidates=()
-while IFS= read -r path; do
-  [ -n "$path" ] && candidates+=("$path")
-done < <(git grep --cached -I -l -E "$marker_pattern" -- "${paths[@]}" 2>/dev/null)
+if [ "$grep_status" -eq 0 ]; then
+  while IFS= read -r path; do
+    [ -n "$path" ] && candidates+=("$path")
+  done < <(comm -12 \
+    <(printf '%s\n' "$grep_output" | LC_ALL=C sort) \
+    <(printf '%s\n' "${paths[@]}" | LC_ALL=C sort))
+fi
 
 if [ ${#candidates[@]} -eq 0 ]; then
   exit 0
@@ -42,6 +73,13 @@ fi
 # A fenced code block is where documentation legitimately shows a marker, so Markdown gets that one
 # exemption and nothing else. An indented code block needs no rule: indentation already moves the
 # marker off column 0.
+#
+# CommonMark's fence rule is tracked properly rather than toggled on any run of backticks or tildes:
+# an opener records which character opened it and how long the run was, and only a run of that same
+# character at least as long closes it. A shorter run, or the other character, is content — which is
+# exactly the standard way to show a fence nested inside a fence (a longer outer run wrapping a
+# shorter inner one). Toggling on any run instead sends `fence` stuck open for the rest of the file
+# the moment a nested example appears, and every later marker in ordinary prose goes unseen.
 report=''
 for path in "${candidates[@]}"; do
   case "$path" in
@@ -49,9 +87,48 @@ for path in "${candidates[@]}"; do
     *) fenced=0 ;;
   esac
   hits="$(git show ":$path" | awk -v fenced="$fenced" -v path="$path" '
-    fenced && /^[ \t]*(```|~~~)/ { fence = !fence; next }
-    fence { next }
-    $0 ~ /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>) / { printf "  %s:%d: %s\n", path, FNR, $0 }
+    function count_run(s, ch,    n) {
+      n = 0
+      while (n < length(s) && substr(s, n + 1, 1) == ch) n++
+      return n
+    }
+    function leading_spaces(s,    n) {
+      n = 0
+      while (n < length(s) && substr(s, n + 1, 1) == " ") n++
+      return n
+    }
+    {
+      if (fenced) {
+        indent = leading_spaces($0)
+        rest = substr($0, indent + 1)
+        first = substr(rest, 1, 1)
+        if (!fence) {
+          if (indent <= 3 && (first == "`" || first == "~")) {
+            run = count_run(rest, first)
+            if (run >= 3) {
+              fence = 1
+              fence_char = first
+              fence_len = run
+              next
+            }
+          }
+        } else {
+          if (indent <= 3 && first == fence_char) {
+            run = count_run(rest, first)
+            trailing = substr(rest, run + 1)
+            gsub(/[ \t]/, "", trailing)
+            if (run >= fence_len && trailing == "") {
+              fence = 0
+              next
+            }
+          }
+          next
+        }
+      }
+      if ($0 ~ /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>) /) {
+        printf "  %s:%d: %s\n", path, FNR, $0
+      }
+    }
   ')"
   # `$(...)` eats the trailing newline, so put one back or two files report as one line.
   [ -n "$hits" ] && report="${report}${hits}"$'\n'
