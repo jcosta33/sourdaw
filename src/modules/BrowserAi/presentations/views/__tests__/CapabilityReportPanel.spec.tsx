@@ -15,10 +15,11 @@ vi.mock('../../../useCases/detectCapabilities', () => ({
 
 const SUPPORTED_REPORT: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
-    sharedArrayBuffer: true,
+    crossOriginIsolated: true,
+    workerAvailable: true,
     opfsAvailable: true,
-    chromeVersion: 133,
     inference: {
         status: 'measured',
         modelId: 'kokoro-82m-q8',
@@ -69,29 +70,64 @@ describe('CapabilityReportPanel', () => {
         expect(mocks.detectCapabilities).toHaveBeenCalledWith(REFRESH_ARGS);
     });
 
-    it('should render the non-Chrome reason for an unsupported report outside Chromium', () => {
+    it.each([
+        ['missing-surface', 'WebGPU is not exposed by this runtime'],
+        ['adapter-unavailable', 'No core WebGPU adapter is available'],
+        ['fallback-adapter', 'Only a software WebGPU fallback adapter is available'],
+        ['device-unavailable', 'The WebGPU adapter could not create a device'],
+        ['probe-failed', 'The WebGPU usability check could not complete'],
+    ] as const)('should show the explicit WebGPU admission failure: %s', (reason, expected) => {
         capabilityStore.set({
             phase: 'done',
-            report: { ...SUPPORTED_REPORT, capability: 'unsupported-browser', chromeVersion: null },
+            report: {
+                ...SUPPORTED_REPORT,
+                capability: 'unsupported-browser',
+                webGpu: { status: 'unavailable', reason },
+            },
         });
 
         render(<CapabilityReportPanel />);
 
         expect(screen.getByText('Browser AI Unavailable')).toBeInTheDocument();
-        expect(screen.getByText('Non-Chrome browser — AI features require Chrome latest')).toBeInTheDocument();
+        expect(screen.getByText(expected)).toBeInTheDocument();
         expect(screen.getByText('Unsupported')).toBeInTheDocument();
     });
 
-    it('should blame missing WebGPU, not the browser, when an unsupported report comes from Chromium', () => {
+    it('should name the Worker failure before a probe-failed WebGPU result', () => {
         capabilityStore.set({
             phase: 'done',
-            report: { ...SUPPORTED_REPORT, capability: 'unsupported-browser' },
+            report: {
+                ...SUPPORTED_REPORT,
+                capability: 'unsupported-browser',
+                workerAvailable: false,
+                webGpu: { status: 'unavailable', reason: 'probe-failed' },
+            },
+        });
+
+        render(<CapabilityReportPanel />);
+
+        expect(screen.getByText('Web Workers are unavailable in this runtime')).toBeInTheDocument();
+        expect(screen.queryByText('The WebGPU usability check could not complete')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['workerAvailable', 'Web Workers are unavailable in this runtime'],
+        ['crossOriginIsolated', 'Cross-origin isolation is not active in this runtime'],
+        ['opfsAvailable', 'Origin-private model storage is unavailable in this runtime'],
+    ] as const)('should show the explicit required capability failure: %s', (capability, expected) => {
+        capabilityStore.set({
+            phase: 'done',
+            report: {
+                ...SUPPORTED_REPORT,
+                capability: 'unsupported-browser',
+                [capability]: false,
+            },
         });
 
         render(<CapabilityReportPanel />);
 
         expect(screen.getByText('Browser AI Unavailable')).toBeInTheDocument();
-        expect(screen.getByText('WebGPU unavailable — AI features need a GPU-enabled Chromium')).toBeInTheDocument();
+        expect(screen.getByText(expected)).toBeInTheDocument();
         expect(screen.getByText('Unsupported')).toBeInTheDocument();
     });
 
@@ -104,21 +140,20 @@ describe('CapabilityReportPanel', () => {
         expect(screen.getByText('Fast (WebGPU)')).toBeInTheDocument();
         expect(screen.getByText('1.60× real time')).toBeInTheDocument();
         expect(screen.getByText('kokoro-82m-q8 · webgpu → wasm')).toBeInTheDocument();
-        expect(screen.getAllByText('Available')).toHaveLength(2);
-        expect(screen.getByText('133')).toBeInTheDocument();
+        expect(screen.getAllByText('Available')).toHaveLength(4);
+        expect(screen.getByText('Cross-Origin Isolation')).toBeInTheDocument();
+        expect(screen.getByText('Web Workers')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Re-detect capabilities' }));
         expect(mocks.detectCapabilities).toHaveBeenCalledWith(REFRESH_ARGS);
     });
 
-    it('should render the slow WebGPU tier and unavailable shared memory / OPFS', () => {
+    it('should render the slow WebGPU tier', () => {
         capabilityStore.set({
             phase: 'done',
             report: {
                 ...SUPPORTED_REPORT,
                 webGpuTier: 'webgpu-slow',
-                sharedArrayBuffer: false,
-                opfsAvailable: false,
                 inference: {
                     status: 'measured',
                     modelId: 'kokoro-82m-q8',
@@ -127,7 +162,6 @@ describe('CapabilityReportPanel', () => {
                     elapsedSeconds: 10,
                     realtimeFactor: 0.4,
                 },
-                chromeVersion: null,
             },
         });
 
@@ -135,7 +169,6 @@ describe('CapabilityReportPanel', () => {
 
         expect(screen.getByText('Slow (WebGPU)')).toBeInTheDocument();
         expect(screen.getByText('0.40× real time')).toBeInTheDocument();
-        expect(screen.getAllByText('Unavailable')).toHaveLength(2);
     });
 
     it('should render the unavailable WebGPU tier for any non webgpu-* value', () => {

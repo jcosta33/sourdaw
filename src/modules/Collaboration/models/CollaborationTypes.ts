@@ -20,6 +20,20 @@ export type CollaborationState = {
     peers: PeerInfo[];
     connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
     error: string | null;
+    /**
+     * Peers whose project-sync channel this node has closed after repeated
+     * failures to read their document.
+     *
+     * Separate from `error` on purpose. `error` is a single slot that every
+     * transient writer overwrites and that routine success paths null out —
+     * an audio asset arriving, an invite being minted, a joiner being
+     * admitted. A closed sync channel is the one collaboration condition that
+     * does not resolve itself: the peer stays listed and present while its
+     * edits silently stop arriving, until it is really gone. That has to be
+     * state nothing routine can erase, so it is held here and cleared only
+     * when the quarantine is lifted or the session ends.
+     */
+    quarantinedPeerIds: PeerId[];
 };
 
 /** Presence data broadcast ephemerally — NOT persisted in CRDT. */

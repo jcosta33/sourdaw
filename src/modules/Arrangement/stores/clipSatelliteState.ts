@@ -1,3 +1,10 @@
+import {
+    type ClipSatelliteEntrySnapshot,
+    type ClipSatelliteGainEnvelopeSnapshot,
+    type ClipSatelliteWarpMarkerSnapshot,
+    type ClipSatelliteWarpStateSnapshot,
+} from '#/utils/handlerContract';
+
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
 import { removeWarpState, setWarpState, warpStates } from './warpStates';
 
@@ -53,7 +60,7 @@ export type ClipSatelliteTransition = {
  * owner plan onto the opaque encoding path. Dropping the key at capture keeps
  * every satellite plan plain JSON.
  */
-function normalizeWarpMarker(marker: WarpMarker): WarpMarker {
+function normalizeWarpMarker(marker: ClipSatelliteWarpMarkerSnapshot): WarpMarker {
     const normalized: WarpMarker = {
         id: marker.id,
         originalBeat: marker.originalBeat,
@@ -71,7 +78,7 @@ function normalizeWarpMarker(marker: WarpMarker): WarpMarker {
     return normalized;
 }
 
-function normalizeWarpState(state: WarpState): WarpState {
+function normalizeWarpState(state: ClipSatelliteWarpStateSnapshot): WarpState {
     return {
         enabled: state.enabled,
         markers: state.markers.map(normalizeWarpMarker),
@@ -80,7 +87,7 @@ function normalizeWarpState(state: WarpState): WarpState {
     };
 }
 
-function normalizeGainEnvelope(envelope: ClipGainEnvelope, clipId: string): ClipGainEnvelope {
+function normalizeGainEnvelope(envelope: ClipSatelliteGainEnvelopeSnapshot, clipId: string): ClipGainEnvelope {
     return {
         clipId,
         points: envelope.points.map((point) => ({
@@ -112,7 +119,7 @@ export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
  * empty one, so a restored clip with no envelope is indistinguishable from a
  * clip that never had one.
  */
-export function writeClipSatelliteEntry(entry: ClipSatelliteEntry): void {
+export function writeClipSatelliteEntry(entry: ClipSatelliteEntrySnapshot): void {
     if (entry.gainEnvelope === null) {
         removeEnvelope(entry.clipId);
     } else {

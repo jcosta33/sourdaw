@@ -128,11 +128,11 @@ export async function createSingerSongwriterTemplate(): Promise<void> {
         ],
     });
     const ssPiano = createInstrumentTrack({
-        name: 'Piano',
+        name: 'Keys',
         parentId: instrumentsFolder.id,
-        deviceType: 'grand-boule',
-        deviceName: 'Grand Piano',
-        deviceParams: { masterGain: 0.75, soundboardSend: 0.55, sympatheticSend: 0.3 },
+        deviceType: 'builtin-synth',
+        deviceName: 'Soft Keys',
+        deviceParams: { waveform: 1, attack: 0.02, release: 0.5, filterCutoff: 3000, gain: 0.38 },
     });
     const ssBass = createInstrumentTrack({
         name: 'Bass',

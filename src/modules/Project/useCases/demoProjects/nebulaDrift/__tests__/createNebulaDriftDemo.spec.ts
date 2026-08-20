@@ -54,6 +54,10 @@ describe('createNebulaDriftDemo', () => {
         expect(dutchOven?.[1]).toContain('fdn_damping_version: 2');
     });
 
+    it('checks every constructed device against release admission', () => {
+        expect(demoSource).toContain('assertReleaseAdmittedDevices(tracks);');
+    });
+
     /**
      * Intro audibility.
      *

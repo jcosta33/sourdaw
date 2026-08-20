@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { createTrack } from '../../models/Track';
 import { type TrackTemplate } from '../../models/TrackTemplate';
@@ -24,6 +26,7 @@ vi.mock('../../repositories/track/setTrackState', () => ({
 vi.mock('../../repositories/trackTemplate/loadTrackTemplates', () => ({
     loadTrackTemplates: vi.fn(),
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 describe('loadTrackTemplate', () => {
     function createTemplate(overrides: Partial<TrackTemplate> = {}): TrackTemplate {
@@ -56,6 +59,32 @@ describe('loadTrackTemplate', () => {
         expect(createTrack).not.toHaveBeenCalled();
         expect(getTrackState).not.toHaveBeenCalled();
         expect(setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('preserves but does not instantiate a template containing a withheld device', () => {
+        const template = createTemplate({
+            devices: [
+                {
+                    id: 'grand-boule-source',
+                    name: 'Grand Boule',
+                    type: 'grand-boule',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ],
+        });
+        trackTemplateCache.templates = [template];
+
+        loadTrackTemplate(template.id);
+
+        expect(trackTemplateCache.templates).toEqual([template]);
+        expect(createTrack).not.toHaveBeenCalled();
+        expect(getTrackState).not.toHaveBeenCalled();
+        expect(setTrackState).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Template contains withheld device "grand-boule" and was not loaded.',
+            'warning'
+        );
     });
 
     it('should no-op when track state is unavailable', () => {

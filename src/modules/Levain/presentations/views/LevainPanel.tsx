@@ -8,6 +8,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { type InstrumentId } from '../../models/LevainPatch';
@@ -96,15 +97,15 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     return (
         <div className="levain-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
-                <aside className="flex min-h-0 flex-col gap-3">
-                    <section className="levain-window flex min-h-0 flex-col gap-3 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1">
+                <Stack as="aside" gap={3}>
+                    <Stack as="section" gap={3} className="levain-window p-3">
+                        <Row align="start" justify="between" gap={3}>
+                            <Stack gap={1}>
                                 <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
                                     Lineup
                                 </div>
                                 <div className="text-[15px] font-semibold text-foreground">Levain</div>
-                            </div>
+                            </Stack>
                             <DawPluginLed
                                 tone="amber"
                                 role="status"
@@ -113,9 +114,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             >
                                 {engineReady ? 'Ready' : 'Loading'}
                             </DawPluginLed>
-                        </div>
+                        </Row>
 
-                        <label className="levain-window flex items-center gap-2 px-3 py-2">
+                        <Row as="label" gap={2} className="levain-window px-3 py-2">
                             <Search className="size-3.5 text-muted-foreground/55" />
                             <input
                                 value={search}
@@ -124,13 +125,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
                                 aria-label="Search Levain instruments"
                             />
-                        </label>
+                        </Row>
 
-                        <div
-                            className="flex flex-wrap gap-1.5"
-                            role="radiogroup"
-                            aria-label="Filter instruments by family"
-                        >
+                        <Row align="stretch" wrap gap={1.5} role="radiogroup" aria-label="Filter instruments by family">
                             {FAMILIES.map((entry) => {
                                 const active = family === entry;
                                 return (
@@ -147,9 +144,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     </DawPluginChip>
                                 );
                             })}
-                        </div>
+                        </Row>
 
-                        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                        <Stack grow gap={2} className="overflow-y-auto pr-1">
                             {visibleInstruments.map((instrument) => {
                                 const active = patch.instrumentId === instrument.id;
                                 return (
@@ -165,19 +162,19 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         }`}
                                         onClick={() => loadInstrument(deviceId, instrument.id)}
                                     >
-                                        <div className="flex w-full items-center justify-between gap-2">
+                                        <Row justify="between" gap={2} className="w-full">
                                             <span className="text-[11px] font-medium text-foreground">
                                                 {instrument.label}
                                             </span>
                                             <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/45">
                                                 {instrument.family}
                                             </span>
-                                        </div>
+                                        </Row>
                                     </button>
                                 );
                             })}
-                        </div>
-                    </section>
+                        </Stack>
+                    </Stack>
 
                     <section className="levain-window min-h-0 overflow-y-auto p-2">
                         <div className="px-2 pb-2 text-[8px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
@@ -189,18 +186,18 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             onSelect={(type) => setLevainParamWithAudio(deviceId, 'currentArticulation', type)}
                         />
                     </section>
-                </aside>
+                </Stack>
 
-                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
+                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
+                    <Row align="start" justify="between" gap={3}>
+                        <Stack gap={2}>
                             <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
                                 Phrase stage
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{instLabel}</div>
-                        </div>
+                        </Stack>
 
-                        <div className="flex flex-wrap justify-end gap-2">
+                        <Row align="stretch" justify="end" wrap gap={2}>
                             <DawPluginMetricTile
                                 className="levain-window"
                                 label="Artic"
@@ -224,11 +221,11 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 }
                                 detail={sampleLoadError !== null ? sampleLoadError : 'Sample stream'}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
 
                     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_18rem] gap-3">
-                        <div className="flex min-h-0 flex-col gap-3">
+                        <Stack gap={3}>
                             <SectionCard
                                 title="Phrase"
                                 detail="Dynamics, vibrato, and legato belong together where the line is most visible."
@@ -276,9 +273,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     />
                                 </SectionCard>
                             </div>
-                        </div>
+                        </Stack>
 
-                        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                        <Stack gap={3} className="overflow-y-auto pr-1">
                             <SectionCard
                                 title="Stage"
                                 detail="Mic balance should feel spatial, not like raw mixer math."
@@ -308,8 +305,8 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </SectionCard>
 
                             <SectionCard title="Desk" detail="A couple of master moves for the final line.">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div className="flex flex-col items-center gap-1">
+                                <Row justify="between" gap={3}>
+                                    <Stack align="center" gap={1}>
                                         <RotaryKnob
                                             value={patch.masterGain}
                                             onChange={(value) => setLevainParamWithAudio(deviceId, 'masterGain', value)}
@@ -327,9 +324,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         <span className="font-mono text-[9px] text-foreground/85">
                                             {(patch.masterGain * 100).toFixed(0)}%
                                         </span>
-                                    </div>
+                                    </Stack>
 
-                                    <div className="space-y-2">
+                                    <Stack gap={2}>
                                         <DawPluginChip
                                             active={patch.releaseTriggers.enabled}
                                             tone="amber"
@@ -356,16 +353,16 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         >
                                             Dynamic tails
                                         </DawPluginChip>
-                                    </div>
-                                </div>
+                                    </Stack>
+                                </Row>
                             </SectionCard>
-                        </div>
+                        </Stack>
                     </div>
-                </section>
+                </Stack>
 
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
-                        <div className="space-y-2">
+                        <Stack gap={2}>
                             <DawReadoutRow label="Instrument" value={instLabel} valueClassName="text-foreground/85" />
                             <DawReadoutRow
                                 label="Family"
@@ -383,9 +380,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 value={`${patch.micPositions.length} mics`}
                                 valueClassName="text-foreground/85"
                             />
-                        </div>
+                        </Stack>
                     </SectionCard>
-                </aside>
+                </Stack>
             </div>
         </div>
     );

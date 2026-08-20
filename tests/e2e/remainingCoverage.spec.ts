@@ -151,7 +151,7 @@ test.describe('Browser Instruments tab', () => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
         await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
 
-        const devices = browser.getByRole('button', { name: /Fermenter|Toaster|Levain|Grand Boule|Crumbs/i });
+        const devices = browser.getByRole('button', { name: /Fermenter|Toaster|Levain|Crumbs/i });
         await expect(devices.first()).toBeVisible();
         expect(await devices.count()).toBeGreaterThan(0);
     });

@@ -5,7 +5,9 @@ import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { createClipSatelliteTransitionPlan } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { readClipScopedAutomationLanes, type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 
 import { getClipIdCensus } from './getClipIdCensus';
 import { getMidiClipGlueSources } from './getMidiClipGlueSources';
@@ -16,6 +18,64 @@ type PrepareClipGlueInput = {
     clipIds: readonly string[];
     targetClipId?: string;
 };
+
+function byBeat<TPoint extends { beat: number }>(points: readonly TPoint[]): TPoint[] {
+    return [...points].sort((left, right) => left.beat - right.beat);
+}
+
+/**
+ * Move every source clip's clip-scoped automation lanes onto the glued clip.
+ *
+ * Points are timeline-absolute (`applyAutomation` evaluates them at the
+ * playhead's absolute beat, gated on the owning clip's `[startBeat, endBeat]`
+ * window), and glue only accepts adjacent, non-overlapping sources, so the
+ * glued clip spans exactly the union of the source windows. Re-keying each
+ * lane's `clipId` with its points untouched therefore reproduces the previous
+ * playback exactly — no established DAW deletes automation on a consolidate,
+ * and retiring these lanes would silence automation that played a moment
+ * earlier with undo as the only recovery.
+ *
+ * Two sources automating the SAME `parameterId` would collide on the glued
+ * clip, so their content merges into one lane: point sets concatenate (the
+ * source windows are disjoint, so they interleave without conflict) and the
+ * earliest source's lane supplies the surviving lane metadata.
+ */
+function migrateAutomationLanesToGluedClip(
+    lanesInSourceOrder: readonly AutomationLaneValue[],
+    gluedClipId: string
+): AutomationLaneValue[] {
+    const byParameterId = new Map<string, AutomationLaneValue>();
+    for (const lane of lanesInSourceOrder) {
+        const existing = byParameterId.get(lane.parameterId);
+        if (!existing) {
+            byParameterId.set(lane.parameterId, {
+                ...lane,
+                id: `auto-${crypto.randomUUID()}`,
+                clipId: gluedClipId,
+                points: byBeat(lane.points),
+                objects: lane.objects.map((object) => ({ ...object })),
+                ...(lane.trimPoints === undefined ? {} : { trimPoints: byBeat(lane.trimPoints) }),
+                ...(lane.ghostPoints === undefined ? {} : { ghostPoints: byBeat(lane.ghostPoints) }),
+            });
+            continue;
+        }
+        existing.points = byBeat([...existing.points, ...lane.points]);
+        existing.objects = [...existing.objects, ...lane.objects.map((object) => ({ ...object }))];
+        if (lane.trimPoints !== undefined) {
+            existing.trimPoints = byBeat([...(existing.trimPoints ?? []), ...lane.trimPoints]);
+        }
+        if (lane.ghostPoints !== undefined) {
+            existing.ghostPoints = byBeat([...(existing.ghostPoints ?? []), ...lane.ghostPoints]);
+        }
+    }
+    const migrated = [...byParameterId.values()];
+    for (const lane of migrated) {
+        for (const object of lane.objects) {
+            object.laneId = lane.id;
+        }
+    }
+    return migrated;
+}
 
 export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput): {
     previous: ClipGlueActionSnapshot;
@@ -116,12 +176,54 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         return null;
     }
 
+    // The surviving glued clip carries the FIRST source's gain envelope and
+    // warp state; the rest retire, undoably. Neither Logic Join (which
+    // normalizes region parameters into the event data, keeping only the name
+    // from the first region) nor Live Consolidate (which renders clip
+    // envelopes into the new sample) actually carries the first source's
+    // settings forward — this choice is defensible only because glue is
+    // MIDI-only here (non-MIDI is refused above), which makes the gain
+    // envelope and warp state playback-inert on the glued clip. Automation is
+    // different: clip-scoped lanes drive parameters during MIDI playback, so
+    // they migrate rather than retire (see
+    // `migrateAutomationLanesToGluedClip`).
+    const sourceIds = clips.map((clip) => clip.id);
+    const [firstSourceId, ...remainingSourceIds] = sourceIds as [string, ...string[]];
+    const clipSatelliteTransitionPlan = createClipSatelliteTransitionPlan({
+        removedClipIds: remainingSourceIds,
+        migrations: [{ sourceClipId: firstSourceId, targetClipId: gluedId }],
+    });
+    if (!clipSatelliteTransitionPlan) {
+        return null;
+    }
+    // `createClipSatelliteTransitionPlan` omits any clip id that carries no
+    // satellite data at all (the common bare-clip case), so its entries may
+    // not cover every id this glue touches. Pad both sides with explicit
+    // empty entries for whatever is missing so restoreClipGlueState's
+    // freshness guard can assert "nothing lives here" for the FULL affected
+    // set — including the glued id itself when the first source had nothing
+    // to migrate — not just the ids the plan happened to mention.
+    const affectedClipIds = [...sourceIds, gluedId];
+    const presentSatelliteIds = new Set(clipSatelliteTransitionPlan.expected.entries.map((entry) => entry.clipId));
+    const emptySatelliteEntries = affectedClipIds
+        .filter((clipId) => !presentSatelliteIds.has(clipId))
+        .map((clipId) => ({ clipId, gainEnvelope: null, warpState: null }));
+    // `clips` is sorted by startBeat, so ordering the lanes by their owner's
+    // position makes "the earliest source wins" concrete for a same-parameter
+    // merge.
+    const sourceAutomationLanes = readClipScopedAutomationLanes(sourceIds).toSorted(
+        (left, right) => sourceIds.indexOf(left.clipId) - sourceIds.indexOf(right.clipId)
+    );
+    const gluedAutomationLanes = migrateAutomationLanesToGluedClip(sourceAutomationLanes, gluedId);
+
     return {
         previous: {
             trackId: track.id,
             clips: structuredClone(clipsInTrackOrder),
             clipOrder: track.clips.map((clip) => clip.id),
             midi: midiPlan.previous,
+            clipSatellites: [...clipSatelliteTransitionPlan.expected.entries, ...emptySatelliteEntries],
+            clipAutomationLanes: sourceAutomationLanes,
         },
         next: {
             trackId: track.id,
@@ -133,6 +235,8 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
                 return clipIds.includes(clip.id) ? [] : [clip.id];
             }),
             midi: midiPlan.next,
+            clipSatellites: [...clipSatelliteTransitionPlan.replacement.entries, ...emptySatelliteEntries],
+            clipAutomationLanes: gluedAutomationLanes,
         },
         targetClipId: gluedId,
     };

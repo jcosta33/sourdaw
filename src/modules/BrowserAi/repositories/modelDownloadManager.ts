@@ -10,24 +10,24 @@
  */
 
 import { MAX_GUARDED_ZIP_BYTES, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
-import { extractSingleGuardedZipEntry } from '#/infra/archive/extractSingleGuardedZipEntry';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type ModelDownloadProgressPayload } from '../models/ModelDownloadProgress';
 import { updateModelStatus } from '../stores/modelRegistryStore';
 
-import { abortWritable } from './abortWritable';
-import { createModelWritable } from './createModelWritable';
-import { deleteModel } from './deleteModel';
 import { getStorageStatus } from './getStorageStatus';
+import { modelStorageWorkerBridge } from './modelStorageWorkerBridge';
 import { requestPersistentStorage } from './requestPersistentStorage';
-import { writeModel } from './writeModel';
 
 const BROADCAST_CHANNEL_NAME = 'sourdaw-model-downloads';
 const MAX_RETRIES = 3;
 /** Minimum interval between throttled progress emissions (~10 Hz). */
 const PROGRESS_THROTTLE_MS = 100;
+
+class ModelSizeError extends Error {
+    override readonly name = 'ModelSizeError';
+}
 
 type ModelDownloadSpec = {
     modelId: string;
@@ -90,8 +90,13 @@ function isModelArchiveUrl(url: string): boolean {
  * Download a model file with retry and integrity verification.
  * Stores the result in OPFS.
  */
-export const downloadModel = inject({ logger })(
-    ({ logger }) =>
+export const downloadModel = inject({
+    logger,
+    getStorageStatus,
+    modelStorageWorkerBridge,
+    requestPersistentStorage,
+})(
+    ({ logger, getStorageStatus, modelStorageWorkerBridge, requestPersistentStorage }) =>
         async function downloadModel({ spec, onProgress, signal }: DownloadModelInput): DownloadModelOutput {
             const { modelId, family, url, sha256, sizeBytes } = spec;
 
@@ -147,66 +152,85 @@ export const downloadModel = inject({ logger })(
                             throw new Error(`HTTP ${String(response.status)}: ${response.statusText}`);
                         }
 
-                        const contentLength = response.headers.get('content-length');
-                        const totalBytes = contentLength ? parseInt(contentLength, 10) : sizeBytes;
-
                         const reader = response.body?.getReader();
                         if (!reader) {
                             throw new Error('Response body not readable');
                         }
 
-                        const isContainer = isModelArchiveUrl(url);
-                        // We must buffer the bytes in memory only when we have to inspect the
-                        // whole payload — SHA256 verification (no streaming digest in WebCrypto)
-                        // or ZIP/oudep extraction. Otherwise we stream chunks straight to OPFS.
-                        const mustBuffer = isContainer || Boolean(sha256);
-
-                        let writable: FileSystemWritableFileStream | null = null;
-                        let streamedAbortPromise: Promise<void> | undefined;
-                        function abortStreamedWritable(): void {
-                            if (writable) {
-                                streamedAbortPromise ??= abortWritable(writable);
-                            }
+                        const contentLength = response.headers.get('content-length');
+                        const declaredBytes = contentLength === null ? null : Number(contentLength);
+                        if (
+                            declaredBytes !== null &&
+                            (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0 || declaredBytes !== sizeBytes)
+                        ) {
+                            await reader.cancel();
+                            throw new ModelSizeError(
+                                `Content-Length mismatch for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(contentLength)}`
+                            );
                         }
-                        const chunks: Uint8Array[] = [];
+                        const totalBytes = declaredBytes ?? sizeBytes;
+
+                        const isContainer = isModelArchiveUrl(url);
+                        if (isContainer && totalBytes > MAX_GUARDED_ZIP_BYTES) {
+                            await reader.cancel();
+                            throw new ZipArchiveError(
+                                `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
+                            );
+                        }
+
+                        const writeId = await modelStorageWorkerBridge.beginModelWrite({
+                            family,
+                            modelId,
+                            expectedSizeBytes: sizeBytes,
+                            expectedSha256: sha256,
+                            archive: isContainer,
+                        });
+                        let abortPromise: Promise<void> | undefined;
+                        function abortWorkerWrite(): void {
+                            abortPromise ??= modelStorageWorkerBridge.abortModelWrite(writeId).catch(() => undefined);
+                        }
+                        signal?.addEventListener('abort', abortWorkerWrite, { once: true });
                         let bytesDownloaded = 0;
+                        let writeCommitted = false;
 
                         try {
-                            if (isContainer && totalBytes > MAX_GUARDED_ZIP_BYTES) {
-                                await reader.cancel();
-                                throw new ZipArchiveError(
-                                    `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
-                                );
-                            }
-                            if (!mustBuffer) {
-                                writable = await createModelWritable({ family, modelId });
-                                signal?.addEventListener('abort', abortStreamedWritable, { once: true });
-                                throwIfAborted(signal);
-                            }
-
+                            throwIfAborted(signal);
                             for (;;) {
                                 const { done, value } = await reader.read();
                                 if (done) {
                                     break;
                                 }
-                                if (signal?.aborted) {
-                                    throw new DOMException('Aborted', 'AbortError');
-                                }
-                                bytesDownloaded += value.byteLength;
-                                if (isContainer && bytesDownloaded > MAX_GUARDED_ZIP_BYTES) {
+                                throwIfAborted(signal);
+                                const chunkBytes = value.byteLength;
+                                const nextBytesDownloaded = bytesDownloaded + chunkBytes;
+                                if (isContainer && nextBytesDownloaded > MAX_GUARDED_ZIP_BYTES) {
                                     await reader.cancel();
                                     throw new ZipArchiveError(
                                         `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
                                     );
                                 }
-
-                                if (writable) {
-                                    // Stream directly to OPFS — no per-chunk accumulation.
-                                    await writable.write(value);
-                                    throwIfAborted(signal);
-                                } else {
-                                    chunks.push(value);
+                                if (nextBytesDownloaded > sizeBytes) {
+                                    await reader.cancel();
+                                    throw new ModelSizeError(
+                                        `Model byte limit exceeded for ${modelId}: expected at most ${String(sizeBytes)} bytes`
+                                    );
                                 }
+                                bytesDownloaded = nextBytesDownloaded;
+
+                                const chunk =
+                                    value.byteOffset === 0 && value.byteLength === value.buffer.byteLength
+                                        ? value.buffer
+                                        : value.slice().buffer;
+                                const bytesWritten = await modelStorageWorkerBridge.writeModelChunk({
+                                    writeId,
+                                    chunk,
+                                });
+                                if (bytesWritten !== chunkBytes) {
+                                    throw new Error(
+                                        `OPFS wrote ${String(bytesWritten)} of ${String(chunkBytes)} model bytes`
+                                    );
+                                }
+                                throwIfAborted(signal);
 
                                 const progress = totalBytes > 0 ? bytesDownloaded / totalBytes : 0;
                                 broadcastProgress(
@@ -214,122 +238,54 @@ export const downloadModel = inject({ logger })(
                                     false
                                 );
                             }
-                        } catch (error) {
-                            // Abandon the partial writable before bubbling up so a retry
-                            // re-creates a clean file.
-                            if (writable) {
-                                await (streamedAbortPromise ?? abortWritable(writable));
-                            }
-                            signal?.removeEventListener('abort', abortStreamedWritable);
-                            throw error;
-                        }
 
-                        if (writable) {
-                            try {
-                                throwIfAborted(signal);
-                                if (bytesDownloaded !== sizeBytes) {
-                                    await (streamedAbortPromise ?? abortWritable(writable));
-                                    throw new Error(
-                                        `Size check failed for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(bytesDownloaded)}`
-                                    );
-                                }
-                                await writable.close();
-                                throwIfAborted(signal);
-
-                                // Check storage quota (parity with the buffered path).
-                                const streamedStatus = await getStorageStatus();
-                                throwIfAborted(signal);
-                                if (streamedStatus.usedBytes > streamedStatus.limitBytes) {
-                                    logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
-                                    // Eviction is handled by the removeModel use case
-                                }
-
-                                updateModelStatus(modelId, { status: 'ready', downloadProgress: 1 });
-                                broadcast({
-                                    modelId,
-                                    bytesDownloaded: sizeBytes,
-                                    totalBytes: sizeBytes,
-                                    progress: 1,
-                                    stage: 'complete',
-                                });
-                                logger.info(`[ModelDownload] Completed: ${modelId}`);
-                                return;
-                            } finally {
-                                signal?.removeEventListener('abort', abortStreamedWritable);
-                            }
-                        }
-
-                        throwIfAborted(signal);
-                        if (bytesDownloaded !== sizeBytes) {
-                            throw new Error(
-                                `Size check failed for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(bytesDownloaded)}`
-                            );
-                        }
-                        // Buffered path: concatenate chunks once.
-                        const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
-                        const fullData = new Uint8Array(totalLength);
-                        let offset = 0;
-                        for (const chunk of chunks) {
-                            fullData.set(chunk, offset);
-                            offset += chunk.byteLength;
-                        }
-                        // Release the per-chunk references so the merged buffer is the only copy.
-                        chunks.length = 0;
-
-                        // Verify integrity
-                        broadcast({
-                            modelId,
-                            bytesDownloaded,
-                            totalBytes: sizeBytes,
-                            progress: 0.95,
-                            stage: 'verifying',
-                        });
-                        if (sha256) {
-                            const hashBuffer = await crypto.subtle.digest('SHA-256', fullData.buffer);
-                            const hashHex = Array.from(new Uint8Array(hashBuffer))
-                                .map((b) => b.toString(16).padStart(2, '0'))
-                                .join('');
-                            if (hashHex !== sha256) {
+                            throwIfAborted(signal);
+                            if (bytesDownloaded !== sizeBytes) {
                                 throw new Error(
-                                    `Integrity check failed for ${modelId}: expected ${sha256}, got ${hashHex}`
+                                    `Size check failed for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(bytesDownloaded)}`
                                 );
                             }
+
+                            const committed = await modelStorageWorkerBridge
+                                .commitModelWrite({
+                                    writeId,
+                                    onProgress(stage) {
+                                        let progress = 0.98;
+                                        if (stage === 'verifying') {
+                                            progress = 0.95;
+                                        } else if (stage === 'extracting') {
+                                            progress = 0.97;
+                                        }
+                                        broadcast({
+                                            modelId,
+                                            bytesDownloaded,
+                                            totalBytes: sizeBytes,
+                                            progress,
+                                            stage,
+                                        });
+                                    },
+                                })
+                                .then((result) => {
+                                    writeCommitted = true;
+                                    signal?.removeEventListener('abort', abortWorkerWrite);
+                                    return result;
+                                });
+                            if (committed.extractedPath) {
+                                logger.info(
+                                    `[ModelDownload] Extracted ${committed.extractedPath} from ZIP for ${modelId}`
+                                );
+                            }
+                        } catch (error) {
+                            if (!writeCommitted) {
+                                await (abortPromise ??
+                                    modelStorageWorkerBridge.abortModelWrite(writeId).catch(() => undefined));
+                            }
+                            throw error;
+                        } finally {
+                            signal?.removeEventListener('abort', abortWorkerWrite);
                         }
 
-                        // Extract ONNX from ZIP/oudep container in a cancellable worker.
-                        let onnxData: ArrayBuffer = fullData.buffer;
-                        if (isContainer) {
-                            broadcast({
-                                modelId,
-                                bytesDownloaded,
-                                totalBytes: sizeBytes,
-                                progress: 0.97,
-                                stage: 'extracting',
-                            });
-                            const extracted = await extractSingleGuardedZipEntry({
-                                bytes: fullData,
-                                suffix: '.onnx',
-                                signal,
-                            });
-                            onnxData = extracted.data.buffer;
-                            logger.info(`[ModelDownload] Extracted ${extracted.path} from ZIP for ${modelId}`);
-                        }
-
-                        throwIfAborted(signal);
-
-                        // Store in OPFS
-                        broadcast({
-                            modelId,
-                            bytesDownloaded,
-                            totalBytes: sizeBytes,
-                            progress: 0.98,
-                            stage: 'storing',
-                        });
-                        await writeModel({ family, modelId, data: onnxData, signal });
-
-                        // Check storage quota
                         const storageStatus = await getStorageStatus();
-                        throwIfAborted(signal);
                         if (storageStatus.usedBytes > storageStatus.limitBytes) {
                             logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
                             // Eviction is handled by the removeModel use case
@@ -350,15 +306,13 @@ export const downloadModel = inject({ logger })(
                         // leave the store/registry untouched beyond what the caller expects.
                         if (isAbortError(error) || signal?.aborted) {
                             logger.info(`[ModelDownload] Cancelled: ${modelId}`);
-                            // Drop any partial file written by the streamed path.
-                            await deleteModel({ family, modelId }).catch(() => undefined);
                             throw error instanceof Error ? error : new DOMException('Aborted', 'AbortError');
                         }
                         lastError = error;
                         logger.warn(
                             `[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`
                         );
-                        if (error instanceof ZipArchiveError) {
+                        if (error instanceof ZipArchiveError || error instanceof ModelSizeError) {
                             break;
                         }
                         if (attempt < MAX_RETRIES - 1) {
@@ -367,7 +321,6 @@ export const downloadModel = inject({ logger })(
                             } catch (sleepError) {
                                 // Aborted mid-backoff: stop without an error-status update.
                                 logger.info(`[ModelDownload] Cancelled: ${modelId}`);
-                                await deleteModel({ family, modelId }).catch(() => undefined);
                                 throw sleepError instanceof Error
                                     ? sleepError
                                     : new DOMException('Aborted', 'AbortError');
@@ -386,6 +339,9 @@ export const downloadModel = inject({ logger })(
                     error: String(lastError),
                 });
                 if (lastError instanceof ZipArchiveError) {
+                    throw lastError;
+                }
+                if (lastError instanceof ModelSizeError) {
                     throw lastError;
                 }
                 throw new Error(

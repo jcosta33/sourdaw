@@ -1,7 +1,7 @@
 ---
 type: adr
 id: 0031
-title: Sourdaw hosts CLAP and VST3; VST2 and Audio Units are permanently out
+title: Sourdaw hosts CLAP and commits to VST3; VST2 and Audio Units are permanently out
 status: accepted
 date: 2026-08-20
 owner: The Sourdaw team
@@ -17,7 +17,7 @@ sources:
     - .agents/decisions/0027-windows-device-layer-iaudioclient3.md
 ---
 
-# 0031 — Sourdaw hosts CLAP and VST3; VST2 and Audio Units are permanently out
+# 0031 — Sourdaw hosts CLAP and commits to VST3; VST2 and Audio Units are permanently out
 
 **Accepted 2026-08-20.** Records which native plugin formats Sourdaw commits to hosting, and why the
 excluded ones are excluded. It governs every packet that touches the plugin host, and it is the

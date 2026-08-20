@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
+import { Stack } from '#/components/layout';
 import { compileReorderDevicesAction, getPlatformPlugins, selectTrack } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
@@ -24,7 +25,10 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
 
     return (
         <MixerSection label="Devices">
-            <div className="max-h-[100px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
+            <Stack
+                gap={0.5}
+                className="max-h-[100px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10"
+            >
                 {track.devices.map((data) => (
                     <div key={data.id} className="group relative">
                         <MixerInsetButton
@@ -92,9 +96,9 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         </button>
                     </div>
                 ))}
-            </div>
+            </Stack>
             {showAdd ? (
-                <div className="space-y-0.5">
+                <Stack gap={0.5}>
                     {getPlatformPlugins().map((param) => (
                         <MixerInsetButton
                             key={param.id}
@@ -142,7 +146,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                     >
                         cancel
                     </button>
-                </div>
+                </Stack>
             ) : (
                 <MixerInsetButton
                     onClick={(event) => {

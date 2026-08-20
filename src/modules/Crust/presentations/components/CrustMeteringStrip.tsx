@@ -7,6 +7,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { Row, Stack } from '#/components/layout';
 
 import { grColor } from './crustMeterColors';
 
@@ -120,8 +121,9 @@ export const CrustMeteringStrip = ({
     }
 
     return (
-        <div
-            className="flex flex-col gap-2 p-2 h-full"
+        <Stack
+            gap={2}
+            className="p-2 h-full"
             style={{
                 width: 160,
                 minWidth: 160,
@@ -130,7 +132,7 @@ export const CrustMeteringStrip = ({
             }}
         >
             <MeterSection title="Output">
-                <div className="flex gap-1 h-16">
+                <Row align="stretch" gap={1} className="h-16">
                     <MeterBar value={outNorm} id="crust-meter-l" />
                     <MeterBar value={outNorm * 0.97} id="crust-meter-r" />
                     <div
@@ -143,8 +145,8 @@ export const CrustMeteringStrip = ({
                             style={{ height: `${grNorm * 100}%`, background: grc, borderRadius: 2 }}
                         />
                     </div>
-                </div>
-                <div className="flex justify-between mt-0.5">
+                </Row>
+                <Row align="stretch" justify="between" className="mt-0.5">
                     <span className="text-[7px] font-mono text-muted-foreground/50">L</span>
                     <span
                         className="text-[7px] font-mono"
@@ -154,7 +156,7 @@ export const CrustMeteringStrip = ({
                         GR
                     </span>
                     <span className="text-[7px] font-mono text-muted-foreground/50">R</span>
-                </div>
+                </Row>
             </MeterSection>
 
             <MeterSection title="Loudness" className="flex-1">
@@ -221,8 +223,8 @@ export const CrustMeteringStrip = ({
                     />
                 }
             >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
+                <Row justify="between">
+                    <Row gap={1}>
                         <span
                             className="text-[9px] font-mono"
                             style={{ color: truepeakExceeded ? '#C44030' : '#E8E6E0' }}
@@ -232,9 +234,9 @@ export const CrustMeteringStrip = ({
                         <DawPluginLed tone={truepeakExceeded ? 'danger' : 'neutral'}>
                             {truepeakExceeded ? 'Clip' : 'Clear'}
                         </DawPluginLed>
-                    </div>
-                </div>
+                    </Row>
+                </Row>
             </MeterSection>
-        </div>
+        </Stack>
     );
 };

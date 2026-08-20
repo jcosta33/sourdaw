@@ -96,12 +96,15 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 ## Resource Safety
 
-- Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
-  Playwright, WASM, or measurements.
+- Run repository commands sequentially within your lane. Other lanes may validate concurrently only
+  when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
   (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
-  `pnpm guard --profile <focused|broad|extended> [--require-target] -- <command>`. A busy lock,
-  memory refusal, timeout, or RSS kill is a stop — never bypass it by rerunning unguarded.
+  `pnpm guard --profile <focused|broad|extended> [--max-rss-mib <estimate>] [--require-target] --
+<command>`. Estimate peak RAM from the latest observed guard peak or the nearest command; use
+  the profile ceiling when evidence is absent. The guard waits until free RAM covers active
+  reservations, this command, and the system reserve. Never bypass it. A timeout, RSS kill, or
+  memory-monitor failure is a stop.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide tests,
   lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
@@ -188,10 +191,12 @@ author lock are shared across every lane, so a global or destructive operation r
 hits all of them.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
-Removal requires a clean lane holding the merged head of exactly one pull request. Delete a leftover
-local branch after success. A superseded lane therefore cannot be removed: `pr:supersede` closes the
-old pull request unmerged, so that lane and the author lock it holds persist until the tooling gains
-a path.
+Removal requires a clean lane holding the head of exactly one pull request whose work reached
+`main`. Merging is one way there. Being superseded is the other: `pr:supersede` closes the old pull
+request unmerged but leaves a receipt naming the replacement, and removal reads that receipt and
+requires the replacement to be merged. Any other closed pull request is an abandonment and keeps its
+lane, because removing it would discard work that never landed. Delete a leftover local branch after
+success.
 
 ## Artifacts
 
@@ -275,16 +280,29 @@ freshness.
 `lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
 it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
 standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, titles the PR with the newest non-merge commit the lane holds above `origin/main`
-(`type(scope): subject`), so merging `origin/main` in never retitles it, keeps the four headings in
-[`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
-`Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
-Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses uncommitted
-lanes and lanes with no non-merge commit above `origin/main`. It does not enable auto-merge or post
-a review.
+`--force`, and refuses any lane with uncommitted changes: commit the work yourself with a
+conventional subject first.
 
-Write the pull request for a teammate who was not in the session. Under the four template headings,
+A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
+newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
+`origin/main` in never retitles it, keeps the required headings in
+[`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
+bytes. Screenshots is offered rather than required: it is written, and the template keeps it, but a
+body without it still merges, because a section whose canonical content is `None.` gates nothing.
+Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
+`Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
+Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses a
+conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
+to title the pull request. It does not enable auto-merge or post a review.
+
+An author-locked, off-convention branch may also publish — but only from inside its own worktree,
+since no issue argument ever resolves one, and only once the repository already has an open pull
+request for that exact branch, which is what proves the worktree a genuine, if stranded, lane
+rather than one locked for an unrelated purpose. That path never writes a title or body: pushing is
+the whole of what publishing it means, so it leaves the pull request exactly as its owner wrote it,
+and it refuses outright if that pull request is no longer open by the time the push lands.
+
+Write the pull request for a teammate who was not in the session. Under the template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
 tables off the pull request.
 
@@ -343,8 +361,10 @@ test that fails when the change is reverted, a measurement at the boundary users
 proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
-pull request is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any
-other way.
+pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
+and nothing else: `lane:publish` opens every pull request there, so any other base is a retarget the
+delivery scripts did not make, and `deliver` refuses it rather than squashing onto a branch the
+change was never reviewed against. Do not merge any other way.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
 review. Enable hooks: `git config core.hooksPath .githooks`.

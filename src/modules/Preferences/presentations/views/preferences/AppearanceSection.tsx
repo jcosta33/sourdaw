@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { Sun, Moon, Palette } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
@@ -20,7 +21,7 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
         <SectionTitle icon={<Palette className="size-4" />} title="Appearance" />
 
         <FieldGroup label="Theme">
-            <div className="flex gap-2">
+            <Row align="stretch" gap={2}>
                 {(['dark', 'light'] as const).map((time) => (
                     <Button
                         key={time}
@@ -37,7 +38,7 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
                         {time}
                     </Button>
                 ))}
-            </div>
+            </Row>
         </FieldGroup>
 
         <Separator />
@@ -51,7 +52,7 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
         <Separator />
 
         <FieldGroup label="UI Scale">
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <Slider
                     value={[prefs.uiScale * 100]}
                     onValueChange={([value]) => {
@@ -68,7 +69,7 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
                 <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
                     {Math.round(prefs.uiScale * 100)}%
                 </span>
-            </div>
+            </Row>
             <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
                 Adjust the global interface size. Useful for high-DPI displays or custom window scaling.
             </p>

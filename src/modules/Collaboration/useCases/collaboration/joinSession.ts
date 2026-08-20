@@ -18,6 +18,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         peers: [],
         connectionStatus: 'connecting',
         error: null,
+        quarantinedPeerIds: [],
     });
 
     let runtimeStarted = false;
@@ -79,6 +80,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             ],
             connectionStatus: 'connecting',
             error: null,
+            quarantinedPeerIds: [],
         });
 
         runtimeStarted = true;
@@ -122,6 +124,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             peers: [],
             connectionStatus: 'error',
             error: error instanceof Error ? error.message : String(error),
+            quarantinedPeerIds: [],
         });
         throw error;
     }

@@ -15,6 +15,7 @@ import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     setNoteVelocity,
@@ -30,13 +31,40 @@ import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
-import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, EMPTY_NOTES, getVisiblePitches } from '../../helpers/pianoRollConstants';
+import {
+    ROW_HEIGHT,
+    RULER_HEIGHT,
+    EMPTY_NOTES,
+    PITCH_RAIL_WIDTH,
+    getVisiblePitches,
+    getPianoRollExtentBeats,
+} from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
 import { PianoRollContextMenu } from './PianoRollContextMenu';
 import { PianoRollToolbar } from './PianoRollToolbar';
+
+/**
+ * Structural equality for the `clipId -> length in beats` map used to derive
+ * the grid extent. The selector below rebuilds this record on every
+ * `trackStore` notification (its identity is never stable), so
+ * `useStoreSelector` needs a predicate to tell a real length change from the
+ * same lengths in a new wrapper — otherwise every store notification would
+ * recompute `extentBeats` and re-run the layout effects that report it
+ * upward.
+ */
+function areClipLengthsEqual(a: Record<string, number>, b: Record<string, number>): boolean {
+    if (a === b) {
+        return true;
+    }
+    const ids = Object.keys(a);
+    if (ids.length !== Object.keys(b).length) {
+        return false;
+    }
+    return ids.every((id) => a[id] === b[id]);
+}
 
 type PianoRollProps = {
     clipId: string;
@@ -80,6 +108,22 @@ export const PianoRoll = ({
     onContentWidthChange,
 }: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    // The scroll container is the piano roll's viewport: the renderer sizes the
+    // canvas backing store from its `clientWidth` and draws from its
+    // `scrollLeft`, and the interaction handlers add that same `scrollLeft` to
+    // turn a pointer position into a beat.
+    const scrollRef = useRef<HTMLDivElement>(null);
+    // Scroll container for the expression view's velocity/pressure/slide/
+    // pitch-bend panel, and the panel's viewport in exactly the sense
+    // `scrollRef` is the roll's: `NotePropertyLane` sizes its backing store
+    // from this element's `clientWidth` and draws from its `scrollLeft`. It is
+    // a real scroll container, synced to the main canvas's `scrollLeft` in the
+    // handler below, because `contentWidth` is unbounded — it tracks the clip's
+    // real length, not a fixed zoom-independent cap. Same pattern as
+    // AutomationLane.tsx (`scrollRef` + `overflow-x-auto`, synced from outside
+    // via ClipView.tsx's `handlePianoRollScroll`) — this one syncs internally
+    // since both scroll containers live in this component.
+    const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
     const [_scrollX, setScrollX] = useState(0);
     const setSelectedNoteIds = onSelectedNoteIdsChange;
@@ -126,6 +170,52 @@ export const PianoRoll = ({
                 : undefined,
         areOpenedClipNotesEqual
     );
+    // Length of the primary clip plus every clip opened alongside it, read
+    // from the Arrangement module's own store (foreign modules may read
+    // another module's store directly — see AGENTS.md §Architecture). Drives
+    // the grid extent below so the piano roll spans everything actually
+    // drawn, not just the clip it was opened on. An opened clip may live on
+    // any track, so this searches every track's clips rather than only
+    // `trackId`'s.
+    const clipLengthsBeats = useStoreSelector(
+        trackStore,
+        (state) => {
+            const ids = openedClipIds && openedClipIds.length > 0 ? [clipId, ...openedClipIds] : [clipId];
+            const lengths: Record<string, number> = {};
+            for (const id of ids) {
+                let length = 0;
+                for (const track of state?.tracks ?? []) {
+                    const clip = track.clips.find((candidate) => candidate.id === id);
+                    if (clip) {
+                        length = clip.endBeat - clip.startBeat;
+                        break;
+                    }
+                }
+                lengths[id] = length;
+            }
+            return lengths;
+        },
+        areClipLengthsEqual
+    );
+    // Extent is derived from the primary clip and every opened clip together
+    // — see `getPianoRollExtentBeats` in pianoRollConstants.ts. Opened clips'
+    // notes are drawn in this same coordinate space (`openedClipNotes` below,
+    // rendered by `usePianoRollRenderer.ts`'s `drawOpenedClipNotes`) and are
+    // editable, not read-only, so their content must also grow the extent.
+    //
+    // This is a CSS layout measurement and nothing else: it is the width of
+    // the scroll wrapper below and of the expression lane's content. It is
+    // deliberately unbounded and independent of `devicePixelRatio` — the
+    // canvas backing store is sized from the viewport, not from this, so no
+    // zoom level can put a beat outside it.
+    const extentBeats = getPianoRollExtentBeats([
+        { clipLengthBeats: clipLengthsBeats[clipId] ?? 0, notes },
+        ...Object.entries(openedClipNotes ?? {}).map(([id, openedNotes]) => ({
+            clipLengthBeats: clipLengthsBeats[id] ?? 0,
+            notes: openedNotes,
+        })),
+    ]);
+    const contentWidth = extentBeats * beatWidth;
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {
@@ -133,21 +223,18 @@ export const PianoRoll = ({
     }, [beatWidth, onBeatWidthChange]);
 
     useLayoutEffect(() => {
-        const canvas = canvasRef.current;
-        const parent = canvas?.parentElement;
-        if (!parent) {
+        const viewport = scrollRef.current;
+        if (!viewport) {
             return undefined;
         }
         const report = (): void => {
-            const parentWidth = parent.clientWidth;
-            const totalWidth = Math.max(parentWidth, GRID_BEATS * beatWidth);
-            onContentWidthChange?.(totalWidth);
+            onContentWidthChange?.(Math.max(viewport.clientWidth, contentWidth));
         };
         report();
         const ro = new ResizeObserver(report);
-        ro.observe(parent);
+        ro.observe(viewport);
         return () => ro.disconnect();
-    }, [beatWidth, onContentWidthChange]);
+    }, [onContentWidthChange, contentWidth]);
 
     // ── Refs shared with interactions ────────────────────────────────
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
@@ -163,6 +250,7 @@ export const PianoRoll = ({
     // ── Canvas rendering ─────────────────────────────────────────────
     const draw = usePianoRollRenderer({
         canvasRef,
+        scrollRef,
         notes,
         clipId,
         trackId,
@@ -195,6 +283,7 @@ export const PianoRoll = ({
         hoverCursor,
     } = usePianoRollInteractions({
         canvasRef,
+        scrollRef,
         clipId,
         trackId,
         notes,
@@ -266,15 +355,19 @@ export const PianoRoll = ({
             />
             <div className="flex flex-1 flex-col overflow-hidden">
                 <div
+                    ref={scrollRef}
                     className="flex flex-1 overflow-auto"
                     onScroll={(event) => {
                         const sl = (event.target as HTMLElement).scrollLeft;
                         setScrollX(sl);
                         onScrollChange?.(sl);
+                        if (expressionScrollRef.current) {
+                            expressionScrollRef.current.scrollLeft = sl;
+                        }
                     }}
                 >
                     {/* Piano keys sidebar */}
-                    <DawSideRail className="sticky left-0 z-10 w-10">
+                    <DawSideRail className="sticky left-0 z-10" style={{ width: PITCH_RAIL_WIDTH }}>
                         <DawGridHeaderCell className="px-0" style={{ height: RULER_HEIGHT }} />
                         {visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
@@ -299,28 +392,46 @@ export const PianoRoll = ({
                         })}
                     </DawSideRail>
 
-                    {/* Canvas */}
-                    <canvas
-                        ref={canvasRef}
-                        className="outline-none"
-                        style={{ cursor: hoverCursor }}
-                        tabIndex={0}
-                        // Marks this surface as a canvas editor that owns its
-                        // destructive keys: `handleKeyDown` deletes the selected
-                        // MIDI notes on Delete/Backspace. The global keyboard
-                        // contract reads `closest('[data-canvas-editor]')` and
-                        // gates the arrangement clip-delete shortcut here so a
-                        // focused piano roll does not also delete the clip.
-                        data-canvas-editor=""
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
-                        onDoubleClick={handleDoubleClick}
-                        onKeyDown={handleKeyDown}
-                        onContextMenu={handleContextMenu}
-                        aria-label="Piano roll editor"
-                    />
+                    {/*
+                     * Layout extent. This wrapper — plain CSS, bounded by
+                     * nothing — is what makes the arrangement scrollable, so
+                     * every beat stays reachable at every zoom. `flex-1`
+                     * fills the viewport when the content is shorter than it;
+                     * `minWidth` takes over once the content is longer.
+                     */}
+                    <div className="flex-1" style={{ minWidth: contentWidth }}>
+                        {/*
+                         * Viewport canvas. Its backing store covers only what
+                         * is on screen (see usePianoRollRenderer), so it sticks
+                         * to the right edge of the pitch rail — the left edge
+                         * of the content area — while the wrapper above scrolls
+                         * past it. `left` must equal the rail's own width or
+                         * the drawn slice and the visible slice disagree, which
+                         * is why both read the same constant.
+                         */}
+                        <canvas
+                            ref={canvasRef}
+                            className="sticky outline-none"
+                            style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor }}
+                            tabIndex={0}
+                            // Marks this surface as a canvas editor that owns
+                            // its destructive keys: `handleKeyDown` deletes the
+                            // selected MIDI notes on Delete/Backspace. The
+                            // global keyboard contract reads
+                            // `closest('[data-canvas-editor]')` and gates the
+                            // arrangement clip-delete shortcut here so a focused
+                            // piano roll does not also delete the clip.
+                            data-canvas-editor=""
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                            onDoubleClick={handleDoubleClick}
+                            onKeyDown={handleKeyDown}
+                            onContextMenu={handleContextMenu}
+                            aria-label="Piano roll editor"
+                        />
+                    </div>
                 </div>
 
                 {/* I4: Expression View bottom panel */}
@@ -331,45 +442,51 @@ export const PianoRoll = ({
                                 {activeExpressionLane}
                             </span>
                         </div>
-                        <div className="flex-1 overflow-x-hidden">
-                            <NotePropertyLane
-                                clipId={clipId}
-                                trackId={trackId}
-                                selectedNoteIds={selectedNoteIds}
-                                beatWidth={beatWidth}
-                                contentWidth={GRID_BEATS * beatWidth}
-                                getValue={(node) => {
-                                    if (activeExpressionLane === 'velocity') {
-                                        return node.velocity ?? 100;
-                                    }
-                                    if (activeExpressionLane === 'pressure') {
-                                        return node.pressure ?? 0;
-                                    }
-                                    if (activeExpressionLane === 'slide') {
-                                        return node.slide ?? 0;
-                                    }
-                                    if (activeExpressionLane === 'pitchBend') {
-                                        return (((node.pitchBend ?? 0) + 8192) / 16383) * 127;
-                                    } // Scale to 0-127
-                                    return 0;
-                                }}
-                                setValue={(cid, nid, val) => {
-                                    if (activeExpressionLane === 'velocity') {
-                                        setNoteVelocity(cid, nid, val);
-                                    }
-                                    if (activeExpressionLane === 'pressure') {
-                                        setNotePressure(cid, nid, val);
-                                    }
-                                    if (activeExpressionLane === 'slide') {
-                                        setNoteSlide(cid, nid, val);
-                                    }
-                                    if (activeExpressionLane === 'pitchBend') {
-                                        setNotePitchBend(cid, nid, Math.round((val / 127) * 16383) - 8192);
-                                    }
-                                }}
-                                label={activeExpressionLane}
-                                undoLabel={`Change ${activeExpressionLane}`}
-                            />
+                        <div
+                            ref={expressionScrollRef}
+                            className="flex-1 overflow-x-auto"
+                            style={{ scrollbarWidth: 'none' }}
+                        >
+                            <div style={{ width: contentWidth, height: '100%' }}>
+                                <NotePropertyLane
+                                    clipId={clipId}
+                                    trackId={trackId}
+                                    selectedNoteIds={selectedNoteIds}
+                                    beatWidth={beatWidth}
+                                    scrollRef={expressionScrollRef}
+                                    getValue={(node) => {
+                                        if (activeExpressionLane === 'velocity') {
+                                            return node.velocity ?? 100;
+                                        }
+                                        if (activeExpressionLane === 'pressure') {
+                                            return node.pressure ?? 0;
+                                        }
+                                        if (activeExpressionLane === 'slide') {
+                                            return node.slide ?? 0;
+                                        }
+                                        if (activeExpressionLane === 'pitchBend') {
+                                            return (((node.pitchBend ?? 0) + 8192) / 16383) * 127;
+                                        } // Scale to 0-127
+                                        return 0;
+                                    }}
+                                    setValue={(cid, nid, val) => {
+                                        if (activeExpressionLane === 'velocity') {
+                                            setNoteVelocity(cid, nid, val);
+                                        }
+                                        if (activeExpressionLane === 'pressure') {
+                                            setNotePressure(cid, nid, val);
+                                        }
+                                        if (activeExpressionLane === 'slide') {
+                                            setNoteSlide(cid, nid, val);
+                                        }
+                                        if (activeExpressionLane === 'pitchBend') {
+                                            setNotePitchBend(cid, nid, Math.round((val / 127) * 16383) - 8192);
+                                        }
+                                    }}
+                                    label={activeExpressionLane}
+                                    undoLabel={`Change ${activeExpressionLane}`}
+                                />
+                            </div>
                         </div>
                     </div>
                 ) : null}

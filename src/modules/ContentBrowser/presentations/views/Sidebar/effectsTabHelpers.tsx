@@ -24,6 +24,7 @@ import { type LucideIcon } from 'lucide-react';
 
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row, Stack } from '#/components/layout';
 import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 
@@ -169,12 +170,12 @@ export const NavCard = ({
             </div>
         }
         endSlot={
-            <div className="flex items-center gap-1 shrink-0">
+            <Row gap={1} shrink={false}>
                 <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors tabular-nums">
                     {count}
                 </span>
                 <ChevronRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-            </div>
+            </Row>
         }
         onClick={onClick}
     />
@@ -195,8 +196,9 @@ export const EffectItem = ({
     plugin: EffectPlugin;
     selectedTrackId: string | null;
 }): ReactElement => (
-    <div
-        className="group flex flex-col justify-center rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden mb-1.5 shadow-sm"
+    <Stack
+        justify="center"
+        className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden mb-1.5 shadow-sm"
         draggable
         onDragStart={(event) => {
             event.dataTransfer.setData(
@@ -219,16 +221,16 @@ export const EffectItem = ({
             }
         }}
     >
-        <div className="flex items-center justify-between">
-            <div className="flex flex-col min-w-0">
+        <Row justify="between">
+            <Stack className="min-w-0">
                 <span className="text-[12px] font-semibold text-foreground/90 leading-tight block truncate drop-shadow-sm">
                     {plugin.name}
                 </span>
                 <span className="text-[10px] text-muted-foreground/70 mt-0.5 capitalize">
                     {plugin.category || 'Effect'}
                 </span>
-            </div>
-            <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
+            </Stack>
+            <Stack align="end" gap={1} shrink={false} className="ml-2">
                 {selectedTrackId ? (
                     <Plus
                         className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
@@ -238,9 +240,9 @@ export const EffectItem = ({
                 <span className="text-[9px] font-medium text-muted-foreground/60 tabular-nums bg-surface-base/50 px-1 rounded">
                     {plugin.parameters.length} params
                 </span>
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Row>
+    </Stack>
 );
 
 // ── UnimplementedBadge ───────────────────────────────────────────────────────

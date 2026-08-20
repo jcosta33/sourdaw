@@ -90,6 +90,8 @@ function expectRippleRestore(action: RestoreClipAction): number {
         trackId: action.payload.trackId,
         removedClips: ripplePlan.removedClips,
         shiftedClips: ripplePlan.shiftedClips,
+        clipSatellites: ripplePlan.clipSatellites,
+        clipAutomationLanes: ripplePlan.clipAutomationLanes,
     });
     expect(mocks.updateTrack).not.toHaveBeenCalled();
 
@@ -163,6 +165,8 @@ describe('handleRestoreClip', () => {
                                   shiftedClips: [
                                       { clipId: 'c2', origStartBeat: 1, origEndBeat: 2, automationDelta: -1 },
                                   ],
+                                  clipSatellites: [],
+                                  clipAutomationLanes: [],
                               }
                             : null,
                     ...snapshots,

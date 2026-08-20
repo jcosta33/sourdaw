@@ -22,10 +22,11 @@ describe('capabilityStore', () => {
     it('setCapabilityReport transitions to done phase with the report', () => {
         const report = {
             capability: 'supported',
+            webGpu: { status: 'supported' },
             webGpuTier: 'webgpu-fast',
-            sharedArrayBuffer: true,
+            crossOriginIsolated: true,
+            workerAvailable: true,
             opfsAvailable: true,
-            chromeVersion: 120,
             inference: {
                 status: 'measured',
                 modelId: 'kokoro-82m-q8',

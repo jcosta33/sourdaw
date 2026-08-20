@@ -7,6 +7,7 @@ import {
     openLane,
     parseOpenLaneArgs,
     runCli,
+    shellCli,
     shellPort,
     type OpenLaneCli,
     type OpenLanePort,
@@ -15,20 +16,32 @@ import { laneBranchName } from '../prContract.ts';
 
 /**
  * `lane:open` is the one delivery script that must never touch GitHub: it runs before the issue
- * exists and before any credential is minted. Two separate things enforce that here.
+ * exists and before any credential is minted. Two separate claims back that, and each needs its
+ * own proof.
  *
- * The first is the shape of the code. `runCli` takes its git access as a parameter, so a test
- * drives the whole entry point while holding no route outward at all.
- * `vi.mock('node:child_process')` is not an alternative to that: it does not intercept a module
- * under `scripts/`, and the sibling spec that trusted it to fake `gh` ran the real
- * `gh issue create` and filed a live issue on the public tracker.
+ * The first claim is narrow: `openLane`'s own body only ever calls the methods on its injected
+ * `OpenLanePort` — it holds no other route out. Driving it through `runCli` with a port built
+ * entirely of fakes (`fakeCli`/`fakePort`) proves exactly that, and nothing broader: a fake port
+ * cannot demonstrate that the *real* port stays offline, because the fake never reaches
+ * `child_process` in the first place, guard or no guard.
  *
- * The second is this recorder. The transformed imports snapshot each spawn entry off the builtin
- * module object when the module is first imported, so an interceptor installed later is read by
- * nobody — it has to be in place before the imports, which is what `vi.hoisted` is for. What it
- * installs is a permanent dispatcher that passes straight through, and `record` switches it to
- * recording only for the body of one test. `afterAll` puts the untouched builtin back, because it
- * is shared with every other spec in this worker.
+ * The second claim is the one that actually matters for the shipped binary: the real default
+ * `shellCli` — `verifyTrustedBlob` and `createPort`, both wired to the real `spawnCapture`/
+ * `spawnRun` — never reaches `gh`. That can only be shown by driving `runCli` with the unmodified
+ * `shellCli`, which is what `'runCli reaches only git, never gh, when driven with the real default
+ * shellCli'` below does. `vi.mock('node:child_process')` is not how that test gets its
+ * interception: it does not intercept a module under `scripts/`, and the sibling spec that trusted
+ * it to fake `gh` ran the real `gh issue create` and filed a live issue on the public tracker.
+ *
+ * The interception that does work is this recorder. The transformed imports snapshot each spawn
+ * entry off the builtin module object when the module is first imported, so an interceptor
+ * installed later is read by nobody — it has to be in place before the imports, which is what
+ * `vi.hoisted` is for. What it installs is a permanent dispatcher that passes straight through, and
+ * `record` switches it to recording — and throwing on every call — only for the body of one test.
+ * That throw is what keeps the real-`shellCli` test safe to run anywhere: it fires before the real
+ * `spawnSync` ever executes, so nothing is actually spawned, no worktree is actually created, and
+ * the assertion holds regardless of the local repo's relationship to `origin/main`. `afterAll` puts
+ * the untouched builtin back, because it is shared with every other spec in this worker.
  */
 const { spawnRecorder } = vi.hoisted(() => {
     const apis = ['exec', 'execFile', 'execFileSync', 'execSync', 'fork', 'spawn', 'spawnSync'] as const;
@@ -142,7 +155,12 @@ describe('lane open', () => {
         expect(spawned).toEqual(['spawnSync:echo']);
     });
 
-    it('stays offline: the whole cli reaches no child process', () => {
+    /**
+     * This proves only that `openLane`'s own body reaches no child process independently of its
+     * port: `fakeCli` replaces both `verifyTrustedBlob` and `createPort`, so nothing here exercises
+     * the real `shellCli` — see the real-wiring test below for that claim.
+     */
+    it("openLane's own body reaches no child process, independent of what its port does", () => {
         const { port, calls, logs } = fakePort();
 
         // `runCli` reports a spawn that threw as exit 1, so the recording is asserted first: it
@@ -162,6 +180,32 @@ describe('lane open', () => {
             'lock:/repo/.agents/worktrees/agent--cleanup',
         ]);
         expect(logs.at(-1)).toBe('/repo/.agents/worktrees/agent--cleanup');
+    });
+
+    /**
+     * This is the claim that actually matters for the shipped binary: driven with the unmodified
+     * default `shellCli` (real `verifyTrustedBlob`, real `createPort`, both wired to the real
+     * `spawnCapture`/`spawnRun`), `runCli` never asks for `gh`. The recorder throws on the first
+     * real `spawnSync` call — the `git cat-file` probe inside `verifyTrustedBlob` — before it can
+     * actually execute, so nothing is truly spawned and no worktree is created; `originMainBlob`'s
+     * own catch treats that throw the same as "file missing from origin/main" and returns
+     * `undefined`, so `verifyTrustedBlob` completes and `runCli` moves on to `createPort`, whose
+     * `resolvePrimaryRoot` immediately makes a second real `git rev-parse` call that the recorder
+     * also intercepts — this time uncaught, so `runCli` reports exit 1. Every command attempted is
+     * named `git`; the assertion holds independent of the local working tree's relationship to
+     * `origin/main`, because the interceptor stops both calls before either one truly runs.
+     */
+    it('runCli reaches only git, never gh, when driven with the real default shellCli', () => {
+        let code = -1;
+        const spawned = spawnRecorder.record((recorded) => {
+            code = runCli(['cleanup'], shellCli, process.cwd());
+            return recorded;
+        });
+
+        expect(spawned).not.toEqual([]);
+        expect(spawned.every((call) => call.startsWith('spawnSync:git'))).toBe(true);
+        expect(spawned.some((call) => call.includes('gh'))).toBe(false);
+        expect(code).toBe(1);
     });
 
     /**

@@ -12,6 +12,7 @@ const initialState: CollaborationState = {
     peers: [],
     connectionStatus: 'disconnected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 export const collaborationStore = createStore<CollaborationState>({

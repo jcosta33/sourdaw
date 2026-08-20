@@ -14,6 +14,7 @@ import { takeLaneStore } from '../stores/takeLaneStore';
 import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
 import { ArrangementEventBus } from './arrangementEventBus';
+import { removeClipSatelliteData } from './clip/removeClipSatelliteData';
 import { refreshToasterPadBindings } from './refreshToasterPadBindings';
 
 type RemoveTrackOptions = {
@@ -66,6 +67,11 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
 
             // Clean up MIDI data for the active and inactive alternative clips.
             removeMidiClipData(clipIds);
+
+            // Clean up gain envelopes and warp states carried by this track's
+            // clips — orphaned satellites survive under the retired clip id
+            // and re-attach to whatever clip reuses it (ledger #2108).
+            removeClipSatelliteData(clipIds);
 
             // Clean up take lanes for this track
             const takeLane = takeLaneStore.value;
