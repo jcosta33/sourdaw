@@ -1,0 +1,49 @@
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_27578aec2aab3b::t_d2f372bca05dcb 29
+  s_27578aec2aab3b::t_920da975455125 6
+  s_27578aec2aab3b::t_3102eded1b4a2d 27-28,30
+  s_27578aec2aab3b::t_b19f80be87ae83 34
+  s_487e9aa1e46063::t_30f451eae7afc0 1-5,7-26,31-33,35-40
+package.json
+  s_487e9aa1e46063::t_5ff639e9a29085 28
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_487e9aa1e46063::t_7e385e267a813d 318-323,331-333
+src/modules/BrowserAi/repositories/__tests__/probeWebGpuUsability.spec.ts
+  s_487e9aa1e46063::t_b617202be76dfa 17,21,27-31,58,72-79,119-136
+src/modules/BrowserAi/workers/__tests__/webGpuProbeWorker.spec.ts
+  s_487e9aa1e46063::t_ade834f868f75d 51-65
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_7ba0b7bee9e951::t_b820f82bb013e4 30,36-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7ee30de246c6fcd25fca9cf558012367f4790b79",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
