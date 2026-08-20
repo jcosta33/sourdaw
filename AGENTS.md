@@ -263,9 +263,10 @@ it finds the lane by branch prefix from anywhere; without one it takes the lane 
 standing in, so an issueless lane is publishable only from inside itself. It pushes without
 `--force`, titles the PR with the HEAD subject (`type(scope): subject`), keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
-there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
-branch carries no issue. It does not enable auto-merge or post a review.
+bytes. Issue lanes use `Closes #<issue>`; campaign slices use `--relates` to write `Related #<issue>`
+without closing the campaign. Later publishes preserve that relationship. Related tickets reads
+`None.` only for a lane whose branch carries no issue. It does not enable auto-merge or post a
+review.
 
 Write the pull request for a teammate who was not in the session. Under the four template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation

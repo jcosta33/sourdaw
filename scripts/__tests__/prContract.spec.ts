@@ -7,6 +7,7 @@ import {
     assertReviewCommentBody,
     composePublishBody,
     fail,
+    issueRelationshipFromBody,
     laneBranchName,
 } from '../prContract.ts';
 
@@ -27,6 +28,15 @@ describe('pull-request contract', () => {
         expect(body).toContain('Related #2164');
         expect(body).not.toContain('Closes #2164');
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
+    it('recovers one existing issue relationship', () => {
+        expect(issueRelationshipFromBody('Closes #2164', 2164)).toBe('closes');
+        expect(issueRelationshipFromBody('Related #2164', 2164)).toBe('relates');
+        expect(() => issueRelationshipFromBody('None.', 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody('Closes #2164\nRelated #2164', 2164)).toThrow(
+            /exactly one relationship/
+        );
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {

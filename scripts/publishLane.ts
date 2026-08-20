@@ -25,6 +25,7 @@ import {
     assertIssueNumber,
     composePublishBody,
     fail,
+    issueRelationshipFromBody,
     type IssueRelationship,
 } from './prContract.ts';
 
@@ -34,6 +35,8 @@ export type PublishWorktree = {
     locked: boolean;
     lockReason?: string;
 };
+
+export type ExistingPullRequest = { number: number; body: string };
 
 export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number] [--relates]';
 
@@ -50,7 +53,7 @@ export type PublishLanePort = {
     remoteBranchSha: (branch: string) => string | undefined;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
     push: (lane: string, branch: string) => void;
-    existingOpenPullRequest: (branch: string) => number | undefined;
+    existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
     updatePullRequest: (number: number, input: { title: string; body: string }) => void;
     log: (message: string) => void;
@@ -58,25 +61,26 @@ export type PublishLanePort = {
 
 export function parsePublishLaneArgs(args: string[]): {
     issue?: number;
-    relationship: IssueRelationship;
+    relationship?: IssueRelationship;
     help: boolean;
 } {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
-        return { relationship: 'closes', help: true };
+        return { help: true };
     }
-    const relationship: IssueRelationship = args.includes('--relates') ? 'relates' : 'closes';
+    const relationship: IssueRelationship | undefined = args.includes('--relates') ? 'relates' : undefined;
     const positional = args.filter((arg) => arg !== '--relates');
-    if (positional.length !== args.length - (relationship === 'relates' ? 1 : 0) || positional.length > 1) {
+    if (positional.length !== args.length - (relationship === undefined ? 0 : 1) || positional.length > 1) {
         fail(PUBLISH_LANE_USAGE);
     }
     const issueArg = positional[0];
     if (issueArg === undefined) {
-        return { relationship, help: false };
+        return relationship === undefined ? { help: false } : { relationship, help: false };
     }
-    return { issue: assertIssueNumber(issueArg, PUBLISH_LANE_USAGE), relationship, help: false };
+    const issue = assertIssueNumber(issueArg, PUBLISH_LANE_USAGE);
+    return relationship === undefined ? { issue, help: false } : { issue, relationship, help: false };
 }
 
 type ResolvedLane = { path: string; branch: string };
@@ -173,7 +177,7 @@ export function resolveAuthorLane(
 export function publishLane(
     issue: number | undefined,
     port: PublishLanePort,
-    relationship: IssueRelationship = 'closes'
+    relationship?: IssueRelationship
 ): number {
     port.fetchMain();
     const lane = resolveAuthorLane(issue, port.worktrees(), port.cwd());
@@ -195,23 +199,27 @@ export function publishLane(
     }
     const title = port.headSubject(lane.path);
     assertConventionalSubject(title, 'pull-request title');
-    // The resolved lane's branch preserves its issue relationship across later updates.
     const laneIssue = issue ?? laneIssueNumber(lane.branch);
     if (relationship === 'relates' && laneIssue === undefined) {
         fail('--relates requires an issue lane or issue number');
     }
-    const body = composePublishBody(laneIssue, title, relationship);
     const headSha = port.headSha(lane.path);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
     }
-    port.push(lane.path, lane.branch);
     const existing = port.existingOpenPullRequest(lane.branch);
+    const resolvedRelationship =
+        relationship ??
+        (existing !== undefined && laneIssue !== undefined
+            ? issueRelationshipFromBody(existing.body, laneIssue)
+            : 'closes');
+    const body = composePublishBody(laneIssue, title, resolvedRelationship);
+    port.push(lane.path, lane.branch);
     const number =
         existing === undefined
             ? port.createPullRequest({ branch: lane.branch, title, body })
-            : (port.updatePullRequest(existing, { title, body }), existing);
+            : (port.updatePullRequest(existing.number, { title, body }), existing.number);
     port.log(String(number));
     return number;
 }
@@ -300,14 +308,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             );
         },
         existingOpenPullRequest: (branch) => {
-            const rows = parseJson<Array<{ number: number }>>(
+            const rows = parseJson<ExistingPullRequest[]>(
                 gh(existingOpenPullRequestArgs(branch)),
                 'open pull-request query'
             );
             if (rows.length > 1) {
                 fail(`branch ${branch} has more than one open pull request`);
             }
-            return rows[0]?.number;
+            return rows[0];
         },
         createPullRequest: ({ branch, title, body }) => {
             const url = gh([
@@ -388,7 +396,7 @@ export function issueExistsFromLookup(
 }
 
 export function existingOpenPullRequestArgs(branch: string): string[] {
-    return ['pr', 'list', '--repo', REQUIRED_REPOSITORY, '--head', branch, '--state', 'open', '--json', 'number'];
+    return ['pr', 'list', '--repo', REQUIRED_REPOSITORY, '--head', branch, '--state', 'open', '--json', 'number,body'];
 }
 
 export function parsePublishWorktrees(value: string): PublishWorktree[] {

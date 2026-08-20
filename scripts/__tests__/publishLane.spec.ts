@@ -51,6 +51,7 @@ type FakeInput = {
     remoteSha?: string;
     ancestor?: boolean;
     existing?: number;
+    existingBody?: string;
     issueExists?: boolean;
 };
 
@@ -78,7 +79,10 @@ function fakePort(input: FakeInput = {}) {
         remoteBranchSha: () => input.remoteSha,
         isAncestor: () => input.ancestor ?? true,
         push: (_lane, branch) => calls.push(`push:${branch}`),
-        existingOpenPullRequest: () => input.existing,
+        existingOpenPullRequest: () =>
+            input.existing === undefined
+                ? undefined
+                : { number: input.existing, body: input.existingBody ?? 'Closes #12' },
         createPullRequest: ({ title, body, branch }) => {
             bodies.push(body);
             calls.push(`create:${branch}:${title}:${body.includes('Closes #12') ? 'closes' : 'missing'}`);
@@ -197,6 +201,15 @@ describe('lane publish', () => {
         publishLane(undefined, port, 'relates');
 
         expect(bodies.at(-1)).toContain('Related #12');
+    });
+
+    it('preserves Related on a later flagless update', () => {
+        const { port, bodies } = fakePort({ existing: 41, existingBody: 'Related #12' });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain('Related #12');
+        expect(bodies.at(-1)).not.toContain('Closes #12');
     });
 
     it('rejects --relates on an issueless lane', () => {
@@ -415,11 +428,11 @@ describe('lane publish', () => {
             locked: true,
             lockReason: AUTHOR_LOCK_REASON,
         });
-        expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, relationship: 'closes', help: false });
+        expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, help: false });
         expect(parsePublishLaneArgs(['12', '--relates'])).toEqual({ issue: 12, relationship: 'relates', help: false });
         expect(parsePublishLaneArgs(['--relates'])).toEqual({ relationship: 'relates', help: false });
-        expect(parsePublishLaneArgs([])).toEqual({ relationship: 'closes', help: false });
-        expect(parsePublishLaneArgs(['--help'])).toEqual({ relationship: 'closes', help: true });
+        expect(parsePublishLaneArgs([])).toEqual({ help: false });
+        expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
         expect(() => parsePublishLaneArgs(['12', '13'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
@@ -445,7 +458,7 @@ describe('lane publish', () => {
             '--state',
             'open',
             '--json',
-            'number',
+            'number,body',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
     });

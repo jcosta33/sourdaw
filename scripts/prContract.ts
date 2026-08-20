@@ -55,6 +55,15 @@ export const NO_RELATED_TICKETS = 'None.';
 
 export type IssueRelationship = 'closes' | 'relates';
 
+export function issueRelationshipFromBody(body: string, issue: number): IssueRelationship {
+    const closes = body.includes(`Closes #${issue}`);
+    const relates = body.includes(`Related #${issue}`);
+    if (closes === relates) {
+        fail(`pull-request body must contain exactly one relationship to #${issue}`);
+    }
+    return closes ? 'closes' : 'relates';
+}
+
 export function composePublishBody(
     issue: number | undefined,
     subject: string,
