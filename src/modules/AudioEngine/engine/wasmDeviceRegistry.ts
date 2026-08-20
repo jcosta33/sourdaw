@@ -8,7 +8,8 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { isFaustModule } from '#/modules/PluginHost/useCases';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+import { getFaustModuleLatencyMs, isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { type DeviceRuntimeLiveFacts } from '../models/BuiltinDeviceRuntime';
@@ -1351,7 +1352,17 @@ const proofDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isProofDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         const loadingControls: {
@@ -1365,7 +1376,61 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         placeholder.nativeDspControls = loadingControls;
         placeholder.controller = loadingControls;
-        const loadPromise = createProofNode(context, undefined, signal)
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: ProofNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        // Demotion is terminal and unrecoverable, so it must run only once the
+        // worklet has actually reported a fault. A fault raised before the node
+        // is published is held in `runtimeFailureMessage` and drained at the
+        // publish site; a healthy load never enters this body at all.
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            const terminalControls = { ready: false, setParam: () => {}, setBypass: () => {}, destroy: () => {} };
+            placeholder.nativeDspControls = terminalControls;
+            // TrackNode keeps the placeholder controller after demotion. Replace
+            // that exact write surface too: otherwise automation retains values
+            // in the pre-ready queue after this terminal no-recovery state.
+            placeholder.controller = terminalControls;
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            publishedResult.destroy();
+            clearReportedLatency(deviceId);
+            const sink = getAudioDeviceRuntimeSink();
+            sink.unregisterProofDevice(deviceId);
+            sink.clearProofMeters(deviceId);
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
+        // Supplying the target fields at all selects live control. Whether the
+        // supplied values bind is `createProofNode`'s decision: it rejects an
+        // out-of-bounds id and leaves every control inert. Testing the values
+        // for truthiness here would turn an invalid target back into "no target
+        // supplied", which selects the legacy raw-param path and routes writes
+        // around the target, generation and sequence binding instead of
+        // stopping at it.
+        const controlTarget =
+            trackId !== undefined && parameterIds !== undefined
+                ? { trackId, deviceId, deviceType, parameterIds }
+                : undefined;
+        const loadPromise = createProofNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -1400,7 +1465,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     result.onMeterData((data) => {
                         runtimeSink.updateProofMeters(deviceId, data);
                     });
-                    onLoaded({
+                    const loadedNode: BuiltinDeviceNode = {
                         deviceId,
                         type: deviceType,
                         nodes: [result.workletNode],
@@ -1408,6 +1473,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         outputNode: result.workletNode,
                         dispose: result.destroy,
                         controller: {
+                            ready: true,
                             setParam: result.setParam,
                             setBypass: result.setBypass,
                             destroy: () => {
@@ -1422,7 +1488,15 @@ const proofDescriptor: WasmDeviceDescriptor = {
                             },
                         },
                         nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                    });
+                    };
+                    const accepted = onLoaded(loadedNode);
+                    if (accepted === false) {
+                        result.destroy();
+                        return;
+                    }
+                    publishedNode = loadedNode;
+                    publishedResult = result;
+                    applyRuntimeFailure();
                 } catch (error) {
                     try {
                         runtimeSink.unregisterProofDevice(deviceId);
@@ -1666,6 +1740,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     controls.destroy?.();
                     return;
                 }
+                // A Faust module's delay line is compiled into its source, so
+                // its latency is a constant of the module and is reported once,
+                // here, before any parameter lands. Without this the Brick-Wall
+                // Limiter's look-ahead delay was unreported and its track slid
+                // against every other one; see `getFaustModuleLatencyMs`.
+                reportLatency(deviceId, getFaustModuleLatencyMs(deviceType));
                 for (const event of pending) {
                     if (event.kind === 'param') {
                         if (event.time !== undefined) {
@@ -1696,10 +1776,14 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         // a Faust instrument was the one device kind the stop /
                         // panic sweep could not silence (audit MD-6).
                         allNotesOff: () => controls.setParam('gate', 0),
-                        destroy: controls.destroy,
+                        destroy: () => {
+                            controls.destroy?.();
+                            clearReportedLatency(deviceId);
+                        },
                     },
                 });
                 if (accepted === false) {
+                    clearReportedLatency(deviceId);
                     return;
                 }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
@@ -1848,4 +1932,11 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
     return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
+}
+
+export function findReleasedWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
+    if (!isDeviceReleaseAdmitted(deviceType)) {
+        return undefined;
+    }
+    return findWasmDescriptor(deviceType);
 }

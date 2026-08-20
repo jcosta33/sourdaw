@@ -1,3 +1,5 @@
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
+
 import { raveStore } from '../../stores/rave';
 
 /**
@@ -15,5 +17,5 @@ import { raveStore } from '../../stores/rave';
  * precisely the state this module was fixed out of.
  */
 export function isRaveModelPresent(modelId: string): boolean {
-    return raveStore.value?.models.some((model) => model.id === modelId) ?? false;
+    return MODEL_RELEASE_ADMISSION.rave && (raveStore.value?.models.some((model) => model.id === modelId) ?? false);
 }

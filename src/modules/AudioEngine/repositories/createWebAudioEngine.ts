@@ -5,6 +5,7 @@ import {
     type AudioLatencyProfile,
 } from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -300,6 +301,25 @@ class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
+    /**
+     * Stereo analysis tap: {@link masterAnalyser}'s pass-through output fans
+     * out through `masterStereoSplitter` into one analyser per channel. Kept
+     * off `masterGainNode` deliberately — {@link wireMasterMeter} disconnects
+     * `masterGainNode` wholesale on every (re-)initialize, which would drop a
+     * tap rooted there. Rooting on `masterAnalyser` instead survives that
+     * rewiring untouched.
+     */
+    private masterStereoSplitter!: ChannelSplitterNode;
+    public masterAnalyserLeft!: AnalyserNode;
+    public masterAnalyserRight!: AnalyserNode;
+    /**
+     * Silent (gain 0) sink the stereo tap analysers connect through to the
+     * destination. Web Audio only pulls nodes with a path to the destination,
+     * so a dead-end analyser branch never processes a render quantum — routing
+     * it through a zero-gain node keeps it live without adding anything to the
+     * audible mix.
+     */
+    private masterStereoTapSink!: GainNode;
     public masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
 
     private trackNodes = new Map<string, TrackNode>();
@@ -331,6 +351,7 @@ class AudioEngineImpl implements AudioEngine {
      */
     private masterMeterBuffer: Float32Array | null = null;
     private pendingDevicePromises = new Set<Promise<unknown>>();
+    private withheldDeviceNotices = new Set<string>();
     private workletReady = false;
     private fallbackMode = false;
     private transportSAB: SharedArrayBuffer | null;
@@ -397,6 +418,26 @@ class AudioEngineImpl implements AudioEngine {
 
             this.masterGainNode.connect(this.masterAnalyser);
             this.masterAnalyser.connect(this.context.destination);
+
+            // Genuine stereo tap: branch off masterAnalyser's pass-through output
+            // (it forwards audio unchanged; only its own analysis reads are
+            // down-mixed to mono) into a ChannelSplitterNode(2), then one analyser
+            // per channel. Route both through a silent sink to the destination so
+            // they are pulled every render quantum without touching the mix.
+            this.masterStereoSplitter = this.context.createChannelSplitter(2);
+            this.masterAnalyserLeft = this.context.createAnalyser();
+            this.masterAnalyserLeft.fftSize = 256;
+            this.masterAnalyserRight = this.context.createAnalyser();
+            this.masterAnalyserRight.fftSize = 256;
+            this.masterStereoTapSink = this.context.createGain();
+            this.masterStereoTapSink.gain.value = 0;
+
+            this.masterAnalyser.connect(this.masterStereoSplitter);
+            this.masterStereoSplitter.connect(this.masterAnalyserLeft, 0);
+            this.masterStereoSplitter.connect(this.masterAnalyserRight, 1);
+            this.masterAnalyserLeft.connect(this.masterStereoTapSink);
+            this.masterAnalyserRight.connect(this.masterStereoTapSink);
+            this.masterStereoTapSink.connect(this.context.destination);
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
             notifyUser(
@@ -425,6 +466,10 @@ class AudioEngineImpl implements AudioEngine {
             port: { postMessage: () => {} },
         };
         this.masterAnalyser = this.context.createAnalyser();
+        this.masterStereoSplitter = this.context.createChannelSplitter(2);
+        this.masterAnalyserLeft = this.context.createAnalyser();
+        this.masterAnalyserRight = this.context.createAnalyser();
+        this.masterStereoTapSink = this.context.createGain();
     }
 
     private assertActive(): void {
@@ -744,13 +789,24 @@ class AudioEngineImpl implements AudioEngine {
                 initializedNode = this.createTrackNode(sourcePlan.id);
                 try {
                     for (const device of sourcePlan.devices) {
-                        initializedNode.addDevice(
+                        const added = initializedNode.addDevice(
                             device.id,
                             device.type,
                             device.externalInstanceId,
                             undefined,
                             device.parameterIds
                         );
+                        if (
+                            !added &&
+                            !isDeviceReleaseAdmitted(device.type) &&
+                            !this.withheldDeviceNotices.has(device.type)
+                        ) {
+                            this.withheldDeviceNotices.add(device.type);
+                            notifyUser(
+                                `"${device.type}" is withheld from this build. Its project data is preserved, but it will remain silent.`,
+                                'warning'
+                            );
+                        }
                     }
                     this.trackNodes.set(sourcePlan.id, initializedNode);
                     this.setTrackOutputTransaction(initializedNode, delta.output.targetId, delta.output.padBinding);
@@ -2437,6 +2493,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public resetGraph(): void {
+        this.withheldDeviceNotices.clear();
         // Tear down all per-project audio graph state (tracks, buses, sends,
         // sidechain routes) without closing the AudioContext, master nodes,
         // or already-loaded worklet modules. Used when switching projects.
@@ -2524,6 +2581,12 @@ class AudioEngineImpl implements AudioEngine {
         // the last block happened to leave in the buffer.
         this.masterMeterBuffer = null;
         this.masterAnalyser.disconnect();
+        // Tear down the stereo analysis tap alongside the mono analyser it
+        // branches from, so nothing is left connected into the closed context.
+        this.masterStereoSplitter.disconnect();
+        this.masterAnalyserLeft.disconnect();
+        this.masterAnalyserRight.disconnect();
+        this.masterStereoTapSink.disconnect();
 
         // Release the transport SAB / its view so the buffer can be GC'd and a
         // post-dispose setTransportInfo() no-ops instead of writing into a stale

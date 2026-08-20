@@ -1,6 +1,17 @@
 import { type ReactElement, useState } from 'react';
 
-import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
+import {
+    Search,
+    ChevronDown,
+    ChevronRight,
+    Plug,
+    RefreshCw,
+    Loader2,
+    Plus,
+    AlertCircle,
+    Info,
+    Monitor,
+} from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
@@ -13,7 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { pluginScanStore, defaultPluginScanState, type PluginScanState } from '#/modules/PluginHost/stores';
-import { startPluginScan } from '#/modules/PluginHost/useCases';
+import { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat, startPluginScan } from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 
@@ -31,7 +42,9 @@ const FORMAT_COLORS: Record<string, string> = {
     clap: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
 };
 
-const FORMAT_ORDER = ['clap'];
+// Grouping follows the host's own supported set, so a format the host gains is
+// never scanned, offered, and then missing a group to appear in.
+const FORMAT_ORDER = SUPPORTED_PLUGIN_FORMATS;
 
 export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserProps): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);
@@ -65,7 +78,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
         );
     }
 
-    const supportedPlugins = state.scannedPlugins.filter((plugin) => plugin.format.toLowerCase() === 'clap');
+    const supportedPlugins = state.scannedPlugins.filter((plugin) => isSupportedPluginFormat(plugin.format));
     const query = (searchQuery || localSearch).toLowerCase().trim();
 
     const filtered = supportedPlugins.filter((param) => {
@@ -218,6 +231,21 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         <div key={index} className="flex items-start gap-1 text-[9px] text-destructive">
                             <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                             <span>{err}</span>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+            {/*
+             * Why a plugin the user owns is not in the list above. That is the
+             * expected result of a healthy scan, so it reads as muted
+             * information rather than as the failure styling directly above it.
+             */}
+            {state.notices.length > 0 && !state.isScanning ? (
+                <div className="px-2 py-1">
+                    {state.notices.map((notice) => (
+                        <div key={notice} className="flex items-start gap-1 text-[9px] text-muted-foreground">
+                            <Info className="size-3 shrink-0 mt-px" aria-hidden="true" />
+                            <span>{notice}</span>
                         </div>
                     ))}
                 </div>

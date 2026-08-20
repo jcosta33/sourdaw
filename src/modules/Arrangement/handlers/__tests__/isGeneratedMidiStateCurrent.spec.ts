@@ -8,10 +8,10 @@ const mocks = vi.hoisted(() => ({
     getAutomationLanes: vi.fn(),
     getEnvelope: vi.fn(),
     getTrackStoreState: vi.fn(),
+    hasNonDefaultWarpState: vi.fn(),
     modulationStore: { value: { modulators: [] } },
     serializeMidiStateForClips: vi.fn(),
     takeLaneStore: { value: { lanes: [] } },
-    warpStates: { has: vi.fn() },
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({ modulationStore: mocks.modulationStore }));
@@ -20,7 +20,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({ serializeMidiStateForClips: mocks.se
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: mocks.getAllSidechainRoutes }));
 vi.mock('../../stores/gainEnvelopeStore', () => ({ getEnvelope: mocks.getEnvelope }));
 vi.mock('../../stores/takeLaneStore', () => ({ takeLaneStore: mocks.takeLaneStore }));
-vi.mock('../../stores/warpStates', () => ({ warpStates: mocks.warpStates }));
+vi.mock('../../stores/warpStates', () => ({ hasNonDefaultWarpState: mocks.hasNonDefaultWarpState }));
 vi.mock('../../useCases/getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
 
 const generatedClip = {
@@ -45,7 +45,7 @@ describe('isGeneratedMidiStateCurrent', () => {
         mocks.getAutomationLanes.mockReturnValue([]);
         mocks.getEnvelope.mockReturnValue(undefined);
         mocks.serializeMidiStateForClips.mockReturnValue('exact-midi');
-        mocks.warpStates.has.mockReturnValue(false);
+        mocks.hasNonDefaultWarpState.mockReturnValue(false);
         mocks.modulationStore.value = { modulators: [] };
         mocks.takeLaneStore.value = { lanes: [] };
     });
@@ -104,5 +104,26 @@ describe('isGeneratedMidiStateCurrent', () => {
                 },
             })
         ).toBe(false);
+    });
+
+    it('rejects a clip carrying non-default warp state, and is wired through hasNonDefaultWarpState not map presence', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        mocks.hasNonDefaultWarpState.mockReturnValue(true);
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedClip.id,
+                entityType: 'clip',
+                guard: {
+                    entityJson: JSON.stringify(generatedClip),
+                    midiByClipIdJson: 'exact-midi',
+                },
+            })
+        ).toBe(false);
+        expect(mocks.hasNonDefaultWarpState).toHaveBeenCalledWith('generated-clip');
     });
 });

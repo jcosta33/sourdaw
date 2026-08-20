@@ -8,6 +8,7 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Fader } from '#/components/daw/Fader';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { getVcaGroups } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -96,7 +97,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     </MixerPopupOption>
                     <MixerPopupSeparator />
                     <MixerPopupLabel>Color</MixerPopupLabel>
-                    <div className="flex gap-1 px-3 py-1">
+                    <Row align="stretch" gap={1} className="px-3 py-1">
                         {TRACK_COLOR_PRESETS.map((context) => (
                             <DawSwatchButton
                                 key={context}
@@ -106,7 +107,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                                 aria-label={`Set color`}
                             />
                         ))}
-                    </div>
+                    </Row>
                     <MixerPopupSeparator />
                     <MixerPopupLabel>VCA Group</MixerPopupLabel>
                     {getVcaGroups().map((g) => (
@@ -198,7 +199,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 </DawMicroBadge>
             ) : null}
             {/* Mute / Solo / Arm / Monitor */}
-            <div className="flex flex-wrap justify-center gap-1">
+            <Row wrap align="stretch" justify="center" gap={1}>
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <LatchButton
@@ -276,7 +277,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     </Tooltip>
                 ) : null}
                 {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
-            </div>
+            </Row>
             <MixerLevelReadout
                 trackId={track.id}
                 control={
@@ -316,7 +317,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 value={<>{actions.displayGain === 0 ? '-∞' : `${((actions.displayGain - 0.8) * 40).toFixed(1)}`} dB</>}
             />
             {/* Pan */}
-            <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
+            <Stack align="center" className="mt-2 mb-2 w-full px-1">
                 <div data-testid={`channel-pan-${track.id}`} onPointerUp={actions.releasePanAutomation}>
                     <RotaryKnob
                         value={actions.displayPan}
@@ -329,7 +330,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     />
                 </div>
                 <MixerStripValue size="sm">{renderIife_1()}</MixerStripValue>
-            </div>
+            </Stack>
             {/* MIDI FX */}
             <MidiFxSection track={track} />
             {/* Devices — contained with scroll */}

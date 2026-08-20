@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginMetricTileProps = HTMLAttributes<HTMLDivElement> & {
@@ -21,7 +22,7 @@ export const DawPluginMetricTile = ({
     detailClassName,
     ...props
 }: DawPluginMetricTileProps): ReactElement => (
-    <div className={cn('flex min-w-[96px] flex-col gap-1 px-3 py-2', className)} {...props}>
+    <Stack gap={1} className={cn('min-w-[96px] px-3 py-2', className)} {...props}>
         <span className={cn('text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55', labelClassName)}>
             {label}
         </span>
@@ -29,5 +30,5 @@ export const DawPluginMetricTile = ({
         {detail ? (
             <span className={cn('text-[9px] leading-4 text-muted-foreground/55', detailClassName)}>{detail}</span>
         ) : null}
-    </div>
+    </Stack>
 );

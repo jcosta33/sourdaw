@@ -4,7 +4,7 @@
  * into the full crumbs interface.
  */
 
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Circle, Cpu, Volume2 } from 'lucide-react';
 
@@ -80,6 +80,10 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    // Monotonic id for the latest recorder request: an arm that resolves
+    // after the user already pressed Stop is stale and must not write the
+    // readout — the LED would flip back to "Recording..." over a closed take.
+    const recorderRequestRef = useRef(0);
     // null = still initializing, true = engine ready, false = engine unavailable.
     // Gates the status LED so a failed init can't read 'Ready' while param writes
     // silently no-op against a missing backend instance.
@@ -259,8 +263,26 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
-                                            setIsRecording(true);
-                                            void armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60);
+                                            // The readout follows the arm's
+                                            // outcome, never the click: a
+                                            // refused arm must not read
+                                            // "Recording..." over a take that
+                                            // was never opened.
+                                            recorderRequestRef.current += 1;
+                                            const requestId = recorderRequestRef.current;
+                                            armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60)
+                                                .then((armed) => {
+                                                    if (recorderRequestRef.current === requestId) {
+                                                        setIsRecording(armed);
+                                                    }
+                                                    return undefined;
+                                                })
+                                                .catch((error: unknown) => {
+                                                    logger.warn('Failed to arm crumbs recording:', error);
+                                                    if (recorderRequestRef.current === requestId) {
+                                                        setIsRecording(false);
+                                                    }
+                                                });
                                         }}
                                     >
                                         Arm
@@ -269,8 +291,17 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
+                                            // Stop reads Idle at once — the
+                                            // user asked for it — but a
+                                            // refusal is reported rather than
+                                            // swallowed by a bare `void`.
+                                            // Bumping the request id makes any
+                                            // in-flight arm resolution stale.
+                                            recorderRequestRef.current += 1;
                                             setIsRecording(false);
-                                            void stopCrumbsRecording(deviceId);
+                                            stopCrumbsRecording(deviceId).catch((error: unknown) => {
+                                                logger.warn('Failed to stop crumbs recording:', error);
+                                            });
                                         }}
                                     >
                                         Stop

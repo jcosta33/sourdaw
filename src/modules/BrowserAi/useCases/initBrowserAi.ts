@@ -3,24 +3,21 @@
  *
  * Called once from bootstrap. Responsibilities:
  * 1. Detect browser platform capabilities (cold-start probe; no inference measurement)
- * 2. Populate model registry with DDSP catalog + Kokoro model entry
+ * 2. Populate the registry with admitted model entries
  * 3. Check which downloadable models are already cached in OPFS and update status
  * 4. Request persistent storage if browser AI is supported
  */
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type DdspInstrument, type KokoroModel, type ModelDownloadStatus } from '../models/BrowserModel';
-import {
-    DDSP_INSTRUMENT_CATALOG,
-    KOKORO_VOICE_CATALOG,
-    KOKORO_MODEL_URL,
-    KOKORO_MODEL_SIZE_BYTES,
-} from '../models/DdspInstrumentCatalog';
+import { DDSP_INSTRUMENT_CATALOG } from '../models/DdspInstrumentCatalog';
+import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroArtifactManifest';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { checkModelCached } from '../repositories/checkModelCached';
+import { readVerifiedModel } from '../repositories/readVerifiedModel';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
@@ -29,21 +26,22 @@ import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 let midiStaleSubscription: (() => void) | undefined;
 
 export const KOKORO_MODEL_ENTRY: KokoroModel = {
-    id: 'kokoro-82m-q8',
+    id: KOKORO_MODEL_ARTIFACT.id,
     name: 'Kokoro TTS (q8f16)',
     family: 'kokoro',
-    sizeBytes: KOKORO_MODEL_SIZE_BYTES,
-    url: KOKORO_MODEL_URL,
+    sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
+    url: KOKORO_MODEL_ARTIFACT.url,
     license: 'Apache-2.0',
     attribution: 'Kokoro by hexgrad — Apache 2.0',
     nativeSampleRate: 24000,
     status: 'not-downloaded',
     downloadProgress: 0,
     quantization: 'q8',
+    sha256: KOKORO_MODEL_ARTIFACT.sha256,
 };
 
-export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModelCached })(
-    ({ logger, detectCapabilitiesRepo, checkModelCached }) =>
+export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, readVerifiedModel })(
+    ({ logger, detectCapabilitiesRepo, readVerifiedModel }) =>
         async function initBrowserAi(): Promise<void> {
             logger.info('[BrowserAi] Initializing…');
 
@@ -72,29 +70,36 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
                 }
             }
 
-            // ── 3. Build DDSP instrument entries from catalog ──────────────
-            // DDSP browser rendering is unavailable in this build because the TF.js
-            // worker is a stub; keep the catalog visible without advertising readiness.
-            const ddspInstruments: DdspInstrument[] = DDSP_INSTRUMENT_CATALOG.map((cat) => ({
-                ...cat,
-                status: 'error' as const,
-                downloadProgress: 0,
-            }));
+            // ── 3. Build admitted model entries ────────────────────────────
+            const ddspInstruments: DdspInstrument[] = MODEL_RELEASE_ADMISSION.ddsp
+                ? DDSP_INSTRUMENT_CATALOG.map((cat) => ({
+                      ...cat,
+                      status: 'error' as const,
+                      downloadProgress: 0,
+                  }))
+                : [];
 
-            // ── 3. Check Kokoro model cache status ─────────────────────────
-            let kokoroStatus: ModelDownloadStatus;
-            try {
-                const cached = await checkModelCached({ family: 'kokoro', modelId: KOKORO_MODEL_ENTRY.id });
-                kokoroStatus = cached ? 'ready' : 'not-downloaded';
-            } catch (error) {
-                kokoroStatus = 'error';
-                logger.warn(`[BrowserAi] Kokoro cache probe failed: ${String(error)}`);
+            let kokoroModel: KokoroModel | null = null;
+            if (MODEL_RELEASE_ADMISSION.kokoro) {
+                let kokoroStatus: ModelDownloadStatus;
+                try {
+                    const modelData = await readVerifiedModel({
+                        family: 'kokoro',
+                        modelId: KOKORO_MODEL_ENTRY.id,
+                        sha256: KOKORO_MODEL_ARTIFACT.sha256,
+                        sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
+                    });
+                    kokoroStatus = modelData ? 'ready' : 'not-downloaded';
+                } catch (error) {
+                    kokoroStatus = 'error';
+                    logger.warn(`[BrowserAi] Kokoro cache probe failed: ${String(error)}`);
+                }
+                kokoroModel = {
+                    ...KOKORO_MODEL_ENTRY,
+                    status: kokoroStatus,
+                    downloadProgress: kokoroStatus === 'ready' ? 1 : 0,
+                };
             }
-            const kokoroModel: KokoroModel = {
-                ...KOKORO_MODEL_ENTRY,
-                status: kokoroStatus,
-                downloadProgress: kokoroStatus === 'ready' ? 1 : 0,
-            };
 
             // ── 4. Populate model registry store ───────────────────────────
             modelRegistryStore.set({
@@ -106,7 +111,7 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             });
 
             logger.info(
-                `[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel.status}`
+                `[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel?.status ?? 'withheld'}`
             );
 
             // ── 5. Subscribe to midiStore — mark rendered phrases stale on edit ──
@@ -155,4 +160,4 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
 );
 
 /** Re-export catalogs and shared types for components that render instrument / voice selectors */
-export { KOKORO_VOICE_CATALOG, DDSP_INSTRUMENT_CATALOG };
+export { KOKORO_VOICE_ARTIFACTS as KOKORO_VOICE_CATALOG, DDSP_INSTRUMENT_CATALOG };

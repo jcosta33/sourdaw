@@ -21,7 +21,7 @@ import {
     externalPluginActivationStore,
     defaultExternalPluginActivationState,
 } from '#/modules/PluginHost/stores';
-import { openPluginGui } from '#/modules/PluginHost/useCases';
+import { isSupportedPluginFormat, openPluginGui } from '#/modules/PluginHost/useCases';
 import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
@@ -40,7 +40,7 @@ type PluginScanViewState = {
         id: string;
         name: string;
         format: string;
-        clap_id?: string;
+        descriptor_id?: string;
     }>;
 };
 
@@ -58,11 +58,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const utilityPlugins = platformPlugins.filter((param) => param.category === 'utility');
     const analyzerPlugins = platformPlugins.filter((param) => param.category === 'analyzer');
     const platformCapabilities = getPlatformCapabilities();
-    const supportedExternalPlugins = pluginScanState.scannedPlugins.filter(
-        (plugin) => plugin.format.toLowerCase() === 'clap'
+    const supportedExternalPlugins = pluginScanState.scannedPlugins.filter((plugin) =>
+        isSupportedPluginFormat(plugin.format)
     );
     const supportedExternalPluginIds = new Set(
-        supportedExternalPlugins.flatMap((plugin) => (plugin.clap_id ? [plugin.id, plugin.clap_id] : [plugin.id]))
+        supportedExternalPlugins.flatMap((plugin) =>
+            plugin.descriptor_id ? [plugin.id, plugin.descriptor_id] : [plugin.id]
+        )
     );
     const unavailableExternalDeviceIds = new Set(
         track.devices

@@ -15,6 +15,7 @@ vi.mock('../../../useCases/detectCapabilities', () => ({
 
 const SUPPORTED_REPORT: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
     sharedArrayBuffer: true,
     opfsAvailable: true,
@@ -82,16 +83,26 @@ describe('CapabilityReportPanel', () => {
         expect(screen.getByText('Unsupported')).toBeInTheDocument();
     });
 
-    it('should blame missing WebGPU, not the browser, when an unsupported report comes from Chromium', () => {
+    it.each([
+        ['missing-surface', 'WebGPU is not exposed by this Chromium runtime'],
+        ['adapter-unavailable', 'No core WebGPU adapter is available'],
+        ['fallback-adapter', 'Only a software WebGPU fallback adapter is available'],
+        ['device-unavailable', 'The WebGPU adapter could not create a device'],
+        ['probe-failed', 'The WebGPU usability check could not complete'],
+    ] as const)('should show the explicit WebGPU admission failure: %s', (reason, expected) => {
         capabilityStore.set({
             phase: 'done',
-            report: { ...SUPPORTED_REPORT, capability: 'unsupported-browser' },
+            report: {
+                ...SUPPORTED_REPORT,
+                capability: 'unsupported-browser',
+                webGpu: { status: 'unavailable', reason },
+            },
         });
 
         render(<CapabilityReportPanel />);
 
         expect(screen.getByText('Browser AI Unavailable')).toBeInTheDocument();
-        expect(screen.getByText('WebGPU unavailable — AI features need a GPU-enabled Chromium')).toBeInTheDocument();
+        expect(screen.getByText(expected)).toBeInTheDocument();
         expect(screen.getByText('Unsupported')).toBeInTheDocument();
     });
 
@@ -104,7 +115,7 @@ describe('CapabilityReportPanel', () => {
         expect(screen.getByText('Fast (WebGPU)')).toBeInTheDocument();
         expect(screen.getByText('1.60× real time')).toBeInTheDocument();
         expect(screen.getByText('kokoro-82m-q8 · webgpu → wasm')).toBeInTheDocument();
-        expect(screen.getAllByText('Available')).toHaveLength(2);
+        expect(screen.getAllByText('Available')).toHaveLength(3);
         expect(screen.getByText('133')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Re-detect capabilities' }));

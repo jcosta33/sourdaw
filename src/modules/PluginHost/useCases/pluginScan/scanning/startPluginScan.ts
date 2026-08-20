@@ -12,7 +12,7 @@ export async function startPluginScan(): Promise<void> {
     if (state.isScanning) {
         return;
     }
-    pluginScanStore.set({ ...state, isScanning: true, errors: [] });
+    pluginScanStore.set({ ...state, isScanning: true, errors: [], notices: [] });
 
     try {
         const defaultPaths = await getDefaultPluginPaths();
@@ -24,6 +24,7 @@ export async function startPluginScan(): Promise<void> {
                 ...(current ?? getState()),
                 isScanning: false,
                 errors: ['No plugin paths configured'],
+                notices: [],
             }));
             return;
         }
@@ -44,6 +45,7 @@ export async function startPluginScan(): Promise<void> {
                 isScanning: false,
                 lastScanTime: Date.now(),
                 errors: result.errors,
+                notices: result.notices,
                 scannedPlugins: result.plugins,
             };
         });
@@ -52,6 +54,10 @@ export async function startPluginScan(): Promise<void> {
             ...(current ?? getState()),
             isScanning: false,
             errors: [error instanceof Error ? error.message : String(error)],
+            // The scan produced no result, so it has nothing to say beyond the
+            // failure. Carrying the previous run's notices forward would
+            // attribute them to a scan that never reported anything.
+            notices: [],
         }));
     }
 }

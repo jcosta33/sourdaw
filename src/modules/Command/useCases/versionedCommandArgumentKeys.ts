@@ -2606,6 +2606,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 0,
             gain: 1,
+            expectedGain: 1,
         },
         required: ['clipId', 'gain'],
         additionalProperties: false,

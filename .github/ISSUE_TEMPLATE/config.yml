@@ -3,6 +3,12 @@ contact_links:
   - name: Architecture & Decisions
     url: https://github.com/jcosta33/sourdaw/tree/main/.agents/decisions
     about: Frozen law. Cite from issues. Do not file ADRs as issues.
+  - name: Bugs
+    url: https://github.com/users/jcosta33/projects/2
+    about: Defect reports. File with the Bug form, not a card.
   - name: Roadmap
-    url: https://github.com/users/jcosta33/projects/1
-    about: Mirrors issues. File with a form, not a card.
+    url: https://github.com/users/jcosta33/projects/3
+    about: Features, specs, and campaigns. File with a form, not a card.
+  - name: Refactors
+    url: https://github.com/users/jcosta33/projects/4
+    about: Refactors and rewrites. File with the Change plan form, not a card.

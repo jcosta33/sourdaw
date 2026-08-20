@@ -14,7 +14,7 @@ function create_scanned_plugin(overrides: Partial<ScannedPlugin> = {}): ScannedP
         category: 'instrument',
         path: '/plugins/plugin.vst3',
         version: '1.0.0',
-        clap_id: 'com.test.plugin',
+        descriptor_id: 'com.test.plugin',
         num_inputs: 2,
         num_outputs: 2,
         num_parameters: 8,
@@ -29,6 +29,7 @@ function create_plugin_scan_state(overrides: Partial<PluginScanState> = {}): Plu
         isScanning: false,
         scannedPlugins: [],
         errors: [],
+        notices: [],
         lastScanTime: null,
         ...overrides,
     };
@@ -50,6 +51,7 @@ const mocks = vi.hoisted(() => {
             isScanning: false,
             scannedPlugins: [],
             errors: [],
+            notices: [],
             lastScanTime: null,
         },
     };
@@ -99,7 +101,7 @@ describe('startPluginScan', () => {
 
     it('sets isScanning and then updates with results', async () => {
         const mockPlugins = [create_scanned_plugin({ id: 'p1', name: 'Synth' })];
-        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], scan_duration_ms: 0 });
+        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 0 });
 
         await startPluginScan();
 
@@ -116,10 +118,56 @@ describe('startPluginScan', () => {
         );
     });
 
+    it('keeps a scan that only refused formats out of the error channel', async () => {
+        // The ordinary outcome for anyone who owns a VST3 plugin: the VST3
+        // roots are scanned by default on every platform, so this runs on every
+        // scan. Routed into `errors` it would render the scan destructively and
+        // withhold the success badge — which is gated on `errors.length === 0`
+        // — permanently, for a scan in which nothing failed.
+        const refusal = 'VST3 plugins are recognised but not loaded yet.';
+        mocks.scanPlugins.mockResolvedValue({
+            plugins: [create_scanned_plugin({ id: 'p1', format: 'clap' })],
+            errors: [],
+            notices: [refusal],
+            scan_duration_ms: 0,
+        });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: [],
+                notices: [refusal],
+            })
+        );
+    });
+
+    it('reports failures and refusals on their own channels at once', async () => {
+        // Neither channel absorbs the other: a scan can fail on one root and
+        // refuse a format under another, and the user has to be able to tell
+        // which is which.
+        mocks.scanPlugins.mockResolvedValue({
+            plugins: [],
+            errors: ['Cannot read /default/path: permission denied'],
+            notices: ['Audio Unit plugins are not loaded.'],
+            scan_duration_ms: 0,
+        });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                errors: ['Cannot read /default/path: permission denied'],
+                notices: ['Audio Unit plugins are not loaded.'],
+            })
+        );
+    });
+
     it('merges existing paths with default paths', async () => {
         mocks.pluginScanStoreValue.value.scanPaths = ['/custom/path'];
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
-        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], scan_duration_ms: 0 });
+        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], notices: [], scan_duration_ms: 0 });
 
         await startPluginScan();
 
@@ -141,7 +189,7 @@ describe('startPluginScan', () => {
             ...mocks.pluginScanStoreValue.value,
             scanPaths: [],
         };
-        scan_deferred.resolve({ plugins: [], errors: [], scan_duration_ms: 0 });
+        scan_deferred.resolve({ plugins: [], errors: [], notices: [], scan_duration_ms: 0 });
         await scan_promise;
 
         expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(

@@ -27,4 +27,10 @@ describe('buildDevice', () => {
         const b = buildDevice({ type: 'x' });
         expect(a.id).not.toBe(b.id);
     });
+
+    it('rejects devices withheld from release templates', () => {
+        expect(() => buildDevice({ type: 'grand-boule' })).toThrow(
+            'Device type "grand-boule" is withheld from release templates.'
+        );
+    });
 });
