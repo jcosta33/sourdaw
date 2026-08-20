@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
@@ -91,7 +92,7 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { trackId: '', gain: 1 },
             { trackId: 'track-1', gain: -0.01 },
-            { trackId: 'track-1', gain: 1.01 },
+            { trackId: 'track-1', gain: FADER_MAX_GAIN + 0.01 },
             { trackId: 'track-1', gain: Number.NaN },
             { trackId: 'track-1', gain: Number.POSITIVE_INFINITY },
             { trackId: 'track-1', gain: 1, expectedGain: 0.5 },
@@ -261,7 +262,13 @@ const guardedPayloadContractCases = [
     guardedPayloadCase({
         actionType: 'setMasterGain',
         validPayload: { gain: 0.65 },
-        invalidPayloads: [{}, { gain: -0.01 }, { gain: 1.01 }, { gain: Number.NaN }, { gain: 0.65, extra: true }],
+        invalidPayloads: [
+            {},
+            { gain: -0.01 },
+            { gain: FADER_MAX_GAIN + 0.01 },
+            { gain: Number.NaN },
+            { gain: 0.65, extra: true },
+        ],
     }),
 
     guardedPayloadCase({
@@ -877,6 +884,34 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         }
 
         expect(guard(payload)).toBe(true);
+    });
+
+    describe('gain ceiling reaches the fader headroom, not unity', () => {
+        it.each([
+            ['setTrackGain', { trackId: 'track-1', gain: 1.5 }],
+            ['setMasterGain', { gain: 1.5 }],
+        ] as const)('accepts %s at 1.5, above unity but under the fader ceiling', (actionType, payload) => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard(payload)).toBe(true);
+        });
+
+        it.each([
+            ['setTrackGain', { trackId: 'track-1', gain: FADER_MAX_GAIN + 0.01 }],
+            ['setMasterGain', { gain: FADER_MAX_GAIN + 0.01 }],
+        ] as const)('rejects %s past the fader ceiling', (actionType, payload) => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard(payload)).toBe(false);
+        });
     });
 
     it('accepts thinAutomation with its default tolerance omitted', () => {

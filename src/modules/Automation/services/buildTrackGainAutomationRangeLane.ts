@@ -1,3 +1,5 @@
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type AutomationLane, type AutomationPoint } from '../models/Automation';
 
 type BuildTrackGainAutomationRangeLaneInput = {
@@ -30,6 +32,6 @@ export function buildTrackGainAutomationRangeLane(input: BuildTrackGainAutomatio
         enabled: true,
         collapsed: false,
         minValue: 0,
-        maxValue: 1,
+        maxValue: FADER_MAX_GAIN,
     };
 }

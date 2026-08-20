@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type MidiLearnMappingsActionSnapshot } from '#/utils/handlerContract';
 
@@ -22,7 +23,8 @@ function cloneSnapshotMappings(snapshot: MidiLearnMappingsActionSnapshot): MidiM
 /**
  * Per-target value contract for MIDI Learn. Ranges mirror the real param
  * contracts each target writes to:
- *  - `trackGain`  → `setTrackGain` clamps [0, 1] (linear amplitude), but a
+ *  - `trackGain`  → `setTrackGain` clamps [0, {@link FADER_MAX_GAIN}] (linear
+ *    amplitude, the same +6 dB headroom the track fader itself allows), but a
  *    knob/fader feels right with a perceptual `log` taper, so that is the default.
  *  - `trackPan`   → `setTrackPan` clamps [-50, 50] (linear, symmetric).
  *  - `deviceParam` / `fermenterGlobalParam` → normalised [0, 1], linear.
@@ -31,7 +33,7 @@ const RANGE_BY_TARGET_TYPE: Record<
     'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam',
     { min: number; max: number; scaleMode: MidiMappingScaleMode }
 > = {
-    trackGain: { min: 0, max: 1, scaleMode: 'log' },
+    trackGain: { min: 0, max: FADER_MAX_GAIN, scaleMode: 'log' },
     trackPan: { min: -50, max: 50, scaleMode: 'linear' },
     deviceParam: { min: 0, max: 1, scaleMode: 'linear' },
     fermenterGlobalParam: { min: 0, max: 1, scaleMode: 'linear' },
