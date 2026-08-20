@@ -76,8 +76,8 @@ Blind stances report to the orchestrator, never straight to GitHub. Only finding
 validation are composed into `review.json` and posted by `review:publish`; a discarded one never
 reaches the pull request. Getting this backwards traps the merge: `deliver` refuses a pull request
 that carries `CHANGES_REQUESTED` or an unresolved thread, and a conversation may only be resolved
-when the head actually addresses it — so a finding posted and then judged wrong blocks delivery with
-nothing left to fix.
+when the head actually addresses it — so a finding posted and then judged wrong blocks delivery
+with nothing left to fix.
 
 ## Docs
 
@@ -174,12 +174,12 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `.agents/review-bundles/` at that root, the caller writes `review.json` beside them, and the
 `.env.sourdaw-*` credentials live there.
 
-`pnpm lane:open [issue] [slug]` (slug `work` if omitted) fetches `origin/main`, branches from it, and locks the lane
-`active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
-never mints or spawns `gh`. Supply the issue number when the work has a ticket; the branch is then
-`agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
-`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
-directory is what identifies it when no issue number does. Touch only your own lane.
+`pnpm lane:open [issue] [slug]` (slug `work` if omitted) fetches `origin/main`, branches from it,
+and locks the lane `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline
+past that fetch and never mints or spawns `gh`. Supply the issue number when the work has a ticket;
+the branch is then `agent/<issue>/<slug>` and the pull request closes the issue on merge. Without
+one the branch is `agent/<slug>`, and `lane:publish` must then be run from inside that lane, since
+the working directory is what identifies it when no issue number does. Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -193,12 +193,16 @@ local branch after success.
 
 Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
 The tracker is public. The issue body is the original; delete any local copy after filing.
-`.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until their
-work is done. New planning is GitHub issues, never a plan file. Durable decisions belong in
+`.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
+their work is done. New planning is GitHub issues, never a plan file. Durable decisions belong in
 `.agents/decisions/` and its ADR ledger.
 
-`.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with
-`pnpm issue:file <template> --title "…" --fields <json> [--milestone <m>] [--project <p>] [--create]`.
+`.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with:
+
+```
+pnpm issue:file <template> --title "…" --fields <json> [--milestone <m>] [--project <p>] [--create]
+```
+
 After create, attach parent/child issues as GitHub sub-issues.
 
 An unlabelled issue is invisible. Every issue carries a priority label and a status label, plus the
@@ -252,8 +256,8 @@ the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of the
 rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
 freshness.
 
-`lane:publish` prints the PR number. It pushes without `--force`, titles the PR with the HEAD subject
-(`type(scope): subject`), and keeps the four headings in
+`lane:publish` prints the PR number. It pushes without `--force`, titles the PR with the HEAD
+subject (`type(scope): subject`), and keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
 bytes. Related tickets carries `Closes #<issue>` when the lane has one. It does not enable
 auto-merge or post a review.
@@ -280,19 +284,18 @@ write one sentence about the code. Prefix non-blocking notes `Nit:` or `Optional
 the approval.
 
 When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
-the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation only
-when the current head actually addresses it. A new head needs a new review.
-
-Proof that a delegated change works — a test that fails when reverted, a measurement at the boundary
-users experience — stays in the session. It is not the GitHub review.
+the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
+only when the current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
 there, and run the affected checks. An approval alone is weak evidence, so every consequential claim
 carries discriminating proof — a test that fails when the change is reverted, a measurement at the
-boundary users experience. `pnpm deliver`
-squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the PR is not a draft,
-merge state is `CLEAN`, and threads are resolved. Do not merge any other way.
+boundary users experience. That proof stays in the session; it is not the GitHub review.
+
+`pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
+pull request is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any
+other way.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
 review. Enable hooks: `git config core.hooksPath .githooks`.
