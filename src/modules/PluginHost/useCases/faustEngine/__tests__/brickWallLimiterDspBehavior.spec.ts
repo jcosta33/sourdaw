@@ -104,6 +104,22 @@ function silenceThenTransient(n: number): number {
     return Math.cos((2 * Math.PI * 1000 * (n - TRANSIENT_S * SAMPLE_RATE)) / SAMPLE_RATE);
 }
 
+/**
+ * MAX_LOOKAHEAD_S in the DSP, in samples at this spec's rate. The device
+ * delays its output by exactly this much at every `lookahead` setting.
+ */
+const MAX_LOOKAHEAD_SAMPLES = 0.01 * SAMPLE_RATE;
+
+/**
+ * A quiet tone under the ceiling throughout, with the same full-scale
+ * transient laid on top from TRANSIENT_S. The quiet part is what a look-ahead
+ * gain reduction lands on before the transient it was computed from arrives.
+ */
+const QUIET_AMPLITUDE = 0.05;
+function quietThenTransient(n: number): number {
+    return QUIET_AMPLITUDE * Math.sin((2 * Math.PI * 220 * n) / SAMPLE_RATE) + silenceThenTransient(n);
+}
+
 /** The only place the output meets the ceiling, so it can be lifted for a test render. */
 const CLIP_EXPRESSION = 'max(0 - ceiling_linear, min(ceiling_linear, delayed(x) * gain))';
 const UNCLIPPED_EXPRESSION = 'delayed(x) * gain';
@@ -218,21 +234,64 @@ describe('brick-wall-limiter.dsp behavior (offline render)', () => {
         expect(removed, 'peak amplitude removed by the clip').toBeLessThan(ceilingLinear * 0.003);
     });
 
-    it('delays the output by the look-ahead time it is given', async () => {
+    it('delays the output by MAX_LOOKAHEAD whatever the look-ahead is set to', async () => {
+        // The device's own latency has to be a constant, because the engine
+        // reports it once at create and every scheduling decision downstream —
+        // clips, notes, automation, a frozen render — is planned against that
+        // one number. A delay that tracked the knob would misalign this track
+        // against every other one the moment the knob moved, and would go
+        // unreported entirely when an automation lane moved it. So the signal
+        // path is delayed by MAX_LOOKAHEAD always, and the look-ahead is spent
+        // on the detector side instead.
         const settings = { ceiling: -6, release: 100 };
         const none = await render(generator, silenceThenLoud, { ...settings, lookahead: 0 });
+        const half = await render(generator, silenceThenLoud, { ...settings, lookahead: 5 });
         const full = await render(generator, silenceThenLoud, { ...settings, lookahead: 10 });
 
+        const inputOnset = ONSET_S * SAMPLE_RATE;
         const onsetNone = firstSampleAbove(none, 1e-4);
+        const onsetHalf = firstSampleAbove(half, 1e-4);
         const onsetFull = firstSampleAbove(full, 1e-4);
-        expect(onsetNone).toBeGreaterThanOrEqual(0);
-        // 10 ms at 48 kHz is 480 samples; allow a few for the sine's own ramp
-        // through the detection threshold.
-        expect(onsetFull - onsetNone).toBeGreaterThan(440);
-        expect(onsetFull - onsetNone).toBeLessThan(520);
+
+        // 10 ms at 48 kHz is 480 samples. Allow a couple for the sine's own
+        // ramp through the detection threshold — not enough to hide a delay
+        // that moved with the control, which would be 240 samples per 5 ms.
+        for (const [label, onset] of [
+            ['lookahead 0', onsetNone],
+            ['lookahead 5', onsetHalf],
+            ['lookahead 10', onsetFull],
+        ] as const) {
+            expect(onset - inputOnset, `${label} output delay`).toBeGreaterThan(MAX_LOOKAHEAD_SAMPLES - 4);
+            expect(onset - inputOnset, `${label} output delay`).toBeLessThan(MAX_LOOKAHEAD_SAMPLES + 4);
+        }
 
         // Both still obey the ceiling — look-ahead changes how the gain gets
         // there, never whether the wall holds.
         expect(peakBetween(full, 0.25, TOTAL_S)).toBeLessThanOrEqual(dbToLinear(-6) + 1e-6);
+    });
+
+    it('still lets the detector lead the output by the look-ahead time', async () => {
+        // The constant output delay must not have cost the control its job.
+        // Look-ahead is visible as the duck that lands on the quiet material
+        // immediately BEFORE a transient: with 10 ms of it the gain has already
+        // come down by the time that material reaches the output, and with none
+        // the gain moves only when the transient itself arrives.
+        const settings = { ceiling: -6, release: 100 };
+        const none = await render(generator, quietThenTransient, { ...settings, lookahead: 0 });
+        const full = await render(generator, quietThenTransient, { ...settings, lookahead: 10 });
+
+        // Output time TRANSIENT_S + 4 ms carries input from 6 ms BEFORE the
+        // transient — quiet tone, in both renders — and the transient itself
+        // does not arrive until TRANSIENT_S + 10 ms.
+        const window: [number, number] = [TRANSIENT_S + 0.004, TRANSIENT_S + 0.0095];
+        const undulled = peakBetween(none, ...window);
+        const ducked = peakBetween(full, ...window);
+
+        // Untouched at zero look-ahead: this is the quiet tone at its own level.
+        expect(undulled, 'no look-ahead').toBeGreaterThan(QUIET_AMPLITUDE * 0.9);
+        // The 10 ms render has the transient's own gain reduction already
+        // applied to it, which at a -6 dB ceiling against a full-scale peak is
+        // a little over 6 dB.
+        expect(ducked, 'full look-ahead').toBeLessThan(undulled * 0.7);
     });
 });

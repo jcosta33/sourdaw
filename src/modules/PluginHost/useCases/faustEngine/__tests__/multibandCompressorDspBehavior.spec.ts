@@ -67,6 +67,43 @@ async function render(
     return output;
 }
 
+/** Both output channels, for the checks that compare the stereo link. */
+async function renderStereo(
+    generator: FaustMonoDspGeneratorType,
+    channels: readonly ((n: number) => number)[],
+    settings: Settings
+): Promise<{ left: Float32Array; right: Float32Array }> {
+    const processor = await generator.createOfflineProcessor(SAMPLE_RATE, BLOCK_SIZE);
+    processor.start();
+    for (const [name, value] of Object.entries(settings)) {
+        processor.setParamValue(`${PREFIX}/${name}`, value);
+    }
+
+    const inputs = Array.from({ length: processor.getNumInputs() }, () => new Float32Array(BLOCK_SIZE));
+    const block = Array.from({ length: processor.getNumOutputs() }, () => new Float32Array(BLOCK_SIZE));
+
+    const total = TOTAL_S * SAMPLE_RATE;
+    const left = new Float32Array(total);
+    const right = new Float32Array(total);
+    for (let start = 0; start < total; start += BLOCK_SIZE) {
+        for (const [channel, samples] of inputs.entries()) {
+            const source = channels[channel] ?? (() => 0);
+            for (let i = 0; i < BLOCK_SIZE; i++) {
+                samples[i] = source(start + i);
+            }
+        }
+        processor.compute(inputs, block);
+        for (let i = 0; i < BLOCK_SIZE; i++) {
+            left[start + i] = block[0]?.[i] ?? 0;
+            right[start + i] = block[1]?.[i] ?? 0;
+        }
+    }
+    return { left, right };
+}
+
+/** Gain reduction that counts as "the band has started working". */
+const GAIN_REDUCTION_KNEE_DB = 0.5;
+
 function rmsOf(sample: (n: number) => number, total: number): number {
     let energy = 0;
     const from = Math.floor(MEASURE_FROM_S * SAMPLE_RATE);
@@ -159,6 +196,100 @@ describe('multiband-compressor.dsp behavior (offline render)', () => {
         const inHighBand = await render(generator, input, { ...settings, crossover_high: 1000 });
 
         expect(outputRms(inMidBand)).toBeGreaterThan(outputRms(inHighBand) * 3);
+    });
+
+    it('detects the true per-channel level, not the sum of both channels', async () => {
+        // `co.compressor_stereo` detects on `abs(x)+abs(y)`, so a centred
+        // (L == R) signal presents 2A where a hard-panned one presents A —
+        // exactly +6.02 dB — and the band starts compressing that much early.
+        // At ratio 3 that is 6.02 * (1 - 1/3) = 4.01 dB of gain reduction the
+        // user never asked for, and it appears and disappears with the source's
+        // own stereo width, so no threshold knob means dBFS.
+        const tone = sine(400, 0.5);
+        const silence = (): number => 0;
+        const settings: Settings = {
+            ...OPEN,
+            mid_threshold: -20,
+            crossover_low: 200,
+            crossover_high: 3000,
+        };
+        const centred = await renderStereo(generator, [tone, tone], settings);
+        const panned = await renderStereo(generator, [tone, silence], settings);
+
+        // Left carries the identical waveform in both renders, so its output
+        // level is the band's gain and nothing else.
+        const centredGainDb = 20 * Math.log10(outputRms(centred.left) / inputRms(tone));
+        const pannedGainDb = 20 * Math.log10(outputRms(panned.left) / inputRms(tone));
+
+        // Both are being compressed — otherwise the comparison is between two
+        // untouched renders and proves nothing.
+        expect(pannedGainDb, 'panned gain reduction').toBeLessThan(-3);
+        expect(Math.abs(centredGainDb - pannedGainDb), 'centred vs panned gain').toBeLessThan(0.2);
+    });
+
+    it('starts compressing a centred sine no earlier than the threshold it declares', async () => {
+        // The absolute claim: the knee is where the knob says it is, in dBFS,
+        // for the stereo material a master bus actually carries.
+        //
+        // Two residuals push the measured knee LATE and are stock JOS
+        // compressor behaviour, shared by every Faust compressor here: the
+        // `an.amp_follower_ar` detector settles about a dB under a sine's peak
+        // at these attack/release times, and near the knee only the ripple
+        // peaks clear `max(level - thresh, 0)` before `kneesmooth` averages
+        // them. The stereo-sum defect pushes the knee the other way — 6.02 dB
+        // EARLY on centred material — so the direction is what makes this
+        // discriminating, and the bound catches a residual that grows.
+        const threshold = -20;
+        const settings: Settings = {
+            ...OPEN,
+            mid_threshold: threshold,
+            crossover_low: 200,
+            crossover_high: 3000,
+        };
+
+        let kneeDb: number | null = null;
+        for (let levelDb = -32; levelDb <= -8; levelDb += 0.5) {
+            const amplitude = 10 ** (levelDb / 20);
+            const tone = sine(400, amplitude);
+            const rendered = await renderStereo(generator, [tone, tone], settings);
+            const gainDb = 20 * Math.log10(outputRms(rendered.left) / inputRms(tone));
+            if (gainDb < -GAIN_REDUCTION_KNEE_DB) {
+                kneeDb = levelDb;
+                break;
+            }
+        }
+
+        expect(kneeDb, 'no gain reduction found across the sweep').not.toBeNull();
+        expect(kneeDb!, 'knee is early — the detector is reading above the true level').toBeGreaterThan(threshold - 1);
+        expect(kneeDb!, 'knee is late').toBeLessThan(threshold + 3);
+    });
+
+    it('reduces gain by what the declared threshold and ratio predict for a centred dBFS level', async () => {
+        // The knee sweep bounds where compression starts; this bounds how much
+        // of it there is once it has, which is the claim a mastering engineer
+        // actually reads off the knob. Well above the threshold the ripple
+        // effects are gone and only the compression law is left:
+        //   GR(dB) = (level - threshold) * (1 - 1/ratio)
+        // 775 Hz is the geometric centre of the default mid band, so the low
+        // and high legs contribute about -47 dB each and the measurement is the
+        // mid band's gain and essentially nothing else.
+        //
+        // The stereo-sum defect adds 6.02 dB to `level` for centred material,
+        // which at ratio 3 is 4.01 dB of gain reduction nobody asked for.
+        const threshold = -30;
+        const levelDb = -14;
+        const expectedGainReductionDb = (levelDb - threshold) * (1 - 1 / 3);
+        const tone = sine(775, 10 ** (levelDb / 20));
+
+        const rendered = await renderStereo(generator, [tone, tone], {
+            ...OPEN,
+            mid_threshold: threshold,
+            crossover_low: 200,
+            crossover_high: 3000,
+        });
+
+        const measuredDb = -20 * Math.log10(outputRms(rendered.left) / inputRms(tone));
+        expect(Math.abs(measuredDb - expectedGainReductionDb), `${measuredDb} dB of gain reduction`).toBeLessThan(2);
     });
 
     it('compresses each band through its own threshold', async () => {

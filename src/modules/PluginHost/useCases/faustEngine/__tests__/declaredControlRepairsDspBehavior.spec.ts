@@ -100,6 +100,16 @@ function sine(frequency: number, amplitude: number): (n: number) => number {
     return (n) => amplitude * Math.sin((2 * Math.PI * frequency * n) / SAMPLE_RATE);
 }
 
+/** The unprocessed input as a buffer, so `rms` can measure it the same way. */
+function referenceOf(source: (n: number) => number, seconds: number): Float32Array {
+    const total = Math.floor(seconds * SAMPLE_RATE);
+    const buffer = new Float32Array(total);
+    for (let n = 0; n < total; n++) {
+        buffer[n] = source(n);
+    }
+    return buffer;
+}
+
 function rms(output: Float32Array, fromS: number, toS: number): number {
     const from = Math.floor(fromS * SAMPLE_RATE);
     const to = Math.floor(toS * SAMPLE_RATE);
@@ -128,6 +138,34 @@ describe('gain-utility.dsp invert_phase', () => {
             expect(straight.left[n]).toBeCloseTo(input(n), 5);
             expect(inverted.left[n]).toBeCloseTo(-input(n), 5);
         }
+    });
+});
+
+describe('1176-compressor.dsp stereo detection', () => {
+    let generator: FaustMonoDspGeneratorType;
+
+    beforeAll(async () => {
+        generator = await compile('1176-compressor.dsp', '1176_Compressor');
+    }, COMPILE_TIMEOUT_MS);
+
+    it('detects the true per-channel level, not the sum of both channels', async () => {
+        // Inherited from `co.compressor_stereo`, whose detector is
+        // `abs(x)+abs(y)`: centred material presents 2A where the same signal
+        // panned hard presents A, so the declared dB threshold fired up to
+        // 6.02 dB early depending only on how wide the source was.
+        const tone = sine(500, 0.5);
+        const silence = (): number => 0;
+        const settings = { ratio: 4, threshold: -20, attack: 0.001, release: 0.1 };
+        const centred = await render(generator, '/1176_Compressor', [tone, tone], 1, settings);
+        const panned = await render(generator, '/1176_Compressor', [tone, silence], 1, settings);
+
+        // Left carries the identical waveform in both renders, so its level is
+        // the compression gain and nothing else.
+        const centredGainDb = 20 * Math.log10(rms(centred.left, 0.6, 1) / rms(referenceOf(tone, 1), 0.6, 1));
+        const pannedGainDb = 20 * Math.log10(rms(panned.left, 0.6, 1) / rms(referenceOf(tone, 1), 0.6, 1));
+
+        expect(pannedGainDb, 'panned gain reduction').toBeLessThan(-3);
+        expect(Math.abs(centredGainDb - pannedGainDb), 'centred vs panned gain').toBeLessThan(0.2);
     });
 });
 

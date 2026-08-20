@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { FaustMonoDspGenerator, type IFaustCompiler } from '@grame/faustwasm/dist/esm/index.js';
 import { describe, expect, it, beforeAll } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import { type FaustModule } from '../../../models/FaustEngineTypes';
 import { loadFaustCompilerForSpec } from '../../../testing/loadFaustCompilerForSpec';
 import { registerBuiltinFaustDSP } from '../builtinDSP';
@@ -19,15 +21,29 @@ import { faustEngineState } from '../faustEngineState';
  * CI instead of shipping dead (audit #508 row 7: spring-reverb.dsp had four
  * undefined free identifiers while factory templates referenced the device).
  *
- * It also compares the compiled parameter set of EVERY registered built-in
- * against the addresses `builtinDSP.ts` declares for it. `faustDeviceFactory`
- * resolves a declared address to a compiled one by its LAST path segment
- * (`buildParamAddressCache`), then swallows a miss into a `logger.warn` — so a
- * declared address with no matching segment ships as a knob that moves and
- * changes nothing. That is a defect in the descriptor table, not a runtime
- * condition, and this is where it is caught (#2300: Multiband Compressor and
- * Brick-Wall Limiter each shipped a stock library one-liner with no `hslider`
- * at all while declaring five and three controls respectively).
+ * It also holds the two parameter tables that describe these modules against
+ * what the compiler actually produced.
+ *
+ * `FaustEffectDescriptors.ts`, reached here through `getPluginById` exactly as
+ * the app reaches it, is the load-bearing one: it is what the device inspector
+ * renders and what `clampDeviceParameterValue` and the AudioParam bounds hold
+ * every write to. Name resolution alone is not enough to keep it honest,
+ * because a name that resolves onto a DIFFERENT SCALE is just as dead as a name
+ * that resolves onto nothing — the Stereo Widener declared 0..2 against a DSP
+ * reading percent, so the widest setting the UI could reach was an effective
+ * width of 0.02 and the device collapsed to near-mono at maximum Width. So the
+ * ranges are compared too, in both directions: every declared parameter must
+ * exist in the compiled node with the same min/max/default, and every input
+ * control the compiled node exposes must be declared, or it is a repair that
+ * exists in the DSP and is invisible in the product.
+ *
+ * `builtinDSP.ts`'s own `paramDescriptors` are compared as well, for address
+ * resolution only. That table has NO runtime reader today — `getFaustModule`
+ * and `getFaustModules` are called from specs and nothing else — so this is a
+ * consistency check on a description, not a contract the product depends on;
+ * `builtinDSP.ts` earns its place by registering the DSP SOURCE, which
+ * `compileFaustDSP` does read. Removing the dead descriptor arrays is filed
+ * separately rather than smuggled in here.
  */
 
 const DSP_DIR = 'src/modules/PluginHost/useCases/faustEngine/dsp';
@@ -41,28 +57,85 @@ const COMPILE_TIMEOUT_MS = 300_000;
  */
 const KNOWN_BROKEN: string[] = [];
 
+/** One leaf of the compiled node's `ui` tree. */
+type CompiledParam = {
+    address: string;
+    type: string;
+    min?: number;
+    max?: number;
+    init?: number;
+};
+
 type CompiledDsp = {
     failures: Record<string, string>;
-    /** file name → sorted compiled parameter addresses. */
-    paramPaths: Record<string, string[]>;
+    /** file name → compiled UI leaves, sorted by address. */
+    params: Record<string, CompiledParam[]>;
     /** file name → the built-in that ships that source, when registered. */
     moduleOf: Record<string, FaustModule>;
 };
 
-function paramPathsOf(generator: FaustMonoDspGenerator): string[] {
-    const paths: string[] = [];
-    const walk = (items: { items?: unknown[]; address?: string }[]): void => {
+type UiItem = {
+    items?: UiItem[];
+    address?: string;
+    type?: string;
+    min?: number;
+    max?: number;
+    init?: number;
+};
+
+function paramsOf(generator: FaustMonoDspGenerator): CompiledParam[] {
+    const params: CompiledParam[] = [];
+    const walk = (items: UiItem[]): void => {
         for (const item of items) {
             if (item.items) {
-                walk(item.items as typeof items);
+                walk(item.items);
             } else if (item.address) {
-                paths.push(item.address);
+                params.push({
+                    address: item.address,
+                    type: item.type ?? 'unknown',
+                    min: item.min,
+                    max: item.max,
+                    init: item.init,
+                });
             }
         }
     };
-    const json = JSON.parse(generator.getJSON()) as { ui?: { items?: unknown[]; address?: string }[] };
+    const json = JSON.parse(generator.getJSON()) as { ui?: UiItem[] };
     walk(json.ui ?? []);
-    return paths.sort();
+    return params.sort((left, right) => left.address.localeCompare(right.address));
+}
+
+/**
+ * A `vbargraph`/`hbargraph` is an OUTPUT — a meter reading, not a control. The
+ * Faust processor does not surface these as AudioParams and no descriptor
+ * declares them, so they are excluded from both directions of the range check.
+ */
+const OUTPUT_TYPES = new Set(['hbargraph', 'vbargraph']);
+
+/**
+ * A `checkbox`/`button` carries no min/max/init in the compiled JSON because it
+ * has no range to carry: it is 0 or 1, resting at 0. That IS its declared
+ * range, so a descriptor has to say the same thing.
+ */
+const TOGGLE_RANGE = { min: 0, max: 1, init: 0 } as const;
+
+function compiledRangeOf(item: CompiledParam): { min: number; max: number; init: number } | null {
+    if (item.type === 'checkbox' || item.type === 'button') {
+        return TOGGLE_RANGE;
+    }
+    if (item.min === undefined || item.max === undefined || item.init === undefined) {
+        return null;
+    }
+    return { min: item.min, max: item.max, init: item.init };
+}
+
+/**
+ * Faust writes the compiled UI bounds as float32, so a source `0.3` comes back
+ * as `0.30000001192092896`. Compare relatively rather than exactly; the drift
+ * this test exists to catch is a factor of 100, not a last-bit rounding.
+ */
+function sameNumber(declared: number, compiledValue: number): boolean {
+    return Math.abs(declared - compiledValue) <= Math.max(1e-6, Math.abs(compiledValue) * 1e-6);
 }
 
 /**
@@ -75,7 +148,7 @@ function bareName(address: string): string {
 }
 
 function bareNamesOf(file: string, compiled: CompiledDsp): string[] {
-    return (compiled.paramPaths[file] ?? []).map(bareName).sort();
+    return (compiled.params[file] ?? []).map((param) => bareName(param.address)).sort();
 }
 
 describe('shipped Faust DSP compile', () => {
@@ -94,7 +167,7 @@ describe('shipped Faust DSP compile', () => {
         }
 
         const failures: Record<string, string> = {};
-        const paramPaths: Record<string, string[]> = {};
+        const params: Record<string, CompiledParam[]> = {};
         const moduleOf: Record<string, FaustModule> = {};
         const files = readdirSync(DSP_DIR)
             .filter((name) => name.endsWith('.dsp'))
@@ -112,7 +185,7 @@ describe('shipped Faust DSP compile', () => {
             try {
                 const result = await generator.compile(compiler, processorName, dspCode, '-I libraries/');
                 if (result) {
-                    paramPaths[file] = paramPathsOf(generator);
+                    params[file] = paramsOf(generator);
                 } else {
                     failures[file] = 'compile returned null';
                 }
@@ -120,7 +193,7 @@ describe('shipped Faust DSP compile', () => {
                 failures[file] = error instanceof Error ? error.message : String(error);
             }
         }
-        compiled = { failures, paramPaths, moduleOf };
+        compiled = { failures, params, moduleOf };
     }, COMPILE_TIMEOUT_MS);
 
     it('compiles every shipped .dsp except the documented known-broken set', () => {
@@ -128,10 +201,79 @@ describe('shipped Faust DSP compile', () => {
     });
 
     it('registers every shipped .dsp as a built-in', () => {
-        const unregistered = Object.keys(compiled.paramPaths)
+        const unregistered = Object.keys(compiled.params)
             .filter((file) => !compiled.moduleOf[file])
             .sort();
         expect(unregistered).toEqual([]);
+    });
+
+    it('declares the range the compiled node implements, for every catalog parameter', () => {
+        // The check that would have caught the Stereo Widener shipping 0..2
+        // against a DSP reading 0..200 percent. `clampDeviceParameterValue` and
+        // the AudioParam bounds both hold a write to the DECLARED range, so a
+        // declared range narrower than the DSP's puts part of the control out
+        // of reach, and a declared range on a different scale puts nearly all
+        // of it out of reach while every name still resolves.
+        const drift: Record<string, string[]> = {};
+        for (const [file, module] of Object.entries(compiled.moduleOf)) {
+            const descriptor = getPluginById(module.id);
+            if (!descriptor) {
+                continue;
+            }
+            const compiledByName = new Map(
+                (compiled.params[file] ?? []).map((param) => [bareName(param.address), param])
+            );
+            const problems: string[] = [];
+            for (const parameter of descriptor.parameters) {
+                const item = compiledByName.get(parameter.id);
+                if (!item) {
+                    problems.push(`${parameter.id}: no compiled parameter carries that name`);
+                    continue;
+                }
+                const range = compiledRangeOf(item);
+                if (!range) {
+                    problems.push(`${parameter.id}: compiled ${item.type} declares no range`);
+                    continue;
+                }
+                if (!sameNumber(parameter.minValue, range.min)) {
+                    problems.push(`${parameter.id}: min ${parameter.minValue} vs compiled ${range.min}`);
+                }
+                if (!sameNumber(parameter.maxValue, range.max)) {
+                    problems.push(`${parameter.id}: max ${parameter.maxValue} vs compiled ${range.max}`);
+                }
+                if (!sameNumber(parameter.defaultValue, range.init)) {
+                    problems.push(`${parameter.id}: default ${parameter.defaultValue} vs compiled ${range.init}`);
+                }
+            }
+            if (problems.length > 0) {
+                drift[descriptor.id] = problems;
+            }
+        }
+        expect(drift).toEqual({});
+    });
+
+    it('declares every input control the compiled node exposes', () => {
+        // The other direction. `gain-utility.dsp` grew a working phase invert
+        // that no descriptor mentioned, and `hasCustomUI` is false for all of
+        // these, so the inspector renders the declared list and nothing else: a
+        // repair real in the DSP and invisible in the product.
+        const undeclared: Record<string, string[]> = {};
+        for (const [file, module] of Object.entries(compiled.moduleOf)) {
+            const descriptor = getPluginById(module.id);
+            if (!descriptor) {
+                continue;
+            }
+            const declared = new Set(descriptor.parameters.map((parameter) => parameter.id));
+            const missing = (compiled.params[file] ?? [])
+                .filter((param) => !OUTPUT_TYPES.has(param.type))
+                .map((param) => bareName(param.address))
+                .filter((name) => !declared.has(name))
+                .sort();
+            if (missing.length > 0) {
+                undeclared[descriptor.id] = missing;
+            }
+        }
+        expect(undeclared).toEqual({});
     });
 
     it('resolves every address declared in builtinDSP.ts against the compiled node', () => {
@@ -210,6 +352,7 @@ describe('shipped Faust DSP compile', () => {
             'frequency',
             'listen',
             'ratio',
+            'reduction',
             'threshold',
         ]);
     });

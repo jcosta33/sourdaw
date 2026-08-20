@@ -33,8 +33,29 @@ high_split = lr4_highpass(crossover_low) : lr4_highpass(crossover_high);
 // attack/release the higher the band so low-end gain movement stays free of
 // the ripple a fast release would put on it.
 band_ratio = 3;
+
+// Stereo-linked compression, detecting on the LOUDER channel rather than on
+// the SUM of the two.
+//
+// `co.compressor_stereo` in this toolchain's compressors.lib is
+//   `cgm = compression_gain_mono(ratio,thresh,att,rel,abs(x)+abs(y))`,
+// and that sum goes straight into a `ba.linear2db`. Centred material presents
+// 2A where the same signal panned hard presents A — exactly +6.02 dB — so a
+// band set to -20 dB starts compressing a centred -20 dBFS source about 6 dB
+// early, and the error walks between 0 and 6 dB with the source's own stereo
+// width. Three bands sharing that program-dependent offset cannot be matched
+// against each other, and no threshold knob means dBFS.
+//
+// `max(abs(x), abs(y))` is the linked-peak idiom already used by
+// `noise-gate.dsp`. One gain, computed once, applied to both channels, so the
+// stereo image is preserved exactly as `compressor_stereo` preserves it.
+compress_stereo(ratio, threshold, attack, release, x, y) = gain * x, gain * y
+with {
+    gain = max(abs(x), abs(y)) : co.compression_gain_mono(ratio, threshold, attack, release);
+};
+
 band(split, threshold, attack, release) =
-    par(i, 2, split) : co.compressor_stereo(band_ratio, threshold, attack, release);
+    par(i, 2, split) : compress_stereo(band_ratio, threshold, attack, release);
 
 process = _, _ <:
     band(low_split, low_threshold, 0.02, 0.25),
