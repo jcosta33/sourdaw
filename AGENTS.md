@@ -34,12 +34,13 @@ The orchestrator specifies, reviews, and delivers. It does not implement. A dele
 one precisely specified task, returns evidence and a result, and never contacts the user or owns a
 decision.
 
-Match the model tier to the work, never to habit. Dispatch one tier below the orchestrator by
-default. Drop further for bounded mechanical work with a decisive oracle. Raise back toward the
-orchestrator's tier for architecture, real-time audio, security, data loss, irreversible change,
-conflicting evidence, or unresolved ambiguity. Escalate a blocked or disputed step one tier, then
-return to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated failure.
-Ignore an agent's own confidence.
+Match the model tier to the work, never to habit. The ladder is economy, standard, strongest; which
+model fills each rung is a deployment detail, and no rule here names one. Dispatch one tier below
+the orchestrator's own by default. Drop to economy for bounded mechanical work with a decisive
+oracle. Raise toward strongest for architecture, real-time audio, security, data loss, irreversible
+change, conflicting evidence, or unresolved ambiguity. Escalate a blocked or disputed step one tier,
+then return to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated
+failure. Ignore an agent's own confidence.
 
 Every dispatch carries the objective, lane, branch, scope, exclusions, dependencies, acceptance
 conditions, and checks. Require back only status, changed paths, decisive evidence, and blockers.
@@ -69,6 +70,14 @@ The orchestrator owns every finding. Validate each one against the live code bef
 discard what is wrong, out of scope, or personal style, and never forward it. Send the survivors to
 the implementing agent as a precise repair task. An implementing agent never judges a finding
 against its own work, never accepts that work, and never merges it.
+
+Order matters, because the pull request is public and a posted finding is expensive to retract.
+Blind stances report to the orchestrator, never straight to GitHub. Only findings that survive
+validation are composed into `review.json` and posted by `review:publish`; a discarded one never
+reaches the pull request. Getting this backwards traps the merge: `deliver` refuses a pull request
+that carries `CHANGES_REQUESTED` or an unresolved thread, and a conversation may only be resolved
+when the head actually addresses it — so a finding posted and then judged wrong blocks delivery with
+nothing left to fix.
 
 ## Docs
 
@@ -157,15 +166,19 @@ Run `pnpm deps:validate` after cross-module changes. Full rules:
 
 ## Worktrees
 
-One change, one lane, one pull request. Never edit the primary checkout: it is the shared root that
-holds the credentials and every other lane, and an edit there belongs to no branch. All mutable work
-lives in a lane under `.agents/worktrees/`.
+One change, one lane, one pull request. Never edit tracked files in the primary checkout: it is the
+shared root that holds the credentials and every other lane, and an edit there belongs to no branch.
+All mutable source work lives in a lane under `.agents/worktrees/`. Its gitignored operational
+paths are the exception the delivery scripts require: `review:prepare` writes bundles to
+`.agents/review-bundles/` at that root, the caller writes `review.json` beside them, and the
+`.env.sourdaw-*` credentials live there.
 
-`pnpm lane:open [issue] <slug>` fetches `origin/main`, branches from it, and locks the lane
+`pnpm lane:open [issue] [slug]` fetches `origin/main`, branches from it, and locks the lane
 `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
 never mints or spawns `gh`. Supply the issue number when the work has a ticket; the branch is then
 `agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
-`agent/<slug>`. Touch only your own lane.
+`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
+directory is what identifies it when no issue number does. Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -188,21 +201,23 @@ work is done. New planning is GitHub issues, never a plan file. Durable decision
 After create, attach parent/child issues as GitHub sub-issues.
 
 An unlabelled issue is invisible. Every issue carries a priority label and a status label, plus the
-labels naming what it is. The template and the priority field set some of those; add the rest. Set
-the milestone when the work belongs to one, and add the issue to the roadmap project when it is on
-the roadmap — leave either empty rather than forcing a fit. Keep the status label true as the work
-moves, because a stale status is worse than none. Read the live sets with `gh label list`,
-`gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`; never from a list
-written down here, which drifts the day it is written.
+labels naming what it is. Set the milestone when the work belongs to one and add the issue to the
+roadmap project when it is on the roadmap, leaving either empty rather than forcing a fit. Do all of
+it on the `issue:file` command: that command applies the template's labels and the derived priority
+label, and takes the milestone and the project, but no sanctioned script edits an issue once it
+exists. Read the live sets with `gh label list`, `gh api repos/:owner/:repo/milestones`, and
+`gh project list --owner <owner>`; never from a list written down here, which drifts the day it is
+written.
 
 ## Delivery
 
-GitHub writes for agent work go through trusted `pnpm` scripts. The model does not run `gh` or
-`git push`. Identity is the App those scripts mint, not a persona.
+GitHub writes for agent work go through trusted `pnpm` scripts. The model never runs `gh` to write
+or `git push` at all; read-only `gh` queries are fine and are how you check live tracker state.
+Identity is the App those scripts mint, not a persona.
 
 | Need                        | Command                         |
 | --------------------------- | ------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] <slug>` |
+| Open a lane                 | `pnpm lane:open [issue] [slug]` |
 | Push; open or update the PR | `pnpm lane:publish [issue]`     |
 | Write the review bundle     | `pnpm review:prepare <pr>`      |
 | Post `review.json`          | `pnpm review:publish <pr>`      |
