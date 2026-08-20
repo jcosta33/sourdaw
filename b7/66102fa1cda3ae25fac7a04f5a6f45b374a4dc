@@ -1,0 +1,79 @@
+.agents/skills/web-audio-engine/SKILL.md
+  s_bef51c907b1953::t_a2d08831b1fc28 63-64
+  s_bef51c907b1953::t_0800e091250fb3 14,18,20,22,24,30,32,36,38-39,43,45,47,49,51,55,61,66,68,72,74
+  s_bef51c907b1953::t_8511c4103b8d43 26,57
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9
+.agents/skills/llm-action-bridge/SKILL.md
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9
+  s_bef51c907b1953::t_d8b0ecc850fe50 14,18,20,24,26,32,38,42,44,54,56,62
+  s_bef51c907b1953::t_63333d7ebb38f8 48
+.agents/skills/plugin-hosting/SKILL.md
+  s_bef51c907b1953::t_71690f3e5e40ac 14,20-21,27,35,39,41-42,44,50,56,62,64,66
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9
+.agents/skills/architecture/SKILL.md
+  s_bef51c907b1953::t_d48f0c6ed5f28b 82
+  s_bef51c907b1953::t_69348f0a51c246 20,27,44,46,61,63,70,76,90,92
+  s_bef51c907b1953::t_34aaa1f35d4b2e 14
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9
+  s_bef51c907b1953::t_1aca4b4bb66713 50
+.agents/skills/ui-patterns/SKILL.md
+  s_bef51c907b1953::t_fd0fba27a011ed 57
+  s_bef51c907b1953::t_83eec76dac7b6c 16,22,26,30,34,38,42,44,46,48,50
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-11
+.github/CODEOWNERS
+  s_bef51c907b1953::t_7c64e41e1a4377 3-12,16
+src/components/AGENTS.md
+  s_bef51c907b1953::t_761257b6e9d5c8 3-5,9-11,15-20
+.agents/skills/architecture-violations/SKILL.md
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9
+  s_bef51c907b1953::t_7bb2120dc6e68c 14,20,28,32,38,44,60,72,78
+.agents/skills/testing-file-layout/SKILL.md
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9
+  s_bef51c907b1953::t_0946b3caf6e8a3 14,20,24,28,32,36,44
+AGENTS.md
+  s_bef51c907b1953::t_4b7879e624a87b 187-196
+  s_bef51c907b1953::t_0a06ce2e903b7a 205-206
+  s_bef51c907b1953::t_b67d87e03eaba0 3-4,8-10,14-18,20-22,25-71,92-93,96-97,103-119,143,160-172,175-176,182-183,213-216,221-224,226-229,231-238,241-248,250-251,253-256,258-260,262-263,265-268,279-281
+.agents/skills/state-and-write-paths/SKILL.md
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9,20-29
+  s_bef51c907b1953::t_918c6fb8db0d57 14,31,43,55,61,67,73
+  s_bef51c907b1953::t_96b1831145abc4 30
+crates/sourdaw-native/AGENTS.md
+  s_bef51c907b1953::t_3fb9811a3b64ac 3-4,8-24,35-49,53-64
+  s_bef51c907b1953::t_ef5272180fb04b 28-34
+src/modules/Collaboration/AGENTS.md
+  s_bef51c907b1953::t_32e9ff69c9ccef 3-5,7-23,27-43
+src/modules/AudioEngine/AGENTS.md
+  s_bef51c907b1953::t_eed753415ec403 3-6,13-28,30,32-37
+  s_bef51c907b1953::t_26fc1e6e68f6ce 10-12
+.agents/skills/desktop-platform/SKILL.md
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-10,21-27
+  s_bef51c907b1953::t_bcea500a51dbba 15,29,35,37,39,45,47,51-53,59,63,65
+  s_bef51c907b1953::t_ed76f5f80beb7a 72
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_bef51c907b1953::t_e9b092cf4ed4e1 15,21,25,29,33,35,37,41,45
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-10,53-62
+  s_bef51c907b1953::t_209efad4b0ef6c 46
+.agents/skills/crdt-collaboration/SKILL.md
+  s_bef51c907b1953::t_0a06ce2e903b7a 4-9,56
+  s_bef51c907b1953::t_2617b29cbf988e 14,20,28,42,44,47,60,72,76,78,92,94
+crates/daw-dsp/AGENTS.md
+  s_bef51c907b1953::t_ae211c57a3eb62 3-13,18-20,24-60
+  s_bef51c907b1953::t_808055664e38a4 14-17,21-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b766102fa1cda3ae25fac7a04f5a6f45b374a4dc",
+  "prompts": {},
+  "sessions": {
+    "s_bef51c907b1953": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec3b96a6-3b56-406a-b86a-457eb52ac4a6",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
