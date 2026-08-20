@@ -1,0 +1,73 @@
+src/modules/BrowserAi/workers/webGpuProbeWorker.ts
+  s_27578aec2aab3b::t_22bbee8c528231 1-52
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_27578aec2aab3b::t_e66c3b42c3c228 38-42
+  s_27578aec2aab3b::t_819270f3671245 1-37,43-66
+src/modules/BrowserAi/repositories/probeWebGpuUsability.ts
+  s_27578aec2aab3b::t_77c53fb8dccd47 1-74
+src/modules/BrowserAi/repositories/capabilityDetector.ts
+  s_27578aec2aab3b::t_78b2f7c001d312 55,58,174-196,209,252-253,267,278,281,300
+src/modules/BrowserAi/workers/__tests__/webGpuProbeWorker.spec.ts
+  s_27578aec2aab3b::t_8d43687a8b6677 64,79
+  s_27578aec2aab3b::t_22bbee8c528231 1-63,65-78,80-119
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_27578aec2aab3b::t_78b2f7c001d312 6,28,66,69,71-77,82,100,121-123,125,127-128,279-308,375,381,387-400
+src/modules/BrowserAi/repositories/__tests__/probeWebGpuUsability.spec.ts
+  s_27578aec2aab3b::t_77c53fb8dccd47 1-115
+src/modules/BrowserAi/models/CapabilityReport.ts
+  s_487e9aa1e46063::t_f21668d5917072 23-24,76-77
+src/modules/BrowserAi/models/WebGpuProbe.ts
+  s_27578aec2aab3b::t_4ed8d8815e9601 1-8
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_27578aec2aab3b::t_188c78a0bf45a6 12,28-34,82-89,147-151
+src/modules/BrowserAi/presentations/views/__tests__/CapabilityReportPanel.spec.tsx
+  s_27578aec2aab3b::t_bc968632a8c106 18,86-91,94-98,104,117
+src/modules/BrowserAi/stores/__tests__/capabilityStore.spec.ts
+  s_487e9aa1e46063::t_25c67829a42e3d 25
+src/modules/BrowserAi/useCases/__tests__/capabilityColdStart.spec.ts
+  s_b3e68b902b6b93::t_b88961466acb25 34,55-56
+src/modules/BrowserAi/useCases/__tests__/detectCapabilities.spec.ts
+  s_a40848e8f8cca9::t_398fbde0ce91c6 20
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_a40848e8f8cca9::t_646918f6f15201 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "399a9fb5e8a75fe9d1d1d1e4f858da121a7bf260",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
