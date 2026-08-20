@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { type ScannedPlugin } from '../../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore, type PluginScanState } from '../pluginScanStore';
+
+const PLUGIN_SCAN_KEY = 'sourdaw:plugin-scan';
 
 function sample(id: string): ScannedPlugin {
     return {
@@ -79,5 +81,114 @@ describe('pluginScanStore', () => {
         pluginScanStore.set({ ...defaultPluginScanState, isScanning: true });
         pluginScanStore.clear();
         expect(pluginScanStore.value).toBeNull();
+    });
+
+    it('should write the scan state through to storage for the next session', () => {
+        const finished: PluginScanState = {
+            scannedPlugins: [sample('a')],
+            scanPaths: ['/plugins'],
+            isScanning: false,
+            lastScanTime: 1_700_000_000_000,
+            errors: [],
+        };
+
+        pluginScanStore.set(finished);
+
+        expect(JSON.parse(window.localStorage.getItem(PLUGIN_SCAN_KEY) ?? 'null')).toEqual(finished);
+    });
+});
+
+/**
+ * A fresh module instance is the next launch: the store is built at import, so
+ * what it holds afterwards is exactly what survived the reload.
+ */
+async function launchWithStoredScanState(stored: string | null): Promise<PluginScanState | null> {
+    vi.resetModules();
+    if (stored === null) {
+        window.localStorage.removeItem(PLUGIN_SCAN_KEY);
+    } else {
+        window.localStorage.setItem(PLUGIN_SCAN_KEY, stored);
+    }
+    const nextLaunch = await import('../pluginScanStore');
+    return nextLaunch.pluginScanStore.value;
+}
+
+describe('pluginScanStore hydration', () => {
+    afterEach(() => {
+        window.localStorage.removeItem(PLUGIN_SCAN_KEY);
+        vi.resetModules();
+    });
+
+    it('should restore the previous session scan result, parameter contracts included', async () => {
+        const scanned: ScannedPlugin = {
+            ...sample('a'),
+            parameters: [
+                {
+                    id: 3,
+                    name: 'Cutoff',
+                    module: 'Filter',
+                    min_value: 0,
+                    max_value: 1,
+                    default_value: 0.5,
+                    is_automatable: true,
+                    is_modulatable: false,
+                    is_stepped: false,
+                    is_enum: false,
+                },
+            ],
+        };
+
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [scanned],
+                scanPaths: ['/plugins'],
+                isScanning: false,
+                lastScanTime: 1_700_000_000_000,
+                errors: [],
+            })
+        );
+
+        expect(restored?.scannedPlugins).toEqual([scanned]);
+        expect(restored?.scanPaths).toEqual(['/plugins']);
+        expect(restored?.lastScanTime).toBe(1_700_000_000_000);
+    });
+
+    it('should not restore a scan that was still running when the session ended', async () => {
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [sample('a')],
+                scanPaths: [],
+                isScanning: true,
+                lastScanTime: null,
+                errors: ['Failed to load plugin c'],
+            })
+        );
+
+        // A scan the process did not survive is not in flight, and the use
+        // cases' in-flight guard would refuse to start a real one over it.
+        expect(restored?.isScanning).toBe(false);
+        expect(restored?.errors).toEqual([]);
+    });
+
+    it('should drop a stored plugin that is missing part of its scanned contract', async () => {
+        const { has_custom_ui: _omitted, ...incomplete } = sample('a');
+
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [incomplete, sample('b')],
+                scanPaths: [],
+                isScanning: false,
+                lastScanTime: null,
+                errors: [],
+            })
+        );
+
+        expect(restored?.scannedPlugins).toEqual([sample('b')]);
+    });
+
+    it('should start empty when the stored value cannot be read', async () => {
+        const restored = await launchWithStoredScanState('{not json at all');
+
+        expect(restored).toEqual(defaultPluginScanState);
     });
 });

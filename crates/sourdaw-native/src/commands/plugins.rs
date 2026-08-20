@@ -1,6 +1,7 @@
 //! Plugin scanning, loading, and parameter management.
 
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
+use crate::host::plugin_registry_store::{PersistedPluginEntry, PluginRegistryStore};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
 use crate::host::plugin_window::PluginWindowHost;
@@ -117,15 +118,7 @@ fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginReg
     let mut registry = HashMap::new();
 
     for plugin in plugins {
-        registry.insert(
-            plugin.id.clone(),
-            PluginRegistryEntry {
-                path: plugin.path.clone(),
-                clap_id: plugin.clap_id.clone(),
-                format: plugin.format.clone(),
-                name: plugin.name.clone(),
-            },
-        );
+        registry.insert(plugin.id.clone(), registry_entry(plugin));
     }
 
     for plugin in plugins {
@@ -134,15 +127,21 @@ fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginReg
         }
         registry
             .entry(plugin.clap_id.clone())
-            .or_insert_with(|| PluginRegistryEntry {
-                path: plugin.path.clone(),
-                clap_id: plugin.clap_id.clone(),
-                format: plugin.format.clone(),
-                name: plugin.name.clone(),
-            });
+            .or_insert_with(|| registry_entry(plugin));
     }
 
     registry
+}
+
+fn registry_entry(plugin: &ScannedPlugin) -> PluginRegistryEntry {
+    PluginRegistryEntry {
+        path: plugin.path.clone(),
+        stable_id: plugin.id.clone(),
+        clap_id: plugin.clap_id.clone(),
+        format: plugin.format.clone(),
+        name: plugin.name.clone(),
+        category: plugin.category.clone(),
+    }
 }
 
 /// Replace the scanned roots' share of the registry with this scan's results.
@@ -174,10 +173,46 @@ fn publish_scan_results_in_registry(
     registry.extend(index_scanned_plugins(plugins));
 }
 
+/// Read the registry file into the in-memory registry, once per process.
+///
+/// On the blocking pool: hydration stats every persisted plugin file and
+/// canonicalizes its path, and the async runtime's worker threads are not the
+/// place to do that.
+async fn hydrate_plugin_registry(state: &AppState) {
+    let plugin_registry = Arc::clone(&state.plugin_registry);
+    let registry_store = Arc::clone(&state.plugin_registry_store);
+    if let Err(error) = tokio::task::spawn_blocking(move || {
+        registry_store.hydrate_into(&plugin_registry, &PluginScanPolicy::platform_defaults());
+    })
+    .await
+    {
+        eprintln!("[Plugin] Could not load the plugin scan registry: {error}");
+    }
+}
+
+/// Write the in-memory registry back to the registry file.
+async fn persist_plugin_registry(state: &AppState) {
+    let snapshot = state
+        .plugin_registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let registry_store = Arc::clone(&state.plugin_registry_store);
+    if let Err(error) = tokio::task::spawn_blocking(move || registry_store.persist(&snapshot)).await
+    {
+        eprintln!("[Plugin] Could not save the plugin scan registry: {error}");
+    }
+}
+
 pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanResult, String> {
     let permit = PLUGIN_SCAN_PERMIT
         .try_acquire()
         .map_err(|_| "Plugin scan already in progress".to_string())?;
+    // Before the scan, not after: the publisher below replaces the scanned
+    // roots' share of the registry and leaves the rest standing, so a registry
+    // that has not yet been hydrated would have the persisted entries for every
+    // *other* root written out of the file by the save that follows.
+    hydrate_plugin_registry(state).await;
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
     let mut authorized_paths = Vec::new();
@@ -273,6 +308,7 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
         scan_complete,
         &plugins,
     );
+    persist_plugin_registry(state).await;
 
     if !scan_complete {
         return Err("Plugin scan did not complete within safety limits".to_string());
@@ -289,6 +325,142 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
 }
 
+// ── Activation-time registry resolution ─────────────────────────────────
+
+/// How long the one targeted rescan an activation miss is allowed may run.
+///
+/// It is a single file through the same bounded child-process worker a full
+/// scan uses, so this only has to cover one plugin's descriptor read — and it
+/// is a user waiting on a plugin they asked for, not a background sweep.
+const TARGETED_RESCAN_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn read_registry_entry(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    plugin_id: &str,
+) -> Option<PluginRegistryEntry> {
+    // Recovered, not refused, for the same reason the publisher recovers:
+    // the registry is a lookup table rebuilt wholesale by every scan, so a
+    // panic elsewhere leaves no state a reader must distrust. Refusing here
+    // meant a poisoned lock let the scan publish while every later load
+    // failed forever with a lock error the user could do nothing about.
+    plugin_registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(plugin_id)
+        .cloned()
+}
+
+fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) -> String {
+    format!(
+        "Plugin '{}' could not be loaded from its last known location {}: {reason}. It has been moved, removed or replaced since it was scanned — reinstall it there, or scan the folder it lives in now.",
+        entry.name, entry.path
+    )
+}
+
+/// Resolve the id a saved project recorded to the registry entry that activates
+/// it.
+///
+/// Three steps, in order, and the order is the point:
+///
+/// 1. hydrate the persisted registry, so a relaunched app resolves a saved
+///    project's plugins with no scan at all;
+/// 2. read the registry;
+/// 3. on a miss, rescan the plugin's last known location — once, bounded, one
+///    file — and take the result if the file is still a loadable plugin.
+///
+/// A miss that survives step 3 is a plugin that is no longer where it was, and
+/// the refusal says so and names it. It used to say "run a scan first", which
+/// was wrong in the case that produced it almost every time: the user *had*
+/// scanned, in a previous session, and the message sent them to repeat work
+/// that would not have helped.
+///
+/// The rescan is injected so the resolution order can be tested without a real
+/// CLAP file and a child process; production passes [`rescan_plugin_file`].
+fn resolve_registry_entry(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    registry_store: &PluginRegistryStore,
+    scan_policy: &PluginScanPolicy,
+    plugin_id: &str,
+    rescan: impl FnOnce(&Path) -> Result<PluginRegistryEntry, String>,
+) -> Result<PluginRegistryEntry, String> {
+    registry_store.hydrate_into(plugin_registry, scan_policy);
+
+    if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
+        return Ok(entry);
+    }
+
+    let Some(last_known) = registry_store.last_known_entry(plugin_id) else {
+        return Err(format!(
+            "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
+        ));
+    };
+
+    let last_known_path = PathBuf::from(&last_known.path);
+    let rescanned = scan_policy
+        .authorize_scan_root(&last_known_path)
+        .and_then(|()| rescan(&last_known_path))
+        .map_err(|reason| plugin_gone_from_last_known_path(&last_known, &reason))?;
+
+    {
+        let mut registry = plugin_registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // The requested key first, so the saved project resolves; the plugin's
+        // own keys additively, which is the same rule `index_scanned_plugins`
+        // follows — nothing that resolves today stops resolving.
+        registry.insert(plugin_id.to_string(), rescanned.clone());
+        registry
+            .entry(rescanned.stable_id.clone())
+            .or_insert_with(|| rescanned.clone());
+        if !rescanned.clap_id.is_empty() {
+            registry
+                .entry(rescanned.clap_id.clone())
+                .or_insert_with(|| rescanned.clone());
+        }
+    }
+    let snapshot = plugin_registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    registry_store.persist(&snapshot);
+
+    Ok(rescanned)
+}
+
+/// The one bounded rescan an activation miss gets: a single file, through the
+/// same child-process worker the full scan uses, so the application process
+/// still never loads a plugin entry point during discovery.
+///
+/// Parameter metadata is not re-read. Activation does not need it, and it is a
+/// second child process for a user who is waiting.
+fn rescan_plugin_file(path: &Path) -> Result<PluginRegistryEntry, String> {
+    let metadata = plugin_scan_worker::scan_clap_metadata(path, TARGETED_RESCAN_TIMEOUT)?;
+    Ok(registry_entry(&scanner::scanned_plugin(path, metadata)))
+}
+
+/// Resolve on the blocking pool: hydration reads the registry file and the
+/// targeted rescan waits on a child process, and neither belongs on an async
+/// runtime worker.
+async fn resolve_plugin_registry_entry(
+    plugin_id: &str,
+    state: &AppState,
+) -> Result<PluginRegistryEntry, String> {
+    let plugin_registry = Arc::clone(&state.plugin_registry);
+    let registry_store = Arc::clone(&state.plugin_registry_store);
+    let plugin_id = plugin_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        resolve_registry_entry(
+            &plugin_registry,
+            &registry_store,
+            &PluginScanPolicy::platform_defaults(),
+            &plugin_id,
+            rescan_plugin_file,
+        )
+    })
+    .await
+    .map_err(|error| format!("Plugin registry lookup failed: {error}"))?
+}
+
 // ── Instance lifecycle commands ─────────────────────────────────────────
 
 pub async fn load_plugin(
@@ -299,23 +471,7 @@ pub async fn load_plugin(
     let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
-    let entry = {
-        // Recovered, not refused, for the same reason the publisher recovers:
-        // the registry is a lookup table rebuilt wholesale by every scan, so a
-        // panic elsewhere leaves no state a reader must distrust. Refusing here
-        // meant a poisoned lock let the scan publish while every later load
-        // failed forever with a lock error the user could do nothing about.
-        let registry = state
-            .plugin_registry
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        registry.get(&plugin_id.0).cloned().ok_or_else(|| {
-            format!(
-                "Plugin {} not found in registry. Run a scan first.",
-                plugin_id.0
-            )
-        })?
-    };
+    let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
 
     match entry.format.as_str() {
         "clap" => {
@@ -1867,9 +2023,11 @@ mod tests {
                 "clap-without-descriptor-id".to_string(),
                 PluginRegistryEntry {
                     path: "/plugins/no-descriptor-id.clap".to_string(),
+                    stable_id: "clap-without-descriptor-id".to_string(),
                     clap_id: String::new(),
                     format: "clap".to_string(),
                     name: "Nameless".to_string(),
+                    category: "effect".to_string(),
                 },
             );
 
@@ -1954,9 +2112,11 @@ mod tests {
                 "vst3-fixture".to_string(),
                 PluginRegistryEntry {
                     path: "/plugins/should-not-be-loaded.vst3".to_string(),
+                    stable_id: "vst3-fixture".to_string(),
                     clap_id: String::new(),
                     format: "vst3".to_string(),
                     name: "Unsupported VST3".to_string(),
+                    category: "effect".to_string(),
                 },
             );
 
@@ -2236,6 +2396,185 @@ mod tests {
             parameters: Some(vec![]),
             parameter_metadata_reason: None,
         }
+    }
+
+    /// A temp plugin folder, a registry file next to it, and a policy that
+    /// authorizes only that folder — the platform defaults are the developer's
+    /// real plugin directories and no test may write into those.
+    struct PersistedRegistryFixture {
+        root: PathBuf,
+    }
+
+    impl PersistedRegistryFixture {
+        fn create(test_name: &str) -> Self {
+            // Canonical: the scan policy refuses any path with a symlink
+            // component, and the platform temp directory reaches through one on
+            // macOS. Left uncanonicalized, every hydration here would refuse for
+            // that reason instead of the one under test.
+            let root = std::fs::canonicalize(std::env::temp_dir())
+                .expect("the temp directory should resolve")
+                .join(
+                    unique_temp_scan_root(test_name)
+                        .file_name()
+                        .expect("the unique root should have a name"),
+                );
+            std::fs::create_dir_all(root.join("plugins"))
+                .expect("test plugin folder should be created");
+            Self { root }
+        }
+
+        fn scan_policy(&self) -> PluginScanPolicy {
+            PluginScanPolicy::with_allowed_roots(vec![self.root.join("plugins")])
+        }
+
+        /// A store over the fixture's registry file. Called again for the next
+        /// launch: nothing carries over but what reached the file.
+        fn store(&self) -> PluginRegistryStore {
+            PluginRegistryStore::at(self.root.join("plugin-registry.json"))
+        }
+
+        fn write_plugin_file(&self, file_name: &str, contents: &[u8]) -> PathBuf {
+            let path = self.root.join("plugins").join(file_name);
+            std::fs::write(&path, contents).expect("test plugin file should be written");
+            path
+        }
+
+        fn persist(&self, plugin_id: &str, path: &Path) {
+            self.store().persist(&HashMap::from([(
+                plugin_id.to_string(),
+                PluginRegistryEntry {
+                    path: path.display().to_string(),
+                    stable_id: plugin_id.to_string(),
+                    clap_id: "com.vendor.reverb".to_string(),
+                    format: "clap".to_string(),
+                    name: "Vendor Reverb".to_string(),
+                    category: "effect".to_string(),
+                },
+            )]));
+        }
+    }
+
+    impl Drop for PersistedRegistryFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// The defect this packet closes: a saved project reopened in a new session
+    /// resolved nothing, because the registry only ever lived in the process
+    /// that scanned. Activation must resolve from the persisted registry with
+    /// no scan and no rescan.
+    #[test]
+    fn an_activation_resolves_a_persisted_plugin_with_no_scan_this_session() {
+        let fixture = PersistedRegistryFixture::create("activation-hydrate");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+
+        let next_launch_registry = Mutex::new(HashMap::new());
+        let entry = resolve_registry_entry(
+            &next_launch_registry,
+            &fixture.store(),
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |path| panic!("a hydrated registry must resolve without rescanning {path:?}"),
+        )
+        .expect("the persisted plugin must resolve in a new session");
+
+        assert_eq!(entry.path, plugin_path.display().to_string());
+        assert_eq!(entry.clap_id, "com.vendor.reverb");
+    }
+
+    /// A plugin updated in place fails hydration's staleness check, which is
+    /// correct — and would strand the user if it ended there. One bounded
+    /// rescan of the file the registry already knows about is the difference
+    /// between "your project opens" and "go and rescan".
+    #[test]
+    fn an_activation_miss_rescans_the_last_known_path_once() {
+        let fixture = PersistedRegistryFixture::create("activation-rescan");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+
+        let rescans = std::cell::Cell::new(0);
+        let registry = Mutex::new(HashMap::new());
+        let store = fixture.store();
+        let entry = resolve_registry_entry(
+            &registry,
+            &store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |path| {
+                rescans.set(rescans.get() + 1);
+                Ok(PluginRegistryEntry {
+                    path: path.display().to_string(),
+                    stable_id: "aaaa1111".to_string(),
+                    clap_id: "com.vendor.reverb".to_string(),
+                    format: "clap".to_string(),
+                    name: "Vendor Reverb 2".to_string(),
+                    category: "effect".to_string(),
+                })
+            },
+        )
+        .expect("a plugin still at its last known path must resolve");
+
+        assert_eq!(entry.name, "Vendor Reverb 2");
+        assert_eq!(rescans.get(), 1, "the miss gets one rescan, not a sweep");
+        assert_eq!(
+            registry
+                .lock()
+                .expect("registry lock")
+                .get("aaaa1111")
+                .expect("the rescan result must be in the registry")
+                .name,
+            "Vendor Reverb 2"
+        );
+
+        // And it is durable: the refreshed fingerprint means the next launch
+        // hydrates it instead of rescanning again.
+        let next_launch_registry = Mutex::new(HashMap::new());
+        fixture
+            .store()
+            .hydrate_into(&next_launch_registry, &fixture.scan_policy());
+        assert_eq!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .get("aaaa1111")
+                .expect("the rescan result must have been saved")
+                .name,
+            "Vendor Reverb 2"
+        );
+    }
+
+    /// "Run a scan first" was wrong nearly every time it was shown: the user
+    /// had scanned, in the session that recorded this plugin, and rescanning
+    /// would not have found it because it is not there any more. Say what
+    /// happened, and to which plugin.
+    #[test]
+    fn an_activation_miss_names_the_plugin_and_its_last_known_path() {
+        let fixture = PersistedRegistryFixture::create("activation-moved");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::remove_file(&plugin_path).expect("the plugin should be removable");
+
+        let error = resolve_registry_entry(
+            &Mutex::new(HashMap::new()),
+            &fixture.store(),
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |path| Err(format!("no such file: {}", path.display())),
+        )
+        .expect_err("a removed plugin must not resolve");
+
+        assert!(
+            error.contains("Vendor Reverb") && error.contains(&plugin_path.display().to_string()),
+            "the refusal must name the plugin and where it was last seen, got: {error}"
+        );
+        assert!(
+            !error.contains("Run a scan first"),
+            "a plugin that moved is not a plugin that was never scanned, got: {error}"
+        );
     }
 
     #[test]
