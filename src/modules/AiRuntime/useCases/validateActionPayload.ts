@@ -27,7 +27,7 @@
  * transient AI lifecycle events. The line is "would a malformed payload
  * cause data loss, persistent corruption, or an exploit".
  */
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
@@ -954,11 +954,15 @@ const validators = {
         isNonEmptyString(param.vcaGroupId),
     removeFromVca: (param): param is PayloadOf<'removeFromVca'> =>
         isObj(param) && hasExactKeys(param, ['trackId']) && isNonEmptyString(param.trackId),
+    // `VCA_MAX_GAIN` (not `FADER_MAX_GAIN`): a VCA group's gain is a
+    // pre-fold multiplier, not a fader position — see the constant's own
+    // doc comment for why the render fold makes those two ceilings
+    // different things.
     setVcaGain: (param): param is PayloadOf<'setVcaGain'> =>
         isObj(param) &&
         hasExactKeys(param, ['vcaGroupId', 'gain']) &&
         isNonEmptyString(param.vcaGroupId) &&
-        isInRange(param.gain, 0, 2),
+        isInRange(param.gain, 0, VCA_MAX_GAIN),
 
     // Groove
     extractGroove: 'unchecked',

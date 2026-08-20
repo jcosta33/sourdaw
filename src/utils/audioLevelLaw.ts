@@ -96,6 +96,22 @@ export function clampFaderGain(gain: number): number {
 }
 
 /**
+ * Ceiling for a VCA group's own gain multiplier, before it folds into a
+ * member track's fader. Deliberately **not** derived from {@link
+ * FADER_HEADROOM_DB} — a VCA multiplier is not a fader position, and the
+ * render fold already clamps the *composed* result to {@link
+ * FADER_MAX_GAIN} regardless of how large the raw multiplier is
+ * (`createOfflineTrackStrip.ts`'s `clampFaderGain(track.gain *
+ * vcaMultiplier)`, `graph.rs`'s `folded.min(fader_max_gain())`). This is the
+ * bound the engine's actual VCA write path enforces on the multiplier
+ * itself — `setVcaGain.ts`'s `Math.min(2, gain)` — so any AI-facing check
+ * of a raw VCA gain value matches it, rather than being either looser than
+ * what a person can never reach or stricter than what a person's own slider
+ * already allows.
+ */
+export const VCA_MAX_GAIN = 2;
+
+/**
  * Maps a 0–100 send-control position onto the stored linear send level.
  *
  * Position 100 is unity (0 dB), position 0 is true silence, and everything

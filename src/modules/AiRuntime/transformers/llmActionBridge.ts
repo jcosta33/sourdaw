@@ -1,3 +1,4 @@
+import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
@@ -675,32 +676,45 @@ function bridgeToolCall({
     }
 
     if (call.name === 'setMasterGain') {
+        // `gain` here is the same linear-amplitude fraction as `setTrackGain`'s,
+        // not the transport store's 0–100 `masterGain` percent field —
+        // `handleSetMasterGain` multiplies it by 100 before writing that field.
+        // The ceiling is therefore `FADER_MAX_GAIN`, matching the fixed
+        // downstream validator in `validateActionPayload`, not `1`.
         if (
             !hasExactKeys(args, ['gain']) ||
             !isFiniteNumber(args.gain) ||
             args.gain < 0 ||
-            args.gain > 1 ||
+            args.gain > FADER_MAX_GAIN ||
             args.gain === context.masterGain
         ) {
-            return rejection(index, call.name, 'Expected only a changed finite master gain from 0 through 1');
+            return rejection(
+                index,
+                call.name,
+                `Expected only a changed finite master gain from 0 through ${FADER_MAX_GAIN}`
+            );
         }
         return { type: 'setMasterGain', payload: { gain: args.gain } };
     }
 
     if (call.name === 'setVcaGain') {
+        // The VCA multiplier ceiling is `VCA_MAX_GAIN`, matching the fixed
+        // downstream validator in `validateActionPayload` and the engine's
+        // own write path (`setVcaGain.ts`'s `Math.min(2, gain)`) — not a
+        // bare `2` repeated a third time.
         const group = findVcaGroup(context, args.vcaGroupId);
         if (
             !hasExactKeys(args, ['vcaGroupId', 'gain']) ||
             !group ||
             !isFiniteNumber(args.gain) ||
             args.gain < 0 ||
-            args.gain > 2 ||
+            args.gain > VCA_MAX_GAIN ||
             args.gain === group.gain
         ) {
             return rejection(
                 index,
                 call.name,
-                'Expected an existing VCA group and a changed finite gain from 0 through 2'
+                `Expected an existing VCA group and a changed finite gain from 0 through ${VCA_MAX_GAIN}`
             );
         }
         return { type: 'setVcaGain', payload: { vcaGroupId: group.id, gain: args.gain } };
@@ -1902,9 +1916,13 @@ function bridgeToolCall({
             !hasTrack(context, args.trackId) ||
             !isFiniteNumber(args.gain) ||
             args.gain < 0 ||
-            args.gain > 1
+            args.gain > FADER_MAX_GAIN
         ) {
-            return rejection(index, call.name, 'Expected an available trackId and finite gain from 0 through 1');
+            return rejection(
+                index,
+                call.name,
+                `Expected an available trackId and finite gain from 0 through ${FADER_MAX_GAIN}`
+            );
         }
         return { type: 'setTrackGain', payload: { trackId: args.trackId, gain: args.gain } };
     }

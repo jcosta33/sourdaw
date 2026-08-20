@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
@@ -606,7 +606,11 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { vcaGroupId: '', gain: 1 },
             { vcaGroupId: 'vca-1', gain: -0.01 },
-            { vcaGroupId: 'vca-1', gain: 2.01 },
+            // #2350 gap 2: the ceiling is `VCA_MAX_GAIN`, a named constant
+            // distinct from `FADER_MAX_GAIN` (a VCA multiplier is pre-fold, not
+            // a fader position) — asserted against the constant, not a bare
+            // `2.01`, so this survives a future change to either headroom.
+            { vcaGroupId: 'vca-1', gain: VCA_MAX_GAIN + 0.01 },
             { vcaGroupId: 'vca-1', gain: Number.NaN },
             { vcaGroupId: 'vca-1', gain: 1, extra: true },
         ],

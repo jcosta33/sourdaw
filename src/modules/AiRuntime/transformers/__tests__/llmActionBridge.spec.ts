@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
@@ -1106,7 +1107,10 @@ describe('bridgeLlmToolCalls', () => {
         const rejected = [
             bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 0.8 } }] }),
             bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: -0.01 } }] }),
-            bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 1.01 } }] }),
+            // #2350 gap 1: the ceiling is `FADER_MAX_GAIN`, not `1` — asserted
+            // against the constant so this stays the true boundary if the
+            // headroom figure ever changes.
+            bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: FADER_MAX_GAIN + 0.01 } }] }),
             bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 0.65, extra: true } }] }),
         ];
         const repeated = bridge({
@@ -2540,7 +2544,10 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'setTimeSignature', arguments: { numerator: 7.5, denominator: 8 } },
                 { name: 'setTimeSignature', arguments: { numerator: 0, denominator: 4 } },
                 { name: 'setTimeSignature', arguments: { numerator: 33, denominator: 4 } },
-                { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 1.1 } },
+                // #2350 gap 1: the ceiling is `FADER_MAX_GAIN`, not `1` —
+                // asserted against the constant so this stays the true
+                // boundary if the headroom figure ever changes.
+                { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: FADER_MAX_GAIN + 0.01 } },
                 { name: 'setTrackPan', arguments: { trackId: 'missing', pan: 0 } },
                 { name: 'renameTrack', arguments: { trackId: 'track-vocals', name: '   ' } },
                 {
