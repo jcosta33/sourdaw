@@ -1,0 +1,89 @@
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_7ba0b7bee9e951::t_5f93ed34d80ec3 857-878,880-883,885-904
+  s_7ba0b7bee9e951::t_79e58d0698e75e 879
+  s_7ba0b7bee9e951::t_2b860bd1d85b15 884
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_7ba0b7bee9e951::t_151bdd66786737 158-160
+  s_7ba0b7bee9e951::t_af12c292754027 16,18-27,36
+  s_7ba0b7bee9e951::t_299a1c93466287 177
+src/modules/AudioEngine/presentations/views/PluginBrowser.tsx
+  s_7ba0b7bee9e951::t_799f8460641142 236-250
+  s_7ba0b7bee9e951::t_91d297e41ea723 3-14
+.agents/decisions/0031-native-plugin-format-strategy.md
+  s_7ba0b7bee9e951::t_23fa42704f4431 94-111
+  s_7ba0b7bee9e951::t_45ceeef11f01a7 34-35
+src/modules/PluginHost/useCases/pluginScan/scanning/startPluginScan.ts
+  s_7ba0b7bee9e951::t_2f74425a1444f6 15
+  s_7ba0b7bee9e951::t_cbe3cb9918acfc 27
+  s_7ba0b7bee9e951::t_c4d0667e99b149 48,57-60
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_7ba0b7bee9e951::t_a652a483ca5d2b 59,61-69
+crates/daw-plugin-host/src/scanner.rs
+  s_7ba0b7bee9e951::t_fcaa8a1acf78e8 290-304
+  s_7ba0b7bee9e951::t_15cdc9853c9da2 613-614,623-624,626-627,629-631
+  s_7ba0b7bee9e951::t_5d479f4ca4a7bd 226-228,230-238
+  s_7ba0b7bee9e951::t_8d162833d55957 101-110
+  s_7ba0b7bee9e951::t_3c1bb73318048b 414-416,423
+  s_7ba0b7bee9e951::t_75ff4da3beb8a9 540-541
+  s_7ba0b7bee9e951::t_3e78bc7994ad79 431-432,436-437
+  s_7ba0b7bee9e951::t_da8b1b33306b9d 572,577
+  s_7ba0b7bee9e951::t_897cd2406a5958 635-636
+  s_7ba0b7bee9e951::t_bc5d5758c5c7ef 63-66
+  s_7ba0b7bee9e951::t_7ee8ccd03315a8 654-655,659-694
+  s_7ba0b7bee9e951::t_c16b68eedb8cd0 720-721,723,728-740,742-743
+  s_7ba0b7bee9e951::t_b954bab54ba050 319-324,326,329-335,340
+  s_7ba0b7bee9e951::t_e15f26cc1bcc66 1796-1802
+docs/architecture/02-rust-backend.md
+  s_7ba0b7bee9e951::t_593104a03e330b 293-301
+  s_7ba0b7bee9e951::t_36966c203f5a37 853
+src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx
+  s_7ba0b7bee9e951::t_8db1f706892539 171-187
+  s_7ba0b7bee9e951::t_59968ef5e21dc5 3-14
+src/modules/PluginHost/repositories/pluginBridge/scanPlugins.ts
+  s_7ba0b7bee9e951::t_ef148daa2131ac 7-12
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_7ba0b7bee9e951::t_cb3ca1888a5964 121-166
+  s_b3e68b902b6b93::t_d5f389ecf6253a 32,54,104,170,192
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_7ba0b7bee9e951::t_07dfa81107174e 50-52
+  s_7ba0b7bee9e951::t_8f36e826a263a6 63,65-75
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_7ba0b7bee9e951::t_bd665936c71276 215,223-227
+  s_7ba0b7bee9e951::t_7704c6bcc119a3 48
+  s_7ba0b7bee9e951::t_de830c57cc6af8 37,95,110,134
+src/modules/PluginHost/useCases/pluginScan/scanning/scanCustomPaths.ts
+  s_7ba0b7bee9e951::t_bba8986a90a8f7 14
+  s_7ba0b7bee9e951::t_8f25ab4151353d 29,37
+crates/sourdaw-native/src/commands/plugins.rs
+  s_7ba0b7bee9e951::t_e0944352d61ade 328
+  s_7ba0b7bee9e951::t_a3324439d8baa9 258,263,270
+  s_7ba0b7bee9e951::t_ed5efbc2387ffb 354
+src/modules/PluginHost/useCases/pluginScan/__tests__/startPluginScan.spec.ts
+  s_7ba0b7bee9e951::t_b8dc900e4f935e 14,72,89,109
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/scanCustomPaths.spec.ts
+  s_7ba0b7bee9e951::t_860a074e232b58 32,54,99,126-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c8b394e800be96c015d1987c6fbe2c4311deea2c",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
