@@ -23,8 +23,8 @@ The panel is labelled **Mastering desk**. It opens on **Play**.
 2. Leave **Target** on **Streaming (−14 LUFS)** unless you are delivering somewhere else.
 3. Watch **Output** and **Ceiling**. The limiter is already on, at −1.0 dBTP.
 4. Open **Build** when you want the equaliser and the other modules, not only the target desk.
-5. Use **B / wet** in **Check** when you want to hear the chain off. It reads **A / dry** while the
-   chain is bypassed.
+5. Click **B / wet** in **Check** to hear the chain off. It reads **A / dry** while the chain is
+   bypassed.
 
 ## Play, Shape, Build, Route, Lab
 
@@ -36,7 +36,7 @@ device opens on **Play**. The choice is this session only — it is not stored i
 | **Play**  | **Target desk**   | Target list, Input / Output LUFS, **Ceiling**.                                                           |
 | **Shape** | **Chain shape**   | The five modules as a strip you can switch off, with **IN** meters between them, plus three macro knobs. |
 | **Build** | **Module detail** | Full **EQ**, **Multiband Dynamics**, **Stereo Imager**, **Harmonic Exciter**, and **Limiter**.           |
-| **Route** | **Chain route**   | **Signal Chain Order**, **Input** gain, **Output** gain.                                                 |
+| **Route** | **Chain route**   | **Signal Chain Order**, **Input Gain**, **Output Gain**.                                                 |
 | **Lab**   | **Check bench**   | **Loudness History**, **Tonal Balance**, the full meter grid, and **Reset Integrated LUFS + True Peak**. |
 
 ## Target
@@ -78,7 +78,7 @@ The three knobs are macros, not the full module:
 | Control                    | Range       | Default | What it does                                                                                       |
 | -------------------------- | ----------- | ------- | -------------------------------------------------------------------------------------------------- |
 | **Dynamics** **Threshold** | −60 to 0 dB | −20 dB  | Moves all four dynamics thresholds together, keeping the offsets between bands.                    |
-| **Imager** **Width**       | 0 to 2      | 1       | Moves **Hi-Mid** and **High** width together. **Sub** and **Low-Mid** stay put.                    |
+| **Imager** **Width**       | 0 to 2      | 1.0     | Moves **Hi-Mid** and **High** width together. **Sub** and **Low-Mid** stay put.                    |
 | **Exciter** **Drive**      | 0 to 1      | 0.2     | Moves all four drives together. If every band is off, turning Drive up also switches the bands on. |
 
 ## EQ

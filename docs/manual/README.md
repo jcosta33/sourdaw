@@ -16,7 +16,7 @@ Organized by what a device does, not by its name.
 
 **Dynamics** — [Gluten](./devices/07-gluten.md) (compressor), [Crust](./devices/08-crust.md) (limiter)
 
-**EQ & Filter** — [Proof](./devices/10-proof.md) (mastering)
+**Mastering** — [Proof](./devices/10-proof.md) (mastering chain)
 
 **Time & Space** — [Dutch Oven](./devices/09-dutch-oven.md) (reverb)
 
