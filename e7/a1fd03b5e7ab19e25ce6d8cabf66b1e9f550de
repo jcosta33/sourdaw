@@ -1,0 +1,82 @@
+src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts
+  s_487e9aa1e46063::t_fda82036384669 81-84
+  s_487e9aa1e46063::t_46dd563a808018 1
+src/modules/PluginHost/useCases/faustEngine/getFaustModuleLatencyMs.ts
+  s_487e9aa1e46063::t_43c5b16086dd4b 1-33
+src/modules/PluginHost/useCases/faustEngine/dsp/brick-wall-limiter.dsp
+  s_487e9aa1e46063::t_96faf460702a20 22-49
+  s_487e9aa1e46063::t_4f7b5a157479ef 101-106,109
+src/modules/PluginHost/useCases/faustEngine/dsp/de-esser.dsp
+  s_487e9aa1e46063::t_d60d74c5b35b2c 20-21
+  s_487e9aa1e46063::t_d362feb5f8c1ff 4,6-11
+src/modules/PluginHost/useCases/index.ts
+  s_487e9aa1e46063::t_6a09c9eed682ef 10
+src/modules/PluginHost/useCases/faustEngine/dsp/noise-gate.dsp
+  s_487e9aa1e46063::t_a9361d0f0b0ec0 3-7
+src/modules/PluginHost/useCases/faustEngine/__tests__/declaredControlRepairsDspBehavior.spec.ts
+  s_487e9aa1e46063::t_774c2b44531275 103-112
+  s_487e9aa1e46063::t_e2e9a79ade5d7a 144-171
+src/modules/PluginHost/useCases/faustEngine/__tests__/multibandCompressorDspBehavior.spec.ts
+  s_487e9aa1e46063::t_2ca3da883cf290 230,233-241,250,262-266,268-283,285-289
+  s_487e9aa1e46063::t_11aae46e440a3a 284,290-292
+  s_487e9aa1e46063::t_4ec7a834fdfc71 70-106
+  s_487e9aa1e46063::t_7174318702f4d9 201-229,231-232,242-249,251-261,293-294
+  s_487e9aa1e46063::t_a33988e26e7741 267
+src/modules/Arrangement/models/StoredDeviceParameterMigration.ts
+  s_487e9aa1e46063::t_46bb1a0f64cdc4 1-14,26-73
+  s_487e9aa1e46063::t_ec96e612d527e3 15-25
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspCompile.spec.ts
+  s_487e9aa1e46063::t_07fb4e937688c3 60-68,71-72,77-88,91,93-99,103,105-138
+  s_487e9aa1e46063::t_12c569aeb266cb 151
+  s_487e9aa1e46063::t_9d9f0bf9709e16 24-46
+  s_487e9aa1e46063::t_4ddecaf422f6cd 170
+  s_487e9aa1e46063::t_e6b37925a486b3 188,196
+  s_487e9aa1e46063::t_c81e154777cf38 10-11
+  s_487e9aa1e46063::t_3af7b101277424 355
+  s_487e9aa1e46063::t_2f32d2009dc830 204,210-277
+  s_487e9aa1e46063::t_60a07759a10384 278
+src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp
+  s_487e9aa1e46063::t_f30018752ea686 6-8
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_487e9aa1e46063::t_b871dfaaaecdbf 150-154
+  s_487e9aa1e46063::t_a94f5dbdf11b21 166,168
+  s_487e9aa1e46063::t_1615832ce0be8e 207-215
+  s_487e9aa1e46063::t_540879e579dd80 225,227-228,230
+  s_487e9aa1e46063::t_4c5e7d83b74787 179-189
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_487e9aa1e46063::t_5a56ce237fb473 11
+  s_487e9aa1e46063::t_50eefe9ae3b097 1669-1674
+  s_487e9aa1e46063::t_2a1863817b5607 1705-1708,1712
+src/modules/Arrangement/stores/__tests__/storedDeviceParameterMigration.spec.ts
+  s_487e9aa1e46063::t_671ff9d185ff10 1-59,62,65-69,75-106
+  s_487e9aa1e46063::t_f32544564d1584 60-61,63-64,70-74
+src/modules/PluginHost/useCases/faustEngine/dsp/multiband-compressor.dsp
+  s_487e9aa1e46063::t_5bf7e86c1c2a4a 36-56,58
+src/modules/AudioEngine/engine/__tests__/faustLookaheadLatency.spec.ts
+  s_487e9aa1e46063::t_cc52c27e782bc9 1-152
+src/modules/Arrangement/stores/trackStore.ts
+  s_487e9aa1e46063::t_3bcc9a77bc3ded 340-346
+  s_487e9aa1e46063::t_da043e45d1e343 4
+src/modules/PluginHost/useCases/faustEngine/dsp/1176-compressor.dsp
+  s_487e9aa1e46063::t_30df996b4c6b36 2-21
+src/modules/PluginHost/useCases/faustEngine/__tests__/brickWallLimiterDspBehavior.spec.ts
+  s_487e9aa1e46063::t_fc43d02c2803dc 237-245,248,251,253,255-266,272-295
+  s_487e9aa1e46063::t_dfe8db619c8834 107-122
+  s_487e9aa1e46063::t_89a7ffbc2cafb6 296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e7a1fd03b5e7ab19e25ce6d8cabf66b1e9f550de",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
