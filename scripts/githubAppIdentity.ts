@@ -367,6 +367,21 @@ export function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
+export function parseGraphqlResponse<Value>(value: string, label: string): Value {
+    const response = parseJson<unknown>(value, label);
+    if (typeof response !== 'object' || response === null || Array.isArray(response)) {
+        fail(`${label} returned an invalid GraphQL envelope`);
+    }
+    const envelope = response as { data?: unknown; errors?: unknown };
+    if (!Object.hasOwn(envelope, 'data') || (envelope.errors !== undefined && !Array.isArray(envelope.errors))) {
+        fail(`${label} returned an invalid GraphQL envelope`);
+    }
+    if (Array.isArray(envelope.errors) && envelope.errors.length > 0) {
+        fail(`${label} returned GraphQL errors`);
+    }
+    return response as Value;
+}
+
 async function defaultGitHubRequest(
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string }

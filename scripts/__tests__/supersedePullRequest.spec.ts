@@ -25,8 +25,10 @@ type Input = {
     heads?: string[];
     authorLogin?: string;
     replacementState?: string;
+    initialState?: string;
     throwAfterComment?: boolean;
     concurrentCommentOnThrow?: boolean;
+    concurrentCommentBeforeConvergence?: boolean;
     throwCloseWithConcurrentState?: boolean;
     failDelete?: boolean;
     returnedCommentBody?: string;
@@ -42,14 +44,15 @@ type Input = {
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
     let index = 0;
-    let state = 'OPEN';
+    let state = input.initialState ?? 'OPEN';
     let closeCalled = false;
+    let concurrentCommentAdded = false;
     let closedAt: string | null = null;
     let comments = [oldComment];
     for (let commentIndex = 0; commentIndex < (input.existingCommentCount ?? 0); commentIndex += 1) {
         comments.push({
             id: commentIndex === 0 ? 'IC_new' : `IC_existing_${commentIndex}`,
-            fullDatabaseId: String(9223372036854775808 + commentIndex),
+            fullDatabaseId: String(9223372036854775808n + BigInt(commentIndex)),
             body: 'Superseded by #2246.',
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: input.existingCommentAuthorType ?? 'Bot',
@@ -81,6 +84,24 @@ function fakePort(input: Input = {}) {
     const port: SupersedePullRequestPort = {
         inspect: (number) => {
             calls.push(`inspect:${number}`);
+            if (
+                number === 2244 &&
+                input.concurrentCommentBeforeConvergence &&
+                !concurrentCommentAdded &&
+                comments.length > 1
+            ) {
+                concurrentCommentAdded = true;
+                comments = [
+                    ...comments,
+                    {
+                        id: 'IC_concurrent',
+                        fullDatabaseId: '9223372036854775809',
+                        body: 'Superseded by #2246.',
+                        authorLogin: AUTHOR_BOT_LOGIN,
+                        authorType: 'Bot',
+                    },
+                ];
+            }
             if (number === 2244 && input.throwCloseWithConcurrentState && closeCalled) {
                 state = 'CLOSED';
                 closedAt = '2026-08-20T12:00:01Z';
@@ -205,6 +226,16 @@ describe('pull-request supersession', () => {
         expect(comments.at(-1)?.id).toBe('IC_100');
         expect(calls[1]).toContain('cursor=issue-comments-1');
     });
+    it('rejects partial GraphQL data with errors before accepting issue comments', () => {
+        expect(() =>
+            inspectIssueComments('PR_kwDOExample', () =>
+                JSON.stringify({
+                    data: { node: { comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } },
+                    errors: [{ message: 'partial failure' }],
+                })
+            )
+        ).toThrow(/GraphQL errors/i);
+    });
 
     it.each([
         ['repeated', 'issue-comments-1'],
@@ -258,6 +289,7 @@ describe('pull-request supersession', () => {
             'inspect:2246',
             'comment:2244:Superseded by #2246.',
             'inspect:2244',
+            'inspect:2244',
             'close:2244',
             'inspect:2244',
             'log:pull-request-superseded:2244:2246',
@@ -308,14 +340,18 @@ describe('pull-request supersession', () => {
         expect(state().state).toBe('CLOSED');
     });
     it('does not reopen a same-marker close when its final head check fails', () => {
-        const { port, calls, authorLogin, state } = fakePort({ heads: [head, head, movedHead, movedHead, movedHead] });
+        const { port, calls, authorLogin, state } = fakePort({
+            heads: [head, head, head, movedHead, movedHead],
+        });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
         expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(state()).toMatchObject({ state: 'CLOSED', comments: [oldComment, { id: 'IC_new' }] });
     });
     it('rejects a late retarget after close without reopening or deleting the receipt comment', () => {
-        const { port, calls, authorLogin, state } = fakePort({ bases: ['main', 'main', 'release', 'release'] });
+        const { port, calls, authorLogin, state } = fakePort({
+            bases: ['main', 'main', 'main', 'release', 'release'],
+        });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/base changed after mutation/i);
         expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
@@ -362,9 +398,28 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
     });
-    it('rejects multiple existing supersession comments before any mutation', () => {
+    it('converges multiple existing supersession comments to the smallest fullDatabaseId before closing', () => {
         const { port, calls, authorLogin } = fakePort({ existingCommentCount: 2 });
-        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/ambiguous/i);
+        expect(supersedePullRequest(2244, head, 2246, authorLogin, port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_existing_1']);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('converges an interleaved concurrent supersession comment before closing', () => {
+        const { port, calls, authorLogin, state } = fakePort({ concurrentCommentBeforeConvergence: true });
+        expect(supersedePullRequest(2244, head, 2246, authorLogin, port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_concurrent']);
+        expect(state().comments.filter((comment) => comment.body === 'Superseded by #2246.')).toEqual([
+            expect.objectContaining({ id: 'IC_new' }),
+        ]);
+    });
+    it('returns completed supersession success without mutation only for one exact Bot marker', () => {
+        const { port, calls, authorLogin } = fakePort({ initialState: 'CLOSED', existingCommentCount: 1 });
+        expect(supersedePullRequest(2244, head, 2246, authorLogin, port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls).toEqual(['inspect:2244', 'inspect:2246', 'log:pull-request-superseded:2244:2246']);
+    });
+    it('fails closed for a completed supersession with multiple markers', () => {
+        const { port, calls, authorLogin } = fakePort({ initialState: 'CLOSED', existingCommentCount: 2 });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/exactly one/i);
         expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
     it('rejects a User-typed existing supersession comment before any mutation', () => {

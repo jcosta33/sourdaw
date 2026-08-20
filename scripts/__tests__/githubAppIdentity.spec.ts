@@ -24,6 +24,7 @@ import {
     loadRoleCredentials,
     mintInstallationToken,
     parseDotenv,
+    parseGraphqlResponse,
     resolvePrimaryRoot,
     type FileReader,
     type GitHubJsonClient,
@@ -149,6 +150,12 @@ describe('dotenv and role files', () => {
                 return files()(path);
             })
         ).toThrow(/unreadable/);
+    });
+});
+
+describe('GraphQL envelopes', () => {
+    it.each(['[]', 'null', '{"errors":{}}', '{}'])('rejects malformed envelopes: %s', (response) => {
+        expect(() => parseGraphqlResponse(response, 'GraphQL query')).toThrow(/invalid GraphQL envelope/i);
     });
 });
 

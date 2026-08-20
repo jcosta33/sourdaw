@@ -9,7 +9,7 @@ import {
     authenticateRole,
     isAuthorBotLogin,
     originMainBlob,
-    parseJson,
+    parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
@@ -91,11 +91,17 @@ export function supersedePullRequest(
     }
     const before = port.inspect(oldNumber);
     const replacement = port.inspect(replacementNumber);
-    assertOld(before, oldNumber, expectedHead);
+    assertOldBinding(before, oldNumber, expectedHead);
     assertReplacement(replacement, replacementNumber, before);
     const body = `Superseded by #${replacementNumber}.`;
+    if (before.state === 'CLOSED') {
+        assertCompletedSupersession(before, oldNumber, expectedHead, before.base, body);
+        return logSupersessionSuccess(oldNumber, replacementNumber, port);
+    }
+    assertOpen(before, oldNumber);
     let commentAttempted = false;
     let commentCreated = false;
+    let createdCommentId: string | undefined;
     let commentId: string | undefined;
     let closeAttempted = false;
     let closeReceipt: PullRequestCloseReceipt | undefined;
@@ -107,10 +113,16 @@ export function supersedePullRequest(
             commentId = assertCommentReceipt(comment, commentClientMutationId(oldNumber, body));
             assertCommentBody(comment, body);
             commentCreated = true;
+            createdCommentId = comment.id;
         } else {
             commentId = existingComment.id;
         }
-        assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead, before.base);
+        const afterComment = port.inspect(oldNumber);
+        assertStableOpen(afterComment, oldNumber, expectedHead, before.base);
+        commentId = convergeCommentMarkers(oldNumber, body, afterComment, port);
+        const converged = port.inspect(oldNumber);
+        assertStableOpen(converged, oldNumber, expectedHead, before.base);
+        commentId = requireOneCommentMarker(converged.comments, body, oldNumber).id;
         closeAttempted = true;
         const receipt = port.close(oldNumber);
         assertCloseReceipt(receipt);
@@ -124,6 +136,7 @@ export function supersedePullRequest(
             body,
             commentAttempted,
             commentCreated,
+            createdCommentId,
             commentId,
             closeAttempted,
             closeReceipt,
@@ -131,6 +144,10 @@ export function supersedePullRequest(
             error
         );
     }
+    return logSupersessionSuccess(oldNumber, replacementNumber, port);
+}
+
+function logSupersessionSuccess(oldNumber: number, replacementNumber: number, port: SupersedePullRequestPort): string {
     const success = `pull-request-superseded:${oldNumber}:${replacementNumber}`;
     port.log(success);
     return success;
@@ -142,6 +159,7 @@ function compensateSupersession(
     expectedCommentBody: string,
     commentAttempted: boolean,
     commentCreated: boolean,
+    createdCommentId: string | undefined,
     commentId: string | undefined,
     closeAttempted: boolean,
     closeReceipt: PullRequestCloseReceipt | undefined,
@@ -162,7 +180,9 @@ function compensateSupersession(
                 'pull-request closure may have succeeded; preserving supersession comment as durable evidence'
             );
         }
-        if (commentAttempted && !commentCreated) {
+        if (!closeAttempted && current.state === 'CLOSED' && commentCreated && createdCommentId !== undefined) {
+            deleteCreatedNoncanonicalComment(current.comments, expectedCommentBody, createdCommentId, port, failures);
+        } else if (commentAttempted && !commentCreated) {
             failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
         } else if (commentCreated && !stateMayHaveMutated && current.state === before.state) {
             if (commentId === undefined) {
@@ -213,15 +233,17 @@ function attempt(failures: string[], label: string, operation: () => void): void
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
-function assertOld(value: SupersededPullRequest, number: number, head: string): void {
+function assertOldBinding(value: SupersededPullRequest, number: number, head: string): void {
     if (value.number !== number || value.repository !== REQUIRED_REPOSITORY) {
         fail(`cannot inspect PR #${number} in ${REQUIRED_REPOSITORY}`);
     }
-    if (value.state !== 'OPEN') {
-        fail(`PR #${number} is ${value.state.toLowerCase()}`);
-    }
     if (value.head !== head) {
         fail('supplied head does not match the current pull-request head');
+    }
+}
+function assertOpen(value: SupersededPullRequest, number: number): void {
+    if (value.state !== 'OPEN') {
+        fail(`PR #${number} is ${value.state.toLowerCase()}`);
     }
 }
 function assertReplacement(value: SupersededPullRequest, number: number, old: SupersededPullRequest): void {
@@ -268,16 +290,82 @@ function hasExpectedComment(comments: IssueComment[], id: string, body: string):
             comment.id === id && comment.body === body && isAuthorBotActor(comment.authorLogin, comment.authorType)
     );
 }
-function findReusableComment(comments: IssueComment[], body: string): IssueComment | undefined {
+function validatedCommentMarkers(comments: IssueComment[], body: string): IssueComment[] {
     const owned = comments.filter((comment) => isAuthorBotLogin(comment.authorLogin));
-    if (owned.length === 0) {
+    for (const comment of owned) {
+        if (
+            !isDecimalId(comment.fullDatabaseId) ||
+            comment.body !== body ||
+            !isAuthorBotActor(comment.authorLogin, comment.authorType)
+        ) {
+            fail('owned supersession marker is not an exact author-bot receipt');
+        }
+    }
+    return owned.sort(compareMarkers);
+}
+function compareMarkers(left: IssueComment, right: IssueComment): number {
+    // The smallest decimal fullDatabaseId, then node ID, is the canonical concurrent marker.
+    const difference = BigInt(left.fullDatabaseId) - BigInt(right.fullDatabaseId);
+    if (difference === 0n) {
+        return left.id.localeCompare(right.id);
+    }
+    return difference < 0n ? -1 : 1;
+}
+function requireOneCommentMarker(comments: IssueComment[], body: string, number: number): IssueComment {
+    const markers = validatedCommentMarkers(comments, body);
+    const [marker] = markers;
+    if (marker === undefined || markers.length !== 1) {
+        fail(`PR #${number} does not have exactly one valid supersession comment marker`);
+    }
+    return marker;
+}
+function requireOneOrMoreCommentMarker(comments: IssueComment[], body: string, number: number): IssueComment {
+    const [marker] = validatedCommentMarkers(comments, body);
+    if (marker === undefined) {
+        fail(`PR #${number} has no valid supersession comment marker`);
+    }
+    return marker;
+}
+function convergeCommentMarkers(
+    number: number,
+    body: string,
+    value: SupersededPullRequest,
+    port: SupersedePullRequestPort
+): string {
+    const canonical = requireOneOrMoreCommentMarker(value.comments, body, number);
+    for (const marker of validatedCommentMarkers(value.comments, body)) {
+        if (marker.id !== canonical.id) {
+            port.deleteComment(marker.id);
+        }
+    }
+    return canonical.id;
+}
+function deleteCreatedNoncanonicalComment(
+    comments: IssueComment[],
+    body: string,
+    createdCommentId: string,
+    port: SupersedePullRequestPort,
+    failures: string[]
+): void {
+    let canonical: IssueComment;
+    try {
+        canonical = requireOneOrMoreCommentMarker(comments, body, 0);
+    } catch (error) {
+        failures.push(`inspect concurrent supersession markers: ${errorMessage(error)}`);
+        return;
+    }
+    if (canonical.id === createdCommentId || !hasExpectedComment(comments, createdCommentId, body)) {
+        failures.push("concurrent closure retained this invocation's canonical or unverified supersession comment");
+        return;
+    }
+    attempt(failures, 'delete noncanonical supersession comment', () => port.deleteComment(createdCommentId));
+}
+function findReusableComment(comments: IssueComment[], body: string): IssueComment | undefined {
+    const markers = validatedCommentMarkers(comments, body);
+    if (markers.length === 0) {
         return undefined;
     }
-    const [comment] = owned;
-    if (comment === undefined || owned.length !== 1 || !hasExpectedComment(comments, comment.id, body)) {
-        fail('existing supersession comment is ambiguous or not an exact author-bot receipt');
-    }
-    return comment;
+    return markers[0];
 }
 function assertFinalSupersession(
     value: SupersededPullRequest,
@@ -300,6 +388,25 @@ function assertFinalSupersession(
     if (!hasExpectedComment(value.comments, commentId, body)) {
         fail(`supersession comment receipt ${commentId} is not present on PR #${number}`);
     }
+    requireOneCommentMarker(value.comments, body, number);
+}
+function assertCompletedSupersession(
+    value: SupersededPullRequest,
+    number: number,
+    head: string,
+    base: string,
+    body: string
+): void {
+    if (
+        value.number !== number ||
+        value.repository !== REQUIRED_REPOSITORY ||
+        value.head !== head ||
+        value.base !== base ||
+        value.state !== 'CLOSED'
+    ) {
+        fail(`PR #${number} is not the expected completed supersession`);
+    }
+    requireOneCommentMarker(value.comments, body, number);
 }
 function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
@@ -340,7 +447,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Supe
 }
 type Gh = (args: string[]) => string;
 function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
-    return parseJson(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
+    return parseGraphqlResponse(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
 }
 function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const [owner, name] = REQUIRED_REPOSITORY.split('/');

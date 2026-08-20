@@ -11,7 +11,7 @@ import {
     isAuthorBotLogin,
     isReviewerBotLogin,
     originMainBlob,
-    parseJson,
+    parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
@@ -94,9 +94,14 @@ export function resolveReviewThread(
     }
     const before = port.inspect(number, threadId);
     assertExpectedHead(before.head, expectedHead);
+    if (before.thread?.isResolved) {
+        assertCompletedResolution(before.thread, threadId);
+        return logResolutionSuccess(number, threadId, port);
+    }
     assertResolvableThread(before.thread, threadId);
     let replyAttempted = false;
     let replyCreated = false;
+    let createdReplyId: string | undefined;
     let replyId: string | undefined;
     let resolveAttempted = false;
     let resolutionReceipt: ReviewResolutionReceipt | undefined;
@@ -108,12 +113,18 @@ export function resolveReviewThread(
             assertReply(reply, replyClientMutationId(threadId));
             replyId = reply.id;
             replyCreated = true;
+            createdReplyId = reply.id;
         } else {
             replyId = existingReply.id;
         }
         const afterReply = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(afterReply.head, expectedHead);
         assertResolvableThread(afterReply.thread, threadId);
+        replyId = convergeReplyMarkers(threadId, afterReply.thread, port);
+        const converged = port.inspect(number, threadId);
+        assertExpectedHeadAfterMutation(converged.head, expectedHead);
+        assertResolvableThread(converged.thread, threadId);
+        replyId = requireOneReplyMarker(converged.thread, threadId).id;
         resolveAttempted = true;
         const resolveReceipt = port.resolve(threadId);
         assertResolutionReceipt(resolveReceipt, resolveClientMutationId(threadId));
@@ -128,6 +139,7 @@ export function resolveReviewThread(
             before,
             replyAttempted,
             replyCreated,
+            createdReplyId,
             replyId,
             resolveAttempted,
             resolutionReceipt,
@@ -135,6 +147,10 @@ export function resolveReviewThread(
             error
         );
     }
+    return logResolutionSuccess(number, threadId, port);
+}
+
+function logResolutionSuccess(number: number, threadId: string, port: ResolveReviewThreadPort): string {
     const success = `review-thread-resolved:${number}:${threadId}`;
     port.log(success);
     return success;
@@ -146,6 +162,7 @@ function compensateResolution(
     before: ReviewThreadInspection,
     replyAttempted: boolean,
     replyCreated: boolean,
+    createdReplyId: string | undefined,
     replyId: string | undefined,
     resolveAttempted: boolean,
     resolutionReceipt: ReviewResolutionReceipt | undefined,
@@ -164,7 +181,9 @@ function compensateResolution(
         if (stateMayHaveMutated) {
             failures.push('review-thread resolution may have succeeded; preserving Done reply as durable evidence');
         }
-        if (replyAttempted && !replyCreated) {
+        if (!resolveAttempted && current.thread.isResolved && replyCreated && createdReplyId !== undefined) {
+            deleteCreatedNoncanonicalReply(current.thread, createdReplyId, port, failures);
+        } else if (replyAttempted && !replyCreated) {
             failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
         } else if (replyCreated && !stateMayHaveMutated) {
             if (replyId === undefined) {
@@ -282,6 +301,86 @@ function hasExpectedReply(thread: ReviewThread, replyId: string): boolean {
             isAuthorBotActor(comment.authorLogin, comment.authorType)
     );
 }
+function validatedReplyMarkers(thread: ReviewThread): ReviewComment[] {
+    const owned = thread.comments.filter((comment) => isAuthorBotLogin(comment.authorLogin));
+    for (const comment of owned) {
+        if (
+            !isDecimalId(comment.fullDatabaseId) ||
+            comment.body !== 'Done' ||
+            !isAuthorBotActor(comment.authorLogin, comment.authorType)
+        ) {
+            fail('owned Done reply marker is not an exact author-bot receipt');
+        }
+    }
+    return owned.sort(compareMarkers);
+}
+function compareMarkers(left: ReviewComment, right: ReviewComment): number {
+    // The smallest decimal fullDatabaseId, then node ID, is the canonical concurrent marker.
+    const difference = BigInt(left.fullDatabaseId) - BigInt(right.fullDatabaseId);
+    if (difference === 0n) {
+        return left.id.localeCompare(right.id);
+    }
+    return difference < 0n ? -1 : 1;
+}
+function requireOneReplyMarker(thread: ReviewThread | null, threadId: string): ReviewComment {
+    if (thread === null) {
+        fail(`review thread ${threadId} was not found on this pull request`);
+    }
+    const markers = validatedReplyMarkers(thread);
+    const [marker] = markers;
+    if (marker === undefined || markers.length !== 1) {
+        fail(`review thread ${threadId} does not have exactly one valid Done reply marker`);
+    }
+    return marker;
+}
+function convergeReplyMarkers(threadId: string, thread: ReviewThread | null, port: ResolveReviewThreadPort): string {
+    if (thread === null) {
+        fail(`review thread ${threadId} was not found on this pull request`);
+    }
+    const canonical = requireOneOrMoreReplyMarker(thread, threadId);
+    const markers = validatedReplyMarkers(thread);
+    for (const marker of markers) {
+        if (marker.id !== canonical.id) {
+            port.deleteReply(marker.id);
+        }
+    }
+    return canonical.id;
+}
+function requireOneOrMoreReplyMarker(thread: ReviewThread | null, threadId: string): ReviewComment {
+    if (thread === null) {
+        fail(`review thread ${threadId} was not found on this pull request`);
+    }
+    const [canonical] = validatedReplyMarkers(thread);
+    if (canonical === undefined) {
+        fail(`review thread ${threadId} has no valid Done reply marker`);
+    }
+    return canonical;
+}
+function deleteCreatedNoncanonicalReply(
+    thread: ReviewThread,
+    createdReplyId: string,
+    port: ResolveReviewThreadPort,
+    failures: string[]
+): void {
+    let canonical: ReviewComment;
+    try {
+        canonical = requireOneOrMoreReplyMarker(thread, thread.id);
+    } catch (error) {
+        failures.push(`inspect concurrent Done reply markers: ${errorMessage(error)}`);
+        return;
+    }
+    if (canonical.id === createdReplyId || !hasExpectedReply(thread, createdReplyId)) {
+        failures.push("concurrent resolution retained this invocation's canonical or unverified Done reply");
+        return;
+    }
+    attempt(failures, 'delete noncanonical review reply', () => port.deleteReply(createdReplyId));
+}
+function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
+    if (!isAuthorBotActor(thread.resolvedByLogin, thread.resolvedByType)) {
+        fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
+    }
+    requireOneReplyMarker(thread, threadId);
+}
 function assertFinalResolution(thread: ReviewThread | null, threadId: string, replyId: string): void {
     if (
         thread?.id !== threadId ||
@@ -293,6 +392,7 @@ function assertFinalResolution(thread: ReviewThread | null, threadId: string, re
     if (!hasExpectedReply(thread, replyId)) {
         fail(`review reply receipt ${replyId} is not present on thread ${threadId}`);
     }
+    requireOneReplyMarker(thread, threadId);
 }
 function assertResolvableThread(thread: ReviewThread | null, expectedThreadId: string): void {
     if (thread === null || thread.id !== expectedThreadId) {
@@ -316,15 +416,11 @@ function findReusableReply(thread: ReviewThread | null): ReviewComment | undefin
     if (thread === null) {
         return undefined;
     }
-    const owned = thread.comments.filter((comment) => isAuthorBotLogin(comment.authorLogin));
-    if (owned.length === 0) {
+    const markers = validatedReplyMarkers(thread);
+    if (markers.length === 0) {
         return undefined;
     }
-    const [reply] = owned;
-    if (reply === undefined || owned.length !== 1 || !hasExpectedReply(thread, reply.id)) {
-        fail('existing Done reply is ambiguous or not an exact author-bot receipt');
-    }
-    return reply;
+    return markers[0];
 }
 
 export function shellPort(session: GhSession, cwd: string = process.cwd()): ResolveReviewThreadPort {
@@ -343,7 +439,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
 }
 type Gh = (args: string[]) => string;
 function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
-    return parseJson(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
+    return parseGraphqlResponse(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
 }
 export function inspectReviewThread(number: number, requestedThreadId: string, gh: Gh): ReviewThreadInspection {
     const [owner, name] = REQUIRED_REPOSITORY.split('/');

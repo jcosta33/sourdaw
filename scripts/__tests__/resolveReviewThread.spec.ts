@@ -22,11 +22,14 @@ type Input = {
     authorLogin?: string;
     throwAfterReply?: boolean;
     concurrentReplyOnThrow?: boolean;
+    concurrentReplyBeforeConvergence?: boolean;
     throwResolveWithConcurrentState?: boolean;
     failDelete?: boolean;
     rootAuthorLogin?: string | null;
     rootAuthorType?: string | null;
     isResolved?: boolean;
+    initialResolvedByLogin?: string | null;
+    initialResolvedByType?: string | null;
     resolvedByAfterResolve?: string | null;
     resolvedByTypeAfterResolve?: string | null;
     existingReplyCount?: number;
@@ -41,8 +44,9 @@ function fakePort(input: Input = {}) {
     let index = 0;
     let resolved = input.isResolved ?? false;
     let resolveCalled = false;
-    let resolvedByLogin: string | null = null;
-    let resolvedByType: string | null = null;
+    let resolvedByLogin: string | null = input.initialResolvedByLogin ?? null;
+    let resolvedByType: string | null = input.initialResolvedByType ?? null;
+    let concurrentReplyAdded = false;
     let comments = [
         {
             id: rootId,
@@ -55,7 +59,7 @@ function fakePort(input: Input = {}) {
     for (let replyIndex = 0; replyIndex < (input.existingReplyCount ?? 0); replyIndex += 1) {
         comments.push({
             id: replyIndex === 0 ? replyId : `PRRC_existing_${replyIndex}`,
-            fullDatabaseId: String(9223372036854775808 + replyIndex),
+            fullDatabaseId: String(9223372036854775808n + BigInt(replyIndex)),
             body: 'Done',
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: 'Bot',
@@ -64,6 +68,19 @@ function fakePort(input: Input = {}) {
     const port: ResolveReviewThreadPort = {
         inspect: () => {
             calls.push(`inspect:${++index}`);
+            if (input.concurrentReplyBeforeConvergence && !concurrentReplyAdded && index === 2) {
+                concurrentReplyAdded = true;
+                comments = [
+                    ...comments,
+                    {
+                        id: 'PRRC_concurrent',
+                        fullDatabaseId: '9223372036854775809',
+                        body: 'Done',
+                        authorLogin: AUTHOR_BOT_LOGIN,
+                        authorType: 'Bot',
+                    },
+                ];
+            }
             if (input.throwResolveWithConcurrentState && resolveCalled) {
                 resolved = true;
             }
@@ -257,6 +274,23 @@ describe('review thread resolution', () => {
         });
         expect(call).toBe(3);
     });
+    it('rejects partial GraphQL data with errors before accepting a review thread', () => {
+        expect(() =>
+            inspectReviewThread(42, threadId, () =>
+                JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                headRefOid: head,
+                                reviewThreads: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                            },
+                        },
+                    },
+                    errors: [{ message: 'partial failure' }],
+                })
+            )
+        ).toThrow(/GraphQL errors/i);
+    });
     it('proves absence only after the final thread page', () => {
         let call = 0;
         const inspection = inspectReviewThread(42, threadId, () => {
@@ -349,8 +383,9 @@ describe('review thread resolution', () => {
             'inspect:1',
             `reply:${threadId}`,
             'inspect:2',
-            `resolve:${threadId}`,
             'inspect:3',
+            `resolve:${threadId}`,
+            'inspect:4',
             `log:review-thread-resolved:42:${threadId}`,
         ]);
     });
@@ -385,7 +420,9 @@ describe('review thread resolution', () => {
         expect(state().resolved).toBe(true);
     });
     it('does not unresolve a same-identity resolution after its final head check fails', () => {
-        const { port, calls, authorLogin, state } = fakePort({ heads: [head, head, movedHead, movedHead, movedHead] });
+        const { port, calls, authorLogin, state } = fakePort({
+            heads: [head, head, head, movedHead, movedHead],
+        });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
         expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
@@ -393,7 +430,7 @@ describe('review thread resolution', () => {
     });
     it('does not delete an edited reply during a failed receipted resolution', () => {
         const { port, calls, authorLogin, state } = fakePort({
-            heads: [head, head, movedHead, movedHead, movedHead],
+            heads: [head, head, head, movedHead, movedHead],
             editReplyAfterResolve: true,
             resolvedByAfterResolve: 'jcosta33-author',
         });
@@ -434,9 +471,44 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([`resolve:${threadId}`]);
     });
-    it('rejects multiple existing Done replies before any state mutation', () => {
+    it('converges multiple existing Done replies to the smallest fullDatabaseId before resolving', () => {
         const { port, calls, authorLogin } = fakePort({ existingReplyCount: 2 });
-        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/ambiguous/i);
+        expect(resolveReviewThread(42, threadId, head, authorLogin, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_existing_1']);
+        expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([`resolve:${threadId}`]);
+    });
+    it('converges an interleaved concurrent Done reply before resolution', () => {
+        const { port, calls, authorLogin, state } = fakePort({ concurrentReplyBeforeConvergence: true });
+        expect(resolveReviewThread(42, threadId, head, authorLogin, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_concurrent']);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId }),
+        ]);
+    });
+    it('returns completed success without mutation only for one exact Bot Done marker', () => {
+        const { port, calls, authorLogin } = fakePort({
+            isResolved: true,
+            initialResolvedByLogin: AUTHOR_BOT_LOGIN,
+            initialResolvedByType: 'Bot',
+            existingReplyCount: 1,
+        });
+        expect(resolveReviewThread(42, threadId, head, authorLogin, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls).toEqual(['inspect:1', `log:review-thread-resolved:42:${threadId}`]);
+    });
+    it('fails closed for a completed thread with multiple Done markers', () => {
+        const { port, calls, authorLogin } = fakePort({
+            isResolved: true,
+            initialResolvedByLogin: AUTHOR_BOT_LOGIN,
+            initialResolvedByType: 'Bot',
+            existingReplyCount: 2,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/exactly one/i);
         expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
     it('rejects a User-typed reviewer marker before any mutation', () => {
