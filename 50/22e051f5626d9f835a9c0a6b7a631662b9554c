@@ -1,0 +1,31 @@
+src/modules/BrowserAi/workers/__tests__/modelStorageWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_c29825aaaddbb1 691-772
+  s_27578aec2aab3b::t_4032b7952fb607 80,84-140,384-385,423-424
+scripts/measureBrowserAiModelStorage.ts
+  s_27578aec2aab3b::t_aec44c58163428 154-157,220-232,266,268,277,356,366,368-372
+  s_27578aec2aab3b::t_8d9b29ed70cd64 10-12
+  s_27578aec2aab3b::t_c3c9ae383e1ed2 233-234,305-329,347-351,355,357,359,363-365,367,373-375,418-424,469-474
+src/modules/BrowserAi/repositories/__tests__/modelStorageWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_d4d70cb253114a 51,75-105
+  s_27578aec2aab3b::t_69a76058f38421 106
+src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts
+  s_27578aec2aab3b::t_727f08f0e755a4 12-13,61-67,234,352-355,357,361-371,374,459-462
+src/modules/BrowserAi/workers/__tests__/onnxInferenceWorker.spec.ts
+  s_27578aec2aab3b::t_531e6304b3f078 1,29-32,64,87-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5022e051f5626d9f835a9c0a6b7a631662b9554c",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
