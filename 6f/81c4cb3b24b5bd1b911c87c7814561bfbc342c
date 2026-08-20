@@ -1,0 +1,295 @@
+scripts/__tests__/publishLane.spec.ts
+  s_487e9aa1e46063::t_d3b27de8c81f68 649
+  s_487e9aa1e46063::t_f77c0ec5e66cc9 15
+  s_487e9aa1e46063::t_24c957221da8da 64
+  s_487e9aa1e46063::t_eb1e006a088b9c 665,667-673,676-682,690,697,701
+  s_487e9aa1e46063::t_a98147827096d0 660
+  s_487e9aa1e46063::t_14fe1f1234ac21 98-107
+  s_487e9aa1e46063::t_bf4fc5bb7a49ec 66,227-346,581-582,586
+scripts/publishLane.ts
+  s_487e9aa1e46063::t_5524e0dda1d1e0 561
+  s_487e9aa1e46063::t_db4123cf6c945a 652,656-661
+  s_487e9aa1e46063::t_24960c82a17209 364,371,376-384,386,390-391,394-399
+  s_487e9aa1e46063::t_8a1f764b872e8f 672-673,675,680
+  s_487e9aa1e46063::t_fa39da0ec011a0 81,336,410-415,417,420-422,434-447,456,463
+  s_487e9aa1e46063::t_78a8a2a5424c2d 24-31,40-42,56,62-66,73-75,78-80,82-83,245,334-335,337-338,706,723
+AGENTS.md
+  s_487e9aa1e46063::t_04dc149c3a76fd 285-289
+  s_487e9aa1e46063::t_6e1a1bca24f7c3 181-184,192-194,218-221,225-246,249-252,319-330
+docs/manual/README.md
+  s_487e9aa1e46063::t_d49c17db3820e2 27-28
+docs/manual/devices/13-bacteria.md
+  s_487e9aa1e46063::t_61e47b8ce3c861 1-408
+package.json
+  s_487e9aa1e46063::t_cbee6ab81c7d55 34-35
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_487e9aa1e46063::t_f9140f1012b487 15-16,35-36
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_487e9aa1e46063::t_69b8b4ea27621c 11,27,64-70,81,85,162-170,189-225,263-280,299-320,561-568
+scripts/__tests__/prContract.spec.ts
+  s_487e9aa1e46063::t_1d700be998ae90 10,26-84
+scripts/__tests__/resolveReviewThread.spec.ts
+  s_487e9aa1e46063::t_042b67384722f6 1-606
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_487e9aa1e46063::t_f4027dd9cc5bd6 1-509
+scripts/githubAppIdentity.ts
+  s_487e9aa1e46063::t_c583c189ee709c 10,17-19,202,219-221,390-401,448-452,455-456
+scripts/prContract.ts
+  s_487e9aa1e46063::t_8e6913d78a8dfe 56-159,173-175
+scripts/resolveReviewThread.ts
+  s_487e9aa1e46063::t_5dac0467b3461f 1-753
+scripts/supersedePullRequest.ts
+  s_487e9aa1e46063::t_354865d70b6845 1-663
+scripts/ui-restatement-census.json
+  s_487e9aa1e46063::t_80b471a08dc319 455,500,560-568,596-604,857-865,1028-1036,1355,1505-1513,1604-1612,1697,1730-1738,1760,1805,2597,2714,3197-3205,3236,3287-3295,3353,3587,4124-4132,4217,4244,4367-4375,4619-4636,4640,4736-4744,5006-5014,5213-5221,5429-5446,5567,5969-5977,6458,6671-6679,7016,7409-7417,7592,7790,8003-8011,8039-8047,8798,8807,8906,9230,9518,9722-9730,9815,9860,10247,10514-10522,10940,11090-11098,11666-11674,12056,12179-12187,12269-12277,12440-12448,12497,13340-13348,14099,14114-14122,14315,14492-14500,14837,15035,15041-15049,15197,15302-15310,15710,15734-15742,15782,16232,16652-16660,16799,16860-16863,16866,17318-17326,17660-17668,18059,18128-18136,18338,18500,18725,18851,18920-18928,19130,19226-19234,19361-19369,19406-19414,19472,19739-19747,20372,20525,21746-21754,22199,22349-22357,22484-22492,22835-22843,23045,23123-23131,23144,23636-23644,23888-23896,24122-24130,24170,24365-24373
+src/app/bootstrap.ts
+  s_487e9aa1e46063::t_d07f3bdafc11c7 126,412
+src/components/daw/DawAnalysisCard.tsx
+  s_487e9aa1e46063::t_442945689cec5e 3,22,27,29,31
+src/components/daw/DawBlockedState.tsx
+  s_487e9aa1e46063::t_3e99738aa22263 3,29-33,41,48,60
+src/components/daw/DawChannelStripShell.tsx
+  s_487e9aa1e46063::t_f4a44f6d0b0744 3,18-21,23,34
+src/components/daw/DawChooserCard.tsx
+  s_487e9aa1e46063::t_5d3f89a53e7d31 3,44,48,58,72
+src/components/daw/DawDiagramFrame.tsx
+  s_487e9aa1e46063::t_3b5823b32e7ed6 3,28,30,46
+src/components/daw/DawDialogBody.tsx
+  s_487e9aa1e46063::t_a7f1eba5c1a6da 3,16-18,22
+src/components/daw/DawDialogSection.tsx
+  s_487e9aa1e46063::t_42835137b1f327 3,44,54
+src/components/daw/DawDisplaySurface.tsx
+  s_487e9aa1e46063::t_6c5a5c6e5d89b5 3,16-18,20,27
+src/components/daw/DawEmptyState.tsx
+  s_487e9aa1e46063::t_6168b9b26082c7 3,23-27,30,37,39
+src/components/daw/DawGridHeaderCell.tsx
+  s_487e9aa1e46063::t_0cbad2d69bff31 3,27-29,31,38
+src/components/daw/DawHeaderBand.tsx
+  s_487e9aa1e46063::t_50abbad49098c2 3,35-39,42,55,57
+src/components/daw/DawHierarchyRow.tsx
+  s_487e9aa1e46063::t_3777381be26387 3,31,38-44,48-50,55-57
+src/components/daw/DawMenuInlineEditor.tsx
+  s_487e9aa1e46063::t_b5fca41a70bd24 3-4,34,46
+src/components/daw/DawMenuParts.tsx
+  s_487e9aa1e46063::t_4805a4d0c9d89e 3,36,39,61-62,64,66,75,78,82
+src/components/daw/DawPanelSurface.tsx
+  s_487e9aa1e46063::t_7efc0946311e0e 3,14-16,25-29
+src/components/daw/DawPickerCard.tsx
+  s_487e9aa1e46063::t_a8478903f7e84e 3,34-35,38,44
+src/components/daw/DawPickerRow.tsx
+  s_487e9aa1e46063::t_6701bbfa4ab4fd 3,42,77-78,82-83,91,97-98,100-101,109,114-122,124
+src/components/daw/DawPluginChoiceRow.tsx
+  s_487e9aa1e46063::t_e847f959b1155e 3,37,44,52,59-60,62,70,75,77
+src/components/daw/DawPluginInsetCard.tsx
+  s_487e9aa1e46063::t_684bee92a8c7da 3,25,28
+src/components/daw/DawPluginMetricTile.tsx
+  s_487e9aa1e46063::t_5da6293476a4e3 3,25,33
+src/components/daw/DawPluginRail.tsx
+  s_487e9aa1e46063::t_241363044415ff 3,17-21
+src/components/daw/DawPluginReadoutList.tsx
+  s_487e9aa1e46063::t_3966af2ebda852 3,15,17
+src/components/daw/DawPluginSectionCard.tsx
+  s_487e9aa1e46063::t_62c03463cb1645 3,25,27,32,34,39,42
+src/components/daw/DawPluginSectionHeader.tsx
+  s_487e9aa1e46063::t_fdb265d2059e88 3,21,31-32
+src/components/daw/DawReadoutRow.tsx
+  s_487e9aa1e46063::t_717a0ef54443dc 3,21,24
+src/components/daw/DawSectionDivider.tsx
+  s_487e9aa1e46063::t_cae6efa73f14a9 3,21,32
+src/components/daw/DawSideRail.tsx
+  s_487e9aa1e46063::t_a20658b1cc745d 3,9,11
+src/components/daw/DawTransportCluster.tsx
+  s_487e9aa1e46063::t_f315156a1a196e 3,11-12,21,23
+src/components/daw/DawUtilityListRow.tsx
+  s_487e9aa1e46063::t_2cf35ab5a8d67b 3,53,62,64,68-72
+src/components/daw/DawUtilityMetric.tsx
+  s_487e9aa1e46063::t_f54b1945b25a89 3,30-31,33,36-37,46
+src/components/daw/DawUtilityNotice.tsx
+  s_487e9aa1e46063::t_c55b6d9d0e2dfc 3,23-25,27,35
+src/components/daw/DawUtilityPanel.tsx
+  s_487e9aa1e46063::t_d372e6998293e2 3,14,16
+src/components/daw/DawUtilitySection.tsx
+  s_487e9aa1e46063::t_f96b648f696808 3,31,39
+src/components/daw/__tests__/DawPluginReadoutList.spec.tsx
+  s_487e9aa1e46063::t_419cc8fe7c2be6 9
+src/components/daw/__tests__/DawPluginSectionCard.spec.tsx
+  s_487e9aa1e46063::t_9fd7ddd2835394 22
+src/modules/Arrangement/handlers/__tests__/isGeneratedMidiStateCurrent.spec.ts
+  s_487e9aa1e46063::t_8f18647fb77a13 11,23,48,108-128
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  s_487e9aa1e46063::t_19c879545a278a 1-74
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.spec.ts
+  s_487e9aa1e46063::t_ed0af62e7f153d 9-10,25-32,37-38,73-76,89-130
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipToNextBar.integration.spec.ts
+  s_487e9aa1e46063::t_48e87055e2113e 1-77
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipToNextBar.spec.ts
+  s_487e9aa1e46063::t_8e3a77d4a8089e 9-10,25-32,37-38,73-76,89-130
+src/modules/Arrangement/handlers/clip/__tests__/handleNormalizeClip.spec.ts
+  s_487e9aa1e46063::t_497af023293241 66,70,79,83-96
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipGain.integration.spec.ts
+  s_487e9aa1e46063::t_1c82942f11c8e5 1-88
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipGain.spec.ts
+  s_487e9aa1e46063::t_ccb026184698dd 42,54,58-89,93-185
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  s_487e9aa1e46063::t_ddf00faf51c926 7-18
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_487e9aa1e46063::t_d65ac0682efffc 1,7,12-18,28-54,82-105
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_487e9aa1e46063::t_31122d30c073d9 1,7,12-18,28-54,82-105
+src/modules/Arrangement/handlers/clip/handleNormalizeClip.ts
+  s_487e9aa1e46063::t_ca51a6e775419c 17-24,40-46
+src/modules/Arrangement/handlers/clip/handleRestoreClipGlueState.ts
+  s_487e9aa1e46063::t_38231167bf4ee7 3,7-10
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoopLength.ts
+  s_487e9aa1e46063::t_f8256eb7d5c30d 2,15-44,47-50,52-53,56,59
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_487e9aa1e46063::t_1179fb2a4c79e8 3,22-34,36-39,41
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_487e9aa1e46063::t_7783b11ba23c58 1,3,5,8-27,29-32
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_487e9aa1e46063::t_40adf9894fa002 3,9-18,20-27,35-47
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleRestoreClipStretchState.spec.ts
+  s_487e9aa1e46063::t_bf7c22a317c8f7 102-154
+src/modules/Arrangement/handlers/clipStretch/handleRestoreClipStretchState.ts
+  s_487e9aa1e46063::t_43ae3d1c59d998 2,15-16,37-45,47-51,53
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  s_487e9aa1e46063::t_b4006916f40d55 10,22
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_487e9aa1e46063::t_3adc1e730fcd88 121,132-135,137-138,150-154,166,168,179-189,207-215,225,227-228,230
+src/modules/Arrangement/models/StoredDeviceParameterMigration.ts
+  s_487e9aa1e46063::t_1f3a95216f4689 1-73
+src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts
+  s_487e9aa1e46063::t_63d602170b619d 1,81-84
+src/modules/Arrangement/stores/__tests__/storedDeviceParameterMigration.spec.ts
+  s_487e9aa1e46063::t_bbc56e1886af2e 1-106
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  s_487e9aa1e46063::t_f25ec07b57c50f 3-12,51-99
+src/modules/Arrangement/stores/trackStore.ts
+  s_487e9aa1e46063::t_f93188b38cef34 4,340-346
+src/modules/Arrangement/stores/warpStates.ts
+  s_487e9aa1e46063::t_23d0832e1a3d79 16-63
+src/modules/Arrangement/transformers/clampClipGain.ts
+  s_487e9aa1e46063::t_ccea64966c32db 1-4
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  s_487e9aa1e46063::t_0a7207e5dc28e5 36-46,183-214
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_487e9aa1e46063::t_c8bce04d6b1044 8,94,97-111
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_487e9aa1e46063::t_1186c10bf95ea9 5,9,13-17,20-22,66,76,364-508
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_487e9aa1e46063::t_e4b1179f28faa0 18,33
+src/modules/Arrangement/useCases/clipEditing/clipGlueStateRestorable.ts
+  s_487e9aa1e46063::t_a938dab0e4f983 1-82
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_487e9aa1e46063::t_e7dd9b7ac784b0 1-60
+src/modules/Arrangement/useCases/clipEditing/hasClipGlueDependencies.ts
+  s_487e9aa1e46063::t_206dab1e52eb5d 6,14
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_487e9aa1e46063::t_5502ab09c87325 1,7,25-28,31-32
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_487e9aa1e46063::t_74eabe9cb102a2 7,9,78-79,89,95-104
+src/modules/Arrangement/useCases/clipEditing/setClipGain.ts
+  s_487e9aa1e46063::t_ecdc0464495be0 2,5
+src/modules/Arrangement/useCases/preset/__tests__/canonicalPresetDeviceParameters.spec.ts
+  s_487e9aa1e46063::t_92736d6343c196 1-48
+src/modules/Arrangement/useCases/preset/canonicalPresetDeviceParameters.ts
+  s_487e9aa1e46063::t_5ad6853d6dc2b4 1-36
+src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts
+  s_487e9aa1e46063::t_a4e562e6565e7d 5-6,22
+src/modules/Arrangement/useCases/preset/materializePresetDevices.ts
+  s_487e9aa1e46063::t_19bcbfd4128bec 5-6,28
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_487e9aa1e46063::t_516e5d827f64a0 13-15,22-33,99-101,139-186,190,198-201,220-229,251,254,257-283,286-305,324
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_487e9aa1e46063::t_350c6f4915e63f 177-219
+src/modules/AudioEngine/engine/__tests__/faustLookaheadLatency.spec.ts
+  s_487e9aa1e46063::t_6d6e4a21b4261b 1-152
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_487e9aa1e46063::t_6623b325457156 19,30,64-67,741-855
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_487e9aa1e46063::t_2946d0377cad48 56,121
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_487e9aa1e46063::t_3fad99d0fb3ee4 11,1354-1364,1378-1432,1467,1475,1490-1498,1742-1747,1778-1781,1785
+src/modules/AudioEngine/models/ProofRuntimeControl.ts
+  s_487e9aa1e46063::t_255815689931a3 1-53
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/panOvershootClampParity.spec.ts
+  s_487e9aa1e46063::t_b6cec4a2fd82c9 1-184
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_487e9aa1e46063::t_9e21975944784e 3-4,147-172,297-316,333-352
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_487e9aa1e46063::t_b5b47f6f2b967b 12,25-39,49-51,63,66-68,78-82,86-87,115-145,151-245,248,253-256,259-262
+src/modules/Automation/useCases/automation/__tests__/getAutomationValueAtBeat.spec.ts
+  s_487e9aa1e46063::t_2cbbd6d13f51c5 78,88,94,101,113-117,126-130,138,147-152,177,240-270
+src/modules/Automation/useCases/automation/__tests__/transformAutomationPoints.spec.ts
+  s_487e9aa1e46063::t_c0192b0ff72e44 118-153,229-340
+src/modules/Automation/useCases/automation/getAutomationValueAtBeat.ts
+  s_487e9aa1e46063::t_c0e5c7edd6b877 17-38,93,96,111
+src/modules/Automation/useCases/automation/transformAutomationPoints.ts
+  s_487e9aa1e46063::t_136d50ff3279b9 42-125,127-129,134,142-171,190-202,205-207
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_487e9aa1e46063::t_bf6f7ef93f2677 2424
+src/modules/MIDI/useCases/index.ts
+  s_487e9aa1e46063::t_6f1f558ddf5d37 48,53
+src/modules/MIDI/useCases/midiClipData/midiClipGlueStateMatches.ts
+  s_487e9aa1e46063::t_cb1fbdfbdb2702 1-51
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  s_487e9aa1e46063::t_73bc79cca62072 1-74
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipGlueState.ts
+  s_487e9aa1e46063::t_a6928a9acbf763 3,52-53,55,58
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipSplitState.ts
+  s_487e9aa1e46063::t_9a1cbf53188a4b 1-3,24-25,27,30-32
+src/modules/PluginHost/useCases/faustEngine/__tests__/brickWallLimiterDspBehavior.spec.ts
+  s_487e9aa1e46063::t_aa319b9cbcc9e1 1-297
+src/modules/PluginHost/useCases/faustEngine/__tests__/declaredControlRepairsDspBehavior.spec.ts
+  s_487e9aa1e46063::t_488473f994c689 1-250
+src/modules/PluginHost/useCases/faustEngine/__tests__/multibandCompressorDspBehavior.spec.ts
+  s_487e9aa1e46063::t_d444e917bf853a 1-307
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspCompile.spec.ts
+  s_487e9aa1e46063::t_566ed2cb260e9a 10-12,14-15,23-46,60-68,71-83,86-88,91,93-99,103,105-151,160-167,170-171,177-183,186,188,196,203-333,338,344,350-356,363
+src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts
+  s_487e9aa1e46063::t_7bf2a54ebd922d 248-249,257-259,271
+src/modules/PluginHost/useCases/faustEngine/dsp/1176-compressor.dsp
+  s_487e9aa1e46063::t_2a47f7e1eb9492 2-21
+src/modules/PluginHost/useCases/faustEngine/dsp/brick-wall-limiter.dsp
+  s_487e9aa1e46063::t_219e2f58ecd69b 2-116
+src/modules/PluginHost/useCases/faustEngine/dsp/de-esser.dsp
+  s_487e9aa1e46063::t_995f430ca69da0 4,6-11,20-21
+src/modules/PluginHost/useCases/faustEngine/dsp/gain-utility.dsp
+  s_487e9aa1e46063::t_d682b2ab8dd9a6 3-8
+src/modules/PluginHost/useCases/faustEngine/dsp/lufs-meter.dsp
+  s_487e9aa1e46063::t_ec9e8b4c454d95 8-19
+src/modules/PluginHost/useCases/faustEngine/dsp/multiband-compressor.dsp
+  s_487e9aa1e46063::t_ef3a7a462182c5 2-64
+src/modules/PluginHost/useCases/faustEngine/dsp/noise-gate.dsp
+  s_487e9aa1e46063::t_e0132e28e858a3 3-7
+src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp
+  s_487e9aa1e46063::t_e8b0bf12e48741 6-8
+src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp
+  s_487e9aa1e46063::t_c49340b66b07ab 21-27
+src/modules/PluginHost/useCases/faustEngine/getFaustModuleLatencyMs.ts
+  s_487e9aa1e46063::t_af74be2bb5b58b 1-33
+src/modules/PluginHost/useCases/index.ts
+  s_487e9aa1e46063::t_7a30925cfe2660 10
+src/modules/Proof/stores/index.ts
+  s_487e9aa1e46063::t_bc541dfd820466 1
+src/modules/Proof/stores/proofStore.ts
+  s_487e9aa1e46063::t_81c5a452a0a2fd 255-280
+src/utils/handlerContract.ts
+  s_487e9aa1e46063::t_eb79caae340fd0 1286-1294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6f81c4cb3b24b5bd1b911c87c7814561bfbc342c",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
