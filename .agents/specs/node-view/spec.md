@@ -2,10 +2,10 @@
 type: spec
 id: SPEC-node-view
 title: Node view — visual graph editor for device routing
-status: draft
+status: retired
 owner: The Sourdaw team
 sources:
-  - "Originating design note: node-view graph editor (.agents/specs/node-view/)"
+    - 'Originating design note: node-view graph editor (.agents/specs/node-view/)'
 ---
 
 # Node view — visual graph editor for device routing
@@ -22,7 +22,7 @@ reflection.
 - A project-wide cross-track graph (this view is per-track).
 - Feedback / cyclic audio routing.
 - Promoting visual-only `mixer`/`splitter`/`merger` nodes into real DSP routing (v1 = annotation).
-- Putting node *position* changes onto the undo stack (position is UI-only state).
+- Putting node _position_ changes onto the undo stack (position is UI-only state).
 
 ## Requirements
 
@@ -92,7 +92,7 @@ Verify with: `pnpm test:run -- nodeView` (and inspect `miscCommands.ts` `toggle-
 
 ### AC-018 — Overlay substitutes for the linear insert row
 
-Opening the view must present an overlay that *replaces* the selected track's linear insert
+Opening the view must present an overlay that _replaces_ the selected track's linear insert
 row; closing must collapse back to that linear insert view. Toggling `visible` (AC-009) is
 the trigger, but this AC binds the view-substitution semantics — overlay shown in place of
 the insert row when open, insert row restored when closed.
@@ -173,41 +173,41 @@ Verify with: `pnpm test:run -- nodeView` (assert tab order across nodes, Enter-t
 ## Open questions
 
 - [ ] Q-001 — On track-selection change while the view is `visible`, should it auto-reopen
-  for the newly selected track, and how is that wired to the selection store?
+      for the newly selected track, and how is that wired to the selection store?
 - [ ] Q-002 — Do visual-only `mixer`/`splitter`/`merger` nodes persist as `extraNodes`, or
-  are they dropped on reload until promoted to real routing?
+      are they dropped on reload until promoted to real routing?
 - [ ] Q-003 — Reconcile-vs-edit race ordering when a remote/CRDT patch arrives mid-drag.
 - [ ] Q-004 — Project-wide routing-visualization graph (deferred-gap from intake/implementation-gaps.md,
-  item 7.8d "Routing Visualization"; non-blocking). The gap asks for a force-directed node graph
-  (d3-force or equivalent) visualizing track → bus → device routing plus sends and sidechain wiring,
-  **read-only in v1** (editing is a follow-up). This conflicts with this spec's per-track, editable
-  scope and the Non-goal "A project-wide cross-track graph"; capture here rather than fold into the
-  per-track requirements. Open sub-questions: (a) is this a separate project-wide view or an
-  extension of this one; (b) the renderer — React Flow (this spec) vs a force-directed d3-force
-  layout (the gap); (c) whether sidechain wiring is shown as edges in the project-wide graph
-  (this spec models `sidechain` only as a `ProcessingNodeType`, AC-014).
+      item 7.8d "Routing Visualization"; non-blocking). The gap asks for a force-directed node graph
+      (d3-force or equivalent) visualizing track → bus → device routing plus sends and sidechain wiring,
+      **read-only in v1** (editing is a follow-up). This conflicts with this spec's per-track, editable
+      scope and the Non-goal "A project-wide cross-track graph"; capture here rather than fold into the
+      per-track requirements. Open sub-questions: (a) is this a separate project-wide view or an
+      extension of this one; (b) the renderer — React Flow (this spec) vs a force-directed d3-force
+      layout (the gap); (c) whether sidechain wiring is shown as edges in the project-wide graph
+      (this spec models `sidechain` only as a `ProcessingNodeType`, AC-014).
 - [ ] Q-005 — Interactive pan/zoom performance target (deferred-gap from intake/implementation-gaps.md,
-  item 7.8d "Routing Visualization"; non-blocking). The gap's acceptance bar: the routing graph must
-  render a 64-track project with 8 busses and 16 sends at **≥ 30 fps** interactive (pan / zoom) on the
-  reference machine, verified via a Playwright perf capture. No equivalent throughput/fps budget exists
-  for this spec's per-track React Flow canvas; decide whether a per-track fps target and a Playwright
-  perf capture apply here, and what node/edge count defines the reference case for a single track.
-  (restored detail) The original design note's Tests section proposed a concrete per-track budget that
-  no requirement currently carries: with **50 nodes, initial render < 100 ms on the declared baseline machine**, and
-  **drag at 60 fps** (snapshot timing). Decide whether to adopt these per-track numbers as the
-  reference case or supersede them with the gap's interactive ≥ 30 fps bar.
+      item 7.8d "Routing Visualization"; non-blocking). The gap's acceptance bar: the routing graph must
+      render a 64-track project with 8 busses and 16 sends at **≥ 30 fps** interactive (pan / zoom) on the
+      reference machine, verified via a Playwright perf capture. No equivalent throughput/fps budget exists
+      for this spec's per-track React Flow canvas; decide whether a per-track fps target and a Playwright
+      perf capture apply here, and what node/edge count defines the reference case for a single track.
+      (restored detail) The original design note's Tests section proposed a concrete per-track budget that
+      no requirement currently carries: with **50 nodes, initial render < 100 ms on the declared baseline machine**, and
+      **drag at 60 fps** (snapshot timing). Decide whether to adopt these per-track numbers as the
+      reference case or supersede them with the gap's interactive ≥ 30 fps bar.
 - [ ] Q-006 — Stray-edge / compaction path for sidechain routing (restored detail; forward gap).
-  Adjacent to this spec's `sidechain` `ProcessingNodeType` (AC-014): the Routing module's
-  `removeSidechainRoute` (`removeSidechainRoute.ts:5-19`) does not validate route existence and there
-  is no compaction path, so an engine `sidechainConnection` with no corresponding store entry is never
-  cleaned up. The Routing audit proposed a `compactSidechainConnections` use-case that diffs engine
-  state against store state. Decide whether the node graph should surface or trigger such compaction
-  when a `sidechain` edge has no backing route, or whether this stays wholly within the Routing module.
+      Adjacent to this spec's `sidechain` `ProcessingNodeType` (AC-014): the Routing module's
+      `removeSidechainRoute` (`removeSidechainRoute.ts:5-19`) does not validate route existence and there
+      is no compaction path, so an engine `sidechainConnection` with no corresponding store entry is never
+      cleaned up. The Routing audit proposed a `compactSidechainConnections` use-case that diffs engine
+      state against store state. Decide whether the node graph should surface or trigger such compaction
+      when a `sidechain` edge has no backing route, or whether this stays wholly within the Routing module.
 
 ## Known risks
 
 - Adjacent ordering hazard in sidechain wiring (Routing module, observed):
-  `addSidechainRoute.ts:51-54` writes `sidechainStore.set(...)` *before* calling
+  `addSidechainRoute.ts:51-54` writes `sidechainStore.set(...)` _before_ calling
   `wireSidechainRoute`. If the wire fails, the store holds a phantom route and its
   subscribers — including this node graph when it reflects a `sidechain` edge (AC-014) —
   re-render with a route that has no audio effect. (Today both calls are synchronous and
