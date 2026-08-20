@@ -15,8 +15,10 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
+import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
 import { updateActiveRenderProgress } from '../stores/inferenceProgressStore';
+
+import { modelStorageWorkerBridge } from './modelStorageWorkerBridge';
 
 type PendingRequest = {
     resolve: (value: WorkerResponse) => void;
@@ -261,12 +263,48 @@ export const inferenceWorkerBridge = {
         return response.type === 'status' ? response.loadedModels : [];
     },
 
-    async loadDdspSession({ modelId, modelUrl }: { modelId: string; modelUrl: string }): Promise<void> {
-        logger.info(`[WorkerBridge] Loading DDSP (TF.js) session from URL: ${modelId}`);
+    async loadDdspSession({
+        modelId,
+        artifacts,
+    }: {
+        modelId: string;
+        artifacts: Array<Omit<DdspStoredArtifact, 'modelDataPort'>>;
+    }): Promise<void> {
+        logger.info(`[WorkerBridge] Loading DDSP (TF.js) session from verified OPFS: ${modelId}`);
         const worker = await getTfjsWorker();
         const requestId = crypto.randomUUID();
-        const request: WorkerRequest = { type: 'create-session-from-url', requestId, modelId, modelUrl };
-        await sendRequest(worker, workerState.tfjs, request);
+        const streamedArtifacts: DdspStoredArtifact[] = [];
+        try {
+            for (const artifact of artifacts) {
+                const modelDataPort = await modelStorageWorkerBridge.readModel({
+                    family: 'ddsp',
+                    modelId: artifact.modelId,
+                    expectedSizeBytes: artifact.sizeBytes,
+                    expectedSha256: artifact.sha256,
+                });
+                if (modelDataPort === null) {
+                    throw new Error(`Verified DDSP artifact is missing: ${artifact.path}`);
+                }
+                streamedArtifacts.push({ ...artifact, modelDataPort });
+            }
+            const request: WorkerRequest = {
+                type: 'create-session-from-model-storage',
+                requestId,
+                modelId,
+                artifacts: streamedArtifacts,
+            };
+            await sendRequest(
+                worker,
+                workerState.tfjs,
+                request,
+                streamedArtifacts.map((artifact) => artifact.modelDataPort)
+            );
+        } catch (error) {
+            for (const artifact of streamedArtifacts) {
+                artifact.modelDataPort.close();
+            }
+            throw error;
+        }
     },
 
     async runKokoroTts(input: RunKokoroInput): Promise<Extract<WorkerResponse, { type: 'tts-result' }>> {

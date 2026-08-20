@@ -13,6 +13,12 @@ import { type ActiveRender } from '../../models/RenderProgress';
 import { inferenceProgressStore, startActiveRender } from '../../stores/inferenceProgressStore';
 import { inferenceWorkerBridge } from '../inferenceWorkerBridge';
 
+const model_storage_mocks = vi.hoisted(() => ({ readModel: vi.fn() }));
+
+vi.mock('../modelStorageWorkerBridge', () => ({
+    modelStorageWorkerBridge: { readModel: model_storage_mocks.readModel },
+}));
+
 /**
  * A controllable Worker stand-in. Captures posted messages/transfers and
  * lets a test drive the `onmessage` reply channel, so request correlation,
@@ -36,6 +42,7 @@ beforeEach(() => {
     installedWorkers = [];
     synchronousPostError = null;
     inferenceProgressStore.set({ activeRenders: {} });
+    model_storage_mocks.readModel.mockReset();
 
     class WorkerStub {
         url: string;
@@ -334,9 +341,11 @@ describe('inferenceWorkerBridge — getLoadedOnnxSessions', () => {
 
 describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
     it('spawns a TF.js worker on its own script, not the ONNX worker script', async () => {
+        const modelDataPort = new MessageChannel().port1;
+        model_storage_mocks.readModel.mockResolvedValue(modelDataPort);
         const ddspLoad = inferenceWorkerBridge.loadDdspSession({
             modelId: 'violin-1',
-            modelUrl: 'https://cdn.example/violin-1/model.json',
+            artifacts: [{ modelId: 'violin-1/model.json', path: 'model.json', sizeBytes: 1, sha256: 'a'.repeat(64) }],
         });
         await flush();
 
@@ -345,10 +354,19 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
         expect(tfjs.url).toContain('tfjsInferenceWorker');
         expect(tfjs.url).not.toContain('onnxInferenceWorker');
         expect(lastRequest(tfjs)).toMatchObject({
-            type: 'create-session-from-url',
+            type: 'create-session-from-model-storage',
             modelId: 'violin-1',
-            modelUrl: 'https://cdn.example/violin-1/model.json',
+            artifacts: [
+                {
+                    modelId: 'violin-1/model.json',
+                    path: 'model.json',
+                    sizeBytes: 1,
+                    sha256: 'a'.repeat(64),
+                    modelDataPort,
+                },
+            ],
         });
+        expect(lastCall(tfjs)[1]).toEqual([modelDataPort]);
 
         reply(tfjs, { type: 'session-created', requestId: lastRequestId(tfjs), modelId: 'violin-1' });
         await expect(ddspLoad).resolves.toBeUndefined();
@@ -497,7 +515,7 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         vi.useFakeTimers();
         const load = inferenceWorkerBridge.loadDdspSession({
             modelId: 'violin-1',
-            modelUrl: 'https://cdn.example/violin-1/model.json',
+            artifacts: [{ modelId: 'violin-1/model.json', path: 'model.json', sizeBytes: 1, sha256: 'a'.repeat(64) }],
         });
         await flush();
         const worker = tfjsWorker();

@@ -33,6 +33,8 @@ type CheckVerifiedModel = (input: {
     sizeBytes: number;
 }) => Promise<boolean>;
 
+type CheckDdspInstrumentReady = (input: { id: string; version: string; artifacts: unknown[] }) => Promise<boolean>;
+
 type LoggerMock = {
     info: (message: string) => void;
     warn: (message: string) => void;
@@ -92,6 +94,7 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();
@@ -104,20 +107,25 @@ describe('initBrowserAi', () => {
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
     });
 
-    it('should keep withheld DDSP checkpoints out of the runtime registry', async () => {
+    it('derives DDSP readiness from the complete validated OPFS artifact set', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
+        const check_ddsp_instrument_ready = vi.fn<CheckDdspInstrumentReady>().mockResolvedValue(true);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
         });
 
         await initBrowserAi();
 
-        expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
-        expect(DDSP_INSTRUMENT_CATALOG.every((instrument) => instrument.license === 'Unverified')).toBe(true);
+        expect(modelRegistryStore.value?.ddspInstruments).toHaveLength(4);
+        expect(modelRegistryStore.value?.ddspInstruments.every((instrument) => instrument.status === 'ready')).toBe(
+            true
+        );
+        expect(check_ddsp_instrument_ready).toHaveBeenCalledTimes(DDSP_INSTRUMENT_CATALOG.length);
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
         expect(check_verified_model).toHaveBeenCalledWith({
             family: 'kokoro',
@@ -136,6 +144,7 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();
@@ -154,6 +163,7 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();
@@ -173,6 +183,7 @@ describe('initBrowserAi', () => {
             logger: logger_mock,
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();
@@ -196,6 +207,7 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();
@@ -217,6 +229,7 @@ describe('initBrowserAi', () => {
             logger: logger_mock,
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await expect(initBrowserAi()).resolves.toBeUndefined();
@@ -239,6 +252,7 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();
@@ -266,6 +280,7 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
         });
 
         await initBrowserAi();

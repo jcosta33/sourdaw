@@ -10,8 +10,10 @@ import { useStore } from '#/infra/store/useStore';
 
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
+import { downloadDdspInstrument } from '../../useCases/downloadDdspInstrument';
 import { downloadModel } from '../../useCases/downloadModel';
 import { KOKORO_MODEL_ENTRY } from '../../useCases/initBrowserAi';
+import { removeDdspInstrument } from '../../useCases/removeDdspInstrument';
 import { removeModel } from '../../useCases/removeModel';
 
 function formatBytes(bytes: number): string {
@@ -23,9 +25,6 @@ function formatBytes(bytes: number): string {
     }
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-
-const DDSP_UNAVAILABLE_DESCRIPTION = 'TF.js worker unavailable in this build';
-const DDSP_UNAVAILABLE_LABEL = 'DDSP browser rendering is not available in this build';
 
 type ModelActionProps = {
     id: string;
@@ -186,7 +185,9 @@ export function ModelManagerPanel(): ReactElement {
                         {instruments.map((instrument) => {
                             const status = 'status' in instrument ? instrument.status : 'error';
                             const description =
-                                status === 'ready' ? 'CDN · ~15 MB · cached by browser' : DDSP_UNAVAILABLE_DESCRIPTION;
+                                status === 'ready'
+                                    ? `Magenta · ${formatBytes(instrument.sizeBytes)} · verified OPFS`
+                                    : `Magenta direct download · ${formatBytes(instrument.sizeBytes)}`;
                             return (
                                 <DawPickerRow
                                     key={instrument.id}
@@ -194,19 +195,31 @@ export function ModelManagerPanel(): ReactElement {
                                     description={description}
                                     endSlot={
                                         status === 'ready' ? (
-                                            <DawMicroBadge
-                                                tone="success"
-                                                aria-label={`${instrument.name} cached and ready`}
-                                            >
-                                                ✓ Cached
-                                            </DawMicroBadge>
+                                            <div className="flex items-center gap-2">
+                                                <DawMicroBadge
+                                                    tone="success"
+                                                    aria-label={`${instrument.name} stored and verified`}
+                                                >
+                                                    ✓ Ready
+                                                </DawMicroBadge>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void removeDdspInstrument(instrument)}
+                                                    className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                                                    aria-label={`Remove ${instrument.name} from storage`}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
                                         ) : (
-                                            <DawMicroBadge
-                                                tone="danger"
-                                                aria-label={`${instrument.name} unavailable: ${DDSP_UNAVAILABLE_LABEL}`}
+                                            <button
+                                                type="button"
+                                                onClick={() => void downloadDdspInstrument(instrument)}
+                                                className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
+                                                aria-label={`Download ${instrument.name} from Magenta`}
                                             >
-                                                Unavailable
-                                            </DawMicroBadge>
+                                                Download
+                                            </button>
                                         )
                                     }
                                 />

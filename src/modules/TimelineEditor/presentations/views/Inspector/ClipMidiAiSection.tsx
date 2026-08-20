@@ -1,6 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
-import { Sparkles, Loader2, Music, Mic, AudioLines, Download } from 'lucide-react';
+import { Sparkles, Loader2, Music, Mic, AudioLines, Download, Cpu } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
@@ -19,6 +19,7 @@ import {
     renderDiffSingerPhrase,
     downloadModel,
     KOKORO_MODEL_ENTRY,
+    renderDdspInstrument,
 } from '#/modules/BrowserAi/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore } from '#/modules/Transport/stores';
@@ -60,6 +61,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
     const [isRenderingTts, setIsRenderingTts] = useState(false);
+    const [isRenderingDdsp, setIsRenderingDdsp] = useState(false);
+    const [ddspInstrumentId, setDdspInstrumentId] = useState('');
+    const [ddspResult, setDdspResult] = useState<RenderResult | null>(null);
     // DiffSinger SVS uses diffusion-based synthesis with configurable step count.
     const [svsRenderQuality, setSvsRenderQuality] = useState<RenderQuality>('standard');
     const [ttsText, setTtsText] = useState('');
@@ -88,6 +92,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;
     const vocoderStatus = registry?.vocoder?.status ?? 'not-downloaded';
     const vocoderProgress = registry?.vocoder?.downloadProgress ?? 0;
+    const readyDdspInstruments = registry?.ddspInstruments.filter((instrument) => instrument.status === 'ready') ?? [];
+    const selectedDdspInstrument =
+        readyDdspInstruments.find((instrument) => instrument.id === ddspInstrumentId) ?? readyDdspInstruments[0];
 
     // Every AI action here runs for seconds while the panel stays interactive, so each one has
     // to prove it still owns the panel before writing anything back (audit M-250). Two
@@ -171,7 +178,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setVariationTokenCount(0);
         setIsGeneratingVariations(false);
         setIsRenderingTts(false);
+        setIsRenderingDdsp(false);
         setIsRenderingSvs(false);
+        setDdspResult(null);
         setTtsResults([]);
         setSvsResults([]);
     }
@@ -184,6 +193,42 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
             sha256: KOKORO_MODEL_ENTRY.sha256,
         });
+    };
+
+    const handleRenderDdsp = async (): Promise<void> => {
+        const instrument = selectedDdspInstrument;
+        const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
+        if (!instrument) {
+            notifyUser('Download a DDSP instrument in AI Model Manager first', 'error');
+            return;
+        }
+        if (notes.length === 0) {
+            notifyUser('No MIDI notes in this clip to render', 'error');
+            return;
+        }
+        const bpm = tempoMapStore.value?.changes[0]?.tempo ?? 120;
+        const secondsPerBeat = 60 / bpm;
+        setIsRenderingDdsp(true);
+        setDdspResult(null);
+        try {
+            const result = await renderDdspInstrument({
+                phraseId: `${clip.id}-ddsp`,
+                instrument,
+                durationSec: (clip.endBeat - clip.startBeat) * secondsPerBeat,
+                notes: notes.map((note) => ({
+                    pitch: note.pitch,
+                    velocity: note.velocity,
+                    startSec: (note.startBeat - clip.startBeat) * secondsPerBeat,
+                    durationSec: note.duration * secondsPerBeat,
+                })),
+            });
+            setDdspResult({ audio: result.audio, sampleRate: result.sampleRate, label: 'DDSP', name: instrument.name });
+            notifyAiChange('Instrument render complete', [`${instrument.name} rendered — drag it onto an audio track`]);
+        } catch (error) {
+            notifyUser(error instanceof Error ? error.message : 'DDSP render failed', 'error');
+        } finally {
+            setIsRenderingDdsp(false);
+        }
     };
 
     const handlePreviewVoice = async (): Promise<void> => {
@@ -755,6 +800,63 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         )}
                     </Button>
                 </DawPluginSectionCard>
+
+                {isUnsupported ? null : (
+                    <DawPluginSectionCard
+                        title="Instrument"
+                        detail={<Cpu className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
+                        detailMode="badge"
+                    >
+                        {readyDdspInstruments.length === 0 ? (
+                            <DawEmptyState
+                                compact
+                                title="Download an instrument to get started"
+                                description="DDSP instruments are verified direct downloads from Magenta in AI Model Manager."
+                            />
+                        ) : (
+                            <div className="space-y-2">
+                                <DawCompactSelect
+                                    value={selectedDdspInstrument?.id ?? ''}
+                                    onChange={(event) => setDdspInstrumentId(event.target.value)}
+                                    aria-label="DDSP instrument"
+                                    className="w-full"
+                                >
+                                    {readyDdspInstruments.map((instrument) => (
+                                        <option key={instrument.id} value={instrument.id}>
+                                            {instrument.name}
+                                        </option>
+                                    ))}
+                                </DawCompactSelect>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)]"
+                                    onClick={handleRenderDdsp}
+                                    disabled={isRenderingDdsp}
+                                >
+                                    {isRenderingDdsp ? (
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />{' '}
+                                            Rendering…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Cpu className="size-3 mr-1" aria-hidden="true" /> Render Instrument
+                                        </>
+                                    )}
+                                </Button>
+                                {ddspResult ? (
+                                    <AiRenderClipPreview
+                                        audio={ddspResult.audio}
+                                        sampleRate={ddspResult.sampleRate}
+                                        label={ddspResult.label}
+                                        name={ddspResult.name}
+                                    />
+                                ) : null}
+                            </div>
+                        )}
+                    </DawPluginSectionCard>
+                )}
 
                 {/* Vocals — unified section for Spoken (Kokoro TTS) and Sung (DiffSinger SVS) */}
                 {renderIife_12()}

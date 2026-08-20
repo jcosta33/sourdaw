@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * tfjsInferenceWorker is a stub that always reports DDSP rendering as
- * unavailable (TF.js cannot be bundled by Rolldown). Importing the module
+ * TF.js worker error handling and session lifecycle. Importing the module
  * registers `self.onmessage` as a side effect. We spy on `self.postMessage`
  * and dispatch synthetic MessageEvents to exercise each request branch.
  */
@@ -52,25 +51,25 @@ describe('tfjsInferenceWorker', () => {
         expect(postMessageSpy).not.toHaveBeenCalled();
     });
 
-    it('returns an unavailable error for create-session-from-url requests (DDSP)', () => {
+    it('rejects a stored DDSP session when WebGPU is absent', async () => {
         const req: WorkerRequest = {
-            type: 'create-session-from-url',
+            type: 'create-session-from-model-storage',
             requestId: 'r3',
             modelId: 'ddsp-1',
-            modelUrl: 'https://example.test/ddsp/model.json',
+            artifacts: [],
         };
         dispatch(req);
 
-        expect(postMessageSpy).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(postMessageSpy).toHaveBeenCalledTimes(1));
         const response = postMessageSpy.mock.calls[0]![0] as WorkerResponse;
         expect(response.type).toBe('error');
         expect(response.requestId).toBe('r3');
         if (response.type === 'error') {
-            expect(response.error).toContain('unavailable');
+            expect(response.error).toContain('WebGPU');
         }
     });
 
-    it('returns an unavailable error for run-ddsp-inference requests', () => {
+    it('reports a missing DDSP session', async () => {
         const req: WorkerRequest = {
             type: 'run-ddsp-inference',
             requestId: 'r4',
@@ -81,12 +80,12 @@ describe('tfjsInferenceWorker', () => {
         };
         dispatch(req);
 
-        expect(postMessageSpy).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(postMessageSpy).toHaveBeenCalledTimes(1));
         const response = postMessageSpy.mock.calls[0]![0] as WorkerResponse;
         expect(response.type).toBe('error');
         expect(response.requestId).toBe('r4');
         if (response.type === 'error') {
-            expect(response.error).toContain('unavailable');
+            expect(response.error).toContain('session not found');
         }
     });
 
@@ -105,7 +104,7 @@ describe('tfjsInferenceWorker', () => {
         expect(response.type).toBe('error');
         expect(response.requestId).toBe('r5');
         if (response.type === 'error') {
-            expect(response.error).toContain('unavailable');
+            expect(response.error).toContain('Unsupported');
         }
     });
 });

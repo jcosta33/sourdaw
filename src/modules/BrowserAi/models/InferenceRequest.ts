@@ -18,6 +18,14 @@ export type SessionOptions = {
 };
 
 export type OnnxExecutionProvider = NonNullable<SessionOptions['executionProviders']>[number];
+export type DdspStoredArtifact = {
+    modelId: string;
+    path: 'model.json' | 'group1-shard1of1.bin' | 'settings.json';
+    sizeBytes: number;
+    sha256: string;
+    /** Already-verified artifact stream from the model-storage worker. */
+    modelDataPort: MessagePort;
+};
 
 // Main thread → Worker
 export type WorkerRequest =
@@ -53,16 +61,12 @@ export type WorkerRequest =
           requestId: string;
       }
     | {
-          /**
-           * Load a TF.js GraphModel from a CDN directory URL.
-           * Used for DDSP instruments (multi-file models: model.json + weight shards).
-           * TF.js handles IndexedDB caching internally.
-           */
-          type: 'create-session-from-url';
+          /** Load a TF.js GraphModel from verified OPFS artifacts. */
+          type: 'create-session-from-model-storage';
           /** UUID used to correlate with the session-created response */
           requestId: string;
           modelId: string;
-          modelUrl: string;
+          artifacts: DdspStoredArtifact[];
       }
     | {
           type: 'run-ddsp-inference';

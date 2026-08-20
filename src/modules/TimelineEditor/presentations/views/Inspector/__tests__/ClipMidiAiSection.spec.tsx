@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { modelRegistryStore } from '#/modules/BrowserAi/stores';
-import { downloadModel, KOKORO_MODEL_ENTRY, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { downloadModel, KOKORO_MODEL_ENTRY, renderDdspInstrument, renderKokoroTts } from '#/modules/BrowserAi/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
@@ -73,6 +73,7 @@ vi.mock('#/modules/BrowserAi/useCases', async (importOriginal) => {
     return {
         ...actual,
         downloadModel: vi.fn(),
+        renderDdspInstrument: vi.fn(),
         renderKokoroTts: vi.fn(),
     };
 });
@@ -354,6 +355,48 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
             sha256: KOKORO_MODEL_ENTRY.sha256,
         });
+    });
+
+    it('renders a verified DDSP instrument through the typed browser-AI caller', async () => {
+        const instrument = {
+            id: 'ddsp-violin',
+            name: 'Violin',
+            family: 'ddsp' as const,
+            instrument: 'violin',
+            url: 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json',
+            sizeBytes: 4,
+            license: 'Unverified' as const,
+            attribution: 'Magenta',
+            nativeSampleRate: 16_000,
+            frameRate: 250,
+            artifactVersion: 'v1',
+            artifacts: [],
+            status: 'ready' as const,
+            downloadProgress: 1,
+        };
+        modelRegistryStore.set({
+            ddspInstruments: [instrument],
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+        midiStoreMock.state = {
+            notesByClipId: { [clipA.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue({
+            audio: new Float32Array([0.1, 0.2]),
+            sampleRate: 44_100,
+            provenance: { modelId: instrument.id, renderQuality: 'standard', renderedAt: 1, tier: 'browser-preview' },
+        });
+
+        render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(screen.getByRole('button', { name: /Render Instrument/ }));
+
+        await screen.findByTestId('ai-render-preview');
+        expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
+            expect.objectContaining({ phraseId: `${clipA.id}-ddsp`, instrument })
+        );
     });
 
     it('discards a TTS render that resolves after a clip switch (audit M-250)', async () => {

@@ -282,7 +282,7 @@
         {
             "id": "ddsp-models",
             "kind": "model-stack",
-            "retention": "defer-behind-admission",
+            "retention": "keep-with-obligations",
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
@@ -292,15 +292,17 @@
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts"
             ],
             "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
-            "revisions": ["mutable checkpoint directories"],
-            "digests": ["pending:OS-04-checkpoint-hashes"],
-            "licenses": ["unverified:exact-GCS-checkpoint-artifacts"],
-            "productSurfaces": ["withheld browser DDSP instruments", "withheld desktop DDSP instruments"],
+            "revisions": ["magenta-js-ddsp-2020-01-05"],
+            "digests": ["sha256:pinned-per-file-in-DdspArtifactManifest"],
+            "licenses": ["first-party:Magenta checkpoint-specific direct-use permission"],
+            "productSurfaces": ["browser DDSP instruments", "desktop DDSP instruments"],
             "evidence": [
-                "The framework is Apache-2.0, but the mutable checkpoint directories publish no exact artifact grant or digest.",
-                "The false release-admission gate keeps checkpoints out of the registry and model manager."
+                "Magenta.js documents direct application loading for these exact checkpoint directories.",
+                "Sourdaw validates every direct-download artifact against its pinned size and SHA-256 before OPFS readiness."
             ],
-            "obligations": ["Pin, hash, and verify each exact checkpoint and transitive runtime before admission."]
+            "obligations": [
+                "Download only at runtime from Magenta; do not bundle, mirror, or redistribute checkpoint weights."
+            ]
         },
         {
             "id": "rave-models",

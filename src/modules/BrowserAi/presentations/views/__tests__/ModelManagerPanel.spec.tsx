@@ -19,12 +19,22 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 const use_case_mocks = vi.hoisted(() => ({
+    downloadDdspInstrument: vi.fn(),
     downloadModel: vi.fn(),
+    removeDdspInstrument: vi.fn(),
     removeModel: vi.fn(),
 }));
 
 vi.mock('../../../useCases/downloadModel', () => ({
     downloadModel: use_case_mocks.downloadModel,
+}));
+
+vi.mock('../../../useCases/downloadDdspInstrument', () => ({
+    downloadDdspInstrument: use_case_mocks.downloadDdspInstrument,
+}));
+
+vi.mock('../../../useCases/removeDdspInstrument', () => ({
+    removeDdspInstrument: use_case_mocks.removeDdspInstrument,
 }));
 
 vi.mock('../../../useCases/removeModel', () => ({
@@ -61,13 +71,14 @@ describe('ModelManagerPanel', () => {
         mocks.registryState = undefined;
     });
 
-    it('does not expose withheld DDSP checkpoints', () => {
+    it('shows admitted DDSP checkpoints as direct Magenta downloads, never a browser cache claim', () => {
         mocks.registryState = create_registry_with_unavailable_ddsp();
 
         render(<ModelManagerPanel />);
 
-        expect(screen.queryByText('DDSP Instruments')).not.toBeInTheDocument();
-        expect(screen.queryByText(/DDSP:/)).not.toBeInTheDocument();
+        expect(screen.getByText('DDSP Instruments')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Download Violin from Magenta' })).toBeInTheDocument();
+        expect(screen.queryByText(/cached by browser/i)).not.toBeInTheDocument();
     });
 
     it('should download the Kokoro model when not-downloaded and show its download button', () => {

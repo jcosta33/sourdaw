@@ -3,7 +3,10 @@
 
 export { initBrowserAi, KOKORO_MODEL_ENTRY } from './initBrowserAi';
 export { downloadModel } from './downloadModel';
+export { downloadDdspInstrument } from './downloadDdspInstrument';
 export { removeModel } from './removeModel';
+export { removeDdspInstrument } from './removeDdspInstrument';
+export { renderDdspInstrument } from './renderDdspInstrument';
 export { renderKokoroTts } from './renderKokoroTts';
 export { renderDiffSingerPhrase } from './renderDiffSingerPhrase';
 export { cancelRender } from './cancelRender';

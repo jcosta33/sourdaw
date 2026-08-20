@@ -10,59 +10,36 @@
  */
 
 import { type DdspInstrument } from './BrowserModel';
-
-const DDSP_BASE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp';
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from './DdspArtifactManifest';
 
 /**
  * Factory DDSP instrument catalog.
  */
-export const DDSP_INSTRUMENT_CATALOG: Omit<DdspInstrument, 'status' | 'downloadProgress'>[] = [
-    {
-        id: 'ddsp-violin',
-        name: 'Violin',
+function entry(
+    id: string,
+    name: string,
+    instrument: keyof typeof DDSP_ARTIFACTS
+): Omit<DdspInstrument, 'status' | 'downloadProgress'> {
+    const artifacts = DDSP_ARTIFACTS[instrument];
+    return {
+        id,
+        name,
         family: 'ddsp',
-        instrument: 'violin',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/violin`,
+        instrument,
+        url: artifacts[0]!.url,
+        sizeBytes: artifacts.reduce((sum, artifact) => sum + artifact.sizeBytes, 0),
         license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
+        attribution: 'Magenta.js DDSP checkpoint — direct runtime download from Magenta.',
+        nativeSampleRate: 16_000,
         frameRate: 250,
-    },
-    {
-        id: 'ddsp-flute',
-        name: 'Flute',
-        family: 'ddsp',
-        instrument: 'flute',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/flute`,
-        license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
-        frameRate: 250,
-    },
-    {
-        id: 'ddsp-trumpet',
-        name: 'Trumpet',
-        family: 'ddsp',
-        instrument: 'trumpet',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/trumpet`,
-        license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
-        frameRate: 250,
-    },
-    {
-        id: 'ddsp-tenor-saxophone',
-        name: 'Tenor Saxophone',
-        family: 'ddsp',
-        instrument: 'tenor_saxophone',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/tenor_saxophone`,
-        license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
-        frameRate: 250,
-    },
+        artifacts: [...artifacts],
+        artifactVersion: DDSP_CHECKPOINT_VERSION,
+    };
+}
+
+export const DDSP_INSTRUMENT_CATALOG = [
+    entry('ddsp-violin', 'Violin', 'violin'),
+    entry('ddsp-flute', 'Flute', 'flute'),
+    entry('ddsp-trumpet', 'Trumpet', 'trumpet'),
+    entry('ddsp-tenor-saxophone', 'Tenor Saxophone', 'tenor_saxophone'),
 ];
