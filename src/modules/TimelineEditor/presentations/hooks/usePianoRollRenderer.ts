@@ -28,6 +28,30 @@
  * 4. **Exposed `draw()`** — the synchronous draw function is still returned so
  *    interaction handlers can request an immediate repaint (e.g. on mousemove
  *    during drag) without waiting for the next rAF tick.
+ *
+ * ## The canvas covers the viewport, not the arrangement
+ *
+ * The backing store spans the visible viewport only — the scroll container's
+ * `clientWidth` minus the sticky pitch rail — and every layer is drawn
+ * translated by the container's `scrollLeft`, so canvas x `0` is the beat at
+ * the left edge of the viewport rather than beat zero. The element itself is
+ * `position: sticky` at the rail's right edge inside a wrapper that carries
+ * the full content width (`PianoRoll.tsx`), so CSS layout owns the scroll
+ * extent and the canvas never has to.
+ *
+ * This is what keeps every beat reachable at every zoom. A backing store sized
+ * to the whole arrangement made the reachable beat count inversely
+ * proportional to zoom by construction: a canvas dimension is finite, so
+ * `beats * beatWidth * devicePixelRatio` had to fit inside it, and any budget
+ * on that product could only choose which of the two to sacrifice. Nothing
+ * here may reintroduce a dependency between the content extent and the
+ * backing store — the two are different measurements of different things.
+ *
+ * Because the drawn window moves with the scroll offset, the scroll offset is
+ * part of what decides a repaint (`scrollDirty`) *and* part of the grid cache
+ * key. The cache covers a window wider than the viewport and is rebuilt only
+ * when scrolling leaves that window, so scrolling costs a blit and the dynamic
+ * layers rather than a full grid re-stroke per frame.
  */
 import { type RefObject, useRef, useEffect, useLayoutEffect } from 'react';
 
@@ -42,14 +66,40 @@ import {
     RULER_HEIGHT,
     SCALES,
     EMPTY_NOTES,
+    PITCH_RAIL_WIDTH,
     getVisiblePitches,
-    getPianoRollExtentBeats,
     colorWithAlpha,
     brightenColor,
 } from '../helpers/pianoRollConstants';
 
+/**
+ * Extra grid cached either side of the viewport, as a fraction of the viewport
+ * width. The cache is rebuilt only when scrolling leaves the cached window, so
+ * this trades backing-store memory for grid re-strokes: at 0.5 the cache is
+ * two viewports wide and a rebuild happens once per half-viewport of travel
+ * instead of once per frame.
+ */
+const GRID_CACHE_MARGIN_RATIO = 0.5;
+
+/** Visible horizontal slice of the arrangement, in content pixels. */
+type ViewportRange = { leftPx: number; rightPx: number };
+
+/** True when a note's painted span overlaps the visible slice at all. */
+function isSpanVisible(startBeat: number, duration: number, beatWidth: number, view: ViewportRange): boolean {
+    const startPx = startBeat * beatWidth;
+    return startPx <= view.rightPx && startPx + duration * beatWidth >= view.leftPx;
+}
+
 type RendererDeps = {
     canvasRef: RefObject<HTMLCanvasElement | null>;
+    /**
+     * The `overflow-auto` scroll container that owns the piano roll's scroll
+     * position. Its `scrollLeft` is the drawing origin and its `clientWidth`
+     * (minus `PITCH_RAIL_WIDTH`) is the width the backing store is sized to.
+     * Read live inside the rAF loop rather than mirrored through React state,
+     * so the drawn offset can never lag the browser's own scroll by a frame.
+     */
+    scrollRef: RefObject<HTMLElement | null>;
     notes: MidiNote[];
     clipId: string;
     trackId: string;
@@ -117,8 +167,11 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
     // ── OffscreenCanvas grid cache ──────────────────────────────────────
     const gridCacheRef = useRef<OffscreenCanvas | null>(null);
-    // String key of the params that were used to draw the cached grid.
+    // String key of the layout params that were used to draw the cached grid.
     const gridCacheKeyRef = useRef('');
+    // Left edge of the cached window, in whole device pixels of content space.
+    // -1 means "no window cached yet", which no real offset can equal.
+    const gridWindowStartRef = useRef(-1);
 
     // ── Change-detection sentinels ───────────────────────────────────────
     const prevNotesRef = useRef<MidiNote[] | null>(null);
@@ -129,6 +182,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     const prevDrawPreviewRef = useRef<unknown>(undefined);
     const prevRubberRef = useRef<unknown>(undefined);
     const prevGhostRef = useRef<boolean | null>(null);
+    const prevScrollRef = useRef<number | null>(null);
 
     // ── Stable draw() ref — updated each rAF tick ───────────────────────
     const drawFnRef = useRef<() => void>(() => {});
@@ -177,45 +231,55 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-            // Extent is derived from the clip being edited plus every clip
-            // opened alongside it (see `getPianoRollExtentBeats`) — opened
-            // clips' notes are drawn in this same coordinate space by
-            // `drawOpenedClipNotes` below and are editable, not read-only, so
-            // their content must also grow the canvas. `pixelsPerBeat` must
-            // stay in lock-step with the same call in PianoRoll.tsx — it is
-            // what the extent's ceiling is derived from at the current zoom.
-            const clip = tracks?.find((time) => time.id === tId)?.clips.find((context) => context.id === cId);
-            const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
-            const extentSources = [{ clipLengthBeats, notes }];
-            if (openedIds.length > 0) {
-                for (const openedId of openedIds) {
-                    if (openedId === cId) {
-                        continue;
-                    }
-                    const openedNotes = midiState?.notesByClipId[openedId] ?? EMPTY_NOTES;
-                    const openedClip = tracks?.flatMap((time) => time.clips).find((context) => context.id === openedId);
-                    const openedClipLengthBeats = openedClip ? openedClip.endBeat - openedClip.startBeat : 0;
-                    extentSources.push({ clipLengthBeats: openedClipLengthBeats, notes: openedNotes });
-                }
-            }
-            const extentBeats = getPianoRollExtentBeats(extentSources, bw * dpr);
-            const containerW = canvas.parentElement?.clientWidth ?? extentBeats * bw;
-            const totalWidth = Math.max(containerW, extentBeats * bw);
             const height = noteAreaHeight + RULER_HEIGHT;
 
+            // ── Viewport, not content extent ─────────────────────────────
+            // The backing store covers what is on screen. The content extent
+            // lives in CSS on the wrapper around this canvas (PianoRoll.tsx)
+            // and never reaches the backing store, so no amount of content at
+            // any zoom can push a beat outside it.
+            const scrollEl = deps.scrollRef.current;
+            const viewportWidth = (scrollEl?.clientWidth ?? 0) - PITCH_RAIL_WIDTH;
+            if (viewportWidth <= 0) {
+                // Not laid out yet (or the editor is collapsed to nothing).
+                // There is no visible slice to draw, so skip the frame rather
+                // than sizing the backing store from a bogus measurement.
+                rafId = requestAnimationFrame(tick);
+                return;
+            }
+
             // Resize canvas backing store only when dimensions change
-            const targetW = Math.round(totalWidth * dpr);
+            const targetW = Math.round(viewportWidth * dpr);
             const targetH = Math.round(height * dpr);
             if (canvas.width !== targetW || canvas.height !== targetH) {
                 canvas.width = targetW;
                 canvas.height = targetH;
-                canvas.style.width = `${totalWidth}px`;
+                canvas.style.width = `${viewportWidth}px`;
                 canvas.style.height = `${height}px`;
             }
 
-            // Check grid cache validity
-            const gridKey = `${bw}|${gs}|${st}|${sr}|${folded}|${totalWidth}|${height}|${dpr}`;
-            const gridDirty = gridKey !== gridCacheKeyRef.current;
+            // Scroll offset snapped to whole device pixels, so the cached grid
+            // blit and the dynamic layers share one origin instead of drifting
+            // a fraction of a pixel apart while scrolling.
+            const scrollDevicePx = Math.max(0, Math.round((scrollEl?.scrollLeft ?? 0) * dpr));
+            const scrollPx = scrollDevicePx / dpr;
+            const view: ViewportRange = { leftPx: scrollPx, rightPx: scrollPx + viewportWidth };
+
+            // ── Grid cache window ────────────────────────────────────────
+            // The cache spans a window wider than the viewport; scrolling
+            // inside it costs only a blit. Leaving it — or changing any layout
+            // input — rebuilds it around the new offset.
+            const marginDevicePx = Math.round(targetW * GRID_CACHE_MARGIN_RATIO);
+            const cacheDeviceWidth = targetW + marginDevicePx * 2;
+            const gridKey = `${bw}|${gs}|${st}|${sr}|${folded}|${targetW}|${targetH}|${dpr}`;
+            const cachedWindowStart = gridWindowStartRef.current;
+            const gridDirty =
+                gridKey !== gridCacheKeyRef.current ||
+                cachedWindowStart < 0 ||
+                scrollDevicePx < cachedWindowStart ||
+                scrollDevicePx + targetW > cachedWindowStart + cacheDeviceWidth;
+            const windowStartDevicePx = gridDirty ? Math.max(0, scrollDevicePx - marginDevicePx) : cachedWindowStart;
+            const scrollDirty = scrollDevicePx !== prevScrollRef.current;
 
             // Check data dirty state
             const notesDirty = notes !== prevNotesRef.current;
@@ -231,8 +295,14 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             // unrelated invalidation.
             const ghostDirty = ghost !== prevGhostRef.current;
 
+            // The drawn window moves with the scroll offset, so a scroll that
+            // stays inside the cached grid window still has to repaint — every
+            // layer sits at a new canvas-local x. Leaving this out would freeze
+            // the picture (or smear the dynamic layers over a stale grid) for
+            // as long as nothing else happened to invalidate the frame.
             const needsRepaint =
                 gridDirty ||
+                scrollDirty ||
                 notesDirty ||
                 midiDirty ||
                 tracksDirty ||
@@ -252,44 +322,81 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 prevDrawPreviewRef.current = deps.drawPreviewRef.current;
                 prevRubberRef.current = deps.rubberBandRef.current;
                 prevGhostRef.current = ghost;
+                prevScrollRef.current = scrollDevicePx;
 
-                // Rebuild grid cache when layout changed
+                // Rebuild the grid cache when layout changed or the scroll
+                // offset left the cached window.
                 if (gridDirty) {
-                    const offscreen = new OffscreenCanvas(targetW, targetH);
+                    const cached = gridCacheRef.current;
+                    const offscreen =
+                        cached && cached.width === cacheDeviceWidth && cached.height === targetH
+                            ? cached
+                            : new OffscreenCanvas(cacheDeviceWidth, targetH);
                     const gCtx = offscreen.getContext('2d')!;
-                    gCtx.scale(dpr, dpr);
-                    drawBackground(gCtx, totalWidth, height);
-                    drawBeatRuler(gCtx, totalWidth, bw, gs);
+                    const windowStartPx = windowStartDevicePx / dpr;
+                    const cacheWidth = cacheDeviceWidth / dpr;
+                    // Opaque background over the whole cache, drawn before the
+                    // content translate so a reused offscreen needs no clear.
+                    gCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                    drawBackground(gCtx, cacheWidth, height);
+                    // From here the cache draws in content coordinates.
+                    gCtx.translate(-windowStartPx, 0);
+                    drawBeatRuler(gCtx, windowStartPx, cacheWidth, bw, gs);
                     gCtx.save();
                     gCtx.translate(0, RULER_HEIGHT);
-                    drawNoteGrid(gCtx, visiblePitches, totalWidth, bw, gs, st, sr);
+                    drawNoteGrid(gCtx, visiblePitches, windowStartPx, cacheWidth, bw, gs, st, sr);
                     gCtx.restore();
                     gridCacheRef.current = offscreen;
                     gridCacheKeyRef.current = gridKey;
+                    gridWindowStartRef.current = windowStartDevicePx;
                 }
 
                 // Reset transform before blitting (canvas resize clears it)
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-                // Blit cached grid
-                ctx.drawImage(gridCacheRef.current!, 0, 0);
+                // Blit the cached grid at its own content origin, expressed in
+                // this frame's canvas-local device pixels.
+                ctx.drawImage(gridCacheRef.current!, windowStartDevicePx - scrollDevicePx, 0);
 
-                // Scale for HiDPI before drawing dynamic layers
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                // Scale for HiDPI and shift the origin to the first visible
+                // beat, so every dynamic layer below keeps drawing in absolute
+                // content coordinates.
+                ctx.setTransform(dpr, 0, 0, dpr, -scrollDevicePx, 0);
 
                 // Ghost notes + secondary open clips + active notes + overlays
                 ctx.save();
                 ctx.translate(0, RULER_HEIGHT);
                 if (ghost && tracks) {
-                    drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId);
+                    drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId, view);
                 }
                 // A9: draw notes from other simultaneously-open clips at 55% opacity
                 if (openedIds.length > 0 && midiState && tracks) {
-                    drawOpenedClipNotes(ctx, pitchToRow, bw, midiState.notesByClipId, tracks, cId, openedIds, selIds);
+                    drawOpenedClipNotes(
+                        ctx,
+                        pitchToRow,
+                        bw,
+                        midiState.notesByClipId,
+                        tracks,
+                        cId,
+                        openedIds,
+                        selIds,
+                        view
+                    );
                 }
-                drawActiveNotes(ctx, pitchToRow, notes, bw, selIds, tracks, tId, cId, deps.dragPreviewRef.current);
+                drawActiveNotes(
+                    ctx,
+                    pitchToRow,
+                    notes,
+                    bw,
+                    selIds,
+                    tracks,
+                    tId,
+                    cId,
+                    view,
+                    deps.dragPreviewRef.current
+                );
                 if (si) {
-                    drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, totalWidth, noteAreaHeight);
+                    drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, view, noteAreaHeight);
                 }
                 drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current);
                 drawRubberBand(ctx, deps.rubberBandRef.current);
@@ -310,6 +417,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             prevRubberRef.current = undefined;
             prevSelIdsRef.current = null;
             prevGhostRef.current = null;
+            prevScrollRef.current = null;
         };
 
         rafId = requestAnimationFrame(tick);
@@ -323,27 +431,36 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
 // ── Drawing helpers ──────────────────────────────────────────────────────────
 
-function drawBackground(ctx: OffscreenCanvasRenderingContext2D, totalWidth: number, height: number): void {
+function drawBackground(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number): void {
     ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
-    ctx.fillRect(0, 0, totalWidth, height);
+    ctx.fillRect(0, 0, width, height);
 }
 
+/**
+ * Draws the ruler across `[startPx, startPx + widthPx)` of content space. The
+ * caller has already translated the context to content coordinates, so the
+ * loop below runs over the beats in that slice rather than from beat zero —
+ * the window may start anywhere in the arrangement.
+ */
 function drawBeatRuler(
     ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-    totalWidth: number,
+    startPx: number,
+    widthPx: number,
     beatWidth: number,
     gridSnap: number
 ): void {
+    const endPx = startPx + widthPx;
     ctx.fillStyle = resolveToken('--color-bg-panel', '#111111');
-    ctx.fillRect(0, 0, totalWidth, RULER_HEIGHT);
+    ctx.fillRect(startPx, 0, widthPx, RULER_HEIGHT);
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.beginPath();
-    ctx.moveTo(0, RULER_HEIGHT);
-    ctx.lineTo(totalWidth, RULER_HEIGHT);
+    ctx.moveTo(startPx, RULER_HEIGHT);
+    ctx.lineTo(endPx, RULER_HEIGHT);
     ctx.stroke();
 
-    const totalBeats = Math.ceil(totalWidth / beatWidth);
-    for (let beat = 0; beat <= totalBeats; beat++) {
+    const firstBeat = Math.max(0, Math.floor(startPx / beatWidth));
+    const lastBeat = Math.ceil(endPx / beatWidth);
+    for (let beat = firstBeat; beat <= lastBeat; beat++) {
         const x = beat * beatWidth;
         const isBar = beat % 4 === 0;
         if (isBar) {
@@ -377,16 +494,19 @@ function drawBeatRuler(
     }
 }
 
+/** Row shading and beat lines across `[startPx, startPx + widthPx)`. */
 function drawNoteGrid(
     ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
     visiblePitches: number[],
-    totalWidth: number,
+    startPx: number,
+    widthPx: number,
     beatWidth: number,
     gridSnap: number,
     scaleType: string,
     scaleRoot: number
 ): void {
     const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+    const endPx = startPx + widthPx;
 
     for (let row = 0; row < visiblePitches.length; row++) {
         const pitch = visiblePitches[row]!;
@@ -396,33 +516,34 @@ function drawNoteGrid(
 
         if (isBlack) {
             ctx.fillStyle = 'rgba(255,255,255,0.02)';
-            ctx.fillRect(0, y, totalWidth, ROW_HEIGHT);
+            ctx.fillRect(startPx, y, widthPx, ROW_HEIGHT);
         }
 
         const relativeNote = (noteIndex - scaleRoot + 12) % 12;
         if (!scaleIntervals.includes(relativeNote)) {
             ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.fillRect(0, y, totalWidth, ROW_HEIGHT);
+            ctx.fillRect(startPx, y, widthPx, ROW_HEIGHT);
         }
 
         ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.beginPath();
-        ctx.moveTo(0, y + ROW_HEIGHT);
-        ctx.lineTo(totalWidth, y + ROW_HEIGHT);
+        ctx.moveTo(startPx, y + ROW_HEIGHT);
+        ctx.lineTo(endPx, y + ROW_HEIGHT);
         ctx.stroke();
 
         if (noteIndex === 0) {
             ctx.strokeStyle = 'rgba(255,255,255,0.12)';
             ctx.beginPath();
-            ctx.moveTo(0, y + ROW_HEIGHT);
-            ctx.lineTo(totalWidth, y + ROW_HEIGHT);
+            ctx.moveTo(startPx, y + ROW_HEIGHT);
+            ctx.lineTo(endPx, y + ROW_HEIGHT);
             ctx.stroke();
         }
     }
 
     const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-    const totalBeats = Math.ceil(totalWidth / beatWidth);
-    for (let beat = 0; beat <= totalBeats; beat++) {
+    const firstBeat = Math.max(0, Math.floor(startPx / beatWidth));
+    const lastBeat = Math.ceil(endPx / beatWidth);
+    for (let beat = firstBeat; beat <= lastBeat; beat++) {
         const x = beat * beatWidth;
         ctx.strokeStyle = beat % 4 === 0 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)';
         ctx.beginPath();
@@ -456,7 +577,8 @@ function drawGhostNotes(
         clips: Array<{ id: string; type: string; color: string }>;
     }>,
     trackId: string,
-    clipId: string
+    clipId: string,
+    view: ViewportRange
 ): void {
     const otherMidiTracks = tracks.filter((time) => time.kind === 'midi' && time.id !== trackId);
     for (const otherTrack of otherMidiTracks) {
@@ -470,7 +592,7 @@ function drawGhostNotes(
             }
             const ghostClipColor = otherClip.color || otherTrack.color;
             for (const gn of otherNotes) {
-                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostClipColor, 0.06, 0.1);
+                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostClipColor, 0.06, 0.1, view);
             }
         }
     }
@@ -487,7 +609,7 @@ function drawGhostNotes(
             }
             const ghostColor = sameTrackClip.color || activeTrack.color;
             for (const gn of ghostNotes) {
-                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostColor, 0.08, 0.12);
+                drawGhostNote(ctx, pitchToRow, beatWidth, gn, ghostColor, 0.08, 0.12, view);
             }
         }
     }
@@ -500,10 +622,14 @@ function drawGhostNote(
     note: MidiNote,
     color: string,
     fillAlpha: number,
-    strokeAlpha: number
+    strokeAlpha: number,
+    view: ViewportRange
 ): void {
     const row = pitchToRow.get(note.pitch) ?? -1;
     if (row === -1) {
+        return;
+    }
+    if (!isSpanVisible(note.startBeat, note.duration, beatWidth, view)) {
         return;
     }
     const x = note.startBeat * beatWidth;
@@ -537,7 +663,8 @@ function drawOpenedClipNotes(
     }>,
     primaryClipId: string,
     openedClipIds: string[],
-    selectedNoteIds: Set<string>
+    selectedNoteIds: Set<string>,
+    view: ViewportRange
 ): void {
     for (const openedId of openedClipIds) {
         if (openedId === primaryClipId) {
@@ -559,6 +686,9 @@ function drawOpenedClipNotes(
         for (const note of openedNotes) {
             const row = pitchToRow.get(note.pitch) ?? -1;
             if (row === -1) {
+                continue;
+            }
+            if (!isSpanVisible(note.startBeat, note.duration, beatWidth, view)) {
                 continue;
             }
             const x = note.startBeat * beatWidth;
@@ -600,6 +730,7 @@ function drawActiveNotes(
     }> | null,
     trackId: string,
     clipId: string,
+    view: ViewportRange,
     dragPreview: DragPreview = null
 ): void {
     const activeTrack = tracks?.find((time) => time.id === trackId);
@@ -627,6 +758,12 @@ function drawActiveNotes(
 
         const row = pitchToRow.get(displayPitch) ?? -1;
         if (row === -1) {
+            continue;
+        }
+        // Cull against the drawn slice, not the clip: a long clip's notes are
+        // mostly off-viewport at any useful zoom, and the whole note list is
+        // walked on every repaint — including every frame of a scroll.
+        if (!isSpanVisible(displayStartBeat, displayDuration, beatWidth, view)) {
             continue;
         }
 
@@ -672,17 +809,17 @@ function drawStepCursor(
     stepPitch: number,
     beatWidth: number,
     gridSnap: number,
-    totalWidth: number,
+    view: ViewportRange,
     noteAreaHeight: number
 ): void {
     const sx = stepBeat * beatWidth;
     const row = pitchToRow.get(stepPitch) ?? -1;
 
-    // Row highlight
+    // Row highlight, across the drawn slice rather than the whole arrangement.
     if (row !== -1) {
         const sy = row * ROW_HEIGHT;
         ctx.fillStyle = 'rgba(160, 90, 120, 0.15)';
-        ctx.fillRect(0, sy, totalWidth, ROW_HEIGHT);
+        ctx.fillRect(view.leftPx, sy, view.rightPx - view.leftPx, ROW_HEIGHT);
     }
 
     // Column highlight

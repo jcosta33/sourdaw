@@ -13,8 +13,8 @@
  * `ROW_HEIGHT`/`RULER_HEIGHT` probe values); unmocking it there would need a
  * second, parallel set of fixtures for no benefit.
  */
-import { render } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, act } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { PianoRoll } from '../PianoRoll';
 
@@ -33,10 +33,17 @@ vi.mock('#/utils/Styles/cn', () => ({
     cn: (...inputs: unknown[]) => inputs.filter((input) => typeof input === 'string').join(' '),
 }));
 
-const { midiState, trackState } = vi.hoisted((): { midiState: ProbeMidiState; trackState: ProbeTrackState } => ({
-    midiState: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-    trackState: { tracks: [], selectedTrackId: null },
-}));
+const { midiState, trackState, toolbarProps } = vi.hoisted(
+    (): {
+        midiState: ProbeMidiState;
+        trackState: ProbeTrackState;
+        toolbarProps: { current: Record<string, unknown> | null };
+    } => ({
+        midiState: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        trackState: { tracks: [], selectedTrackId: null },
+        toolbarProps: { current: null },
+    })
+);
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
@@ -101,7 +108,10 @@ vi.mock('../../../hooks/usePianoRollInteractions', () => ({
 }));
 
 vi.mock('../PianoRollToolbar', () => ({
-    PianoRollToolbar: () => <div data-testid="toolbar" />,
+    PianoRollToolbar: (props: Record<string, unknown>) => {
+        toolbarProps.current = props;
+        return <div data-testid="toolbar" />;
+    },
 }));
 
 vi.mock('../PianoRollContextMenu', () => ({
@@ -216,5 +226,65 @@ describe('PianoRoll grid extent (real pianoRollConstants)', () => {
         // at GRID_BEATS(32) * 40 = 1280) would fail this.
         const openedNoteEndPx = (openedNote.startBeat + openedNote.duration) * 40;
         expect(reportedWidth).toBeGreaterThanOrEqual(openedNoteEndPx);
+    });
+
+    // The decisive case for issue #2299. The layout extent is what the scroll
+    // container and the expression lane span, so a beat missing from it cannot
+    // be scrolled to, selected, dragged or resized at all.
+    //
+    // Pinning one `pixelsPerBeat` (the old tests all used beatWidth 40 at
+    // devicePixelRatio 1) cannot observe a ceiling that is a *pixel* budget:
+    // such a ceiling only engages once zoom and display density push
+    // `beats * beatWidth * devicePixelRatio` past the budget, which 40 never
+    // does. That blind spot is why an extent ceiling shipped twice. This
+    // sweeps the zoom levels the toolbar actually offers across the display
+    // densities the app actually runs on, and asserts against the clip's own
+    // length rather than a computed expectation — so it stays decisive
+    // whatever rule replaces the one under test.
+    describe('reachability across zoom and device pixel ratio', () => {
+        /** 64 bars at 4/4 — an unremarkable arrangement-length MIDI clip. */
+        const LONG_CLIP_BEATS = 256;
+        const originalDevicePixelRatio = window.devicePixelRatio;
+
+        afterEach(() => {
+            Object.defineProperty(window, 'devicePixelRatio', {
+                value: originalDevicePixelRatio,
+                configurable: true,
+            });
+        });
+
+        const cases = [1, 2, 3].flatMap((devicePixelRatio) => [2, 4].map((zoom) => ({ devicePixelRatio, zoom })));
+
+        it.each(cases)(
+            'keeps every beat of a 256-beat clip inside the layout extent at zoom $zoom on a $devicePixelRatio x display',
+            ({ devicePixelRatio, zoom }) => {
+                Object.defineProperty(window, 'devicePixelRatio', {
+                    value: devicePixelRatio,
+                    configurable: true,
+                });
+                midiState.notesByClipId = { 'clip-1': [] };
+                trackState.tracks = [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        color: 'oklch(0.5 0.1 200)',
+                        clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: LONG_CLIP_BEATS }],
+                    },
+                ];
+
+                const onContentWidthChange = vi.fn();
+                render(<PianoRoll {...defaultProps} onContentWidthChange={onContentWidthChange} />);
+                const onZoomChange = toolbarProps.current?.onZoomChange as ((next: number) => void) | undefined;
+                expect(onZoomChange).toBeTypeOf('function');
+                act(() => {
+                    onZoomChange?.(zoom);
+                });
+
+                // PianoRoll's own zoom→beatWidth rule: max(1, 40 * zoom).
+                const beatWidth = 40 * zoom;
+                const reportedWidth = onContentWidthChange.mock.calls.at(-1)?.[0] as number;
+                expect(reportedWidth).toBeGreaterThanOrEqual(LONG_CLIP_BEATS * beatWidth);
+            }
+        );
     });
 });
