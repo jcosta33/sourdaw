@@ -5,6 +5,7 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
@@ -32,13 +33,23 @@ type ModelActionProps = {
     family: string;
     url: string;
     sizeBytes: number;
+    sha256?: string;
     status: string;
     downloadProgress: number;
 };
 
-function ModelAction({ id, name, family, url, sizeBytes, status, downloadProgress }: ModelActionProps): ReactElement {
+function ModelAction({
+    id,
+    name,
+    family,
+    url,
+    sizeBytes,
+    sha256,
+    status,
+    downloadProgress,
+}: ModelActionProps): ReactElement {
     const handleDownload = (): void => {
-        void downloadModel({ modelId: id, family, url, sizeBytes });
+        void downloadModel({ modelId: id, family, url, sizeBytes, sha256 });
     };
     const handleRemove = (): void => {
         // Surface a failed delete instead of letting the rejection vanish into a
@@ -169,62 +180,62 @@ export function ModelManagerPanel(): ReactElement {
                 </div>
             </DawUtilitySection>
 
-            {/* DDSP Instruments */}
-            <DawUtilitySection
-                title="DDSP Instruments"
-                detail="Monophonic synthesis · Apache 2.0 · Google Research · Browser renderer unavailable"
-            >
-                <div className="space-y-0.5">
-                    {instruments.map((instrument) => {
-                        const status = 'status' in instrument ? instrument.status : 'error';
-                        const description =
-                            status === 'ready' ? 'CDN · ~15 MB · cached by browser' : DDSP_UNAVAILABLE_DESCRIPTION;
-                        return (
-                            <DawPickerRow
-                                key={instrument.id}
-                                heading={instrument.name}
-                                description={description}
-                                endSlot={
-                                    status === 'ready' ? (
-                                        <DawMicroBadge
-                                            tone="success"
-                                            aria-label={`${instrument.name} cached and ready`}
-                                        >
-                                            ✓ Cached
-                                        </DawMicroBadge>
-                                    ) : (
-                                        <DawMicroBadge
-                                            tone="danger"
-                                            aria-label={`${instrument.name} unavailable: ${DDSP_UNAVAILABLE_LABEL}`}
-                                        >
-                                            Unavailable
-                                        </DawMicroBadge>
-                                    )
-                                }
-                            />
-                        );
-                    })}
-                </div>
-            </DawUtilitySection>
+            {MODEL_RELEASE_ADMISSION.ddsp ? (
+                <DawUtilitySection title="DDSP Instruments" detail="Monophonic synthesis · Google Research">
+                    <div className="space-y-0.5">
+                        {instruments.map((instrument) => {
+                            const status = 'status' in instrument ? instrument.status : 'error';
+                            const description =
+                                status === 'ready' ? 'CDN · ~15 MB · cached by browser' : DDSP_UNAVAILABLE_DESCRIPTION;
+                            return (
+                                <DawPickerRow
+                                    key={instrument.id}
+                                    heading={instrument.name}
+                                    description={description}
+                                    endSlot={
+                                        status === 'ready' ? (
+                                            <DawMicroBadge
+                                                tone="success"
+                                                aria-label={`${instrument.name} cached and ready`}
+                                            >
+                                                ✓ Cached
+                                            </DawMicroBadge>
+                                        ) : (
+                                            <DawMicroBadge
+                                                tone="danger"
+                                                aria-label={`${instrument.name} unavailable: ${DDSP_UNAVAILABLE_LABEL}`}
+                                            >
+                                                Unavailable
+                                            </DawMicroBadge>
+                                        )
+                                    }
+                                />
+                            );
+                        })}
+                    </div>
+                </DawUtilitySection>
+            ) : null}
 
-            {/* Kokoro TTS */}
-            <DawUtilitySection title="Kokoro TTS (82M)" detail="Vocal scratch tracks · Apache 2.0 · hexgrad">
-                <DawPickerRow
-                    heading="Kokoro-82M (q8f16)"
-                    description={`21 voices · ${formatBytes(KOKORO_MODEL_ENTRY.sizeBytes)}`}
-                    endSlot={
-                        <ModelAction
-                            id={KOKORO_MODEL_ENTRY.id}
-                            name="Kokoro-82M (q8f16)"
-                            family={KOKORO_MODEL_ENTRY.family}
-                            url={KOKORO_MODEL_ENTRY.url}
-                            sizeBytes={KOKORO_MODEL_ENTRY.sizeBytes}
-                            status={kokoroStatus}
-                            downloadProgress={kokoroProgress}
-                        />
-                    }
-                />
-            </DawUtilitySection>
+            {MODEL_RELEASE_ADMISSION.kokoro ? (
+                <DawUtilitySection title="Kokoro TTS (82M)" detail="Vocal scratch tracks · Apache 2.0 · hexgrad">
+                    <DawPickerRow
+                        heading="Kokoro-82M (q8f16)"
+                        description={`21 voices · ${formatBytes(KOKORO_MODEL_ENTRY.sizeBytes)}`}
+                        endSlot={
+                            <ModelAction
+                                id={KOKORO_MODEL_ENTRY.id}
+                                name="Kokoro-82M (q8f16)"
+                                family={KOKORO_MODEL_ENTRY.family}
+                                url={KOKORO_MODEL_ENTRY.url}
+                                sizeBytes={KOKORO_MODEL_ENTRY.sizeBytes}
+                                sha256={KOKORO_MODEL_ENTRY.sha256}
+                                status={kokoroStatus}
+                                downloadProgress={kokoroProgress}
+                            />
+                        }
+                    />
+                </DawUtilitySection>
+            ) : null}
 
             {/* Attribution */}
             <section
@@ -234,8 +245,7 @@ export function ModelManagerPanel(): ReactElement {
                 <p id="credits-heading" className="font-medium text-muted-foreground/70 mb-1">
                     AI Model Credits
                 </p>
-                <p>DDSP: Engel et al., ICLR 2020. Apache 2.0.</p>
-                <p>Kokoro TTS: hexgrad. Apache 2.0.</p>
+                {MODEL_RELEASE_ADMISSION.kokoro ? <p>Kokoro TTS: hexgrad. Apache 2.0.</p> : null}
             </section>
         </div>
     );

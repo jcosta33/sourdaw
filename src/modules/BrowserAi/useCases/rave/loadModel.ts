@@ -1,3 +1,5 @@
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
+
 import { raveStore, raveLogger } from '../../stores/rave';
 
 /**
@@ -16,6 +18,9 @@ import { raveStore, raveLogger } from '../../stores/rave';
  * exact dishonesty this gate exists to stop.
  */
 export function loadModel(modelId: string): void {
+    if (!MODEL_RELEASE_ADMISSION.rave) {
+        throw new Error('RAVE model artifacts are not admitted in this release');
+    }
     const state = raveStore.value;
     if (!state) {
         throw new Error('RAVE store is not initialised');

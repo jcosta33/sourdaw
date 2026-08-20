@@ -11,6 +11,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 
 import { type CapabilityReport } from '../../models/CapabilityReport';
+import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { initBrowserAi } from '../initBrowserAi';
@@ -19,7 +20,7 @@ type DetectCapabilitiesRepo = (input?: {
     forceRefresh?: boolean;
     measureInference?: boolean;
 }) => Promise<CapabilityReport>;
-type CheckModelCached = (input: { family: string; modelId: string }) => Promise<boolean>;
+type ReadVerifiedModel = () => Promise<ArrayBuffer | null>;
 
 function create_logger_mock(): { info: (m: string) => void; warn: (m: string) => void; debug: (m: string) => void } {
     return {
@@ -38,7 +39,7 @@ const supported_report: CapabilityReport = {
     chromeVersion: 133,
     inference: {
         status: 'measured',
-        modelId: 'kokoro-82m-q8',
+        modelId: KOKORO_MODEL_ARTIFACT.id,
         executionProviders: ['webgpu', 'wasm'],
         audioSeconds: 4,
         elapsedSeconds: 2,
@@ -76,12 +77,12 @@ describe('BrowserAi capabilityColdStart', () => {
 
     it('forces a fresh capability probe on cold start rather than accepting a cached report', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(supported_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -95,12 +96,12 @@ describe('BrowserAi capabilityColdStart', () => {
             .fn<DetectCapabilitiesRepo>()
             .mockResolvedValueOnce(supported_report)
             .mockResolvedValueOnce(regressed_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         // First cold start: healthy runtime.
