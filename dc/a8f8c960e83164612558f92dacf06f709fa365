@@ -1,0 +1,22 @@
+scripts/vitestZeroTestReport.ts
+  s_487e9aa1e46063::t_733baf2788a5ed 16-24
+  s_487e9aa1e46063::t_b95fe576378ce2 81
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_487e9aa1e46063::t_c78c2225ce99dc 324-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dca8f8c960e83164612558f92dacf06f709fa365",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
