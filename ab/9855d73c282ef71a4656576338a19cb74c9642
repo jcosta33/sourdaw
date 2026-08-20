@@ -1,0 +1,48 @@
+package.json
+  s_a40848e8f8cca9::t_198239747d2933 36
+scripts/githubAppIdentity.ts
+  s_a40848e8f8cca9::t_198239747d2933 32-35,51-53,242-261,453-456
+scripts/__tests__/reconcileTrackerIssue.spec.ts
+  s_a40848e8f8cca9::t_acb75740d86ab4 290,312-352,355-356,359-366
+  s_a40848e8f8cca9::t_538c629681bbb4 8,83-84,90,100-102,106,108
+  s_a40848e8f8cca9::t_e5415d33d1cae5 213-231,250-289,291-311,353-354,357-358,367-369
+  s_a40848e8f8cca9::t_1fa538decacd8d 6,112-138
+  s_a40848e8f8cca9::t_9548426c736146 12,93,103-105,107,109-111,199
+  s_a40848e8f8cca9::t_6e83f144bfeddc 210
+  s_a40848e8f8cca9::t_c26d5441533f15 1-5,7,9-11,13-41,45,47-53,55,59,61-68,70-82,85-89,91-92,94-99,139-198,200-209,211-212,370
+  s_a40848e8f8cca9::t_21641680378cef 232-249
+  s_a40848e8f8cca9::t_97be8f73fd03e7 42-44,46,54,56-58,60,69
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_a40848e8f8cca9::t_e7081d57541eae 11,374-389
+  s_a40848e8f8cca9::t_acb75740d86ab4 390,392-409
+  s_a40848e8f8cca9::t_220ba4ee986d6e 391
+scripts/reconcileTrackerIssue.ts
+  s_a40848e8f8cca9::t_6735d3914ef5d1 1-2,4-92,94-96,98-101,110-112,114-116,118-122,124-253,258-274,280-328
+  s_a40848e8f8cca9::t_a22629bb37cf50 3,275-279
+  s_a40848e8f8cca9::t_010835462a9774 102-109,113
+  s_a40848e8f8cca9::t_32399da392b3d5 93,97,254-257
+  s_a40848e8f8cca9::t_1fa538decacd8d 117,123
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_21641680378cef 49-54
+  s_a40848e8f8cca9::t_c26d5441533f15 17,38
+  s_a40848e8f8cca9::t_ddfa919f6f5521 39
+scripts/trackerIssueReconciliation.ts
+  s_a40848e8f8cca9::t_8d3a81498358aa 1-98,102-153,157-162,167-168,170-171,173-212,220,226-227,234-237,240-247
+  s_a40848e8f8cca9::t_6e68052121c7cc 99-101,154-156,163-166,169,172,213-219,221-225,228-233,238-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ab9855d73c282ef71a4656576338a19cb74c9642",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
