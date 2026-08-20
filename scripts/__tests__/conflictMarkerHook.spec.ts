@@ -56,11 +56,23 @@ const backtick3 = '`'.repeat(3);
 const backtick4 = '`'.repeat(4);
 const tilde3 = '~'.repeat(3);
 
+/**
+ * Joins lines with CRLF and terminates the last one, so a fixture's line endings are stated by the
+ * builder rather than hidden inside an escape in a template literal.
+ */
+function crlf(lines: string[]): string {
+    return `${lines.join('\r\n')}\r\n`;
+}
+
 beforeEach(() => {
     repository = mkdtempSync(join(tmpdir(), 'sourdaw-conflict-hook-'));
     git(['init', '-q', '-b', 'main', '.']);
     git(['config', 'user.name', 'Fixture']);
     git(['config', 'user.email', 'fixture@example.com']);
+    // The CRLF cases below assert on what reaches the index, so line-ending translation is pinned
+    // off rather than inherited: with `autocrlf` on, git would rewrite the fixture to LF on the way
+    // in and those cases would silently stop testing CRLF at all.
+    git(['config', 'core.autocrlf', 'false']);
 });
 
 afterEach(() => {
@@ -217,6 +229,162 @@ describe('staged conflict-marker hook', () => {
             'a 4-backtick line failed to close a 3-backtick fence once a mismatched-character line came between them'
         ).toBe(1);
         expect(stderr).toMatch(/doc\.md:5:/);
+    });
+
+    /**
+     * awk ends a record at `\n` alone, so on a CRLF file every line still carries a trailing `\r`.
+     * The closing-fence test compared what followed the delimiter run against the empty string, and
+     * `"\r"` is not empty — so a fence opened and never closed, and every marker from there to end
+     * of file was skipped as sample code. The LF version of the same bytes was refused, which is
+     * what makes this a line-ending defect rather than a fence defect.
+     */
+    it('refuses a real conflict in CRLF prose after a properly closed fence', () => {
+        stage(
+            'crlf.md',
+            crlf(['Intro', '', backtick3, 'code', backtick3, '', 'Prose', '', open, 'ours', separator, 'theirs', close])
+        );
+
+        const { status, stderr } = runHook();
+
+        expect(status, 'a trailing carriage return stopped the fence closing, hiding every later marker').toBe(1);
+        expect(stderr).toMatch(/crlf\.md:9:/);
+    });
+
+    /**
+     * The discriminating half of the CRLF repair, and the one case that separates a real fix from
+     * two wrong ones. A marker inside the fence and another in prose after it must produce exactly
+     * one report: the later line.
+     *
+     * Before the repair the fence never closed and both markers were hidden, so the hook exited 0.
+     * A repair that strips `\r` by abandoning the fence exemption on CRLF files instead reports
+     * both lines. Only tracking the fence correctly on CRLF input reports the second and not the
+     * first, so this asserts the absence of line 4 as firmly as the presence of line 8.
+     */
+    it('exempts a fenced CRLF marker while still catching one past the fence', () => {
+        stage('mixed.md', crlf([backtick3, open, 'ours', close, backtick3, '', 'Prose', open, 'ours', close]));
+
+        const { status, stderr } = runHook();
+
+        expect(status, 'the CRLF fence never closed, so the marker in prose after it went unseen').toBe(1);
+        expect(
+            stderr,
+            'the fence exemption was lost rather than fixed: a marker inside the fence was reported'
+        ).not.toMatch(/mixed\.md:2:/);
+        expect(stderr, 'the marker in prose after the CRLF fence was still not reported').toMatch(/mixed\.md:8:/);
+    });
+
+    /**
+     * The exemption itself, on CRLF input. This one passes both before and after the repair — before,
+     * because the fence never closed and the marker was skipped for the wrong reason; after, because
+     * the fence opens and closes and the marker is genuinely inside it. It reproduces no defect and
+     * is kept only as a guard against the repair that deletes the exemption instead of fixing it.
+     * The case above is the one that actually discriminates.
+     */
+    it('accepts a CRLF marker genuinely inside a fenced block', () => {
+        stage('inf.md', crlf(['Doc', '', backtick3, open, 'ours', separator, 'theirs', close, backtick3]));
+
+        expect(runHook().status).toBe(0);
+    });
+
+    /**
+     * The hook builds two lists and intersects them: the staged paths, and the index paths whose
+     * content matches a marker. Every case below is a filename that the two sides used to spell
+     * differently, so the intersection matched neither and a file carrying a real conflict dropped
+     * out of the scan entirely — the hook exited 0 with markers staged.
+     *
+     * `git grep -l` renders a path through `core.quotePath` unless `-z` is passed, while
+     * `git diff --name-only -z` always emits raw bytes. The trigger is not one property of the
+     * name: `café.md` is quoted because it is non-ASCII and `core.quotePath` defaults on, but
+     * `has"quote.md` and a name holding a control character are quoted whatever that config says.
+     * That is why the repair is `-z` on both sides rather than `core.quotePath=false`, and why
+     * these cases name distinct causes instead of repeating one.
+     *
+     * The last two go past quoting to representation. A path may contain a literal newline, which
+     * no line-based intersection can carry and which also aborts `awk -v`; a path may contain a
+     * backslash, which `awk -v` silently expands as an escape sequence. Both ended in the same
+     * fail-open, so both are pinned here.
+     */
+    it.each([
+        ['a non-ASCII name', 'café.md'],
+        ['a name needing quotes for a reason core.quotePath does not govern', 'has"quote.md'],
+        ['a name holding a backslash', 'back\\slash.md'],
+        ['a name holding a literal newline', 'we\nird.md'],
+    ])('refuses a real conflict staged under %s', (_case, name) => {
+        stage(name, `${open}\nours\n${separator}\ntheirs\n${close}\n`);
+
+        const { status, stderr } = runHook();
+
+        expect(status, `a conflict staged under ${JSON.stringify(name)} was never scanned and committed silently`).toBe(
+            1
+        );
+        expect(stderr).toMatch(/staged content still contains merge-conflict markers/);
+        // The report must name the file by its real bytes, not by a quoted or escape-expanded
+        // rendering of them: an operator has to be able to find the file the hook is refusing.
+        expect(stderr).toContain(`${name}:1:`);
+    });
+
+    /**
+     * `core.quotePath=false` is the repair this defect invites and the one that does not hold. It
+     * addresses the non-ASCII spelling and nothing else, so the same hole stays open one filename
+     * away. Forcing the config off here proves the fix does not depend on it.
+     */
+    it('refuses a conflict under a quote-needing name even with core.quotePath off', () => {
+        git(['config', 'core.quotePath', 'false']);
+        stage('has"quote.md', `${open}\nours\n${close}\n`);
+
+        expect(runHook().status, 'the intersection still depended on how core.quotePath renders a path').toBe(1);
+    });
+
+    /**
+     * The rewritten intersection is the load-bearing change, so the ordinary shapes it has to keep
+     * getting right are pinned rather than assumed. A space needs no quoting and so never
+     * reproduced the defect; it is here because the new membership test compares whole records and
+     * would be the first thing broken by a return to word-splitting.
+     */
+    it('refuses a real conflict staged under an ASCII name containing spaces', () => {
+        stage('has space.md', `a\n${open}\nb\n`);
+
+        expect(runHook().status).toBe(1);
+    });
+
+    /**
+     * `-I` drops binary blobs, so marker bytes inside one are not a staged textual conflict. The NUL
+     * bytes are what make git call this blob binary in the first place: without one in the first
+     * 8000 bytes git reads the file as text and this case would quietly stop testing `-I` at all.
+     */
+    it('ignores marker bytes inside a binary file', () => {
+        const binary = Buffer.concat([
+            Buffer.from(`${open}\n`),
+            Buffer.from([0x00, 0x01, 0x02]),
+            Buffer.from('payload'),
+            Buffer.from([0x00]),
+            Buffer.from(`\n${close}\n`),
+        ]);
+        writeFileSync(join(repository, 'blob.bin'), binary);
+        git(['add', '--', 'blob.bin']);
+
+        expect(runHook().status, 'a binary blob was scanned as text').toBe(0);
+    });
+
+    /** A deletion stages no content, so there is nothing for this hook to refuse. */
+    it('ignores a staged deletion of a file that contained markers', () => {
+        stage('gone.ts', `a\n${open}\nb\n`);
+        git(['commit', '-q', '--no-verify', '-m', 'chore(fixture): seed with markers']);
+        git(['rm', '-q', '--', 'gone.ts']);
+
+        expect(runHook().status).toBe(0);
+    });
+
+    /** A rename stages the content under the new name, and the markers travel with it. */
+    it('refuses a rename that carries markers to the new path', () => {
+        stage('old.ts', `a\n${open}\nb\n`);
+        git(['commit', '-q', '--no-verify', '-m', 'chore(fixture): seed with markers']);
+        git(['mv', 'old.ts', 'renamed.ts']);
+
+        const { status, stderr } = runHook();
+
+        expect(status).toBe(1);
+        expect(stderr).toMatch(/renamed\.ts:2:/);
     });
 
     /**
