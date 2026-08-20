@@ -1,0 +1,32 @@
+scripts/runVitestZeroTestGuard.ts
+  s_487e9aa1e46063::t_3ec3be6bbbc579 53-56
+  s_487e9aa1e46063::t_82527d8f76bff2 16,19
+  s_487e9aa1e46063::t_fa5dfd008aebbf 64-67
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_487e9aa1e46063::t_2986769cadaf2b 72,82-122
+  s_487e9aa1e46063::t_7c7c5c3311a373 10,12,15
+  s_487e9aa1e46063::t_0e559b890c6104 123,203,284-323
+  s_487e9aa1e46063::t_9c50825625056b 175,190-200
+  s_487e9aa1e46063::t_988b661ea3aab0 6
+  s_487e9aa1e46063::t_a1f679b466b5c2 124-125,201-202
+scripts/vitestZeroTestReport.ts
+  s_487e9aa1e46063::t_6ddcda95001e9d 98-111
+  s_487e9aa1e46063::t_65683b5bea3bfa 2-15,18-21,25,34-46,58-71
+  s_487e9aa1e46063::t_f609a1f3094d6a 72-74,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d2ee81aedd54662ed23c03420d351b61ddacbe0b",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
