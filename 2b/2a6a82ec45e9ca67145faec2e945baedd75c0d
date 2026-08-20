@@ -1,0 +1,22 @@
+tests/e2e/devicePanelAllTestId.spec.ts
+  s_24b1bdbc3c31ad::t_bf8ea2b793125d 1-2,5-23,28,33,36,40-42,46,48,51-54,58-60,64-66
+  s_24b1bdbc3c31ad::t_d805dc39254f6d 24-27
+  s_24b1bdbc3c31ad::t_6ec8ef8a597bd9 45
+  s_24b1bdbc3c31ad::t_1070d899c74490 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2b2a6a82ec45e9ca67145faec2e945baedd75c0d",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
