@@ -124,11 +124,22 @@ export type LegacyLaneCandidate = { path: string; branch: string; lockReason: st
  * pre-`agent/` lane) and the correct lock (the fact that grants push authority); either alone falls
  * through to the ordinary "not a lane" refusal instead of misdirecting a worktree that was never an
  * author lane in the first place.
+ *
+ * `git worktree list` always lists the primary checkout first — `removeLane`'s `identifyLane` relies
+ * on that same ordering to refuse removing it — so the primary root is excluded here too, the same
+ * way and for the same reason: it can never be a genuine legacy lane, no matter what branch or lock
+ * it carries.
  */
 function legacyLaneCandidates(worktrees: PublishWorktree[]): LegacyLaneCandidate[] {
+    const primaryRoot = worktrees[0]?.path;
     return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        if (branch === undefined || branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) || !worktree.locked) {
+        if (
+            worktree.path === primaryRoot ||
+            branch === undefined ||
+            branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) ||
+            !worktree.locked
+        ) {
             return [];
         }
         return [{ path: worktree.path, branch, lockReason: worktree.lockReason }];
@@ -152,9 +163,9 @@ function legacyLockMigrationMessage(candidate: LegacyLaneCandidate): string {
 /**
  * The lock reason is the only ownership signal this gate has, so a refusal must never hand out the
  * command that overwrites it. An unrecognized `active:<someone>` is another owner working in that
- * worktree; relocking it as the author lane and rerunning would commit `git add -A`, push, and
- * rewrite a pull request that belongs to them. Name the holder and stop — the remedy is theirs to
- * run, not this caller's.
+ * worktree; relocking it as the author lane and rerunning would push a branch and rewrite a pull
+ * request that belong to them. Name the holder and stop — the remedy is theirs to run, not this
+ * caller's.
  */
 function legacyForeignLockMessage(candidate: LegacyLaneCandidate, owner: string): string {
     return (

@@ -290,25 +290,39 @@ describe('lane publish', () => {
             ],
             '/repo/.agents/worktrees/collab-sync-state',
         ],
-        [
-            'the cwd is inside an unlocked worktree',
-            [
-                ...otherAuthorLanes(),
-                worktree({
-                    path: '/repo/.agents/worktrees/scratch',
-                    branch: 'scratch',
-                    locked: false,
-                    lockReason: undefined,
-                }),
-            ],
-            '/repo/.agents/worktrees/scratch',
-        ],
     ])('refuses to publish without an issue when %s', (_case, trees, cwd) => {
         const { port, calls } = fakePort({ trees, cwd });
 
         expect(() => publishLane(undefined, port)).toThrow(
             /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
         );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('refuses to publish without an issue when the cwd is inside an unlocked worktree with an open pull request', () => {
+        // An open pull request alone must never grant push authority: `locked` is the other half
+        // of the legacy-candidacy gate, and dropping it would let an unlocked worktree fall to
+        // `legacyLockMigrationMessage`, which hands out `git worktree unlock`/`lock` for a
+        // worktree that was never locked and never an author lane — the exact misdirection this
+        // gate exists to prevent.
+        const trees = [
+            ...otherAuthorLanes(),
+            worktree({
+                path: '/repo/.agents/worktrees/scratch',
+                branch: 'scratch',
+                locked: false,
+                lockReason: undefined,
+            }),
+        ];
+        const { port, calls } = fakePort({ trees, cwd: '/repo/.agents/worktrees/scratch', existing: 99 });
+
+        const message = refusalMessage(() => publishLane(undefined, port));
+        expect(message).toMatch(
+            /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+        );
+        expect(message).not.toContain('git worktree unlock');
+        expect(message).not.toContain('git worktree lock');
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -568,6 +582,36 @@ describe('lane publish', () => {
             expect(() => resolveAuthorLane(2039, trees, PRIMARY_ROOT, undefined, () => true)).toThrow(
                 /expected exactly one locked author lane for issue #2039/
             );
+        });
+
+        it('never resolves a legacy candidate whose path does not enclose cwd, even with an open pull request', () => {
+            // Live on this machine: several author-locked, off-convention worktrees carry open
+            // pull requests beside the primary root. Without the containment check, `cwd` outside
+            // every one of them would still let the loop resolve and push whichever candidate
+            // sorts first by canonical path length, instead of refusing outright.
+            const trees = [...otherAuthorLanes(), legacyWorktree()];
+            const { port, calls } = fakePort({ trees, cwd: PRIMARY_ROOT, existing: 2275 });
+
+            expect(() => publishLane(undefined, port)).toThrow(
+                /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+            );
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        });
+
+        it('never treats the primary worktree as a legacy candidate, even locked with an open pull request', () => {
+            // `git worktree list` always lists the primary checkout first. A hand-locked root
+            // whose branch happens to have an open pull request must still refuse, symmetrically
+            // with `removeLane`'s own explicit "refusing to remove the primary worktree" check.
+            const trees = [
+                worktree({ path: PRIMARY_ROOT, branch: 'main', lockReason: AUTHOR_LOCK_REASON }),
+                ...otherAuthorLanes(),
+            ];
+            const { port, calls } = fakePort({ trees, cwd: PRIMARY_ROOT, existing: 2275 });
+
+            expect(() => publishLane(undefined, port)).toThrow(
+                /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+            );
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         });
 
         it('resolves an off-convention branch with an open pull request, from inside the lane', () => {
