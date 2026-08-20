@@ -200,6 +200,7 @@ async function renderFaustTrack(): Promise<{
             projectMidiEvents: ({ events }) => events,
             projectPpqEndpoints,
             processYeastMidi: null,
+            resolveTempoAtBeat: null,
             selectMidiEventProbability: () => true,
             projectChordPitch: ({ pitch }) => pitch,
             evaluateAutomationValue: null,

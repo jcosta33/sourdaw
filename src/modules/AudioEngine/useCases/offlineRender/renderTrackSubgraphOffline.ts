@@ -292,6 +292,7 @@ export async function renderTrackSubgraphOffline({
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    resolveTempoAtBeat: projections.resolveTempoAtBeat,
                     processYeastMidi: projections.processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,

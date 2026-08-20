@@ -158,6 +158,7 @@ function makeContext(): OfflineRenderContext {
             durationSeconds: endPpq - startPpq,
         }),
         processYeastMidi: null,
+        resolveTempoAtBeat: null,
         evaluateAutomationValue: null,
     };
 }

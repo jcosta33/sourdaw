@@ -25,6 +25,7 @@ export { prepareTimelineMapStateRestore } from './tempoMap/prepareTimelineMapSta
 export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
 export { replaceTempoMap } from './tempoMap/replaceTempoMap';
+export { resolveTempoAtBeat } from './tempoMap/resolveTempoAtBeat';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';
 export { updateTempoChange } from './tempoMap/updateTempoChange';
 

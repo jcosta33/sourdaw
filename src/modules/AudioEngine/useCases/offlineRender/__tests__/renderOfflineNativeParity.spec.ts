@@ -494,6 +494,7 @@ function fixtureRenderContext(): OfflineRenderContext {
             };
         },
         processYeastMidi: null,
+        resolveTempoAtBeat: null,
         evaluateAutomationValue: null,
     };
 }

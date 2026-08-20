@@ -110,6 +110,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             projectMidiEvents,
             selectMidiEventProbability,
             projectPpqEndpoints,
+            resolveTempoAtBeat,
             processYeastMidi,
             projectChordPitch,
             evaluateAutomationValue,
@@ -240,6 +241,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 defaultTempo,
                 changes,
                 projectPpqEndpoints,
+                resolveTempoAtBeat,
                 renderableTracks: allRenderableTracks,
                 scheduledTracks,
                 scheduledTrackIds,
@@ -409,6 +411,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    resolveTempoAtBeat,
                     processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,

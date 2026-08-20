@@ -26,7 +26,10 @@ import {
     type OfflineChordPitchProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
-import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import {
+    type OfflinePpqEndpointProjector,
+    type OfflineTempoAtBeatResolver,
+} from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -79,6 +82,13 @@ function getSourceOccurrenceOffset({
 type OfflineProjectionDependencies = {
     projectMidiEvents: OfflineMidiEventProjector;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
+    /**
+     * Flat tempo at a beat — what a clip's buffer-content offset converts
+     * through, as opposed to the integrated map `projectPpqEndpoints` walks.
+     * `null` leaves the render on its default tempo, which is the answer the
+     * law itself gives for a project with no tempo map.
+     */
+    resolveTempoAtBeat: OfflineTempoAtBeatResolver | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector;
     projectChordPitch: OfflineChordPitchProjector;
@@ -186,6 +196,7 @@ export async function scheduleTrackClips({
         projectPpqEndpoints,
         processYeastMidi,
         resolveArticulationId,
+        resolveTempoAtBeat,
         selectMidiEventProbability,
     } = projections;
     function projectBeatToSeconds(beat: number): number {
@@ -196,6 +207,13 @@ export async function scheduleTrackClips({
             sampleRate: offlineCtx.sampleRate,
             changes,
         }).startSeconds;
+    }
+    // The flat rate at a beat, not the integrated map — a clip's source-content
+    // offset answers to the tempo its material was recorded at. Unconfigured,
+    // the project's default tempo is what `getTempoAtBeat` returns for an empty
+    // map, so the fallback is the law's own answer rather than a guess.
+    function resolveClipTempo(beat: number): number {
+        return resolveTempoAtBeat?.({ changes, beat, defaultTempo }) ?? defaultTempo;
     }
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = getCompensationDelay(track.id);
@@ -776,6 +794,7 @@ export async function scheduleTrackClips({
                 durationSeconds,
                 compensationDelay,
                 projectBeatToSeconds,
+                resolveTempoAtBeat: resolveClipTempo,
             });
             for (const playback of playbacks) {
                 checkCallerAbort();

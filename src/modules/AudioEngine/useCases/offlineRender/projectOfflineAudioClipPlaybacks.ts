@@ -33,6 +33,18 @@ export type ProjectOfflineAudioClipPlaybacksInput = Readonly<{
     durationSeconds: number;
     compensationDelay: number;
     projectBeatToSeconds: (beat: number) => number;
+    /**
+     * The flat tempo, in BPM, governing a beat — `getTempoAtBeat` under this
+     * render's map, which is the function the live scheduler resolves its clip
+     * tempo with.
+     *
+     * Deliberately separate from `projectBeatToSeconds`, which integrates every
+     * change in a span: timeline placement and source-content seek answer to
+     * different clocks, and `scheduleAudioClips` states that contract. A
+     * buffer-content offset stays on the single rate the material was recorded
+     * at, so a tempo change inside the offset span must not move it.
+     */
+    resolveTempoAtBeat: (beat: number) => number;
 }>;
 
 /**
@@ -82,6 +94,7 @@ export function projectOfflineAudioClipPlaybacks(
         durationSeconds,
         compensationDelay,
         projectBeatToSeconds,
+        resolveTempoAtBeat,
     } = input;
 
     const clipVisualLength = clip.endBeat - clip.startBeat;
@@ -104,11 +117,36 @@ export function projectOfflineAudioClipPlaybacks(
     const clipGainValue = clip.gain;
 
     const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-    const clipOffsetTimelineSec =
-        clipAudioOffsetBeats > 0
-            ? projectBeatToSeconds(clip.startBeat + clipAudioOffsetBeats) - projectBeatToSeconds(clip.startBeat)
-            : 0;
-    const baseBufferOffsetSec = clipOffsetTimelineSec * safeStretchRatio;
+    // Where the clip enters its own material, in *source* seconds — the same
+    // number `scheduleAudioClips` hands to `source.start(when, offset, …)`, and
+    // the same entry point both waveform renderers draw from. Two things the
+    // timeline arithmetic below does are deliberately absent here:
+    //
+    //   - the tempo map is not integrated. The rate is the flat one governing
+    //     the clip's start beat, because the material was rendered at one
+    //     tempo; a change inside the offset span moves the clip on the
+    //     timeline, never the point it seeks to inside the file.
+    //   - the stretch ratio is not applied. It scales how long the material
+    //     sounds, not where reading begins; `scheduleOfflineClipSource` scales
+    //     the duration alone, exactly as live does.
+    //
+    // A non-positive or non-finite tempo cannot come from either tempo store,
+    // both of which clamp what they hold; treating it as "no offset" keeps a
+    // malformed one from turning the seek into Infinity or NaN.
+    const clipTempo = resolveTempoAtBeat(clip.startBeat);
+    const clipSecondsPerBeat = Number.isFinite(clipTempo) && clipTempo > 0 ? 60 / clipTempo : 0;
+    const clipAudioOffsetSec = clipAudioOffsetBeats * clipSecondsPerBeat;
+    const baseBufferOffsetSec = Math.max(0, clipAudioOffsetSec);
+    // A negative offset — reachable by slipping content right or dragging the
+    // left edge leftward, neither of which floors it — puts the clip's head
+    // before the start of its source. The professional answer (Live, Cubase) is
+    // silence across that span and then the file from sample 0, so the sound
+    // starts later on the destination timeline by the negative span converted
+    // at the playback rate, and enters the source at 0. Clamping the offset to
+    // 0 instead would sound material the clip's head does not name, and passing
+    // the negative number to `start()` is the `RangeError` the Web Audio
+    // specification requires.
+    const sourcePreRollSec = Math.max(0, -clipAudioOffsetSec) / safeStretchRatio;
 
     const playbacks: OfflineAudioClipPlaybackProjection[] = [];
     for (let iter = 0; iter < maxIterations; iter++) {
@@ -125,8 +163,12 @@ export function projectOfflineAudioClipPlaybacks(
 
         const rawIterStartSec = projectBeatToSeconds(iterStartBeat) + compensationDelay;
         const rawIterEndSec = projectBeatToSeconds(iterEndBeat) + compensationDelay;
-        const iterStartTime = rawIterStartSec - regionStartSec;
         const iterEndTime = rawIterEndSec - regionStartSec;
+        // Where this iteration's *sound* begins: its placement on the timeline,
+        // pushed back by the silent span a negative offset opens at its head.
+        // The iteration still ends where the clip says it does, so the pre-roll
+        // shortens what is heard rather than moving the tail.
+        const iterStartTime = rawIterStartSec - regionStartSec + sourcePreRollSec;
         if (iterStartTime >= durationSeconds) {
             break;
         }

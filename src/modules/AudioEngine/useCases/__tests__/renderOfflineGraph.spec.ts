@@ -216,6 +216,7 @@ function makeContext(overrides?: Partial<OfflineRenderContext>): OfflineRenderCo
             durationSeconds: endPpq - startPpq,
         }),
         processYeastMidi: null,
+        resolveTempoAtBeat: null,
         evaluateAutomationValue: null,
         ...overrides,
     };
