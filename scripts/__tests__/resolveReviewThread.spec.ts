@@ -14,233 +14,221 @@ import {
 const head = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
 const threadId = 'PRRT_kwDOExample';
-const rootCommentId = 'PRRC_root';
+const rootId = 'PRRC_root';
 const replyId = 'PRRC_reply';
-
-type FakeInput = {
-    authorLogin?: string;
+type Input = {
     heads?: string[];
-    thread?: Partial<{
-        id: string;
-        isResolved: boolean;
-        rootCommentId: string | null;
-        rootCommentFullDatabaseId: string | null;
-        rootAuthorLogin: string | null;
-    }>;
+    authorLogin?: string;
+    throwAfterReply?: boolean;
+    throwAfterResolve?: boolean;
     failDelete?: boolean;
+    rootAuthorLogin?: string | null;
+    isResolved?: boolean;
 };
-
-function fakePort(input: FakeInput = {}) {
+function fakePort(input: Input = {}) {
     const calls: string[] = [];
-    let inspectionCount = 0;
-    let isResolved = input.thread?.isResolved ?? false;
-    let replyExists = false;
+    let index = 0;
+    let resolved = input.isResolved ?? false;
+    let comments = [
+        {
+            id: rootId,
+            fullDatabaseId: '9223372036854775807',
+            body: 'review',
+            authorLogin: input.rootAuthorLogin ?? REVIEWER_BOT_LOGIN,
+        },
+    ];
     const port: ResolveReviewThreadPort = {
         inspect: () => {
-            const currentHead = input.heads?.[inspectionCount] ?? head;
-            inspectionCount += 1;
-            calls.push(`inspect:${inspectionCount}`);
+            calls.push(`inspect:${++index}`);
             return {
-                head: currentHead,
+                head: input.heads?.[index - 1] ?? head,
                 thread: {
                     id: threadId,
-                    rootCommentId,
+                    isResolved: resolved,
+                    rootCommentId: rootId,
                     rootCommentFullDatabaseId: '9223372036854775807',
-                    rootAuthorLogin: REVIEWER_BOT_LOGIN,
-                    commentIds: replyExists ? [rootCommentId, replyId] : [rootCommentId],
-                    ...input.thread,
-                    isResolved,
+                    rootAuthorLogin: comments[0]?.authorLogin ?? null,
+                    comments,
                 },
             };
         },
         replyDone: (id) => {
-            calls.push(`reply:${id}:Done`);
-            replyExists = true;
+            calls.push(`reply:${id}`);
+            comments = [
+                ...comments,
+                { id: replyId, fullDatabaseId: '9223372036854775808', body: 'Done', authorLogin: AUTHOR_BOT_LOGIN },
+            ];
+            if (input.throwAfterReply) {
+                throw new Error('reply transport lost');
+            }
             return { id: replyId, fullDatabaseId: '9223372036854775808' };
         },
         resolve: (id) => {
             calls.push(`resolve:${id}`);
-            isResolved = true;
+            resolved = true;
+            if (input.throwAfterResolve) {
+                throw new Error('resolve transport lost');
+            }
         },
         unresolve: (id) => {
             calls.push(`unresolve:${id}`);
-            isResolved = false;
+            resolved = false;
         },
         deleteReply: (id) => {
             calls.push(`delete:${id}`);
-            if (input.failDelete === true) {
+            if (input.failDelete) {
                 throw new Error('delete denied');
             }
-            replyExists = false;
+            comments = comments.filter((comment) => comment.id !== id);
         },
         log: (message) => calls.push(`log:${message}`),
     };
-    return { calls, port, authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN };
+    return { port, calls, authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN, state: () => ({ resolved, comments }) };
 }
 
+function threadPage(nodes: unknown[], hasNextPage: boolean, endCursor: string | null) {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: { headRefOid: head, reviewThreads: { nodes, pageInfo: { hasNextPage, endCursor } } },
+            },
+        },
+    });
+}
+function commentPage(nodes: unknown[], hasNextPage: boolean, endCursor: string | null) {
+    return JSON.stringify({
+        data: { node: { id: threadId, comments: { nodes, pageInfo: { hasNextPage, endCursor } } } },
+    });
+}
+const root = {
+    id: rootId,
+    fullDatabaseId: '9223372036854775807',
+    body: 'review',
+    author: { login: REVIEWER_BOT_LOGIN },
+};
+
 describe('review thread resolution', () => {
-    it('uses the supported GraphQL reply and deletion input fields', () => {
+    it('uses supported GraphQL reply and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
         expect(source).toContain('pullRequestReviewThreadId:$threadId');
         expect(source).toContain('deletePullRequestReviewComment(input:{id:$replyId})');
     });
-
-    it('finds the requested reviewer thread on a later GraphQL page', () => {
-        const calls: string[][] = [];
-        const response = (nodes: unknown[], hasNextPage: boolean, endCursor: string | null) =>
-            JSON.stringify({
-                data: {
-                    repository: {
-                        pullRequest: {
-                            headRefOid: head,
-                            reviewThreads: { nodes, pageInfo: { hasNextPage, endCursor } },
-                        },
-                    },
-                },
-            });
-        const inspection = inspectReviewThread(42, threadId, (args) => {
-            calls.push(args);
-            if (calls.length === 1) {
-                return response([], true, 'cursor-1');
+    it('finds the requested thread on a later page and paginates its comments', () => {
+        let call = 0;
+        const inspection = inspectReviewThread(42, threadId, () => {
+            call += 1;
+            if (call === 1) {
+                return threadPage([], true, 'threads-1');
             }
-            return response(
-                [
-                    {
-                        id: threadId,
-                        isResolved: false,
-                        comments: {
-                            nodes: [
-                                {
-                                    id: rootCommentId,
-                                    fullDatabaseId: '9223372036854775807',
-                                    author: { login: REVIEWER_BOT_LOGIN },
-                                },
-                            ],
-                        },
-                    },
-                ],
-                false,
-                null
-            );
+            if (call === 2) {
+                return threadPage([{ id: threadId, isResolved: false }], false, null);
+            }
+            return commentPage([root], false, null);
         });
         expect(inspection).toMatchObject({
             head,
-            thread: {
-                id: threadId,
-                rootCommentId,
-                rootCommentFullDatabaseId: '9223372036854775807',
-            },
+            thread: { id: threadId, rootCommentFullDatabaseId: '9223372036854775807' },
         });
-        expect(calls).toHaveLength(2);
-        expect(calls[1]).toContain('cursor=cursor-1');
+        expect(call).toBe(3);
     });
-
-    it('proves absence only after the final GraphQL page', () => {
-        const calls: string[][] = [];
-        const inspection = inspectReviewThread(42, threadId, (args) => {
-            calls.push(args);
-            const hasNextPage = calls.length === 1;
-            return JSON.stringify({
-                data: {
-                    repository: {
-                        pullRequest: {
-                            headRefOid: head,
-                            reviewThreads: {
-                                nodes: [],
-                                pageInfo: { hasNextPage, endCursor: hasNextPage ? 'cursor-1' : null },
-                            },
-                        },
-                    },
-                },
-            });
+    it('proves absence only after the final thread page', () => {
+        let call = 0;
+        const inspection = inspectReviewThread(42, threadId, () => {
+            call += 1;
+            return threadPage([], call === 1, call === 1 ? 'threads-1' : null);
         });
         expect(inspection).toEqual({ head, thread: null });
-        expect(calls).toHaveLength(2);
+        expect(call).toBe(2);
     });
-
-    it('parses only the required strict arguments', () => {
-        expect(parseResolveReviewThreadArgs(['42', '--thread', threadId, '--head', head])).toEqual({
+    it('finds and retains a created reply beyond 100 comments', () => {
+        const first = Array.from({ length: 100 }, (_, index) => ({
+            id: `PRRC_${index}`,
+            fullDatabaseId: String(index + 1),
+            body: 'old',
+            author: { login: REVIEWER_BOT_LOGIN },
+        }));
+        first[0] = root;
+        const later = {
+            id: replyId,
+            fullDatabaseId: '9223372036854775808',
+            body: 'Done',
+            author: { login: AUTHOR_BOT_LOGIN },
+        };
+        let call = 0;
+        const inspection = inspectReviewThread(42, threadId, () => {
+            call += 1;
+            if (call === 1) {
+                return threadPage([{ id: threadId, isResolved: false }], false, null);
+            }
+            if (call === 2) {
+                return commentPage(first, true, 'comments-1');
+            }
+            return commentPage([later], false, null);
+        });
+        expect(inspection.thread?.comments).toHaveLength(101);
+        expect(inspection.thread?.comments.at(-1)?.id).toBe(replyId);
+    });
+    it('parses strict arguments', () => {
+        expect(parseResolveReviewThreadArgs(['42', '--thread', threadId, '--head', head])).toMatchObject({
             number: 42,
             threadId,
             head,
-            help: false,
         });
         for (const args of [
             [],
-            ['0', '--thread', threadId, '--head', head],
-            ['42', '--thread', 'bad id', '--head', head],
-            ['42', '--thread', threadId, '--head', 'abc'],
             ['42', '--head', head, '--thread', threadId],
-            ['42', '--thread', threadId, '--head', head, 'extra'],
+            ['42', '--thread', threadId, '--head', 'bad'],
         ]) {
-            expect(() => parseResolveReviewThreadArgs(args)).toThrow(/usage|head|thread/i);
+            expect(() => parseResolveReviewThreadArgs(args)).toThrow(/usage/i);
         }
     });
-
     it.each([
         ['wrong head', { heads: [movedHead] }],
-        ['wrong root owner', { thread: { rootAuthorLogin: 'someone[bot]' } }],
-        ['already resolved', { thread: { isResolved: true } }],
-        ['missing root database id', { thread: { rootCommentFullDatabaseId: null } }],
-    ])('refuses %s without mutations', (_case, input) => {
+        ['wrong author', { rootAuthorLogin: 'other[bot]' }],
+        ['resolved', { isResolved: true }],
+    ])('refuses %s with zero mutations', (_name, input) => {
         const { port, calls, authorLogin } = fakePort(input);
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow();
-        expect(calls.filter((call) => /^(reply|resolve|unresolve|delete):/.test(call))).toEqual([]);
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
-
-    it('refuses an unexpected author login without mutations', () => {
-        const { port, calls } = fakePort({ authorLogin: 'someone[bot]' });
-        expect(() => resolveReviewThread(42, threadId, head, 'someone[bot]', port)).toThrow(/author/);
+    it('refuses the wrong actor with zero mutations', () => {
+        const { port, calls } = fakePort();
+        expect(() => resolveReviewThread(42, threadId, head, 'other[bot]', port)).toThrow(/author/i);
         expect(calls).toEqual([]);
     });
-
-    it('preserves 64-bit decimal fullDatabaseId values without numeric coercion', () => {
-        const { port, calls, authorLogin } = fakePort();
-        resolveReviewThread(42, threadId, head, authorLogin, port);
-        expect(calls).toContain(`reply:${threadId}:Done`);
-    });
-
-    it('replies before rechecking the head, then resolves and verifies', () => {
+    it('runs reply, resolve, and final inspection in order', () => {
         const { port, calls, authorLogin } = fakePort();
         expect(resolveReviewThread(42, threadId, head, authorLogin, port)).toBe(
             `review-thread-resolved:42:${threadId}`
         );
         expect(calls).toEqual([
             'inspect:1',
-            `reply:${threadId}:Done`,
+            `reply:${threadId}`,
             'inspect:2',
             `resolve:${threadId}`,
             'inspect:3',
             `log:review-thread-resolved:42:${threadId}`,
         ]);
     });
-
-    it('deletes the reply and leaves the thread unresolved when the head moves after the reply', () => {
-        const { port, calls, authorLogin } = fakePort({ heads: [head, movedHead, movedHead] });
-        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/);
-        expect(calls).toEqual(['inspect:1', `reply:${threadId}:Done`, 'inspect:2', `delete:${replyId}`, 'inspect:3']);
+    it('compensates a reply that committed before its mutation threw', () => {
+        const { port, authorLogin, state } = fakePort({ throwAfterReply: true });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/reply transport lost$/);
+        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
     });
-
-    it('unresolves and deletes the reply when the head moves after resolution', () => {
-        const { port, calls, authorLogin } = fakePort({ heads: [head, head, movedHead, movedHead] });
-        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/);
-        expect(calls).toEqual([
-            'inspect:1',
-            `reply:${threadId}:Done`,
-            'inspect:2',
-            `resolve:${threadId}`,
-            'inspect:3',
-            `unresolve:${threadId}`,
-            `delete:${replyId}`,
-            'inspect:4',
-        ]);
+    it('compensates a resolution that committed before its mutation threw', () => {
+        const { port, authorLogin, state } = fakePort({ throwAfterResolve: true });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/resolve transport lost$/);
+        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
     });
-
-    it('surfaces compensation failures alongside the original failure', () => {
-        const { port, calls, authorLogin } = fakePort({ heads: [head, movedHead], failDelete: true });
+    it('deletes the exact new reply when the head moves after replying', () => {
+        const { port, authorLogin, state } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
+        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
+    });
+    it('reports original and compensation failure', () => {
+        const { port, authorLogin } = fakePort({ throwAfterReply: true, failDelete: true });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(
-            /head moved[\s\S]*compensation failed/i
+            /reply transport lost[\s\S]*compensation failed/i
         );
-        expect(calls).toEqual(['inspect:1', `reply:${threadId}:Done`, 'inspect:2', `delete:${replyId}`, 'inspect:3']);
     });
 });

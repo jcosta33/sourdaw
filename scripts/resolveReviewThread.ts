@@ -17,13 +17,14 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
+export type ReviewComment = { id: string; fullDatabaseId: string; body: string; authorLogin: string | null };
 export type ReviewThread = {
     id: string;
     isResolved: boolean;
     rootCommentId: string | null;
     rootCommentFullDatabaseId: string | null;
     rootAuthorLogin: string | null;
-    commentIds: string[];
+    comments: ReviewComment[];
 };
 export type ReviewThreadInspection = { head: string; thread: ReviewThread | null };
 export type ReviewReply = { id: string; fullDatabaseId: string };
@@ -36,7 +37,6 @@ export type ResolveReviewThreadPort = {
     log: (message: string) => void;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
-
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
 
 export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThreadArgs {
@@ -76,25 +76,27 @@ export function resolveReviewThread(
     if (authorLogin !== AUTHOR_BOT_LOGIN) {
         fail(`authenticated author login ${authorLogin} is not ${AUTHOR_BOT_LOGIN}`);
     }
-    const initial = port.inspect(number, threadId);
-    assertExpectedHead(initial.head, expectedHead);
-    assertResolvableThread(initial.thread, threadId);
-    const reply = port.replyDone(threadId);
-    assertReply(reply);
-    let resolved = false;
+    const before = port.inspect(number, threadId);
+    assertExpectedHead(before.head, expectedHead);
+    assertResolvableThread(before.thread, threadId);
+    let replyAttempted = false;
+    let resolveAttempted = false;
     try {
+        replyAttempted = true;
+        const reply = port.replyDone(threadId);
+        assertReply(reply);
         const afterReply = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(afterReply.head, expectedHead);
         assertResolvableThread(afterReply.thread, threadId);
+        resolveAttempted = true;
         port.resolve(threadId);
-        resolved = true;
         const verified = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(verified.head, expectedHead);
         if (verified.thread?.id !== threadId || !verified.thread.isResolved) {
             fail(`review thread ${threadId} was not resolved`);
         }
     } catch (error) {
-        compensateResolution(number, threadId, reply.id, resolved, port, error);
+        compensateResolution(number, threadId, before, replyAttempted, resolveAttempted, port, error);
     }
     const success = `review-thread-resolved:${number}:${threadId}`;
     port.log(success);
@@ -104,26 +106,68 @@ export function resolveReviewThread(
 function compensateResolution(
     number: number,
     threadId: string,
-    replyId: string,
-    resolved: boolean,
+    before: ReviewThreadInspection,
+    replyAttempted: boolean,
+    resolveAttempted: boolean,
     port: ResolveReviewThreadPort,
     original: unknown
 ): never {
     const failures: string[] = [];
-    if (resolved) {
-        attempt(failures, 'unresolve review thread', () => port.unresolve(threadId));
+    let current: ReviewThreadInspection | undefined;
+    attempt(failures, 'inspect ambiguous review transaction', () => {
+        current = port.inspect(number, threadId);
+    });
+    if (current === undefined || current.thread === null || before.thread === null) {
+        failures.push('cannot determine ambiguous review transaction state');
+    } else {
+        if (resolveAttempted && current.thread.isResolved !== before.thread.isResolved) {
+            attempt(failures, 'unresolve review thread', () => port.unresolve(threadId));
+        }
+        if (replyAttempted) {
+            const replyId = createdCommentId(before.thread.comments, current.thread.comments, 'Done', AUTHOR_BOT_LOGIN);
+            if (replyId === undefined) {
+                failures.push('cannot identify the created review reply for compensation');
+            } else if (replyId !== null) {
+                attempt(failures, 'delete review reply', () => port.deleteReply(replyId));
+            }
+        }
     }
-    attempt(failures, 'delete review reply', () => port.deleteReply(replyId));
     attempt(failures, 'verify review-thread compensation', () => {
-        const inspection = port.inspect(number, threadId);
+        const verified = port.inspect(number, threadId);
         if (
-            inspection.thread?.id !== threadId ||
-            inspection.thread.isResolved ||
-            inspection.thread.commentIds.includes(replyId)
+            before.thread === null ||
+            verified.thread === null ||
+            verified.thread.isResolved !== before.thread.isResolved ||
+            !sameCommentIds(verified.thread.comments, before.thread.comments)
         ) {
             fail(`review thread ${threadId} compensation was not verified`);
         }
     });
+    throwWithCompensation(original, failures);
+}
+
+export function createdCommentId(
+    before: ReviewComment[],
+    after: ReviewComment[],
+    body: string,
+    authorLogin: string
+): string | null | undefined {
+    const beforeIds = new Set(before.map((comment) => comment.id));
+    const newComments = after.filter((comment) => !beforeIds.has(comment.id));
+    if (newComments.length === 0) {
+        return null;
+    }
+    const candidates = newComments.filter((comment) => comment.body === body && comment.authorLogin === authorLogin);
+    return candidates.length === 1 ? candidates[0]?.id : undefined;
+}
+function sameCommentIds(left: ReviewComment[], right: ReviewComment[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const ids = new Set(left.map((comment) => comment.id));
+    return ids.size === right.length && right.every((comment) => ids.has(comment.id));
+}
+function throwWithCompensation(original: unknown, failures: string[]): never {
     const message = errorMessage(original);
     if (failures.length > 0) {
         throw new Error(`${message}; compensation failed: ${failures.join('; ')}`, { cause: original });
@@ -133,7 +177,6 @@ function compensateResolution(
     }
     throw new Error(message);
 }
-
 function attempt(failures: string[], label: string, operation: () => void): void {
     try {
         operation();
@@ -188,15 +231,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
     );
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
-        inspect: (number, requestedThreadId) => inspectReviewThread(number, requestedThreadId, gh),
-        replyDone: (threadId) => mutationReply(threadId, gh),
-        resolve: (threadId) => mutateThread('resolveReviewThread', threadId, true, gh),
-        unresolve: (threadId) => mutateThread('unresolveReviewThread', threadId, false, gh),
-        deleteReply: (replyId) => deleteReply(replyId, gh),
+        inspect: (number, id) => inspectReviewThread(number, id, gh),
+        replyDone: (id) => mutationReply(id, gh),
+        resolve: (id) => mutateThread('resolveReviewThread', id, true, gh),
+        unresolve: (id) => mutateThread('unresolveReviewThread', id, false, gh),
+        deleteReply: (id) => deleteReply(id, gh),
         log: (message) => console.log(message),
     };
 }
-
 type Gh = (args: string[]) => string;
 function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
     return parseJson(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
@@ -211,7 +253,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
     let head: string | undefined;
     for (;;) {
         const connection = cursor === undefined ? 'reviewThreads(first:100)' : 'reviewThreads(first:100,after:$cursor)';
-        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid ${connection}{nodes{id isResolved comments(first:100){nodes{id fullDatabaseId author{login}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid ${connection}{nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -240,13 +282,13 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
             fail(`invalid review-thread page for PR #${number}`);
         }
         const selected = threads.nodes.find(
-            (candidate): candidate is { id?: unknown; isResolved?: unknown; comments?: { nodes?: unknown } } =>
+            (candidate): candidate is { id?: unknown; isResolved?: unknown } =>
                 typeof candidate === 'object' &&
                 candidate !== null &&
                 (candidate as { id?: unknown }).id === requestedThreadId
         );
         if (selected !== undefined) {
-            return { head, thread: toReviewThread(selected, requestedThreadId) };
+            return { head, thread: inspectThreadComments(requestedThreadId, selected.isResolved, gh) };
         }
         if (!threads.pageInfo.hasNextPage) {
             return { head, thread: null };
@@ -259,26 +301,78 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
         cursor = next;
     }
 }
-function toReviewThread(
-    value: { id?: unknown; isResolved?: unknown; comments?: { nodes?: unknown } },
-    expectedId: string
-): ReviewThread {
-    if (value.id !== expectedId || typeof value.isResolved !== 'boolean' || !Array.isArray(value.comments?.nodes)) {
-        fail(`invalid review thread ${expectedId}`);
+function inspectThreadComments(threadId: string, isResolved: unknown, gh: Gh): ReviewThread {
+    if (typeof isResolved !== 'boolean') {
+        fail(`invalid review thread ${threadId}`);
     }
-    const comments = value.comments.nodes as Array<{
-        id?: unknown;
-        fullDatabaseId?: unknown;
-        author?: { login?: unknown } | null;
-    }>;
+    let cursor: string | undefined;
+    const cursors = new Set<string>();
+    const comments: ReviewComment[] = [];
+    for (;;) {
+        const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
+        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login}} pageInfo{hasNextPage endCursor}}}}}`;
+        const fields = ['-F', `threadId=${threadId}`];
+        if (cursor !== undefined) {
+            fields.push('-F', `cursor=${cursor}`);
+        }
+        const response = graphql(gh, query, fields, `review comments for thread ${threadId}`) as {
+            data?: {
+                node?: {
+                    id?: unknown;
+                    comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
+                } | null;
+            };
+        };
+        const thread = response.data?.node;
+        if (
+            thread?.id !== threadId ||
+            !Array.isArray(thread.comments?.nodes) ||
+            typeof thread.comments.pageInfo?.hasNextPage !== 'boolean'
+        ) {
+            fail(`invalid review comments for thread ${threadId}`);
+        }
+        for (const value of thread.comments.nodes) {
+            const comment = toReviewComment(value);
+            if (comments.some((current) => current.id === comment.id)) {
+                fail(`duplicate review comment ${comment.id}`);
+            }
+            comments.push(comment);
+        }
+        if (!thread.comments.pageInfo.hasNextPage) {
+            break;
+        }
+        const next = thread.comments.pageInfo.endCursor;
+        if (typeof next !== 'string' || next === '' || cursors.has(next)) {
+            fail(`invalid review-comment pagination for thread ${threadId}`);
+        }
+        cursors.add(next);
+        cursor = next;
+    }
     const root = comments[0];
     return {
-        id: value.id,
-        isResolved: value.isResolved,
-        rootCommentId: typeof root?.id === 'string' ? root.id : null,
-        rootCommentFullDatabaseId: isDecimalId(root?.fullDatabaseId) ? root.fullDatabaseId : null,
-        rootAuthorLogin: typeof root?.author?.login === 'string' ? root.author.login : null,
-        commentIds: comments.flatMap((comment) => (typeof comment.id === 'string' ? [comment.id] : [])),
+        id: threadId,
+        isResolved,
+        rootCommentId: root?.id ?? null,
+        rootCommentFullDatabaseId: root?.fullDatabaseId ?? null,
+        rootAuthorLogin: root?.authorLogin ?? null,
+        comments,
+    };
+}
+function toReviewComment(value: unknown): ReviewComment {
+    const comment = value as {
+        id?: unknown;
+        fullDatabaseId?: unknown;
+        body?: unknown;
+        author?: { login?: unknown } | null;
+    };
+    if (typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId) || typeof comment.body !== 'string') {
+        fail('invalid review comment');
+    }
+    return {
+        id: comment.id,
+        fullDatabaseId: comment.fullDatabaseId,
+        body: comment.body,
+        authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
     };
 }
 function mutationReply(threadId: string, gh: Gh): ReviewReply {
@@ -316,9 +410,12 @@ function mutateThread(
     }
 }
 function deleteReply(replyId: string, gh: Gh): void {
-    const query =
-        'mutation($replyId:ID!){deletePullRequestReviewComment(input:{id:$replyId}){pullRequestReviewComment{ id }}}';
-    graphql(gh, query, ['-F', `replyId=${replyId}`], 'delete review reply');
+    graphql(
+        gh,
+        'mutation($replyId:ID!){deletePullRequestReviewComment(input:{id:$replyId}){pullRequestReviewComment{id}}}',
+        ['-F', `replyId=${replyId}`],
+        'delete review reply'
+    );
 }
 async function main(): Promise<number> {
     const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));

@@ -15,15 +15,21 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
-export type SupersededPullRequest = { number: number; state: string; head: string; repository: string; base: string };
-export type IssueComment = { id: string; fullDatabaseId: string };
+export type IssueComment = { id: string; fullDatabaseId: string; body: string; authorLogin: string | null };
+export type SupersededPullRequest = {
+    number: number;
+    state: string;
+    head: string;
+    repository: string;
+    base: string;
+    comments: IssueComment[];
+};
 export type SupersedePullRequestPort = {
     inspect: (number: number) => SupersededPullRequest;
     comment: (number: number, body: string) => IssueComment;
     close: (number: number) => void;
     reopen: (number: number) => void;
-    deleteComment: (commentId: string) => void;
-    inspectComment: (commentId: string) => boolean;
+    deleteComment: (id: string) => void;
     log: (message: string) => void;
 };
 export type SupersedePullRequestArgs = { oldNumber?: number; head?: string; replacementNumber?: number; help: boolean };
@@ -74,17 +80,20 @@ export function supersedePullRequest(
     if (oldNumber === replacementNumber) {
         fail('replacement pull request must differ from the old pull request');
     }
-    const oldPullRequest = port.inspect(oldNumber);
+    const before = port.inspect(oldNumber);
     const replacement = port.inspect(replacementNumber);
-    assertOld(oldPullRequest, oldNumber, expectedHead);
-    assertReplacement(replacement, replacementNumber, oldPullRequest);
-    const comment = port.comment(oldNumber, `Superseded by #${replacementNumber}.`);
-    assertComment(comment);
-    let closed = false;
+    assertOld(before, oldNumber, expectedHead);
+    assertReplacement(replacement, replacementNumber, before);
+    const body = `Superseded by #${replacementNumber}.`;
+    let commentAttempted = false;
+    let closeAttempted = false;
     try {
+        commentAttempted = true;
+        const comment = port.comment(oldNumber, body);
+        assertComment(comment);
         assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead);
+        closeAttempted = true;
         port.close(oldNumber);
-        closed = true;
         const verified = port.inspect(oldNumber);
         if (verified.head !== expectedHead) {
             fail('pull-request head moved after mutation; compensating');
@@ -93,13 +102,95 @@ export function supersedePullRequest(
             fail(`PR #${oldNumber} was not closed`);
         }
     } catch (error) {
-        compensateSupersession(oldNumber, comment.id, closed, port, error);
+        compensateSupersession(oldNumber, body, before, commentAttempted, closeAttempted, port, error);
     }
     const success = `pull-request-superseded:${oldNumber}:${replacementNumber}`;
     port.log(success);
     return success;
 }
 
+function compensateSupersession(
+    number: number,
+    body: string,
+    before: SupersededPullRequest,
+    commentAttempted: boolean,
+    closeAttempted: boolean,
+    port: SupersedePullRequestPort,
+    original: unknown
+): never {
+    const failures: string[] = [];
+    let current: SupersededPullRequest | undefined;
+    attempt(failures, 'inspect ambiguous supersession transaction', () => {
+        current = port.inspect(number);
+    });
+    if (current === undefined) {
+        failures.push('cannot determine ambiguous supersession transaction state');
+    } else {
+        if (closeAttempted && current.state !== before.state) {
+            if (current.state === 'CLOSED' && before.state === 'OPEN') {
+                attempt(failures, 'reopen pull request', () => port.reopen(number));
+            } else {
+                failures.push(`cannot safely restore PR #${number} from ${current.state}`);
+            }
+        }
+        if (commentAttempted) {
+            const commentId = createdCommentId(before.comments, current.comments, body, AUTHOR_BOT_LOGIN);
+            if (commentId === undefined) {
+                failures.push('cannot identify the created supersession comment for compensation');
+            } else if (commentId !== null) {
+                attempt(failures, 'delete supersession comment', () => port.deleteComment(commentId));
+            }
+        }
+    }
+    attempt(failures, 'verify supersession compensation', () => {
+        const verified = port.inspect(number);
+        if (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments)) {
+            fail(`PR #${number} compensation was not verified`);
+        }
+    });
+    throwWithCompensation(original, failures);
+}
+export function createdCommentId(
+    before: IssueComment[],
+    after: IssueComment[],
+    body: string,
+    authorLogin: string
+): string | null | undefined {
+    const ids = new Set(before.map((comment) => comment.id));
+    const newComments = after.filter((comment) => !ids.has(comment.id));
+    if (newComments.length === 0) {
+        return null;
+    }
+    const candidates = newComments.filter((comment) => comment.body === body && comment.authorLogin === authorLogin);
+    return candidates.length === 1 ? candidates[0]?.id : undefined;
+}
+function sameCommentIds(left: IssueComment[], right: IssueComment[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const ids = new Set(left.map((comment) => comment.id));
+    return ids.size === right.length && right.every((comment) => ids.has(comment.id));
+}
+function throwWithCompensation(original: unknown, failures: string[]): never {
+    const message = errorMessage(original);
+    if (failures.length > 0) {
+        throw new Error(`${message}; compensation failed: ${failures.join('; ')}`, { cause: original });
+    }
+    if (original instanceof Error) {
+        throw original;
+    }
+    throw new Error(message);
+}
+function attempt(failures: string[], label: string, operation: () => void): void {
+    try {
+        operation();
+    } catch (error) {
+        failures.push(`${label}: ${errorMessage(error)}`);
+    }
+}
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
 function assertOld(value: SupersededPullRequest, number: number, head: string): void {
     if (value.number !== number || value.repository !== REQUIRED_REPOSITORY) {
         fail(`cannot inspect PR #${number} in ${REQUIRED_REPOSITORY}`);
@@ -134,46 +225,14 @@ function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
 function assertComment(value: IssueComment): void {
-    if (typeof value.id !== 'string' || value.id === '' || !isDecimalId(value.fullDatabaseId)) {
+    if (
+        typeof value.id !== 'string' ||
+        value.id === '' ||
+        !isDecimalId(value.fullDatabaseId) ||
+        value.authorLogin !== AUTHOR_BOT_LOGIN
+    ) {
         fail('add supersession comment returned an invalid result');
     }
-}
-function compensateSupersession(
-    number: number,
-    commentId: string,
-    closed: boolean,
-    port: SupersedePullRequestPort,
-    original: unknown
-): never {
-    const failures: string[] = [];
-    if (closed) {
-        attempt(failures, 'reopen pull request', () => port.reopen(number));
-    }
-    attempt(failures, 'delete supersession comment', () => port.deleteComment(commentId));
-    attempt(failures, 'verify supersession compensation', () => {
-        const current = port.inspect(number);
-        if (current.state !== 'OPEN' || port.inspectComment(commentId)) {
-            fail(`PR #${number} compensation was not verified`);
-        }
-    });
-    const message = errorMessage(original);
-    if (failures.length > 0) {
-        throw new Error(`${message}; compensation failed: ${failures.join('; ')}`, { cause: original });
-    }
-    if (original instanceof Error) {
-        throw original;
-    }
-    throw new Error(message);
-}
-function attempt(failures: string[], label: string, operation: () => void): void {
-    try {
-        operation();
-    } catch (error) {
-        failures.push(`${label}: ${errorMessage(error)}`);
-    }
-}
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
 
 export function shellPort(session: GhSession, cwd: string = process.cwd()): SupersedePullRequestPort {
@@ -182,15 +241,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Supe
         cwd
     );
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
-    const nodeIds = new Map<number, string>();
-    const nodeId = (number: number) => nodeIds.get(number) ?? fail(`PR #${number} was not inspected`);
+    const ids = new Map<number, string>();
+    const nodeId = (number: number) => ids.get(number) ?? fail(`PR #${number} was not inspected`);
     return {
-        inspect: (number) => inspectPullRequest(number, gh, nodeIds),
+        inspect: (number) => inspectPullRequest(number, gh, ids),
         comment: (number, body) => addComment(nodeId(number), body, gh),
         close: (number) => setPullRequestState('closePullRequest', nodeId(number), 'CLOSED', gh),
         reopen: (number) => setPullRequestState('reopenPullRequest', nodeId(number), 'OPEN', gh),
         deleteComment: (id) => deleteComment(id, gh),
-        inspectComment: (id) => inspectComment(id, gh),
         log: (message) => console.log(message),
     };
 }
@@ -198,7 +256,7 @@ type Gh = (args: string[]) => string;
 function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
     return parseJson(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
 }
-function inspectPullRequest(number: number, gh: Gh, nodeIds: Map<number, string>): SupersededPullRequest {
+function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const [owner, name] = REQUIRED_REPOSITORY.split('/');
     if (owner === undefined || name === undefined) {
         fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
@@ -237,31 +295,83 @@ function inspectPullRequest(number: number, gh: Gh, nodeIds: Map<number, string>
     ) {
         fail(`cannot inspect PR #${number}`);
     }
-    nodeIds.set(number, pullRequest.id);
+    ids.set(number, pullRequest.id);
     return {
         number: pullRequest.number,
         state: pullRequest.state,
         head: pullRequest.headRefOid,
         repository: repository.nameWithOwner,
         base: pullRequest.baseRefName,
+        comments: inspectIssueComments(pullRequest.id, gh),
+    };
+}
+function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] {
+    let cursor: string | undefined;
+    const cursors = new Set<string>();
+    const comments: IssueComment[] = [];
+    for (;;) {
+        const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
+        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login}} pageInfo{hasNextPage endCursor}}}}}`;
+        const fields = ['-F', `subjectId=${subjectId}`];
+        if (cursor !== undefined) {
+            fields.push('-F', `cursor=${cursor}`);
+        }
+        const response = graphql(gh, query, fields, `issue comments for ${subjectId}`) as {
+            data?: {
+                node?: {
+                    comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
+                } | null;
+            };
+        };
+        const node = response.data?.node;
+        if (!Array.isArray(node?.comments?.nodes) || typeof node.comments.pageInfo?.hasNextPage !== 'boolean') {
+            fail(`invalid issue comments for ${subjectId}`);
+        }
+        for (const value of node.comments.nodes) {
+            const comment = toIssueComment(value);
+            if (comments.some((current) => current.id === comment.id)) {
+                fail(`duplicate issue comment ${comment.id}`);
+            }
+            comments.push(comment);
+        }
+        if (!node.comments.pageInfo.hasNextPage) {
+            return comments;
+        }
+        const next = node.comments.pageInfo.endCursor;
+        if (typeof next !== 'string' || next === '' || cursors.has(next)) {
+            fail(`invalid issue-comment pagination for ${subjectId}`);
+        }
+        cursors.add(next);
+        cursor = next;
+    }
+}
+function toIssueComment(value: unknown): IssueComment {
+    const comment = value as {
+        id?: unknown;
+        fullDatabaseId?: unknown;
+        body?: unknown;
+        author?: { login?: unknown } | null;
+    };
+    if (typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId) || typeof comment.body !== 'string') {
+        fail('invalid issue comment');
+    }
+    return {
+        id: comment.id,
+        fullDatabaseId: comment.fullDatabaseId,
+        body: comment.body,
+        authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
     };
 }
 function addComment(subjectId: string, body: string, gh: Gh): IssueComment {
     const query =
-        'mutation($subjectId:ID!,$body:String!){addComment(input:{subjectId:$subjectId,body:$body}){commentEdge{node{id fullDatabaseId body}}}}';
+        'mutation($subjectId:ID!,$body:String!){addComment(input:{subjectId:$subjectId,body:$body}){commentEdge{node{id fullDatabaseId body author{login}}}}}';
     const response = graphql(
         gh,
         query,
         ['-F', `subjectId=${subjectId}`, '-f', `body=${body}`],
         'add supersession comment'
-    ) as {
-        data?: { addComment?: { commentEdge?: { node?: { id?: unknown; fullDatabaseId?: unknown; body?: unknown } } } };
-    };
-    const comment = response.data?.addComment?.commentEdge?.node;
-    if (comment?.body !== body || typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId)) {
-        fail('add supersession comment returned an invalid result');
-    }
-    return { id: comment.id, fullDatabaseId: comment.fullDatabaseId };
+    ) as { data?: { addComment?: { commentEdge?: { node?: unknown } } } };
+    return toIssueComment(response.data?.addComment?.commentEdge?.node);
 }
 function setPullRequestState(
     name: 'closePullRequest' | 'reopenPullRequest',
@@ -278,22 +388,13 @@ function setPullRequestState(
         fail(`${name} returned an invalid result`);
     }
 }
-function deleteComment(commentId: string, gh: Gh): void {
+function deleteComment(id: string, gh: Gh): void {
     graphql(
         gh,
         'mutation($id:ID!){deleteIssueComment(input:{id:$id}){clientMutationId}}',
-        ['-F', `id=${commentId}`],
+        ['-F', `id=${id}`],
         'delete supersession comment'
     );
-}
-function inspectComment(commentId: string, gh: Gh): boolean {
-    const response = graphql(
-        gh,
-        'query($id:ID!){node(id:$id){id}}',
-        ['-F', `id=${commentId}`],
-        'inspect supersession comment'
-    ) as { data?: { node?: { id?: unknown } | null } };
-    return response.data?.node?.id === commentId;
 }
 async function main(): Promise<number> {
     const parsed = parseSupersedePullRequestArgs(process.argv.slice(2));
