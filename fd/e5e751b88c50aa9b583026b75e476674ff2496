@@ -1,0 +1,53 @@
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineClipSource.ts
+  s_7ba0b7bee9e951::t_dd7c835029579c 123-131
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_7ba0b7bee9e951::t_a422b5c5aedecf 372-373,384-433,438-452
+  s_7ba0b7bee9e951::t_dcf3d72a4b1dac 434-437
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_08345533798083 41-43
+  s_7ba0b7bee9e951::t_3fa2969dd4199c 2131
+  s_7ba0b7bee9e951::t_aeef3e749fd310 2114
+  s_7ba0b7bee9e951::t_3ad2c4852d6e8c 2175
+  s_7ba0b7bee9e951::t_6dd8e7621320fb 1509-1512,1514-1515
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_7ba0b7bee9e951::t_34adfc764d692e 888-892
+src/modules/AudioEngine/useCases/offlineRender/__tests__/nullTestRenderHarness.ts
+  s_7ba0b7bee9e951::t_dc5895cf65ac35 825-828,844,848
+  s_7ba0b7bee9e951::t_2cdffb9065207e 803-812
+  s_7ba0b7bee9e951::t_158c531305db71 861-869,875
+  s_7ba0b7bee9e951::t_b4ef9b5c72723d 300-302
+  s_7ba0b7bee9e951::t_92dd47b16dc5b7 38-43
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_7ba0b7bee9e951::t_ddea69f9c6e54d 406-426
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_7ba0b7bee9e951::t_c8fa250faa4b6c 2004
+  s_7ba0b7bee9e951::t_9d077a7e234607 2048
+  s_7ba0b7bee9e951::t_b1b2dde5047130 2052
+  s_7ba0b7bee9e951::t_657a2d5ac1f041 1948,1950-1955,1957-1960,1962,1964,1966-1975
+  s_7ba0b7bee9e951::t_5d7980f059f459 1898,1911-1914,1923-1924,1941,1947,1949,1956,1961,1963,1965
+  s_7ba0b7bee9e951::t_cae086ff72c5f9 172
+  s_7ba0b7bee9e951::t_ac19cd35833c52 2162-2163,2166-2168,2178,2185,2192-2193,2202-2203,2208-2222,2224-2227,2229-2230
+  s_7ba0b7bee9e951::t_b8a219c2fa2b5b 1918-1919
+  s_7ba0b7bee9e951::t_76b773f8d37c47 1899-1907
+  s_7ba0b7bee9e951::t_fef3c756e4e1b5 2164-2165,2169-2177,2179-2184,2186-2191,2194-2201,2204-2207,2223,2228
+  s_7ba0b7bee9e951::t_73f547b00a706c 1937
+  s_7ba0b7bee9e951::t_91d4336f12003e 109-112
+  s_7ba0b7bee9e951::t_40a1fd9bcba17c 2000
+  s_7ba0b7bee9e951::t_2c7bb39648b064 1976
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fde5e751b88c50aa9b583026b75e476674ff2496",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
