@@ -14,6 +14,28 @@ type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number]
 let _lastLanesRef: readonly AutomationLane[] | null = null;
 const _laneByIdCache = new Map<string, AutomationLane>();
 
+/**
+ * Bound a raw value to the point-holding lane's own declared `minValue`/
+ * `maxValue`. Catmull-Rom ('smooth') interpolation overshoots between control
+ * points by construction, so an interior segment can briefly hand back a
+ * value the lane says it cannot hold — the declared range is a contract every
+ * other reader (device-param clamps, AudioParam schedulers) assumes already
+ * holds. Applied to `interpolated` *before* `resolved.scale`: `minValue`/
+ * `maxValue` describe the source lane's own points (the same units as
+ * `interpolated`), not the scaled return value — a linked/inverted lane's
+ * `linkScale` can legitimately push the final value outside the source
+ * lane's own range (e.g. `linkScale: -1`), and clamping after the multiply
+ * would wrongly flatten that. Defensive against non-finite bounds so a lane
+ * fixture that never set them (several specs construct lanes with only the
+ * fields their assertions touch) degrades to a no-op instead of NaN.
+ */
+function clampToLaneRange(value: number, lane: AutomationLane): number {
+    if (!Number.isFinite(lane.minValue) || !Number.isFinite(lane.maxValue)) {
+        return value;
+    }
+    return Math.min(lane.maxValue, Math.max(lane.minValue, value));
+}
+
 export function getAutomationValueAtBeat(
     laneId: string,
     beat: number,
@@ -68,10 +90,10 @@ export function getAutomationValueAtBeat(
     }
 
     if (beforeIdx === -1) {
-        return points[0]!.value * resolved.scale;
+        return clampToLaneRange(points[0]!.value, lane) * resolved.scale;
     }
     if (beforeIdx === points.length - 1) {
-        return points[beforeIdx]!.value * resolved.scale;
+        return clampToLaneRange(points[beforeIdx]!.value, lane) * resolved.scale;
     }
 
     // Pass the surrounding points so a 'smooth' (Catmull-Rom) segment uses its
@@ -86,5 +108,5 @@ export function getAutomationValueAtBeat(
         previousPoint: points[beforeIdx - 1],
         nextPoint: points[beforeIdx + 2],
     });
-    return interpolated * resolved.scale;
+    return clampToLaneRange(interpolated, lane) * resolved.scale;
 }

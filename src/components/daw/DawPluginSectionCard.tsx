@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginSectionCardProps = HTMLAttributes<HTMLElement> & {
@@ -21,22 +22,22 @@ export const DawPluginSectionCard = ({
     children,
     ...props
 }: DawPluginSectionCardProps): ReactElement => (
-    <section className={cn('flex flex-col gap-3 p-3', className)} {...props}>
+    <Stack as="section" gap={3} className={cn('p-3', className)} {...props}>
         {detailMode === 'badge' ? (
-            <div className="flex items-center justify-between gap-2">
+            <Row justify="between" gap={2}>
                 <div className={cn('text-[8px] font-semibold uppercase tracking-[0.24em]', titleClassName)}>
                     {title}
                 </div>
                 {detail ? <div className={detailClassName}>{detail}</div> : null}
-            </div>
+            </Row>
         ) : (
-            <div className="space-y-1">
+            <Stack gap={1}>
                 <div className={cn('text-[8px] font-semibold uppercase tracking-[0.24em]', titleClassName)}>
                     {title}
                 </div>
                 {detail ? <span className="sr-only">{detail}</span> : null}
-            </div>
+            </Stack>
         )}
         {children}
-    </section>
+    </Stack>
 );

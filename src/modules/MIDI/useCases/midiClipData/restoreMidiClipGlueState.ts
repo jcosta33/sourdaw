@@ -1,28 +1,6 @@
-import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
-
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
-type RestoreMidiClipGlueStateInput = {
-    expected: MidiClipGlueActionSnapshot;
-    replacement: MidiClipGlueActionSnapshot;
-};
-
-function snapshotClipData(state: MidiStoreState, clipId: string): MidiClipDataActionSnapshot {
-    return {
-        notes: {
-            present: Object.hasOwn(state.notesByClipId, clipId),
-            value: structuredClone(state.notesByClipId[clipId] ?? []),
-        },
-        controlChanges: {
-            present: Object.hasOwn(state.ccByClipId, clipId),
-            value: structuredClone(state.ccByClipId[clipId] ?? []),
-        },
-        pitchBends: {
-            present: Object.hasOwn(state.pitchBendByClipId, clipId),
-            value: structuredClone(state.pitchBendByClipId[clipId] ?? []),
-        },
-    };
-}
+import { midiClipGlueStateMatches, type MidiClipGlueStateMatchInput } from './midiClipGlueStateMatches';
 
 function replaceSlot<Row>(
     current: Record<string, Row[]>,
@@ -71,22 +49,13 @@ function mergeMigrationIds({
     return result;
 }
 
-export function restoreMidiClipGlueState({ expected, replacement }: RestoreMidiClipGlueStateInput): boolean {
+export function restoreMidiClipGlueState(input: MidiClipGlueStateMatchInput): boolean {
+    const { expected, replacement } = input;
     const state = midiStore.value;
-    const expectedIds = expected.clips.map((clip) => clip.clipId);
-    const replacementIds = replacement.clips.map((clip) => clip.clipId);
-    if (
-        !state ||
-        new Set(expectedIds).size !== expectedIds.length ||
-        JSON.stringify(expectedIds) !== JSON.stringify(replacementIds) ||
-        expected.clips.some(
-            (clip) => JSON.stringify(snapshotClipData(state, clip.clipId)) !== JSON.stringify(clip.data)
-        ) ||
-        JSON.stringify(expected.migratedAbsoluteNoteClipIds.value.filter((clipId) => expectedIds.includes(clipId))) !==
-            JSON.stringify((state.migratedAbsoluteNoteClipIds ?? []).filter((clipId) => expectedIds.includes(clipId)))
-    ) {
+    if (!state || !midiClipGlueStateMatches(input, state)) {
         return false;
     }
+    const expectedIds = expected.clips.map((clip) => clip.clipId);
 
     let notesByClipId = state.notesByClipId;
     let ccByClipId = state.ccByClipId;

@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
+import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
 import { normalizeTrack } from '../models/Track';
 
 import type {
@@ -336,7 +337,13 @@ function normalize_device(value: unknown): Device | null {
         name: value.name,
         type: value.type,
         bypassed: typeof value.bypassed === 'boolean' ? value.bypassed : false,
-        parameterValues: normalize_parameter_values(value.parameterValues),
+        // Read stored values before anything clamps them: a parameter whose
+        // declared unit changed holds values the current range would pin to its
+        // minimum. See `StoredDeviceParameterMigration`.
+        parameterValues: migrateStoredDeviceParameterValues(
+            value.type,
+            normalize_parameter_values(value.parameterValues)
+        ),
     };
 
     if (typeof value.externalPluginId === 'string') {

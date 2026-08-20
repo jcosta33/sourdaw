@@ -1,5 +1,7 @@
 import { type KeyboardEvent, type ReactElement } from 'react';
 
+import { Stack } from '#/components/layout';
+
 import { DawCompactInput } from './DawCompactInput';
 
 type DawMenuInlineEditorProps = {
@@ -29,7 +31,7 @@ export const DawMenuInlineEditor = ({
     };
 
     return (
-        <div className="mx-1 my-0.5 flex flex-col gap-1 rounded bg-surface-raised/80 px-2 py-1.5">
+        <Stack gap={1} className="mx-1 my-0.5 rounded bg-surface-raised/80 px-2 py-1.5">
             <div className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
             <DawCompactInput
                 type="text"
@@ -41,6 +43,6 @@ export const DawMenuInlineEditor = ({
                 size="micro"
                 className="w-full text-[10px]"
             />
-        </div>
+        </Stack>
     );
 };
