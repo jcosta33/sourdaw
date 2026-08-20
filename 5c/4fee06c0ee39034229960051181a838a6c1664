@@ -1,0 +1,24 @@
+scripts/runVitestZeroTestGuard.ts
+  s_24b1bdbc3c31ad::t_05eef6fd9e64f8 22,24-28,30-32,37-44,69-72
+  s_24b1bdbc3c31ad::t_9bfa73a0fcc888 29,45
+  s_24b1bdbc3c31ad::t_5c05be7db51105 65-68
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_24b1bdbc3c31ad::t_be48078dceb792 1-2,8
+  s_24b1bdbc3c31ad::t_9acff4965da062 108-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5c4fee06c0ee39034229960051181a838a6c1664",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
