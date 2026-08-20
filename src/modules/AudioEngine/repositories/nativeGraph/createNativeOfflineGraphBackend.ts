@@ -29,7 +29,7 @@
  *
  * An offline backend deliberately never calls `apply_graph_commands`: that
  * command lazily starts the live CPAL engine (#1984), and a bounce must not
- * open an audio device. Live adoption is the D3.c cutover (#2214).
+ * open an audio device. Live adoption is the D3.c cutover (#2223).
  *
  * ── The strip reports ─────────────────────────────────────────────────────
  *
@@ -47,7 +47,7 @@
  * strip presence today is the null test's audio residual plus the offline
  * diagnostics backstop (`offline-render-dropped-commands` in `graph.rs`).
  * Carrying native reports across the wire lands with the D3.c cutover
- * (jcosta33/sourdaw#2214), when reports become production-consumed.
+ * (jcosta33/sourdaw#2223), when reports become production-consumed.
  */
 
 import {
@@ -183,7 +183,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
             // nothing. Cost note: every probe re-serializes and re-sends the
             // whole accumulated command list, so a bounce of N batches crosses
             // the wire O(N²) commands in total. Harmless at bounce sizes
-            // today; the D3.c consumer (#2214) must either diff batches or cap
+            // today; the D3.c consumer (#2223) must either diff batches or cap
             // the accumulation before adopting this path for live-sized runs.
             try {
                 await transport.renderGraphOffline({

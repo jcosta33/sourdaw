@@ -562,6 +562,8 @@ impl AudioScheduler {
             retired_tx,
             pending_retirement: None,
             pending_batch: None,
+            // Sized for the boot ring; a swap can grow the live ring, so the
+            // drop-time drain re-reserves from the live ring's capacity.
             shutdown_commands: Vec::with_capacity(command_queue_capacity),
             retain_command_consumer: !cfg!(test),
             sample_rate,
@@ -1589,6 +1591,17 @@ impl DeviceChain for TrackDeviceChain<'_> {
 
 impl Drop for AudioScheduler {
     fn drop(&mut self) {
+        // Drop runs control-side (`StreamWithReclaimerShutdown`), never in
+        // the audio callback, so this reserve may allocate: a ring swap can
+        // have grown the live ring past the boot capacity `shutdown_commands`
+        // was preallocated with, and the drain below must hold a full ring.
+        let live_ring_capacity = self
+            .command_rx
+            .as_ref()
+            .expect("command consumer")
+            .buffer()
+            .capacity();
+        self.shutdown_commands.reserve(live_ring_capacity);
         while let Ok(command) = self.command_rx.as_mut().expect("command consumer").pop() {
             self.shutdown_commands.push(command);
         }

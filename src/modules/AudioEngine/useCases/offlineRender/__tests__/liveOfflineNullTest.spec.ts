@@ -2507,7 +2507,7 @@ async function renderCommandsThroughNativeBackend(commands: AudioGraphCommand[])
         // backstop (`offline-render-dropped-commands` in `graph.rs`), which
         // fails the render when the engine dropped any admitted command.
         // Reports become a native observation when they cross the wire with
-        // the D3.c cutover (#2214), where production starts consuming them.
+        // the D3.c cutover (#2223), where production starts consuming them.
         const { left, right } = await backend.render(RENDER_FRAMES);
         return {
             sampleRate: SAMPLE_RATE,

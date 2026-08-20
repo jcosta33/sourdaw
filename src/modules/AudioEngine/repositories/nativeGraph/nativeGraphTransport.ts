@@ -46,7 +46,7 @@ export type NativeGraphTransport = Readonly<{
     /**
      * `apply_graph_commands`: one batch onto the **live** native engine, which
      * lazily starts on the first batch. Not called by the offline backend —
-     * live adoption is the D3.c cutover (#2214) — but carried on the seam so
+     * live adoption is the D3.c cutover (#2223) — but carried on the seam so
      * the cutover swaps a call site, not the transport.
      */
     applyGraphCommands: (input: ApplyGraphCommandsInput) => Promise<unknown>;

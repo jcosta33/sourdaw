@@ -66,10 +66,11 @@
 //! echoes of the request: every strip a batch creates or whose chain it
 //! touches (`insert-device`, `remove-device`) reports its realized
 //! `deviceIds` after the whole batch. A device that degraded on a
-//! non-contributing strip is therefore visibly absent, and no chain edit is
-//! silent — a degraded `insert-device` still produces a report whose ids
-//! reflect reality. The offline render wire (`render_graph_offline`) answers
-//! PCM bytes only, so these reports do not cross it; the TS offline backend
+//! non-contributing strip is therefore visibly absent, and no chain edit
+//! through this backend is silent — a degraded `insert-device` still produces
+//! a report whose ids reflect reality. The offline render wire
+//! (`render_graph_offline`) answers PCM bytes only, so these reports do not
+//! cross it; the TS offline backend
 //! restates them from its own commands (`createNativeOfflineGraphBackend.ts`),
 //! a derivation D3.c pins until reports ride a richer offline result.
 //!
@@ -106,8 +107,14 @@
 //!   no live document races it (`AudioGraphBackend.ts`, batch law). Echoing
 //!   is therefore the whole truthful behaviour for every batch that exists
 //!   today. Validation against a live revision becomes meaningful — and lands
-//!   here — with the D3.c live cutover (jcosta33/sourdaw#2214), where
+//!   here — with the D3.c live cutover (jcosta33/sourdaw#2223), where
 //!   `apply_graph_commands` batches race a live document.
+//! - Strip reports here cover every strip a batch *touched* — created,
+//!   inserted into, or removed from — a superset of the contract's
+//!   strip-creating scope (`AudioGraphBackend.ts`, `AudioGraphStripReport`),
+//!   which the web backend implements literally: it reports creates only
+//!   (`createWebAudioOfflineBackend.ts`). jcosta33/sourdaw#2223 reconciles
+//!   the two to one law — widen the web backend or the contract doc.
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
@@ -494,11 +501,16 @@ struct DeviceEntry {
 /// The registry also carries the cross-batch queue ledger (see
 /// [`QueueBudgets`]): what earlier accepted batches left queued on the
 /// engine's fixed per-parameter queues, so a later batch cannot overflow a
-/// queue an earlier one filled. The ledger is conservative — it is reduced
-/// only by the stamp laws this side can mirror (a replace's cancellation, a
-/// locate's drop), never by the playhead landing an event, so it may
-/// over-refuse but never under-refuses. An offline render's fresh registry
-/// keeps the ledger exact for its one self-contained batch.
+/// queue an earlier one filled. The ledger cannot see the playhead landing
+/// an event, so its release laws are exactly these: device-param depths are
+/// **monotonic** — no release law exists, and a device whose window fills
+/// stays full for the life of this engine session; automation stamps are
+/// **forward-locate-inert** — released only by a replace/hold's
+/// stale-cancellation or by a backward locate past the stamps. It never
+/// under-refuses; the release mechanism (the engine echoing landed depths
+/// back to this side) is jcosta33/sourdaw#2223's obligation. An offline
+/// render's fresh registry keeps the ledger exact for its one
+/// self-contained batch.
 #[derive(Clone, Debug)]
 pub struct GraphRegistry {
     strips: HashMap<String, StripEntry>,
@@ -657,10 +669,14 @@ impl QueueBudgets {
         }
         if queued.len() == AUTOMATION_QUEUE_CAPACITY {
             return Err(format!(
-                "automation-queue-capacity — accepted batches already queue \
-                 {AUTOMATION_QUEUE_CAPACITY} unlanded writes on this parameter, all its \
-                 native queue holds; the engine would drop the rest silently, so the \
-                 batch refuses instead — split the writes across batches"
+                "automation-queue-capacity — this parameter's native queue is full: \
+                 {AUTOMATION_QUEUE_CAPACITY} unlanded writes are pending, counting this \
+                 batch and every earlier accepted one; the engine would drop further \
+                 writes silently, so the batch refuses whole. The control-side ledger \
+                 cannot see writes land, so splitting across batches frees nothing — \
+                 these slots release only when a replace or hold cancels the stale \
+                 writes, or a locate behind their stamps drops them (the engine's \
+                 landed-depth echo is jcosta33/sourdaw#2223)"
             ));
         }
         queued.push(PendingStamp {
@@ -674,10 +690,14 @@ impl QueueBudgets {
         let depth = self.device_params.entry(effect_id).or_insert(0);
         if *depth == DEVICE_PARAM_QUEUE_CAPACITY {
             return Err(format!(
-                "device-param-queue-capacity — accepted batches already queue \
-                 {DEVICE_PARAM_QUEUE_CAPACITY} unlanded changes on this device, all its native \
-                 queue holds; the engine would drop the rest silently, so the batch refuses \
-                 instead — split the writes across batches"
+                "device-param-queue-capacity — this device's pending window is full: \
+                 {DEVICE_PARAM_QUEUE_CAPACITY} changes are charged, counting this batch and \
+                 every earlier accepted one, and the ledger has no release law for device \
+                 params — it cannot see changes land, so splitting across batches frees \
+                 nothing and this device refuses further parameter writes for the life of \
+                 this engine session, until the engine's landed-depth echo lands \
+                 (jcosta33/sourdaw#2223); the engine would drop the writes silently, so \
+                 the batch refuses whole instead"
             ));
         }
         *depth += 1;
@@ -1903,8 +1923,15 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
             total,
             error,
         }) => {
-            // Unreachable after provisioning, but a partial publication must
-            // never report itself as whole.
+            // Defensive-only: `send_graph_batch` checks slots for the whole
+            // batch before publishing the fence, and this thread is the only
+            // producer (the engine mutex is held), so no other push can steal
+            // a slot mid-batch. If this branch were ever reached, the
+            // consequence under the fence is not a partial application but a
+            // stall: the published `BeginBatch` tells the drain to wait for
+            // commands that will never all arrive, so the engine drains
+            // nothing further from this ring. A state that broken must never
+            // report itself as whole.
             return result_json(&GraphApplyResultPayload::needs_reconcile(
                 format!(
                     "the engine refused command {pushed} of {total} after {pushed} were \
@@ -2175,8 +2202,9 @@ mod tests {
             .expect("the full vocabulary should map");
 
         assert!(!mapped.ops.is_empty());
-        // Reports observe the post-batch registry: the batch itself removes
-        // `d-knead` after inserting it, so `t1`'s realized chain is empty.
+        // Reports observe the post-batch registry: `d-knead` arrives with
+        // `t1`'s creation and the same batch then removes it, so `t1`'s
+        // realized chain is empty.
         assert_eq!(
             mapped.reports,
             vec![
