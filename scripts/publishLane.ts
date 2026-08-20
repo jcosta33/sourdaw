@@ -108,6 +108,71 @@ function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
     });
 }
 
+export type LegacyLaneCandidate = { path: string; branch: string; lockReason: string | undefined };
+
+/**
+ * Worktrees whose branch predates the `agent/` convention but are still lock-shaped (locked for
+ * *some* reason). Structural shape alone proves nothing: a worktree locked for an unrelated purpose
+ * (a collaboration session, say) looks identical at this stage. `resolveLegacyCandidate` below is
+ * the only thing allowed to turn one of these into a resolved lane or a specific refusal — it
+ * requires both an open pull request for the exact branch (the fact that migrates a stranded
+ * pre-`agent/` lane) and the correct lock (the fact that grants push authority); either alone falls
+ * through to the ordinary "not a lane" refusal instead of misdirecting a worktree that was never an
+ * author lane in the first place.
+ */
+function legacyLaneCandidates(worktrees: PublishWorktree[]): LegacyLaneCandidate[] {
+    return worktrees.flatMap((worktree) => {
+        const branch = worktree.branch;
+        if (branch === undefined || branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) || !worktree.locked) {
+            return [];
+        }
+        return [{ path: worktree.path, branch, lockReason: worktree.lockReason }];
+    });
+}
+
+function legacyLockMigrationMessage(candidate: LegacyLaneCandidate): string {
+    const actual = candidate.lockReason ?? 'with no reason';
+    return (
+        `${candidate.branch} has an open pull request but ${candidate.path} is locked ${actual}, not ` +
+        `${AUTHOR_LOCK_REASON}: only ${AUTHOR_LOCK_REASON} may publish. Migrate the lock, then retry: ` +
+        `git worktree unlock ${candidate.path} && git worktree lock --reason ${AUTHOR_LOCK_REASON} ${candidate.path}`
+    );
+}
+
+function legacyNoPullRequestMessage(candidate: LegacyLaneCandidate): string {
+    return (
+        `${candidate.branch} does not match the ${AUTHOR_LANE_BRANCH_PREFIX} convention and has no open pull ` +
+        `request: an off-convention branch may only publish once the repository already has an open pull ` +
+        `request for that exact branch.`
+    );
+}
+
+/**
+ * Applies the legacy-lane bound to one structural candidate: an open pull request for the exact
+ * branch is what proves this off-convention worktree is a genuine (if stranded) author lane; the
+ * correct lock is what proves it may push. Returns the resolved lane when both hold; throws the
+ * specific, actionable message the moment exactly one of the two holds (that is precisely the
+ * situation callers need named); returns `undefined` when neither holds, so the caller can fall back
+ * to the ordinary "not a lane" refusal instead of explaining a worktree that was never an author lane.
+ */
+function resolveLegacyCandidate(
+    candidate: LegacyLaneCandidate,
+    hasOpenPullRequest: (branch: string) => boolean
+): ResolvedLane | undefined {
+    const correctLock = candidate.lockReason === AUTHOR_LOCK_REASON;
+    const hasPullRequest = hasOpenPullRequest(candidate.branch);
+    if (correctLock && hasPullRequest) {
+        return { path: candidate.path, branch: candidate.branch };
+    }
+    if (correctLock && !hasPullRequest) {
+        fail(legacyNoPullRequestMessage(candidate));
+    }
+    if (!correctLock && hasPullRequest) {
+        fail(legacyLockMigrationMessage(candidate));
+    }
+    return undefined;
+}
+
 /**
  * The issue a lane branch carries, or `undefined` for an issueless lane. `lane:open <issue>` is the
  * only producer of the `agent/<issue>/<slug>` shape, so the branch is the lane's own record of
@@ -126,42 +191,60 @@ export function resolveAuthorLane(
     issue: number | undefined,
     worktrees: PublishWorktree[],
     cwd: string,
-    resolveExisting: (path: string) => string = realpathSync
+    resolveExisting: (path: string) => string = realpathSync,
+    hasOpenPullRequest: (branch: string) => boolean = () => false
 ): ResolvedLane {
     const lanes = authorLanes(worktrees);
     if (issue === undefined) {
         const here = canonicalPath(cwd, resolveExisting);
-        const enclosing = lanes.flatMap((lane) => {
+        type Enclosing = { canonical: string; resolve: () => ResolvedLane | undefined };
+        const conformingEnclosing: Enclosing[] = lanes.flatMap((lane) => {
             const canonical = canonicalPath(lane.path, resolveExisting);
-            return containsPath(canonical, here) ? [{ lane, canonical }] : [];
+            return containsPath(canonical, here) ? [{ canonical, resolve: () => lane }] : [];
+        });
+        const legacyEnclosing: Enclosing[] = legacyLaneCandidates(worktrees).flatMap((candidate) => {
+            const canonical = canonicalPath(candidate.path, resolveExisting);
+            return containsPath(canonical, here)
+                ? [{ canonical, resolve: () => resolveLegacyCandidate(candidate, hasOpenPullRequest) }]
+                : [];
         });
         // Depth is measured on the same canonical spellings containment used. Comparing the
         // recorded paths instead lets a symlinked outer lane out-rank the inner lane it contains.
-        const innermost = enclosing.reduce<{ lane: ResolvedLane; canonical: string } | undefined>(
+        const innermost = [...conformingEnclosing, ...legacyEnclosing].reduce<Enclosing | undefined>(
             (deepest, candidate) =>
                 deepest === undefined || candidate.canonical.length > deepest.canonical.length ? candidate : deepest,
             undefined
         );
-        if (innermost === undefined) {
+        const resolved = innermost?.resolve();
+        if (resolved === undefined) {
             fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
         }
-        return innermost.lane;
+        return resolved;
     }
+    // Deliberately no legacy fallback here. An off-convention branch carries no issue of its own
+    // (`laneIssueNumber` requires the `agent/` prefix), so nothing ties a passed issue number to a
+    // *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
+    // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
+    // legacy lane resolves only from inside itself, with no issue argument — see the `issue ===
+    // undefined` branch above, which is also what keeps `laneIssueNumber` reachable so the body
+    // gets `None.` instead of a wrong closing keyword.
     const prefix = `agent/${issue}/`;
     const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
-        fail(`expected exactly one locked author lane for issue #${issue}`);
+        return fail(`expected exactly one locked author lane for issue #${issue}`);
     }
-    const lane = matches[0];
-    if (lane === undefined) {
-        fail(`expected exactly one locked author lane for issue #${issue}`);
-    }
-    return lane;
+    return matches[0]!;
 }
 
 export function publishLane(issue: number | undefined, port: PublishLanePort): number {
     port.fetchMain();
-    const lane = resolveAuthorLane(issue, port.worktrees(), port.cwd());
+    const lane = resolveAuthorLane(
+        issue,
+        port.worktrees(),
+        port.cwd(),
+        realpathSync,
+        (branch) => port.existingOpenPullRequest(branch) !== undefined
+    );
     // Without an argument the target is whatever the caller happened to be standing in, and the
     // next steps commit and push it. Name the selection before anything mutates, so a caller who
     // was in the wrong lane sees which one it was.

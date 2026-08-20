@@ -8,6 +8,7 @@ import {
     existingOpenPullRequestArgs,
     issueExistsFromLookup,
     issueLookupArgs,
+    laneIssueNumber,
     parsePublishLaneArgs,
     parsePublishWorktrees,
     publishLane,
@@ -20,6 +21,8 @@ import {
 const PRIMARY_ROOT = '/repo';
 const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
+const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
+const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
 
 function worktree(overrides: Partial<PublishWorktree> = {}): PublishWorktree {
     return {
@@ -266,11 +269,6 @@ describe('lane publish', () => {
             ],
             '/repo/.agents/worktrees/scratch',
         ],
-        [
-            'the cwd is inside an author-locked worktree whose branch is not a lane',
-            [...otherAuthorLanes(), worktree({ path: '/repo/release-1-2', branch: 'release/1.2' })],
-            '/repo/release-1-2',
-        ],
     ])('refuses to publish without an issue when %s', (_case, trees, cwd) => {
         const { port, calls } = fakePort({ trees, cwd });
 
@@ -279,6 +277,16 @@ describe('lane publish', () => {
         );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('refuses an author-locked, off-convention branch with no open pull request, naming the branch', () => {
+        // Correctly locked (AUTHOR_LOCK_REASON) but off-convention, e.g. a hand-locked release
+        // branch or a not-yet-published legacy lane: proves the lock alone is not enough, the open
+        // pull request is the actual gate.
+        const trees = [...otherAuthorLanes(), worktree({ path: '/repo/release-1-2', branch: 'release/1.2' })];
+
+        expect(() => resolveAuthorLane(undefined, trees, '/repo/release-1-2')).toThrow(/release\/1\.2/);
+        expect(() => resolveAuthorLane(undefined, trees, '/repo/release-1-2')).toThrow(/no open pull request/);
     });
 
     it('resolves symlinked paths on both sides before comparing', () => {
@@ -416,5 +424,94 @@ describe('lane publish', () => {
             'number',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
+    });
+
+    describe('legacy, pre-agent/ lanes', () => {
+        function legacyWorktree(overrides: Partial<PublishWorktree> = {}): PublishWorktree {
+            return {
+                path: LEGACY_LANE,
+                branch: LEGACY_BRANCH,
+                locked: true,
+                lockReason: AUTHOR_LOCK_REASON,
+                ...overrides,
+            };
+        }
+
+        it('never resolves a legacy candidate by issue argument, even fully qualified', () => {
+            // The candidate here is exactly what an unmodified legacy fallback would accept: correct
+            // lock, an open pull request. Nothing in the branch ties it to issue 2039 specifically —
+            // `laneIssueNumber` requires the `agent/` prefix this branch doesn't have — so resolving
+            // it here would let `pnpm lane:publish <any real issue>` push an unrelated stranded lane
+            // and stamp `Closes #<that issue>` on its pull request. This is the test that goes red if
+            // the legacy fallback is reinstated in the issue-argument branch.
+            const trees = [...otherAuthorLanes(), legacyWorktree()];
+
+            expect(() => resolveAuthorLane(2039, trees, PRIMARY_ROOT, undefined, () => true)).toThrow(
+                /expected exactly one locked author lane for issue #2039/
+            );
+        });
+
+        it('resolves an off-convention branch with an open pull request, from inside the lane', () => {
+            const trees = [...otherAuthorLanes(), legacyWorktree()];
+
+            expect(resolveAuthorLane(undefined, trees, `${LEGACY_LANE}/src`, undefined, () => true)).toEqual({
+                path: LEGACY_LANE,
+                branch: LEGACY_BRANCH,
+            });
+        });
+
+        it('refuses an off-convention branch with no open pull request, naming the branch as the reason', () => {
+            const trees = [...otherAuthorLanes(), legacyWorktree()];
+
+            expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => false)).toThrow(
+                new RegExp(`${LEGACY_BRANCH.replace('/', '\\/')}.*no open pull request`)
+            );
+        });
+
+        it('refuses an off-convention branch locked with the wrong reason, naming the lock and the remedy', () => {
+            const trees = [...otherAuthorLanes(), legacyWorktree({ lockReason: 'active:principal' })];
+
+            expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => true)).toThrow(
+                /active:principal/
+            );
+            expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => true)).toThrow(
+                new RegExp(
+                    `git worktree unlock ${LEGACY_LANE}.*git worktree lock --reason ${AUTHOR_LOCK_REASON} ${LEGACY_LANE}`
+                )
+            );
+        });
+
+        it('does not treat a foreign lock on an off-convention branch as a legacy candidate at all', () => {
+            // A collaboration-session lock is not "not yet migrated" — it was never an author lane.
+            // Without a proven open pull request it must fall through to the ordinary refusal, not
+            // a legacy-specific one that would wrongly invite relocking someone else's worktree.
+            const trees = [
+                ...otherAuthorLanes(),
+                legacyWorktree({ lockReason: 'active:collab-lane-3', branch: 'collab/sync' }),
+            ];
+
+            expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => false)).toThrow(
+                /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+            );
+        });
+
+        it('parses no issue number out of a legacy branch whose slug happens to end in digits', () => {
+            expect(laneIssueNumber(LEGACY_BRANCH)).toBeUndefined();
+            expect(laneIssueNumber('fix/proof-metering-bs1770-2039')).toBeUndefined();
+            expect(laneIssueNumber('fix/arrangement-satellite-paths-2039')).toBeUndefined();
+        });
+
+        it('publishes a legacy lane end to end and writes None., not Closes #2039, into the body', () => {
+            const { port, calls, bodies } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+            });
+
+            expect(publishLane(undefined, port)).toBe(2275);
+            expect(calls).toContain(`push:${LEGACY_BRANCH}`);
+            expect(bodies.at(-1)).not.toContain('Closes #2039');
+            expect(bodies.at(-1)).toContain('### 📌 Related tickets & additional notes\nNone.');
+        });
     });
 });
