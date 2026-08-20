@@ -17,6 +17,7 @@ function createLoggerMock(): { info: (message: string) => void; error: (error: E
 
 const report: CapabilityReport = {
     capability: 'supported',
+    webGpu: { status: 'supported' },
     webGpuTier: 'webgpu-fast',
     sharedArrayBuffer: true,
     opfsAvailable: true,

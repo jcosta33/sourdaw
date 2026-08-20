@@ -41,7 +41,7 @@ export function writeDeviceToProject(
         return null;
     }
     if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
-        notifyUser(`"${deviceType}" is not available on this platform and was not added.`, 'error');
+        notifyUser(`"${deviceType}" is not available and was not added.`, 'error');
         return null;
     }
     const plugin = getPlatformPlugins().find(

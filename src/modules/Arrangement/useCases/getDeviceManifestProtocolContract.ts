@@ -1,3 +1,5 @@
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+
 import { BUILTIN_PLUGINS, isDeviceSupportedOnCurrentPlatform } from '../models/DeviceParameter';
 
 import { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
@@ -15,13 +17,15 @@ export function getDeviceManifestProtocolContract() {
             'state-chunks',
             'contract-fingerprints',
         ] as const,
-        operations: BUILTIN_PLUGINS.map((descriptor) => ({
-            name: descriptor.id,
-            version: getDeviceContractVersionForCommand(descriptor.id) ?? 'descriptor-v1:unavailable',
-            availability: isDeviceSupportedOnCurrentPlatform(descriptor.id)
-                ? ('available' as const)
-                : ('unavailable-on-platform' as const),
-        })),
+        operations: BUILTIN_PLUGINS.filter((descriptor) => isDeviceReleaseAdmitted(descriptor.id)).map(
+            (descriptor) => ({
+                name: descriptor.id,
+                version: getDeviceContractVersionForCommand(descriptor.id) ?? 'descriptor-v1:unavailable',
+                availability: isDeviceSupportedOnCurrentPlatform(descriptor.id)
+                    ? ('available' as const)
+                    : ('unavailable-on-platform' as const),
+            })
+        ),
         availability: 'available' as const,
         compatibility: {
             mode: 'read-only-preserve' as const,

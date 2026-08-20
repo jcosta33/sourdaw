@@ -188,7 +188,7 @@ async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<Nativ
     };
 }
 
-type NativeDspDeviceFactory = {
+export type NativeDspDeviceFactory = {
     /**
      * The canonical type this factory builds.
      *

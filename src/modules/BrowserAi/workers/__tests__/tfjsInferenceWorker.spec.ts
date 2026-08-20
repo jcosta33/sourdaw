@@ -66,7 +66,7 @@ describe('tfjsInferenceWorker', () => {
         expect(response.type).toBe('error');
         expect(response.requestId).toBe('r3');
         if (response.type === 'error') {
-            expect(response.error).toContain('not available');
+            expect(response.error).toContain('unavailable');
         }
     });
 
@@ -86,7 +86,7 @@ describe('tfjsInferenceWorker', () => {
         expect(response.type).toBe('error');
         expect(response.requestId).toBe('r4');
         if (response.type === 'error') {
-            expect(response.error).toContain('not available');
+            expect(response.error).toContain('unavailable');
         }
     });
 
@@ -105,7 +105,7 @@ describe('tfjsInferenceWorker', () => {
         expect(response.type).toBe('error');
         expect(response.requestId).toBe('r5');
         if (response.type === 'error') {
-            expect(response.error).toContain('not available');
+            expect(response.error).toContain('unavailable');
         }
     });
 });

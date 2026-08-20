@@ -7,7 +7,7 @@ import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
-import { findWasmDescriptor } from './wasmDeviceRegistry';
+import { findReleasedWasmDescriptor } from './wasmDeviceRegistry';
 
 import type {
     createDeviceReadinessDiagnostics,
@@ -938,7 +938,7 @@ export class TrackNode {
         }
 
         const { context } = this.deps;
-        const descriptor = findWasmDescriptor(deviceType);
+        const descriptor = findReleasedWasmDescriptor(deviceType);
         const readinessToken = this.deps.readinessDiagnostics.begin({
             deviceId,
             deviceType,

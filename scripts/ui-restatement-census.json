@@ -90,6 +90,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-00c03ca71f9e3d5a",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
+    "line": 105,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-00ca3c67e932a2fd",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
     "line": 675,
@@ -119,7 +128,7 @@
   {
     "id": "ui-0100ed0eec43eda8",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 224,
+    "line": 225,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -164,7 +173,7 @@
   {
     "id": "ui-0186c458cececbce",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 292,
+    "line": 294,
     "fingerprint": "div\tflex items-center gap-1.5 min-w-0 pr-2",
     "kind": "layout",
     "mapping": "Row",
@@ -286,15 +295,6 @@
     "kind": "daw-chrome",
     "mapping": "DawDialogFooter",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-02d44cd432e3873b",
-    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 154,
-    "fingerprint": "div\tflex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-02d61b76654d2db6",
@@ -497,7 +497,7 @@
   {
     "id": "ui-04317f5f182c6415",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 122,
+    "line": 124,
     "fingerprint": "div\tspace-y-1",
     "kind": "layout",
     "mapping": "Stack",
@@ -522,15 +522,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-048c67fe0e2fcbbf",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 99,
-    "fingerprint": "div\tflex gap-1 px-3 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-04b52cdf4d6c08a3",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 1038,
@@ -542,7 +533,7 @@
   {
     "id": "ui-04baaaac75008518",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 382,
+    "line": 384,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -776,7 +767,7 @@
   {
     "id": "ui-06df69f2f0f08a9f",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 157,
+    "line": 158,
     "fingerprint": "DawDialogFooter\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogFooter",
@@ -1694,7 +1685,7 @@
   {
     "id": "ui-0e9df11738446752",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 57,
+    "line": 59,
     "fingerprint": "div\tflex items-center gap-1 px-1 py-0.5 pt-2",
     "kind": "layout",
     "mapping": "Row",
@@ -1775,7 +1766,7 @@
   {
     "id": "ui-0f379ea016b7ac2f",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 112,
+    "line": 113,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2099,7 +2090,7 @@
   {
     "id": "ui-12581a490c690c5c",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 277,
+    "line": 370,
     "fingerprint": "DawSideRail\t",
     "kind": "daw-chrome",
     "mapping": "DawSideRail",
@@ -2265,15 +2256,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-13e2f0b1c7e520ca",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 319,
-    "fingerprint": "div\tw-full px-1 flex flex-col items-center mt-2 mb-2",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -2594,7 +2576,7 @@
   {
     "id": "ui-16c5f30d81d885e0",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 220,
+    "line": 222,
     "fingerprint": "DawInlineHint\t",
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
@@ -2630,7 +2612,7 @@
   {
     "id": "ui-172643be77e79629",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 136,
+    "line": 137,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2711,7 +2693,7 @@
   {
     "id": "ui-18265c7f5bf0b060",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 146,
+    "line": 148,
     "fingerprint": "DawInlineHint\t",
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
@@ -2725,6 +2707,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-182fa03ab332fc92",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
+    "line": 320,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1858ba002f3e1075",
@@ -2855,7 +2846,7 @@
   {
     "id": "ui-19c7968944ae186d",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 60,
+    "line": 69,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3186,6 +3177,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-1e2a6ca34ccc066c",
+    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
+    "line": 209,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1e3294af186a1810",
     "file": "src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneHeader.tsx",
     "line": 51,
@@ -3233,7 +3233,7 @@
   {
     "id": "ui-1e8b897c910f7038",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 123,
+    "line": 125,
     "fingerprint": "div\tflex items-center gap-1 px-1 py-0.5 pt-2",
     "kind": "layout",
     "mapping": "Row",
@@ -3314,7 +3314,7 @@
   {
     "id": "ui-1f20818feb965da3",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 135,
+    "line": 148,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -3339,6 +3339,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-1f90b7c3348f2f5b",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx",
+    "line": 31,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1f90e281dc36553e",
     "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
     "line": 197,
@@ -3359,7 +3368,7 @@
   {
     "id": "ui-1faa4a72509226f3",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 136,
+    "line": 149,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -3458,7 +3467,7 @@
   {
     "id": "ui-206a565d623b51ab",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 41,
+    "line": 50,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3584,7 +3593,7 @@
   {
     "id": "ui-220c7257b5526897",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 56,
+    "line": 58,
     "fingerprint": "div\tspace-y-1",
     "kind": "layout",
     "mapping": "Stack",
@@ -3593,7 +3602,7 @@
   {
     "id": "ui-2227137e84255848",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 99,
+    "line": 100,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4239,9 +4248,18 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-280976c70208c45b",
+    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
+    "line": 155,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-28139b0329930fe6",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 144,
+    "line": 146,
     "fingerprint": "div\tflex items-center gap-2 px-2 py-2",
     "kind": "layout",
     "mapping": "Row",
@@ -4574,7 +4592,7 @@
   {
     "id": "ui-2b86426c22dc77c2",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 137,
+    "line": 138,
     "fingerprint": "DawDialogBody\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogBody",
@@ -4781,7 +4799,7 @@
   {
     "id": "ui-2d4f779dfcae17a9",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 163,
+    "line": 165,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4880,7 +4898,7 @@
   {
     "id": "ui-2e394513bc53ce7b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 50,
+    "line": 59,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -5019,15 +5037,6 @@
     "fingerprint": "section\tflex min-h-0 min-w-0 flex-col gap-3",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-309f6ea8964b9de4",
-    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 98,
-    "fingerprint": "div\tflex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -5227,6 +5236,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-336474f2a7266f9d",
+    "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
+    "line": 177,
+    "fingerprint": "DawReadoutRow\t",
+    "kind": "daw-chrome",
+    "mapping": "DawReadoutRow",
+    "disposition": "semantic-wrapper"
   },
   {
     "id": "ui-336a6981c870562b",
@@ -5564,7 +5582,7 @@
   {
     "id": "ui-36cfcb8c63900c9c",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 229,
+    "line": 231,
     "fingerprint": "div\tflex items-start gap-1 text-[9px] text-destructive",
     "kind": "layout",
     "mapping": "Row",
@@ -5681,7 +5699,7 @@
   {
     "id": "ui-37dcf6ef35eaa4ac",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 154,
+    "line": 163,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -5834,7 +5852,7 @@
   {
     "id": "ui-3992f954a4f1c836",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 284,
+    "line": 377,
     "fingerprint": "div\tflex items-center justify-end pr-1 text-[10px] bg-surface-base text-muted-foreground/40 text-muted-foreground/60",
     "kind": "layout",
     "mapping": "Row",
@@ -5861,7 +5879,7 @@
   {
     "id": "ui-39ccd42b61e5a4a5",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 93,
+    "line": 94,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -6221,7 +6239,7 @@
   {
     "id": "ui-3cec07342118e162",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 84,
+    "line": 97,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -6455,7 +6473,7 @@
   {
     "id": "ui-3f875580aa2fa85a",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 196,
+    "line": 198,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -6617,7 +6635,7 @@
   {
     "id": "ui-41556abcd96ea804",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 297,
+    "line": 299,
     "fingerprint": "div\tflex flex-col gap-0.5",
     "kind": "layout",
     "mapping": "Stack",
@@ -6676,15 +6694,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-41ebbbfbc83a00a3",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx",
-    "line": 30,
-    "fingerprint": "div\tflex items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-42101d25b2f75742",
@@ -6948,15 +6957,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-43d94cef54cc527d",
-    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 223,
-    "fingerprint": "div\tflex flex-1 items-center justify-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-43e67ba5ba54b68b",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar.tsx",
     "line": 174,
@@ -7013,7 +7013,7 @@
   {
     "id": "ui-445e8ff62a701b20",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 286,
+    "line": 288,
     "fingerprint": "div\tflex items-center gap-1 shrink-0",
     "kind": "layout",
     "mapping": "Row",
@@ -7119,6 +7119,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-45457e233a27cf86",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
+    "line": 30,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-45622e74751d988a",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1704,
@@ -7157,7 +7166,7 @@
   {
     "id": "ui-45b22f77673d693d",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 101,
+    "line": 102,
     "fingerprint": "DawSwatchButton\t",
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
@@ -7580,7 +7589,7 @@
   {
     "id": "ui-49fbe683124afd49",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 174,
+    "line": 175,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7697,7 +7706,7 @@
   {
     "id": "ui-4b4418fdb1c0db70",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
-    "line": 135,
+    "line": 139,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7839,6 +7848,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-4d326f24d5393b40",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
+    "line": 49,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-4d8379c50ec4dd2e",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 165,
@@ -7877,7 +7895,7 @@
   {
     "id": "ui-4de60907f3529712",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 267,
+    "line": 356,
     "fingerprint": "div\tflex flex-1 flex-col overflow-hidden",
     "kind": "layout",
     "mapping": "Stack",
@@ -8102,7 +8120,7 @@
   {
     "id": "ui-4f90d25bac7c48f6",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 156,
+    "line": 157,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -8795,7 +8813,7 @@
   {
     "id": "ui-5720f0e9ffae064d",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 59,
+    "line": 61,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -8804,7 +8822,7 @@
   {
     "id": "ui-574c8ed5564fd450",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 280,
+    "line": 282,
     "fingerprint": "div\tflex items-center gap-1",
     "kind": "layout",
     "mapping": "Row",
@@ -8840,7 +8858,7 @@
   {
     "id": "ui-57c6271936d16f5c",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 134,
+    "line": 147,
     "fingerprint": "div\tspace-y-1",
     "kind": "layout",
     "mapping": "Stack",
@@ -8903,7 +8921,7 @@
   {
     "id": "ui-580967268b5e0d97",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 168,
+    "line": 170,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9515,7 +9533,7 @@
   {
     "id": "ui-5dbed2d0c56fa78d",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 63,
+    "line": 65,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -9749,7 +9767,7 @@
   {
     "id": "ui-5ff148343f23432f",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 79,
+    "line": 92,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -9812,7 +9830,7 @@
   {
     "id": "ui-60278685c76ca43b",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 125,
+    "line": 127,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -9857,7 +9875,7 @@
   {
     "id": "ui-609a05de351f3e36",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 156,
+    "line": 158,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -9927,15 +9945,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-6150ed0f016ce126",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
-    "line": 27,
-    "fingerprint": "div\tmax-h-[100px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6152e5aab0a50066",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx",
     "line": 111,
@@ -9956,7 +9965,7 @@
   {
     "id": "ui-6170a2c97928390b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 55,
+    "line": 64,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -10244,7 +10253,7 @@
   {
     "id": "ui-64183be017a535c1",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 153,
+    "line": 155,
     "fingerprint": "div\tflex items-center gap-1 px-1",
     "kind": "layout",
     "mapping": "Row",
@@ -10541,7 +10550,7 @@
   {
     "id": "ui-67bfd94bd6af0e94",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 130,
+    "line": 131,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -10559,7 +10568,7 @@
   {
     "id": "ui-67e40e5876636c74",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 231,
+    "line": 320,
     "fingerprint": "div\tflex flex-1 flex-col overflow-hidden",
     "kind": "layout",
     "mapping": "Stack",
@@ -10901,7 +10910,7 @@
   {
     "id": "ui-6c186771a9c46f15",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 138,
+    "line": 153,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -10969,6 +10978,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-6d806cd3e606317f",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
+    "line": 150,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-6db3a4ec8ed72879",
@@ -11207,7 +11225,7 @@
   {
     "id": "ui-6f7f68130ac27791",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 146,
+    "line": 151,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -11247,15 +11265,6 @@
     "fingerprint": "div\tspace-y-3",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-702e758eb95a96c9",
-    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 208,
-    "fingerprint": "div\tflex h-full items-stretch gap-1 p-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -11756,7 +11765,7 @@
   {
     "id": "ui-74f30dbe74bf062f",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 190,
+    "line": 191,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12350,7 +12359,7 @@
   {
     "id": "ui-7aa6a556b6585f12",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 146,
+    "line": 147,
     "fingerprint": "div\tflex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2 border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]",
     "kind": "layout",
     "mapping": "Stack",
@@ -12521,7 +12530,7 @@
   {
     "id": "ui-7bd933ea34698d48",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 268,
+    "line": 357,
     "fingerprint": "div\tflex flex-1 overflow-auto",
     "kind": "layout",
     "mapping": "Row",
@@ -12570,6 +12579,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7c1d2382e55ae78a",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
+    "line": 202,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -12836,7 +12854,7 @@
   {
     "id": "ui-7e9886f5c9097d8b",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 164,
+    "line": 165,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -12967,15 +12985,6 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityListRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-7fa07d28a32da8c4",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
-    "line": 114,
-    "fingerprint": "div\tflex items-end justify-center h-full",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7fafe7da43526bcf",
@@ -13394,7 +13403,7 @@
   {
     "id": "ui-83988b5f2baab07e",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 184,
+    "line": 186,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13673,7 +13682,7 @@
   {
     "id": "ui-85ac9e0f028eb99f",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 311,
+    "line": 313,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14510,7 +14519,7 @@
   {
     "id": "ui-8e7b3aafd67f187f",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
-    "line": 58,
+    "line": 62,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14627,7 +14636,7 @@
   {
     "id": "ui-8f52a276603a79d4",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 256,
+    "line": 258,
     "fingerprint": "div\tgrid grid-cols-1 @md:grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -14762,7 +14771,7 @@
   {
     "id": "ui-90ebaacd04793d0a",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
-    "line": 75,
+    "line": 79,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15635,7 +15644,7 @@
   {
     "id": "ui-9a2c485ad1d6e93a",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 36,
+    "line": 45,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -15699,6 +15708,15 @@
     "id": "ui-9b454fd38e7ca03a",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 822,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9b471e48cc5f9ae5",
+    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
+    "line": 224,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15847,6 +15865,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9d06a4c98b925410",
+    "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
+    "line": 171,
+    "fingerprint": "DawMicroBadge\t",
+    "kind": "daw-chrome",
+    "mapping": "DawMicroBadge",
+    "disposition": "semantic-wrapper"
   },
   {
     "id": "ui-9d31fdcea360d43b",
@@ -16076,7 +16103,7 @@
   {
     "id": "ui-9f5c1f3092ac4a7d",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 168,
+    "line": 169,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16229,7 +16256,7 @@
   {
     "id": "ui-a0f7a080bb494fb0",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 265,
+    "line": 267,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
@@ -16553,7 +16580,7 @@
   {
     "id": "ui-a44577cfb0b595fd",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 119,
+    "line": 132,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -16679,7 +16706,7 @@
   {
     "id": "ui-a4f21a1d2bd47bfd",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 310,
+    "line": 312,
     "fingerprint": "div\tflex items-center gap-0.5 shrink-0",
     "kind": "layout",
     "mapping": "Row",
@@ -16776,15 +16803,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-a685ec4153aab43d",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
-    "line": 97,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a68cab625a6c662a",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1487,
@@ -16796,7 +16814,7 @@
   {
     "id": "ui-a69d7e213dfff797",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 184,
+    "line": 186,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16985,7 +17003,7 @@
   {
     "id": "ui-a88c6ed313dac554",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 123,
+    "line": 124,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17343,6 +17361,24 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-ac9647dc34b397cc",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
+    "line": 100,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ac9b94b769f59fa2",
+    "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
+    "line": 99,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-accda4ad64cfc488",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
     "line": 123,
@@ -17651,7 +17687,7 @@
   {
     "id": "ui-afc42a45b0d9ee3d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 366,
+    "line": 368,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17921,7 +17957,7 @@
   {
     "id": "ui-b2448b3ee8046c53",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 137,
+    "line": 139,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17975,7 +18011,7 @@
   {
     "id": "ui-b31733aaac096ac8",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 143,
+    "line": 155,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -18052,6 +18088,15 @@
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-b426f225939efc18",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
+    "line": 101,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-b43ed03165f8cc59",
@@ -18722,7 +18767,7 @@
   {
     "id": "ui-bb86a41d674c0cd7",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 154,
+    "line": 156,
     "fingerprint": "div\tflex-1 flex items-center gap-1",
     "kind": "layout",
     "mapping": "Row",
@@ -18772,15 +18817,6 @@
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-bc47c1e1d16832e1",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 149,
-    "fingerprint": "div\tflex items-center gap-2 pt-4 text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-bc4830ae54107bf4",
@@ -18920,7 +18956,7 @@
   {
     "id": "ui-bddf87b8e5b79924",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 244,
+    "line": 246,
     "fingerprint": "div\tflex items-start gap-1 text-[9px] text-muted-foreground",
     "kind": "layout",
     "mapping": "Row",
@@ -19253,7 +19289,7 @@
   {
     "id": "ui-c13a385da5636aa6",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
-    "line": 103,
+    "line": 104,
     "fingerprint": "div\tmt-1 flex shrink-0 flex-col items-center gap-1",
     "kind": "layout",
     "mapping": "Stack",
@@ -19330,6 +19366,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-c1db66a417a9534b",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
+    "line": 28,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c208a296694550ac",
@@ -19469,7 +19514,7 @@
   {
     "id": "ui-c36c42635b4d8424",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 269,
+    "line": 271,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -19892,7 +19937,7 @@
   {
     "id": "ui-c8e5fdcbb33a8f2d",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 328,
+    "line": 439,
     "fingerprint": "div\th-32 border-t border-border/20 bg-surface-well flex",
     "kind": "layout",
     "mapping": "Row",
@@ -20090,7 +20135,7 @@
   {
     "id": "ui-cae869d2ec8f1c14",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 207,
+    "line": 209,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20117,7 +20162,7 @@
   {
     "id": "ui-cb0d7b02411a104d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 113,
+    "line": 115,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -20369,7 +20414,7 @@
   {
     "id": "ui-cd2631b1e29abc76",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 130,
+    "line": 132,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -20400,15 +20445,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-cd6c60f8e4d2f268",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
-    "line": 104,
-    "fingerprint": "div\ttext-[9px] font-mono cursor-pointer text-muted-foreground/80 hover:text-text-primary transition-colors h-3 flex items-center justify-center",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -20522,7 +20558,7 @@
   {
     "id": "ui-ceb7f27a914befe9",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 267,
+    "line": 269,
     "fingerprint": "div\tflex items-center gap-1",
     "kind": "layout",
     "mapping": "Row",
@@ -20810,7 +20846,7 @@
   {
     "id": "ui-d1d3322576b4ab81",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 92,
+    "line": 93,
     "fingerprint": "DawPanelSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
@@ -20954,7 +20990,7 @@
   {
     "id": "ui-d312ae2647d20fbb",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 278,
+    "line": 371,
     "fingerprint": "DawGridHeaderCell\t",
     "kind": "daw-chrome",
     "mapping": "DawGridHeaderCell",
@@ -21393,6 +21429,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-d7965e7669436b95",
+    "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
+    "line": 116,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d7befdd81345a763",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
     "line": 436,
@@ -21762,15 +21807,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-dc30bd86dd11199b",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
-    "line": 29,
-    "fingerprint": "div\tmax-h-[80px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-dc3334669e14a8ce",
     "file": "src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneHeader.tsx",
     "line": 39,
@@ -21800,7 +21836,7 @@
   {
     "id": "ui-dc9d9e6792bcc695",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
-    "line": 182,
+    "line": 183,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21971,7 +22007,7 @@
   {
     "id": "ui-dda19634888e100e",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 138,
+    "line": 139,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -22574,7 +22610,7 @@
   {
     "id": "ui-e4e9fc19eadea53e",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 151,
+    "line": 160,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -22862,7 +22898,7 @@
   {
     "id": "ui-e93396f8f254deb6",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 342,
+    "line": 344,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23051,7 +23087,7 @@
   {
     "id": "ui-ead8d90fb1545a4a",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 122,
+    "line": 135,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23105,7 +23141,7 @@
   {
     "id": "ui-eb76038a79fe6159",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 160,
+    "line": 168,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -23141,7 +23177,7 @@
   {
     "id": "ui-eba80b4a73cd17bd",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
-    "line": 135,
+    "line": 137,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23163,15 +23199,6 @@
     "fingerprint": "div\tspace-y-3",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ebd608246d9ecc3e",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 201,
-    "fingerprint": "div\tflex flex-wrap justify-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -23267,7 +23294,7 @@
   {
     "id": "ui-ecdc735ef6f8752b",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 406,
+    "line": 408,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -23285,7 +23312,7 @@
   {
     "id": "ui-ece87780b2bc2b5d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
-    "line": 119,
+    "line": 121,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23688,15 +23715,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-f033623412a4a050",
-    "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
-    "line": 45,
-    "fingerprint": "div\tspace-y-0.5 mt-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f03547b13c81fbaa",
     "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
     "line": 55,
@@ -23798,7 +23816,7 @@
   {
     "id": "ui-f1778adf8180e094",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
-    "line": 329,
+    "line": 440,
     "fingerprint": "div\tw-10 shrink-0 border-r border-border/10 flex flex-col items-center py-1",
     "kind": "layout",
     "mapping": "Stack",
@@ -23924,7 +23942,7 @@
   {
     "id": "ui-f2969c9a19e6c011",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 135,
+    "line": 148,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -24572,7 +24590,7 @@
   {
     "id": "ui-f8993be36849d089",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
-    "line": 158,
+    "line": 159,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25112,7 +25130,7 @@
   {
     "id": "ui-fe45020766357593",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx",
-    "line": 196,
+    "line": 197,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
