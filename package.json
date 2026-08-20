@@ -22,6 +22,7 @@
         "test:collection-scope": "node scripts/checkVitestCollectionScope.ts",
         "test:command-schema": "node scripts/generateVersionedCommandArgumentSchemas.mjs --check",
         "test:release-inventory": "node scripts/checkReleaseInventory.ts",
+        "test:lgpl-runtime": "node scripts/checkLgplRuntimeProvenance.ts",
         "test:barrel-mocks": "node scripts/checkBarrelMockCoverage.ts",
         "census:ui": "node scripts/uiRestatementCensus.ts",
         "test:e2e": "playwright test",
@@ -71,8 +72,8 @@
     },
     "dependencies": {
         "@automerge/automerge": "^3.4.1",
-        "@breezystack/lamejs": "^1.2.7",
-        "@grame/faustwasm": "^0.16.7",
+        "@breezystack/lamejs": "1.2.7",
+        "@grame/faustwasm": "0.16.7",
         "@mlc-ai/web-llm": "^0.2.84",
         "@radix-ui/react-dropdown-menu": "^2.1.24",
         "@spotify/basic-pitch": "^1.0.1",
