@@ -109,17 +109,21 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     compileAddDeviceAction: actionMocks.compileAddDeviceAction,
 }));
 
+// Was previously registered twice for this specifier; the second registration
+// silently shadowed this one and disconnected `executeAppAction` from
+// `actionMocks.executeAppAction`, which the assertions below configure and
+// read back through the real import. Keep exactly one registration.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: actionMocks.executeAppAction,
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
     setProjectKeyRoot: vi.fn(),
     setProjectScaleName: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
 }));
 
 describe('KneadEditor', () => {
