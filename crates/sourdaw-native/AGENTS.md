@@ -21,12 +21,14 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   the Node event loop, so a shell can never drain it and quit, and anything held by a thread that
   does not stop has no other release path.
 - The `napi-addon` feature is off by default so a shell that links this crate as an rlib does not
-  pull the Node addon registration in with it. Nothing outside `src/addon/` may be gated on it.
+  pull the Node addon registration in with it. Its one gate outside `src/addon/` is the module
+  declaration in `src/lib.rs`; nothing else may be gated on it.
 
 ## Real-time invariants (hard)
 
-- The audio path is the CPAL callback in `crates/daw-engine/src/audio_thread.rs`: **no heap
-  allocation, no locks, no IPC**, scratch buffers preallocated (`host/native_bridge.rs`).
+- The audio path is the render callback in `crates/daw-engine/src/audio_thread.rs`, whichever
+  platform stream the device seam (`crate::device`) drives it from: **no heap allocation, no locks,
+  no IPC**, scratch buffers preallocated (`host/native_bridge.rs`).
 - No host seam may be called from the audio callback. Every one allocates, serializes, or reaches
   another thread.
 - Field order is drop order in `AppState` and `NativeSingletons`, and it is load bearing: the

@@ -57,7 +57,7 @@ Two writes separated by an `await` need two `scope(...)` calls, one per synchron
 
 ### 2. CrdtDocument owns the document; modules own projections
 
-Document lifecycle — create/load/save, branches, merge, semantic action history, compaction — belongs to CrdtDocument. Stores fed from the document are projections (`projection/projectProjection.ts`): derived, disposable, rebuildable; never a second truth and never patched by hand.
+Document lifecycle — create/load/save, branches, merge, semantic action history, compaction — belongs to CrdtDocument. Stores fed from the document are projections (`src/modules/CrdtDocument/useCases/projection/projectProjection.ts`): derived, disposable, rebuildable; never a second truth and never patched by hand.
 
 **Why:** two writable copies of one truth diverge; a projection you cannot throw away becomes the bug you cannot find.
 

@@ -207,13 +207,14 @@ pnpm issue:file <template> --title "…" --fields <json> [--milestone <m>] [--pr
 After create, attach parent/child issues as GitHub sub-issues.
 
 An unlabelled issue is invisible. Every issue carries a priority label and a status label, plus the
-labels naming what it is. Set the milestone when the work belongs to one and add the issue to the
-roadmap project when it is on the roadmap, leaving either empty rather than forcing a fit. Do all of
-it on the `issue:file` command: that command applies the template's labels and the derived priority
-label, and takes the milestone and the project, but no sanctioned script edits an issue once it
-exists. Read the live sets with `gh label list`, `gh api repos/:owner/:repo/milestones`, and
-`gh project list --owner <owner>`; never from a list written down here, which drifts the day it is
-written.
+labels naming what it is. Set the milestone when the work belongs to one — by title, matched
+case-insensitively against **open** milestones only, so the number the tracker UI shows is rejected
+and nothing is filed — and add the issue to the roadmap project when it is on the roadmap, leaving
+either empty rather than forcing a fit. Do all of it on the `issue:file` command: that command
+applies the template's labels and the derived priority label, and takes the milestone and the
+project, but no sanctioned script edits an issue once it exists. Read the live sets with
+`gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`;
+never from a list written down here, which drifts the day it is written.
 
 ## Delivery
 

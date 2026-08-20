@@ -6,8 +6,8 @@ lucide icons; `components.json`), `layout/` holds layout primitives behind a bar
 
 ## Hard rules (deps **error**)
 
-- No business-store or use-case import, **direct or transitive**. Data arrives via props and hooks;
-  parent views wire the stores.
+- No **direct** business-store or use-case import, and no **transitive** reach of use cases. Data
+  arrives via props and hooks; parent views wire the stores.
 - Components stay presentation-pure. Domain logic belongs to the owning module.
 
 ## Conventions

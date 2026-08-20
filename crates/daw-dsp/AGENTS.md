@@ -2,7 +2,7 @@
 
 Pure mathematical DSP: the bread-named device engines, one module each, every one exposing a
 `#[wasm_bindgen]` `*Instance` struct. No I/O, no desktop IPC, no repositories. Dependencies stay
-minimal (`wasm-bindgen`, `serde`).
+minimal.
 
 Dual compilation target: native (linked via `daw-engine`) and WASM. Code must compile cleanly for
 both — gate platform-specific bits behind `cfg(target_arch = "wasm32")` as existing modules do.
@@ -18,15 +18,14 @@ in-memory pool that `add_sample` fills over the worklet port.
 
 ## The audio path allocates nothing and locks nothing
 
-`tests/device_process_rt.rs` guards every `#[wasm_bindgen]` process/render export in this crate,
-one test per device family; the sibling `proof-chamber` crate guards its own in
-`tests/reverb_process_rt.rs`.
+`tests/device_process_rt.rs` guards every `#[wasm_bindgen]` process/render export in this crate; the
+sibling `proof-chamber` crate guards its own in `tests/reverb_process_rt.rs`.
 
 - **Convolution is the exception, and it is pinned, not fixed.** It builds scratch frames per
   partition boundary, and Hybrid inherits that as soon as its convolution routing is engaged. No
   product surface can select either, so this is carried weight rather than a live fault, recorded
-  as a measured fact by `convolution_backed_engines_still_allocate_on_the_render_path`. Never treat
-  convolution as covered.
+  as a measured fact by `convolution_backed_engines_still_allocate_on_the_render_path` in the
+  sibling `proof-chamber` crate's `tests/reverb_process_rt.rs`. Never treat convolution as covered.
 - **Drive the engine, then guard it.** Most engines early-return while every stage sits at its
   default, so a guard wrapped around an unconfigured instance passes without executing any DSP.
   Each guard drives its engine into a configured, audibly active state and asserts non-silence. If
@@ -44,12 +43,13 @@ one test per device family; the sibling `proof-chamber` crate guards its own in
 
 ## Output level at the engine boundary is pinned
 
-`tests/engine_output_level.rs` drives each device family's `*Instance` render export with a fixed
-stimulus and asserts peak and RMS inside a two-sided ±1 dB band, plus Grinder's model separation
-and that its −0.3 dB output safety limiter stays idle at shipped settings. Every other guard here
-measures the stage under test, so a change upstream of an engine's output can move delivered level
-by several dB and pass everything: a shelf relocation in `grinder/triode.rs` once moved a model
-+6.2 dB peak and cleared the whole gate set.
+`tests/engine_output_level.rs` drives device families' `*Instance` render exports with a fixed
+stimulus and asserts peak and RMS inside a two-sided ±1 dB band, plus Grinder's model separation and
+that its −0.3 dB output safety limiter stays idle at shipped settings. Coverage is not universal —
+`crumbs` has no band here — so read the file before assuming a family's level is pinned. Every other
+guard here measures the stage under test, so a change upstream of an engine's output can move
+delivered level by several dB and pass everything: a shelf relocation in `grinder/triode.rs` once
+moved a model +6.2 dB peak and cleared the whole gate set.
 
 - **Measure at the engine output, after the cabinet and limiter.** The observation point is part of
   the claim. A number taken at `Preamp` says nothing about what anyone hears — models that tie at
