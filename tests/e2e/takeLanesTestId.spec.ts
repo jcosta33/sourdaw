@@ -74,7 +74,8 @@ test.describe('Take lanes & comp — test-id targeted', () => {
         await expect(play).toHaveAttribute('aria-label', 'Play');
 
         await play.click();
-        await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(playhead).toHaveText(/\d+\.\d+\.\d+/, { timeout: 10_000 });
+        await expect(playhead).not.toHaveText('1.1.000');
         await expect(play).toHaveAttribute('aria-label', 'Pause');
 
         await page.getByTestId('transport-stop').click();
