@@ -36,6 +36,8 @@ Organized by what a device does, not by its name.
 
 **Sample** — [Crumbs](./devices/18-crumbs.md) (drag-and-drop sampler)
 
+**Pitch** — [Knead](./devices/19-knead.md) (clip pitch correction)
+
 ## Conventions used in this manual
 
 Sourdaw is in active development. Where a feature is incomplete, this manual says so at the point
