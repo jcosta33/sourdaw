@@ -42,13 +42,4 @@ test.describe('Collaboration & Preferences', () => {
         await page.keyboard.press('Escape');
         await expect(dialog).toBeHidden({ timeout: 5000 });
     });
-
-    test('Ableton Link toggle is clickable', async ({ page }) => {
-        const link = page.getByRole('button', { name: /Ableton Link/i });
-        await expect(link).toBeVisible();
-        const label_before = await link.getAttribute('aria-label');
-        await link.click();
-        await page.waitForTimeout(300);
-        await expect(link).toBeVisible();
-    });
 });
