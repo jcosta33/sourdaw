@@ -101,6 +101,16 @@ export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/vi
  * clearing it to zero starts from a real measurement rather than a number
  * someone wrote down.
  *
+ * `presentations/views` is at zero violations because every exhaustive mock of
+ * that kind already lists every export its graph consumes. `events` is at zero
+ * for a different reason worth naming plainly rather than folding into the same
+ * sentence: no spec mocks an `events` contract barrel at all today, so this is a
+ * pre-commitment, not a measured clean bill — the first `events` mock the tree
+ * gets is caught by this gate the moment it goes stale, rather than needing a
+ * later change to start checking it. The guard spec asserts that population is
+ * zero for exactly this kind, so the day it stops being zero someone rereads
+ * this paragraph instead of the assertion silently passing on an empty set.
+ *
  * Exported so the guard spec makes its "no violations" claim once per gated kind
  * and cannot silently stop claiming one.
  */
@@ -120,9 +130,33 @@ function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
 const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
 
 /**
- * Exemptions. Each row must carry the spec, the barrel, and the reason the mock is
- * deliberately narrower than the graph. Empty is the correct state; a row here is
- * debt with a name on it, not a silenced check.
+ * One row of the `exemptions` table. `missingKeys` is the exact, closed set of
+ * export names this row mutes for this (spec, barrel) pair — not the pair itself.
+ * A name the graph later starts requiring that is not in this list is not covered
+ * by the row and still violates, and `reason` documents why the listed names are
+ * safe to mute today; it is prose, not something the checker reads to decide
+ * scope.
+ */
+export type ExemptionRow = {
+    spec: string;
+    barrel: string;
+    missingKeys: string[];
+    reason: string;
+};
+
+/**
+ * Exemptions. Each row must carry the spec, the barrel, the exact key names it
+ * mutes, and the reason those keys are deliberately unread by the graph. Empty is
+ * the correct state; a row here is debt with a name on it, not a silenced check.
+ *
+ * A row mutes only `missingKeys` — any other name the graph later starts
+ * requiring from that (spec, barrel) pair still violates. This is what keeps the
+ * table from becoming a permanent blind spot on the pair: it does not need to be
+ * touched again unless the *named* keys stop being the problem, and a name
+ * outside the list is caught the moment it matters. `checkDerivation`'s sibling,
+ * `staleExemptions` below, also holds the table itself honest: a row whose listed
+ * keys the graph walk no longer finds missing is reported rather than left to
+ * quietly outlive the debt it was written for.
  *
  * This is a documented exit, not evasion, and the failure output and
  * `docs/06-testing.md` §5 both name it — a knob nobody can find from the error is
@@ -130,74 +164,115 @@ const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
  * is cheating. Adding a row with a real reason is not that; deleting the check, or
  * adding a row because the gate was inconvenient, is.
  */
-const exemptions: ReadonlyArray<{ spec: string; barrel: string; reason: string }> = [
+const exemptions: ReadonlyArray<ExemptionRow> = [
     // Pre-existing `stores` debt, surfaced (not caused) by gating `stores` in this
     // change — the same shape as the three specs fixed alongside this gate
     // (persistDeviceParam), but the fix for these eight was out of scope for that
     // patch. Each row is evidenced, not assumed: `pnpm test:run <spec>` passes
-    // today, proving every name the graph walk lists as "missing" for that spec is
-    // read only inside a function body none of that spec's tests ever call — the
-    // graph walk treats reachable-via-import as required, with no way to tell that
-    // apart from reachable-and-executed short of running the code. Follow-up:
-    // replace each row with a real fix (stub the missing keys, same as the three
-    // specs above) rather than carrying it here indefinitely.
+    // today, proving every listed name is read only inside a function body none of
+    // that spec's tests ever call — the graph walk treats reachable-via-import as
+    // required, with no way to tell that apart from reachable-and-executed short
+    // of running the code. Follow-up: replace each row with a real fix (stub the
+    // missing keys, same as the three specs above) rather than carrying it here
+    // indefinitely.
     {
         spec: 'src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx',
         barrel: '#/modules/MIDI/stores',
-        reason:
-            'Omits GROOVE_CONSUMER_TYPES, chordTrackStore, grooveTemplateStore and related groove/chord-track ' +
-            "exports reachable via this spec's graph but never read by its tests (verified passing).",
+        missingKeys: [
+            'GROOVE_CONSUMER_TYPES',
+            'LEGACY_MIDI_PROBABILITY_SEED',
+            'canonicalizeGrooveConsumerId',
+            'chordTrackStore',
+            'defaultChordTrackState',
+            'defaultGrooveTemplateState',
+            'grooveTemplateProjectRevisionStore',
+            'grooveTemplateStore',
+            'isChordTrackState',
+            'isGrooveTemplateState',
+            'sanitizeGrooveTemplateState',
+        ],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        reason: "Omits clipSelectionStore, reachable via this spec's graph but never read by its tests (verified passing).",
+        missingKeys: ['clipSelectionStore'],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        reason:
-            "Omits markerStore and resolveEligibleDeviceWriteTarget, reachable via this spec's graph but never " +
-            'read by its tests (verified passing).',
+        missingKeys: ['markerStore', 'resolveEligibleDeviceWriteTarget'],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        reason:
-            'Omits appendClipToTrack, clipSelectionStore, gainEnvelopeStore, getTrackEligibility, markerStore, ' +
-            'resolveEligibleClipWriteTarget, takeLaneStore, updateClipInStore, vcaGroupStore, reachable via this ' +
-            "spec's graph but never read by its tests (verified passing).",
+        missingKeys: [
+            'appendClipToTrack',
+            'clipSelectionStore',
+            'gainEnvelopeStore',
+            'getTrackEligibility',
+            'markerStore',
+            'resolveEligibleClipWriteTarget',
+            'takeLaneStore',
+            'updateClipInStore',
+            'vcaGroupStore',
+        ],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        reason:
-            'Omits addWarpMarker, adjustmentLayerStore, clampDeviceParamWrite, deriveEffectiveAudibility, ' +
-            'deriveVcaMultiplier, getVcaGroupsState, getWarpState, shouldCreateLiveTrackStrip, takeLaneStore, ' +
-            "warpStates, reachable via this spec's graph but never read by its tests (verified passing).",
+        missingKeys: [
+            'addWarpMarker',
+            'adjustmentLayerStore',
+            'clampDeviceParamWrite',
+            'deriveEffectiveAudibility',
+            'deriveVcaMultiplier',
+            'getVcaGroupsState',
+            'getWarpState',
+            'shouldCreateLiveTrackStrip',
+            'takeLaneStore',
+            'warpStates',
+        ],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx',
         barrel: '#/modules/Arrangement/stores',
-        reason:
-            'Omits addWarpMarker, adjustmentLayerStore, clampDeviceParamWrite, deriveEffectiveAudibility, ' +
-            'deriveVcaMultiplier, getVcaGroupsState, getWarpState, shouldCreateLiveTrackStrip, takeLaneStore, ' +
-            "warpStates, reachable via this spec's graph but never read by its tests (verified passing).",
+        missingKeys: [
+            'addWarpMarker',
+            'adjustmentLayerStore',
+            'clampDeviceParamWrite',
+            'deriveEffectiveAudibility',
+            'deriveVcaMultiplier',
+            'getVcaGroupsState',
+            'getWarpState',
+            'shouldCreateLiveTrackStrip',
+            'takeLaneStore',
+            'warpStates',
+        ],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        reason:
-            'Omits appendClipToTrack, clipSelectionStore, gainEnvelopeStore, resolveEligibleClipWriteTarget, ' +
-            "updateClipInStore, vcaGroupStore, reachable via this spec's graph but never read by its tests " +
-            '(verified passing).',
+        missingKeys: [
+            'appendClipToTrack',
+            'clipSelectionStore',
+            'gainEnvelopeStore',
+            'resolveEligibleClipWriteTarget',
+            'updateClipInStore',
+            'vcaGroupStore',
+        ],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        reason:
-            'Omits appendClipToTrack, clipSelectionStore, resolveEligibleClipWriteTarget, updateClipInStore, ' +
-            "reachable via this spec's graph but never read by its tests (verified passing).",
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
 ];
 
@@ -245,6 +320,25 @@ export type Violation = {
 };
 
 /**
+ * An `exemptions` row that no longer matches the debt it names. Either its
+ * (spec, barrel) pair was never placed under test this run (the mock is gone, or
+ * spreads now, or the barrel kind is out of scope for this scan), or the graph
+ * walk never found one or more of its `missingKeys` actually missing — the row is
+ * muting a name that stopped needing it. Both are the same failure mode `main`
+ * treats as a debt table drifting away from the debt it was written to describe.
+ */
+export type StaleExemption = {
+    spec: string;
+    barrel: string;
+    /**
+     * Empty means the pair itself never matched this run (delete the row).
+     * Non-empty names the subset of `missingKeys` the graph walk never needed
+     * (narrow the row to what is still real, or delete it if that empties it).
+     */
+    unusedKeys: string[];
+};
+
+/**
  * The verdict plus the derivation counts behind it. A check of this shape fails
  * open in every direction that produces an empty analysis — a resolver that
  * resolves nothing, a reader that returns nothing, a parser that parses nothing,
@@ -263,6 +357,20 @@ export type AnalysisResult = {
     analyzedSpecCount: number;
     /** Total module-graph nodes walked, summed over analysed specs. */
     graphNodeCount: number;
+    /**
+     * `exemptions` rows evaluated against this scan that no longer match live
+     * debt. Empty is the only state that lets the exemption table be trusted at
+     * face value; see `ExemptionRow` and `StaleExemption`.
+     */
+    staleExemptions: StaleExemption[];
+    /**
+     * Number of (spec, barrel) pairs placed under test this scan, per barrel
+     * kind — the population each per-kind claim is actually made against, not
+     * just its violation count. A kind with zero pairs here has an empty claim:
+     * "no violations" is true because nothing was checked, not because
+     * something was checked and found clean.
+     */
+    matchedBarrelKindCounts: Record<string, number>;
 };
 
 /**
@@ -688,20 +796,53 @@ export type AnalyzeInput = {
     fileExists: (path: string) => boolean;
     /** Barrel kinds to check. Defaults to the gated set. */
     barrelKinds?: ReadonlyArray<string>;
+    /**
+     * Exemption rows to apply. Defaults to the real `exemptions` table. Injected
+     * so a planted fixture can prove the mechanism itself — that a row mutes only
+     * its named keys, not the pair — without depending on live repo debt, and so
+     * a measurement run can disable exemptions entirely by passing `[]`.
+     */
+    exemptions?: ReadonlyArray<ExemptionRow>;
 };
+
+/** `#/modules/Foo/Common/Bar/presentations/views` → `presentations/views`. No kind
+ * is a suffix of another, so the suffix test partitions unambiguously. */
+function kindOfSpecifier(specifier: string): string | undefined {
+    return allBarrelKinds.find((kind) => specifier.endsWith(`/${kind}`));
+}
 
 /**
  * Walks each spec's module graph and reports every exhaustive contract-barrel mock
  * that omits a name the graph imports from that barrel.
  */
-export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: AnalyzeInput): AnalysisResult {
-    const contractBarrelPattern = buildBarrelPattern(barrelKinds ?? gatedBarrelKinds);
+export function analyzeSpecs({
+    specPaths,
+    readFacts,
+    fileExists,
+    barrelKinds,
+    exemptions: exemptionRows = exemptions,
+}: AnalyzeInput): AnalysisResult {
+    const kinds = barrelKinds ?? gatedBarrelKinds;
+    const contractBarrelPattern = buildBarrelPattern(kinds);
     const violations: Violation[] = [];
     const extractionFailures: string[] = [];
     let parsedMockCount = 0;
     let resolvedMockCount = 0;
     let analyzedSpecCount = 0;
     let graphNodeCount = 0;
+    const matchedBarrelKindCounts: Record<string, number> = {};
+
+    // Exemption bookkeeping. `matchedPair` records that a row's (spec, barrel)
+    // pair was placed under test this run; `seenKeys` records which of the row's
+    // `missingKeys` the graph walk actually found missing at least once. A row
+    // in scope for this scan (its barrel kind is among `kinds`) that never
+    // matches a pair, or whose `missingKeys` are not fully seen, is stale.
+    const inScopeExemptions = exemptionRows.filter((row) => contractBarrelPattern.test(row.barrel));
+    const matchedPair = new Set<ExemptionRow>();
+    const seenKeys = new Map<ExemptionRow, Set<string>>();
+    for (const row of inScopeExemptions) {
+        seenKeys.set(row, new Set());
+    }
 
     for (const specPath of specPaths) {
         const specFacts = readFacts(specPath);
@@ -717,8 +858,13 @@ export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: 
         parsedMockCount += specFacts.mocks.length;
 
         const specDirectory = dirname(specPath);
+        const relSpecPath = relative(repoRoot, specPath).split(sep).join('/');
         const mockedPaths = new Set<string>();
         const barrelsUnderTest = new Map<string, MockedBarrel>();
+        // Resolved barrel path -> the exemption row muting some of its keys for
+        // this spec, if any. A row mutes keys, not the pair, so the barrel stays
+        // in `barrelsUnderTest` either way.
+        const exemptedKeysFor = new Map<string, { row: ExemptionRow; keys: Set<string> }>();
 
         for (const mock of specFacts.mocks) {
             const resolved = resolveSpecifier(mock.specifier, specDirectory, fileExists);
@@ -739,11 +885,17 @@ export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: 
             if (mock.spreadsOriginal || !contractBarrelPattern.test(mock.specifier)) {
                 continue;
             }
-            const exempt = exemptions.some(
-                (row) => relative(repoRoot, specPath).split(sep).join('/') === row.spec && row.barrel === mock.specifier
+
+            barrelsUnderTest.set(resolved, mock);
+            matchedBarrelKindCounts[kindOfSpecifier(mock.specifier) ?? mock.specifier] =
+                (matchedBarrelKindCounts[kindOfSpecifier(mock.specifier) ?? mock.specifier] ?? 0) + 1;
+
+            const matchingRow = inScopeExemptions.find(
+                (row) => row.spec === relSpecPath && row.barrel === mock.specifier
             );
-            if (!exempt) {
-                barrelsUnderTest.set(resolved, mock);
+            if (matchingRow) {
+                matchedPair.add(matchingRow);
+                exemptedKeysFor.set(resolved, { row: matchingRow, keys: new Set(matchingRow.missingKeys) });
             }
         }
 
@@ -775,10 +927,20 @@ export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: 
 
                 const mock = barrelsUnderTest.get(resolved);
                 if (mock) {
-                    const missing = [...names].filter((name) => name !== '*' && !mock.keys.includes(name));
+                    const rawMissing = [...names].filter((name) => name !== '*' && !mock.keys.includes(name));
                     if (names.has('*')) {
-                        missing.push('* (namespace import)');
+                        rawMissing.push('* (namespace import)');
                     }
+
+                    const exemption = exemptedKeysFor.get(resolved);
+                    const missing = rawMissing.filter((name) => {
+                        if (exemption && exemption.keys.has(name)) {
+                            seenKeys.get(exemption.row)?.add(name);
+                            return false;
+                        }
+                        return true;
+                    });
+
                     if (missing.length > 0) {
                         violations.push({
                             spec: specPath,
@@ -801,6 +963,19 @@ export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: 
         graphNodeCount += visited.size;
     }
 
+    const staleExemptions: StaleExemption[] = [];
+    for (const row of inScopeExemptions) {
+        if (!matchedPair.has(row)) {
+            staleExemptions.push({ spec: row.spec, barrel: row.barrel, unusedKeys: [...row.missingKeys] });
+            continue;
+        }
+        const seen = seenKeys.get(row) ?? new Set<string>();
+        const unusedKeys = row.missingKeys.filter((key) => !seen.has(key));
+        if (unusedKeys.length > 0) {
+            staleExemptions.push({ spec: row.spec, barrel: row.barrel, unusedKeys });
+        }
+    }
+
     return {
         violations,
         extractionFailures,
@@ -808,6 +983,8 @@ export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: 
         resolvedMockCount,
         analyzedSpecCount,
         graphNodeCount,
+        staleExemptions,
+        matchedBarrelKindCounts,
     };
 }
 
@@ -831,7 +1008,10 @@ function walkForSpecs(directory: string, found: string[]): void {
 }
 
 /** Scans the real tree. Exported so the guard's spec runs the same scan the CLI does. */
-export function scanRepository(barrelKinds?: ReadonlyArray<string>): AnalysisResult & { specCount: number } {
+export function scanRepository(
+    barrelKinds?: ReadonlyArray<string>,
+    exemptionRows?: ReadonlyArray<ExemptionRow>
+): AnalysisResult & { specCount: number } {
     const specPaths: string[] = [];
     walkForSpecs(sourceRoot, specPaths);
 
@@ -868,7 +1048,7 @@ export function scanRepository(barrelKinds?: ReadonlyArray<string>): AnalysisRes
 
     return {
         specCount: specPaths.length,
-        ...analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }),
+        ...analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds, exemptions: exemptionRows }),
     };
 }
 
@@ -991,6 +1171,24 @@ function main(): number {
                 `${String(uniquePairs.size)} unique (spec, barrel) pair(s) across ${String(uniqueSpecs.size)} spec file(s)\n`
         );
         console.error(result.violations.map(formatViolation).join('\n\n'));
+        console.error('');
+        return 1;
+    }
+
+    if (result.staleExemptions.length > 0) {
+        console.error(
+            '\nbarrel mock coverage: stale `exemptions` row(s) in scripts/checkBarrelMockCoverage.ts — ' +
+                'the graph no longer needs what these rows mute\n'
+        );
+        for (const stale of result.staleExemptions) {
+            console.error(
+                stale.unusedKeys.length === 0
+                    ? `  ✗ ${stale.spec} — ${stale.barrel}\n    This row never matched a mocked pair this run. Delete it.`
+                    : `  ✗ ${stale.spec} — ${stale.barrel}\n` +
+                          `    Lists ${stale.unusedKeys.join(', ')} in missingKeys, but the graph walk never found ` +
+                          'them missing. Narrow the row to the names still real, or delete it.'
+            );
+        }
         console.error('');
         return 1;
     }
