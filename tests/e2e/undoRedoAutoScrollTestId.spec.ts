@@ -65,7 +65,7 @@ test.describe('Transport toggles — test-id targeted', () => {
         await expect(autoScroll).toHaveAttribute('data-variant', 'secondary');
 
         await autoScroll.click();
-        await expect(autoScroll).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(autoScroll).toHaveAttribute('aria-pressed', 'false');
         await expect(autoScroll).toHaveAttribute('data-variant', 'ghost');
 
         await autoScroll.click();
