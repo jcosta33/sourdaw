@@ -1,0 +1,79 @@
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_0a3429e31e555d::t_0fe50aa62a2de8 510,620
+  s_0a3429e31e555d::t_84d46ee652c24b 499-509,511-522
+  s_0a3429e31e555d::t_dc016cf5b020a1 230-244
+src/modules/BrowserAi/repositories/measureInferenceThroughput.ts
+  s_0a3429e31e555d::t_cf70efc811fd69 52,59,95-96,98-100,108-113
+src/infra/release/modelReleaseAdmission.ts
+  s_0a3429e31e555d::t_9b62afca9a1caf 6
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_0a3429e31e555d::t_dc016cf5b020a1 6
+  s_0a3429e31e555d::t_7f6eef02ab42c2 20,43-44,86-88,91-92
+  s_0a3429e31e555d::t_e15e918e3e7007 89-90
+src/modules/BrowserAi/repositories/modelDownloadManager.ts
+  s_0a3429e31e555d::t_dc016cf5b020a1 230-235,263
+  s_0a3429e31e555d::t_84d46ee652c24b 264-267
+src/modules/AudioAnalysis/repositories/isStemSeparationAvailable.ts
+  s_0a3429e31e555d::t_9b62afca9a1caf 1-2,4
+src/modules/BrowserAi/repositories/__tests__/measureInferenceThroughput.spec.ts
+  s_0a3429e31e555d::t_942cbb68acbe29 20-22,55,60-65,92,94,169-170,175-186,190,199
+docs/architecture/09-ai-stack.md
+  s_0a3429e31e555d::t_c167343c65cc99 31-32
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_0a3429e31e555d::t_dcecc86eb518f8 17,36,89,107,134-135,137,221
+src/modules/BrowserAi/useCases/renderKokoroTts.ts
+  s_0a3429e31e555d::t_f5f954d025fe8d 28,108-109,166-171,173
+src/modules/BrowserAi/useCases/__tests__/capabilityColdStart.spec.ts
+  s_0a3429e31e555d::t_53e43091c0bb33 23,78,83,97,102
+src/modules/BrowserAi/repositories/__tests__/readVerifiedModel.spec.ts
+  s_0a3429e31e555d::t_62643bc1cf92be 1-53
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_0a3429e31e555d::t_9b62afca9a1caf 185
+src/modules/BrowserAi/repositories/readVerifiedModel.ts
+  s_0a3429e31e555d::t_62643bc1cf92be 1-36
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_e1f5943feddf28 281
+  s_0a3429e31e555d::t_e15e918e3e7007 238,277-279
+  s_0a3429e31e555d::t_9b62afca9a1caf 236,261-276,280
+  s_0a3429e31e555d::t_fabe59676a6792 708,712,720
+  s_0a3429e31e555d::t_41f5904e12400b 237,240
+  s_0a3429e31e555d::t_dc016cf5b020a1 234
+tests/e2e/modelManagerAdmission.spec.ts
+  s_0a3429e31e555d::t_84d46ee652c24b 18
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_7ba0b7bee9e951::t_3b45ec9fe377ae 358
+  s_0a3429e31e555d::t_bd9f2b3bb3c911 7,75,345-347,349-357
+  s_0a3429e31e555d::t_53e43091c0bb33 348
+.agents/decisions/0030-exact-model-release-admission.md
+  s_0a3429e31e555d::t_dc016cf5b020a1 17,22-23,44
+  s_0a3429e31e555d::t_c167343c65cc99 43,55,57
+crates/sourdaw-native/src/commands/ai_audio.rs
+  s_0a3429e31e555d::t_c167343c65cc99 30
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_0a3429e31e555d::t_7715b9511d6878 130-145
+  s_0a3429e31e555d::t_4eb47e65dd28f5 29-34,88,93,108,113,121,124-125,148-149,155,168,174,192,197,212,218,230,240,257,267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "97902d9bd3b2a54d432ebf59d0452c68264129c5",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
