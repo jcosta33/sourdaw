@@ -96,6 +96,52 @@ describe('pluginScanStore', () => {
 
         expect(JSON.parse(window.localStorage.getItem(PLUGIN_SCAN_KEY) ?? 'null')).toEqual(finished);
     });
+
+    it('should keep a scan the quota refused live for the session', () => {
+        const first: PluginScanState = {
+            scannedPlugins: [sample('a')],
+            scanPaths: ['/plugins'],
+            isScanning: false,
+            lastScanTime: 1_700_000_000_000,
+            errors: [],
+        };
+        pluginScanStore.set(first);
+        const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('exceeded the quota', 'QuotaExceededError');
+        });
+
+        const second: PluginScanState = { ...first, scannedPlugins: [sample('a'), sample('b')] };
+        pluginScanStore.set(second);
+        refuse.mockRestore();
+
+        // The scan succeeded; only its durable copy did not. A throw here would
+        // land inside the scan use case, whose error handler writes to this
+        // same store and would throw again, stranding `isScanning`.
+        expect(pluginScanStore.value).toEqual(second);
+    });
+
+    it('should discard the superseded stored scan when the durable write is refused', () => {
+        const first: PluginScanState = {
+            scannedPlugins: [sample('a')],
+            scanPaths: ['/plugins'],
+            isScanning: false,
+            lastScanTime: 1_700_000_000_000,
+            errors: [],
+        };
+        pluginScanStore.set(first);
+        const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('exceeded the quota', 'QuotaExceededError');
+        });
+
+        pluginScanStore.set({ ...first, scannedPlugins: [sample('a'), sample('b')] });
+        refuse.mockRestore();
+
+        // Leaving `first` in the key would restore it on the next launch as if
+        // it were the current scan, and `getAgentDeviceFactoryManifest` would
+        // advertise its parameter contracts as fact. Empty is a state the app
+        // already has an answer for; superseded is not.
+        expect(window.localStorage.getItem(PLUGIN_SCAN_KEY)).toBeNull();
+    });
 });
 
 /**

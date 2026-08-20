@@ -1,7 +1,7 @@
 //! Plugin scanning, loading, and parameter management.
 
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
-use crate::host::plugin_registry_store::{PersistedPluginEntry, PluginRegistryStore};
+use crate::host::plugin_registry_store::{PersistedPluginEntry, PluginRegistryStore, RescanClaim};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
 use crate::host::plugin_window::PluginWindowHost;
@@ -93,7 +93,13 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 
 // ── Scanning commands ───────────────────────────────────────────────────
 
-const MAX_SCAN_CANDIDATES: usize = 256;
+/// The most plugin files a single scan will index.
+///
+/// `pub(crate)` because the persisted registry derives its own row cap from it
+/// (`host::plugin_registry_store`): a document carrying more rows than a scan
+/// can produce was not written by one. The two bounds have to move together, or
+/// the cap quietly stops meaning what it says.
+pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
 const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
 static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
@@ -140,7 +146,6 @@ fn registry_entry(plugin: &ScannedPlugin) -> PluginRegistryEntry {
         clap_id: plugin.clap_id.clone(),
         format: plugin.format.clone(),
         name: plugin.name.clone(),
-        category: plugin.category.clone(),
     }
 }
 
@@ -153,23 +158,32 @@ fn registry_entry(plugin: &ScannedPlugin) -> PluginRegistryEntry {
 /// apart. The registry is a lookup table derived entirely from this scan's own
 /// results, so no panic elsewhere can leave it in a state this rebuild does not
 /// correct.
+///
+/// The same retention runs against the registry store's persisted view.
+/// `persist` unions the live registry over that view rather than replacing it,
+/// so a plugin this scan found gone would otherwise be written back out of the
+/// view's own copy and survive its own uninstall forever.
 fn publish_scan_results_in_registry(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    registry_store: &PluginRegistryStore,
     authorized_paths: &[PathBuf],
     scanned_paths: &[PathBuf],
     scan_complete: bool,
     plugins: &[ScannedPlugin],
 ) {
-    let mut registry = plugin_registry
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.retain(|_, entry| {
-        let path = Path::new(&entry.path);
+    let survives_this_scan = |path: &Path| {
         if scan_complete {
             return !authorized_paths.iter().any(|root| path.starts_with(root));
         }
         !scanned_paths.iter().any(|scanned| scanned == path)
-    });
+    };
+
+    registry_store.apply_completed_scan_removals(survives_this_scan);
+
+    let mut registry = plugin_registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    registry.retain(|_, entry| survives_this_scan(Path::new(&entry.path)));
     registry.extend(index_scanned_plugins(plugins));
 }
 
@@ -303,6 +317,7 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
     // recover the id it had thrown away.
     publish_scan_results_in_registry(
         &state.plugin_registry,
+        &state.plugin_registry_store,
         &authorized_paths,
         &scanned_paths,
         scan_complete,
@@ -376,6 +391,26 @@ fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) 
 ///
 /// The rescan is injected so the resolution order can be tested without a real
 /// CLAP file and a child process; production passes [`rescan_plugin_file`].
+///
+/// Step 3 happens at most once per registry key per process, and the store
+/// holds that record — see `PluginRegistryStore::claim_rescan`. Nothing above
+/// this function bounds how often a miss is asked for: `activateExternalPlugin`
+/// drops its in-flight guard when activation fails, and the frontend rebuilds a
+/// project's live strip on every transport start, firing one activation per
+/// external device. A per-attempt rescan turns "this project's plugins moved"
+/// into one scan-worker child process per plugin per Play.
+///
+/// The rescan deliberately does not take `PLUGIN_SCAN_PERMIT`. That permit
+/// serializes directory sweeps — hundreds of candidates, thirty seconds — and
+/// this is one file, once per key per process, single-flighted. Running it
+/// alongside a sweep is bounded and convergent: both writers mutate the
+/// registry under its own mutex, `publish_scan_results_in_registry` drops a
+/// rescanned row only when the sweep covered that root and did not find it (in
+/// which case the row is wrong), and `persist` unions rather than replaces, so
+/// neither save can erase the other's rows whichever order they land in.
+/// Queueing behind the permit instead would park a blocking-pool thread for up
+/// to the sweep's full duration; refusing on contention instead would record a
+/// negative verdict that has nothing to do with the plugin.
 fn resolve_registry_entry(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
     registry_store: &PluginRegistryStore,
@@ -395,11 +430,30 @@ fn resolve_registry_entry(
         ));
     };
 
+    let attempt = match registry_store.claim_rescan(plugin_id) {
+        RescanClaim::Granted(attempt) => attempt,
+        RescanClaim::Refused(reason) => return Err(reason),
+        RescanClaim::InProgress => {
+            return Err(format!(
+                "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
+                last_known.name, last_known.path
+            ));
+        }
+    };
+
     let last_known_path = PathBuf::from(&last_known.path);
-    let rescanned = scan_policy
+    let rescanned = match scan_policy
         .authorize_scan_root(&last_known_path)
         .and_then(|()| rescan(&last_known_path))
-        .map_err(|reason| plugin_gone_from_last_known_path(&last_known, &reason))?;
+    {
+        Ok(rescanned) => rescanned,
+        Err(reason) => {
+            let refusal = plugin_gone_from_last_known_path(&last_known, &reason);
+            attempt.refuse(refusal.clone());
+            return Err(refusal);
+        }
+    };
+    attempt.resolved();
 
     {
         let mut registry = plugin_registry
@@ -468,10 +522,18 @@ pub async fn load_plugin(
     instance_id: PluginInstanceId,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
+    // Resolution runs before the runtime gate is taken, not under it. It reads
+    // the registry file and can wait on a bounded child-process rescan, and it
+    // touches no runtime state at all — no `plugins`, no `engine_plugins`, no
+    // engine — so nothing the gate protects is in scope. Holding the gate in
+    // read mode across that wait was the whole exposure: `PLUGIN_RUNTIME_GATE`
+    // is a fair `RwLock`, so one queued writer (`unload_all_plugin_runtimes`,
+    // which the quit path runs) blocks behind the rescan and every later reader
+    // blocks behind the writer.
+    let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
     let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
-    let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
 
     match entry.format.as_str() {
         "clap" => {
@@ -1990,6 +2052,7 @@ mod tests {
 
         publish_scan_results_in_registry(
             &state.plugin_registry,
+            &state.plugin_registry_store,
             &[],
             &[],
             true,
@@ -2027,7 +2090,6 @@ mod tests {
                     clap_id: String::new(),
                     format: "clap".to_string(),
                     name: "Nameless".to_string(),
-                    category: "effect".to_string(),
                 },
             );
 
@@ -2116,7 +2178,6 @@ mod tests {
                     clap_id: String::new(),
                     format: "vst3".to_string(),
                     name: "Unsupported VST3".to_string(),
-                    category: "effect".to_string(),
                 },
             );
 
@@ -2448,7 +2509,6 @@ mod tests {
                     clap_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb".to_string(),
-                    category: "effect".to_string(),
                 },
             )]));
         }
@@ -2512,7 +2572,6 @@ mod tests {
                     clap_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb 2".to_string(),
-                    category: "effect".to_string(),
                 })
             },
         )
@@ -2544,6 +2603,58 @@ mod tests {
                 .expect("the rescan result must have been saved")
                 .name,
             "Vendor Reverb 2"
+        );
+    }
+
+    /// The rescan is bounded per process, not per attempt. `activateExternalPlugin`
+    /// releases its in-flight guard when activation fails, and the frontend
+    /// rebuilds a project's live strip on every transport start, so a project
+    /// whose plugins have all moved asks again on every Play — once per plugin.
+    /// Each unbounded ask is a scan-worker child process that runs up to the
+    /// rescan timeout.
+    #[test]
+    fn a_miss_already_rescanned_this_process_does_not_rescan_again() {
+        let fixture = PersistedRegistryFixture::create("activation-rescan-once");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::remove_file(&plugin_path).expect("the plugin should be removable");
+
+        let store = fixture.store();
+        let registry = Mutex::new(HashMap::new());
+        let rescans = std::cell::Cell::new(0);
+        // Borrows the counter rather than owning it, so the same closure can be
+        // handed to both calls: the point of the test is that only one of them
+        // reaches it.
+        let rescan = |path: &Path| {
+            rescans.set(rescans.get() + 1);
+            Err::<PluginRegistryEntry, String>(format!("no such file: {}", path.display()))
+        };
+
+        let first = resolve_registry_entry(
+            &registry,
+            &store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            rescan,
+        )
+        .expect_err("a removed plugin must not resolve");
+        let second = resolve_registry_entry(
+            &registry,
+            &store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            rescan,
+        )
+        .expect_err("a removed plugin must not resolve");
+
+        assert_eq!(
+            rescans.get(),
+            1,
+            "the second activation must answer from the recorded refusal, not spawn another scan"
+        );
+        assert_eq!(
+            second, first,
+            "the recorded refusal must be the one the user already saw"
         );
     }
 
@@ -2637,6 +2748,7 @@ mod tests {
 
         publish_scan_results_in_registry(
             &plugin_registry,
+            &PluginRegistryStore::in_memory_only(),
             &[],
             &[],
             true,

@@ -14,6 +14,16 @@
 //! symlink components at that moment rather than trusted from when it was
 //! written.
 //!
+//! What the file *is* trusted for, verbatim, is the mapping from a registry key
+//! to a `(path, clap_id)` pair. The stored fingerprint gates staleness, not
+//! authenticity: it can tell that the file at that path has changed since the
+//! scan, and it can tell nothing whatsoever about whether the bytes there were
+//! ever the plugin the row claims. An attacker who can write this file can
+//! point an authorized key at any other policy-authorized plugin, and the
+//! fingerprint will agree. Anything stronger — a content hash, a signature —
+//! would be a different mechanism; do not build on the weaker one as if it were
+//! that.
+//!
 //! A file this build cannot parse, or one carrying a different schema version,
 //! is treated as absent: the registry stays empty and a scan refills it, which
 //! is exactly the state a first run is in. Reading half of it is never an
@@ -24,13 +34,16 @@
 //! filesystem and must never be reached from the audio callback.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::plugins::MAX_SCAN_CANDIDATES;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::PluginRegistryEntry;
 
@@ -44,12 +57,32 @@ const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 1;
 
 const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
-const REGISTRY_TEMPORARY_FILE_NAME: &str = "plugin-registry.json.tmp";
+const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
 
 /// Refuse to parse a registry file larger than a scan could have written.
 /// A bounded scan yields at most a few hundred entries of a few hundred bytes;
 /// anything past this is not this file's content and is not worth the parse.
 const MAX_REGISTRY_FILE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Refuse a document carrying more rows than a completed scan could index.
+///
+/// Twice [`MAX_SCAN_CANDIDATES`] because every scanned CLAP plugin claims two
+/// keys — the path hash and the CLAP descriptor id — and both are rows here.
+/// Bounding the row count as well as the byte count matters because the two
+/// costs are different: a few hundred kilobytes of deeply repetitive JSON is
+/// inside the byte bound and still expands into a map far larger than any scan
+/// this build can produce.
+const MAX_REGISTRY_ENTRIES: usize = 2 * MAX_SCAN_CANDIDATES;
+
+/// Distinguishes one process's temporary registry file from another's.
+///
+/// Two Sourdaw instances writing the registry at the same time is not exotic —
+/// they share one app-data directory. A fixed temporary name lets each truncate
+/// the other's half-written bytes and then rename the result over the registry,
+/// publishing a document that is neither process's. The pid separates
+/// instances; this counter separates writes inside one instance, which
+/// `resolve_registry_entry` can issue concurrently with a scan's own save.
+static TEMPORARY_FILE_NONCE: AtomicU64 = AtomicU64::new(0);
 
 /// The persisted registry document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +106,6 @@ pub struct PersistedPluginEntry {
     pub clap_id: String,
     pub format: String,
     pub name: String,
-    pub category: String,
     /// Size of the plugin file, in bytes, when it was scanned.
     pub file_size_bytes: u64,
     /// Modification time of the plugin file when it was scanned, in
@@ -93,9 +125,19 @@ impl PersistedPluginEntry {
             clap_id: self.clap_id.clone(),
             format: self.format.clone(),
             name: self.name.clone(),
-            category: self.category.clone(),
         }
     }
+}
+
+/// What this process has already learned about a registry key the in-memory
+/// registry does not hold.
+#[derive(Debug)]
+enum ResolutionOutcome {
+    /// A caller is inside this key's rescan right now.
+    InProgress,
+    /// The rescan ran and the plugin was not there, with the refusal it
+    /// produced.
+    Refused(String),
 }
 
 #[derive(Debug, Default)]
@@ -104,10 +146,73 @@ struct StoredRegistry {
     /// boot step, and re-reading it later would resurrect entries a completed
     /// scan has since removed.
     hydrated: bool,
-    /// Every row the file carried, including rows hydration refused as stale.
-    /// A refused row is still the plugin's last known location, which is what
-    /// an activation miss needs in order to say where the plugin used to be.
+    /// The persisted view of the registry: every row the file carried, plus
+    /// every row this process has written to it, minus the rows a completed
+    /// scan removed. Rows hydration refused as stale stay — a refused row is
+    /// still the plugin's last known location, which is what an activation miss
+    /// needs in order to say where the plugin used to be.
+    ///
+    /// This is the union source [`PluginRegistryStore::persist`] writes over, so
+    /// it has to track removals: see
+    /// [`PluginRegistryStore::apply_completed_scan_removals`].
     entries: BTreeMap<String, PersistedPluginEntry>,
+    /// One entry per registry key whose miss this process has already tried to
+    /// resolve. Bounds the targeted rescan to once per key per process; see
+    /// [`PluginRegistryStore::claim_rescan`].
+    resolutions: HashMap<String, ResolutionOutcome>,
+}
+
+/// The verdict on a caller's request to run the one targeted rescan a registry
+/// key gets per process.
+pub enum RescanClaim<'a> {
+    /// Nobody has rescanned this key yet. The caller owns the attempt and must
+    /// settle it.
+    Granted(RescanAttempt<'a>),
+    /// A rescan already ran this process and refused, with this message.
+    Refused(String),
+    /// Another caller is inside this key's rescan right now.
+    InProgress,
+}
+
+/// The one rescan a registry key gets this process, held while it runs.
+///
+/// Settle it with [`RescanAttempt::refuse`] or [`RescanAttempt::resolved`].
+/// Dropping it unsettled — a panic in the rescan, an early return — clears the
+/// in-progress marker rather than leaving it, because a marker nothing can
+/// clear would refuse that plugin for the rest of the process.
+pub struct RescanAttempt<'a> {
+    store: &'a PluginRegistryStore,
+    plugin_id: String,
+    settled: bool,
+}
+
+impl RescanAttempt<'_> {
+    /// The plugin is not at its last known location. Record the refusal so the
+    /// next activation of the same id answers from it instead of spawning
+    /// another scan worker.
+    pub fn refuse(mut self, reason: String) {
+        self.settled = true;
+        self.store
+            .lock_stored()
+            .resolutions
+            .insert(self.plugin_id.clone(), ResolutionOutcome::Refused(reason));
+    }
+
+    /// The rescan found the plugin. Nothing is recorded: the entry is in the
+    /// registry now, so the next lookup hits before it ever reaches a claim.
+    pub fn resolved(mut self) {
+        self.settled = true;
+        self.store.lock_stored().resolutions.remove(&self.plugin_id);
+    }
+}
+
+impl Drop for RescanAttempt<'_> {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        self.store.lock_stored().resolutions.remove(&self.plugin_id);
+    }
 }
 
 /// The registry file, and what this process has read from it.
@@ -197,12 +302,84 @@ impl PluginRegistryStore {
         self.lock_stored().entries.get(plugin_id).cloned()
     }
 
-    /// Write the registry to the file, replacing what was there.
+    /// Claim the one targeted rescan a registry key gets this process.
+    ///
+    /// The in-memory registry is the only thing bounding how often activation
+    /// asks for a plugin it cannot resolve, and it bounds nothing: the frontend
+    /// rebuilds a project's live strip on every transport start and fires an
+    /// activation per external device, so a project whose plugins have all
+    /// moved asks again on every Play. Without this record each of those asks
+    /// spawns its own scan-worker child process, up to the rescan timeout each,
+    /// and `load_plugin` is holding a fair `RwLock` in read mode the whole time
+    /// — one queued writer behind them stalls every later reader.
+    ///
+    /// Concurrent callers for the same key do not queue. The second one is told
+    /// [`RescanClaim::InProgress`] and refuses immediately, because the
+    /// alternative is parking a blocking-pool thread for the length of a child
+    /// process to arrive at an answer the first caller is about to publish to
+    /// the registry anyway.
+    pub fn claim_rescan(&self, plugin_id: &str) -> RescanClaim<'_> {
+        let mut stored = self.lock_stored();
+        match stored.resolutions.get(plugin_id) {
+            Some(ResolutionOutcome::Refused(reason)) => {
+                return RescanClaim::Refused(reason.clone())
+            }
+            Some(ResolutionOutcome::InProgress) => return RescanClaim::InProgress,
+            None => {}
+        }
+        stored
+            .resolutions
+            .insert(plugin_id.to_string(), ResolutionOutcome::InProgress);
+        drop(stored);
+
+        RescanClaim::Granted(RescanAttempt {
+            store: self,
+            plugin_id: plugin_id.to_string(),
+            settled: false,
+        })
+    }
+
+    /// Apply a completed scan's removals to the persisted view.
+    ///
+    /// `keeps_persisted_row` is the scan publisher's own retention predicate,
+    /// and it has to run here as well as against the in-memory registry.
+    /// [`persist`](Self::persist) unions the live registry over this view, so a
+    /// row the scan legitimately dropped — a plugin uninstalled from a root the
+    /// scan covered — would otherwise be written straight back out of the
+    /// view's own copy and outlive the deletion forever.
+    ///
+    /// Recorded rescan refusals are dropped too. Every one of them predates
+    /// this scan, and the scan is a fresh authoritative look at the same disk:
+    /// a plugin that was missing an hour ago and is indexed now must not keep
+    /// answering from the older verdict.
+    pub fn apply_completed_scan_removals(&self, keeps_persisted_row: impl Fn(&Path) -> bool) {
+        let mut stored = self.lock_stored();
+        stored
+            .entries
+            .retain(|_, entry| keeps_persisted_row(Path::new(&entry.path)));
+        stored.resolutions.clear();
+    }
+
+    /// Write the registry to the file, merged over what the file already holds.
+    ///
+    /// A union, not a replacement. The in-memory registry is not the whole
+    /// truth about the file: hydration deliberately refuses stale rows while
+    /// keeping them as last-known locations, and a targeted rescan publishes
+    /// exactly one key. Replacing the document with the live registry alone
+    /// deleted every row hydration had refused — so a user whose plugins had
+    /// all been updated in place lost every last-known location the moment one
+    /// of them resolved, and every other plugin's activation fell into the
+    /// "no scanned location is recorded" dead end this module exists to close.
+    ///
+    /// The union source is the view this store maintains, which already has
+    /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)
+    /// applied, so a merge cannot resurrect a row a scan removed this session.
     ///
     /// A registry entry whose file cannot be fingerprinted right now is left
-    /// out: without a fingerprint the next hydration has nothing to invalidate
-    /// against, and an entry that can never be proven stale is worse than an
-    /// entry that is missing.
+    /// out of the fresh side: without a fingerprint the next hydration has
+    /// nothing to invalidate against, and an entry that can never be proven
+    /// stale is worse than an entry that is missing. Whatever the file already
+    /// held for that key stands.
     ///
     /// Failure is reported and swallowed. A scan that found plugins has already
     /// succeeded for this session, and turning a full disk into a failed scan
@@ -213,7 +390,7 @@ impl PluginRegistryStore {
         };
 
         let mut fingerprints: HashMap<&str, Option<(u64, u64)>> = HashMap::new();
-        let mut entries = BTreeMap::new();
+        let mut scanned_this_session = BTreeMap::new();
         for (key, entry) in plugin_registry {
             let fingerprint = *fingerprints
                 .entry(entry.path.as_str())
@@ -221,7 +398,7 @@ impl PluginRegistryStore {
             let Some((file_size_bytes, file_modified_ms)) = fingerprint else {
                 continue;
             };
-            entries.insert(
+            scanned_this_session.insert(
                 key.clone(),
                 PersistedPluginEntry {
                     path: entry.path.clone(),
@@ -229,19 +406,22 @@ impl PluginRegistryStore {
                     clap_id: entry.clap_id.clone(),
                     format: entry.format.clone(),
                     name: entry.name.clone(),
-                    category: entry.category.clone(),
                     file_size_bytes,
                     file_modified_ms,
                 },
             );
         }
 
+        let mut stored = self.lock_stored();
+        let mut entries = stored.entries.clone();
+        entries.extend(scanned_this_session);
+
         let document = PersistedScanRegistry {
             schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
             entries,
         };
         match write_registry_document(location, &document) {
-            Ok(()) => self.lock_stored().entries = document.entries,
+            Ok(()) => stored.entries = document.entries,
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
     }
@@ -290,9 +470,24 @@ fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
     Some((metadata.len(), u64::try_from(modified).ok()?))
 }
 
+/// Read the registry document, or nothing.
+///
+/// The bound is enforced on the read itself rather than on a `metadata` call
+/// first. Two reasons, and both of them are the same file: `metadata` follows
+/// symlinks and reports a length that need not describe what a subsequent read
+/// will produce, so a registry replaced by a link to a character device reads a
+/// declared length of zero and then returns bytes until memory runs out; and
+/// even for an ordinary file the size can change between the stat and the read.
+/// Reading one byte past the limit and refusing on overflow answers both
+/// without trusting anything the filesystem said earlier.
 fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
-    let metadata = fs::metadata(location).ok()?;
-    if metadata.len() > MAX_REGISTRY_FILE_BYTES {
+    let mut bytes = Vec::new();
+    File::open(location)
+        .ok()?
+        .take(MAX_REGISTRY_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_REGISTRY_FILE_BYTES {
         eprintln!(
             "[Plugin] Ignoring an oversized plugin scan registry at {}",
             location.display()
@@ -300,9 +495,19 @@ fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
         return None;
     }
 
-    let bytes = fs::read(location).ok()?;
     let document: PersistedScanRegistry = serde_json::from_slice(&bytes).ok()?;
     if document.schema_version != SCAN_REGISTRY_SCHEMA_VERSION {
+        return None;
+    }
+    if document.entries.len() > MAX_REGISTRY_ENTRIES {
+        // Absent, not truncated, for the reason a corrupt file is absent: a
+        // registry this build reads in part is a lookup table that says "no
+        // such plugin" for plugins the user has already scanned, and nothing
+        // downstream can tell that apart from a genuine miss.
+        eprintln!(
+            "[Plugin] Ignoring a plugin scan registry with more rows than a scan can produce at {}",
+            location.display()
+        );
         return None;
     }
     Some(document)
@@ -311,6 +516,12 @@ fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
 /// Write through a temporary file and rename over the target, so a process that
 /// dies mid-write leaves the previous registry intact rather than a truncated
 /// one the next boot has to discard.
+///
+/// The temporary file is named per writer, not per registry. The atomicity the
+/// rename buys is only worth having if the bytes being renamed are one writer's:
+/// a shared name lets a second instance truncate this one's half-written file
+/// and publish the interleaving of both. Same directory, because a rename is
+/// only atomic within a filesystem.
 fn write_registry_document(
     location: &Path,
     document: &PersistedScanRegistry,
@@ -323,7 +534,11 @@ fn write_registry_document(
 
     let bytes = serde_json::to_vec(document)
         .map_err(|error| format!("cannot serialize the registry: {error}"))?;
-    let temporary_location = directory.join(REGISTRY_TEMPORARY_FILE_NAME);
+    let nonce = TEMPORARY_FILE_NONCE.fetch_add(1, Ordering::Relaxed);
+    let temporary_location = directory.join(format!(
+        "{REGISTRY_TEMPORARY_FILE_STEM}.{}.{nonce}.tmp",
+        std::process::id()
+    ));
     fs::write(&temporary_location, &bytes)
         .map_err(|error| format!("cannot write {}: {error}", temporary_location.display()))?;
     fs::rename(&temporary_location, location).map_err(|error| {
@@ -394,7 +609,6 @@ mod tests {
             clap_id: "com.vendor.reverb".to_string(),
             format: "clap".to_string(),
             name: "Vendor Reverb".to_string(),
-            category: "effect".to_string(),
         }
     }
 
@@ -429,7 +643,6 @@ mod tests {
         assert_eq!(entry.path, plugin_path.display().to_string());
         assert_eq!(entry.clap_id, "com.vendor.reverb");
         assert_eq!(entry.name, "Vendor Reverb");
-        assert_eq!(entry.category, "effect");
         assert_eq!(entry.format, "clap");
         assert_eq!(entry.stable_id, "aaaa1111");
     }
@@ -639,6 +852,192 @@ mod tests {
                 .is_empty(),
             "the registry file must not authorize a path the scan policy refuses"
         );
+    }
+
+    /// The defect a wholesale rewrite produced: `persist` rebuilt the document
+    /// from the live registry alone, so every row hydration had refused as
+    /// stale — deliberately kept as a last known location — was deleted from
+    /// disk by the next save. In the shape that matters, a vendor updates a
+    /// folder of plugins in place, the user relaunches, activating one of them
+    /// re-indexes just that one, and the save that follows takes every other
+    /// plugin's last known location with it.
+    #[test]
+    fn persisting_a_partial_registry_keeps_the_rows_hydration_refused() {
+        let test_root = TestRegistryRoot::create("registry-persist-union");
+        let fresh_path = test_root.write_plugin_file("Fresh.clap", b"clap-bytes");
+        let stale_path = test_root.write_plugin_file("Stale.clap", b"clap-bytes");
+        test_root.store().persist(&registry_with(vec![
+            (
+                "fresh0001".to_string(),
+                registry_entry(&fresh_path, "fresh0001"),
+            ),
+            (
+                "stale0001".to_string(),
+                registry_entry(&stale_path, "stale0001"),
+            ),
+        ]));
+        // Only the second plugin is updated in place, so only its row goes
+        // stale: hydration admits one and refuses the other.
+        fs::write(&stale_path, b"clap-bytes-version-2").expect("the plugin should be updated");
+
+        let second_launch = test_root.store();
+        let registry = Mutex::new(HashMap::new());
+        second_launch.hydrate_into(&registry, &test_root.scan_policy());
+        assert_eq!(
+            registry.lock().expect("registry lock").len(),
+            1,
+            "the fixture must produce one admitted row and one refused one"
+        );
+        // The save any activation triggers: a snapshot holding only what
+        // hydration admitted.
+        second_launch.persist(&registry.lock().expect("registry lock").clone());
+
+        let third_launch = test_root.store();
+        third_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let last_known = third_launch
+            .last_known_entry("stale0001")
+            .expect("a row refused as stale must survive a save it was not part of");
+        assert_eq!(last_known.path, stale_path.display().to_string());
+    }
+
+    /// The other half of the union: a plugin the user actually uninstalled must
+    /// not come back out of the file's own copy of it.
+    #[test]
+    fn persisting_does_not_resurrect_a_row_a_completed_scan_removed() {
+        let test_root = TestRegistryRoot::create("registry-persist-removal");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&registry_with(vec![(
+            "aaaa1111".to_string(),
+            registry_entry(&plugin_path, "aaaa1111"),
+        )]));
+
+        // The scan publisher's retention predicate for a completed scan of the
+        // plugin root, run when the scan found nothing there any more.
+        let scanned_root = test_root.root.join("plugins");
+        store.apply_completed_scan_removals(|path| !path.starts_with(&scanned_root));
+        store.persist(&HashMap::new());
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.last_known_entry("aaaa1111").is_none(),
+            "a row a completed scan removed must not be written back from the persisted view"
+        );
+    }
+
+    #[test]
+    fn a_registry_file_with_more_rows_than_a_scan_can_produce_reads_as_absent() {
+        let test_root = TestRegistryRoot::create("registry-row-cap");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let mut entries = BTreeMap::new();
+        for index in 0..=MAX_REGISTRY_ENTRIES {
+            entries.insert(
+                format!("key-{index:05}"),
+                PersistedPluginEntry {
+                    path: plugin_path.display().to_string(),
+                    stable_id: format!("key-{index:05}"),
+                    clap_id: "com.vendor.reverb".to_string(),
+                    format: "clap".to_string(),
+                    name: "Vendor Reverb".to_string(),
+                    file_size_bytes: 10,
+                    file_modified_ms: 0,
+                },
+            );
+        }
+        fs::write(
+            test_root.root.join(REGISTRY_FILE_NAME),
+            serde_json::to_vec(&PersistedScanRegistry {
+                schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
+                entries,
+            })
+            .expect("the oversized registry should serialize"),
+        )
+        .expect("the oversized registry should be written");
+
+        let store = test_root.store();
+        store.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        assert!(
+            store.last_known_entry("key-00000").is_none(),
+            "a document past the row cap must be read as absent, not in part"
+        );
+    }
+
+    /// The bound has to hold against a file whose declared length is a lie —
+    /// a registry replaced by a symlink to a character device declares zero and
+    /// then reads forever.
+    #[cfg(unix)]
+    #[test]
+    fn a_registry_symlinked_to_an_endless_device_does_not_read_endlessly() {
+        let test_root = TestRegistryRoot::create("registry-endless");
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        std::os::unix::fs::symlink("/dev/zero", &location)
+            .expect("the endless-device symlink should be created");
+
+        assert!(
+            read_registry_document(&location).is_none(),
+            "an endless read must be refused by the bound, not followed"
+        );
+    }
+
+    /// One rescan per key per process. Without the record, every activation
+    /// that misses spawns its own scan-worker child — and the frontend
+    /// re-activates a project's devices on every transport start.
+    #[test]
+    fn a_key_already_refused_this_process_is_not_rescanned_again() {
+        let store = PluginRegistryStore::in_memory_only();
+
+        let RescanClaim::Granted(attempt) = store.claim_rescan("aaaa1111") else {
+            panic!("the first caller must be granted the attempt");
+        };
+        attempt.refuse("Plugin 'Vendor Reverb' is gone".to_string());
+
+        let RescanClaim::Refused(reason) = store.claim_rescan("aaaa1111") else {
+            panic!("a key refused this process must answer from the record");
+        };
+        assert_eq!(reason, "Plugin 'Vendor Reverb' is gone");
+    }
+
+    /// A completed scan is a fresh look at the same disk: a plugin that was
+    /// missing before it ran must not keep answering from the older verdict.
+    #[test]
+    fn a_completed_scan_clears_a_recorded_refusal() {
+        let store = PluginRegistryStore::in_memory_only();
+        let RescanClaim::Granted(attempt) = store.claim_rescan("aaaa1111") else {
+            panic!("the first caller must be granted the attempt");
+        };
+        attempt.refuse("Plugin 'Vendor Reverb' is gone".to_string());
+
+        store.apply_completed_scan_removals(|_| true);
+
+        assert!(
+            matches!(store.claim_rescan("aaaa1111"), RescanClaim::Granted(_)),
+            "a scan that has run since the refusal must let the key be resolved again"
+        );
+    }
+
+    /// A rescan that unwound without settling — a panicking worker, an early
+    /// return — must not leave a marker nothing can clear, because that key
+    /// would then refuse for the rest of the process.
+    #[test]
+    fn an_attempt_dropped_without_an_outcome_leaves_the_key_claimable() {
+        let store = PluginRegistryStore::in_memory_only();
+        {
+            let RescanClaim::Granted(attempt) = store.claim_rescan("aaaa1111") else {
+                panic!("the first caller must be granted the attempt");
+            };
+            assert!(matches!(
+                store.claim_rescan("aaaa1111"),
+                RescanClaim::InProgress
+            ));
+            drop(attempt);
+        }
+
+        assert!(matches!(
+            store.claim_rescan("aaaa1111"),
+            RescanClaim::Granted(_)
+        ));
     }
 
     #[test]

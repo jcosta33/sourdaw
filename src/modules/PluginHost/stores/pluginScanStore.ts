@@ -159,9 +159,23 @@ function readPluginScanState(value: unknown): PluginScanState | null {
     };
 }
 
+/**
+ * `discardStoredValueOnRefusedWrite`, because the alternative is silently
+ * restoring a scan the user has already replaced.
+ *
+ * A refused `setItem` leaves the PREVIOUS document in the key. Here that
+ * document is a whole scan result: the plugin list from an earlier folder
+ * configuration, with the parameter contracts that went with it. The next
+ * launch would restore it and nothing downstream could tell it apart from the
+ * current one — `getAgentDeviceFactoryManifest` reads those contracts and
+ * advertises a factory version derived from them, so a superseded copy is
+ * advertised as fact. Starting empty is legible: no plugins until a scan, which
+ * is what a first run looks like and what the UI already handles.
+ */
 const persistedScanState = createPlainJsonLocalStorage<PluginScanState>({
     key: PLUGIN_SCAN_KEY,
     decode: readPluginScanState,
+    discardStoredValueOnRefusedWrite: true,
 });
 
 /**
@@ -178,6 +192,15 @@ const persistedScanState = createPlainJsonLocalStorage<PluginScanState>({
  * session, the dropped write is logged and raises the storage-full notice once,
  * and the user's plugin list works now and needs a rescan after a reload. That
  * is the honest outcome of a refused write here; a stranded scan is not.
+ *
+ * Overriding the adapter rather than calling `pluginScanStore.trySet()` at the
+ * write sites is deliberate, and `Store.update()` is the reason: it is
+ * hard-wired to `store.set`, with no `tryUpdate` beside it, and the writes that
+ * carry a full scan result — `startPluginScan`, `scanCustomPaths` — are
+ * read-modify-write and so go through `update`. A call site here cannot opt
+ * into the non-throwing path, so the opt-in has to sit under it. If `update`
+ * ever grows a non-throwing form, delete this object and let the call sites
+ * choose, which is the repository's normal shape.
  */
 const scanStateStorage: typeof persistedScanState = {
     ...persistedScanState,

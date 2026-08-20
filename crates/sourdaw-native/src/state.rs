@@ -186,7 +186,6 @@ pub struct PluginRegistryEntry {
     pub clap_id: String,
     pub format: String,
     pub name: String,
-    pub category: String,
 }
 
 impl AppState {
