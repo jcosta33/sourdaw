@@ -1,0 +1,38 @@
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  s_487e9aa1e46063::t_f93243769fd375 52-66
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipSplitState.ts
+  s_487e9aa1e46063::t_975741d9fb244a 26-27
+src/modules/MIDI/useCases/midiClipData/midiClipGlueStateMatches.ts
+  s_487e9aa1e46063::t_52a60b5bcef0b8 30-37
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipGlueState.ts
+  s_487e9aa1e46063::t_73d1f8b0ca7d49 55
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_487e9aa1e46063::t_ea7a66552476c6 77-78
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_487e9aa1e46063::t_f48f8d379b5160 36-39
+  s_487e9aa1e46063::t_01c9d080056532 3
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_487e9aa1e46063::t_d79ced7ada587a 33
+  s_487e9aa1e46063::t_e9fd198d4ef245 18
+src/modules/Arrangement/useCases/clipEditing/clipGlueStateRestorable.ts
+  s_487e9aa1e46063::t_2ebd27e6b13b27 17-24
+  s_487e9aa1e46063::t_9d026c163cf238 4
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_487e9aa1e46063::t_ff125320d26845 27-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4b468d929671299e16b91d56e278acb515dca727",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
