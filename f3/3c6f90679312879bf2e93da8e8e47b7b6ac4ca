@@ -1,0 +1,19 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_9b52697c06fee1 2075,4037,6053,6719,7754,8591,11327,13064,14513,19670,19724,20138,21083,22406,22442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f33c6f90679312879bf2e93da8e8e47b7b6ac4ca",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
