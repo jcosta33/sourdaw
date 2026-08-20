@@ -18,7 +18,7 @@ resolver = "2"
 # Exclusive through the platform's own bindings. Pinned to the version
 # already present in the lockfile through cpal's Windows dependency tree,
 # so both resolve to one copy.
-windows = "0.61.3"
+windows = "0.62.2"
 
 [profile.release]
 opt-level = 3
