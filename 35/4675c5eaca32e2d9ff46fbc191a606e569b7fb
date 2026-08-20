@@ -1,0 +1,19 @@
+tests/e2e/setlistLoopStationTestId.spec.ts
+  s_24b1bdbc3c31ad::t_2b99a665d759ce 1,5-7,10-13,18,24,26-27,29-31,35-38,42-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "354675c5eaca32e2d9ff46fbc191a606e569b7fb",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
