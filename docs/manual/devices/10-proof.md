@@ -205,21 +205,21 @@ order.
 
 ## Meters and readouts
 
-| Readout                       | Shows                                                                      |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| **In** / **Out** (header)     | Input and output LUFS                                                      |
-| **Peak**                      | True peak                                                                  |
-| **LRA**                       | Loudness range, in LU                                                      |
-| **Integrated**                | Integrated LUFS                                                            |
-| **Correlation**               | Stereo correlation                                                         |
-| **Limiter GR**                | Limiter gain reduction                                                     |
-| **Input** / **Output** (Play) | The same LUFS pair, larger                                                 |
-| **Short-term**                | Short-term LUFS                                                            |
-| **Loudness History**          | Integrated loudness over time, against the Target                          |
-| **Tonal Balance**             | Spectrum against a target curve                                            |
-| **Gain Applied**              | Input versus output on **Lab**                                             |
-| **Momentary LUFS**            | Momentary loudness                                                         |
-| **Reported latency**          | Delay the chain is adding, in samples (and ms when above 0). On **Route**. |
+| Readout                       | Shows                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| **In** / **Out** (header)     | Input and output LUFS                                                          |
+| **Peak**                      | True peak                                                                      |
+| **LRA**                       | Loudness range, in LU                                                          |
+| **Integrated**                | Integrated LUFS                                                                |
+| **Correlation**               | Stereo correlation                                                             |
+| **Limiter GR**                | Limiter gain reduction                                                         |
+| **Input** / **Output** (Play) | The same LUFS pair, larger                                                     |
+| **Short-term**                | Short-term LUFS                                                                |
+| **Loudness History**          | Momentary loudness over time, with integrated loudness and the Target as lines |
+| **Tonal Balance**             | Spectrum against a target curve                                                |
+| **Gain Applied**              | Input versus output on **Lab**                                                 |
+| **Momentary LUFS**            | Momentary loudness                                                             |
+| **Reported latency**          | Delay the chain is adding, in samples (and ms when above 0). On **Route**.     |
 
 **Tonal Balance** follows the master output, not this insert. On a track that is not the master,
 the picture is the rest of the mix. When the analyser is missing, the overlay reads **Spectrum
