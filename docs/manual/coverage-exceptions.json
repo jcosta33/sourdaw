@@ -102,7 +102,30 @@
         { "ac": "SPEC-yeast/AC-017", "reason": "Allocation-free preview tap. No control." },
         { "ac": "SPEC-yeast/AC-021", "reason": "Renderer technology constraint. The musician sees Phrase view." },
         { "ac": "SPEC-yeast/AC-023", "reason": "One-frame preview update bound. No control." },
-        { "ac": "SPEC-yeast/AC-027", "reason": "Component-implementation constraint. No user-visible behaviour." }
+        { "ac": "SPEC-yeast/AC-027", "reason": "Component-implementation constraint. No user-visible behaviour." },
+        { "ac": "SPEC-drum-machine/AC-002", "reason": "Real-time safety invariant on the audio thread." },
+        { "ac": "SPEC-drum-machine/AC-007", "reason": "Voice-steal policy. Audible only as the absence of a fault." },
+        { "ac": "SPEC-drum-machine/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-003",
+            "reason": "Timing-match bound. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-004",
+            "reason": "Round-trip invariance. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-005",
+            "reason": "Empty-pattern no-op. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-006",
+            "reason": "Preview-and-commit protocol. The musician sees Template and Amount."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-007",
+            "reason": "The Template menu is the library. Names are not catalogued; Straight is the no-op."
+        }
     ],
 
     "omitted-unshipped": [
@@ -188,6 +211,54 @@
         {
             "ac": "SPEC-orchestra-daw-integration/AC-004",
             "reason": "No Orchestra-specific insert surface. Track inserts are the DAW mixer, not this panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-001",
+            "reason": "Pad bay does not expose layers, insert FX, transient shaper, or output routing. Hit, Tone, Crunch, Level, Pan, and Bright ship."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-004",
+            "reason": "No sample drop, zones, or round-robin control on the shipped panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-005",
+            "reason": "The grid toggles steps and Alt-drags velocity. Probability, micro-timing, parameter locks, and conditionals have no editor."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-008",
+            "reason": "Per-pad send knobs and bus routing are not on the panel. Space and Spray are kit-global mixes."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-010",
+            "reason": "No dropped-loop auto-slice onto pads."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-011",
+            "reason": "Play through Lab complexity levels are not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-014",
+            "reason": "Ratchet count can appear on a step. There is no control to write it."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-015",
+            "reason": "No pattern-morph control."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-016",
+            "reason": "No 16 Levels mode."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-017",
+            "reason": "No Note Repeat control."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-018",
+            "reason": "No Fill-hold mode."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-001",
+            "reason": "No extract-from-pattern control on Toaster."
         }
     ],
 
