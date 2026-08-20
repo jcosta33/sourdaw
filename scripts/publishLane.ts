@@ -47,9 +47,8 @@ export type PublishLanePort = {
     issueExists: (issue: number) => boolean;
     aheadBehind: (lane: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
-    headSubject: (lane: string) => string;
+    laneSubject: (lane: string) => string | undefined;
     headSha: (lane: string) => string;
-    commitAll: (lane: string, subject: string) => void;
     remoteBranchSha: (branch: string) => string | undefined;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
     push: (lane: string, branch: string) => void;
@@ -174,6 +173,12 @@ export function resolveAuthorLane(
     return lane;
 }
 
+export const DIRTY_LANE_FAILURE =
+    'has uncommitted changes: commit them yourself with a conventional subject (type(scope): subject), then publish';
+
+export const NO_LANE_SUBJECT_FAILURE =
+    'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
+
 export function publishLane(
     issue: number | undefined,
     port: PublishLanePort,
@@ -182,22 +187,26 @@ export function publishLane(
     port.fetchMain();
     const lane = resolveAuthorLane(issue, port.worktrees(), port.cwd());
     // Without an argument the target is whatever the caller happened to be standing in, and the
-    // next steps commit and push it. Name the selection before anything mutates, so a caller who
-    // was in the wrong lane sees which one it was.
+    // next steps push it. Name the selection before anything mutates, so a caller who was in the
+    // wrong lane sees which one it was.
     port.log(`publishing ${lane.path} on ${lane.branch}`);
     if (issue !== undefined && !port.issueExists(issue)) {
         fail(`issue #${issue} does not exist in ${REQUIRED_REPOSITORY}`);
     }
+    // Publishing never authors a commit message. The only subject this script could invent for
+    // uncommitted work is some earlier commit's, which describes a different change; the operator
+    // is the one who knows what the leftover files are.
     if (port.dirty(lane.path)) {
-        const subject = port.headSubject(lane.path);
-        assertConventionalSubject(subject, 'commit subject');
-        port.commitAll(lane.path, subject);
+        fail(`${lane.branch} ${DIRTY_LANE_FAILURE}`);
     }
     const { ahead, behind } = port.aheadBehind(lane.path);
     if (behind !== 0 || ahead < 1) {
         fail('lane must be strictly ahead of origin/main');
     }
-    const title = port.headSubject(lane.path);
+    const title = port.laneSubject(lane.path);
+    if (title === undefined) {
+        fail(`${lane.branch} ${NO_LANE_SUBJECT_FAILURE}`);
+    }
     assertConventionalSubject(title, 'pull-request title');
     const laneIssue = issue ?? laneIssueNumber(lane.branch);
     if (relationship === 'relates' && laneIssue === undefined) {
@@ -224,6 +233,17 @@ export function publishLane(
     port.log(String(number));
     return number;
 }
+
+/**
+ * The pull-request title is squash-merged onto `main`, so it has to name the lane's work. Keeping a
+ * published lane current means merging `origin/main` into it — rebasing would force a
+ * non-fast-forward push — which leaves HEAD a merge commit, so HEAD alone titles the pull request
+ * after the merge that carried it. Both halves of this argument list are load-bearing:
+ * `--no-merges` skips the merge commits, and `origin/main..HEAD` keeps the walk inside the lane's
+ * own commits. Without the range, a lane commit older than `origin/main`'s tip loses the date sort
+ * and the title comes from a commit `main` already has.
+ */
+export const LANE_SUBJECT_ARGS = ['log', '-1', '--format=%s', '--no-merges', 'origin/main..HEAD'];
 
 export function shellPort(session: GhSession, cwd: string = process.cwd()): PublishLanePort {
     const primaryRoot = resolvePrimaryRoot(
@@ -279,12 +299,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         },
         dirty: (lane) =>
             spawnCapture('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: lane }) !== '',
-        headSubject: (lane) => spawnCapture('git', ['log', '-1', '--format=%s'], { cwd: lane }),
+        laneSubject: (lane) => spawnCapture('git', LANE_SUBJECT_ARGS, { cwd: lane }) || undefined,
         headSha: (lane) => spawnCapture('git', ['rev-parse', 'HEAD'], { cwd: lane }),
-        commitAll: (lane, subject) => {
-            spawnRun('git', ['add', '-A'], { cwd: lane });
-            spawnRun('git', ['commit', '-m', subject], { cwd: lane });
-        },
         remoteBranchSha: (branch) => {
             const output = git(['ls-remote', GITHUB_HTTPS_REMOTE, `refs/heads/${branch}`], primaryRoot);
             if (output === '') {
