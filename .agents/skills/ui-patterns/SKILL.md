@@ -1,76 +1,57 @@
 ---
 name: ui-patterns
 description: >-
-  Build and review React presentation-layer UI for the DAW: presentation-only
-  components, dense editor surfaces on a renderer not the DOM, accessibility and
-  failure states built into the component shape, theming through tokens. ALWAYS
-  apply when writing or reviewing React components, hooks, contexts, or view
-  models, when touching accessibility or keyboard behavior, when building
-  timeline / waveform / piano-roll / automation / spectrogram surfaces, or when
-  styling presentation. Skip engine/DSP/Rust work, pure business-rule or
-  data-model changes, and build tooling config.
+    Build and review React presentation-layer UI for the DAW: presentation-only
+    components, dense editor surfaces on a renderer not the DOM, accessibility and
+    failure states built into the component shape, theming through tokens. ALWAYS
+    apply when writing or reviewing React components, hooks, contexts, or view
+    models, when touching accessibility or keyboard behavior, when building
+    timeline / waveform / piano-roll / automation / spectrogram surfaces, or when
+    styling presentation. Skip engine/DSP/Rust work, pure business-rule or
+    data-model changes, and build tooling config.
 ---
 
 ## Purpose
 
-Presentation code that owns business truth, dense editors rendered as giant DOM forests, a11y bolted on late, or hand-memoized components that fight the React Compiler all produce the same outcome: untestable UI and RT-adjacent work on the wrong thread. This skill keeps the presentation layer presentation-only.
+The presentation layer stays presentation-only. Business truth in the tree, dense editors as DOM forests, and accessibility bolted on late all end the same way: untestable UI and RT-adjacent work on the wrong thread.
 
 ## Core rules
 
 ### 1. Presentation only
 
-Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They must not become the primary home of validation, persistence, undo orchestration, or engine control. Presentation must not import repositories, handlers, or engine (`architecture` rule 5). React stays in presentation (`react-only-in-presentation`).
-
-**Why:** business rules in the tree duplicate across surfaces and couple domain logic to React lifecycle.
+Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They are not the home of validation, persistence, undo orchestration, or engine control, and they must not import repositories, handlers, or engine (`architecture` rule 5). React stays in presentation (`react-only-in-presentation`). Business logic parked in a hook labelled “UI” is boundary evasion, not presentation. Business rules in the tree duplicate across surfaces and couple domain logic to the React lifecycle.
 
 ### 2. React owns layout; renderer surfaces own pixels
 
-Use Canvas/WebGL/WebGPU-style renderers for timeline lanes, waveforms, piano roll, automation, spectrograms, dense overlays, and hot-path meters — not giant DOM forests. React owns chrome, layout, and accessibility semantics around complex surfaces. Renderers may draw, hit-test, and run pointer/render loops; they must not own business writes. Writes still go through explicit actions.
-
-**Why:** DOM-per-clip does not scale; a renderer that mutates truth is an undocumented write path.
+Draw timeline lanes, waveforms, piano roll, automation, spectrograms, dense overlays, and hot-path meters on a Canvas/WebGL/WebGPU-style renderer, never a giant DOM forest. React owns chrome, layout, and accessibility semantics around the surface; the renderer draws, hit-tests, and runs pointer/render loops. DOM-per-clip does not scale.
 
 ### 3. Hooks stay thin; leaf components stay dumb
 
-Hooks bind presentation to explicit actions and read surfaces. Leaf `presentations/components/` must not import useCases or business stores (`components-no-usecase-access`, `components-no-business-store-access`, `components-no-usecase-transitively`). Views and hooks compose; pass props into leaves.
-
-**Why:** fat hooks and business-aware leaves become untestable mini-use-cases in the React tree.
+Hooks bind presentation to explicit actions and read surfaces. Leaf `presentations/components/` must not import useCases or business stores (`components-no-usecase-access`, `components-no-business-store-access`, `components-no-usecase-transitively`). Views and hooks compose; pass props into leaves. Fat hooks and business-aware leaves are untestable mini-use-cases hiding in the React tree.
 
 ### 4. Accessibility is part of component design
 
-Prefer real buttons, inputs, sliders, lists, dialogs, menus, and labels. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable. Dense surfaces still need accessible support in surrounding chrome.
-
-**Why:** semantics retrofitted after the fact produce visual-only controls that fail a11y and often keyboard use.
+Reach for real buttons, inputs, sliders, lists, dialogs, menus, and labels before anything custom. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable. Dense surfaces still need accessible support in the surrounding chrome. Semantics retrofitted after the fact produce visual-only controls that fail a11y and usually keyboard use too.
 
 ### 5. Styling is systematic
 
-Use design tokens and project-standard primitives — dark-UI legibility at DAW density. No one-off styling systems per feature.
-
-**Why:** fragmented styling becomes unmaintainable under DAW density.
+Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature: fragmented styling is unmaintainable at that density.
 
 ### 6. No happy-path-only coding
 
-Plan for audio-thread failure, async projection failure, network failure, and unavailable rendering backends: error boundaries, fallback UIs, structured pending/error for async UI. Platform-dependent renderer selection must preserve a working fallback, such as WebGPU to Canvas.
+The audio thread, async projections, the network, and rendering backends genuinely fail. Build error boundaries, fallback UIs, and structured pending/error state for async UI. Platform-dependent renderer selection must preserve a working fallback, such as WebGPU to Canvas.
 
-**Why:** a DAW depends on an audio thread and async projections that genuinely fail.
+### 7. Compiler-friendly components
 
-### 7. Prefer plain, compiler-friendly components
+Prefer a ternary or early `return null` over render `&&`; leaky non-boolean `&&` (e.g. `0 && …`) is **error** lint and silently renders `0`/`''`. Consume Context with `use()`, not `useContext`.
 
-Do not hand-write `useMemo`, `useCallback`, or `React.memo` — the React Compiler owns memoization. No `forwardRef` (ref is a regular prop in React 19). Prefer ternary or early `return null` over render `&&`; leaky non-boolean `&&` (e.g. `0 && …`) is **error** lint. Consume Context with `use()`, not `useContext`.
+### 8. View models shape display; writes go through actions
 
-**Why:** hand memoization fights the compiler; `&&` silently renders `0`/`''`; `forwardRef` is obsolete.
-
-### 8. View models stay presentation-focused; writes go through actions
-
-View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer may interpret interactions; authoritative writes still go through use cases / `executeAppAction`.
-
-**Why:** a view model or hit-test handler that writes truth is a use case in the wrong clothes.
-
-## What does not belong
-
-- Gaming architecture rules by moving business logic into hooks labeled “UI”.
+View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer or view model may interpret interactions; authoritative writes go through use cases / `executeAppAction`. One that writes truth is a use case in the wrong clothes.
 
 ## References
 
 - [docs/05-accessibility.md](../../../docs/05-accessibility.md) — a11y patterns for the app.
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — presentation layer placement.
 - `.dependency-cruiser.cjs` — `components-no-*`, `presentation-no-*`, `react-only-in-presentation`.
+- `.dependency-cruiser.reachability.cjs` — `components-no-usecase-transitively`.
