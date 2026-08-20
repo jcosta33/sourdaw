@@ -20,6 +20,8 @@
  * `WebGpuTier` is allowed to be derived from.
  */
 
+import { type WebGpuProbeResult } from './WebGpuProbe';
+
 /**
  * `not-measured` is a first-class outcome, not a failure. A report that admits
  * it could not measure is worth more than a confident wrong one — the same
@@ -71,6 +73,8 @@ export type InferenceThroughput =
 export type CapabilityReport = {
     /** Whether the browser supports browser AI features */
     capability: BrowserAiCapability;
+    /** Result of obtaining a core, non-fallback adapter and a device. */
+    webGpu: WebGpuProbeResult;
     webGpuTier: WebGpuTier;
     /** Whether SharedArrayBuffer is available (required for multi-threaded WASM) */
     sharedArrayBuffer: boolean;

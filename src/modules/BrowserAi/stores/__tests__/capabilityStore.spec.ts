@@ -22,6 +22,7 @@ describe('capabilityStore', () => {
     it('setCapabilityReport transitions to done phase with the report', () => {
         const report = {
             capability: 'supported',
+            webGpu: { status: 'supported' },
             webGpuTier: 'webgpu-fast',
             sharedArrayBuffer: true,
             opfsAvailable: true,
