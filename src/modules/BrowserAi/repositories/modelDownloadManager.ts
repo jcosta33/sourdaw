@@ -16,7 +16,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { type ModelDownloadProgressPayload } from '../models/ModelDownloadProgress';
 import { updateModelStatus } from '../stores/modelRegistryStore';
 
-import { deleteModel } from './deleteModel';
 import { getStorageStatus } from './getStorageStatus';
 import { modelStorageWorkerBridge } from './modelStorageWorkerBridge';
 import { requestPersistentStorage } from './requestPersistentStorage';
@@ -93,12 +92,11 @@ function isModelArchiveUrl(url: string): boolean {
  */
 export const downloadModel = inject({
     logger,
-    deleteModel,
     getStorageStatus,
     modelStorageWorkerBridge,
     requestPersistentStorage,
 })(
-    ({ logger, deleteModel, getStorageStatus, modelStorageWorkerBridge, requestPersistentStorage }) =>
+    ({ logger, getStorageStatus, modelStorageWorkerBridge, requestPersistentStorage }) =>
         async function downloadModel({ spec, onProgress, signal }: DownloadModelInput): DownloadModelOutput {
             const { modelId, family, url, sha256, sizeBytes } = spec;
 
@@ -295,8 +293,6 @@ export const downloadModel = inject({
                         // leave the store/registry untouched beyond what the caller expects.
                         if (isAbortError(error) || signal?.aborted) {
                             logger.info(`[ModelDownload] Cancelled: ${modelId}`);
-                            // Drop any partial file written by the streamed path.
-                            await deleteModel({ family, modelId }).catch(() => undefined);
                             throw error instanceof Error ? error : new DOMException('Aborted', 'AbortError');
                         }
                         lastError = error;
@@ -312,7 +308,6 @@ export const downloadModel = inject({
                             } catch (sleepError) {
                                 // Aborted mid-backoff: stop without an error-status update.
                                 logger.info(`[ModelDownload] Cancelled: ${modelId}`);
-                                await deleteModel({ family, modelId }).catch(() => undefined);
                                 throw sleepError instanceof Error
                                     ? sleepError
                                     : new DOMException('Aborted', 'AbortError');

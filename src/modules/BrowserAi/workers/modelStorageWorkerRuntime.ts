@@ -193,10 +193,14 @@ async function resolveModelLocation(
     return { directory, fileName };
 }
 
-async function readAll(file: ReadableSyncFileHandle): Promise<ArrayBuffer> {
+async function readAll(file: ReadableSyncFileHandle, expectedSizeBytes?: number): Promise<ArrayBuffer | null> {
     const access = await file.createSyncAccessHandle({ mode: 'read-only' });
     try {
-        const output = new Uint8Array(access.getSize());
+        const size = access.getSize();
+        if (expectedSizeBytes !== undefined && size !== expectedSizeBytes) {
+            return null;
+        }
+        const output = new Uint8Array(size);
         let offset = 0;
         while (offset < output.byteLength) {
             const end = Math.min(offset + READ_CHUNK_BYTES, output.byteLength);
@@ -327,11 +331,9 @@ export function createModelStorageRequestHandler({
                 const root = await getRoot();
                 const { directory, fileName } = await resolveModelLocation(root, request, false);
                 const file = requireReadableSyncFileHandle(await directory.getFileHandle(fileName, { create: false }));
-                const modelData = await readAll(file);
-                const validSize =
-                    request.expectedSizeBytes === undefined || modelData.byteLength === request.expectedSizeBytes;
+                const modelData = await readAll(file, request.expectedSizeBytes);
                 const validDigest =
-                    validSize &&
+                    modelData !== null &&
                     (request.expectedSha256 === undefined || (await sha256(modelData)) === request.expectedSha256);
                 if (!validDigest) {
                     await directory.removeEntry(fileName);
@@ -410,19 +412,27 @@ export function createModelStorageRequestHandler({
         if (!session?.access) {
             throw new Error(`Unknown model write: ${request.writeId}`);
         }
-        throwIfAborted(session);
-        const chunk = new Uint8Array(request.chunk);
-        if (session.expectedSizeBytes !== undefined && session.offset + chunk.byteLength > session.expectedSizeBytes) {
-            const message = `Model byte limit exceeded for ${session.modelId}: expected at most ${String(session.expectedSizeBytes)} bytes`;
+        try {
+            throwIfAborted(session);
+            const chunk = new Uint8Array(request.chunk);
+            if (
+                session.expectedSizeBytes !== undefined &&
+                session.offset + chunk.byteLength > session.expectedSizeBytes
+            ) {
+                throw new Error(
+                    `Model byte limit exceeded for ${session.modelId}: expected at most ${String(session.expectedSizeBytes)} bytes`
+                );
+            }
+            const bytesWritten = session.access.write(chunk, { at: session.offset });
+            if (bytesWritten !== chunk.byteLength) {
+                throw new Error(`OPFS wrote ${String(bytesWritten)} of ${String(chunk.byteLength)} model bytes`);
+            }
+            session.offset += bytesWritten;
+            postResponse({ type: 'chunk-written', requestId: request.requestId, bytesWritten });
+        } catch (error) {
             await abortWrite(request.writeId);
-            throw new Error(message);
+            throw error;
         }
-        const bytesWritten = session.access.write(chunk, { at: session.offset });
-        if (bytesWritten !== chunk.byteLength) {
-            throw new Error(`OPFS wrote ${String(bytesWritten)} of ${String(chunk.byteLength)} model bytes`);
-        }
-        session.offset += bytesWritten;
-        postResponse({ type: 'chunk-written', requestId: request.requestId, bytesWritten });
     }
 
     async function handleCommit(
@@ -445,7 +455,10 @@ export function createModelStorageRequestHandler({
             let extractedPath: string | null = null;
             let downloadedBytes: ArrayBuffer | null = null;
             if (session.expectedSha256 !== undefined || session.archive) {
-                downloadedBytes = await readAll(session.file);
+                downloadedBytes = await readAll(session.file, session.expectedSizeBytes);
+                if (downloadedBytes === null) {
+                    throw new Error(`Size check failed for ${session.modelId} while reopening downloaded bytes`);
+                }
             }
             if (session.expectedSha256 !== undefined && downloadedBytes !== null) {
                 postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'verifying' });
@@ -582,10 +595,8 @@ export function createModelStorageRequestHandler({
                         const file = requireReadableSyncFileHandle(
                             await directory.getFileHandle(fileName, { create: false })
                         );
-                        const modelData = await readAll(file);
-                        verified =
-                            modelData.byteLength === request.expectedSizeBytes &&
-                            (await sha256(modelData)) === request.expectedSha256;
+                        const modelData = await readAll(file, request.expectedSizeBytes);
+                        verified = modelData !== null && (await sha256(modelData)) === request.expectedSha256;
                         if (!verified) {
                             await directory.removeEntry(fileName);
                         }

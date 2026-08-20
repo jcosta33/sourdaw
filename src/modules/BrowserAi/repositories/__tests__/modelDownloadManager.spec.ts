@@ -74,7 +74,6 @@ class FakeBroadcastChannel {
 }
 
 const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), setWriters: vi.fn(), warn: vi.fn() };
-const deleteModel = vi.fn<(input: { family: string; modelId: string }) => Promise<void>>();
 const getStorageStatus = vi.fn(() =>
     Promise.resolve({ usedBytes: 0, limitBytes: 2 * 1024 * 1024 * 1024, persisted: true, availableBytes: 1e12 })
 );
@@ -83,13 +82,14 @@ const beginModelWrite = vi.fn<ModelStoragePort['beginModelWrite']>();
 const writeModelChunk = vi.fn<ModelStoragePort['writeModelChunk']>();
 const commitModelWrite = vi.fn<ModelStoragePort['commitModelWrite']>();
 const abortModelWrite = vi.fn<ModelStoragePort['abortModelWrite']>();
+const deleteStoredModel = vi.fn<ModelStoragePort['deleteModel']>();
 
 const modelStorageWorkerBridge: ModelStoragePort = {
     abortModelWrite,
     beginModelWrite,
     checkModel: vi.fn(),
     commitModelWrite,
-    deleteModel: vi.fn(),
+    deleteModel: deleteStoredModel,
     measureStorage: vi.fn(),
     readModel: vi.fn(),
     verifyModel: vi.fn(),
@@ -112,7 +112,7 @@ beforeEach(() => {
     writeModelChunk.mockImplementation(({ chunk }) => Promise.resolve(chunk.byteLength));
     commitModelWrite.mockResolvedValue({ storedBytes: baseSpec.sizeBytes, extractedPath: null });
     abortModelWrite.mockResolvedValue(undefined);
-    deleteModel.mockResolvedValue(undefined);
+    deleteStoredModel.mockResolvedValue(undefined);
     getStorageStatus.mockResolvedValue({
         usedBytes: 0,
         limitBytes: 2 * 1024 * 1024 * 1024,
@@ -122,7 +122,6 @@ beforeEach(() => {
     requestPersistentStorage.mockResolvedValue(true);
     injectDependencies(downloadModel, {
         logger,
-        deleteModel,
         getStorageStatus,
         modelStorageWorkerBridge,
         requestPersistentStorage,
@@ -370,6 +369,7 @@ describe('downloadModel cancellation and cleanup', () => {
         controller.abort();
 
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(deleteStoredModel).not.toHaveBeenCalled();
         expect(stages).not.toContain('error');
         expect(openChannels).toBe(0);
     });
@@ -398,7 +398,7 @@ describe('downloadModel cancellation and cleanup', () => {
 
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
         expect(abortModelWrite).toHaveBeenCalledWith('write-1');
-        expect(deleteModel).toHaveBeenCalledWith({ family: 'ddsp', modelId: 'violin-1' });
+        expect(deleteStoredModel).not.toHaveBeenCalled();
         expect(stages).not.toContain('complete');
     });
 
@@ -429,9 +429,14 @@ describe('downloadModel cancellation and cleanup', () => {
         expect(stages).not.toContain('complete');
     });
 
-    it('removes a committed model when cancellation arrives during the final storage check', async () => {
+    it('preserves the committed model when cancellation arrives during the final storage check', async () => {
         const controller = new AbortController();
         const status = deferred<Awaited<ReturnType<typeof getStorageStatus>>>();
+        let committedModelPresent = false;
+        commitModelWrite.mockImplementation(() => {
+            committedModelPresent = true;
+            return Promise.resolve({ storedBytes: baseSpec.sizeBytes, extractedPath: null });
+        });
         getStorageStatus.mockReturnValue(status.promise);
         vi.stubGlobal(
             'fetch',
@@ -449,7 +454,8 @@ describe('downloadModel cancellation and cleanup', () => {
         status.resolve({ usedBytes: 0, limitBytes: 1, persisted: true, availableBytes: 1 });
 
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-        expect(deleteModel).toHaveBeenCalledWith({ family: 'ddsp', modelId: 'violin-1' });
+        expect(committedModelPresent).toBe(true);
+        expect(deleteStoredModel).not.toHaveBeenCalled();
         expect(stages).not.toContain('complete');
     });
 });

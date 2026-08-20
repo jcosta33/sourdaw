@@ -101,6 +101,69 @@ function createModelStorageRequestHandler(
     return createRuntimeModelStorageRequestHandler({ locks: locks.port('handler'), ...input });
 }
 
+async function expectReplacementWriteCanAcquire(input: {
+    locks: TestOriginLocks;
+    root: FileSystemDirectoryHandle;
+    writeId: string;
+}): Promise<void> {
+    const responses: ModelStorageWorkerResponse[] = [];
+    const replacement = createRuntimeModelStorageRequestHandler({
+        getRoot: () => Promise.resolve(input.root),
+        locks: input.locks.port(`replacement-${input.writeId}`),
+        postResponse: (response) => responses.push(response),
+    });
+    const begin = replacement({
+        type: 'begin-model-write',
+        requestId: `begin-replacement-${input.writeId}`,
+        writeId: input.writeId,
+        family: 'kokoro',
+        modelId: 'model.onnx',
+        archive: false,
+    });
+    let settled = false;
+    void begin.then(() => {
+        settled = true;
+    });
+    await vi.waitFor(() => expect(settled).toBe(true));
+    await begin;
+    expect(responses).toContainEqual({
+        type: 'write-begun',
+        requestId: `begin-replacement-${input.writeId}`,
+    });
+    await replacement({
+        type: 'abort-model-write',
+        requestId: `abort-replacement-${input.writeId}`,
+        writeId: input.writeId,
+    });
+}
+
+function createWriteStorage(write: SyncAccessHandle['write']): {
+    move: ReturnType<typeof vi.fn>;
+    removeEntry: ReturnType<typeof vi.fn>;
+    root: FileSystemDirectoryHandle;
+    syncAccess: SyncAccessHandle;
+} {
+    const syncAccess = readAccess(new Uint8Array(0));
+    syncAccess.write = write;
+    const move = vi.fn(() => Promise.resolve());
+    const temporaryFile = {
+        createSyncAccessHandle: vi.fn(() => Promise.resolve(syncAccess)),
+        move,
+    } as unknown as FileSystemFileHandle;
+    const removeEntry = vi.fn(() => Promise.resolve());
+    const familyDirectory = {
+        getFileHandle: vi.fn(() => Promise.resolve(temporaryFile)),
+        removeEntry,
+    } as unknown as FileSystemDirectoryHandle;
+    const modelsDirectory = {
+        getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+    } as unknown as FileSystemDirectoryHandle;
+    const root = {
+        getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
+    } as unknown as FileSystemDirectoryHandle;
+    return { move, removeEntry, root, syncAccess };
+}
+
 function createMutableStorageTree(): {
     files: Map<string, FileSystemFileHandle>;
     removeEntry: ReturnType<typeof vi.fn>;
@@ -191,7 +254,11 @@ describe('modelStorageWorkerRuntime', () => {
             close: vi.fn(),
         } as unknown as MessagePort;
         const responses: ModelStorageWorkerResponse[] = [];
-        const sha256 = vi.fn(() => Promise.resolve('verified'));
+        const sha256 = vi.fn((bytes: ArrayBuffer) =>
+            Promise.resolve(
+                new Uint8Array(bytes).every((byte, index) => byte === expectedBytes[index]) ? 'verified' : 'wrong'
+            )
+        );
         const handler = createModelStorageRequestHandler({
             getRoot: () => Promise.resolve(root),
             sha256,
@@ -210,6 +277,7 @@ describe('modelStorageWorkerRuntime', () => {
 
         expect(createSyncAccessHandle).toHaveBeenCalledWith({ mode: 'read-only' });
         expect(sha256).toHaveBeenCalledOnce();
+        expect(new Uint8Array(sha256.mock.calls[0]?.[0] ?? new ArrayBuffer(0))).toEqual(expectedBytes);
         const transferred = destinationPostMessage.mock.calls[0]?.[0] as
             { type: string; modelData: ArrayBuffer } | undefined;
         expect(transferred?.type).toBe('model-data');
@@ -307,8 +375,10 @@ describe('modelStorageWorkerRuntime', () => {
             getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
         } as unknown as FileSystemDirectoryHandle;
         const responses: ModelStorageWorkerResponse[] = [];
-        const handler = createModelStorageRequestHandler({
+        const originLocks = new TestOriginLocks();
+        const handler = createRuntimeModelStorageRequestHandler({
             getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('commit-writer'),
             sha256: () => Promise.resolve('unused'),
             postResponse: (response) => responses.push(response),
         });
@@ -337,6 +407,7 @@ describe('modelStorageWorkerRuntime', () => {
             storedBytes: 4,
             extractedPath: null,
         });
+        await expectReplacementWriteCanAcquire({ locks: originLocks, root, writeId: 'write-1' });
     });
 
     it('aborts before writing a chunk that would exceed the expected model size', async () => {
@@ -361,8 +432,10 @@ describe('modelStorageWorkerRuntime', () => {
             ),
         } as unknown as FileSystemDirectoryHandle;
         const responses: ModelStorageWorkerResponse[] = [];
-        const handler = createModelStorageRequestHandler({
+        const originLocks = new TestOriginLocks();
+        const handler = createRuntimeModelStorageRequestHandler({
             getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('bounded-writer'),
             postResponse: (response) => responses.push(response),
         });
 
@@ -395,6 +468,55 @@ describe('modelStorageWorkerRuntime', () => {
             requestId: 'chunk-over-bound',
             name: 'Error',
             message: 'Model byte limit exceeded for model.onnx: expected at most 4 bytes',
+        });
+        await expectReplacementWriteCanAcquire({ locks: originLocks, root, writeId: 'write-bounded' });
+    });
+
+    it.each([
+        [
+            'throws',
+            vi.fn(() => {
+                throw new Error('write exploded');
+            }),
+            'write exploded',
+        ],
+        ['returns a short count', vi.fn(() => 1), 'OPFS wrote 1 of 3 model bytes'],
+    ])('aborts and releases both leases when a chunk write %s', async (_case, write, message) => {
+        const storage = createWriteStorage(write);
+        const originLocks = new TestOriginLocks();
+        const responses: ModelStorageWorkerResponse[] = [];
+        const handler = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port(`terminal-${_case}`),
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'begin-model-write',
+            requestId: `begin-${_case}`,
+            writeId: `write-${_case}`,
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        await handler({
+            type: 'write-model-chunk',
+            requestId: `chunk-${_case}`,
+            writeId: `write-${_case}`,
+            chunk: Uint8Array.from([1, 2, 3]).buffer,
+        });
+
+        expect(storage.removeEntry).toHaveBeenCalledWith(`.sourdaw-write-${_case}.partial`);
+        expect(responses).toContainEqual({
+            type: 'error',
+            requestId: `chunk-${_case}`,
+            name: 'Error',
+            message,
+        });
+        await expectReplacementWriteCanAcquire({
+            locks: originLocks,
+            root: storage.root,
+            writeId: `write-${_case}`,
         });
     });
 
@@ -439,6 +561,84 @@ describe('modelStorageWorkerRuntime', () => {
         expect(removeEntry).toHaveBeenCalledWith('model.onnx');
         expect(destinationPostMessage).not.toHaveBeenCalled();
         expect(responses).toContainEqual({ type: 'read-complete', requestId: 'read-invalid', found: false });
+    });
+
+    it('deletes an oversized cached model before allocating or reading its declared bytes', async () => {
+        const read = vi.fn();
+        const syncAccess = readAccess(new Uint8Array(0));
+        syncAccess.getSize = vi.fn(() => Number.MAX_SAFE_INTEGER);
+        syncAccess.read = read;
+        const oversizedFile = {
+            createSyncAccessHandle: vi.fn(() => Promise.resolve(syncAccess)),
+        } as unknown as FileSystemFileHandle;
+        const retryBytes = Uint8Array.from([1, 2, 3, 4]);
+        const retryAccess = readAccess(retryBytes);
+        const retryFile = {
+            createSyncAccessHandle: vi.fn(() => Promise.resolve(retryAccess)),
+        } as unknown as FileSystemFileHandle;
+        const removeEntry = vi.fn(() => Promise.resolve());
+        const familyDirectory = {
+            getFileHandle: vi.fn().mockResolvedValueOnce(oversizedFile).mockResolvedValueOnce(retryFile),
+            removeEntry,
+        } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const destinationPort = {
+            postMessage: vi.fn(),
+            close: vi.fn(),
+        } as unknown as MessagePort;
+        const responses: ModelStorageWorkerResponse[] = [];
+        const sha256 = vi.fn((bytes: ArrayBuffer) =>
+            Promise.resolve(
+                new Uint8Array(bytes).every((byte, index) => byte === retryBytes[index]) ? 'verified' : 'wrong'
+            )
+        );
+        const handler = createModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            sha256,
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'read-model',
+            requestId: 'read-oversized',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            expectedSizeBytes: 4,
+            expectedSha256: 'verified',
+            destinationPort,
+        });
+
+        expect(read).not.toHaveBeenCalled();
+        expect(sha256).not.toHaveBeenCalled();
+        expect(removeEntry).toHaveBeenCalledWith('model.onnx');
+        expect(responses).toContainEqual({ type: 'read-complete', requestId: 'read-oversized', found: false });
+        expect(syncAccess.close).toHaveBeenCalledOnce();
+
+        const retryDestinationPort = {
+            postMessage: vi.fn(),
+            close: vi.fn(),
+        } as unknown as MessagePort;
+        await handler({
+            type: 'read-model',
+            requestId: 'read-retry',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            expectedSizeBytes: retryBytes.byteLength,
+            expectedSha256: 'verified',
+            destinationPort: retryDestinationPort,
+        });
+
+        expect(retryAccess.read).toHaveBeenCalled();
+        expect(retryDestinationPort.postMessage).toHaveBeenCalledWith(
+            { type: 'model-data', modelData: expect.any(ArrayBuffer) },
+            [expect.any(ArrayBuffer)]
+        );
+        expect(responses).toContainEqual({ type: 'read-complete', requestId: 'read-retry', found: true });
     });
 
     it('verifies startup readiness entirely in the worker and removes invalid cached bytes', async () => {
@@ -658,9 +858,14 @@ describe('modelStorageWorkerRuntime', () => {
         const archiveBytes = Uint8Array.from([9, 8, 7]);
         const onnxBytes = Uint8Array.from([2, 3, 5, 7]);
         const extractArchive = vi.fn(() => Promise.resolve({ path: 'package/model.onnx', data: onnxBytes }));
+        const sha256 = vi.fn((bytes: ArrayBuffer) =>
+            Promise.resolve(
+                new Uint8Array(bytes).every((byte, index) => byte === archiveBytes[index]) ? 'verified' : 'wrong'
+            )
+        );
         const handler = createModelStorageRequestHandler({
             getRoot: () => Promise.resolve(root),
-            sha256: () => Promise.resolve('verified'),
+            sha256,
             extractArchive,
             postResponse: (response) => responses.push(response),
         });
@@ -688,6 +893,7 @@ describe('modelStorageWorkerRuntime', () => {
             suffix: '.onnx',
             signal: expect.any(AbortSignal),
         });
+        expect(new Uint8Array(sha256.mock.calls[0]?.[0] ?? new ArrayBuffer(0))).toEqual(archiveBytes);
         expect(createSyncAccessHandle.mock.calls.map(([options]) => options)).toEqual([
             { mode: 'readwrite' },
             { mode: 'read-only' },
@@ -909,8 +1115,10 @@ describe('modelStorageWorkerRuntime', () => {
             ),
         } as unknown as FileSystemDirectoryHandle;
         const responses: ModelStorageWorkerResponse[] = [];
-        const handler = createModelStorageRequestHandler({
+        const originLocks = new TestOriginLocks();
+        const handler = createRuntimeModelStorageRequestHandler({
             getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('explicit-abort-writer'),
             postResponse: (response) => responses.push(response),
         });
 
@@ -927,6 +1135,72 @@ describe('modelStorageWorkerRuntime', () => {
         expect(syncAccess.close).toHaveBeenCalledOnce();
         expect(removeEntry).toHaveBeenCalledWith('.sourdaw-write-abort.partial');
         expect(responses).toContainEqual({ type: 'write-aborted', requestId: 'abort-1' });
+        await expectReplacementWriteCanAcquire({ locks: originLocks, root, writeId: 'write-abort' });
+    });
+
+    it('lets a queued writer publish after the previous worker aborts without losing the replacement', async () => {
+        const storage = createWriteStorage(vi.fn((input: ArrayBufferView) => input.byteLength));
+        const originLocks = new TestOriginLocks();
+        const firstResponses: ModelStorageWorkerResponse[] = [];
+        const secondResponses: ModelStorageWorkerResponse[] = [];
+        const first = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port('cancelled-worker'),
+            postResponse: (response) => firstResponses.push(response),
+        });
+        const second = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port('replacement-worker'),
+            postResponse: (response) => secondResponses.push(response),
+        });
+
+        await first({
+            type: 'begin-model-write',
+            requestId: 'begin-cancelled',
+            writeId: 'write-cancelled',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        const replacementBegin = second({
+            type: 'begin-model-write',
+            requestId: 'begin-replacement',
+            writeId: 'write-replacement',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        let replacementBegan = false;
+        void replacementBegin.then(() => {
+            replacementBegan = true;
+        });
+        for (let index = 0; index < 10; index += 1) {
+            await Promise.resolve();
+        }
+        expect(replacementBegan).toBe(false);
+
+        await first({ type: 'abort-model-write', requestId: 'abort-cancelled', writeId: 'write-cancelled' });
+        await replacementBegin;
+        await second({
+            type: 'write-model-chunk',
+            requestId: 'chunk-replacement',
+            writeId: 'write-replacement',
+            chunk: Uint8Array.from([4, 5, 6]).buffer,
+        });
+        await second({
+            type: 'commit-model-write',
+            requestId: 'commit-replacement',
+            writeId: 'write-replacement',
+        });
+
+        expect(firstResponses).toContainEqual({ type: 'write-aborted', requestId: 'abort-cancelled' });
+        expect(storage.move).toHaveBeenCalledWith(expect.anything(), 'model.onnx');
+        expect(secondResponses).toContainEqual({
+            type: 'write-committed',
+            requestId: 'commit-replacement',
+            storedBytes: 3,
+            extractedPath: null,
+        });
     });
 
     it('reports a nested cache miss without hiding non-not-found storage failures', async () => {
