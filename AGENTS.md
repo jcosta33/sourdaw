@@ -96,12 +96,15 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 ## Resource Safety
 
-- Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
-  Playwright, WASM, or measurements.
+- Run repository commands sequentially within your lane. Other lanes may validate concurrently only
+  when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
   (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
-  `pnpm guard --profile <focused|broad|extended> [--require-target] -- <command>`. A busy lock,
-  memory refusal, timeout, or RSS kill is a stop — never bypass it by rerunning unguarded.
+  `pnpm guard --profile <focused|broad|extended> [--max-rss-mib <estimate>] [--require-target] --
+<command>`. Estimate peak RAM from the latest observed guard peak or the nearest command; use
+  the profile ceiling when evidence is absent. The guard waits until free RAM covers active
+  reservations, this command, and the system reserve. Never bypass it. A timeout, RSS kill, or
+  memory-monitor failure is a stop.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide tests,
   lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
