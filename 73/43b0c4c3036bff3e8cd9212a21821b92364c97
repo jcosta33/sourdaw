@@ -1,0 +1,59 @@
+src/infra/store/createStore.ts
+  s_7ba0b7bee9e951::t_5f0cd093655ac5 66-68
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_7ba0b7bee9e951::t_b2e9b8b67830ea 242-245
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_7ba0b7bee9e951::t_7109fd2d1d26dd 210
+  s_7ba0b7bee9e951::t_00dc7bd5202b6a 204-209
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_7ba0b7bee9e951::t_8729b547c0c0b6 71-74
+src/infra/store/storage/types.ts
+  s_7ba0b7bee9e951::t_ad2cdf64420e18 14-16
+src/modules/BrowserAi/repositories/capabilityDetector.ts
+  s_7ba0b7bee9e951::t_5ebbdb8d038568 250
+  s_7ba0b7bee9e951::t_ee571c28a34008 121-126,128
+src/modules/BrowserAi/models/CapabilityReport.ts
+  s_7ba0b7bee9e951::t_a5fa83f6398651 30-37
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchWritesUnderStoragePressure.spec.ts
+  s_7ba0b7bee9e951::t_c5c194864a318b 6
+src/modules/BrowserAi/presentations/views/__tests__/CapabilityReportPanel.spec.tsx
+  s_7ba0b7bee9e951::t_1680d4501b667f 80,82
+src/modules/CrdtDocument/stores/branchStore.ts
+  s_7ba0b7bee9e951::t_e5a1dcecb02677 274-276
+src/modules/Arrangement/presentations/hooks/useTimelineGestures.ts
+  s_7ba0b7bee9e951::t_3b2c49f4e17de6 21-24
+src/modules/Grinder/repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary.ts
+  s_7ba0b7bee9e951::t_cfd8bff26c7b83 9-16
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_7ba0b7bee9e951::t_d201601f261781 76
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_7ba0b7bee9e951::t_22266d464a63cb 345-351,365-381
+src/styles/main.css
+  s_7ba0b7bee9e951::t_5c357ef31c0048 634
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_7ba0b7bee9e951::t_15e9a98b4bdc9a 85
+src/modules/Grinder/repositories/neuralLibraryPersistence/downloadGrinderNeuralModelFile.ts
+  s_7ba0b7bee9e951::t_5e5257a62f1072 14-16
+.agents/decisions/0012-neither-target-degrades-the-other.md
+  s_7ba0b7bee9e951::t_3dede33c3810b0 97-112
+src/modules/CrdtDocument/stores/__tests__/branchStoreBoot.spec.ts
+  s_7ba0b7bee9e951::t_37dc1992d8adfe 30
+  s_7ba0b7bee9e951::t_4b52711bf323c4 52-53
+  s_7ba0b7bee9e951::t_1bc05ea9fdff25 104-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7343b0c4c3036bff3e8cd9212a21821b92364c97",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
