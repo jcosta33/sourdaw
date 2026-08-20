@@ -54,8 +54,8 @@ describe('createNebulaDriftDemo', () => {
         expect(dutchOven?.[1]).toContain('fdn_damping_version: 2');
     });
 
-    it('does not bypass release admission with a withheld device', () => {
-        expect(demoSource).not.toContain("type: 'grand-boule'");
+    it('checks every constructed device against release admission', () => {
+        expect(demoSource).toContain('assertReleaseAdmittedDevices(tracks);');
     });
 
     /**

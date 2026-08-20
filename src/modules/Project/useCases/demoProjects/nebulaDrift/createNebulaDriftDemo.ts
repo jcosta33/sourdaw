@@ -12,6 +12,7 @@
  * sections are omitted. Notes use **clip-relative** beats and GM pitches `36 + padIndex`.
  * Toaster folder + pad tracks use **muted oklch** strip/clip colors (not the kit’s bright PAD_COLORS).
  */
+import { assertReleaseAdmittedDevices } from '#/infra/release/deviceReleaseAdmission';
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
 import { waitForDevices } from '#/modules/AudioEngine/useCases';
@@ -1353,6 +1354,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         tDelayBus,
     ];
 
+    assertReleaseAdmittedDevices(tracks);
     trackStore.set({ tracks, selectedTrackId: tLeadMoog.id });
 
     const notesByClipId: Record<string, MidiNote[]> = {

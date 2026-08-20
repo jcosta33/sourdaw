@@ -6,16 +6,16 @@ status: accepted
 date: 2026-08-20
 owner: The Sourdaw team
 sources:
-  - https://patents.google.com/patent/US7915515B2/en
-  - https://patentscope.wipo.int/search/en/detail.jsf?docId=WO2008012412
-  - https://api.archives-ouvertes.fr/search/?q=halId_s%3Ahal-00688679
-  - crates/daw-dsp/src/grand_boule/string.rs
-  - crates/daw-dsp/src/grand_boule/soundboard.rs
-  - crates/daw-dsp/src/grand_boule/parameters.rs
-  - src/infra/release/deviceReleaseAdmission.ts
+    - https://patents.google.com/patent/US7915515B2/en
+    - https://patentscope.wipo.int/search/en/detail.jsf?docId=WO2008012412
+    - https://api.archives-ouvertes.fr/search/?q=halId_s%3Ahal-00688679
+    - crates/daw-dsp/src/grand_boule/string.rs
+    - crates/daw-dsp/src/grand_boule/soundboard.rs
+    - crates/daw-dsp/src/grand_boule/parameters.rs
+    - src/infra/release/deviceReleaseAdmission.ts
 ---
 
-# 0031 - Withhold Grand Boule from release
+# 0032 - Withhold Grand Boule from release
 
 **Accepted 2026-08-20.** Preserve the implementation. Exclude it from released product paths until
 claim-level and parameter-source evidence admits it.

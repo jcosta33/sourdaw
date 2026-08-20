@@ -459,10 +459,10 @@
             "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:crates/daw-dsp/src/grand_boule"],
-            "licenses": ["withheld:patent-and-parameter-provenance"],
+            "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Preserved Grand Boule source and project schema"],
             "evidence": [
-                "ADR 0031 maps the live independent-claim risk and withholds every released discovery and runtime path."
+                "ADR 0032 maps the live independent-claim risk and withholds every released discovery and runtime path."
             ],
             "obligations": [
                 "Re-admit only after current patent-family, claim-element, design-around, and parameter-source proof."
@@ -691,7 +691,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "1a11c851e7f3b61179a556c8fd2730af974532dfc8a597571e9df8913323910b"
+            "sha256": "4ca0b0440293ee559f0a0368ea34d37c2421606e9c07ac88e621eb004b111793"
         },
         {
             "path": "server/package.json",
