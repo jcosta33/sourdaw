@@ -99,11 +99,15 @@ export function duplicateClipCore(
     // Only stamp a map entry when the source clip carries actual warp state to
     // preserve. `getWarpState` already falls back to `defaultWarpState` for a
     // clip with no entry, so writing an entry that is value-identical to that
-    // fallback is a no-op for every reader — except `hasClipSatelliteState`
-    // (see `isGeneratedMidiStateCurrent`), which treats *any* map entry as
-    // user-added state that must block a blind undo. Without this guard every
-    // duplicate — even of a clip with no warp markers — would poison its own
-    // undo guard the instant it is created.
+    // fallback is a no-op for every ordinary reader of warp state. Two readers
+    // treat presence in the map alone — regardless of content — as meaningful:
+    // `hasClipSatelliteState` (see `isGeneratedMidiStateCurrent`) would poison
+    // the duplicate's own undo guard, so `undo()` could never remove it; and
+    // `hasClipGlueDependencies` (`clipEditing/hasClipGlueDependencies.ts`)
+    // would permanently block gluing the duplicate to anything, including a
+    // duplicated MIDI clip that never had warp state to begin with. Both
+    // consequences apply to every duplicate the instant it is created, not
+    // just audio clips with real warp markers.
     const isDefaultWarp =
         clonedWarp.enabled === defaultWarpState.enabled &&
         clonedWarp.markers.length === 0 &&

@@ -8,8 +8,10 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { duplicateClipCore } from '../../clip/duplicateClipCore';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
+import { hasClipGlueDependencies } from '../hasClipGlueDependencies';
 
 describe('glueClips MIDI state integration', () => {
     beforeEach(() => {
@@ -348,5 +350,30 @@ describe('glueClips MIDI state integration', () => {
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         expect(trackStore.value!.ghostClips).toMatchObject([{ id: 'clip-ghost', parentClipId: 'clip-a' }]);
+    });
+
+    it('keeps a duplicated MIDI clip glue-eligible (regression: spurious default warp entry blocked gluing)', () => {
+        // Duplicate clip-b immediately after itself so the copy is adjacent to
+        // an existing plain MIDI clip and would be a valid glue candidate on
+        // its own merits. Neither clip-b nor its copy ever had warp markers.
+        expect(
+            duplicateClipCore({
+                clipId: 'clip-b',
+                targetClipId: 'clip-b-copy',
+                computeStartBeat: () => 16,
+            })
+        ).toBe(true);
+
+        // The exact presence check `hasClipGlueDependencies` performs
+        // (`warpStates.has(clipId)`, clipEditing/hasClipGlueDependencies.ts:14)
+        // must not see a map entry for a clip that never had warp state.
+        expect(hasClipGlueDependencies(['clip-b-copy'])).toBe(false);
+
+        // And the production surface the UI uses to offer gluing must list the
+        // duplicate as a real candidate, not silently drop it forever.
+        expect(getGlueEligibleClipPairs()).toEqual([
+            ['clip-a', 'clip-b'],
+            ['clip-b', 'clip-b-copy'],
+        ]);
     });
 });
