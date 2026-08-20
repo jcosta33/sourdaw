@@ -102,7 +102,33 @@
         { "ac": "SPEC-yeast/AC-017", "reason": "Allocation-free preview tap. No control." },
         { "ac": "SPEC-yeast/AC-021", "reason": "Renderer technology constraint. The musician sees Phrase view." },
         { "ac": "SPEC-yeast/AC-023", "reason": "One-frame preview update bound. No control." },
-        { "ac": "SPEC-yeast/AC-027", "reason": "Component-implementation constraint. No user-visible behaviour." }
+        { "ac": "SPEC-yeast/AC-027", "reason": "Component-implementation constraint. No user-visible behaviour." },
+        { "ac": "SPEC-drum-machine/AC-002", "reason": "Real-time safety invariant on the audio thread." },
+        { "ac": "SPEC-drum-machine/AC-007", "reason": "Voice-steal policy. Audible only as the absence of a fault." },
+        { "ac": "SPEC-drum-machine/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-003",
+            "reason": "Timing-match bound. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-004",
+            "reason": "Round-trip invariance. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-005",
+            "reason": "Empty-pattern no-op. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-006",
+            "reason": "Preview-and-commit protocol. The musician sees Template and Amount."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-007",
+            "reason": "The Template menu is the library. Names are not catalogued; Straight is the no-op."
+        },
+        { "ac": "SPEC-fermenter-ui/AC-006", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-unified-sampler-suite/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-slicer/AC-009", "reason": "Module isolation. No control." }
     ],
 
     "omitted-unshipped": [
@@ -188,6 +214,96 @@
         {
             "ac": "SPEC-orchestra-daw-integration/AC-004",
             "reason": "No Orchestra-specific insert surface. Track inserts are the DAW mixer, not this panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-001",
+            "reason": "Pad bay does not expose layers, insert FX, transient shaper, or output routing. Hit, Tone, Crunch, Level, Pan, and Bright ship."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-004",
+            "reason": "No sample drop, zones, or round-robin control on the shipped panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-005",
+            "reason": "The grid toggles steps and Alt-drags velocity. Probability, micro-timing, parameter locks, and conditionals have no editor."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-008",
+            "reason": "Per-pad send knobs and bus routing are not on the panel. Space and Spray are kit-global mixes."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-010",
+            "reason": "No dropped-loop auto-slice onto pads."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-011",
+            "reason": "Play through Lab complexity levels are not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-014",
+            "reason": "Ratchet count can appear on a step. There is no control to write it."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-015",
+            "reason": "No pattern-morph control."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-016",
+            "reason": "No 16 Levels mode."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-017",
+            "reason": "No Note Repeat control."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-018",
+            "reason": "No Fill-hold mode."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-001",
+            "reason": "No extract-from-pattern control on Toaster."
+        },
+
+        {
+            "ac": "SPEC-fermenter-ui/AC-003",
+            "reason": "Modulated knobs do not render per-source arc segments on the shipped panel."
+        },
+        {
+            "ac": "SPEC-fermenter-ui/AC-004",
+            "reason": "Empty layer or generator slots do not offer guided start actions."
+        },
+        {
+            "ac": "SPEC-fermenter-ui/AC-005",
+            "reason": "Layer rows have no bounce or freeze action."
+        },
+
+        {
+            "ac": "SPEC-slicer/AC-010",
+            "reason": "No Send to Toaster control on the shipped Crumbs panel."
+        },
+        {
+            "ac": "SPEC-slicer/AC-011",
+            "reason": "No Suggest button for complementary markers."
+        },
+        {
+            "ac": "SPEC-slicer/AC-014",
+            "reason": "No built-in step sequencer on Crumbs."
+        },
+        {
+            "ac": "SPEC-slicer/AC-016",
+            "reason": "Play through Lab disclosure is not on this panel."
+        },
+        {
+            "ac": "SPEC-slicer/AC-018",
+            "reason": "REX2 import is not a reachable control."
+        },
+        {
+            "ac": "SPEC-unified-sampler-suite/AC-015",
+            "reason": "Mod X/Y dual-deck is not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-unified-sampler-suite/AC-028",
+            "reason": "Granular warp parameter set is not on the shipped panel; Warp is a mode chip only."
         }
     ],
 

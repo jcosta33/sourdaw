@@ -119,23 +119,22 @@ many notes it touched.
 > generic parameter control in the Inspector applies and saves its value but does not add an undo
 > entry unless the table names that change explicitly.
 >
-> | Device          | Direct changes that add undo entries                                                                                         |
-> | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-> | **Bacteria**    | None of its panel controls.                                                                                                  |
-> | **Crumbs**      | Parameter gestures after release. Sample and operating-mode changes save and sync but are not undoable.                      |
-> | **Crust**       | None of its panel controls.                                                                                                  |
-> | **CvGate**      | None of its panel controls.                                                                                                  |
-> | **Fermenter**   | None of its panel controls.                                                                                                  |
-> | **Gluten**      | Individual control gestures after release. Preset loads and Quick moves are not recorded.                                    |
-> | **Grand Boule** | Master gain, soundboard send, sympathetic send, lid position, and mic position. Other panel controls are not recorded.       |
-> | **Grinder**     | None: knobs, presets, imported models, and snapshot recalls are not recorded.                                                |
-> | **Knead**       | Committing a pitch edit records the clip edit; its device controls are not recorded.                                         |
-> | **Levain**      | None. Instrument and articulation selections save and sync but are not undoable.                                             |
-> | **Proof**       | None of its panel controls.                                                                                                  |
-> | **Dutch Oven**  | Individual controls and algorithms; loading a Space creates grouped parameter entries that undo together.                    |
-> | **Toaster**     | Pattern groove-template selection and committed groove amount. Kit changes save and sync but are not undoable.               |
-> | **Tuner**       | A completed Concert A reference gesture.                                                                                     |
-> | **Yeast**       | Selecting, creating, renaming, or deleting a groove template, plus Groove Amount; other processor controls are not recorded. |
+> | Device         | Direct changes that add undo entries                                                                                         |
+> | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+> | **Bacteria**   | None of its panel controls.                                                                                                  |
+> | **Crumbs**     | Parameter gestures after release. Sample and operating-mode changes save and sync but are not undoable.                      |
+> | **Crust**      | None of its panel controls.                                                                                                  |
+> | **CvGate**     | None of its panel controls.                                                                                                  |
+> | **Fermenter**  | None of its panel controls.                                                                                                  |
+> | **Gluten**     | Individual control gestures after release. Preset loads and Quick moves are not recorded.                                    |
+> | **Grinder**    | None: knobs, presets, imported models, and snapshot recalls are not recorded.                                                |
+> | **Knead**      | Committing a pitch edit records the clip edit; its device controls are not recorded.                                         |
+> | **Levain**     | None. Instrument and articulation selections save and sync but are not undoable.                                             |
+> | **Proof**      | None of its panel controls.                                                                                                  |
+> | **Dutch Oven** | Individual controls and algorithms; loading a Space creates grouped parameter entries that undo together.                    |
+> | **Toaster**    | Pattern groove-template selection and committed groove amount. Kit changes save and sync but are not undoable.               |
+> | **Tuner**      | A completed Concert A reference gesture.                                                                                     |
+> | **Yeast**      | Selecting, creating, renaming, or deleting a groove template, plus Groove Amount; other processor controls are not recorded. |
 >
 > A recorded device entry restores project truth, the running sound, and the mounted controls that
 > expose that value. Where the table describes a gesture after release, the movement you hear while

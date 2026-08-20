@@ -108,6 +108,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-00e736aadc29a8e6",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 197,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-00edcf81e583dff5",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1746,
@@ -560,7 +569,7 @@
   {
     "id": "ui-04eb081dc8c6a45a",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 391,
+    "line": 404,
     "fingerprint": "div\tflex flex-col gap-1.5 mb-3",
     "kind": "layout",
     "mapping": "Stack",
@@ -594,15 +603,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-05488613ad01cf2a",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 331,
-    "fingerprint": "div\tscoring-window flex items-center justify-between gap-2 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0554e04da6977030",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 748,
@@ -610,6 +610,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-0556fb0419ee8cee",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 743,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-056ab9efa632c201",
@@ -1908,15 +1917,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-108fb0bb3bf693dc",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 196,
-    "fingerprint": "div\tflex items-center justify-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-109b313f31875125",
     "file": "src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx",
     "line": 95,
@@ -2243,7 +2243,7 @@
   {
     "id": "ui-13c4e5b3fc6b127c",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 330,
+    "line": 331,
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -2637,15 +2637,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-1788cb81e8b3abdd",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 313,
-    "fingerprint": "div\tspace-y-2 text-[10px] leading-4 text-white/56",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-1799e096cae1c55b",
     "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
     "line": 440,
@@ -2817,15 +2808,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-1977717c51f80d79",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 742,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-1980c3428a3ca513",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
     "line": 90,
@@ -2864,7 +2846,7 @@
   {
     "id": "ui-1a018ee7cd2c71ce",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 488,
+    "line": 503,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -2976,6 +2958,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-1ba47abef3cc69b2",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 157,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -4518,15 +4509,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2b24ea8a1efb94e6",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 282,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2b2bd2163ce12775",
     "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
     "line": 77,
@@ -4551,6 +4533,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2b4efa7eaec14f67",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 333,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -4826,7 +4817,7 @@
   {
     "id": "ui-2db5ffcf2f0e5d20",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 439,
+    "line": 454,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -4876,15 +4867,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-2e22643ef9d148d3",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 339,
-    "fingerprint": "div\tflex items-center gap-2 text-[10px] text-white/56",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-2e258d8f86b65601",
@@ -5220,6 +5202,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-33147510b82831fb",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 315,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-33177d2707493ef0",
     "file": "src/components/daw/DawUtilityMetric.tsx",
     "line": 33,
@@ -5290,15 +5281,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-33bcebde057b5521",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 338,
-    "fingerprint": "div\tscoring-window flex items-center justify-between gap-2 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-33d26ed2f88768d1",
@@ -5602,15 +5584,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx",
     "line": 99,
     "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-36e3ebfe0e210286",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 311,
-    "fingerprint": "div\tflex min-h-0 flex-col gap-3 overflow-y-auto pr-1",
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
@@ -6003,6 +5976,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3acc9a90dbe385a1",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 229,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3ad05e3b665e2494",
     "file": "src/infra/dialogService/ConfirmDialog.tsx",
     "line": 51,
@@ -6158,7 +6140,7 @@
   {
     "id": "ui-3be8d4a9889465e1",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 559,
+    "line": 574,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -6406,6 +6388,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
+  },
+  {
+    "id": "ui-3f10a37121f3c4cf",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 239,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3f1a328e5cd5854d",
@@ -7103,7 +7094,7 @@
   {
     "id": "ui-452946f43aa27f2b",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 392,
+    "line": 405,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -7378,6 +7369,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityListRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-474f58d6828ba7df",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 323,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-47760475a9156e30",
@@ -7670,7 +7670,7 @@
   {
     "id": "ui-4af4bdc2c59a63b5",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 281,
+    "line": 282,
     "fingerprint": "div\tgrid min-h-0 flex-1 grid-cols-[140px_minmax(0,1fr)_120px] items-center gap-4",
     "kind": "layout",
     "mapping": "Grid",
@@ -9020,7 +9020,7 @@
   {
     "id": "ui-5923c73f3ec8c91e",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 532,
+    "line": 547,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -9711,6 +9711,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-5f0e316d01cb71c6",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 332,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5f39385626e7635f",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 621,
@@ -10100,7 +10109,7 @@
   {
     "id": "ui-6281cfd19a111622",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 530,
+    "line": 545,
     "fingerprint": "div\tspace-y-1.5 px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2",
     "kind": "layout",
     "mapping": "Stack",
@@ -10123,6 +10132,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-62f555a900f5196f",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 278,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-630774ec06b48ae7",
@@ -10460,7 +10478,7 @@
   {
     "id": "ui-66a2766734d33009",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 83,
+    "line": 84,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
@@ -10924,15 +10942,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6c822438a7b091df",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 156,
-    "fingerprint": "div\tscoring-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6cd979d628dac033",
@@ -11646,6 +11655,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7347f261d6236f3a",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 312,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-73657a2a487827f8",
     "file": "src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx",
     "line": 350,
@@ -11657,7 +11675,7 @@
   {
     "id": "ui-737a605fbf5a6cef",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 494,
+    "line": 509,
     "fingerprint": "div\tflex items-center gap-1 mb-2",
     "kind": "layout",
     "mapping": "Row",
@@ -11909,7 +11927,7 @@
   {
     "id": "ui-76bb81587da836d3",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 269,
+    "line": 270,
     "fingerprint": "div\tgrid min-h-0 shrink-0 grid-cols-[minmax(0,1fr)_220px] gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -12528,6 +12546,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-7bc7bde5c24128dd",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 340,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7bd933ea34698d48",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx",
     "line": 357,
@@ -13124,7 +13151,7 @@
   {
     "id": "ui-81346966353a4aef",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 168,
+    "line": 169,
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -13581,15 +13608,6 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-84fedd0dd2bd9781",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 271,
-    "fingerprint": "div\tflex h-full min-h-0 flex-col px-4 py-4 transition-colors duration-300",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-8510f2dc4743dd4d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx",
     "line": 132,
@@ -13875,6 +13893,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-87e7ae3fb70969bf",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 230,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -14508,6 +14535,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-8e3460fd140fb3bb",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 339,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8e4698c288bd9baa",
     "file": "src/modules/Proof/presentations/components/ProofLimiterSection.tsx",
     "line": 142,
@@ -14645,7 +14681,7 @@
   {
     "id": "ui-8f56f62a3f909309",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 515,
+    "line": 530,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14879,7 +14915,7 @@
   {
     "id": "ui-919e9bd830bd6242",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 558,
+    "line": 573,
     "fingerprint": "div\tflex items-center gap-1.5 mt-1",
     "kind": "layout",
     "mapping": "Row",
@@ -15768,15 +15804,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-9c4bcba644dc7be5",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 740,
-    "fingerprint": "div\tflex h-full flex-col justify-center gap-2 px-4",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9c6b4324d8c18131",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1668,
@@ -16130,7 +16157,7 @@
   {
     "id": "ui-9f75922d9f73faad",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 454,
+    "line": 469,
     "fingerprint": "div\tflex flex-col gap-1.5",
     "kind": "layout",
     "mapping": "Stack",
@@ -16787,7 +16814,7 @@
   {
     "id": "ui-a64da8b7481aca3f",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 545,
+    "line": 560,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16963,15 +16990,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginInsetCard",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-a849e15a258658f5",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 332,
-    "fingerprint": "div\tflex items-center gap-2 text-[10px] text-white/56",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a85b766cf34a5ca8",
@@ -17273,7 +17291,7 @@
   {
     "id": "ui-abedc6f9f71a1690",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 279,
+    "line": 280,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -17550,15 +17568,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-ae9a7e614c378d1f",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 277,
-    "fingerprint": "div\tmb-3 flex items-center justify-between gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-aeb34c8e614b6bdb",
     "file": "src/modules/MixerConsole/presentations/components/Mixer/MixerSection.tsx",
     "line": 19,
@@ -17705,7 +17714,7 @@
   {
     "id": "ui-b00a56c5ddd63914",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 355,
+    "line": 368,
     "fingerprint": "div\tflex flex-col gap-1.5 animate-in slide-in-from-right-4 duration-200",
     "kind": "layout",
     "mapping": "Stack",
@@ -17908,15 +17917,6 @@
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-b1c9e5f89541d9bc",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 229,
-    "fingerprint": "header\tscoring-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b1e35bbe2e930ad4",
@@ -18189,6 +18189,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-b4eacf402e67d5e1",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 294,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b4ff5a3f437f0a92",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1270,
@@ -18252,6 +18261,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-b54ff509d1d11ed3",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 283,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b553f8846e7f64c4",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 477,
@@ -18286,6 +18304,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-b60f86b53905e069",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 272,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-b62134ef3fcdb271",
@@ -18900,6 +18927,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-bd4246455cb160fb",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 319,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-bd4908078a3f1e83",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 183,
@@ -18925,15 +18961,6 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-bdba57059001722e",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 230,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-bdbf207ef7868466",
@@ -19125,15 +19152,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-bffe6d4369efb58f",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 322,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c0034b7d4c2f644a",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
     "line": 118,
@@ -19190,7 +19208,7 @@
   {
     "id": "ui-c0532a553e9e5907",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 571,
+    "line": 586,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19872,6 +19890,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-c846b9a100826c37",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 314,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c84ebe948d76e215",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
     "line": 399,
@@ -19901,7 +19928,7 @@
   {
     "id": "ui-c89373f3b757e4e9",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 585,
+    "line": 600,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
@@ -20423,7 +20450,7 @@
   {
     "id": "ui-cd2b3275e57f94b8",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 495,
+    "line": 510,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
@@ -20540,19 +20567,10 @@
   {
     "id": "ui-ce8e7dfc2b8f7239",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 172,
+    "line": 173,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ce9640b4a77c1e95",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 293,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -20626,6 +20644,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-cf8d02dc90a16d8f",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 231,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-cf990fe4eb9c548d",
@@ -20745,15 +20772,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-d069ccbf1ae62c15",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 318,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d0a4e2847020e07e",
     "file": "src/components/daw/MechanicalSwitch.tsx",
     "line": 59,
@@ -20774,7 +20792,7 @@
   {
     "id": "ui-d0da1f4517a17620",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 389,
+    "line": 402,
     "fingerprint": "div\tflex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200",
     "kind": "layout",
     "mapping": "Stack",
@@ -21075,15 +21093,6 @@
     "fingerprint": "div\tflex flex-col gap-1.5",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-d3dd4b1a3037771c",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 238,
-    "fingerprint": "div\tml-auto flex flex-wrap gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -21413,7 +21422,7 @@
   {
     "id": "ui-d78a0dc61b7adec4",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 239,
+    "line": 240,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -21476,7 +21485,7 @@
   {
     "id": "ui-d80866b2704c32ff",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 311,
+    "line": 324,
     "fingerprint": "div\tflex flex-col gap-1.5 animate-in fade-in duration-100",
     "kind": "layout",
     "mapping": "Stack",
@@ -21575,7 +21584,7 @@
   {
     "id": "ui-d94c103df5dabf96",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 257,
+    "line": 258,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -21942,15 +21951,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-dd53acf949b75c4b",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 228,
-    "fingerprint": "section\tflex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-dd5efcb67bc2fae0",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 916,
@@ -22160,7 +22160,7 @@
   {
     "id": "ui-df77d0a3e9703df8",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 248,
+    "line": 249,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -22403,7 +22403,7 @@
   {
     "id": "ui-e32cbf614de3bceb",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 531,
+    "line": 546,
     "fingerprint": "div\tflex items-center gap-1",
     "kind": "layout",
     "mapping": "Row",
@@ -22502,7 +22502,7 @@
   {
     "id": "ui-e3fd1cca61a78136",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-    "line": 502,
+    "line": 517,
     "fingerprint": "div\tflex items-center gap-1",
     "kind": "layout",
     "mapping": "Row",
@@ -22556,7 +22556,7 @@
   {
     "id": "ui-e48286e660ac1a88",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 188,
+    "line": 189,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -22686,15 +22686,6 @@
     "fingerprint": "div\tflex gap-0.5",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-e5f539703a279b36",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 160,
-    "fingerprint": "aside\tflex h-full w-[232px] shrink-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -24336,6 +24327,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f6bfc89398c0ef3b",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 741,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f6ddd84e12c43b58",
     "file": "src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx",
     "line": 189,
@@ -24507,6 +24507,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-f7e7b6b261d2b86f",
+    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
+    "line": 161,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f7f7d0c53788bc6a",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
     "line": 34,
@@ -24567,15 +24576,6 @@
     "fingerprint": "div\tflex flex-col items-center gap-3",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-f88d5ac2537d9fb7",
-    "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
-    "line": 314,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {

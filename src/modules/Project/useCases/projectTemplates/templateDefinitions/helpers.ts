@@ -85,7 +85,7 @@ export const templates: ProjectTemplate[] = [
         id: 'cinematic',
         name: 'Cinematic',
         description:
-            '90 BPM D minor, 96 beats with a 6/8 bridge at beat 48 and tempo rall. at the coda. Levain strings/cello, brass lead + French horn, flute/clarinet winds, Grand Boule piano, timpani + percussion, hall/plate/delay sends, cinematic master.',
+            '90 BPM D minor, 96 beats with a 6/8 bridge at beat 48 and tempo rall. at the coda. Levain strings/cello, brass lead + French horn, flute/clarinet winds, soft keys, timpani + percussion, hall/plate/delay sends, cinematic master.',
         category: 'film',
         executionBoundary: 'app-action',
         create: () => createSuccessfulTemplate(createCinematicTemplate),
@@ -103,7 +103,7 @@ export const templates: ProjectTemplate[] = [
         id: 'singer-songwriter',
         name: 'Singer-Songwriter',
         description:
-            '90 BPM G major. Lead + harmony vocal stack with Knead, acoustic guitar, Grand Boule piano, sub bass, plate short/long + slap delay sends, gentle gluten + proof-warm master.',
+            '90 BPM G major. Lead + harmony vocal stack with Knead, acoustic guitar, soft keys, sub bass, plate short/long + slap delay sends, gentle gluten + proof-warm master.',
         category: 'music',
         executionBoundary: 'app-action',
         create: () => createSuccessfulTemplate(createSingerSongwriterTemplate),
@@ -112,7 +112,7 @@ export const templates: ProjectTemplate[] = [
         id: 'ambient',
         name: 'Ambient',
         description:
-            '60 BPM C Lydian, 128 beats. Three Fermenter drones, Levain + FM shimmer pads, DX bell / Grand Boule piano / Crumbs granular melodic layer, tape-hiss texture, 8-second Cathedral reverb + tape delay + spring sends.',
+            '60 BPM C Lydian, 128 beats. Three Fermenter drones, Levain + FM shimmer pads, DX bell / soft keys / Crumbs granular melodic layer, tape-hiss texture, 8-second Cathedral reverb + tape delay + spring sends.',
         category: 'music',
         executionBoundary: 'app-action',
         create: () => createSuccessfulTemplate(createAmbientTemplate),

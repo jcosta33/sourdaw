@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { notifyUser } from '../../../../utils/Notification/notifyUser';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
 
 import {
@@ -99,6 +100,9 @@ vi.mock('../../engine/TrackNode', () => {
                 precedingDeviceIds?: readonly string[],
                 parameterIds: readonly string[] = []
             ) => {
+                if (type === 'grand-boule') {
+                    return false;
+                }
                 if (
                     this.strip.deviceNodes.some(
                         (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
@@ -651,6 +655,31 @@ describe('AudioEngine', () => {
 
         expect(abaReplay).toEqual(expect.objectContaining({ acceptance: 'rejected', application: 'not-applied' }));
         expect(engine.getRuntimeGraphRevision()).toBe(1);
+    });
+
+    it('warns once per project when withheld devices remain silent', () => {
+        const first = engine.initializeTrackStripFromSnapshot(
+            createTrackStripInitialization(0, [
+                { id: 'withheld-1', type: 'grand-boule' },
+                { id: 'withheld-2', type: 'grand-boule' },
+            ])
+        );
+
+        expect(first).toEqual(expect.objectContaining({ acceptance: 'accepted', application: 'applied' }));
+        expect(notifyUser).toHaveBeenCalledOnce();
+        expect(notifyUser).toHaveBeenCalledWith(
+            '"grand-boule" is withheld from this build. Its project data is preserved, but it will remain silent.',
+            'warning'
+        );
+
+        engine.resetGraph();
+        engine.initializeTrackStripFromSnapshot(
+            createTrackStripInitialization(engine.getRuntimeGraphRevision(), [
+                { id: 'withheld-next-project', type: 'grand-boule' },
+            ])
+        );
+
+        expect(notifyUser).toHaveBeenCalledTimes(2);
     });
 
     it('reports the master peak as unavailable until initialize() wires the meter tap', () => {
