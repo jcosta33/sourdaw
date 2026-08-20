@@ -80,6 +80,21 @@
         },
         { "ac": "grinder-neural-builtins-phase-7/AC-005", "reason": "Real-time safety invariant on the audio thread." },
 
+        {
+            "ac": "SPEC-levain-multi-instance/AC-001",
+            "reason": "Store keying. Musicians see separate panels, not the map."
+        },
+        { "ac": "SPEC-levain-multi-instance/AC-002", "reason": "Per-instance bridge. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-003", "reason": "No shared singleton. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-006", "reason": "Single-instance regression gate. No extra control." },
+        { "ac": "SPEC-levain-multi-instance/AC-007", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-levain-multi-instance/AC-008", "reason": "Bridge-message isolation. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-levain-multi-instance/AC-013", "reason": "Port teardown on remove. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-014", "reason": "Audio-thread lookup constraint. No control." },
+        { "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-006", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-orchestra-daw-integration/AC-005", "reason": "Dependency-boundary hygiene gate." },
+
         { "ac": "SPEC-yeast/AC-003", "reason": "Emit-to-paint lag bound. Audible only as the absence of a fault." },
         { "ac": "SPEC-yeast/AC-010", "reason": "Serialized processor-shape invariance. No control." },
         { "ac": "SPEC-yeast/AC-012", "reason": "Dependency-boundary hygiene gate." },
@@ -149,6 +164,30 @@
         {
             "ac": "SPEC-yeast/AC-022",
             "reason": "Lookahead in beats has no control. Phrase view is fixed at four beats."
+        },
+        {
+            "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-001",
+            "reason": "Five-zone layout is not shipped. The panel is Lineup, Phrase stage, and Quick read."
+        },
+        {
+            "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-002",
+            "reason": "Play through Lab complexity chips are not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-003",
+            "reason": "Play-only musical-label surface is not shipped; Phrase, Lift, Spread, Stage, and Desk are always visible."
+        },
+        {
+            "ac": "SPEC-orchestra-daw-integration/AC-002",
+            "reason": "Not every panel control is a host-automatable lane. Four descriptor lanes ship; most Phrase, Lift, Spread, Stage, and Handle fields do not."
+        },
+        {
+            "ac": "SPEC-orchestra-daw-integration/AC-003",
+            "reason": "No orchestral template loads a pre-routed section set."
+        },
+        {
+            "ac": "SPEC-orchestra-daw-integration/AC-004",
+            "reason": "No Orchestra-specific insert surface. Track inserts are the DAW mixer, not this panel."
         }
     ],
 
