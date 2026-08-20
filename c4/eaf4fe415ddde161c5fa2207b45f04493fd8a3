@@ -1,0 +1,22 @@
+tests/e2e/takeLanesTestId.spec.ts
+  s_24b1bdbc3c31ad::t_ddd29e8b9b4045 65
+  s_24b1bdbc3c31ad::t_099321a619f289 22
+  s_24b1bdbc3c31ad::t_771b2ae4ba1714 1-18,20-21,23-25,32,35-37,43-44,47,49-51,53-55,58,60,62,64,68,71-82
+  s_24b1bdbc3c31ad::t_13a2be21877961 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c4eaf4fe415ddde161c5fa2207b45f04493fd8a3",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
