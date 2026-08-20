@@ -36,10 +36,11 @@
  * -------
  * The report is stored in localStorage. That cache now holds a figure worth
  * reusing: a real throughput measurement costs a full model render, so it is not
- * repeated on every boot. `forceRefresh` re-reads the platform facts; passing
- * `measureInference` is what re-runs the expensive part. A cached *measured*
- * throughput is carried forward across a platform-only refresh so the tier does
- * not silently regress to `not-measured`.
+ * repeated on every boot. Every detection re-reads the platform facts through
+ * the lightweight worker probe; `forceRefresh` remains accepted for caller
+ * compatibility. Passing `measureInference` is what re-runs the expensive part.
+ * A cached *measured* throughput is carried forward when inference is not
+ * requested so the tier does not silently regress to `not-measured`.
  */
 
 import { inject } from '#/infra/di/inject';
@@ -52,8 +53,10 @@ import {
     type ThroughputNotMeasuredReason,
     type WebGpuTier,
 } from '../models/CapabilityReport';
+import { type WebGpuProbeResult } from '../models/WebGpuProbe';
 
 import { measureInferenceThroughput } from './measureInferenceThroughput';
+import { probeWebGpuUsability } from './probeWebGpuUsability';
 
 const STORAGE_KEY = 'sourdaw-browser-ai-capability';
 
@@ -169,6 +172,30 @@ function is_inference_throughput(value: unknown): value is InferenceThroughput {
     );
 }
 
+function is_web_gpu_probe_result(value: unknown): value is WebGpuProbeResult {
+    if (!is_plain_record(value)) {
+        return false;
+    }
+    if (value.status === 'supported') {
+        return true;
+    }
+    return (
+        value.status === 'unavailable' &&
+        (value.reason === 'missing-surface' ||
+            value.reason === 'adapter-unavailable' ||
+            value.reason === 'fallback-adapter' ||
+            value.reason === 'device-unavailable' ||
+            value.reason === 'probe-failed')
+    );
+}
+
+function is_capability_admission_pair(value: UnknownRecord): boolean {
+    if (!is_browser_ai_capability(value.capability) || !is_web_gpu_probe_result(value.webGpu)) {
+        return false;
+    }
+    return value.capability !== 'supported' || value.webGpu.status === 'supported';
+}
+
 function is_nullable_finite_number(value: unknown): value is number | null {
     if (value === null) {
         return true;
@@ -181,7 +208,7 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
         return false;
     }
     return (
-        is_browser_ai_capability(value.capability) &&
+        is_capability_admission_pair(value) &&
         is_web_gpu_tier(value.webGpuTier) &&
         typeof value.sharedArrayBuffer === 'boolean' &&
         typeof value.opfsAvailable === 'boolean' &&
@@ -190,6 +217,23 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
         is_nullable_finite_number(value.chromeVersion) &&
         is_inference_throughput(value.inference)
     );
+}
+
+/**
+ * Only a `measured` throughput is ever reused (see the last branch of
+ * `detectCapabilities`), and a measurement is only ever produced while that
+ * same run's WebGPU probe read `supported`. Requiring `supported` here makes
+ * that provenance explicit rather than relying on write-time discipline: a
+ * cached record whose own probe outcome was anything else — a settled
+ * hardware rejection or a bridge failure that observed no verdict at all — is
+ * a runtime admission fact about a past run, not a durable property, and is
+ * never reusable.
+ */
+function is_reusable_cached_report(value: unknown): value is CapabilityReport {
+    if (!is_valid_capability_report(value)) {
+        return false;
+    }
+    return value.webGpu.status === 'supported';
 }
 
 function read_cached_report(storage: Storage | null): CapabilityReport | null {
@@ -202,7 +246,7 @@ function read_cached_report(storage: Storage | null): CapabilityReport | null {
     }
     try {
         const parsed: unknown = JSON.parse(cached);
-        if (is_valid_capability_report(parsed)) {
+        if (is_reusable_cached_report(parsed)) {
             return parsed;
         }
     } catch {
@@ -212,6 +256,7 @@ function read_cached_report(storage: Storage | null): CapabilityReport | null {
 }
 
 type DetectCapabilitiesInput = {
+    /** Retained for caller compatibility; the lightweight platform probe always runs. */
     forceRefresh?: boolean;
     /**
      * Run the real throughput measurement. Off by default: it renders a full
@@ -224,22 +269,22 @@ type DetectCapabilitiesInput = {
 
 type DetectCapabilitiesOutput = Promise<CapabilityReport>;
 
-export const detectCapabilities = inject({ logger, measureInferenceThroughput })(
-    ({ logger, measureInferenceThroughput }) =>
+export const detectCapabilities = inject({ logger, measureInferenceThroughput, probeWebGpuUsability })(
+    ({ logger, measureInferenceThroughput, probeWebGpuUsability }) =>
         async function detectCapabilities({
-            forceRefresh = false,
             measureInference = false,
         }: DetectCapabilitiesInput = {}): DetectCapabilitiesOutput {
             const storage = get_capability_storage();
             const cachedReport = read_cached_report(storage);
 
-            if (!forceRefresh && !measureInference && cachedReport) {
-                logger.info('[BrowserAi] Using cached capability report');
-                return cachedReport;
-            }
-
             const chromeVersion = detectChromeVersion();
-            const webGpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator;
+            let webGpu: WebGpuProbeResult;
+            try {
+                webGpu = await probeWebGpuUsability();
+            } catch {
+                webGpu = { status: 'unavailable', reason: 'probe-failed' };
+                logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
+            }
             const sharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
             const opfsAvailable =
                 typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
@@ -250,10 +295,10 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
             if (!chromeVersion) {
                 capability = 'unsupported-browser';
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');
-            } else if (!webGpuAvailable) {
+            } else if (webGpu.status === 'unavailable') {
                 capability = 'unsupported-browser';
                 inference = { status: 'not-measured', reason: 'no-webgpu' };
-                logger.info('[BrowserAi] WebGPU not available — browser AI disabled');
+                logger.info(`[BrowserAi] WebGPU ${webGpu.reason} — browser AI disabled`);
             } else if (measureInference) {
                 capability = 'supported';
                 inference = await measureInferenceThroughput();
@@ -272,6 +317,7 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
 
             const report: CapabilityReport = {
                 capability,
+                webGpu,
                 webGpuTier,
                 sharedArrayBuffer,
                 opfsAvailable,
