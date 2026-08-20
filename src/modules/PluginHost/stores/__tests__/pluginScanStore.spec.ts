@@ -232,6 +232,31 @@ describe('pluginScanStore hydration', () => {
         expect(restored?.scannedPlugins).toEqual([sample('b')]);
     });
 
+    it('should restore the reason a plugin capability is a default rather than a measurement', async () => {
+        // Zeros that survive a reload without their reason are read downstream
+        // as a scanned fact about the plugin. The reason is what makes an
+        // unqueried default legible as one, so it has to survive with them.
+        const unqueried: ScannedPlugin = {
+            ...sample('a'),
+            num_inputs: 0,
+            num_outputs: 0,
+            has_custom_ui: false,
+            capability_metadata_reason: 'This plugin does not implement clap.audio-ports.',
+        };
+
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [unqueried],
+                scanPaths: [],
+                isScanning: false,
+                lastScanTime: null,
+                errors: [],
+            })
+        );
+
+        expect(restored?.scannedPlugins).toEqual([unqueried]);
+    });
+
     it('should start empty when the stored value cannot be read', async () => {
         const restored = await launchWithStoredScanState('{not json at all');
 

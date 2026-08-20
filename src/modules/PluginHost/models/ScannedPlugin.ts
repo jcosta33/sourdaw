@@ -35,9 +35,21 @@ export type ScannedPlugin = {
      * The host resolves either one, so `id` remains the value to persist.
      */
     clap_id: string;
+    /**
+     * Total audio channels the plugin declared through its own
+     * `clap.audio-ports` extension during the scan. Read together with
+     * `capability_metadata_reason`: a zero whose reason is present is an
+     * unqueried default, not a measured count.
+     */
     num_inputs: number;
+    /** Total declared output channels. Same provenance as `num_inputs`. */
     num_outputs: number;
     num_parameters: number;
+    /**
+     * Whether the plugin implements `clap.gui`, the only way a CLAP plugin can
+     * offer its own editor. `false` with a `capability_metadata_reason` present
+     * means "not asked", not "no editor".
+     */
     has_custom_ui: boolean;
     /**
      * Present only when the bounded scanner process created, initialized,
@@ -46,4 +58,11 @@ export type ScannedPlugin = {
     parameters?: ScannedPluginParameter[];
     /** A safe scanner disposition; never a plugin-originated diagnostic payload. */
     parameter_metadata_reason?: string;
+    /**
+     * Present exactly when `num_inputs`, `num_outputs`, or `has_custom_ui` is a
+     * default rather than a value the scanner read from the plugin. Absent means
+     * all three are queried facts. A safe scanner disposition; never a
+     * plugin-originated diagnostic payload.
+     */
+    capability_metadata_reason?: string;
 };

@@ -53,7 +53,13 @@ use crate::state::PluginRegistryEntry;
 /// "read nothing". A per-entry version would license a partial load, which is
 /// the half-populated registry that reports "plugin not found" for a plugin the
 /// user has already scanned.
-const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 1;
+///
+/// Bumped to 2 when the row gained the scanned capability fields. A version 1
+/// document carries no record of whether its zeros were queried or assumed, and
+/// there is no migration that can invent one: the whole document reads as
+/// absent and the next scan refills it, which is the policy every other row
+/// change here follows.
+const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 2;
 
 const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -106,6 +112,16 @@ pub struct PersistedPluginEntry {
     pub clap_id: String,
     pub format: String,
     pub name: String,
+    /// What the scan read from the plugin's own capability extensions: total
+    /// declared audio channels each way, and whether it implements `clap.gui`.
+    pub num_inputs: u32,
+    pub num_outputs: u32,
+    pub has_custom_ui: bool,
+    /// Present exactly when the three fields above are unqueried defaults.
+    /// Persisted alongside them rather than recomputed, because whether a scan
+    /// asked is a fact about that scan and cannot be rederived from its answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_metadata_reason: Option<String>,
     /// Size of the plugin file, in bytes, when it was scanned.
     pub file_size_bytes: u64,
     /// Modification time of the plugin file when it was scanned, in
@@ -125,6 +141,10 @@ impl PersistedPluginEntry {
             clap_id: self.clap_id.clone(),
             format: self.format.clone(),
             name: self.name.clone(),
+            num_inputs: self.num_inputs,
+            num_outputs: self.num_outputs,
+            has_custom_ui: self.has_custom_ui,
+            capability_metadata_reason: self.capability_metadata_reason.clone(),
         }
     }
 }
@@ -406,6 +426,10 @@ impl PluginRegistryStore {
                     clap_id: entry.clap_id.clone(),
                     format: entry.format.clone(),
                     name: entry.name.clone(),
+                    num_inputs: entry.num_inputs,
+                    num_outputs: entry.num_outputs,
+                    has_custom_ui: entry.has_custom_ui,
+                    capability_metadata_reason: entry.capability_metadata_reason.clone(),
                     file_size_bytes,
                     file_modified_ms,
                 },
@@ -609,6 +633,10 @@ mod tests {
             clap_id: "com.vendor.reverb".to_string(),
             format: "clap".to_string(),
             name: "Vendor Reverb".to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            has_custom_ui: true,
+            capability_metadata_reason: None,
         }
     }
 
@@ -940,6 +968,10 @@ mod tests {
                     clap_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: true,
+                    capability_metadata_reason: None,
                     file_size_bytes: 10,
                     file_modified_ms: 0,
                 },

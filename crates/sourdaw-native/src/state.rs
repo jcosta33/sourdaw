@@ -186,6 +186,18 @@ pub struct PluginRegistryEntry {
     pub clap_id: String,
     pub format: String,
     pub name: String,
+    /// Total audio channels the plugin declared through `clap.audio-ports` when
+    /// it was scanned, and whether it implements `clap.gui`.
+    ///
+    /// `capability_metadata_reason` is present exactly when these three are
+    /// unqueried defaults rather than facts — a targeted activation rescan, for
+    /// one, reads the descriptor only and never creates the instance these
+    /// answers come from. Read the counts without reading the reason and a
+    /// default becomes indistinguishable from a measurement.
+    pub num_inputs: u32,
+    pub num_outputs: u32,
+    pub has_custom_ui: bool,
+    pub capability_metadata_reason: Option<String>,
 }
 
 impl AppState {

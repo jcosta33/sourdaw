@@ -146,6 +146,13 @@ fn registry_entry(plugin: &ScannedPlugin) -> PluginRegistryEntry {
         clap_id: plugin.clap_id.clone(),
         format: plugin.format.clone(),
         name: plugin.name.clone(),
+        num_inputs: plugin.num_inputs,
+        num_outputs: plugin.num_outputs,
+        has_custom_ui: plugin.has_custom_ui,
+        // Carried with the values, never dropped on the way through. A row that
+        // kept the counts and lost the reason would state as fact what the scan
+        // recorded as unknown.
+        capability_metadata_reason: plugin.capability_metadata_reason.clone(),
     }
 }
 
@@ -285,21 +292,31 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                 scanned_paths.push(candidate.clone());
                 match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
                     Ok(mut metadata) => {
-                        let parameter_remaining =
-                            deadline.saturating_duration_since(Instant::now());
-                        if parameter_remaining.is_zero() {
-                            metadata.parameter_metadata_reason =
-                                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
-                        } else if let Ok(parameters) =
-                            plugin_scan_worker::scan_clap_parameter_metadata(
-                                &candidate,
-                                parameter_remaining,
-                            )
-                        {
-                            metadata.parameters = Some(parameters);
+                        // One inspection worker answers parameters and
+                        // capabilities together, so they succeed and fail
+                        // together. When it does not run, both stay `None` and
+                        // `scanned_plugin` records why — a capability field
+                        // this scan never asked for must never be published as
+                        // a measured zero.
+                        let instance_remaining = deadline.saturating_duration_since(Instant::now());
+                        let instance = if instance_remaining.is_zero() {
+                            Err("deadline".to_string())
                         } else {
-                            metadata.parameter_metadata_reason =
-                                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
+                            plugin_scan_worker::scan_clap_instance_metadata(
+                                &candidate,
+                                instance_remaining,
+                            )
+                        };
+                        match instance {
+                            Ok(instance) => {
+                                metadata.parameters = Some(instance.parameters);
+                                metadata.capabilities = Some(instance.capabilities);
+                            }
+                            Err(_) => {
+                                metadata.parameter_metadata_reason = Some(
+                                    scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string(),
+                                );
+                            }
                         }
                         plugins.push(scanner::scanned_plugin(&candidate, metadata));
                     }
@@ -674,14 +691,15 @@ pub async fn load_plugin(
 
             Ok(instance)
         }
-        "vst3" => {
-            Err("VST3 plugin loading is not supported. CLAP plugins are supported.".to_string())
-        }
-        "au" => Err(
-            "Audio Unit plugin loading is not yet implemented. CLAP plugins are supported."
-                .to_string(),
-        ),
-        _ => Err(format!("Unknown plugin format: {}", entry.format)),
+        // A format Sourdaw recognises and does not load. The refusal is the
+        // scanner's own wording, so the reason a user is given for skipping the
+        // file during a scan is the same reason they are given for refusing to
+        // activate it — see
+        // `.agents/decisions/0031-native-plugin-format-strategy.md`.
+        format => match scanner::unsupported_format_refusal(format) {
+            Some(refusal) => Err(refusal.to_string()),
+            None => Err(format!("Unknown plugin format: {format}")),
+        },
     }
 }
 
@@ -2090,6 +2108,10 @@ mod tests {
                     clap_id: String::new(),
                     format: "clap".to_string(),
                     name: "Nameless".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: false,
+                    capability_metadata_reason: None,
                 },
             );
 
@@ -2178,6 +2200,12 @@ mod tests {
                     clap_id: String::new(),
                     format: "vst3".to_string(),
                     name: "Unsupported VST3".to_string(),
+                    num_inputs: 0,
+                    num_outputs: 0,
+                    has_custom_ui: false,
+                    capability_metadata_reason: Some(
+                        scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                    ),
                 },
             );
 
@@ -2188,10 +2216,7 @@ mod tests {
         ));
 
         match result {
-            Err(error) => assert_eq!(
-                error,
-                "VST3 plugin loading is not supported. CLAP plugins are supported."
-            ),
+            Err(error) => assert_eq!(error, scanner::VST3_REFUSAL),
             Ok(instance) => panic!("unsupported VST3 unexpectedly loaded: {instance:?}"),
         }
         insert_engine_owned_fixture(&state, "vst3-instance", vec![1, 2, 3]);
@@ -2204,6 +2229,101 @@ mod tests {
             duplicate.unwrap_err(),
             "Plugin instance already exists: vst3-instance"
         );
+    }
+
+    /// Activation refuses in the same words the scan skipped the file in, and
+    /// each one names the format and the reason. A user who is told "VST3 is
+    /// not supported" in one place and "unknown plugin format" in the other has
+    /// been given two different stories about one file.
+    #[test]
+    fn every_refused_format_names_itself_and_its_reason_at_activation() {
+        for (plugin_id, path, format, expected) in [
+            (
+                "vst3-refusal",
+                "/plugins/Vendor.vst3",
+                "vst3",
+                scanner::VST3_REFUSAL,
+            ),
+            (
+                "vst2-refusal",
+                "/plugins/Vendor.vst",
+                "vst2",
+                scanner::VST2_REFUSAL,
+            ),
+            (
+                "au-refusal",
+                "/plugins/Vendor.component",
+                "au",
+                scanner::AUDIO_UNIT_REFUSAL,
+            ),
+        ] {
+            let state = AppState::default();
+            state
+                .plugin_registry
+                .lock()
+                .expect("plugin registry lock should be available")
+                .insert(
+                    plugin_id.to_string(),
+                    PluginRegistryEntry {
+                        path: path.to_string(),
+                        stable_id: plugin_id.to_string(),
+                        clap_id: String::new(),
+                        format: format.to_string(),
+                        name: "Refused".to_string(),
+                        num_inputs: 0,
+                        num_outputs: 0,
+                        has_custom_ui: false,
+                        capability_metadata_reason: Some(
+                            scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                        ),
+                    },
+                );
+
+            let result = crate::block_on_test(load_plugin(
+                PluginId(plugin_id.to_string()),
+                PluginInstanceId(format!("{plugin_id}-instance")),
+                &state,
+            ));
+
+            match result {
+                Err(error) => assert_eq!(error, expected, "wrong refusal for {format}"),
+                Ok(instance) => panic!("{format} unexpectedly loaded: {instance:?}"),
+            }
+        }
+    }
+
+    /// A format the registry has never carried is still not silently accepted.
+    #[test]
+    fn an_unrecognised_format_is_refused_by_name() {
+        let state = AppState::default();
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "unknown-format".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/Vendor.mystery".to_string(),
+                    stable_id: "unknown-format".to_string(),
+                    clap_id: String::new(),
+                    format: "mystery".to_string(),
+                    name: "Mystery".to_string(),
+                    num_inputs: 0,
+                    num_outputs: 0,
+                    has_custom_ui: false,
+                    capability_metadata_reason: Some(
+                        scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                    ),
+                },
+            );
+
+        let result = crate::block_on_test(load_plugin(
+            PluginId("unknown-format".to_string()),
+            PluginInstanceId("unknown-instance".to_string()),
+            &state,
+        ));
+
+        assert_eq!(result.unwrap_err(), "Unknown plugin format: mystery");
     }
 
     #[test]
@@ -2456,6 +2576,7 @@ mod tests {
             has_custom_ui: true,
             parameters: Some(vec![]),
             parameter_metadata_reason: None,
+            capability_metadata_reason: None,
         }
     }
 
@@ -2509,6 +2630,10 @@ mod tests {
                     clap_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: true,
+                    capability_metadata_reason: None,
                 },
             )]));
         }
@@ -2572,6 +2697,14 @@ mod tests {
                     clap_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb 2".to_string(),
+                    // A targeted rescan reads the descriptor only, so it
+                    // reports no capabilities and says so.
+                    num_inputs: 0,
+                    num_outputs: 0,
+                    has_custom_ui: false,
+                    capability_metadata_reason: Some(
+                        scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                    ),
                 })
             },
         )

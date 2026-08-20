@@ -113,6 +113,10 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
         }
     }
     const parameterMetadataReason = readString(value.parameter_metadata_reason);
+    // Restored with the counts it qualifies. Dropping it here would turn an
+    // unqueried default back into a measurement on the next launch, which is the
+    // fabrication this field exists to prevent.
+    const capabilityMetadataReason = readString(value.capability_metadata_reason);
 
     return {
         id: value.id,
@@ -129,6 +133,7 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
         has_custom_ui: value.has_custom_ui,
         ...(parameters === undefined ? {} : { parameters }),
         ...(parameterMetadataReason === null ? {} : { parameter_metadata_reason: parameterMetadataReason }),
+        ...(capabilityMetadataReason === null ? {} : { capability_metadata_reason: capabilityMetadataReason }),
     };
 }
 
