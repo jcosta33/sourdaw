@@ -49,7 +49,22 @@ describe('pull-request contract', () => {
         expect(() => issueRelationshipFromBody(`${prefix}Closes #90071992547409930`, Number.MAX_SAFE_INTEGER)).toThrow(
             /exactly one relationship/
         );
+        expect(() => issueRelationshipFromBody(`Fixes #99\n${prefix}Related #2164`, 2164)).toThrow(
+            /unexpected issue-closing references/
+        );
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
+    });
+
+    it('rejects hidden GitHub closing references', () => {
+        expect(() => composePublishBody(2164, 'feat(vcs): fixes #99', 'relates')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes owner/repo#99')).toThrow(
+            /unexpected issue-closing references/
+        );
+        expect(() =>
+            composePublishBody(undefined, 'feat(vcs): resolves https://github.com/owner/repo/issues/99')
+        ).toThrow(/unexpected issue-closing references/);
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {

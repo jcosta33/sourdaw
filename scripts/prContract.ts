@@ -55,6 +55,21 @@ export const NO_RELATED_TICKETS = 'None.';
 
 export type IssueRelationship = 'closes' | 'relates';
 
+const CLOSING_REFERENCE_PATTERN =
+    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?)\s+(?:#([1-9][0-9]*)|[\w.-]+\/[\w.-]+#([1-9][0-9]*)|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/([1-9][0-9]*))\b/gi;
+
+function assertIssueClosingReferences(
+    body: string,
+    issue: number | undefined,
+    relationship: IssueRelationship | undefined
+): void {
+    const references = [...body.matchAll(CLOSING_REFERENCE_PATTERN)].map((match) => match[1] ?? match[2] ?? match[3]);
+    const expected = relationship === 'closes' && issue !== undefined ? String(issue) : undefined;
+    if (expected === undefined ? references.length > 0 : references.length !== 1 || references[0] !== expected) {
+        fail('pull-request body contains unexpected issue-closing references');
+    }
+}
+
 export function issueRelationshipFromBody(body: string, issue: number | undefined): IssueRelationship | undefined {
     const heading = REQUIRED_BODY_HEADINGS.at(-1);
     const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
@@ -75,12 +90,15 @@ export function issueRelationshipFromBody(body: string, issue: number | undefine
         if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {
             fail('issueless pull-request body must start its Related tickets section with None.');
         }
+        assertIssueClosingReferences(body, issue, undefined);
         return undefined;
     }
     if (relationships.length !== 1 || relationships[0]?.issue !== String(issue) || lines.includes(NO_RELATED_TICKETS)) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
-    return relationships[0].label === 'Closes' ? 'closes' : 'relates';
+    const relationship = relationships[0].label === 'Closes' ? 'closes' : 'relates';
+    assertIssueClosingReferences(body, issue, relationship);
+    return relationship;
 }
 
 export function composePublishBody(
@@ -103,6 +121,7 @@ None.
 ${relatedTickets}
 `;
     assertPullRequestBody(body, 'pull-request body');
+    assertIssueClosingReferences(body, issue, issue === undefined ? undefined : relationship);
     if (issue !== undefined && !body.includes(`${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`)) {
         fail(`pull-request body is missing ${relationship === 'closes' ? 'Closes' : 'Related'} #<issue-number>`);
     }
