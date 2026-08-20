@@ -219,12 +219,21 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
     );
 }
 
-/** A bridge failure is truthful for its run but cannot stand in for a later hardware probe. */
+/**
+ * Only a `measured` throughput is ever reused (see the last branch of
+ * `detectCapabilities`), and a measurement is only ever produced while that
+ * same run's WebGPU probe read `supported`. Requiring `supported` here makes
+ * that provenance explicit rather than relying on write-time discipline: a
+ * cached record whose own probe outcome was anything else — a settled
+ * hardware rejection or a bridge failure that observed no verdict at all — is
+ * a runtime admission fact about a past run, not a durable property, and is
+ * never reusable.
+ */
 function is_reusable_cached_report(value: unknown): value is CapabilityReport {
     if (!is_valid_capability_report(value)) {
         return false;
     }
-    return value.webGpu.status !== 'unavailable' || value.webGpu.reason !== 'probe-failed';
+    return value.webGpu.status === 'supported';
 }
 
 function read_cached_report(storage: Storage | null): CapabilityReport | null {

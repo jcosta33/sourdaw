@@ -363,6 +363,30 @@ describe('detectCapabilities', () => {
         expect(probe).toHaveBeenCalledTimes(1);
     });
 
+    // A measured throughput is only ever produced while that same run's webGpu
+    // probe read `supported` — a cache-reuse gate that only excludes
+    // `probe-failed` still admits any *other* unavailable reason, so a
+    // measured figure whose own record says the adapter or device was
+    // unusable would be carried forward the moment the current probe happens
+    // to succeed again. Reusability must depend on the record's own webGpu
+    // verdict, not merely on which unavailable reason it carries.
+    it('should not carry forward a cached measured throughput whose own record reports WebGPU unavailable', async () => {
+        install_supported_browser();
+        const { measure } = install(measured(3));
+        const inconsistent_cached_report: CapabilityReport = {
+            ...valid_cached_report,
+            capability: 'unsupported-browser',
+            webGpu: { status: 'unavailable', reason: 'adapter-unavailable' },
+        };
+        window.localStorage.setItem(storage_key, JSON.stringify(inconsistent_cached_report));
+
+        const report = await detectCapabilities();
+
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+        expect(measure).not.toHaveBeenCalled();
+    });
+
     it('should ignore invalid cache shapes and run fresh detection', async () => {
         install_supported_browser();
         install(measured(3));
