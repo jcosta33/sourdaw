@@ -4,6 +4,7 @@ import { type ClipGlueActionSnapshot, type ClipStateSnapshot } from '#/utils/han
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
+import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 
 import { clipGlueStateRestorable } from './clipGlueStateRestorable';
 
@@ -91,5 +92,15 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
         ...state,
         tracks: state.tracks.map((candidate) => (candidate.id === track.id ? { ...candidate, clips } : candidate)),
     });
+
+    // `expected.clips` names only the side this call actually retires: the
+    // source clips on the apply direction, the glued clip on the undo
+    // direction — never both, since `clipGlueStateRestorable` already proved
+    // the other side of `affectedClipIds` is absent from the track. Sweeping
+    // exactly this set (not `affectedClipIds`, which always names every
+    // participant on both directions) is what keeps this call from erasing
+    // satellite state the opposite direction just restored.
+    const consumedClipIds = expected.clips.map((clip) => clip.id);
+    removeClipSatelliteData(consumedClipIds);
     return true;
 }

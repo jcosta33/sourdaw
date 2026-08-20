@@ -18,6 +18,8 @@ import { setStretchMode } from '../../warp/setStretchMode';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 import { hasClipGlueDependencies } from '../hasClipGlueDependencies';
+import { prepareClipGlue } from '../prepareClipGlue';
+import { restoreClipGlueState } from '../restoreClipGlueState';
 
 describe('glueClips MIDI state integration', () => {
     beforeEach(() => {
@@ -431,5 +433,61 @@ describe('glueClips MIDI state integration', () => {
         setStretchMode('clip-a', 'complex');
         expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
         expect(isCurrent()).toBe(false);
+    });
+
+    it('sweeps the consumed source clips warp state when a glue with a content-default entry commits', () => {
+        // Real write path, not a map poke: `repitch` is `defaultWarpState.stretchMode`,
+        // so this is exactly the regression scenario above — content-identical to
+        // default, which the content-aware gate now lets through.
+        setStretchMode('clip-a', 'repitch');
+        expect(warpStates.has('clip-a')).toBe(true);
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
+
+        // Both consumed source clip ids must be gone from the map — a stale
+        // entry keyed to a retired clip id can never re-attach (ids are never
+        // reused) but it still has to be swept, not left to leak forever.
+        expect(warpStates.has('clip-a')).toBe(false);
+        expect(warpStates.has('clip-b')).toBe(false);
+    });
+
+    it('does not destroy a source clip warp entry that undo just restored', () => {
+        // Every entry below is content-default on purpose: `hasClipGlueDependencies`
+        // gates both the apply *and* the restore direction on the same
+        // `expected`/`replacement` participant set, so a genuinely non-default
+        // entry on any of them would block the call outright rather than
+        // exercise the sweep. Content-default is exactly the shape the
+        // content-aware gate lets through, and its presence in the map is
+        // still observable via `warpStates.has`, which is what this test
+        // exercises.
+        setStretchMode('clip-a', 'repitch');
+        const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
+        expect(plan).not.toBeNull();
+        const { previous, next, targetClipId: gluedId } = plan!;
+
+        expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
+        expect(warpStates.has('clip-a')).toBe(false);
+        expect(warpStates.has('clip-b')).toBe(false);
+
+        // Normal usage after gluing: the glued clip picks up its own warp
+        // footprint. This is what undo must retire — it is the clip undo
+        // consumes.
+        setStretchMode(gluedId, 'repitch');
+        expect(warpStates.has(gluedId)).toBe(true);
+
+        // A real map entry sitting under the restored clips' ids at the moment
+        // undo runs — exactly what an unconditional sweep (one that clears
+        // both sides of the operation, or the wrong side) would destroy the
+        // instant it reinserts `clip-a` and `clip-b` back onto the track.
+        setStretchMode('clip-a', 'repitch');
+        setStretchMode('clip-b', 'repitch');
+
+        expect(restoreClipGlueState({ expected: next, replacement: previous })).toBe(true);
+
+        // The glued clip's own entry is gone — it is the id undo consumed.
+        expect(warpStates.has(gluedId)).toBe(false);
+        // The restored clips keep whatever satellite state they had.
+        expect(warpStates.has('clip-a')).toBe(true);
+        expect(warpStates.has('clip-b')).toBe(true);
     });
 });
