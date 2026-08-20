@@ -56,7 +56,7 @@ export const NO_RELATED_TICKETS = 'None.';
 export type IssueRelationship = 'closes' | 'relates';
 
 const CLOSING_REFERENCE_PATTERN =
-    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?)\s+(?:#([1-9][0-9]*)|[\w.-]+\/[\w.-]+#([1-9][0-9]*)|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/([1-9][0-9]*))\b/gi;
+    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?)\s*:?\s+(?:#([1-9][0-9]*)|[\w.-]+\/[\w.-]+#([1-9][0-9]*)|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/([1-9][0-9]*))\b/gi;
 
 function assertIssueClosingReferences(
     body: string,

@@ -62,6 +62,9 @@ describe('pull-request contract', () => {
         expect(() => composePublishBody(2164, 'feat(vcs): closes owner/repo#99')).toThrow(
             /unexpected issue-closing references/
         );
+        expect(() => composePublishBody(2164, 'feat(vcs): closes: #99', 'relates')).toThrow(
+            /unexpected issue-closing references/
+        );
         expect(() =>
             composePublishBody(undefined, 'feat(vcs): resolves https://github.com/owner/repo/issues/99')
         ).toThrow(/unexpected issue-closing references/);
