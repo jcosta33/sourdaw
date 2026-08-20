@@ -179,13 +179,13 @@ export function parseCliArgs(args: string[]): {
             continue;
         }
         const value = args[index + 1];
-        if (flag === '--title' && value !== undefined) {
-            title = value;
+        if (flag === '--title') {
+            title = optionValue(flag, value);
             index += 1;
             continue;
         }
-        if (flag === '--fields' && value !== undefined) {
-            fieldsPath = value;
+        if (flag === '--fields') {
+            fieldsPath = optionValue(flag, value);
             index += 1;
             continue;
         }
@@ -213,6 +213,11 @@ export function parseCliArgs(args: string[]): {
 function optionValue(flag: string, value: string | undefined): string {
     if (value === undefined) {
         fail(`missing value for ${flag}`);
+    }
+    // A flag swallowing the next flag as its value is silent: the swallowed flag stops taking
+    // effect, so `--milestone --create` files nothing and still exits 0.
+    if (value.startsWith('--')) {
+        fail(`missing value for ${flag}: ${value} is an option, not a value`);
     }
     const trimmed = value.trim();
     if (trimmed === '') {
@@ -370,19 +375,50 @@ export function ghIssueCreateArgs(submission: IssueSubmission, metadata: IssueMe
     for (const label of submission.labels) {
         args.push('--label', label);
     }
-    if (metadata.milestone !== undefined) {
+    if (metadata.milestone) {
         args.push('--milestone', metadata.milestone);
     }
-    if (metadata.project !== undefined) {
+    if (metadata.project) {
         args.push('--project', metadata.project);
     }
     return args;
 }
 
-function createIssue(submission: IssueSubmission, metadata: IssueMetadata): { url: string; number: number } {
-    const result = spawnSync('gh', ghIssueCreateArgs(submission, metadata), { encoding: 'utf8' });
+/**
+ * `gh issue create` is not atomic once `--project` is in play. `api.IssueCreate` rejects
+ * `projectV2Ids` inside the `createIssue` mutation and attaches the project afterwards through
+ * `UpdateProjectV2Items`; on that error it returns the issue *and* the error, and `create.go`
+ * returns before printing the URL. So a nonzero exit with `--project` set does not mean nothing
+ * was filed, and a blind retry files a duplicate.
+ */
+export function ghIssueCreateFailure(stderr: string, metadata: IssueMetadata): string {
+    const reason = stderr.trim() || 'gh issue create failed';
+    if (!metadata.project) {
+        return reason;
+    }
+    return `${reason}\ngh attaches --project after the issue exists, so the issue may already have been created. Check the tracker before retrying.`;
+}
+
+/**
+ * Filing is an irreversible public write, so the only way a test may exercise the path from parsed
+ * flags to `gh` argv is through an injected runner. A test that mocks `node:child_process` instead
+ * files a real issue the moment the mock stops intercepting, and nothing in the assertion notices.
+ */
+export type GhRunner = (args: string[]) => { status: number; stdout: string; stderr: string };
+
+const spawnGh: GhRunner = (args) => {
+    const result = spawnSync('gh', args, { encoding: 'utf8' });
+    return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+};
+
+function createIssue(
+    submission: IssueSubmission,
+    metadata: IssueMetadata,
+    runGh: GhRunner
+): { url: string; number: number } {
+    const result = runGh(ghIssueCreateArgs(submission, metadata));
     if (result.status !== 0) {
-        fail(result.stderr.trim() || 'gh issue create failed');
+        fail(ghIssueCreateFailure(result.stderr, metadata));
     }
     const url = result.stdout.trim();
     const number = Number(url.split('/').at(-1));
@@ -392,15 +428,16 @@ function createIssue(submission: IssueSubmission, metadata: IssueMetadata): { ur
     return { url, number };
 }
 
-function main(): number {
+export function runCli(argv: string[], runGh: GhRunner = spawnGh): number {
     try {
-        const parsed = parseCliArgs(process.argv.slice(2));
+        const parsed = parseCliArgs(argv);
         if (parsed.help) {
             console.log(`Usage: ${USAGE}`);
             console.log('');
             console.log('Renders a tracker issue from .github/ISSUE_TEMPLATE using field ids as JSON.');
             console.log('--create files it with gh.');
-            console.log('--milestone takes a milestone number or title. --project takes a project title.');
+            console.log('--milestone matches an open milestone by title, case-insensitively; a milestone');
+            console.log('number does not resolve and nothing is filed. --project takes a project title.');
             return 0;
         }
         if (parsed.template === undefined || parsed.title === undefined || parsed.fieldsPath === undefined) {
@@ -416,7 +453,7 @@ function main(): number {
             process.stdout.write(`${JSON.stringify(submission, null, 2)}\n`);
             return 0;
         }
-        const created = createIssue(submission, { milestone: parsed.milestone, project: parsed.project });
+        const created = createIssue(submission, { milestone: parsed.milestone, project: parsed.project }, runGh);
         process.stdout.write(
             `${JSON.stringify({ ...created, title: submission.title, labels: submission.labels }, null, 2)}\n`
         );
@@ -428,5 +465,5 @@ function main(): number {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    process.exit(main());
+    process.exit(runCli(process.argv.slice(2)));
 }
