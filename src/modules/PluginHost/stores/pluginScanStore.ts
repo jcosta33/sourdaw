@@ -13,7 +13,18 @@ export type PluginScanState = {
     scanPaths: string[];
     isScanning: boolean;
     lastScanTime: number | null;
+    /** Failures from the last scan. Rendered destructively; gates the success badge. */
     errors: string[];
+    /**
+     * Informational messages from the last scan — the reason a recognised
+     * plugin format is not loaded.
+     *
+     * A separate field from `errors` and not a subset of it: these describe a
+     * scan that succeeded, so they must not be rendered as failures and must
+     * not withhold the success state. The VST3 roots are scanned by default on
+     * every platform, so this is non-empty for most users on every scan.
+     */
+    notices: string[];
 };
 
 export const defaultPluginScanState: PluginScanState = {
@@ -22,6 +33,7 @@ export const defaultPluginScanState: PluginScanState = {
     isScanning: false,
     lastScanTime: null,
     errors: [],
+    notices: [],
 };
 
 const PLUGIN_SCAN_KEY = 'sourdaw:plugin-scan';
@@ -113,6 +125,10 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
         }
     }
     const parameterMetadataReason = readString(value.parameter_metadata_reason);
+    // Restored with the counts it qualifies. Dropping it here would turn an
+    // unqueried default back into a measurement on the next launch, which is the
+    // fabrication this field exists to prevent.
+    const capabilityMetadataReason = readString(value.capability_metadata_reason);
 
     return {
         id: value.id,
@@ -129,6 +145,7 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
         has_custom_ui: value.has_custom_ui,
         ...(parameters === undefined ? {} : { parameters }),
         ...(parameterMetadataReason === null ? {} : { parameter_metadata_reason: parameterMetadataReason }),
+        ...(capabilityMetadataReason === null ? {} : { capability_metadata_reason: capabilityMetadataReason }),
     };
 }
 
@@ -138,8 +155,9 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
  * `isScanning` is never restored. A scan that was running when the window went
  * away did not finish, and reading `true` back would leave the UI in a scan
  * that no longer exists and that the use cases' in-flight guard would then
- * refuse to replace. `errors` are dropped for the same reason: they described
- * the run that is gone.
+ * refuse to replace. `errors` and `notices` are dropped for the same reason:
+ * both described the run that is gone, and the next scan is what restates
+ * whichever of them still applies.
  */
 function readPluginScanState(value: unknown): PluginScanState | null {
     if (!isRecord(value)) {
@@ -156,6 +174,7 @@ function readPluginScanState(value: unknown): PluginScanState | null {
         isScanning: false,
         lastScanTime: typeof value.lastScanTime === 'number' ? value.lastScanTime : null,
         errors: [],
+        notices: [],
     };
 }
 
