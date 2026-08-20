@@ -804,9 +804,11 @@ describe('live/offline null test — the instrument is sharp enough to matter', 
         const offline = await renderOffline({ ...BASE_TRACK, devices: [detuned] });
         const result = nullTest({ a: live.buffer, b: offline.buffer });
 
-        // Measured −84.7 dBFS. Four hundredths of a percent of the cutoff is
+        // Measured −78.11 dBFS. Four hundredths of a percent of the cutoff is
         // over budget, which is what makes the clean nulls above worth having.
         expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(result.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
+        expect(result.residualPeakDbfs).toBeCloseTo(-78.11, 1);
     });
 
     it('sees a pan divergence of one fifty-thousandth of full scale', async () => {
@@ -814,8 +816,10 @@ describe('live/offline null test — the instrument is sharp enough to matter', 
         const offline = await renderOffline({ ...BASE_TRACK, pan: 20.01 });
         const result = nullTest({ a: live.buffer, b: offline.buffer });
 
-        // Measured −83.0 dBFS.
+        // Measured −82.96 dBFS.
         expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(result.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
+        expect(result.residualPeakDbfs).toBeCloseTo(-82.96, 1);
     });
 
     /**
