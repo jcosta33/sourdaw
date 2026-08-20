@@ -289,8 +289,12 @@ assignments save with the project.
 
 ## Automation and control
 
-These names appear as automation lanes: **Arp Mode**, **Rate**, **Gate**, **Swing**. They follow
-the Arpeggiator on Play and Shape.
+**Arp Mode**, **Rate**, **Gate**, and **Swing** appear as automation lanes.
+
+> [!WARNING]
+> **Not yet active.** Those four lanes remember drawn values and do not move the Arpeggiator on
+> **Play**, **Shape**, or an expanded rack row.
+> [#2408](https://github.com/jcosta33/sourdaw/issues/2408)
 
 Processor knobs on expanded rack rows save with the project. They are not extra lanes in that
 list.
