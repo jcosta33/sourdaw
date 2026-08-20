@@ -290,6 +290,15 @@ over leaves a user with an empty plugin list and nothing to act on, and "unsuppo
 looking for a setting to turn on. A refusal for a format that will never arrive says so; one for a
 format that is coming says that instead.
 
+A refusal is only ever attached to a file the refusal is true of. Recognising an extension a scan
+cannot legitimately meet does not add information — it manufactures a claim about whatever else
+happens to carry that extension inside the roots the scan does walk.
+
+A scan reports refusals separately from failures. A refused format is the expected outcome of a
+healthy scan, and putting it on the channel that means "this scan went wrong" makes success
+unreachable for any user who owns a plugin in a format Sourdaw does not load — which is most of
+them — and trains them to ignore the failures that matter.
+
 ### What a scan may claim
 
 Discovery reports what it read from the plugin and nothing else. A capability the scan did not query
@@ -841,12 +850,7 @@ my-daw/
 │   │       ├── delay.rs
 │   │       ├── reverb.rs
 │   │       └── waveform.rs
-│   ├── daw-plugin-host/
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── scanner.rs
-│   │       ├── traits.rs
-│   │       └── clap_host.rs
+│   ├── daw-plugin-host/         # contract in § 5.4; no file list, it drifts
 │   ├── daw-io/
 │   │   └── src/
 │   │       ├── lib.rs

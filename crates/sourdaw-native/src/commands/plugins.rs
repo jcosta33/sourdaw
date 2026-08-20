@@ -255,17 +255,19 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
 
     let scan_roots = authorized_paths.clone();
     let deadline = start + MAX_SCAN_DURATION;
-    let (plugins, scan_errors, scanned_paths, scan_complete) =
+    let (plugins, scan_errors, notices, scanned_paths, scan_complete) =
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let mut candidates = Vec::new();
             let mut scan_errors = Vec::new();
+            let mut notices = Vec::new();
             let mut scan_complete = true;
             for path in scan_roots {
                 if !scanner::scan_directory_bounded(
                     &path,
                     &mut candidates,
                     &mut scan_errors,
+                    &mut notices,
                     (MAX_SCAN_CANDIDATES, deadline),
                 ) {
                     let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
@@ -323,7 +325,7 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
                 }
             }
-            (plugins, scan_errors, scanned_paths, scan_complete)
+            (plugins, scan_errors, notices, scanned_paths, scan_complete)
         })
         .await
         .map_err(|error| format!("Plugin scan task failed: {error}"))?;
@@ -349,6 +351,7 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
     Ok(ScanResult {
         plugins,
         errors,
+        notices,
         scan_duration_ms: start.elapsed().as_millis() as u64,
     })
 }

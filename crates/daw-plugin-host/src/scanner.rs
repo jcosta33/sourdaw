@@ -60,6 +60,10 @@ pub const CAPABILITY_METADATA_UNAVAILABLE_REASON: &str =
 /// plugin that does not implement it has none — a note effect, for instance.
 /// Zero is the truthful answer here, and this says why it is an answer rather
 /// than a gap.
+///
+/// It qualifies the port counts alone. An instance was inspected to learn this,
+/// so `has_custom_ui` alongside it is that instance's own answer about
+/// `clap.gui` — a queried fact, not a default.
 pub const AUDIO_PORTS_EXTENSION_ABSENT_REASON: &str =
     "This plugin does not implement clap.audio-ports, so it declares no audio ports.";
 
@@ -94,9 +98,16 @@ pub struct ScannedPlugin {
     pub parameters: Option<Vec<ClapParameterDescriptor>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_metadata_reason: Option<String>,
-    /// Present exactly when `num_inputs`, `num_outputs`, or `has_custom_ui` is a
-    /// default rather than a value read from the plugin. Absent means every one
-    /// of them is a queried fact.
+    /// Present when any of `num_inputs`, `num_outputs`, or `has_custom_ui` is a
+    /// default rather than a queried fact. Absent means every one of them is a
+    /// queried fact.
+    ///
+    /// The reason says which fields it covers, and it is not always all three.
+    /// [`CAPABILITY_METADATA_UNAVAILABLE_REASON`] covers all of them: no
+    /// inspection ran. [`AUDIO_PORTS_EXTENSION_ABSENT_REASON`] covers the two
+    /// port counts only — an instance was inspected and `has_custom_ui` is that
+    /// instance's answer, a queried fact standing beside two defaults. Read the
+    /// reason, not just its presence, before calling a field unmeasured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_metadata_reason: Option<String>,
 }
@@ -212,7 +223,19 @@ pub fn category_from_clap_features(features: &[String]) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub plugins: Vec<ScannedPlugin>,
+    /// What went wrong: a root that could not be read, a candidate the worker
+    /// failed on, a safety limit hit. A non-empty list is a scan the user has a
+    /// problem with, and every consumer renders it as one.
     pub errors: Vec<String>,
+    /// What the scan wants the user to know about a healthy run.
+    ///
+    /// Format refusals live here and not in `errors`. Sourdaw scans the VST3
+    /// roots by default on every platform, so a user who owns a single VST3
+    /// plugin gets the VST3 refusal on every scan — as an error it would make a
+    /// completely successful scan render red forever and permanently withhold
+    /// the success badge, which teaches the user to ignore the channel that
+    /// reports real failures.
+    pub notices: Vec<String>,
     pub scan_duration_ms: u64,
 }
 
@@ -264,13 +287,22 @@ fn detect_format(path: &Path, is_dir: bool) -> Option<&'static str> {
         ("vst3", true) => Some("vst3"),
         ("clap", false) => Some("clap"),
         ("component", true) => Some("au"),
-        // The two shapes VST2 ships in: a bundle on macOS and Linux, a bare
-        // module on Windows. Neither is reachable from a default scan root —
-        // the policy authorizes the VST3, CLAP and Components folders — but a
-        // user may add their VST2 folder as a custom path, and that is exactly
-        // the user who needs the refusal rather than silence.
+        // A `.vst` *directory*: the bundle shape VST2 ships in on macOS and
+        // Linux, recognised so a bundle misplaced into an authorized root is
+        // refused by name rather than passed over in silence.
+        //
+        // Windows VST2 ships as a bare `.dll`, and that extension is
+        // deliberately not recognised here. There is no way to reach a VST2
+        // folder: `PluginScanPolicy::platform_defaults` is production's only
+        // policy constructor and `authorize_scan_root` admits only descendants
+        // of its fixed roots, so a custom VST2 path cannot be granted. What a
+        // `.dll` arm would actually match is the vendor support and runtime
+        // libraries sitting inside the authorized Windows VST3 and CLAP roots,
+        // which the walk recurses into — and telling a user that a vendor's
+        // runtime DLL is a VST2 plugin Sourdaw will never load is a fabricated
+        // claim about a file that is not a plugin at all. Restore this arm only
+        // together with a production path that can authorize a VST2 root.
         ("vst", true) => Some("vst2"),
-        ("dll", false) => Some("vst2"),
         _ => None,
     }
 }
@@ -284,15 +316,28 @@ fn plugin_name_from_path(path: &Path) -> String {
 // ── Directory scanning ──────────────────────────────────────────────────
 
 #[cfg(test)]
-fn scan_directory(dir: &Path, candidates: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
+fn scan_directory(
+    dir: &Path,
+    candidates: &mut Vec<PathBuf>,
+    errors: &mut Vec<String>,
+    notices: &mut Vec<String>,
+) {
     let deadline = Instant::now() + std::time::Duration::from_secs(5);
-    let _ = scan_directory_bounded(dir, candidates, errors, (usize::MAX, deadline));
+    let _ = scan_directory_bounded(dir, candidates, errors, notices, (usize::MAX, deadline));
 }
 
+/// Walk one authorized root, collecting loadable candidates.
+///
+/// `errors` and `notices` are two channels because they mean two different
+/// things to the user: something failed, versus something the scan wants them to
+/// know. A recognised-but-unloadable format is the second — see
+/// [`ScanResult::notices`] — and routing it through `errors` makes an entirely
+/// healthy scan report as broken.
 pub fn scan_directory_bounded(
     dir: &Path,
     candidates: &mut Vec<PathBuf>,
     errors: &mut Vec<String>,
+    notices: &mut Vec<String>,
     budget: (usize, Instant),
 ) -> bool {
     if candidates.len() >= budget.0 || Instant::now() >= budget.1 {
@@ -366,17 +411,16 @@ pub fn scan_directory_bounded(
             if let Some(refusal) = unsupported_format_refusal(format) {
                 // Once per format, not once per bundle. A user with two hundred
                 // VST3 plugins needs the reason, not two hundred copies of it,
-                // and the scan's error list is the whole of what the plugin
-                // browser shows them.
-                if !errors.iter().any(|error| error == refusal) {
-                    errors.push(refusal.to_string());
+                // and this list is shown to them verbatim.
+                if !notices.iter().any(|notice| notice == refusal) {
+                    notices.push(refusal.to_string());
                 }
                 continue;
             }
 
             candidates.push(entry_path);
         } else if is_dir {
-            if !scan_directory_bounded(&entry_path, candidates, errors, budget) {
+            if !scan_directory_bounded(&entry_path, candidates, errors, notices, budget) {
                 return false;
             }
         }
@@ -384,11 +428,13 @@ pub fn scan_directory_bounded(
     true
 }
 
-/// Why this plugin's capability fields are not queried facts, or `None` when
-/// every one of them is.
+/// Why at least one of this plugin's capability fields is not a queried fact,
+/// or `None` when every one of them is.
 ///
 /// Two distinguishable absences, and they are not the same claim: the scanner
 /// never asked, or the scanner asked and the plugin declares no audio ports.
+/// The second one leaves `has_custom_ui` a fact — the instance answered — so
+/// the reason a caller reads decides which fields it qualifies.
 fn capability_metadata_reason(
     capabilities: Option<&ClapInstanceCapabilities>,
 ) -> Option<&'static str> {
@@ -491,7 +537,8 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&scan_root, &mut plugins, &mut errors);
+        let mut notices = Vec::new();
+        scan_directory(&scan_root, &mut plugins, &mut errors, &mut notices);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
@@ -522,10 +569,12 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
+        let mut notices = Vec::new();
         scan_directory(
             &symlinked_scan_root.join("Vendor"),
             &mut plugins,
             &mut errors,
+            &mut notices,
         );
         let _ = std::fs::remove_dir_all(&temp_root);
 
@@ -561,7 +610,8 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&temp_root, &mut plugins, &mut errors);
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
@@ -570,18 +620,20 @@ mod tests {
         );
         // Skipped in silence, an unloadable format is indistinguishable from an
         // empty folder. Each refusal names the format and why.
-        assert!(errors.contains(&VST3_REFUSAL.to_string()), "{errors:?}");
-        assert!(errors.contains(&VST2_REFUSAL.to_string()), "{errors:?}");
+        assert!(notices.contains(&VST3_REFUSAL.to_string()), "{notices:?}");
+        assert!(notices.contains(&VST2_REFUSAL.to_string()), "{notices:?}");
         assert!(
-            errors.contains(&AUDIO_UNIT_REFUSAL.to_string()),
-            "{errors:?}"
+            notices.contains(&AUDIO_UNIT_REFUSAL.to_string()),
+            "{notices:?}"
         );
+        // The whole point of the second channel: a folder of plugins Sourdaw
+        // will not load is not a scan that went wrong.
+        assert!(errors.is_empty(), "{errors:?}");
     }
 
     /// One line per format, not one per plugin. A user with a folder of VST3
-    /// bundles gets the reason once; the scan's error list is the whole of what
-    /// the plugin browser shows them, and repeating it two hundred times buries
-    /// every other error in it.
+    /// bundles gets the reason once; this list is shown to them verbatim, and
+    /// repeating it two hundred times buries everything else in it.
     #[test]
     fn a_folder_of_refused_bundles_reports_its_format_once() {
         let temp_root = std::env::current_dir()
@@ -599,11 +651,47 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&temp_root, &mut plugins, &mut errors);
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(plugins.is_empty());
-        assert_eq!(errors, vec![VST3_REFUSAL.to_string()]);
+        assert_eq!(notices, vec![VST3_REFUSAL.to_string()]);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// Sourdaw scans the VST3 roots by default on every platform, so this is
+    /// the *ordinary* outcome for a user who owns any VST3 plugin at all. On
+    /// the error channel it would render the scan destructively and withhold
+    /// the success badge forever, on every scan, for a run in which nothing
+    /// went wrong.
+    #[test]
+    fn a_scan_that_only_refused_formats_reports_no_error() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-refusal-not-an-error")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        std::fs::create_dir_all(temp_root.join("Vendor.vst3"))
+            .expect("VST3 placeholder should be created");
+        std::fs::create_dir_all(temp_root.join("Vendor.component"))
+            .expect("Audio Unit placeholder should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(plugins.is_empty());
+        assert!(
+            errors.is_empty(),
+            "a refusal is not a failure and may not ride the error channel: {errors:?}"
+        );
+        assert_eq!(notices.len(), 2, "{notices:?}");
     }
 
     /// Each refusal has to say which format it is about and why that format is
@@ -629,15 +717,30 @@ mod tests {
         );
     }
 
+    /// A `.vst` bundle sitting in an authorized root is plausibly a misplaced
+    /// VST2 plugin, and naming it beats passing it over.
     #[test]
-    fn the_two_shapes_vst2_ships_in_are_both_recognised_so_they_can_be_refused() {
+    fn a_vst2_bundle_in_an_authorized_root_is_recognised_so_it_can_be_refused() {
         assert_eq!(
             detect_format(Path::new("/plugins/Vendor.vst"), true),
             Some("vst2")
         );
+    }
+
+    /// A bare `.dll` is not claimed as a VST2 plugin, and the reason is where
+    /// the walk actually meets one. No production path can authorize a VST2
+    /// folder — `platform_defaults` is the only policy constructor and it
+    /// authorizes the VST3, CLAP and Components roots — while the walk does
+    /// recurse into vendor subfolders of the Windows VST3 and CLAP roots, which
+    /// are full of support and runtime DLLs. Claiming those are VST2 plugins
+    /// Sourdaw will never load is a fabricated statement about a file that is
+    /// not a plugin.
+    #[test]
+    fn a_bare_dll_is_not_claimed_to_be_a_vst2_plugin() {
+        assert_eq!(detect_format(Path::new("/plugins/Vendor.dll"), false), None);
         assert_eq!(
-            detect_format(Path::new("/plugins/Vendor.dll"), false),
-            Some("vst2")
+            detect_format(Path::new("/plugins/Vendor Support.dll"), false),
+            None
         );
     }
 
@@ -1690,6 +1793,13 @@ mod instance_metadata_tests {
     /// would otherwise be reported as timed out rather than as malformed.
     #[test]
     fn an_unbounded_port_count_is_refused_rather_than_walked() {
+        // Held like every other test that drives the shared fixture. Nothing
+        // here reads a counter today only because the bound is checked before
+        // `test_audio_port_get` is ever called — that ordering is an
+        // implementation detail of `audio_channel_count`, and a refactor that
+        // moved the check after the first `get` would silently start
+        // perturbing `AUDIO_PORT_QUERY_CALLS` under the tests that do read it.
+        let _fixture = lock_fixture();
         unsafe extern "C" fn unbounded_port_count(
             _plugin: *const clap_plugin,
             _is_input: bool,

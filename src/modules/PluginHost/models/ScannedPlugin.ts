@@ -47,8 +47,9 @@ export type ScannedPlugin = {
     num_parameters: number;
     /**
      * Whether the plugin implements `clap.gui`, the only way a CLAP plugin can
-     * offer its own editor. `false` with a `capability_metadata_reason` present
-     * means "not asked", not "no editor".
+     * offer its own editor. `false` means "not asked" only when
+     * `capability_metadata_reason` is the one that covers this field — see
+     * that field's own note.
      */
     has_custom_ui: boolean;
     /**
@@ -59,10 +60,19 @@ export type ScannedPlugin = {
     /** A safe scanner disposition; never a plugin-originated diagnostic payload. */
     parameter_metadata_reason?: string;
     /**
-     * Present exactly when `num_inputs`, `num_outputs`, or `has_custom_ui` is a
+     * Present when any of `num_inputs`, `num_outputs`, or `has_custom_ui` is a
      * default rather than a value the scanner read from the plugin. Absent means
-     * all three are queried facts. A safe scanner disposition; never a
-     * plugin-originated diagnostic payload.
+     * all three are queried facts.
+     *
+     * The reason names which fields it covers, and it is not always all three.
+     * "did not inspect this plugin's capability extensions" covers all of them:
+     * no instance was inspected. "does not implement clap.audio-ports" covers
+     * the two port counts only — an instance was inspected to learn that, so
+     * `has_custom_ui` beside it is that instance's own answer and a queried
+     * fact. Read the reason, not just its presence, before calling a field
+     * unmeasured.
+     *
+     * A safe scanner disposition; never a plugin-originated diagnostic payload.
      */
     capability_metadata_reason?: string;
 };

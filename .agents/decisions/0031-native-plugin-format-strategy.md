@@ -31,8 +31,8 @@ plugin host with legal terms attached, and those terms differ per format and are
 of them cannot be entered into at all any more.
 
 Sourdaw hosts CLAP today. VST3 is recognised by the scanner and refused. Audio Units are recognised
-and refused. VST2 was not recognised at all, which meant a user pointing Sourdaw at a VST2 folder saw
-an empty list and no reason for it.
+and refused. VST2 was not recognised at all, so a VST2 bundle sitting among a user's other plugins
+was passed over in silence, leaving them a short list and no reason for it.
 
 The question this record settles is which formats Sourdaw commits to, so that the refusals can state
 a reason instead of a category, and so that no later packet has to relitigate the licensing.
@@ -91,10 +91,24 @@ Sourdaw will host.
 
 ## Consequences
 
-- The scanner recognises `.vst3`, `.vst`/`.dll` (VST2) and `.component` bundles and refuses each one
-  by name, with the reason above, rather than passing over them in silence. `load_plugin` refuses in
-  the same words, from the same constants, so a user is never told two different stories about one
-  file.
+- The scanner recognises `.vst3` bundles, `.vst` bundles (VST2) and `.component` bundles and refuses
+  each one by name, with the reason above, rather than passing over them in silence. `load_plugin`
+  refuses in the same words, from the same constants, so a user is never told two different stories
+  about one file.
+- **A bare `.dll` is not recognised as VST2**, and that is a decision rather than an omission.
+  Windows VST2 ships as a bare module, so recognising the extension looks like the matching half of
+  the `.vst` bundle rule — but no scan can reach a VST2 folder. `PluginScanPolicy::platform_defaults`
+  is production's only policy constructor, and its `authorize_scan_root` admits only descendants of
+  the fixed VST3, CLAP and Components roots. What a `.dll` rule would match instead is the vendor
+  support and runtime libraries inside those authorized Windows roots, which the walk recurses into:
+  every one of them would be reported to the user as a VST2 plugin that will never load, which is a
+  fabricated claim about a file that is not a plugin. A refusal must be true of the file it names.
+  Recognising `.dll` becomes correct only alongside a production path that can authorize a VST2 root.
+- **A refusal is not an error.** The scan reports refusals on a channel of its own, separate from the
+  failures — a root it could not read, a candidate the worker crashed on, a safety limit reached.
+  The VST3 roots are scanned by default on every platform, so a user who owns one VST3 plugin would
+  otherwise see a permanently failed scan for a run in which nothing went wrong, and would learn to
+  ignore the channel that reports the failures that matter.
 - VST3's refusal is temporary and says so; VST2's and AU's are permanent and say so. A refusal that
   reads as "not yet" for a format that will never arrive is a promise Sourdaw cannot keep.
 - The VST3 packet inherits the obligations above as acceptance conditions — the Steinberg notice in
