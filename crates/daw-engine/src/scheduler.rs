@@ -28,7 +28,19 @@ pub enum MidiFxKind {
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
     // Built-in effects
+    /// Register a built-in effect on the master insert chain — the crate's
+    /// original chain, and where the plugin-bridge path still runs a built-in
+    /// it registers standalone.
     AddEffect(usize, String),
+    /// Register a built-in effect detached from every chain.
+    ///
+    /// The graph transport's form: its effect exists only once the
+    /// `InsertTrackDevice`/`InsertBusDevice` that follows it lands, and the
+    /// commands cross the ring one at a time, so a callback can drain between
+    /// the two. An effect registered onto the master chain in that window
+    /// would render one block of the *entire mix* through a device the user
+    /// put on one strip; a detached one renders nowhere until it is placed.
+    AddDetachedEffect(usize, String),
     SetParam(usize, String, f32),
     SetBypass(usize, bool),
 
@@ -93,6 +105,21 @@ pub enum GraphCommand {
         track_id: usize,
         effect_id: usize,
     },
+    /// Take an effect out of a track's chain and retire it in the same drain
+    /// step.
+    ///
+    /// The graph transport's remove: a `RemoveTrackDevice` followed by a
+    /// separate retirement would return the effect to the master chain for
+    /// any block a callback rendered between the two commands, running a
+    /// deleted strip device over the whole mix. This variant removes and
+    /// retires atomically, so a graph-owned effect is never observable on the
+    /// master chain. The retirement crosses the retirement channel exactly as
+    /// `RemovePluginWithBridge`'s does — the final drop stays off the
+    /// callback thread.
+    RemoveTrackDeviceRetired {
+        track_id: usize,
+        effect_id: usize,
+    },
     /// Splice an effect into a *bus's* device chain, on the same contract as
     /// [`GraphCommand::InsertTrackDevice`]. A send bus that cannot host a
     /// reverb is not a send bus.
@@ -102,6 +129,13 @@ pub enum GraphCommand {
         index: usize,
     },
     RemoveBusDevice {
+        bus_id: usize,
+        effect_id: usize,
+    },
+    /// Take an effect out of a bus's chain and retire it in the same drain
+    /// step, on the same contract as
+    /// [`GraphCommand::RemoveTrackDeviceRetired`].
+    RemoveBusDeviceRetired {
         bus_id: usize,
         effect_id: usize,
     },
@@ -370,6 +404,10 @@ impl ActiveEffect {
     }
 
     fn new(id: usize, instance: PluginCore) -> Self {
+        Self::with_placement(id, instance, EffectPlacement::MasterChain)
+    }
+
+    fn with_placement(id: usize, instance: PluginCore, placement: EffectPlacement) -> Self {
         Self {
             id,
             instance,
@@ -377,7 +415,7 @@ impl ActiveEffect {
             probability_evaluator: ProbabilityEvaluator,
             midi_fx: Vec::new(),
             pending_midi: MidiEventBuffer::new(),
-            placement: EffectPlacement::MasterChain,
+            placement,
             pending_params: DeviceParamQueue::new(),
         }
     }
@@ -497,25 +535,10 @@ impl AudioScheduler {
         while let Ok(cmd) = self.command_rx.as_mut().expect("command consumer").pop() {
             let retired = match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
-                    let instance = match plugin_type.as_str() {
-                        "knead" => Some(PluginCore::Knead(KneadEngine::new(self.sample_rate))),
-                        _ => {
-                            self.midi_rt_diagnostics
-                                .record_unsupported_effect_addition(1);
-                            None
-                        }
-                    };
-                    if let Some(inst) = instance {
-                        if self.effect_id_exists(id) {
-                            self.midi_rt_diagnostics.record_effect_id_collision(1);
-                            Some(RetiredGraphObjects::effect(ActiveEffect::new(id, inst)))
-                        } else {
-                            self.effects.push(ActiveEffect::new(id, inst));
-                            None
-                        }
-                    } else {
-                        None
-                    }
+                    self.add_builtin_effect(id, &plugin_type, EffectPlacement::MasterChain)
+                }
+                GraphCommand::AddDetachedEffect(id, plugin_type) => {
+                    self.add_builtin_effect(id, &plugin_type, EffectPlacement::Detached)
                 }
                 #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
@@ -688,6 +711,22 @@ impl AudioScheduler {
                     }
                     None
                 }
+                GraphCommand::RemoveTrackDeviceRetired {
+                    track_id,
+                    effect_id,
+                } => {
+                    // Retire only what this chain actually held: retiring on a
+                    // refused removal could final-drop an effect another chain
+                    // is running.
+                    if self.timeline.remove_track_device(track_id, effect_id) {
+                        RetiredGraphObjects::effect_with_bridge(
+                            self.remove_effect(effect_id),
+                            self.remove_audio_bridge(effect_id),
+                        )
+                    } else {
+                        None
+                    }
+                }
                 GraphCommand::InsertBusDevice {
                     bus_id,
                     entry,
@@ -705,6 +744,16 @@ impl AudioScheduler {
                         self.release_effect(effect_id, EffectPlacement::Bus(bus_id));
                     }
                     None
+                }
+                GraphCommand::RemoveBusDeviceRetired { bus_id, effect_id } => {
+                    if self.timeline.remove_bus_device(bus_id, effect_id) {
+                        RetiredGraphObjects::effect_with_bridge(
+                            self.remove_effect(effect_id),
+                            self.remove_audio_bridge(effect_id),
+                        )
+                    } else {
+                        None
+                    }
                 }
                 GraphCommand::AddSend {
                     track_id,
@@ -812,6 +861,33 @@ impl AudioScheduler {
 
     fn effect_id_exists(&self, id: usize) -> bool {
         self.effects.iter().any(|effect| effect.id == id)
+    }
+
+    /// Register a built-in effect at the given placement, retiring the fresh
+    /// instance instead when the id already names a live effect.
+    fn add_builtin_effect(
+        &mut self,
+        id: usize,
+        plugin_type: &str,
+        placement: EffectPlacement,
+    ) -> Option<RetiredGraphObjects> {
+        let instance = match plugin_type {
+            "knead" => PluginCore::Knead(KneadEngine::new(self.sample_rate)),
+            _ => {
+                self.midi_rt_diagnostics
+                    .record_unsupported_effect_addition(1);
+                return None;
+            }
+        };
+        if self.effect_id_exists(id) {
+            self.midi_rt_diagnostics.record_effect_id_collision(1);
+            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
+                id, instance, placement,
+            )));
+        }
+        self.effects
+            .push(ActiveEffect::with_placement(id, instance, placement));
+        None
     }
 
     /// Record where an effect now runs, after a chain has accepted it.
@@ -3040,6 +3116,67 @@ mod timeline_tests {
         // have halved the second track too, giving 1.0.
         let (left, _) = harness.render(4);
         assert_eq!(left, vec![1.5; 4]);
+    }
+
+    /// The graph transport pushes its batch one command at a time on the
+    /// SPSC ring, so a callback can drain between an effect's registration
+    /// and the splice that places it — and a removal drains apart from
+    /// anything after it. Neither split may put a strip-owned effect on the
+    /// master chain, even for one block.
+    #[test]
+    fn a_graph_owned_effect_never_transits_the_master_chain_at_any_drain_split() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 0.5, 64);
+
+        // Split one: the registration drains alone. Registered onto the
+        // master chain, the knead engine would run over the whole mix here
+        // (its latency alone replaces the 0.5 constant); detached, it runs
+        // nowhere.
+        harness.send(GraphCommand::AddDetachedEffect(7, "knead".to_string()));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+        let (registered_only, _) = harness.render(4);
+        assert_eq!(
+            registered_only,
+            vec![0.5; 4],
+            "an effect whose splice has not landed must not touch the master output"
+        );
+
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(7),
+            index: 0,
+        });
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Track(1)
+        );
+        harness.render(4);
+
+        // Split two: the removal drains alone. The remove-then-retire pair
+        // this variant replaces released the effect to the master chain in
+        // exactly this window.
+        harness.send(GraphCommand::RemoveTrackDeviceRetired {
+            track_id: 1,
+            effect_id: 7,
+        });
+        assert!(
+            harness.scheduler.effects.is_empty(),
+            "a retired graph device must leave the effect table in the same drain step"
+        );
+        let (after_remove, _) = harness.render(4);
+        assert_eq!(after_remove, vec![0.5; 4]);
+
+        // The final drop crossed the retirement channel rather than running
+        // on this (stand-in audio) thread.
+        let retired = harness
+            .retired_rx
+            .pop()
+            .expect("the removed effect must be handed off for reclamation");
+        assert!(retired.effect.is_some());
     }
 
     #[test]

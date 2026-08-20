@@ -9,6 +9,13 @@
 //! serde mirror of that contract's batch types (crates/sourdaw-native/AGENTS.md
 //! — no binding generator runs).
 //!
+//! This file is where the native chain stopped rendering only silence-plus-
+//! bridged-plugins: a batch applied here builds timeline tracks, clips, buses,
+//! sends and device chains that `daw-engine` renders. Web Audio remains the
+//! live product path until the D3.c cutover; the commands stay denied in the
+//! shipped shell, and the offline render below is the parity oracle for that
+//! cutover.
+//!
 //! ## Mapping
 //!
 //! Every batch is validated and mapped control-side into a vector of
@@ -52,17 +59,23 @@
 //!   primitive; they refuse. `ramp-to` maps onto `AutomationWrite::Replace`
 //!   (cancel-and-replace, re-anchored — the semantics the contract requires),
 //!   `step` onto `Append`, `hold` onto `Hold`.
-//! - Gate writes (`track-mute-gate` / `track-solo-gate`) accept only `step`
-//!   and apply at the next block boundary, not at the stamped sample: the
-//!   native gates are strip flags, not ramped parameters.
+//! - Gate writes (`track-mute-gate` / `track-solo-gate`) accept only `step`,
+//!   and the stamp is not honoured at all: the native gates are strip flags,
+//!   not ramped parameters, so the write applies at the block boundary that
+//!   drains the command — even when its stamp names a future time.
 //! - A bus strip has no pan, no mute gate, no solo gate and no sends in
 //!   `daw-engine`; batches that need them refuse with a reason naming the gap.
 //! - `bus -> track` routing refuses with its own reason — the D3 obligation
 //!   named at `AudioGraphBackend.ts` (routing constraint): buses are summed
 //!   after every track, so the edge cannot carry audio today.
-//! - `set-transport` carries only `playing` + `positionSeconds`; tempo and
-//!   time signature stay on the plugin-transport path until the two transports
-//!   are unified.
+//! - `set-transport` carries only `playing` + `positionSeconds`, and the
+//!   `TransportState` it assigns is built from the engine default — so a graph
+//!   set-transport currently *resets* tempo and time signature to 120 BPM 4/4
+//!   and will fight `update_plugin_transport` the moment both paths drive one
+//!   live engine. Resolution is deferred to the live-cutover slice.
+//! - `correlation` is accepted and echoed but not yet validated against a
+//!   live document revision. The TS-side backend (D3.b) owns wiring it; until
+//!   then the native side echoes whatever it was handed.
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
@@ -71,8 +84,9 @@ use daw_engine::scheduler::GraphCommand;
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
     ClipPlayback, DeviceKind, DeviceParam, RampShape, RouteTarget, TimelineBus, TimelineClip,
-    TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS,
-    MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
+    TimelineRtDiagnosticsSnapshot, TimelineTrack, AUTOMATION_QUEUE_CAPACITY,
+    DEVICE_PARAM_QUEUE_CAPACITY, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS,
+    MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -94,7 +108,10 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 
 /// The one refusal-free ceiling on an offline render: ten minutes at 48 kHz.
 /// A null test renders windows, not albums, and an unbounded frame count is an
-/// unbounded allocation.
+/// unbounded allocation. The sample pool applies the same ceiling per channel
+/// on registration for the same reason: `register_timeline_sample` copies the
+/// material it accepts, so an unbounded payload is an unbounded allocation
+/// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
 /// The `SetParam` names the built-in Knead effect maps
@@ -526,6 +543,64 @@ impl std::fmt::Debug for MappedBatch {
     }
 }
 
+/// Control-side ledger of what one batch queues on the engine's fixed
+/// per-parameter queues.
+///
+/// `RampedParam` holds [`AUTOMATION_QUEUE_CAPACITY`] pending writes and a
+/// [`DeviceParamQueue`] holds [`DEVICE_PARAM_QUEUE_CAPACITY`]; a write past
+/// either is dropped render-side with only a diagnostics counter, because the
+/// audio thread cannot grow a queue. This module's law is refuse-don't-drop,
+/// so the batch that would overflow a queue refuses here, whole, before
+/// anything is pushed. The ledger follows the queue's own semantics: an
+/// `Append` occupies a slot, a `Replace` or `Hold` drops everything queued
+/// first and then occupies one.
+///
+/// [`DeviceParamQueue`]: daw_engine::timeline::DeviceParamQueue
+#[derive(Default)]
+struct QueueBudgets {
+    automation: HashMap<AutomationTarget, usize>,
+    device_params: HashMap<usize, usize>,
+}
+
+impl QueueBudgets {
+    fn charge_automation(
+        &mut self,
+        target: AutomationTarget,
+        write: &AutomationWrite,
+    ) -> Result<(), String> {
+        let depth = self.automation.entry(target).or_insert(0);
+        match write {
+            AutomationWrite::Append(_) => {
+                if *depth == AUTOMATION_QUEUE_CAPACITY {
+                    return Err(format!(
+                        "automation-queue-capacity — this batch already queues \
+                         {AUTOMATION_QUEUE_CAPACITY} unlanded writes on this parameter, all its \
+                         native queue holds; the engine would drop the rest silently, so the \
+                         batch refuses instead — split the writes across batches"
+                    ));
+                }
+                *depth += 1;
+            }
+            AutomationWrite::Replace(_) | AutomationWrite::Hold { .. } => *depth = 1,
+        }
+        Ok(())
+    }
+
+    fn charge_device_param(&mut self, effect_id: usize) -> Result<(), String> {
+        let depth = self.device_params.entry(effect_id).or_insert(0);
+        if *depth == DEVICE_PARAM_QUEUE_CAPACITY {
+            return Err(format!(
+                "device-param-queue-capacity — this batch already queues \
+                 {DEVICE_PARAM_QUEUE_CAPACITY} unlanded changes on this device, all its native \
+                 queue holds; the engine would drop the rest silently, so the batch refuses \
+                 instead — split the writes across batches"
+            ));
+        }
+        *depth += 1;
+        Ok(())
+    }
+}
+
 fn finite(value: f64, what: &str) -> Result<f64, String> {
     if value.is_finite() {
         Ok(value)
@@ -583,6 +658,20 @@ fn immediate_write(value: f32) -> AutomationWrite {
     })
 }
 
+/// The one gate every mixer-parameter write passes: the batch's queue ledger
+/// is charged first, so a write the engine's fixed queue could not take
+/// refuses the batch here instead of being dropped render-side.
+fn push_automation(
+    target: AutomationTarget,
+    write: AutomationWrite,
+    budgets: &mut QueueBudgets,
+    ops: &mut Vec<GraphCommand>,
+) -> Result<(), String> {
+    budgets.charge_automation(target, &write)?;
+    ops.push(GraphCommand::AutomateParam { target, write });
+    Ok(())
+}
+
 /// What one device maps onto natively. The scheduler's only built-in is the
 /// Knead engine; everything else in the project's native-DSP vocabulary is a
 /// WASM device the web runtime realises, with no `daw-engine` body yet.
@@ -626,7 +715,15 @@ fn map_device(
     }
 
     let effect_id = registry.allocate_effect_id();
-    ops.push(GraphCommand::AddEffect(effect_id, "knead".to_string()));
+    // Detached, never `AddEffect`: commands cross the ring one at a time, so
+    // a callback can drain between this registration and the chain splice
+    // that follows it. An effect registered onto the master chain in that
+    // window would render one block of the entire mix through a device the
+    // batch put on one strip.
+    ops.push(GraphCommand::AddDetachedEffect(
+        effect_id,
+        "knead".to_string(),
+    ));
     for (name, value) in &device.parameter_values {
         ops.push(GraphCommand::SetParam(
             effect_id,
@@ -685,6 +782,7 @@ fn map_batch(
     let mut ops = Vec::new();
     let mut reports = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
+    let mut budgets = QueueBudgets::default();
 
     for (index, command) in batch.commands.iter().enumerate() {
         if let Err(reason) = map_command(
@@ -692,6 +790,7 @@ fn map_batch(
             registry,
             samples,
             sample_rate,
+            &mut budgets,
             &mut ops,
             &mut reports,
         ) {
@@ -741,6 +840,7 @@ fn map_command(
     registry: &mut GraphRegistry,
     samples: &HashMap<String, TimelineSample>,
     sample_rate: f32,
+    budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
     reports: &mut Vec<StripReportPayload>,
 ) -> Result<(), String> {
@@ -772,15 +872,19 @@ fn map_command(
             let native_id = registry.allocate_node_id();
 
             ops.push(GraphCommand::AddTrack(TimelineTrack::new(native_id)));
-            ops.push(GraphCommand::AutomateParam {
-                target: AutomationTarget::TrackGain(native_id),
-                write: immediate_write(gain),
-            });
+            push_automation(
+                AutomationTarget::TrackGain(native_id),
+                immediate_write(gain),
+                budgets,
+                ops,
+            )?;
             if pan != 0.0 {
-                ops.push(GraphCommand::AutomateParam {
-                    target: AutomationTarget::TrackPan(native_id),
-                    write: immediate_write(pan),
-                });
+                push_automation(
+                    AutomationTarget::TrackPan(native_id),
+                    immediate_write(pan),
+                    budgets,
+                    ops,
+                )?;
             }
             if *honor_muted && state.muted {
                 ops.push(GraphCommand::SetTrackMute(native_id, true));
@@ -887,10 +991,12 @@ fn map_command(
             let native_id = registry.allocate_node_id();
 
             ops.push(GraphCommand::AddBus(TimelineBus::new(native_id)));
-            ops.push(GraphCommand::AutomateParam {
-                target: AutomationTarget::BusGain(native_id),
-                write: immediate_write(gain),
-            });
+            push_automation(
+                AutomationTarget::BusGain(native_id),
+                immediate_write(gain),
+                budgets,
+                ops,
+            )?;
 
             let mut built_device_ids = Vec::new();
             let mut chain_index = 0usize;
@@ -1128,22 +1234,20 @@ fn map_command(
                     "remove-device: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
+            // Remove and retire in one engine command. A separate removal
+            // followed by a retirement would return the effect to the master
+            // insert chain for any block a callback rendered between the two,
+            // running a deleted device over the whole mix.
             ops.push(match strip.kind {
-                StripKind::Track => GraphCommand::RemoveTrackDevice {
+                StripKind::Track => GraphCommand::RemoveTrackDeviceRetired {
                     track_id: strip.native_id,
                     effect_id: device.native_effect_id,
                 },
-                StripKind::Bus => GraphCommand::RemoveBusDevice {
+                StripKind::Bus => GraphCommand::RemoveBusDeviceRetired {
                     bus_id: strip.native_id,
                     effect_id: device.native_effect_id,
                 },
             });
-            // Fully retire the effect. Leaving it registered would return it
-            // to the master insert chain, which would run a deleted device
-            // over the whole mix.
-            ops.push(GraphCommand::RemovePluginWithBridge(
-                device.native_effect_id,
-            ));
             registry.devices.remove(device_id);
             registry
                 .strips
@@ -1154,7 +1258,7 @@ fn map_command(
         }
 
         GraphCommandPayload::WriteParameter { target, write } => {
-            map_parameter_write(target, write, registry, sample_rate, ops)
+            map_parameter_write(target, write, registry, sample_rate, budgets, ops)
         }
 
         GraphCommandPayload::WriteDeviceParameter { target, write } => {
@@ -1183,6 +1287,9 @@ fn map_command(
                 }
             };
             let StepWritePayload::Step { value, time } = write;
+            budgets
+                .charge_device_param(device.native_effect_id)
+                .map_err(|reason| format!("write-device-parameter: {reason}"))?;
             ops.push(GraphCommand::AutomateDeviceParam {
                 effect_id: device.native_effect_id,
                 param,
@@ -1202,10 +1309,10 @@ fn map_command(
         } => {
             let frame =
                 seconds_to_frames(*position_seconds, sample_rate, "set-transport position")?;
-            // Stop first, then locate: stopping holds every parameter where
-            // the last rendered frame left it, and the locate then drops what
-            // the move made stale — the same order the engine's own laws
-            // compose in.
+            // Transport state lands before the locate: a play→stop edge holds
+            // every parameter where the last rendered frame left it, and the
+            // seek that follows then drops whatever the move made stale — the
+            // same order the engine's own laws compose in.
             ops.push(GraphCommand::SetTransport(TransportState {
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
@@ -1222,6 +1329,7 @@ fn map_parameter_write(
     write: &ParameterWritePayload,
     registry: &GraphRegistry,
     sample_rate: f32,
+    budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<(), String> {
     let strip_for = |strip_id: &String| {
@@ -1270,7 +1378,8 @@ fn map_parameter_write(
         _ => {}
     }
 
-    let (automation_target, value_law): (
+    let (strip, automation_target, value_law): (
+        &StripEntry,
         AutomationTarget,
         fn(f64, &StripEntry) -> Result<f32, String>,
     ) = match target {
@@ -1280,7 +1389,7 @@ fn map_parameter_write(
                 StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
                 StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
             };
-            (target, |value, strip| {
+            (strip, target, |value, strip| {
                 fader_gain(value, strip.vca_multiplier)
             })
         }
@@ -1292,9 +1401,11 @@ fn map_parameter_write(
                          the native bus strip has no panner"
                 ));
             }
-            (AutomationTarget::TrackPan(strip.native_id), |value, _| {
-                pan_position(value)
-            })
+            (
+                strip,
+                AutomationTarget::TrackPan(strip.native_id),
+                |value, _| pan_position(value),
+            )
         }
         StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
             let strip = strip_for(track_id)?;
@@ -1308,6 +1419,7 @@ fn map_parameter_write(
                 .get(bus_id)
                 .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
             (
+                strip,
                 AutomationTarget::TrackSendLevel {
                     track_id: strip.native_id,
                     bus_id: destination.native_id,
@@ -1317,14 +1429,6 @@ fn map_parameter_write(
         }
         StripParameterTargetPayload::TrackMuteGate { .. }
         | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
-    };
-
-    let strip = match target {
-        StripParameterTargetPayload::TrackFader { track_id }
-        | StripParameterTargetPayload::TrackPan { track_id }
-        | StripParameterTargetPayload::TrackSendLevel { track_id, .. }
-        | StripParameterTargetPayload::TrackMuteGate { track_id }
-        | StripParameterTargetPayload::TrackSoloGate { track_id } => strip_for(track_id)?,
     };
 
     let automation_write = match write {
@@ -1364,11 +1468,8 @@ fn map_parameter_write(
         },
     };
 
-    ops.push(GraphCommand::AutomateParam {
-        target: automation_target,
-        write: automation_write,
-    });
-    Ok(())
+    push_automation(automation_target, automation_write, budgets, ops)
+        .map_err(|reason| format!("write-parameter: {reason}"))
 }
 
 fn map_schedule_clip(
@@ -1508,6 +1609,39 @@ fn map_schedule_clip(
 
 // ── Command bodies ──────────────────────────────────────────────────────────
 
+/// Frames per channel in a raw PCM payload, refusing shapes no schedule could
+/// honour.
+///
+/// Ragged bytes are not frames. Zero frames refuse because the contract
+/// (`AudioGraphClipSource`) forbids playing silence for a real source — a
+/// 0-frame sample registered here would render a later `schedule-clip` as
+/// exactly that. And a payload above the offline render ceiling refuses
+/// because registration copies the material, so the ceiling on allocation is
+/// the same one the renderer holds, applied per channel.
+fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
+    let bytes_per_frame = 4 * channels;
+    if pcm_len % bytes_per_frame != 0 {
+        return Err(format!(
+            "PCM byte length {pcm_len} is not a whole number of {channels}-channel f32 frames"
+        ));
+    }
+    let frames = pcm_len / bytes_per_frame;
+    if frames == 0 {
+        return Err(
+            "PCM payload holds zero frames — a clip scheduled from it could only render \
+             silence, which the contract forbids for a real source"
+                .to_string(),
+        );
+    }
+    if frames > MAX_OFFLINE_RENDER_FRAMES {
+        return Err(format!(
+            "PCM payload holds {frames} frames per channel, above the \
+             {MAX_OFFLINE_RENDER_FRAMES}-frame ceiling"
+        ));
+    }
+    Ok(frames)
+}
+
 fn parse_batch(batch: Value) -> Result<GraphBatchPayload, String> {
     serde_json::from_value(batch).map_err(|error| format!("Invalid graph command batch: {error}"))
 }
@@ -1542,15 +1676,8 @@ pub async fn register_timeline_sample(
             ))
         }
     };
+    let frames = pcm_frame_count(pcm.len(), channels)?;
     let bytes_per_frame = 4 * channels;
-    if pcm.len() % bytes_per_frame != 0 {
-        return Err(format!(
-            "PCM byte length {} is not a whole number of {channels}-channel f32 frames",
-            pcm.len()
-        ));
-    }
-
-    let frames = pcm.len() / bytes_per_frame;
     let mut left = Vec::with_capacity(frames);
     let mut right = if channels == 2 {
         Vec::with_capacity(frames)
@@ -1586,7 +1713,14 @@ pub async fn register_timeline_sample(
 /// so — never a crash and never a silent no-op. The batch is validated whole
 /// against the registry before anything is pushed.
 pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Value, String> {
-    let batch = parse_batch(batch)?;
+    // A batch that does not even deserialize is a refusal, not a transport
+    // error: the contract's one failure vocabulary is the `rejected` result,
+    // and a thrown error beside it would be a second vocabulary for the same
+    // fact. The serde message is the reason.
+    let batch = match parse_batch(batch) {
+        Ok(batch) => batch,
+        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+    };
 
     let mut engine_guard = state
         .engine
@@ -1659,32 +1793,70 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
     ))
 }
 
+/// Map one self-contained batch for an offline render: fresh registry, no
+/// live engine.
+///
+/// The caller holds the sample-pool lock only across this call — mapping
+/// clones the material each clip plays into its command, so the render itself
+/// runs without the lock.
+fn map_offline_batch(
+    batch: &GraphBatchPayload,
+    samples: &HashMap<String, TimelineSample>,
+    sample_rate: f32,
+) -> Result<Vec<GraphCommand>, String> {
+    let mut registry = GraphRegistry::default();
+    Ok(map_batch(batch, &mut registry, samples, sample_rate)?.ops)
+}
+
+/// Drive one mapped batch through the offline scheduler, refusing a render
+/// the engine did not take whole.
+fn render_offline_ops(
+    ops: Vec<GraphCommand>,
+    frames: usize,
+    sample_rate: f32,
+) -> Result<(Vec<f32>, Vec<f32>), String> {
+    // A render is playback by construction: the transport rolls from frame 0
+    // unless the batch itself says otherwise (its own set-transport commands
+    // are mapped after this preamble and override it).
+    let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1);
+    renderer.push(GraphCommand::SetTransport(TransportState {
+        is_playing: true,
+        ..TransportState::default()
+    }))?;
+    for op in ops {
+        renderer.push(op)?;
+    }
+
+    let rendered = renderer.render(frames);
+
+    // Belt and braces under refuse-don't-drop: `map_batch` refuses anything
+    // the graph's fixed capacities could not take, so these counters stay
+    // zero — but a nonzero counter means the engine dropped part of the
+    // admitted batch, and success here would launder that drop into a clean
+    // render.
+    let diagnostics = renderer.timeline_diagnostics();
+    if diagnostics != TimelineRtDiagnosticsSnapshot::default() {
+        return Err(format!(
+            "offline-render-dropped-commands: the engine refused part of the batch after \
+             admission ({diagnostics:?}); the output is not the batch and is discarded"
+        ));
+    }
+    Ok(rendered)
+}
+
 /// One offline render: map, apply, render — with no live engine involved.
 ///
 /// Split from the napi wrapper so refusal-before-application and determinism
 /// are testable without a device. Returns interleaved stereo f32.
+#[cfg(test)]
 fn render_offline_batch(
     batch: &GraphBatchPayload,
     samples: &HashMap<String, TimelineSample>,
     frames: usize,
     sample_rate: f32,
 ) -> Result<Vec<f32>, String> {
-    let mut registry = GraphRegistry::default();
-    let mapped = map_batch(batch, &mut registry, samples, sample_rate)?;
-
-    // A render is playback by construction: the transport rolls from frame 0
-    // unless the batch itself says otherwise (its own set-transport commands
-    // are mapped after this preamble and override it).
-    let mut renderer = OfflineRenderer::new(sample_rate, mapped.ops.len() + 1);
-    renderer.push(GraphCommand::SetTransport(TransportState {
-        is_playing: true,
-        ..TransportState::default()
-    }))?;
-    for op in mapped.ops {
-        renderer.push(op)?;
-    }
-
-    let (left, right) = renderer.render(frames);
+    let ops = map_offline_batch(batch, samples, sample_rate)?;
+    let (left, right) = render_offline_ops(ops, frames, sample_rate)?;
     let mut interleaved = Vec::with_capacity(frames * 2);
     for index in 0..frames {
         interleaved.push(left[index]);
@@ -1720,15 +1892,24 @@ pub async fn render_graph_offline(
         ));
     }
 
-    let samples = state
-        .timeline_samples
-        .lock()
-        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
-    let interleaved = render_offline_batch(&batch, &samples, frames, sample_rate as f32)?;
+    // The pool lock spans only the mapping: every source the batch plays is
+    // cloned into its clip command there, so the render — the long part —
+    // runs with the pool free for concurrent registrations.
+    let ops = {
+        let samples = state
+            .timeline_samples
+            .lock()
+            .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+        map_offline_batch(&batch, &samples, sample_rate as f32)?
+    };
+    let (left, right) = render_offline_ops(ops, frames, sample_rate as f32)?;
 
-    let mut bytes = Vec::with_capacity(interleaved.len() * 4);
-    for sample in interleaved {
-        bytes.extend_from_slice(&sample.to_le_bytes());
+    // Interleave straight into the byte payload; the render's planar pair is
+    // the only f32 copy of the output this function holds.
+    let mut bytes = Vec::with_capacity(frames * 2 * 4);
+    for index in 0..frames {
+        bytes.extend_from_slice(&left[index].to_le_bytes());
+        bytes.extend_from_slice(&right[index].to_le_bytes());
     }
     Ok(bytes)
 }
@@ -2093,6 +2274,141 @@ mod tests {
         assert!(silence.iter().all(|sample| *sample == 0.0));
     }
 
+    fn pan_step(track: &str, value: f64, time: f64) -> Value {
+        json!({ "kind": "write-parameter",
+                "target": { "kind": "track-pan", "trackId": track },
+                "write": { "shape": "step", "value": value, "time": time } })
+    }
+
+    fn track_strip(track: &str) -> Value {
+        json!({ "kind": "create-track-strip", "trackId": track, "name": "T",
+                "state": strip_state(1.0), "devices": [],
+                "honorMuted": true, "contributesAudio": true })
+    }
+
+    /// The RT-side automation queue holds eight pending writes per parameter
+    /// and drops the ninth with only a counter. The batch must refuse whole
+    /// instead: a ninth step on one parameter names the batch unrenderable.
+    #[test]
+    fn a_batch_with_nine_step_writes_on_one_parameter_refuses_whole() {
+        let mut commands = vec![track_strip("t1")];
+        for index in 0..=AUTOMATION_QUEUE_CAPACITY {
+            commands.push(pan_step("t1", 0.1, 1.0 + index as f64));
+        }
+        let refusal = map_batch(
+            &batch(Value::Array(commands)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("the ninth pending write on one parameter must refuse the batch");
+
+        assert!(
+            refusal.contains("automation-queue-capacity"),
+            "the refusal must name the queue, got: {refusal}"
+        );
+        // The command past the capacity is the one named — creation is
+        // commands[0], the writes follow.
+        assert!(refusal.contains(&format!("commands[{}]", AUTOMATION_QUEUE_CAPACITY + 1)));
+    }
+
+    #[test]
+    fn a_batch_filling_one_parameters_queue_exactly_maps() {
+        let mut commands = vec![track_strip("t1")];
+        for index in 0..AUTOMATION_QUEUE_CAPACITY {
+            commands.push(pan_step("t1", 0.1, 1.0 + index as f64));
+        }
+
+        map_batch(
+            &batch(Value::Array(commands)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("exactly the queue's capacity must map");
+    }
+
+    /// The ledger is per parameter, not per batch: full queues on two strips,
+    /// on two parameters of one strip, and on a device queue beside them must
+    /// not pool into one count — and the ninth device write must refuse on
+    /// its own queue's law.
+    #[test]
+    fn queue_budgets_do_not_conflate_distinct_parameters_strips_or_devices() {
+        let mut commands = vec![
+            track_strip("t1"),
+            track_strip("t2"),
+            json!({ "kind": "insert-device", "trackId": "t1", "index": 0,
+                    "device": { "id": "d1", "type": "knead", "bypassed": false,
+                                "parameterValues": {} } }),
+        ];
+        for index in 0..AUTOMATION_QUEUE_CAPACITY {
+            let time = 1.0 + index as f64;
+            commands.push(pan_step("t1", 0.1, time));
+            commands.push(pan_step("t2", 0.1, time));
+            // The fader carries the creation write (a replace holding one
+            // slot), so capacity minus one steps still fit.
+            if index + 1 < AUTOMATION_QUEUE_CAPACITY {
+                commands.push(json!({ "kind": "write-parameter",
+                    "target": { "kind": "track-fader", "trackId": "t1" },
+                    "write": { "shape": "step", "value": 0.5, "time": time } }));
+            }
+        }
+        for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
+            commands.push(json!({ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                            "parameterId": "shift_semitones" },
+                "write": { "shape": "step", "value": 1.0, "time": 1.0 + index as f64 } }));
+        }
+
+        map_batch(
+            &batch(Value::Array(commands.clone())),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("full-but-not-overflowing queues on distinct targets must map");
+
+        commands.push(json!({ "kind": "write-device-parameter",
+            "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                        "parameterId": "shift_semitones" },
+            "write": { "shape": "step", "value": 1.0, "time": 99.0 } }));
+        let refusal = map_batch(
+            &batch(Value::Array(commands)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("the ninth pending device write must refuse the batch");
+        assert!(refusal.contains("device-param-queue-capacity"));
+    }
+
+    /// A payload that does not deserialize resolves to the contract's
+    /// `rejected` result — one failure vocabulary, not a thrown transport
+    /// error beside it. `index: -1` is the likeliest live trigger: the
+    /// contract's `number` admits what `u32` refuses.
+    #[test]
+    fn a_batch_that_fails_to_parse_resolves_rejected_rather_than_throwing() {
+        let state = AppState::default();
+        let malformed = json!({ "schemaVersion": 1, "commands": [
+            { "kind": "insert-device", "trackId": "t1", "index": -1,
+              "device": { "id": "d1", "type": "knead", "bypassed": false,
+                          "parameterValues": {} } }
+        ]});
+
+        let result = block_on_test(apply_graph_commands(malformed, &state))
+            .expect("a parse failure must resolve to a result, not throw");
+
+        assert_eq!(result["acceptance"], "rejected");
+        assert_eq!(result["application"], "not-applied");
+        assert!(result["reason"]
+            .as_str()
+            .expect("the reason is the serde message")
+            .contains("Invalid graph command batch"));
+        // Refused before the lazy bootstrap: a batch that cannot be read must
+        // not start an engine.
+        assert!(state.engine.lock().expect("engine lock").is_none());
+    }
+
     #[test]
     fn register_timeline_sample_decodes_interleaved_stereo_and_refuses_ragged_bytes() {
         let state = AppState::default();
@@ -2128,6 +2444,36 @@ mod tests {
         assert!(refused.is_err(), "ragged bytes must refuse");
     }
 
+    /// The pool refuses what a schedule could never honour: zero frames (the
+    /// contract forbids rendering a real source as silence) and material past
+    /// the per-channel registration ceiling. The ceiling is arithmetic on the
+    /// payload length, so proving it needs no quarter-gigabyte buffer.
+    #[test]
+    fn a_zero_frame_sample_and_one_past_the_ceiling_refuse_registration() {
+        let state = AppState::default();
+        let refused = block_on_test(register_timeline_sample(
+            "s0".to_string(),
+            48_000.0,
+            2,
+            Vec::new(),
+            &state,
+        ))
+        .expect_err("zero frames must refuse");
+        assert!(refused.contains("zero frames"), "got: {refused}");
+        assert!(state
+            .timeline_samples
+            .lock()
+            .expect("sample lock")
+            .is_empty());
+
+        assert!(pcm_frame_count(MAX_OFFLINE_RENDER_FRAMES * 4, 1).is_ok());
+        assert!(pcm_frame_count(MAX_OFFLINE_RENDER_FRAMES * 8, 2).is_ok());
+        let over = pcm_frame_count((MAX_OFFLINE_RENDER_FRAMES + 1) * 4, 1)
+            .expect_err("a frame past the ceiling must refuse");
+        assert!(over.contains("ceiling"), "got: {over}");
+        assert!(pcm_frame_count((MAX_OFFLINE_RENDER_FRAMES + 1) * 8, 2).is_err());
+    }
+
     /// The wire result is a hand-maintained mirror of `AudioGraphApplyResult`;
     /// pin its spellings the way `engine_diagnostics` pins its own payload.
     #[test]
@@ -2156,6 +2502,30 @@ mod tests {
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
                 r#""reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}]}"#
+            )
+        );
+
+        // `needs-reconcile` is the one variant carrying `compensation` and the
+        // one nothing produces at runtime today, so only this pin proves its
+        // spellings against the contract (`AudioGraphApplyResult`).
+        let needs_reconcile = serde_json::to_string(&GraphApplyResultPayload::needs_reconcile(
+            "the engine refused command 2 of 3".to_string(),
+            Some(json!({ "documentRevision": 9 })),
+            7,
+            vec![StripReportPayload {
+                kind: "track",
+                id: "t1".to_string(),
+                device_ids: Vec::new(),
+            }],
+        ))
+        .expect("needs-reconcile serializes");
+        assert_eq!(
+            needs_reconcile,
+            concat!(
+                r#"{"acceptance":"accepted","application":"needs-reconcile","#,
+                r#""reason":"the engine refused command 2 of 3","#,
+                r#""compensation":"not-attempted","correlation":{"documentRevision":9},"#,
+                r#""runtimeRevision":7,"reports":[{"kind":"track","id":"t1","deviceIds":[]}]}"#
             )
         );
     }

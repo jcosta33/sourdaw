@@ -23,11 +23,6 @@ use rtrb::{Consumer, Producer, RingBuffer};
 /// block-constant fast paths) is exercised on the same grain.
 pub const OFFLINE_BLOCK_FRAMES: usize = 512;
 
-/// Slots the offline retirement ring holds. Offline retirements are drained on
-/// the same thread every block, so this only has to cover one block's worth of
-/// refusals plus the scheduler's reserved shutdown slot.
-const OFFLINE_RETIREMENT_CAPACITY: usize = 257;
-
 /// The scheduler, a command ring, and a render loop — and no cpal stream.
 ///
 /// Field order is drop order and is load bearing, exactly as `AppState`'s is:
@@ -50,8 +45,18 @@ impl OfflineRenderer {
     /// it to its validated batch can push every command before the first block
     /// renders, so the graph is never observed half-built.
     pub fn new(sample_rate: f32, command_capacity: usize) -> Self {
-        let (command_tx, command_rx) = RingBuffer::new(command_capacity.max(1));
-        let (retired_tx, retired_rx) = RingBuffer::new(OFFLINE_RETIREMENT_CAPACITY);
+        let command_capacity = command_capacity.max(1);
+        // The retirement ring's real bound is the command ring: `update_graph`
+        // drains the *entire* command ring in one call, every command can
+        // produce at most one retirement, and a retirement the ring cannot
+        // take makes `update_graph` return early — deferring the rest of the
+        // batch past a rendered block and breaking the whole-batch guarantee.
+        // One command ring of slots plus the scheduler's reserved shutdown
+        // slot therefore always suffices and never defers — the same
+        // arithmetic behind the live engine's `RETIREMENT_QUEUE_CAPACITY`
+        // (its 256-slot command ring plus one).
+        let (command_tx, command_rx) = RingBuffer::new(command_capacity);
+        let (retired_tx, retired_rx) = RingBuffer::new(command_capacity + 1);
         let (midi_diagnostics_tx, _midi_diagnostics_reader) = active_midi_rt_diagnostics_channel();
         let (timeline_diagnostics_tx, _timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();

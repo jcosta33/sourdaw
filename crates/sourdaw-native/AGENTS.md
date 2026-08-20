@@ -20,7 +20,7 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 - Never final-drop a hosted plugin on the audio thread — removed CLAP runtimes go to `retired_engine_plugins` (`state.rs`).
 - If non-RT control owns a plugin wrapper's mutex, the RT path bypasses it rather than waiting (`host/native_bridge.rs`).
 - WebAudio↔Rust audio crosses `PluginAudioBridge` (rtrb SPSC rings sized from `MAX_CALLBACK_FRAMES`, 36 blocks × up to 512 frames stereo), relayed from the worklet via main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`). Capacity is headroom, not latency: the callback holds the round trip within twice the device period by processing a block and then withholding it from the return ring, so latency settles at that depth instead of ratcheting up to the ring. Never shed a block before the plugin sees it — the input side is the native sampler's only record feed.
-- The native chain renders silence except bridged plugins (`audio_thread.rs`); timeline audio is a Web Audio concern.
+- The native chain renders bridged plugins plus the timeline graph built through the graph-command surface (`commands/graph.rs` — tracks, clips, buses, sends, device chains), started lazily by the first `apply_graph_commands`. Web Audio remains the live product path until the D3.c cutover; nothing else may make the native chain sound.
 
 ## Constraints
 
