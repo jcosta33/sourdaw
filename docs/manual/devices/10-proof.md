@@ -31,13 +31,13 @@ The panel is labelled **Mastering desk**. It opens on **Play**.
 The five chips in the rail change how much of the panel you see. They do not bypass the chain. The
 device opens on **Play**. The choice is this session only — it is not stored in the project.
 
-| Chip      | Heading           | What you get                                                                                             |
-| --------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
-| **Play**  | **Target desk**   | Target list, Input / Output LUFS, **Ceiling**.                                                           |
-| **Shape** | **Chain shape**   | The five modules as a strip you can switch off, with **IN** meters between them, plus four knobs.        |
-| **Build** | **Module detail** | Full **EQ**, **Multiband Dynamics**, **Stereo Imager**, **Harmonic Exciter**, and **Limiter**.           |
-| **Route** | **Chain route**   | **Signal Chain Order**, **Input Gain**, **Output Gain**.                                                 |
-| **Lab**   | **Check bench**   | **Loudness History**, **Tonal Balance**, the full meter grid, and **Reset Integrated LUFS + True Peak**. |
+| Chip      | Heading           | What you get                                                                                                            |
+| --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Play**  | **Target desk**   | Target list, Input / Output LUFS, **Ceiling**.                                                                          |
+| **Shape** | **Chain shape**   | The five modules as a strip you can switch off, an **IN** meter at the start, peak meters between them, and four knobs. |
+| **Build** | **Module detail** | Full **EQ**, **Multiband Dynamics**, **Stereo Imager**, **Harmonic Exciter**, and **Limiter**.                          |
+| **Route** | **Chain route**   | **Signal Chain Order**, **Input Gain**, **Output Gain**.                                                                |
+| **Lab**   | **Check bench**   | **Loudness History**, **Tonal Balance**, the full meter grid, and **Reset Integrated LUFS + True Peak**.                |
 
 ## Target
 
