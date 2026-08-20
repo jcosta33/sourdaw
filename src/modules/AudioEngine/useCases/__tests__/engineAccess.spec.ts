@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const engineMocks = vi.hoisted(() => {
     const context = { currentTime: 12.5, sampleRate: 48_000, state: 'running', destination: {} };
     const masterAnalyser = { fftSize: 2048 };
+    const masterAnalyserLeft = { fftSize: 256 };
+    const masterAnalyserRight = { fftSize: 256 };
     const trackAnalyser = { fftSize: 256 };
     const trackStrip = { trackId: 't1', analyserNode: trackAnalyser };
     const toasterControls = { ready: true, noteOn: vi.fn() };
@@ -11,6 +13,8 @@ const engineMocks = vi.hoisted(() => {
     return {
         context,
         masterAnalyser,
+        masterAnalyserLeft,
+        masterAnalyserRight,
         trackAnalyser,
         trackStrip,
         toasterControls,
@@ -18,6 +22,8 @@ const engineMocks = vi.hoisted(() => {
         engine: {
             context: engineContext,
             masterAnalyser,
+            masterAnalyserLeft,
+            masterAnalyserRight,
             getState: vi.fn(() => engineState),
             getMasterPeakLevel: vi.fn(() => 0.42),
             getTrackStrip: vi.fn(),
@@ -48,6 +54,7 @@ import { getAudioTime } from '../engineAccess/getAudioTime';
 import { getEngineState } from '../engineAccess/getEngineState';
 import { getMasterAnalyser } from '../engineAccess/getMasterAnalyser';
 import { getMasterPeakLevel } from '../engineAccess/getMasterPeakLevel';
+import { getMasterStereoAnalysers } from '../engineAccess/getMasterStereoAnalysers';
 import { getToasterDeviceControls } from '../engineAccess/getToasterDeviceControls';
 import { getTrackAnalyser } from '../engineAccess/getTrackAnalyser';
 import { getTrackStrip } from '../engineAccess/getTrackStrip';
@@ -97,6 +104,12 @@ describe('engineAccess', () => {
 
     it('getMasterAnalyser exposes the engine master analyser node', () => {
         expect(getMasterAnalyser()).toBe(engineMocks.masterAnalyser);
+    });
+
+    it('getMasterStereoAnalysers exposes the engine left/right stereo tap nodes', () => {
+        const stereo = getMasterStereoAnalysers();
+        expect(stereo.left).toBe(engineMocks.masterAnalyserLeft);
+        expect(stereo.right).toBe(engineMocks.masterAnalyserRight);
     });
 
     it('getMasterPeakLevel returns the live master peak value', () => {
