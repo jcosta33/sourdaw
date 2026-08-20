@@ -1,0 +1,44 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_7ba0b7bee9e951::t_5ccbd325f19359 524,529
+  s_7ba0b7bee9e951::t_845ff6725d39c7 621-623,629,633,638
+  s_7ba0b7bee9e951::t_ea7d78a86fb3a4 106-109
+  s_7ba0b7bee9e951::t_30c424d4906d46 29-58
+  s_7ba0b7bee9e951::t_41ccbe39f6d5f8 110-115
+  s_7ba0b7bee9e951::t_9a341c233f458e 614-620,624-628,630-632,634-637,639-641
+src/modules/AudioEngine/useCases/offlineRender/__tests__/nullTestRenderHarness.ts
+  s_7ba0b7bee9e951::t_ff1675a0e73b3b 75-81
+  s_7ba0b7bee9e951::t_4affeba708112c 835-846,853-856,873-874
+  s_7ba0b7bee9e951::t_407477ffa92295 886-890,903,909
+  s_7ba0b7bee9e951::t_14f6f3dacc4bc8 466-476,486,488-491
+  s_7ba0b7bee9e951::t_94fa948dafe9a3 111
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_7ba0b7bee9e951::t_c6f5996af7635a 241-246
+  s_7ba0b7bee9e951::t_ac568de59754da 56-59
+  s_7ba0b7bee9e951::t_ee4836556bcf15 275-279
+  s_7ba0b7bee9e951::t_1b2215bf171070 18-44,48,54-55
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_7ba0b7bee9e951::t_e8833d8fedcf8e 29-33
+  s_7ba0b7bee9e951::t_90ae982008fd05 82-84
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_7ba0b7bee9e951::t_f8b8f38fc1f34e 192
+  s_7ba0b7bee9e951::t_01d86f8460e92e 1-191,193-373
+  s_7ba0b7bee9e951::t_6d8d8331781fee 374-378
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_7ba0b7bee9e951::t_674fa0ae2a066c 19-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d5d61d7a8aad86f4d11c7f77336beae18c5c9de7",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
