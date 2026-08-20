@@ -27,11 +27,11 @@ export type SupersededPullRequest = {
     comments: IssueComment[];
 };
 export type PullRequestCloseReceipt = { closedAt: string };
+export type AddedIssueCommentReceipt = IssueComment & { clientMutationId: string };
 export type SupersedePullRequestPort = {
     inspect: (number: number) => SupersededPullRequest;
-    comment: (number: number, body: string) => IssueComment;
+    comment: (number: number, body: string) => AddedIssueCommentReceipt;
     close: (number: number) => PullRequestCloseReceipt;
-    reopen: (number: number) => void;
     deleteComment: (id: string) => void;
     log: (message: string) => void;
 };
@@ -95,18 +95,20 @@ export function supersedePullRequest(
     try {
         commentAttempted = true;
         const comment = port.comment(oldNumber, body);
-        commentId = assertCommentReceipt(comment);
+        commentId = assertCommentReceipt(comment, commentClientMutationId(oldNumber, body));
         assertCommentBody(comment, body);
         assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead, before.base);
         closeAttempted = true;
-        closeReceipt = port.close(oldNumber);
-        assertCloseReceipt(closeReceipt);
+        const receipt = port.close(oldNumber);
+        assertCloseReceipt(receipt);
+        closeReceipt = receipt;
         const verified = port.inspect(oldNumber);
-        assertFinalSupersession(verified, oldNumber, expectedHead, commentId, body, closeReceipt);
+        assertFinalSupersession(verified, oldNumber, expectedHead, before.base, commentId, body, closeReceipt);
     } catch (error) {
         compensateSupersession(
             oldNumber,
             before,
+            body,
             commentAttempted,
             commentId,
             closeAttempted,
@@ -123,6 +125,7 @@ export function supersedePullRequest(
 function compensateSupersession(
     number: number,
     before: SupersededPullRequest,
+    expectedCommentBody: string,
     commentAttempted: boolean,
     commentId: string | undefined,
     closeAttempted: boolean,
@@ -139,18 +142,16 @@ function compensateSupersession(
         failures.push('cannot determine ambiguous supersession transaction state');
     } else {
         if (closeReceipt !== undefined && current.state !== before.state) {
-            if (current.state === 'CLOSED' && before.state === 'OPEN' && current.closedAt === closeReceipt.closedAt) {
-                attempt(failures, 'reopen pull request', () => port.reopen(number));
-            } else {
-                failures.push(`PR #${number} was closed by another actor; refusing to reopen`);
-            }
+            failures.push('pull-request closure was receipted but is not rollback-safe; refusing to reopen');
         } else if (closeAttempted && current.state !== before.state) {
             failures.push(`ambiguous PR closure for #${number}; refusing to reopen an unverified transition`);
         }
         if (commentAttempted) {
             if (commentId === undefined) {
                 failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
-            } else if (hasOwnedComment(current.comments, commentId)) {
+            } else if (closeReceipt !== undefined) {
+                failures.push('supersession comment is durable evidence for a receipted close; refusing to delete it');
+            } else if (hasExpectedComment(current.comments, commentId, expectedCommentBody)) {
                 attempt(failures, 'delete supersession comment', () => port.deleteComment(commentId));
             } else {
                 failures.push(
@@ -161,7 +162,10 @@ function compensateSupersession(
     }
     attempt(failures, 'verify supersession compensation', () => {
         const verified = port.inspect(number);
-        if (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments)) {
+        if (
+            closeReceipt === undefined &&
+            (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments))
+        ) {
             fail(`PR #${number} compensation was not verified`);
         }
     });
@@ -234,24 +238,31 @@ function assertCloseReceipt(receipt: PullRequestCloseReceipt): void {
         fail('closePullRequest returned an invalid result');
     }
 }
+function commentClientMutationId(number: number, body: string): string {
+    return `supersede-comment:${number}:${body}`;
+}
+function closeClientMutationId(pullRequestId: string): string {
+    return `supersede-close:${pullRequestId}`;
+}
 function hasExpectedComment(comments: IssueComment[], id: string, body: string): boolean {
     return comments.some(
-        (comment) => comment.id === id && comment.body === body && comment.authorLogin === AUTHOR_BOT_LOGIN
+        (comment) => comment.id === id && comment.body === body && isAuthorBotLogin(comment.authorLogin)
     );
-}
-function hasOwnedComment(comments: IssueComment[], id: string): boolean {
-    return comments.some((comment) => comment.id === id && comment.authorLogin === AUTHOR_BOT_LOGIN);
 }
 function assertFinalSupersession(
     value: SupersededPullRequest,
     number: number,
     head: string,
+    base: string,
     commentId: string,
     body: string,
     closeReceipt: PullRequestCloseReceipt
 ): void {
     if (value.number !== number || value.repository !== REQUIRED_REPOSITORY || value.head !== head) {
         fail('pull-request head moved after mutation; compensating');
+    }
+    if (value.base !== base) {
+        fail('pull-request base changed after mutation; compensating');
     }
     if (value.state !== 'CLOSED' || value.closedAt !== closeReceipt.closedAt) {
         fail(`PR #${number} was closed by another actor`);
@@ -263,12 +274,13 @@ function assertFinalSupersession(
 function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
-function assertCommentReceipt(value: IssueComment): string {
+function assertCommentReceipt(value: AddedIssueCommentReceipt, expectedClientMutationId: string): string {
     if (
         typeof value.id !== 'string' ||
         value.id === '' ||
         !isDecimalId(value.fullDatabaseId) ||
-        !isAuthorBotLogin(value.authorLogin)
+        !isAuthorBotLogin(value.authorLogin) ||
+        value.clientMutationId !== expectedClientMutationId
     ) {
         fail('add supersession comment returned an invalid result');
     }
@@ -290,9 +302,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Supe
     const nodeId = (number: number) => ids.get(number) ?? fail(`PR #${number} was not inspected`);
     return {
         inspect: (number) => inspectPullRequest(number, gh, ids),
-        comment: (number, body) => addComment(nodeId(number), body, gh),
+        comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),
         close: (number) => closePullRequest(nodeId(number), gh),
-        reopen: (number) => setPullRequestState('reopenPullRequest', nodeId(number), 'OPEN', gh),
         deleteComment: (id) => deleteComment(id, gh),
         log: (message) => console.log(message),
     };
@@ -410,45 +421,47 @@ function toIssueComment(value: unknown): IssueComment {
         authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
     };
 }
-function addComment(subjectId: string, body: string, gh: Gh): IssueComment {
+function addComment(subjectId: string, body: string, clientMutationId: string, gh: Gh): AddedIssueCommentReceipt {
     const query =
-        'mutation($subjectId:ID!,$body:String!){addComment(input:{subjectId:$subjectId,body:$body}){commentEdge{node{id fullDatabaseId body author{login}}}}}';
+        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{login}}}}}';
     const response = graphql(
         gh,
         query,
-        ['-F', `subjectId=${subjectId}`, '-f', `body=${body}`],
+        ['-F', `subjectId=${subjectId}`, '-f', `body=${body}`, '-f', `clientMutationId=${clientMutationId}`],
         'add supersession comment'
-    ) as { data?: { addComment?: { commentEdge?: { node?: unknown } } } };
-    return toIssueComment(response.data?.addComment?.commentEdge?.node);
-}
-function setPullRequestState(
-    name: 'closePullRequest' | 'reopenPullRequest',
-    pullRequestId: string,
-    expectedState: string,
-    gh: Gh
-): PullRequestCloseReceipt | undefined {
-    const query = `mutation($pullRequestId:ID!){${name}(input:{pullRequestId:$pullRequestId}){pullRequest{id state closedAt}}}`;
-    const response = graphql(gh, query, ['-F', `pullRequestId=${pullRequestId}`], name) as {
-        data?: Record<string, { pullRequest?: { id?: unknown; state?: unknown; closedAt?: unknown } }>;
-    };
-    const pullRequest = response.data?.[name]?.pullRequest;
-    if (pullRequest?.id !== pullRequestId || pullRequest.state !== expectedState) {
-        fail(`${name} returned an invalid result`);
+    ) as { data?: { addComment?: { clientMutationId?: unknown; commentEdge?: { node?: unknown } } } };
+    if (response.data?.addComment?.clientMutationId !== clientMutationId) {
+        fail('add supersession comment returned an invalid result');
     }
-    if (name === 'closePullRequest') {
-        if (typeof pullRequest.closedAt !== 'string' || pullRequest.closedAt === '') {
-            fail(`${name} returned an invalid result`);
-        }
-        return { closedAt: pullRequest.closedAt };
-    }
-    return undefined;
+    return { ...toIssueComment(response.data?.addComment?.commentEdge?.node), clientMutationId };
 }
 function closePullRequest(pullRequestId: string, gh: Gh): PullRequestCloseReceipt {
-    const receipt = setPullRequestState('closePullRequest', pullRequestId, 'CLOSED', gh);
-    if (receipt === undefined) {
+    const clientMutationId = closeClientMutationId(pullRequestId);
+    const query = `mutation($pullRequestId:ID!,$clientMutationId:String!){closePullRequest(input:{pullRequestId:$pullRequestId,clientMutationId:$clientMutationId}){clientMutationId pullRequest{id state closedAt}}}`;
+    const response = graphql(
+        gh,
+        query,
+        ['-F', `pullRequestId=${pullRequestId}`, '-f', `clientMutationId=${clientMutationId}`],
+        'close pull request'
+    ) as {
+        data?: {
+            closePullRequest?: {
+                clientMutationId?: unknown;
+                pullRequest?: { id?: unknown; state?: unknown; closedAt?: unknown };
+            };
+        };
+    };
+    const receipt = response.data?.closePullRequest;
+    if (
+        receipt?.clientMutationId !== clientMutationId ||
+        receipt.pullRequest?.id !== pullRequestId ||
+        receipt.pullRequest.state !== 'CLOSED' ||
+        typeof receipt.pullRequest.closedAt !== 'string' ||
+        receipt.pullRequest.closedAt === ''
+    ) {
         fail('closePullRequest returned an invalid result');
     }
-    return receipt;
+    return { closedAt: receipt.pullRequest.closedAt };
 }
 export function deleteComment(id: string, gh: Gh): void {
     const response = graphql(

@@ -29,13 +29,12 @@ export type ReviewThread = {
     comments: ReviewComment[];
 };
 export type ReviewThreadInspection = { head: string; thread: ReviewThread | null };
-export type ReviewReply = { id: string; fullDatabaseId: string; authorLogin: string | null };
-export type ReviewResolutionReceipt = { resolvedByLogin: string };
+export type ReviewReply = { id: string; fullDatabaseId: string; authorLogin: string | null; clientMutationId: string };
+export type ReviewResolutionReceipt = { resolvedByLogin: string; clientMutationId: string };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     replyDone: (threadId: string) => ReviewReply;
     resolve: (threadId: string) => ReviewResolutionReceipt;
-    unresolve: (threadId: string) => void;
     deleteReply: (replyId: string) => void;
     log: (message: string) => void;
 };
@@ -89,14 +88,15 @@ export function resolveReviewThread(
     try {
         replyAttempted = true;
         const reply = port.replyDone(threadId);
-        assertReply(reply);
+        assertReply(reply, replyClientMutationId(threadId));
         replyId = reply.id;
         const afterReply = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(afterReply.head, expectedHead);
         assertResolvableThread(afterReply.thread, threadId);
         resolveAttempted = true;
-        resolutionReceipt = port.resolve(threadId);
-        assertResolutionReceipt(resolutionReceipt);
+        const resolveReceipt = port.resolve(threadId);
+        assertResolutionReceipt(resolveReceipt, resolveClientMutationId(threadId));
+        resolutionReceipt = resolveReceipt;
         const verified = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(verified.head, expectedHead);
         assertFinalResolution(verified.thread, threadId, replyId);
@@ -138,11 +138,7 @@ function compensateResolution(
         failures.push('cannot determine ambiguous review transaction state');
     } else {
         if (resolutionReceipt !== undefined && current.thread.isResolved !== before.thread.isResolved) {
-            if (current.thread.resolvedByLogin === resolutionReceipt.resolvedByLogin) {
-                attempt(failures, 'unresolve review thread', () => port.unresolve(threadId));
-            } else {
-                failures.push('review thread was resolved by another actor; refusing to unresolve');
-            }
+            failures.push('review-thread resolution was receipted but is not rollback-safe; refusing to unresolve');
         } else if (resolveAttempted && current.thread.isResolved !== before.thread.isResolved) {
             failures.push('ambiguous review-thread resolution; refusing to unresolve an unverified transition');
         }
@@ -210,28 +206,41 @@ function assertExpectedHeadAfterMutation(currentHead: string, expectedHead: stri
 function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
-function assertReply(reply: ReviewReply): void {
+function authorBotLogin(value: unknown): string {
+    if (typeof value !== 'string' || !isAuthorBotLogin(value)) {
+        fail('expected author bot login');
+    }
+    return value;
+}
+function replyClientMutationId(threadId: string): string {
+    return `review-reply:${threadId}`;
+}
+function resolveClientMutationId(threadId: string): string {
+    return `review-resolve:${threadId}`;
+}
+function assertReply(reply: ReviewReply, expectedClientMutationId: string): void {
     if (
         typeof reply.id !== 'string' ||
         reply.id === '' ||
         !isDecimalId(reply.fullDatabaseId) ||
-        !isAuthorBotLogin(reply.authorLogin)
+        !isAuthorBotLogin(reply.authorLogin) ||
+        reply.clientMutationId !== expectedClientMutationId
     ) {
         fail('add review-thread reply returned an invalid result');
     }
 }
-function assertResolutionReceipt(receipt: ReviewResolutionReceipt): void {
-    if (receipt.resolvedByLogin !== AUTHOR_BOT_LOGIN) {
+function assertResolutionReceipt(receipt: ReviewResolutionReceipt, expectedClientMutationId: string): void {
+    if (!isAuthorBotLogin(receipt.resolvedByLogin) || receipt.clientMutationId !== expectedClientMutationId) {
         fail('resolve review thread returned an invalid result');
     }
 }
 function hasExpectedReply(thread: ReviewThread, replyId: string): boolean {
     return thread.comments.some(
-        (comment) => comment.id === replyId && comment.body === 'Done' && comment.authorLogin === AUTHOR_BOT_LOGIN
+        (comment) => comment.id === replyId && comment.body === 'Done' && isAuthorBotLogin(comment.authorLogin)
     );
 }
 function assertFinalResolution(thread: ReviewThread | null, threadId: string, replyId: string): void {
-    if (thread?.id !== threadId || !thread.isResolved || thread.resolvedByLogin !== AUTHOR_BOT_LOGIN) {
+    if (thread?.id !== threadId || !thread.isResolved || !isAuthorBotLogin(thread.resolvedByLogin)) {
         fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
     }
     if (!hasExpectedReply(thread, replyId)) {
@@ -267,7 +276,6 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
         inspect: (number, id) => inspectReviewThread(number, id, gh),
         replyDone: (id) => mutationReply(id, gh),
         resolve: (id) => resolveThread(id, gh),
-        unresolve: (id) => mutateThread('unresolveReviewThread', id, false, gh),
         deleteReply: (id) => deleteReply(id, gh),
         log: (message) => console.log(message),
     };
@@ -413,16 +421,18 @@ function toReviewComment(value: unknown): ReviewComment {
     };
 }
 function mutationReply(threadId: string, gh: Gh): ReviewReply {
+    const clientMutationId = replyClientMutationId(threadId);
     const query =
-        'mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id fullDatabaseId body author{login}}}}';
+        'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login}}}}';
     const response = graphql(
         gh,
         query,
-        ['-F', `threadId=${threadId}`, '-f', 'body=Done'],
+        ['-F', `threadId=${threadId}`, '-f', 'body=Done', '-f', `clientMutationId=${clientMutationId}`],
         'add review-thread reply'
     ) as {
         data?: {
             addPullRequestReviewThreadReply?: {
+                clientMutationId?: unknown;
                 comment?: {
                     id?: unknown;
                     fullDatabaseId?: unknown;
@@ -438,37 +448,39 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
         comment?.body !== 'Done' ||
         typeof comment.id !== 'string' ||
         !isDecimalId(comment.fullDatabaseId) ||
-        !isAuthorBotLogin(authorLogin)
+        !isAuthorBotLogin(authorLogin) ||
+        response.data?.addPullRequestReviewThreadReply?.clientMutationId !== clientMutationId
     ) {
         fail(`add review-thread reply returned an invalid result for ${threadId}`);
     }
-    return { id: comment.id, fullDatabaseId: comment.fullDatabaseId, authorLogin };
-}
-function mutateThread(
-    name: 'resolveReviewThread' | 'unresolveReviewThread',
-    threadId: string,
-    resolved: boolean,
-    gh: Gh
-): { resolvedByLogin: string | null } {
-    const query = `mutation($threadId:ID!){${name}(input:{threadId:$threadId}){thread{id isResolved resolvedBy{login}}}}`;
-    const response = graphql(gh, query, ['-F', `threadId=${threadId}`], name) as {
-        data?: Record<
-            string,
-            { thread?: { id?: unknown; isResolved?: unknown; resolvedBy?: { login?: unknown } | null } }
-        >;
-    };
-    const thread = response.data?.[name]?.thread;
-    if (thread?.id !== threadId || thread.isResolved !== resolved) {
-        fail(`${name} returned an invalid result for ${threadId}`);
-    }
-    return { resolvedByLogin: typeof thread.resolvedBy?.login === 'string' ? thread.resolvedBy.login : null };
+    return { id: comment.id, fullDatabaseId: comment.fullDatabaseId, authorLogin, clientMutationId };
 }
 function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
-    const receipt = mutateThread('resolveReviewThread', threadId, true, gh);
-    if (receipt.resolvedByLogin !== AUTHOR_BOT_LOGIN) {
+    const clientMutationId = resolveClientMutationId(threadId);
+    const query = `mutation($threadId:ID!,$clientMutationId:String!){resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId}){clientMutationId thread{id isResolved resolvedBy{login}}}}`;
+    const response = graphql(
+        gh,
+        query,
+        ['-F', `threadId=${threadId}`, '-f', `clientMutationId=${clientMutationId}`],
+        'resolve review thread'
+    ) as {
+        data?: {
+            resolveReviewThread?: {
+                clientMutationId?: unknown;
+                thread?: { id?: unknown; isResolved?: unknown; resolvedBy?: { login?: unknown } | null };
+            };
+        };
+    };
+    const receipt = response.data?.resolveReviewThread;
+    const resolvedByLogin = receipt?.thread?.resolvedBy?.login;
+    if (
+        receipt?.clientMutationId !== clientMutationId ||
+        receipt.thread?.id !== threadId ||
+        receipt.thread.isResolved !== true
+    ) {
         fail(`resolveReviewThread returned an invalid result for ${threadId}`);
     }
-    return { resolvedByLogin: AUTHOR_BOT_LOGIN };
+    return { resolvedByLogin: authorBotLogin(resolvedByLogin), clientMutationId };
 }
 export function deleteReply(replyId: string, gh: Gh): void {
     const response = graphql(

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
@@ -24,6 +27,8 @@ type Input = {
     bases?: string[];
     changedClosedAtAfterClose?: boolean;
     deleteCommentAfterClose?: boolean;
+    editCommentAfterComment?: boolean;
+    returnedCommentClientMutationId?: string;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -68,6 +73,11 @@ function fakePort(input: Input = {}) {
             if (number === 2244 && closeCalled && input.deleteCommentAfterClose) {
                 comments = comments.filter((comment) => comment.id !== 'IC_new');
             }
+            if (number === 2244 && !closeCalled && input.editCommentAfterComment) {
+                comments = comments.map((comment) =>
+                    comment.id === 'IC_new' ? { ...comment, body: 'Edited' } : comment
+                );
+            }
             return snapshot(number);
         },
         comment: (number, body) => {
@@ -93,7 +103,10 @@ function fakePort(input: Input = {}) {
                 }
                 throw new Error('comment transport lost');
             }
-            return created;
+            return {
+                ...created,
+                clientMutationId: input.returnedCommentClientMutationId ?? `supersede-comment:${number}:${body}`,
+            };
         },
         close: (number) => {
             calls.push(`close:${number}`);
@@ -104,11 +117,6 @@ function fakePort(input: Input = {}) {
             state = 'CLOSED';
             closedAt = '2026-08-20T12:00:00Z';
             return { closedAt };
-        },
-        reopen: (number) => {
-            calls.push(`reopen:${number}`);
-            state = 'OPEN';
-            closedAt = null;
         },
         deleteComment: (id) => {
             calls.push(`delete:${id}`);
@@ -128,6 +136,15 @@ function fakePort(input: Input = {}) {
 }
 
 describe('pull-request supersession', () => {
+    it('uses client mutation receipts for forward comment and close mutations', () => {
+        const source = readFileSync(join(import.meta.dirname, '../supersedePullRequest.ts'), 'utf8');
+        expect(source).toContain(
+            'addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId})'
+        );
+        expect(source).toContain(
+            'closePullRequest(input:{pullRequestId:$pullRequestId,clientMutationId:$clientMutationId})'
+        );
+    });
     it.each([
         ['missing', { data: { deleteIssueComment: { clientMutationId: null } } }],
         ['mismatched', { data: { deleteIssueComment: { clientMutationId: 'IC_other' } } }],
@@ -232,7 +249,15 @@ describe('pull-request supersession', () => {
             /add supersession comment returned an invalid result/i
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
-        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment, { id: 'IC_new' }] });
+    });
+    it('refuses a mismatched comment client receipt before close', () => {
+        const { port, calls, authorLogin } = fakePort({ returnedCommentClientMutationId: 'wrong' });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /add supersession comment returned an invalid result/i
+        );
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
     });
     it('refuses a retargeted old PR before close', () => {
         const { port, calls, authorLogin } = fakePort({ bases: ['main', 'release'] });
@@ -244,7 +269,7 @@ describe('pull-request supersession', () => {
     it('fails without success when the exact receipt comment disappears before final inspection', () => {
         const { port, calls, authorLogin } = fakePort({ deleteCommentAfterClose: true });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/comment receipt/i);
-        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual(['reopen:2244']);
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
     });
@@ -254,11 +279,29 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
         expect(state().state).toBe('CLOSED');
     });
-    it('rolls back a successfully closed pull request when its final head check fails', () => {
+    it('does not reopen a same-marker close when its final head check fails', () => {
         const { port, calls, authorLogin, state } = fakePort({ heads: [head, head, movedHead, movedHead, movedHead] });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
-        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual(['reopen:2244']);
-        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state()).toMatchObject({ state: 'CLOSED', comments: [oldComment, { id: 'IC_new' }] });
+    });
+    it('rejects a late retarget after close without reopening or deleting the receipt comment', () => {
+        const { port, calls, authorLogin, state } = fakePort({ bases: ['main', 'main', 'release', 'release'] });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/base changed after mutation/i);
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state()).toMatchObject({ state: 'CLOSED', comments: [oldComment, { id: 'IC_new' }] });
+    });
+    it('does not delete an edited comment before an unreceipted close', () => {
+        const { port, calls, authorLogin, state } = fakePort({
+            heads: [head, movedHead, movedHead],
+            editCommentAfterComment: true,
+        });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state().comments.find((comment) => comment.id === 'IC_new')?.body).toBe('Edited');
     });
     it('fails closed when a thrown comment mutation collides with an identical concurrent comment', () => {
         const { port, authorLogin, state, calls } = fakePort({

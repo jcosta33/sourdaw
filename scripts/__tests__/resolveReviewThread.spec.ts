@@ -28,6 +28,9 @@ type Input = {
     isResolved?: boolean;
     resolvedByAfterResolve?: string | null;
     deleteReplyAfterResolve?: boolean;
+    editReplyAfterResolve?: boolean;
+    replyClientMutationId?: string;
+    resolveClientMutationId?: string;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -54,6 +57,11 @@ function fakePort(input: Input = {}) {
             }
             if (resolveCalled && input.deleteReplyAfterResolve) {
                 comments = comments.filter((comment) => comment.id !== replyId);
+            }
+            if (resolveCalled && input.editReplyAfterResolve) {
+                comments = comments.map((comment) =>
+                    comment.id === replyId ? { ...comment, body: 'Edited' } : comment
+                );
             }
             return {
                 head: input.heads?.[index - 1] ?? head,
@@ -88,7 +96,12 @@ function fakePort(input: Input = {}) {
                 }
                 throw new Error('reply transport lost');
             }
-            return { id: replyId, fullDatabaseId: '9223372036854775808', authorLogin: AUTHOR_BOT_LOGIN };
+            return {
+                id: replyId,
+                fullDatabaseId: '9223372036854775808',
+                authorLogin: AUTHOR_BOT_LOGIN,
+                clientMutationId: input.replyClientMutationId ?? `review-reply:${id}`,
+            };
         },
         resolve: (id) => {
             calls.push(`resolve:${id}`);
@@ -98,12 +111,7 @@ function fakePort(input: Input = {}) {
             }
             resolved = true;
             resolvedByLogin = AUTHOR_BOT_LOGIN;
-            return { resolvedByLogin };
-        },
-        unresolve: (id) => {
-            calls.push(`unresolve:${id}`);
-            resolved = false;
-            resolvedByLogin = null;
+            return { resolvedByLogin, clientMutationId: input.resolveClientMutationId ?? `review-resolve:${id}` };
         },
         deleteReply: (id) => {
             calls.push(`delete:${id}`);
@@ -150,6 +158,10 @@ describe('review thread resolution', () => {
         expect(source).toContain(
             'deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId})'
         );
+        expect(source).toContain(
+            'addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId})'
+        );
+        expect(source).toContain('resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId})');
     });
     it.each([
         [
@@ -311,24 +323,48 @@ describe('review thread resolution', () => {
             `log:review-thread-resolved:42:${threadId}`,
         ]);
     });
+    it('rejects a mismatched reply client receipt before resolve', () => {
+        const { port, calls, authorLogin } = fakePort({ replyClientMutationId: 'wrong' });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/reply returned an invalid/i);
+        expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([]);
+    });
+    it('rejects a mismatched resolve client receipt without accepting state ownership', () => {
+        const { port, calls, authorLogin } = fakePort({ resolveClientMutationId: 'wrong' });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(
+            /resolve review thread returned an invalid/i
+        );
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+    });
     it('fails without success when the exact receipt reply disappears before final inspection', () => {
         const { port, calls, authorLogin } = fakePort({ deleteReplyAfterResolve: true });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/reply receipt/i);
-        expect(calls).toContain(`unresolve:${threadId}`);
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
     });
     it('does not unresolve a thread whose resolution marker changed concurrently', () => {
         const { port, calls, authorLogin, state } = fakePort({ resolvedByAfterResolve: 'other[bot]' });
-        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/resolved by another actor/i);
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/not resolved by/i);
         expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
         expect(state().resolved).toBe(true);
     });
-    it('rolls back a successfully resolved thread when its final head check fails', () => {
+    it('does not unresolve a same-identity resolution after its final head check fails', () => {
         const { port, calls, authorLogin, state } = fakePort({ heads: [head, head, movedHead, movedHead, movedHead] });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
-        expect(calls).toContain(`unresolve:${threadId}`);
-        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+        expect(calls).toContain(`delete:${replyId}`);
+        expect(state()).toMatchObject({ resolved: true, comments: [{ id: rootId }] });
+    });
+    it('does not delete an edited reply during a failed receipted resolution', () => {
+        const { port, calls, authorLogin, state } = fakePort({
+            heads: [head, head, movedHead, movedHead, movedHead],
+            editReplyAfterResolve: true,
+            resolvedByAfterResolve: 'jcosta33-author',
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/head moved/i);
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state().comments.find((comment) => comment.id === replyId)?.body).toBe('Edited');
     });
     it('fails closed when a thrown reply mutation collides with an identical concurrent comment', () => {
         const { port, authorLogin, state, calls } = fakePort({ throwAfterReply: true, concurrentReplyOnThrow: true });
