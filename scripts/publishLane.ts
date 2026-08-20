@@ -86,14 +86,40 @@ export function containsPath(container: string, candidate: string): boolean {
     return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
 }
 
+export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
+
+/**
+ * A push target must be lock-shaped *and* branch-shaped. `lockReason` is only ever set on a locked
+ * worktree, so it alone proves the lock; the branch prefix is the part that keeps a hand-locked
+ * checkout on, say, `release/1.2` out of the issueless resolution path, where no issue argument
+ * constrains the branch name.
+ */
 function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
     return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        if (!worktree.locked || worktree.lockReason !== AUTHOR_LOCK_REASON || branch === undefined) {
+        if (
+            worktree.lockReason !== AUTHOR_LOCK_REASON ||
+            branch === undefined ||
+            !branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX)
+        ) {
             return [];
         }
         return [{ path: worktree.path, branch }];
     });
+}
+
+/**
+ * The issue a lane branch carries, or `undefined` for an issueless lane. `lane:open <issue>` is the
+ * only producer of the `agent/<issue>/<slug>` shape, so the branch is the lane's own record of
+ * which issue it closes.
+ */
+export function laneIssueNumber(branch: string): number | undefined {
+    const captured = /^agent\/(\d+)\//.exec(branch)?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const issue = Number(captured);
+    return Number.isSafeInteger(issue) && issue > 0 ? issue : undefined;
 }
 
 export function resolveAuthorLane(
@@ -105,15 +131,21 @@ export function resolveAuthorLane(
     const lanes = authorLanes(worktrees);
     if (issue === undefined) {
         const here = canonicalPath(cwd, resolveExisting);
-        const enclosing = lanes.filter((lane) => containsPath(canonicalPath(lane.path, resolveExisting), here));
-        const innermost = enclosing.reduce<ResolvedLane | undefined>(
-            (deepest, lane) => (deepest === undefined || lane.path.length > deepest.path.length ? lane : deepest),
+        const enclosing = lanes.flatMap((lane) => {
+            const canonical = canonicalPath(lane.path, resolveExisting);
+            return containsPath(canonical, here) ? [{ lane, canonical }] : [];
+        });
+        // Depth is measured on the same canonical spellings containment used. Comparing the
+        // recorded paths instead lets a symlinked outer lane out-rank the inner lane it contains.
+        const innermost = enclosing.reduce<{ lane: ResolvedLane; canonical: string } | undefined>(
+            (deepest, candidate) =>
+                deepest === undefined || candidate.canonical.length > deepest.canonical.length ? candidate : deepest,
             undefined
         );
         if (innermost === undefined) {
             fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
         }
-        return innermost;
+        return innermost.lane;
     }
     const prefix = `agent/${issue}/`;
     const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
@@ -130,6 +162,10 @@ export function resolveAuthorLane(
 export function publishLane(issue: number | undefined, port: PublishLanePort): number {
     port.fetchMain();
     const lane = resolveAuthorLane(issue, port.worktrees(), port.cwd());
+    // Without an argument the target is whatever the caller happened to be standing in, and the
+    // next steps commit and push it. Name the selection before anything mutates, so a caller who
+    // was in the wrong lane sees which one it was.
+    port.log(`publishing ${lane.path} on ${lane.branch}`);
     if (issue !== undefined && !port.issueExists(issue)) {
         fail(`issue #${issue} does not exist in ${REQUIRED_REPOSITORY}`);
     }
@@ -144,7 +180,10 @@ export function publishLane(issue: number | undefined, port: PublishLanePort): n
     }
     const title = port.headSubject(lane.path);
     assertConventionalSubject(title, 'pull-request title');
-    const body = composePublishBody(issue, title);
+    // The update path overwrites the whole body, so an argumentless run on an issue lane would
+    // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
+    // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
+    const body = composePublishBody(issue ?? laneIssueNumber(lane.branch), title);
     const headSha = port.headSha(lane.path);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
@@ -300,8 +339,17 @@ function isAncestorCommit(lane: string, ancestorSha: string, descendantSha: stri
 
 const ISSUE_NOT_FOUND_PATTERN = /HTTP 404|Not Found|Could not resolve to an? Issue/i;
 
+/**
+ * The REST issues endpoint resolves pull-request numbers too, and answers with the same `number`.
+ * Only the `pull_request` key tells the two apart, so the lookup has to ask for it: without it a
+ * pull-request number passes the existence gate and lands `Closes #<pr>` in the body.
+ */
+export const ISSUE_LOOKUP_JQ = '{number: .number, isPullRequest: (has("pull_request"))}';
+
+type IssueLookup = { number?: number; isPullRequest?: boolean };
+
 export function issueLookupArgs(issue: number): string[] {
-    return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', '.number'];
+    return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', ISSUE_LOOKUP_JQ];
 }
 
 export function issueExistsFromLookup(
@@ -309,7 +357,11 @@ export function issueExistsFromLookup(
     result: { status: number | null; stdout: string; stderr: string }
 ): boolean {
     if (result.status === 0) {
-        return result.stdout.trim() === String(issue);
+        const lookup = parseJson<IssueLookup>(result.stdout, `issue #${issue} lookup`);
+        if (lookup.isPullRequest === true) {
+            fail(`#${issue} in ${REQUIRED_REPOSITORY} is a pull request, not an issue; pass the issue it closes`);
+        }
+        return lookup.number === issue;
     }
     const stderr = result.stderr.trim();
     if (ISSUE_NOT_FOUND_PATTERN.test(stderr)) {

@@ -1,6 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { openLane, parseOpenLaneArgs, type OpenLanePort } from '../openLane.ts';
+import { laneDirectoryName, openLane, parseOpenLaneArgs, type OpenLanePort } from '../openLane.ts';
+import { laneBranchName } from '../prContract.ts';
+
+const { spawned } = vi.hoisted(() => ({ spawned: [] as string[] }));
+
+/**
+ * `lane:open` is the one delivery script that must never touch GitHub: it runs before the issue
+ * exists and before any credential is minted. Every process this repository launches goes through
+ * `node:child_process`, so recording that module is the only assertion that can see the script
+ * reaching outward — a claim about the shape of the injected port cannot.
+ */
+vi.mock('node:child_process', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('node:child_process')>();
+    const record = (api: string) => (command: string) => {
+        spawned.push(`${api}:${command}`);
+        throw new Error(`lane:open reached ${api}(${command})`);
+    };
+    return {
+        ...actual,
+        exec: record('exec'),
+        execFile: record('execFile'),
+        execFileSync: record('execFileSync'),
+        execSync: record('execSync'),
+        fork: record('fork'),
+        spawn: record('spawn'),
+        spawnSync: record('spawnSync'),
+    };
+});
 
 function fakePort(exists = false) {
     const calls: string[] = [];
@@ -44,18 +71,33 @@ describe('lane open', () => {
 
         const path = openLane(undefined, 'cleanup', port);
 
-        expect(path).toBe('/repo/.agents/worktrees/agent-cleanup');
-        expect(calls).toContain('add:/repo/.agents/worktrees/agent-cleanup:agent/cleanup');
-        expect(calls).toContain('lock:/repo/.agents/worktrees/agent-cleanup');
+        expect(path).toBe('/repo/.agents/worktrees/agent--cleanup');
+        expect(calls).toContain('add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup');
+        expect(calls).toContain('lock:/repo/.agents/worktrees/agent--cleanup');
         expect(logs.at(-1)).toBe(path);
     });
 
-    it('stays offline: the port exposes no gh or issue lookup', () => {
-        const { port } = fakePort();
+    it('gives an issue lane and an issueless lane different directories', () => {
+        expect(laneBranchName(12, 'beat')).toBe('agent/12/beat');
+        expect(laneBranchName(undefined, '12-beat')).toBe('agent/12-beat');
+        expect(laneDirectoryName(12, 'beat')).toBe('agent-12-beat');
+        expect(laneDirectoryName(undefined, '12-beat')).toBe('agent--12-beat');
+        expect(laneDirectoryName(undefined, '12-beat')).not.toBe(laneDirectoryName(12, 'beat'));
+    });
+
+    it('stays offline: opening a lane reaches no child process', () => {
+        const { port, calls } = fakePort();
+        spawned.length = 0;
 
         openLane(undefined, 'cleanup', port);
 
-        expect(Object.keys(port).filter((key) => /gh|github|issue/i.test(key))).toEqual([]);
+        expect(spawned).toEqual([]);
+        expect(calls).toEqual([
+            'mkdir:/repo/.agents/worktrees/agent--cleanup',
+            'fetch',
+            'add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup',
+            'lock:/repo/.agents/worktrees/agent--cleanup',
+        ]);
     });
 
     it('does not modify a primary checkout path', () => {
@@ -86,8 +128,13 @@ describe('lane open', () => {
         [['12', 'beat', 'extra'], /unknown option/],
         [['--help', 'beat'], /--help/],
     ])('rejects argv %j before creating a worktree', (args, message) => {
-        expect(() => parseOpenLaneArgs(args)).toThrow(message);
-        const { calls } = fakePort();
+        const { port, calls } = fakePort();
+
+        expect(() => {
+            const parsed = parseOpenLaneArgs(args);
+            openLane(parsed.issue, parsed.slug, port);
+        }).toThrow(message);
+
         expect(calls).toEqual([]);
     });
 });

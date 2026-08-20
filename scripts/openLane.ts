@@ -53,8 +53,14 @@ export function parseOpenLaneArgs(args: string[]): { issue?: number; slug: strin
     return { slug: first, help: false };
 }
 
+/**
+ * One directory per branch, both ways. `agent/12/beat` and `agent/12-beat` are different lanes, so
+ * flattening both to `agent-12-beat` would make the second `lane:open` fail as "lane already
+ * exists". A slug never contains a doubled dash and the issue form always puts a digit straight
+ * after `agent-`, so the doubled dash is free to mark the issueless form.
+ */
 export function laneDirectoryName(issue: number | undefined, slug: string): string {
-    return issue === undefined ? `agent-${slug}` : `agent-${issue}-${slug}`;
+    return issue === undefined ? `agent--${slug}` : `agent-${issue}-${slug}`;
 }
 
 export function openLane(issue: number | undefined, slug: string, port: OpenLanePort): string {
