@@ -14,15 +14,21 @@ type FakeWorker = {
 
 const OriginalWorker = globalThis.Worker;
 let installedWorkers: FakeWorker[] = [];
+let postMessageError: Error | null = null;
 
 beforeEach(() => {
     installedWorkers = [];
+    postMessageError = null;
     class WorkerStub {
         url: string;
         options: WorkerOptions;
         onmessage: ((event: MessageEvent<WebGpuProbeResponse>) => void) | null = null;
         onerror: ((event: ErrorEvent) => void) | null = null;
-        postMessage = vi.fn<(message: WebGpuProbeRequest) => void>();
+        postMessage = vi.fn<(message: WebGpuProbeRequest) => void>(() => {
+            if (postMessageError) {
+                throw postMessageError;
+            }
+        });
         terminate = vi.fn();
 
         constructor(url: string | URL, options: WorkerOptions) {
@@ -49,6 +55,7 @@ function installedWorker(): FakeWorker {
 
 describe('probeWebGpuUsability', () => {
     it('runs the one-shot probe in its dedicated module worker', async () => {
+        vi.useFakeTimers();
         const result = probeWebGpuUsability();
         const worker = installedWorker();
 
@@ -62,6 +69,14 @@ describe('probeWebGpuUsability', () => {
 
         await expect(result).resolves.toEqual({ status: 'supported' });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(10_001);
+
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
     });
 
     it('preserves an explicit unavailable outcome and terminates the worker', async () => {
@@ -98,6 +113,24 @@ describe('probeWebGpuUsability', () => {
         worker.onerror?.(new ErrorEvent('error', { error: new Error('worker crashed') }));
 
         await expect(result).rejects.toThrow('WebGPU probe worker failed');
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it('cleans up when posting the probe request throws synchronously', async () => {
+        vi.useFakeTimers();
+        postMessageError = new Error('postMessage refused');
+
+        const result = probeWebGpuUsability();
+        const worker = installedWorker();
+
+        await expect(result).rejects.toThrow('postMessage refused');
+        expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'probe-webgpu' });
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(10_001);
+
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
 

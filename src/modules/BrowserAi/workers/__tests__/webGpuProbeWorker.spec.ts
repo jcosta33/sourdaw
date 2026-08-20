@@ -48,6 +48,21 @@ describe('webGpuProbeWorker', () => {
         });
     });
 
+    it('reports adapter request rejection as unavailable exactly once', async () => {
+        const requestAdapter = vi.fn().mockRejectedValue(new Error('adapter refused'));
+        installNavigator({ gpu: { requestAdapter } });
+
+        await expect(runProbe()).resolves.toEqual({
+            type: 'webgpu-probe-result',
+            result: { status: 'unavailable', reason: 'adapter-unavailable' },
+        });
+        expect(requestAdapter).toHaveBeenCalledExactlyOnceWith({
+            featureLevel: 'core',
+            forceFallbackAdapter: false,
+        });
+        expect(self.postMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects a fallback adapter without requesting a device', async () => {
         const requestDevice = vi.fn();
         installNavigator({

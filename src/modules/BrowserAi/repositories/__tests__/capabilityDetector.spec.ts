@@ -315,8 +315,12 @@ describe('detectCapabilities', () => {
 
     it('should discard a cached report from the property-only detector with no probe outcome', async () => {
         install_supported_browser();
-        install(measured(3));
-        const stale_report: Record<string, unknown> = { ...valid_cached_report };
+        const { probe } = install(measured(3));
+        const stale_report: Record<string, unknown> = {
+            ...valid_cached_report,
+            detectedAt: detected_at - 86_400_000,
+            inference: measured(7.25),
+        };
         Reflect.deleteProperty(stale_report, 'webGpu');
         window.localStorage.setItem(storage_key, JSON.stringify(stale_report));
 
@@ -324,6 +328,9 @@ describe('detectCapabilities', () => {
 
         expect(report.detectedAt).toBe(detected_at);
         expect(report.webGpu).toEqual({ status: 'supported' });
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+        expect(probe).toHaveBeenCalledTimes(1);
     });
 
     it('should discard a cached supported verdict with an unavailable probe outcome', async () => {
