@@ -17,9 +17,10 @@ const runKokoroTts = vi.hoisted(() =>
 const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
 const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
-const computeRenderCacheKey = vi.hoisted(() =>
-    vi.fn<typeof import('../../repositories/computeRenderCacheKey').computeRenderCacheKey>()
-);
+type ComputeRenderCacheKeyCall = Parameters<
+    typeof import('../../repositories/computeRenderCacheKey').computeRenderCacheKey
+>[0];
+const computeRenderCacheKey = vi.hoisted(() => vi.fn<(input: ComputeRenderCacheKeyCall) => Promise<string>>());
 const textToKokoroInputIds = vi.hoisted(() => vi.fn());
 const resampleTo44100 = vi.hoisted(() =>
     vi.fn<(input: { audio: Float32Array; fromSampleRate: number }) => Promise<Float32Array>>()
