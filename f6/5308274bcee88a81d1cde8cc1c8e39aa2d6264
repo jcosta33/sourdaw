@@ -1,0 +1,71 @@
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_487e9aa1e46063::t_39e6510a03e1e1 275-279,281
+  s_487e9aa1e46063::t_386bcd03e70319 6
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_487e9aa1e46063::t_7a220202e5e5f5 4
+  s_487e9aa1e46063::t_eee781ba876e8a 126-128
+src/modules/Transport/useCases/__tests__/setMasterGain.spec.ts
+  s_487e9aa1e46063::t_e45a031201e24c 4
+  s_487e9aa1e46063::t_10fa01e822c2af 9
+  s_487e9aa1e46063::t_17053f29a176d1 61,66-68
+src/utils/__tests__/audioLevelLaw.spec.ts
+  s_487e9aa1e46063::t_c11b25d43e744f 48-87
+  s_487e9aa1e46063::t_c011e505c3a10b 3-13
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_487e9aa1e46063::t_5e4e93c1962719 111-114,118-132
+  s_487e9aa1e46063::t_1176b278895108 5
+  s_487e9aa1e46063::t_578529e657b6dd 133-137
+src/modules/Transport/stores/transportStore.ts
+  s_487e9aa1e46063::t_1f988ea2f08311 3,17-24,26
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_487e9aa1e46063::t_66ae0ecb47905c 4-5
+  s_487e9aa1e46063::t_fd7789ddbd7608 82-84,95-102,108,116-121
+  s_487e9aa1e46063::t_e87bbcf74b05f2 35
+  s_487e9aa1e46063::t_4ebfae688653bf 39,81
+src/modules/TimelineEditor/presentations/helpers/automationLaneConstants.ts
+  s_487e9aa1e46063::t_0afa6a506ea9ab 52
+  s_487e9aa1e46063::t_3902cb8ef6621a 5-6
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineVcaGainParity.spec.ts
+  s_487e9aa1e46063::t_5a25de377c840f 148-154,163-164
+src/modules/Transport/useCases/setMasterGain.ts
+  s_487e9aa1e46063::t_8f7a92dc9c5394 8-14,16-20
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackGain.spec.ts
+  s_487e9aa1e46063::t_25d8ed65b59254 71,73-78
+  s_487e9aa1e46063::t_6423e42fdf13f5 3-4
+src/utils/audioLevelLaw.ts
+  s_487e9aa1e46063::t_95f2031dc3100b 2-3,10-12,31-62,64-73,84,89
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_487e9aa1e46063::t_ad138e39c0a1b7 308,317
+  s_487e9aa1e46063::t_eda2abd283c88a 13
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_487e9aa1e46063::t_4e5fdd29a83fac 8
+  s_487e9aa1e46063::t_f658dabd238a97 38-42,48
+  s_487e9aa1e46063::t_48967f40106ec0 21-25
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_487e9aa1e46063::t_77b464db0120da 454-458,466,469,472,484-486,489
+  s_487e9aa1e46063::t_1cfed0a946027f 620,627-628,631,633
+  s_487e9aa1e46063::t_311bb1a03ba6a2 556-559,580-583
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_487e9aa1e46063::t_3a707744bde2fb 78-85
+  s_487e9aa1e46063::t_dbdc391d93547c 3-4
+  s_487e9aa1e46063::t_97bf8584a07f51 114,118,120,122-124
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_487e9aa1e46063::t_25f76a0623c1c1 8
+  s_487e9aa1e46063::t_e2951942b467f5 1110-1114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f65308274bcee88a81d1cde8cc1c8e39aa2d6264",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
