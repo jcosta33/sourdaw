@@ -138,13 +138,24 @@ vi.mock('../../AutomationLane/NotePropertyLane', () => ({
     },
 }));
 
+// Whole-module mock: deliberately fake, test-friendly constants (distinct
+// from the real ROW_HEIGHT/RULER_HEIGHT, a fixed visible-pitches list) so the
+// bulk of this file's assertions don't depend on real scale/geometry math.
+// `getPianoRollExtentBeats` is stubbed only so PianoRoll's render doesn't
+// crash calling it — its numeric output is NOT asserted anywhere in this
+// file. The real extent rule (rounding, trailing room, the actual
+// GRID_BEATS floor) is covered against the real module in the sibling
+// PianoRollGridExtent.spec.tsx; duplicating that math here with fake inputs
+// would just be a second copy of the same defect risk this issue fixed.
 vi.mock('../../../helpers/pianoRollConstants', () => ({
     NOTE_NAMES: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
     GRID_BEATS: 256,
     ROW_HEIGHT: 24,
     RULER_HEIGHT: 28,
+    PITCH_RAIL_WIDTH: 40,
     EMPTY_NOTES: [],
     getVisiblePitches: vi.fn(() => [60, 61, 62, 63, 64]),
+    getPianoRollExtentBeats: vi.fn(() => 256),
 }));
 
 vi.mock('#/components/daw/DawGridHeaderCell', () => ({
@@ -230,19 +241,24 @@ describe('PianoRoll', () => {
         expect(canvas).toHaveAttribute('tabindex', '0');
     });
 
-    it('reports the initial beat width and total content width to the parent on mount', () => {
+    it('reports the initial beat width to the parent on mount', () => {
         const onBeatWidthChange = vi.fn();
-        const onContentWidthChange = vi.fn();
-        render(
-            <PianoRoll
-                {...defaultProps}
-                onBeatWidthChange={onBeatWidthChange}
-                onContentWidthChange={onContentWidthChange}
-            />
-        );
+        render(<PianoRoll {...defaultProps} onBeatWidthChange={onBeatWidthChange} />);
 
-        // beatWidth = max(1, 40 * zoom=1) = 40; totalWidth = max(parentClientWidth=0, GRID_BEATS(256) * 40).
+        // beatWidth = max(1, 40 * zoom=1) = 40.
         expect(onBeatWidthChange).toHaveBeenCalledWith(40);
+    });
+
+    // The reported content width is derived from `getPianoRollExtentBeats`,
+    // which this file stubs to a fixed value (see the pianoRollConstants
+    // mock above) so it doesn't crash — real width behaviour, including the
+    // clip-length/furthest-note/GRID_BEATS-floor rule, is asserted against
+    // the real module in PianoRollGridExtent.spec.tsx.
+    it('reports a content width derived from beat width and the grid extent', () => {
+        const onContentWidthChange = vi.fn();
+        render(<PianoRoll {...defaultProps} onContentWidthChange={onContentWidthChange} />);
+
+        // extentBeats is stubbed to 256; totalWidth = max(parentClientWidth=0, 256 * 40).
         expect(onContentWidthChange).toHaveBeenCalledWith(10_240);
     });
 

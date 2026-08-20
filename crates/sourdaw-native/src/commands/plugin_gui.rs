@@ -241,7 +241,7 @@ fn publish_plugin_gui_window_in_label_order(
 ///
 /// The shell must call this off its window-event thread. That thread is
 /// otherwise the only event-thread caller of the plugin mutexes (`plugins`,
-/// `engine_plugins`) and of `SharedClapPlugin`'s control lock (a 2 s spin);
+/// `engine_plugins`) and of `SharedHostedPlugin`'s control lock (a 2 s spin);
 /// running this inline risks a circular-wait deadlock with GUI-affine plugins
 /// and freezes the whole app event loop otherwise.
 pub fn reset_plugin_gui_state_after_os_close(
@@ -505,7 +505,7 @@ pub async fn show_all_plugin_guis(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::native_bridge::SharedClapPlugin;
+    use crate::host::native_bridge::SharedHostedPlugin;
     use crate::host::plugin_window::NoWindowHost;
     use crate::state::{AppState, EnginePluginInstanceData};
     use daw_plugin_host::ClapWrapper;
@@ -515,7 +515,7 @@ mod tests {
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, has_gui: bool) {
         let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", vec![], has_gui);
-        let runtime = Arc::new(SharedClapPlugin::new(wrapper));
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper));
         let mut engine_plugins = state
             .engine_plugins
             .lock()
@@ -534,7 +534,7 @@ mod tests {
         );
     }
 
-    fn engine_fixture_runtime(state: &AppState, instance_id: &str) -> Arc<SharedClapPlugin> {
+    fn engine_fixture_runtime(state: &AppState, instance_id: &str) -> Arc<SharedHostedPlugin> {
         let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
         Arc::clone(
             &engine_plugins

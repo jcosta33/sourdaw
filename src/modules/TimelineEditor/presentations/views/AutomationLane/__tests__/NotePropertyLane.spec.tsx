@@ -46,13 +46,57 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(<TData,>(store: { value: TData | null }, fallback?: TData) => store.value ?? fallback),
 }));
 
+/**
+ * Stand-in for the horizontally scrolling wrapper the lane is laid out inside.
+ * Only `clientWidth` and `scrollLeft` are read, and they are exactly what
+ * decides how wide the backing store is and which slice of the clip it covers.
+ */
+const scrollContainer = (scrollLeft = 0, clientWidth = 200): { current: HTMLElement } => {
+    const element = document.createElement('div');
+    Object.defineProperty(element, 'clientWidth', { value: clientWidth, configurable: true });
+    Object.defineProperty(element, 'scrollLeft', { value: scrollLeft, writable: true, configurable: true });
+    return { current: element };
+};
+
+type LaneNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+
+// Shared jsdom 2d-context stub — the same object serves every canvas.
+const ctx2d = document.createElement('canvas').getContext('2d')!;
+
+const makeNote = (id: string, startBeat: number, velocity = 100): LaneNote => ({
+    id,
+    pitch: 60,
+    startBeat,
+    duration: 1,
+    velocity,
+});
+
+const seedNotes = (notes: LaneNote[]): void => {
+    laneMocks.midiState = { notesByClipId: { 'clip-1': notes } };
+};
+
+// setValue that behaves like the real use case: mutates the store state
+// so the release handler can diff old vs new values.
+const liveSetValue = vi.fn((clipId: string, noteId: string, value: number): void => {
+    const note = (laneMocks.midiState.notesByClipId[clipId] ?? []).find((entry) => entry.id === noteId);
+    if (note) {
+        note.velocity = value;
+    }
+});
+
+const getCanvas = (): HTMLCanvasElement => {
+    const canvas = screen.getByRole('group').querySelector('canvas');
+    expect(canvas).not.toBeNull();
+    return canvas!;
+};
+
 describe('NotePropertyLane', () => {
     const defaultProps = {
         clipId: 'clip-1',
         trackId: 'track-1',
         selectedNoteIds: new Set<string>(),
         beatWidth: 40,
-        contentWidth: 800,
+        scrollRef: scrollContainer(),
         getValue: (note: { velocity: number }) => note.velocity,
         setValue: vi.fn(),
         label: 'Velocity',
@@ -85,32 +129,7 @@ describe('NotePropertyLane', () => {
     });
 
     describe('value painting and ramps', () => {
-        type LaneNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
-
-        // Shared jsdom 2d-context stub — the same object serves every canvas.
-        const ctx2d = document.createElement('canvas').getContext('2d')!;
         let rectSpy: { mockRestore: () => void };
-
-        const makeNote = (id: string, startBeat: number, velocity = 100): LaneNote => ({
-            id,
-            pitch: 60,
-            startBeat,
-            duration: 1,
-            velocity,
-        });
-
-        const seedNotes = (notes: LaneNote[]): void => {
-            laneMocks.midiState = { notesByClipId: { 'clip-1': notes } };
-        };
-
-        // setValue that behaves like the real use case: mutates the store state
-        // so the release handler can diff old vs new values.
-        const liveSetValue = vi.fn((clipId: string, noteId: string, value: number): void => {
-            const note = (laneMocks.midiState.notesByClipId[clipId] ?? []).find((entry) => entry.id === noteId);
-            if (note) {
-                note.velocity = value;
-            }
-        });
 
         beforeEach(() => {
             // Deterministic geometry: value = round((1 - (clientY - 2) / 127) * 127)
@@ -122,12 +141,6 @@ describe('NotePropertyLane', () => {
         afterEach(() => {
             rectSpy.mockRestore();
         });
-
-        const getCanvas = (): HTMLElement => {
-            const canvas = screen.getByRole('group').querySelector('canvas');
-            expect(canvas).not.toBeNull();
-            return canvas!;
-        };
 
         it('draws one bar per note with height proportional to its value', () => {
             const roundRect = vi.spyOn(ctx2d, 'roundRect');
@@ -716,6 +729,165 @@ describe('NotePropertyLane', () => {
                     expect.any(Function)
                 );
             });
+        });
+    });
+
+    describe('viewport-sized backing store', () => {
+        // PianoRoll derives `beatWidth = Math.max(1, 40 * zoom)` and its toolbar
+        // zoom slider tops out at 400%, so this is the widest beat a user can
+        // ask for — the setting at which a content-sized backing store used to
+        // run out of canvas.
+        const BEAT_WIDTH_AT_400_PERCENT = 160;
+        // Chromium refuses a canvas whose width or height exceeds this.
+        const MAX_CANVAS_DIMENSION = 32_767;
+        // PianoRoll's expression panel is `h-32`.
+        const LANE_HEIGHT = 128;
+        const VIEWPORT_WIDTH = 1_200;
+        // A 256-bar clip, the length the old sizing asked ~84 MB of backing
+        // store for in order to show ~1200 px of it.
+        const LONG_CLIP_BEATS = 1_024;
+
+        const geometry = { scrollLeft: 0, contentWidth: 0 };
+        let rectSpy: { mockRestore: () => void };
+        let originalDpr: number;
+
+        beforeEach(() => {
+            originalDpr = window.devicePixelRatio;
+            // The canvas is pinned to the viewport by `position: sticky`, so its
+            // box stays at the scrollport's left edge however far the lane is
+            // scrolled; the lane root spans the whole content and slides left
+            // with the scroll. Reading one where the other is meant is a
+            // scroll-sized error, which is what these tests are here to catch.
+            rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function mockRect(
+                this: HTMLElement
+            ) {
+                return this.tagName === 'CANVAS'
+                    ? new DOMRect(0, 0, VIEWPORT_WIDTH, LANE_HEIGHT)
+                    : new DOMRect(-geometry.scrollLeft, 0, geometry.contentWidth, LANE_HEIGHT);
+            });
+        });
+
+        afterEach(() => {
+            rectSpy.mockRestore();
+            Object.defineProperty(window, 'devicePixelRatio', { value: originalDpr, configurable: true });
+        });
+
+        const setDevicePixelRatio = (dpr: number): void => {
+            Object.defineProperty(window, 'devicePixelRatio', { value: dpr, configurable: true });
+        };
+
+        for (const dpr of [2, 3]) {
+            it(`draws and hit-tests a note past beat 100 at 400% zoom on a ${dpr}x display`, () => {
+                setDevicePixelRatio(dpr);
+                // Beat 120 is past the reach of the old sizing at this zoom on
+                // both displays: 32767 / (160 * 2) ≈ 102 beats on 2x, and
+                // 32767 / (160 * 3) ≈ 68 beats on 3x.
+                const noteBeat = 120;
+                const noteX = noteBeat * BEAT_WIDTH_AT_400_PERCENT;
+                geometry.contentWidth = LONG_CLIP_BEATS * BEAT_WIDTH_AT_400_PERCENT;
+                // Scroll so the note sits 400 px into the visible slice.
+                geometry.scrollLeft = noteX - 400;
+                seedNotes([makeNote('n-tail', noteBeat, 100)]);
+                const roundRect = vi.spyOn(ctx2d, 'roundRect');
+
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        beatWidth={BEAT_WIDTH_AT_400_PERCENT}
+                        scrollRef={scrollContainer(geometry.scrollLeft, VIEWPORT_WIDTH)}
+                        setValue={liveSetValue}
+                    />
+                );
+
+                const canvas = getCanvas();
+                // Sized from the viewport, so neither clip length nor zoom can
+                // push it past what the browser will allocate.
+                expect(canvas.width).toBe(VIEWPORT_WIDTH * dpr);
+                expect(canvas.width).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION);
+
+                // Drawn: the bar is emitted in content coordinates, which the
+                // scroll translate maps onto the visible slice.
+                expect(roundRect).toHaveBeenCalledWith(
+                    noteX + 1,
+                    expect.any(Number),
+                    BEAT_WIDTH_AT_400_PERCENT - 2,
+                    expect.any(Number),
+                    [2, 2, 0, 0]
+                );
+
+                // Hit-testable: a press 410 px into the viewport lands on it.
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 410, clientY: 2 });
+                expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n-tail', 127);
+            });
+        }
+
+        it('repaints the newly visible slice when the lane scrolls', () => {
+            setDevicePixelRatio(2);
+            const noteX = 120 * BEAT_WIDTH_AT_400_PERCENT;
+            geometry.contentWidth = LONG_CLIP_BEATS * BEAT_WIDTH_AT_400_PERCENT;
+            geometry.scrollLeft = 0;
+            seedNotes([makeNote('n-tail', 120, 100)]);
+            const scrollRef = scrollContainer(0, VIEWPORT_WIDTH);
+            const roundRect = vi.spyOn(ctx2d, 'roundRect');
+
+            render(<NotePropertyLane {...defaultProps} beatWidth={BEAT_WIDTH_AT_400_PERCENT} scrollRef={scrollRef} />);
+
+            // Beat 120 is far outside the first 1200 px, so nothing is painted.
+            expect(roundRect).not.toHaveBeenCalled();
+
+            geometry.scrollLeft = noteX - 400;
+            scrollRef.current.scrollLeft = geometry.scrollLeft;
+            fireEvent.scroll(scrollRef.current);
+
+            expect(roundRect).toHaveBeenCalledWith(
+                noteX + 1,
+                expect.any(Number),
+                BEAT_WIDTH_AT_400_PERCENT - 2,
+                expect.any(Number),
+                [2, 2, 0, 0]
+            );
+        });
+
+        it('a press lands on the note it is over, not on the beat that pixel held before the scroll', () => {
+            setDevicePixelRatio(1);
+            // n1 covers content x 81–119 at a 40 px beat; n2 covers 481–519.
+            seedNotes([makeNote('n1', 2, 100), makeNote('n2', 12, 100)]);
+            geometry.contentWidth = 20 * 40;
+            geometry.scrollLeft = 0;
+
+            const unscrolled = render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    scrollRef={scrollContainer(0, VIEWPORT_WIDTH)}
+                    setValue={liveSetValue}
+                />
+            );
+            fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 100, clientY: 2 });
+            expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n1', 127);
+            fireEvent.pointerUp(getCanvas(), { pointerId: 1, clientX: 100, clientY: 2 });
+            unscrolled.unmount();
+            liveSetValue.mockClear();
+
+            // Scroll 40 px. n1 now sits at screen x 41–79, so the press that
+            // still finds it moved with it…
+            geometry.scrollLeft = 40;
+            render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    scrollRef={scrollContainer(40, VIEWPORT_WIDTH)}
+                    setValue={liveSetValue}
+                />
+            );
+            fireEvent.pointerDown(getCanvas(), { pointerId: 2, clientX: 60, clientY: 2 });
+            expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n1', 127);
+            fireEvent.pointerUp(getCanvas(), { pointerId: 2, clientX: 60, clientY: 2 });
+
+            // …and the screen position it used to occupy is now content x 140,
+            // which is past n1's end and short of n2's start, so it writes
+            // nothing. Drop the scroll offset and this press hits n1 again.
+            liveSetValue.mockClear();
+            fireEvent.pointerDown(getCanvas(), { pointerId: 3, clientX: 100, clientY: 2 });
+            expect(liveSetValue).not.toHaveBeenCalled();
         });
     });
 });

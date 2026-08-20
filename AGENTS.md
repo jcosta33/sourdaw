@@ -275,14 +275,25 @@ freshness.
 `lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
 it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
 standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, titles the PR with the newest non-merge commit the lane holds above `origin/main`
-(`type(scope): subject`), so merging `origin/main` in never retitles it, keeps the four headings in
+`--force`, and refuses any lane with uncommitted changes: commit the work yourself with a
+conventional subject first.
+
+A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
+newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
+`origin/main` in never retitles it, keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
 bytes. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
 `Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
-Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses uncommitted
-lanes and lanes with no non-merge commit above `origin/main`. It does not enable auto-merge or post
-a review.
+Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses a
+conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
+to title the pull request. It does not enable auto-merge or post a review.
+
+An author-locked, off-convention branch may also publish — but only from inside its own worktree,
+since no issue argument ever resolves one, and only once the repository already has an open pull
+request for that exact branch, which is what proves the worktree a genuine, if stranded, lane
+rather than one locked for an unrelated purpose. That path never writes a title or body: pushing is
+the whole of what publishing it means, so it leaves the pull request exactly as its owner wrote it,
+and it refuses outright if that pull request is no longer open by the time the push lands.
 
 Write the pull request for a teammate who was not in the session. Under the four template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
@@ -331,12 +342,12 @@ Affected-only is the shape of that run, not a discount on it. Resource Safety al
 outer edge, and the one condition that moves it; the obligation here is everything that can fail
 because of these changed files. They are one boundary read from both sides: a check this diff can
 break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
-lane, on the head being merged — `lane:publish` refuses a lane that is not strictly ahead of
-`origin/main`, and `deliver` refuses a pull request whose base its own fetch does not match. A
-branch-local run stands in for the merge result only while the branch is current, so merging
-`origin/main` back into the lane — the routine answer when `deliver` reports a base mismatch —
-makes a new head and stales every run that preceded it. Run them again on the head that will
-actually merge.
+lane, on the head being merged. Unrelated `origin/main` movement does not by itself stale feature
+review or affected-only evidence, and a lane may publish while behind when it still has lane
+commits to push. Re-run checks and review when the feature head changes in a way that touches the
+reviewed or tested surface, when you resolve conflicts, or when the affected surfaces changed. Base
+compatibility is GitHub's ordinary mergeability gate: if the pull request is no longer `CLEAN` or
+its base branch changes, refresh the evidence on the head that will actually merge.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That
