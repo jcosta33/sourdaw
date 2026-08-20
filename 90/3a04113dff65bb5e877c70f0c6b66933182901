@@ -1,0 +1,64 @@
+crates/daw-dsp/src/proof/metering.rs
+  s_487e9aa1e46063::t_252c2aa338c0d0 357-371
+  s_487e9aa1e46063::t_9cce5a6e38effa 1396-1400
+  s_487e9aa1e46063::t_cf1ec4867ebb02 388
+  s_487e9aa1e46063::t_2c962eea3946c1 1480-1600
+  s_487e9aa1e46063::t_da519e77171dd5 1028
+  s_487e9aa1e46063::t_2da511b7f63b4b 315
+  s_487e9aa1e46063::t_94584dfa02fed1 783
+  s_487e9aa1e46063::t_0c26c052b2286c 1368
+  s_487e9aa1e46063::t_492ff39ea68695 275-300
+  s_487e9aa1e46063::t_be503a6e170054 1350
+  s_487e9aa1e46063::t_9908b9755ffab4 424-436
+  s_487e9aa1e46063::t_21ada40165ecdb 758
+  s_487e9aa1e46063::t_c673fa950cc0cd 1106
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_8ddfabd1166b5d::t_b534406aa92b1c 1,756-763,898-969
+public/wasm/daw-dsp/daw_dsp.js
+  s_8ddfabd1166b5d::t_562e29c9d94811 1763-1770
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_8ddfabd1166b5d::t_f438be8089eb42 1,756-763,898-969
+public/wasm/manifest.json
+  s_2175fca1f07426::t_62946fa1e12834 12,15-18,20-21
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_8ddfabd1166b5d::t_e577a4e0f7620c 1,59-130
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_8ddfabd1166b5d::t_50cbcedace15d8 1940-1947
+crates/daw-dsp/src/proof/mod.rs
+  s_487e9aa1e46063::t_146f597f930860 164-169
+  s_487e9aa1e46063::t_548a031572af92 175
+  s_487e9aa1e46063::t_70d62a2d9b94b1 174,176-228
+  s_487e9aa1e46063::t_1b9696f2afdb46 173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "903a04113dff65bb5e877c70f0c6b66933182901",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
