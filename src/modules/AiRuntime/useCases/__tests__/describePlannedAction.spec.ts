@@ -15,6 +15,31 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.markerStoreValue.value;
         },
     },
+    // Not exercised by this spec — stubbed only because `describeAction`'s module
+    // graph reaches these transitively (through the AI action registry's other
+    // action handlers) and the widened barrel-mock-coverage gate (`stores`) treats
+    // every reachable import as required, even one only read inside a function body
+    // this spec's tests never call.
+    persistDeviceParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+    trackStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    shouldCreateLiveTrackStrip: vi.fn(),
+    deriveEffectiveAudibility: vi.fn(),
+    adjustmentLayerStore: { value: null },
+    vcaGroupStore: { value: null },
+    deriveVcaMultiplier: vi.fn(),
+    getVcaGroupsState: vi.fn(),
+    gainEnvelopeStore: { value: null },
+    warpStates: new Map(),
+    getWarpState: vi.fn(),
+    addWarpMarker: vi.fn(),
+    clipSelectionStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn(),
+    updateClipInStore: vi.fn(),
+    appendClipToTrack: vi.fn(),
+    clampDeviceParamWrite: vi.fn(),
+    takeLaneStore: { value: null },
 }));
 
 import { type ProjectContext } from '../../models/ProjectContext';

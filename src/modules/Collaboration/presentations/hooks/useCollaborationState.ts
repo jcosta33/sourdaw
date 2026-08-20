@@ -13,6 +13,7 @@ const defaultState: CollaborationState = {
     peers: [],
     connectionStatus: 'disconnected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 export const useCollaborationState = (): CollaborationState => {

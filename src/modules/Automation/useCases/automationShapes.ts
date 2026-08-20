@@ -3,7 +3,7 @@ import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 import { type AutomationPoint } from '../models/Automation';
 import { automationStore } from '../stores/automationStore';
 
-import { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
+import { DEFAULT_BEAT_MERGE_EPSILON, batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 
 // Local shape (AGENTS.md model isolation). Structurally compatible with what
 // Arrangement's `generateShapePoints` accepts; we do not import the type from
@@ -90,6 +90,33 @@ function generateAutomationShapePoints({
 }
 
 /**
+ * The merge epsilon a generated shape hands `batchAddAutomationPoints`: half
+ * the batch's own smallest adjacent beat gap, capped at the freehand default.
+ * Generated shapes space their points by a fraction of the cycle (sine a
+ * quarter, random an eighth), so a short range or many cycles puts neighbours
+ * closer than the 0.05-beat freehand-jitter window and the batch would
+ * collapse onto one point, landing fewer points than the shape requested.
+ * Halving the smallest gap keeps every generated point distinct — the merge
+ * window is open, so a gap of exactly twice the epsilon never matches — while
+ * the cap preserves the freehand dedup against pre-existing points wherever
+ * the generated spacing is wider than it. A zero gap must not zero the
+ * epsilon, because the merge windows are open and a zero epsilon merges
+ * nothing — coincident generated points are left to the freehand default.
+ */
+function shapeMergeEpsilon(points: readonly AutomationPoint[]): number {
+    let minGap = Infinity;
+    for (let index = 1; index < points.length; index += 1) {
+        const gap = points[index]!.beat - points[index - 1]!.beat;
+        if (gap < minGap) {
+            minGap = gap;
+        }
+    }
+    return Number.isFinite(minGap) && minGap > 0
+        ? Math.min(DEFAULT_BEAT_MERGE_EPSILON, minGap / 2)
+        : DEFAULT_BEAT_MERGE_EPSILON;
+}
+
+/**
  * Insert a predefined automation shape into a lane at a given beat range.
  * Uses the lane's min/max values to scale the shape vertically.
  */
@@ -130,5 +157,5 @@ export function insertAutomationShape(
         }
     }
 
-    batchAddAutomationPoints(laneId, allPoints);
+    batchAddAutomationPoints(laneId, allPoints, shapeMergeEpsilon(allPoints));
 }

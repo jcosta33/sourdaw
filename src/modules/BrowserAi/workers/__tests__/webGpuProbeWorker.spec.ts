@@ -23,6 +23,7 @@ describe('webGpuProbeWorker', () => {
     beforeEach(() => {
         vi.resetModules();
         self.postMessage = vi.fn();
+        Object.defineProperty(globalThis, 'crossOriginIsolated', { configurable: true, value: false });
     });
 
     it('reports the WebGPU surface as missing', async () => {
@@ -31,6 +32,7 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'unavailable', reason: 'missing-surface' },
+            workerCrossOriginIsolated: false,
         });
     });
 
@@ -41,6 +43,7 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'unavailable', reason: 'adapter-unavailable' },
+            workerCrossOriginIsolated: false,
         });
         expect(requestAdapter).toHaveBeenCalledExactlyOnceWith({
             featureLevel: 'core',
@@ -55,6 +58,7 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'unavailable', reason: 'adapter-unavailable' },
+            workerCrossOriginIsolated: false,
         });
         expect(requestAdapter).toHaveBeenCalledExactlyOnceWith({
             featureLevel: 'core',
@@ -77,6 +81,7 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'unavailable', reason: 'fallback-adapter' },
+            workerCrossOriginIsolated: false,
         });
         expect(requestDevice).not.toHaveBeenCalled();
     });
@@ -92,6 +97,7 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'unavailable', reason: 'adapter-unavailable' },
+            workerCrossOriginIsolated: false,
         });
         expect(requestDevice).not.toHaveBeenCalled();
     });
@@ -110,6 +116,7 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'unavailable', reason: 'device-unavailable' },
+            workerCrossOriginIsolated: false,
         });
         expect(requestDevice).toHaveBeenCalledTimes(1);
     });
@@ -128,7 +135,22 @@ describe('webGpuProbeWorker', () => {
         await expect(runProbe()).resolves.toEqual({
             type: 'webgpu-probe-result',
             result: { status: 'supported' },
+            workerCrossOriginIsolated: false,
         });
         expect(destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports cross-origin isolation from its own worker global', async () => {
+        Object.defineProperty(globalThis, 'crossOriginIsolated', { configurable: true, value: true });
+        installNavigator({
+            gpu: {
+                requestAdapter: vi.fn().mockResolvedValue({
+                    info: { isFallbackAdapter: false },
+                    requestDevice: vi.fn().mockResolvedValue({ destroy: vi.fn() }),
+                }),
+            },
+        });
+
+        await expect(runProbe()).resolves.toMatchObject({ workerCrossOriginIsolated: true });
     });
 });

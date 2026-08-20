@@ -133,10 +133,10 @@ export async function createCinematicTemplate(): Promise<void> {
     addSend({ from: clarinet, to: hallReverb, level: 0.45 });
 
     const piano = createInstrumentTrack({
-        name: 'Piano',
-        deviceType: 'grand-boule',
-        deviceName: 'Grand Piano',
-        deviceParams: { masterGain: 0.75, soundboardSend: 0.55, sympatheticSend: 0.3 },
+        name: 'Keys',
+        deviceType: 'builtin-synth',
+        deviceName: 'Soft Keys',
+        deviceParams: { waveform: 1, attack: 0.02, release: 0.45, filterCutoff: 3200, gain: 0.4 },
     });
     addSend({ from: piano, to: plateReverb, level: 0.35 });
     addSend({ from: piano, to: hallReverb, level: 0.25 });

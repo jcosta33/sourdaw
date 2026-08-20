@@ -313,6 +313,34 @@ function setCollaborationError(message: string): void {
 }
 
 /**
+ * Record or retire a peer whose sync channel this node has closed.
+ *
+ * Deliberately not the `error` field. That slot holds one string, every
+ * writer overwrites it without severity, and `clearCollaborationFailure`
+ * nulls it from routine paths — a delivered audio asset, a new joiner being
+ * admitted. A closed sync channel is the one condition here that never
+ * resolves itself, and it stays true while the peer sits in the list looking
+ * connected, so it lives in its own field that routine traffic cannot erase.
+ */
+function setPeerSyncQuarantined(peerId: PeerId, isQuarantined: boolean): void {
+    collaborationStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+        const alreadyListed = state.quarantinedPeerIds.includes(peerId);
+        if (alreadyListed === isQuarantined) {
+            return state;
+        }
+        return {
+            ...state,
+            quarantinedPeerIds: isQuarantined
+                ? [...state.quarantinedPeerIds, peerId]
+                : state.quarantinedPeerIds.filter((param) => param !== peerId),
+        };
+    });
+}
+
+/**
  * Build the hooks AutomergeSync uses to (1) keep branch metadata
  * host-authoritative and (2) surface persistence failures.
  *
@@ -353,6 +381,12 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             // Saying so is the whole point: the alternative is a session that
             // looks healthy while the other side silently falls behind.
             setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+        },
+        onSyncQuarantine: ({ peerId }) => {
+            setPeerSyncQuarantined(peerId, true);
+        },
+        onSyncQuarantineLifted: ({ peerId }) => {
+            setPeerSyncQuarantined(peerId, false);
         },
     };
 }
@@ -662,6 +696,7 @@ function handlePeerConnected(peerId: PeerId): void {
             ...state,
             connectionStatus: 'connected',
             error: recovered && state.error === HOST_DEPARTED_MESSAGE ? null : state.error,
+            quarantinedPeerIds: [],
         });
     }
 }
@@ -785,6 +820,14 @@ function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
     });
 }
 
+/**
+ * Remove a peer that is durably gone — it left, or its cleanup timer elapsed.
+ *
+ * `automergeSync.forgetPeer`, not `removePeer`: this is the only place that
+ * decides a peer really went away, so it is the only place allowed to reopen
+ * a sync channel that was closed against it. The immediate disconnect path
+ * also fires on the transient ICE `disconnected` state.
+ */
 function removePeer(peerId: PeerId): void {
     collaborationStore.update((state) => {
         if (!state) {
@@ -792,6 +835,7 @@ function removePeer(peerId: PeerId): void {
         }
         return { ...state, peers: state.peers.filter((param) => param.id !== peerId) };
     });
+    sessionState.automergeSync?.forgetPeer(peerId);
     sessionState.peerManager?.removePeer(peerId);
 }
 

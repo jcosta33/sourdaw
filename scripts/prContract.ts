@@ -1,6 +1,25 @@
 export const TITLE_PATTERN = /^(?:feat|fix|chore|docs|test|refactor|perf|build|ci)(?:\([^)]+\))?!?: .+/;
 
+/**
+ * The headings a body must carry to merge. Screenshots is deliberately not among them: its
+ * canonical content is the literal `None.` that `composePublishBody` writes into every body, and a
+ * section whose required content states that it has nothing to say gates nothing. It remains in the
+ * template and is still offered and written — it is simply not a merge gate.
+ */
 export const REQUIRED_BODY_HEADINGS = [
+    '### 🎯 What does this PR do?',
+    '### 🧪 How to test',
+    '### 📌 Related tickets & additional notes',
+] as const;
+
+/**
+ * Every heading the template defines, in template order. This bounds where a section's content
+ * *ends*, which is a different question from which headings a body must carry. An offered heading
+ * still terminates the section above it: without that, dropping Screenshots from the required list
+ * would silently fold its block into the How-to-test span, and an empty How-to-test section
+ * followed by `### 🖼️ Screenshots\nNone.` would read as full and pass the emptiness check.
+ */
+const TEMPLATE_BODY_HEADINGS = [
     '### 🎯 What does this PR do?',
     '### 🧪 How to test',
     '### 🖼️ Screenshots',
@@ -19,33 +38,59 @@ export function assertConventionalSubject(subject: string, label: string): void 
     }
 }
 
+export type RequiredBodyHeading = (typeof REQUIRED_BODY_HEADINGS)[number];
+
+/** Where each required heading sits in a body. A negative index means the heading is absent. */
+type LocatedSection = { heading: RequiredBodyHeading; index: number };
+
+function locateRequiredSections(body: string): LocatedSection[] {
+    return REQUIRED_BODY_HEADINGS.map((heading) => ({ heading, index: body.indexOf(heading) }));
+}
+
+/**
+ * Where a section's content stops: the next template heading that actually appears after it,
+ * required or merely offered, or the end of the body when none does.
+ */
+function sectionContentEnd(body: string, contentStart: number): number {
+    const boundaries = TEMPLATE_BODY_HEADINGS.map((heading) => body.indexOf(heading, contentStart)).filter(
+        (index) => index >= 0
+    );
+    return boundaries.length === 0 ? body.length : Math.min(...boundaries);
+}
+
+/**
+ * A missing heading and an empty section are two different failures, so they are diagnosed in two
+ * separate passes and never share a message. Deriving one section's end from the *next* heading's
+ * position — the only way to know where its content stops — means an absent later heading makes the
+ * current section look unterminated. Judging presence first, across every required heading, is what
+ * keeps that from being reported as the preceding section being empty: a body whose How-to-test
+ * heading was never written is missing How-to-test, not missing a What-does-this-do section that is
+ * sitting right there, full.
+ */
 export function assertPullRequestBody(body: string, label: string): void {
     if (Buffer.byteLength(body, 'utf8') > PULL_REQUEST_BODY_BYTE_LIMIT) {
         fail(`${label} exceeds 4000 bytes`);
     }
-    let previousHeading = -1;
-    for (let index = 0; index < REQUIRED_BODY_HEADINGS.length; index += 1) {
-        const heading = REQUIRED_BODY_HEADINGS[index];
-        if (heading === undefined) {
-            continue;
-        }
-        const headingIndex = body.indexOf(heading);
-        if (headingIndex < 0) {
-            fail(`${label} is missing: ${heading}`);
-        }
-        if (headingIndex <= previousHeading) {
+    const sections = locateRequiredSections(body);
+    const absent = sections.find((section) => section.index < 0);
+    if (absent !== undefined) {
+        fail(`${label} is missing: ${absent.heading}`);
+    }
+    for (const [position, section] of sections.entries()) {
+        const previous = sections[position - 1];
+        if (previous !== undefined && section.index <= previous.index) {
             fail(`${label} sections are out of order`);
         }
-        if (body.includes(heading, headingIndex + heading.length)) {
-            fail(`${label} duplicates: ${heading}`);
+    }
+    for (const section of sections) {
+        const contentStart = section.index + section.heading.length;
+        if (body.includes(section.heading, contentStart)) {
+            fail(`${label} duplicates: ${section.heading}`);
         }
-        const nextHeading = REQUIRED_BODY_HEADINGS[index + 1];
-        const contentEnd =
-            nextHeading === undefined ? body.length : body.indexOf(nextHeading, headingIndex + heading.length);
-        if (contentEnd < 0 || body.slice(headingIndex + heading.length, contentEnd).trim() === '') {
-            fail(`${label} section is empty: ${heading}`);
+        const contentEnd = sectionContentEnd(body, contentStart);
+        if (body.slice(contentStart, contentEnd).trim() === '') {
+            fail(`${label} section is empty: ${section.heading}`);
         }
-        previousHeading = headingIndex;
     }
 }
 

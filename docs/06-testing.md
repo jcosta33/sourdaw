@@ -149,7 +149,7 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
 }));
 ```
 
-`pnpm test:barrel-mocks` enforces this for `presentations/views` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. Its focused guard spec covers the checker. The failure names the spec, barrel, missing export, and consuming module, then prints the three remedies, including a reasoned `exemptions` row in `scripts/checkBarrelMockCoverage.ts`. `--all` reports the same class across the other three barrel kinds, which are measured rather than gated. Background: PR #1572, issue #1393.
+`pnpm test:barrel-mocks` enforces this for `presentations/views`, `stores`, and `events` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. No spec mocks an `events` contract barrel today — that kind is gated pre-emptively, not because it has been observed clean, so the tree's first `events` mock is caught by this gate the moment it goes stale rather than needing a later change to start checking it. Its focused guard spec covers the checker. The failure names the spec, barrel, missing export, and consuming module, then prints the three remedies, including a reasoned `exemptions` row in `scripts/checkBarrelMockCoverage.ts` — that row mutes only the export names it lists, not the whole (spec, barrel) pair, so a name outside the list still violates. `--all` reports the same class across all four barrel kinds, including `useCases`, which carries too much pre-existing debt to gate and is measured rather than gated. Background: PR #1572, issue #1393, #2364.
 
 ### Canonical test shape for an injectable
 
@@ -692,10 +692,13 @@ Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(te
 
 Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
 coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
-sequentially through `package.json`. The scripts themselves are plain, standard commands; in
-agent sessions, wrap compute-heavy runs with `pnpm guard --profile <p> -- <command>`, which
-rejects concurrent validation, low-memory starts, timeouts, and process trees above the
-configured RSS ceiling. A guard refusal is final; never bypass it by rerunning unguarded.
+sequentially within each lane through `package.json`. Other lanes may validate concurrently when
+RAM permits. Wrap compute-heavy agent runs with
+`pnpm guard --profile <p> [--max-rss-mib <estimate>] -- <command>`. Estimate peak RAM from the
+latest observed guard peak or the nearest command; use the profile ceiling without evidence.
+The guard reserves that budget and waits until measured free RAM covers active unused headroom,
+the new command, and the 2 GiB system reserve. It still enforces timeouts, process cleanup, host
+pressure, and the command RSS ceiling. Never bypass it.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 

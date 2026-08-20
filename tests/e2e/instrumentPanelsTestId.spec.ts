@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-test.describe('Instrument device panels — Fermenter, Grand Boule, Crumbs', () => {
+test.describe('Instrument device panels — Fermenter, Levain, Crumbs', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -48,21 +48,14 @@ test.describe('Instrument device panels — Fermenter, Grand Boule, Crumbs', () 
         }
     });
 
-    test('Grand Boule panel opens with Close button', async ({ page }) => {
-        const opened = await openInstrument(page, 'Grand Boule');
-        if (opened) {
-            const close = page.getByRole('button', { name: /Close Grand Boule/i }).first();
-            await expect(close).toBeVisible({ timeout: 10_000 });
-        }
-    });
-
     test('Crumbs panel opens with Close button', async ({ page }) => {
         const opened = await openInstrument(page, 'Crumbs');
         if (opened) {
             // Crumbs may have a different close label.
-            const close = page.getByRole('button', { name: /Close Crumbs/i }).or(
-                page.getByRole('button', { name: /Close/i })
-            ).first();
+            const close = page
+                .getByRole('button', { name: /Close Crumbs/i })
+                .or(page.getByRole('button', { name: /Close/i }))
+                .first();
             const hasClose = await close.isVisible().catch(() => false);
             if (hasClose) {
                 const label = await close.getAttribute('aria-label');

@@ -10,4 +10,16 @@ export type WebGpuProbeResult = { status: 'supported' } | { status: 'unavailable
 
 export type WebGpuProbeRequest = { type: 'probe-webgpu' };
 
-export type WebGpuProbeResponse = { type: 'webgpu-probe-result'; result: WebGpuProbeResult };
+export type WebGpuProbeObservation = {
+    webGpu: WebGpuProbeResult;
+    /** The isolation fact from the worker global that will host inference. */
+    crossOriginIsolated: boolean;
+    /** A valid typed response proves the module worker bridge completed its handshake. */
+    workerAvailable: true;
+};
+
+export type WebGpuProbeResponse = {
+    type: 'webgpu-probe-result';
+    result: WebGpuProbeResult;
+    workerCrossOriginIsolated: boolean;
+};

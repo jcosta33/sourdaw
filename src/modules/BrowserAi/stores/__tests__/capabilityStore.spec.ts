@@ -24,9 +24,9 @@ describe('capabilityStore', () => {
             capability: 'supported',
             webGpu: { status: 'supported' },
             webGpuTier: 'webgpu-fast',
-            sharedArrayBuffer: true,
+            crossOriginIsolated: true,
+            workerAvailable: true,
             opfsAvailable: true,
-            chromeVersion: 120,
             inference: {
                 status: 'measured',
                 modelId: 'kokoro-82m-q8',

@@ -5,6 +5,7 @@ import {
     type AudioLatencyProfile,
 } from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -351,6 +352,7 @@ class AudioEngineImpl implements AudioEngine {
      */
     private masterMeterBuffer: Float32Array | null = null;
     private pendingDevicePromises = new Set<Promise<unknown>>();
+    private withheldDeviceNotices = new Set<string>();
     private workletReady = false;
     private fallbackMode = false;
     private transportSAB: SharedArrayBuffer | null;
@@ -788,13 +790,24 @@ class AudioEngineImpl implements AudioEngine {
                 initializedNode = this.createTrackNode(sourcePlan.id);
                 try {
                     for (const device of sourcePlan.devices) {
-                        initializedNode.addDevice(
+                        const added = initializedNode.addDevice(
                             device.id,
                             device.type,
                             device.externalInstanceId,
                             undefined,
                             device.parameterIds
                         );
+                        if (
+                            !added &&
+                            !isDeviceReleaseAdmitted(device.type) &&
+                            !this.withheldDeviceNotices.has(device.type)
+                        ) {
+                            this.withheldDeviceNotices.add(device.type);
+                            notifyUser(
+                                `"${device.type}" is withheld from this build. Its project data is preserved, but it will remain silent.`,
+                                'warning'
+                            );
+                        }
                     }
                     this.trackNodes.set(sourcePlan.id, initializedNode);
                     this.setTrackOutputTransaction(initializedNode, delta.output.targetId, delta.output.padBinding);
@@ -2485,6 +2498,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public resetGraph(): void {
+        this.withheldDeviceNotices.clear();
         // Tear down all per-project audio graph state (tracks, buses, sends,
         // sidechain routes) without closing the AudioContext, master nodes,
         // or already-loaded worklet modules. Used when switching projects.

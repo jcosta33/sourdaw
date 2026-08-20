@@ -51,6 +51,30 @@ describe('handleSetMasterGain — execute', () => {
         const result = handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
         expect(result).toEqual({ status: 'written' });
     });
+
+    it('conflicts without writing when the fader moved since the caller read expectedPercent', () => {
+        // The caller derived 0.8 from a master it read at 80%; by admission the
+        // fader is at 50%. Overwriting would silently discard that move.
+        mockValue = { masterGain: 50 };
+        mockedReplace.mockReturnValue(true);
+        const result = handleSetMasterGain.execute({
+            type: 'setMasterGain',
+            payload: { gain: 0.8, expectedPercent: 80 },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedReplace).not.toHaveBeenCalled();
+    });
+
+    it('writes when the carried expectedPercent still matches the live percent', () => {
+        mockValue = { masterGain: 80 };
+        mockedReplace.mockReturnValue(true);
+        const result = handleSetMasterGain.execute({
+            type: 'setMasterGain',
+            payload: { gain: 0.5, expectedPercent: 80 },
+        });
+        expect(mockedReplace).toHaveBeenCalledWith({ expectedPercent: 80, replacementPercent: 50 });
+        expect(result).toEqual({ status: 'written' });
+    });
 });
 
 describe('handleSetMasterGain — describe', () => {
@@ -97,5 +121,14 @@ describe('handleSetMasterGain — isNoop', () => {
     it('returns false when store is null', () => {
         mockValue = null;
         expect(handleSetMasterGain.isNoop!({ type: 'setMasterGain', payload: { gain: 0.8 } })).toBe(false);
+    });
+
+    it('returns false when the guard diverges even though the target already matches', () => {
+        // Swallowing this as a no-op would hide the divergence instead of
+        // letting execute report it as a conflict.
+        mockValue = { masterGain: 80 };
+        expect(
+            handleSetMasterGain.isNoop!({ type: 'setMasterGain', payload: { gain: 0.8, expectedPercent: 50 } })
+        ).toBe(false);
     });
 });

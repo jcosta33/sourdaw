@@ -1,3 +1,5 @@
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+
 import {
     BUILTIN_PLUGINS,
     isDeviceSupportedOnCurrentPlatform,
@@ -73,14 +75,15 @@ function toManifestParameter(parameter: DeviceParameter, guidance: DeviceParamet
 
 /** Arrangement owns catalog descriptors, never live node topology or latency. */
 export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDeviceDescriptor[] {
+    const releasedDescriptors = BUILTIN_PLUGINS.filter((descriptor) => isDeviceReleaseAdmitted(descriptor.id));
     const presetContracts = new Map(
         getFactoryPresetContractsByDeviceType(
             getFactoryPresets(),
-            BUILTIN_PLUGINS.map((descriptor) => descriptor.id)
+            releasedDescriptors.map((descriptor) => descriptor.id)
         ).map((contract) => [contract.type, contract])
     );
 
-    return BUILTIN_PLUGINS.map((descriptor) => {
+    return releasedDescriptors.map((descriptor) => {
         const descriptorVersion = getDeviceContractVersionForCommand(descriptor.id);
         if (!descriptorVersion) {
             throw new Error(`Built-in descriptor fingerprint unavailable: ${descriptor.id}`);

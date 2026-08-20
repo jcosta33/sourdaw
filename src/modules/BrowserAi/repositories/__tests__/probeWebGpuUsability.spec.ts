@@ -15,10 +15,12 @@ type FakeWorker = {
 const OriginalWorker = globalThis.Worker;
 let installedWorkers: FakeWorker[] = [];
 let postMessageError: Error | null = null;
+let constructorError: Error | null = null;
 
 beforeEach(() => {
     installedWorkers = [];
     postMessageError = null;
+    constructorError = null;
     class WorkerStub {
         url: string;
         options: WorkerOptions;
@@ -32,6 +34,9 @@ beforeEach(() => {
         terminate = vi.fn();
 
         constructor(url: string | URL, options: WorkerOptions) {
+            if (constructorError) {
+                throw constructorError;
+            }
             this.url = String(url);
             this.options = options;
             installedWorkers.push(this);
@@ -64,10 +69,18 @@ describe('probeWebGpuUsability', () => {
         expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'probe-webgpu' });
 
         worker.onmessage?.({
-            data: { type: 'webgpu-probe-result', result: { status: 'supported' } },
+            data: {
+                type: 'webgpu-probe-result',
+                result: { status: 'supported' },
+                workerCrossOriginIsolated: true,
+            },
         } as MessageEvent<WebGpuProbeResponse>);
 
-        await expect(result).resolves.toEqual({ status: 'supported' });
+        await expect(result).resolves.toEqual({
+            webGpu: { status: 'supported' },
+            crossOriginIsolated: true,
+            workerAvailable: true,
+        });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
         expect(worker.onmessage).toBeNull();
         expect(worker.onerror).toBeNull();
@@ -87,10 +100,15 @@ describe('probeWebGpuUsability', () => {
             data: {
                 type: 'webgpu-probe-result',
                 result: { status: 'unavailable', reason: 'fallback-adapter' },
+                workerCrossOriginIsolated: false,
             },
         } as MessageEvent<WebGpuProbeResponse>);
 
-        await expect(result).resolves.toEqual({ status: 'unavailable', reason: 'fallback-adapter' });
+        await expect(result).resolves.toEqual({
+            webGpu: { status: 'unavailable', reason: 'fallback-adapter' },
+            crossOriginIsolated: false,
+            workerAvailable: true,
+        });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
 
@@ -99,7 +117,23 @@ describe('probeWebGpuUsability', () => {
         const worker = installedWorker();
 
         worker.onmessage?.({
-            data: { type: 'webgpu-probe-result', result: { status: 'available' } },
+            data: {
+                type: 'webgpu-probe-result',
+                result: { status: 'available' },
+                workerCrossOriginIsolated: true,
+            },
+        } as unknown as MessageEvent<WebGpuProbeResponse>);
+
+        await expect(result).rejects.toThrow('invalid response');
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a WebGPU verdict that omits the worker isolation fact', async () => {
+        const result = probeWebGpuUsability();
+        const worker = installedWorker();
+
+        worker.onmessage?.({
+            data: { type: 'webgpu-probe-result', result: { status: 'supported' } },
         } as unknown as MessageEvent<WebGpuProbeResponse>);
 
         await expect(result).rejects.toThrow('invalid response');
@@ -107,6 +141,7 @@ describe('probeWebGpuUsability', () => {
     });
 
     it('rejects worker failures and terminates the worker', async () => {
+        vi.useFakeTimers();
         const result = probeWebGpuUsability();
         const worker = installedWorker();
 
@@ -114,6 +149,19 @@ describe('probeWebGpuUsability', () => {
 
         await expect(result).rejects.toThrow('WebGPU probe worker failed');
         expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(10_001);
+
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects when the module worker constructor throws before a worker exists', async () => {
+        constructorError = new Error('WebGPU probe worker construction failed');
+
+        await expect(probeWebGpuUsability()).rejects.toThrow('WebGPU probe worker construction failed');
+        expect(installedWorkers).toHaveLength(0);
     });
 
     it('cleans up when posting the probe request throws synchronously', async () => {
@@ -144,5 +192,7 @@ describe('probeWebGpuUsability', () => {
 
         await rejection;
         expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
     });
 });
