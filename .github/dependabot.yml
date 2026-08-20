@@ -7,8 +7,7 @@ updates:
       interval: "monthly"
     open-pull-requests-limit: 0
     labels:
-      - "build"
-      - "priority:P3"
+      - "security"
 
   # Keep Cargo metadata for security updates; routine version PRs are disabled.
   - package-ecosystem: "cargo"
@@ -17,5 +16,4 @@ updates:
       interval: "monthly"
     open-pull-requests-limit: 0
     labels:
-      - "build"
-      - "priority:P3"
+      - "security"
