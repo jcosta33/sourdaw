@@ -259,8 +259,20 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
-                                            setIsRecording(true);
-                                            void armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60);
+                                            // The readout follows the arm's
+                                            // outcome, never the click: a
+                                            // refused arm must not read
+                                            // "Recording..." over a take that
+                                            // was never opened.
+                                            armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60)
+                                                .then((armed) => {
+                                                    setIsRecording(armed);
+                                                    return undefined;
+                                                })
+                                                .catch((error: unknown) => {
+                                                    logger.warn('Failed to arm crumbs recording:', error);
+                                                    setIsRecording(false);
+                                                });
                                         }}
                                     >
                                         Arm
@@ -269,8 +281,14 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
+                                            // Stop reads Idle at once — the
+                                            // user asked for it — but a
+                                            // refusal is reported rather than
+                                            // swallowed by a bare `void`.
                                             setIsRecording(false);
-                                            void stopCrumbsRecording(deviceId);
+                                            stopCrumbsRecording(deviceId).catch((error: unknown) => {
+                                                logger.warn('Failed to stop crumbs recording:', error);
+                                            });
                                         }}
                                     >
                                         Stop

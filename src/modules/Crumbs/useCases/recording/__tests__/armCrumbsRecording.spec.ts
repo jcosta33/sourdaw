@@ -64,9 +64,22 @@ describe('armCrumbsRecording parameter validation', () => {
     it('does not arm when the instance has no pads', async () => {
         padStore.set({});
 
-        await armCrumbsRecording(INSTANCE, 0.5, 0, 60);
+        // Reported as "not armed", not as a resolved arm: the caller renders
+        // this outcome as recorder state, and a bare resolve is
+        // indistinguishable from an open take.
+        await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).resolves.toBe(false);
 
         expect(armRecording).not.toHaveBeenCalled();
+    });
+
+    it('reports an armed recorder only once the bridge accepted the arm', async () => {
+        await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).resolves.toBe(true);
+    });
+
+    it('propagates a backend refusal instead of reporting an armed recorder', async () => {
+        armRecording.mockRejectedValueOnce(new Error('Crumbs instance not found'));
+
+        await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).rejects.toThrow('Crumbs instance not found');
     });
 
     it('forwards valid parameters unchanged', async () => {
