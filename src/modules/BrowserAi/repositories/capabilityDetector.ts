@@ -36,10 +36,11 @@
  * -------
  * The report is stored in localStorage. That cache now holds a figure worth
  * reusing: a real throughput measurement costs a full model render, so it is not
- * repeated on every boot. `forceRefresh` re-reads the platform facts; passing
- * `measureInference` is what re-runs the expensive part. A cached *measured*
- * throughput is carried forward across a platform-only refresh so the tier does
- * not silently regress to `not-measured`.
+ * repeated on every boot. Every detection re-reads the platform facts through
+ * the lightweight worker probe; `forceRefresh` remains accepted for caller
+ * compatibility. Passing `measureInference` is what re-runs the expensive part.
+ * A cached *measured* throughput is carried forward when inference is not
+ * requested so the tier does not silently regress to `not-measured`.
  */
 
 import { inject } from '#/infra/di/inject';
@@ -246,6 +247,7 @@ function read_cached_report(storage: Storage | null): CapabilityReport | null {
 }
 
 type DetectCapabilitiesInput = {
+    /** Retained for caller compatibility; the lightweight platform probe always runs. */
     forceRefresh?: boolean;
     /**
      * Run the real throughput measurement. Off by default: it renders a full
@@ -261,16 +263,10 @@ type DetectCapabilitiesOutput = Promise<CapabilityReport>;
 export const detectCapabilities = inject({ logger, measureInferenceThroughput, probeWebGpuUsability })(
     ({ logger, measureInferenceThroughput, probeWebGpuUsability }) =>
         async function detectCapabilities({
-            forceRefresh = false,
             measureInference = false,
         }: DetectCapabilitiesInput = {}): DetectCapabilitiesOutput {
             const storage = get_capability_storage();
             const cachedReport = read_cached_report(storage);
-
-            if (!forceRefresh && !measureInference && cachedReport) {
-                logger.info('[BrowserAi] Using cached capability report');
-                return cachedReport;
-            }
 
             const chromeVersion = detectChromeVersion();
             let webGpu: WebGpuProbeResult;
