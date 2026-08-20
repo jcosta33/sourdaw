@@ -148,6 +148,12 @@ describe('TransportBar', () => {
         expect(container.firstChild).toBeTruthy();
     });
 
+    it('provides the integrated desktop title-bar drag region', () => {
+        renderTransportBar();
+
+        expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region');
+    });
+
     it('should show play button', () => {
         render(<TransportBar />);
         expect(screen.getByRole('button', { name: /Play/i })).toBeInTheDocument();
