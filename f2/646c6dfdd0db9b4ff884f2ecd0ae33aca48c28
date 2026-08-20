@@ -1,0 +1,47 @@
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_27578aec2aab3b::t_e2699653883b4c 76,79
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_27578aec2aab3b::t_ad96fed89a32f5 175,180-206,212
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_27578aec2aab3b::t_b88e1b9fb2a0a8 11,93,115,142
+  s_27578aec2aab3b::t_2a1cad16944f4a 116-117
+  s_27578aec2aab3b::t_1fab9379de503b 2,4-5,10,12-19,36-61,66-73,75-92,94-108,110-114,118-135,138,140-141,143-148,150-151,153,157-158,162-169
+  s_27578aec2aab3b::t_4467feb75e7ec0 62-65,74
+  s_27578aec2aab3b::t_130831e1af1296 9
+  s_27578aec2aab3b::t_81d2f64d6631a4 20-35
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_3252170a5b0b83 100,115,120-123
+electron/protocol.ts
+  s_27578aec2aab3b::t_1beb729fea945a 72-74,78
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorker.spec.ts
+  s_27578aec2aab3b::t_c179df81df12b1 17,79
+  s_27578aec2aab3b::t_91dde563520f75 47-56,59,71,73,85-86,115-116
+  s_27578aec2aab3b::t_855fe680c76d9f 104-105
+  s_27578aec2aab3b::t_483e9d653369cd 3-16,18-26,30-31,35,39-46,60,63,67,70,74-76,78,80-81,84,87,89-90,94-103,106-114,117-127,130-131,133-134,136-143
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_27578aec2aab3b::t_bca5a5c080cd6a 48-61,78-86
+  s_27578aec2aab3b::t_ac5ee7d9b7da88 87-88
+electron/__tests__/webviewSecurity.spec.ts
+  s_27578aec2aab3b::t_f270d06ec3ea85 105
+  s_27578aec2aab3b::t_3fc27e0bd5e28e 92-96
+package.json
+  s_27578aec2aab3b::t_c089c934254b23 76-77
+pnpm-lock.yaml
+  s_27578aec2aab3b::t_6367101e67f6be 35-40,2439-2444,2451-2461,2467-2471,2476-2479,2486-2491,2497-2501,2506-2509,2608-2610,3111-3113,3445-3447,7868-7873,7884-7896,7901-7904,7918-7929,7940-7949,7954-7957,7975-7991,8109-8110,8492-8493,8845-8846
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f2646c6dfdd0db9b4ff884f2ecd0ae33aca48c28",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
