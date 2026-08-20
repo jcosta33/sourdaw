@@ -221,6 +221,18 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain('Closes #12');
     });
 
+    it('preserves Closes on a later flagless update', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+        });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain('Closes #12');
+        expect(bodies.at(-1)).not.toContain('Related #12');
+    });
+
     it('changes a valid existing relationship only when requested', () => {
         const { port, bodies } = fakePort({
             existing: 41,

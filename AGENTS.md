@@ -178,9 +178,10 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
 never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
 number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
-`agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
-`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
-directory is what identifies it when no issue number does. Touch only your own lane.
+`agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
+`lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`,
+and `lane:publish` must run from inside that lane because the working directory identifies it. Touch
+only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
