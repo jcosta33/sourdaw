@@ -431,13 +431,16 @@ function mutateThread(
         fail(`${name} returned an invalid result for ${threadId}`);
     }
 }
-function deleteReply(replyId: string, gh: Gh): void {
-    graphql(
+export function deleteReply(replyId: string, gh: Gh): void {
+    const response = graphql(
         gh,
         'mutation($replyId:ID!){deletePullRequestReviewComment(input:{id:$replyId}){pullRequestReviewComment{id}}}',
         ['-F', `replyId=${replyId}`],
         'delete review reply'
-    );
+    ) as { data?: { deletePullRequestReviewComment?: { pullRequestReviewComment?: { id?: unknown } | null } } };
+    if (response.data?.deletePullRequestReviewComment?.pullRequestReviewComment?.id !== replyId) {
+        fail(`delete review reply returned an invalid result for ${replyId}`);
+    }
 }
 async function main(): Promise<number> {
     const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));

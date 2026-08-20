@@ -93,8 +93,8 @@ export function supersedePullRequest(
     try {
         commentAttempted = true;
         const comment = port.comment(oldNumber, body);
-        assertComment(comment);
-        commentId = comment.id;
+        commentId = assertCommentReceipt(comment);
+        assertCommentBody(comment, body);
         assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead);
         closeAttempted = true;
         port.close(oldNumber);
@@ -226,13 +226,19 @@ function assertStableOpen(value: SupersededPullRequest, number: number, head: st
 function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
-function assertComment(value: IssueComment): void {
+function assertCommentReceipt(value: IssueComment): string {
     if (
         typeof value.id !== 'string' ||
         value.id === '' ||
         !isDecimalId(value.fullDatabaseId) ||
         !isAuthorBotLogin(value.authorLogin)
     ) {
+        fail('add supersession comment returned an invalid result');
+    }
+    return value.id;
+}
+function assertCommentBody(value: IssueComment, expectedBody: string): void {
+    if (value.body !== expectedBody) {
         fail('add supersession comment returned an invalid result');
     }
 }
@@ -390,13 +396,16 @@ function setPullRequestState(
         fail(`${name} returned an invalid result`);
     }
 }
-function deleteComment(id: string, gh: Gh): void {
-    graphql(
+export function deleteComment(id: string, gh: Gh): void {
+    const response = graphql(
         gh,
-        'mutation($id:ID!){deleteIssueComment(input:{id:$id}){clientMutationId}}',
-        ['-F', `id=${id}`],
+        'mutation($id:ID!,$clientMutationId:String!){deleteIssueComment(input:{id:$id,clientMutationId:$clientMutationId}){clientMutationId}}',
+        ['-F', `id=${id}`, '-f', `clientMutationId=${id}`],
         'delete supersession comment'
-    );
+    ) as { data?: { deleteIssueComment?: { clientMutationId?: unknown } } };
+    if (response.data?.deleteIssueComment?.clientMutationId !== id) {
+        fail(`delete supersession comment returned an invalid result for ${id}`);
+    }
 }
 async function main(): Promise<number> {
     const parsed = parseSupersedePullRequestArgs(process.argv.slice(2));

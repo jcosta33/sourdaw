@@ -5,6 +5,7 @@ import {
     inspectIssueComments,
     parseSupersedePullRequestArgs,
     supersedePullRequest,
+    deleteComment,
     type SupersedePullRequestPort,
 } from '../supersedePullRequest.ts';
 
@@ -19,6 +20,7 @@ type Input = {
     concurrentCommentOnThrow?: boolean;
     throwCloseWithConcurrentState?: boolean;
     failDelete?: boolean;
+    returnedCommentBody?: string;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
@@ -57,7 +59,7 @@ function fakePort(input: Input = {}) {
             const created = {
                 id: 'IC_new',
                 fullDatabaseId: '9223372036854775808',
-                body,
+                body: input.returnedCommentBody ?? body,
                 authorLogin: AUTHOR_BOT_LOGIN,
             };
             comments = [...comments, created];
@@ -102,6 +104,14 @@ function fakePort(input: Input = {}) {
 }
 
 describe('pull-request supersession', () => {
+    it.each([
+        ['missing', { data: { deleteIssueComment: { clientMutationId: null } } }],
+        ['mismatched', { data: { deleteIssueComment: { clientMutationId: 'IC_other' } } }],
+    ])('rejects a %s delete-comment receipt', (_case, response) => {
+        expect(() => deleteComment('IC_new', () => JSON.stringify(response))).toThrow(
+            /delete supersession comment returned an invalid result/i
+        );
+    });
     it('paginates over 100 pull-request comments before supersession compensation can compare them', () => {
         const first = Array.from({ length: 100 }, (_, index) => ({
             id: `IC_${index}`,
@@ -191,6 +201,14 @@ describe('pull-request supersession', () => {
             'inspect:2244',
             'log:pull-request-superseded:2244:2246',
         ]);
+    });
+    it('refuses a wrong-body comment receipt before checking stability or closing', () => {
+        const { port, calls, authorLogin, state } = fakePort({ returnedCommentBody: 'Superseded by #9999.' });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /add supersession comment returned an invalid result/i
+        );
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
     });
     it('fails closed when a thrown comment mutation collides with an identical concurrent comment', () => {
         const { port, authorLogin, state, calls } = fakePort({

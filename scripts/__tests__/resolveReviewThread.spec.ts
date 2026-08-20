@@ -8,6 +8,7 @@ import {
     inspectReviewThread,
     parseResolveReviewThreadArgs,
     resolveReviewThread,
+    deleteReply,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -129,6 +130,17 @@ describe('review thread resolution', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
         expect(source).toContain('pullRequestReviewThreadId:$threadId');
         expect(source).toContain('deletePullRequestReviewComment(input:{id:$replyId})');
+    });
+    it.each([
+        ['missing', { data: { deletePullRequestReviewComment: { pullRequestReviewComment: null } } }],
+        [
+            'mismatched',
+            { data: { deletePullRequestReviewComment: { pullRequestReviewComment: { id: 'PRRC_other' } } } },
+        ],
+    ])('rejects a %s delete-reply receipt', (_case, response) => {
+        expect(() => deleteReply(replyId, () => JSON.stringify(response))).toThrow(
+            /delete review reply returned an invalid result/i
+        );
     });
     it('finds the requested thread on a later page and paginates its comments', () => {
         let call = 0;
