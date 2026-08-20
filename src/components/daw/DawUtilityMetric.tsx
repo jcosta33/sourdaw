@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 import { DawMeterBar } from './DawMeterBar';
@@ -26,14 +27,14 @@ export const DawUtilityMetric = ({
     children,
     ...props
 }: DawUtilityMetricProps): ReactElement => (
-    <div className={cn('space-y-0.5', className)} {...props}>
-        <div className="flex items-start gap-2">
+    <Stack gap={0.5} className={className} {...props}>
+        <Row align="start" gap={2}>
             {startSlot}
-            <div className="min-w-0 flex-1 space-y-0.5">
+            <Stack grow gap={0.5} className="min-w-0">
                 <DawReadoutRow label={label} value={value} valueClassName={valueClassName} />
                 {children}
-            </div>
-        </div>
+            </Stack>
+        </Row>
         {meterValue !== undefined ? (
             <DawMeterBar
                 size="sm"
@@ -42,5 +43,5 @@ export const DawUtilityMetric = ({
                 value={meterValue}
             />
         ) : null}
-    </div>
+    </Stack>
 );

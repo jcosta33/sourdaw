@@ -1,97 +1,76 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_from_template, setupWorkspace } from './e2eUtils';
 
-async function openAutomationTab(page: import('@playwright/test').Page): Promise<void> {
-    const dock = page.getByTestId('toggle-bottom-dock');
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
     if ((await dock.getAttribute('aria-pressed')) === 'false') {
         await dock.click();
-        await page.waitForTimeout(500);
     }
-    const autoTab = page.locator('#bottom-dock-tab-automation');
-    if (await autoTab.isVisible().catch(() => false)) {
-        await autoTab.click();
-        await page.waitForTimeout(500);
-    }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
 
 test.describe('Automation lanes on EDM template', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'EDM' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_from_template({ page, template_name: /EDM/i });
+        await openBottomTab(page, 'Automation');
     });
 
     test('automation tab is accessible and shows mode button', async ({ page }) => {
-        await openAutomationTab(page);
-        const mode = page.getByTestId('automation-mode-button');
-        const hasMode = await mode.isVisible().catch(() => false);
-        if (hasMode) {
-            const label = await mode.getAttribute('aria-label');
-            expect(label).toContain('Automation mode');
-        }
+        const mode = page.getByRole('button', { name: /Automation mode/ });
+        await expect(mode).toBeVisible();
+        await expect(mode).toHaveAttribute('data-testid', 'automation-mode-button');
     });
 
     test('automation mode dropdown lists read/write/touch/latch', async ({ page }) => {
-        await openAutomationTab(page);
         const mode = page.getByTestId('automation-mode-button');
-        if (await mode.isVisible().catch(() => false)) {
-            await mode.click();
-            await page.waitForTimeout(300);
+        await expect(mode).toBeVisible();
+        await mode.click();
 
-            const options = page.getByRole('button').filter({ hasText: /read|write|touch|latch/i });
-            const count = await options.count();
-            expect(count).toBeGreaterThan(0);
-
-            await page.keyboard.press('Escape');
+        for (const name of ['Read', 'Write', 'Touch', 'Latch'] as const) {
+            await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
         }
+
+        await page.keyboard.press('Escape');
     });
 
     test('transport play/stop works with automation tab open', async ({ page }) => {
-        await openAutomationTab(page);
-
-        await page.getByTestId('transport-play').click();
-        await page.waitForTimeout(600);
-
         const playhead = page.getByTestId('transport-playhead');
-        const movingText = (await playhead.innerText()).trim();
-        expect(movingText).not.toMatch(/1\.1\.000/);
+        const play = page.getByTestId('transport-play');
+        await expect(playhead).toHaveText(/1\.1\.000/);
+        await expect(play).toHaveAttribute('aria-label', 'Play');
+
+        await play.click();
+        await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Pause');
 
         await page.getByTestId('transport-stop').click();
-        await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 5000 });
+        await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 10_000 });
+        await expect(play).toHaveAttribute('aria-label', 'Play');
     });
 
     test('automation tab and mixer tab can be switched', async ({ page }) => {
-        await openAutomationTab(page);
+        const tabs = page.getByRole('tablist', { name: 'Bottom dock' });
+        const mixer = tabs.getByRole('tab', { name: 'Mixer', exact: true });
+        const automation = tabs.getByRole('tab', { name: 'Automation', exact: true });
 
-        // Switch to mixer.
-        const mixerTab = page.locator('#bottom-dock-tab-mixer');
-        if (await mixerTab.isVisible().catch(() => false)) {
-            await mixerTab.click();
-            await page.waitForTimeout(500);
+        await mixer.click();
+        await expect(mixer).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('region', { name: 'Mixer panel' })).toBeVisible();
 
-            // Switch back to automation.
-            const autoTab = page.locator('#bottom-dock-tab-automation');
-            await autoTab.click();
-            await page.waitForTimeout(500);
-
-            // Mode button should still be visible.
-            const mode = page.getByTestId('automation-mode-button');
-            const hasMode = await mode.isVisible().catch(() => false);
-            expect(hasMode).toBe(true);
-        }
+        await automation.click();
+        await expect(automation).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByTestId('automation-mode-button')).toBeVisible();
     });
 
-    test('solo mode SIP/AFL/PFL accessible during automation', async ({ page }) => {
-        await openAutomationTab(page);
-
+    test('solo mode SIP is checked while the automation tab is open', async ({ page }) => {
         const sip = page.getByTestId('solo-mode-sip');
-        const hasSip = await sip.isVisible().catch(() => false);
-        if (hasSip) {
-            await expect(sip).toHaveAttribute('aria-checked', 'true');
-        }
+        await expect(sip).toBeVisible();
+        await expect(sip).toHaveAttribute('aria-checked', 'true');
     });
 });

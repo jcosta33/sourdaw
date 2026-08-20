@@ -7,7 +7,7 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type FermenterNodeResult } from '../FermenterNode';
 import { type ProofNodeResult } from '../ProofNode';
-import { findWasmDescriptor } from '../wasmDeviceRegistry';
+import { findReleasedWasmDescriptor, findWasmDescriptor } from '../wasmDeviceRegistry';
 
 const proofNodeMocks = vi.hoisted(() => ({
     createProofNode: vi.fn(),
@@ -89,6 +89,11 @@ describe('findWasmDescriptor', () => {
     it('should not return a descriptor for unknown device types', () => {
         expect(findWasmDescriptor('unknown-plugin')).toBeUndefined();
         expect(findWasmDescriptor('')).toBeUndefined();
+    });
+
+    it('keeps withheld implementations out of the released runtime registry', () => {
+        expect(findWasmDescriptor('grand-boule')).toBeDefined();
+        expect(findReleasedWasmDescriptor('grand-boule')).toBeUndefined();
     });
 
     it('should apply the validated Proof patch after queued restored flat params', async () => {

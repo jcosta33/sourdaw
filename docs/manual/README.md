@@ -26,6 +26,16 @@ Organized by what a device does, not by its name.
 
 **Creative multi-FX** — [Bacteria](./devices/13-bacteria.md) (multi-band mangler)
 
+**MIDI FX** — [Yeast](./devices/14-yeast.md) (MIDI rack)
+
+**Orchestra** — [Levain](./devices/15-levain.md) (sampled orchestra)
+
+**Drums** — [Toaster](./devices/16-toaster.md) (drum pads and sequencer)
+
+**Synth** — [Fermenter](./devices/17-fermenter.md) (wavetable and analog synth)
+
+**Sample** — [Crumbs](./devices/18-crumbs.md) (drag-and-drop sampler)
+
 ## Conventions used in this manual
 
 Sourdaw is in active development. Where a feature is incomplete, this manual says so at the point

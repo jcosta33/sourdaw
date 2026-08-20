@@ -6,6 +6,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
@@ -153,11 +154,11 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const announced = useDebouncedAnnouncement(liveMessage);
 
     return (
-        <div className="scoring-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
+        <Row align="stretch" gap={3} className="scoring-faceplate h-full min-h-0 overflow-hidden p-3">
             <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
                 {announced}
             </div>
-            <aside className="flex h-full w-[232px] shrink-0 flex-col gap-3 overflow-y-auto pr-1">
+            <Stack as="aside" gap={3} shrink={false} className="h-full w-[232px] overflow-y-auto pr-1">
                 <SectionCard title="Display" detail={mode}>
                     <div>
                         <div className="text-[18px] font-semibold text-white/92">Scoring</div>
@@ -193,7 +194,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </SectionCard>
 
                 <SectionCard title="Reference" detail={`${a4Reference} Hz`}>
-                    <div className="flex items-center justify-center">
+                    <Row justify="center">
                         <RotaryKnob
                             value={a4Reference}
                             onChange={(value, isTransient) => {
@@ -217,25 +218,25 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             size="md"
                             tone="indigo"
                         />
-                    </div>
+                    </Row>
                     <div className="text-center">
                         <div className="font-mono text-[16px] text-white/88">{a4Reference} Hz</div>
                         <div className="text-[10px] uppercase tracking-[0.22em] text-white/42">Concert A</div>
                     </div>
                 </SectionCard>
-            </aside>
+            </Stack>
 
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-                <header className="scoring-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
-                    <div className="space-y-1">
+            <Stack as="section" gap={3} grow className="min-w-0 overflow-y-auto pr-1">
+                <Row as="header" wrap gap={2.5} shrink={false} className="scoring-window px-3 py-2">
+                    <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-indigo)]/72">
                             Tuning deck
                         </div>
                         <div className="text-[14px] font-semibold text-white/92">
                             {active ? `${noteName}${octave}` : 'Waiting for pitch'}
                         </div>
-                    </div>
-                    <div className="ml-auto flex flex-wrap gap-2">
+                    </Stack>
+                    <Row wrap align="stretch" gap={2} className="ml-auto">
                         <DawPluginMetricTile
                             className="scoring-window min-w-[88px]"
                             labelClassName="text-white/48"
@@ -263,34 +264,34 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             value={`${Math.round(displayConfidence * 100)}%`}
                             detail="Tracker"
                         />
-                    </div>
-                </header>
+                    </Row>
+                </Row>
 
                 <div className="grid min-h-0 shrink-0 grid-cols-[minmax(0,1fr)_220px] gap-3">
                     <div className="scoring-window min-h-[280px] overflow-hidden">
-                        <div
-                            className="flex h-full min-h-0 flex-col px-4 py-4 transition-colors duration-300"
+                        <Stack
+                            className="h-full px-4 py-4 transition-colors duration-300"
                             style={{
                                 background: `radial-gradient(circle at 50% 50%, ${centerGlow}, transparent 56%)`,
                             }}
                         >
-                            <div className="mb-3 flex items-center justify-between gap-3">
+                            <Row justify="between" gap={3} className="mb-3">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/42">Main read</div>
                                 <DawPluginLed tone="mint">{active ? 'Tracking' : 'Idle'}</DawPluginLed>
-                            </div>
+                            </Row>
                             <div className="grid min-h-0 flex-1 grid-cols-[140px_minmax(0,1fr)_120px] items-center gap-4">
-                                <div className="flex flex-col items-center gap-1">
+                                <Stack align="center" gap={1}>
                                     <div
                                         className={`text-6xl font-bold tracking-tight transition-colors duration-200 ${toneColor}`}
                                     >
                                         {active ? noteName : '—'}
                                     </div>
                                     <div className="text-xl text-white/42">{active ? octave : ''}</div>
-                                </div>
+                                </Stack>
 
                                 <div className="min-h-0">{displayComponent}</div>
 
-                                <div className="flex flex-col items-center gap-1">
+                                <Stack align="center" gap={1}>
                                     <div
                                         className={`font-mono text-3xl font-semibold transition-colors duration-200 ${toneColor}`}
                                     >
@@ -300,54 +301,54 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     <div className="font-mono text-[10px] text-white/38">
                                         {active ? `${frequency.toFixed(1)} Hz` : 'No input'}
                                     </div>
-                                </div>
+                                </Stack>
                             </div>
                             <div className="mt-3 h-[56px] shrink-0 overflow-hidden rounded-[14px] border border-white/8 bg-black/24">
                                 <HistoryGraph cents={cents} active={active} />
                             </div>
-                        </div>
+                        </Stack>
                     </div>
 
-                    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <Stack gap={3} className="overflow-y-auto pr-1">
                         <SectionCard title="Quick read" detail={active ? 'Signal up' : 'No signal'}>
-                            <div className="space-y-2 text-[10px] leading-4 text-white/56">
-                                <div className="flex items-center justify-between gap-2">
+                            <Stack gap={2} className="text-[10px] leading-4 text-white/56">
+                                <Row justify="between" gap={2}>
                                     <span>Mode</span>
                                     <span className="font-mono text-white/84">{mode}</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
+                                </Row>
+                                <Row justify="between" gap={2}>
                                     <span>Reference</span>
                                     <span className="font-mono text-white/84">{a4Reference} Hz</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
+                                </Row>
+                                <Row justify="between" gap={2}>
                                     <span>Status</span>
                                     <span className="font-mono text-white/84">{active ? 'Locked' : 'Listening'}</span>
-                                </div>
-                            </div>
+                                </Row>
+                            </Stack>
                         </SectionCard>
 
                         <SectionCard title="Guide" detail="Center">
                             <div className="grid gap-2">
-                                <div className="scoring-window flex items-center justify-between gap-2 px-3 py-2">
-                                    <div className="flex items-center gap-2 text-[10px] text-white/56">
+                                <Row justify="between" gap={2} className="scoring-window px-3 py-2">
+                                    <Row gap={2} className="text-[10px] text-white/56">
                                         <Activity className="size-3.5 text-[var(--color-accent-mint)]" />
                                         Tight zone
-                                    </div>
+                                    </Row>
                                     <div className="font-mono text-[11px] text-white/82">±2c</div>
-                                </div>
-                                <div className="scoring-window flex items-center justify-between gap-2 px-3 py-2">
-                                    <div className="flex items-center gap-2 text-[10px] text-white/56">
+                                </Row>
+                                <Row justify="between" gap={2} className="scoring-window px-3 py-2">
+                                    <Row gap={2} className="text-[10px] text-white/56">
                                         <Waves className="size-3.5 text-[var(--color-accent-cyan)]" />
                                         Usable zone
-                                    </div>
+                                    </Row>
                                     <div className="font-mono text-[11px] text-white/82">±10c</div>
-                                </div>
+                                </Row>
                             </div>
                         </SectionCard>
-                    </div>
+                    </Stack>
                 </div>
-            </section>
-        </div>
+            </Stack>
+        </Row>
     );
 };
 
@@ -737,17 +738,17 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
 
 const PolyDisplay = (): ReactElement => {
     return (
-        <div className="flex h-full flex-col justify-center gap-2 px-4">
+        <Stack justify="center" gap={2} className="h-full px-4">
             {GUITAR_STRINGS.map((label) => (
-                <div key={label} className="flex items-center gap-2">
+                <Row key={label} gap={2}>
                     <span className="w-6 text-right font-mono text-[10px] text-white/52">{label}</span>
                     <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-black/28">
                         <div className="absolute bottom-0 left-1/2 top-0 w-px bg-emerald-500/20" />
                     </div>
                     <span className="w-10 text-right font-mono text-[8px] text-white/36">—</span>
-                </div>
+                </Row>
             ))}
             <span className="mt-1 text-center text-[8px] text-white/34">Strum all open strings</span>
-        </div>
+        </Stack>
     );
 };

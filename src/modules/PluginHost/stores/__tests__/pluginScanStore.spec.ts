@@ -14,7 +14,7 @@ function sample(id: string): ScannedPlugin {
         category: 'Fx',
         path: `/plugins/${id}.vst3`,
         version: '1.0',
-        clap_id: `com.test.${id}`,
+        descriptor_id: `com.test.${id}`,
         num_inputs: 2,
         num_outputs: 2,
         num_parameters: 8,

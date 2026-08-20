@@ -45,10 +45,12 @@ export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
 export { glueMidiClipData } from './midiClipData/glueMidiClipData';
 export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGlueState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
+export { midiClipGlueStateMatches } from './midiClipData/midiClipGlueStateMatches';
 export { restoreMidiClipGlueState } from './midiClipData/restoreMidiClipGlueState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
 export { restoreMidiClipData } from './midiClipData/restoreMidiClipData';
 export { prepareMidiClipSplit } from './midiClipData/prepareMidiClipSplit';
+export { midiClipSplitStateMatches } from './midiClipData/midiClipSplitStateMatches';
 export { restoreMidiClipSplitState } from './midiClipData/restoreMidiClipSplitState';
 
 export { adaptGrooveTemplateForConsumer } from './grooveTemplates/adaptGrooveTemplateForConsumer';

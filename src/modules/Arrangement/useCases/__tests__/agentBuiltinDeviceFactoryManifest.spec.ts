@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+
 import { type PluginDescriptor, BUILTIN_PLUGINS } from '../../models/DeviceParameter';
 import { getStableContractFingerprint } from '../../models/GetStableContractFingerprint';
 import {
@@ -14,7 +16,8 @@ import { getFactoryPresets } from '../soundPresetLibrary';
 describe('built-in descriptor manifest law', () => {
     it('publishes Arrangement-owned descriptors without inventing runtime topology or latency', () => {
         const manifest = getAgentBuiltinDeviceFactoryManifest();
-        expect(manifest).toHaveLength(BUILTIN_PLUGINS.length);
+        expect(manifest).toHaveLength(BUILTIN_PLUGINS.filter(({ id }) => isDeviceReleaseAdmitted(id)).length);
+        expect(manifest.some(({ type }) => type === 'grand-boule')).toBe(false);
         const sidechain = manifest.find((device) => device.type === 'builtin-sidechain-compressor');
         expect(sidechain).toMatchObject({
             type: 'builtin-sidechain-compressor',

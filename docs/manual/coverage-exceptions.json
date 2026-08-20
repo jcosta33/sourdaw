@@ -1,83 +1,311 @@
 {
-  "_comment": "Acceptance criteria with no manual home, and why. Every criterion is either anchored in a manual page with an '<!-- ac: -->' comment, or listed here. 'omitted-internal' means it has no user-visible behaviour. 'omitted-unshipped' means the behaviour is not reachable in the shipped product. 'todo' means it belongs in the manual but the page is not written yet.",
+    "_comment": "Acceptance criteria with no manual home, and why. Every criterion is either anchored in a manual page with an '<!-- ac: -->' comment, or listed here. 'omitted-internal' means it has no user-visible behaviour. 'omitted-unshipped' means the behaviour is not reachable in the shipped product. 'todo' means it belongs in the manual but the page is not written yet.",
 
-  "omitted-internal": [
-    { "ac": "grinder-stabilization-phase-1/AC-006", "reason": "Dependency-boundary hygiene gate. No user-visible behaviour." },
-    { "ac": "grinder-stabilization-phase-1/AC-008", "reason": "Test-layout requirement. No user-visible behaviour." },
-    { "ac": "grinder-stabilization-phase-1/AC-009", "reason": "Historical-diff constraint on the change itself." },
-    { "ac": "grinder-stabilization-phase-1/AC-010", "reason": "Historical-diff constraint on the change itself." },
-    { "ac": "grinder-stabilization-phase-2/AC-007", "reason": "Dependency-boundary hygiene gate." },
-    { "ac": "grinder-stabilization-phase-2/AC-009", "reason": "Dependency-boundary hygiene gate." },
-    { "ac": "grinder-stabilization-phase-2/AC-010", "reason": "Test-layout requirement." },
-    { "ac": "grinder-cab-reality-phase-4/AC-007", "reason": "Historical-diff constraint on the change itself." },
-    { "ac": "grinder-cab-reality-phase-4/AC-008", "reason": "Test-existence requirement." },
-    { "ac": "grinder-cab-reality-phase-4/AC-009", "reason": "Regression/build gate." },
-    { "ac": "grinder-cab-reality-phase-4/AC-010", "reason": "Regression/build gate." },
-    { "ac": "grinder-cab-reality-phase-4/AC-011", "reason": "Documentation bookkeeping." },
-    { "ac": "grinder-high-gain-phase-5/AC-008", "reason": "Regression/build gate." },
-    { "ac": "grinder-high-gain-phase-5/AC-009", "reason": "Test-existence requirement." },
-    { "ac": "grinder-high-gain-phase-5/AC-010", "reason": "Regression/build gate." },
-    { "ac": "grinder-neural-builtins-phase-7/AC-006", "reason": "Test-existence requirement." },
-    { "ac": "grinder-neural-external-models-phase-8/AC-009", "reason": "Dependency-boundary hygiene gate." },
-    { "ac": "grinder-neural-external-models-phase-8/AC-012", "reason": "Test-existence requirement." },
-    { "ac": "grinder-later-amp-voicing-phase-10/AC-008", "reason": "Regression/build gate." },
-    { "ac": "grinder-neural-library-management-phase-14/AC-006", "reason": "Dependency-boundary hygiene gate." },
-    { "ac": "grinder-modular-rig-graph/AC-014", "reason": "Dependency-boundary hygiene gate." },
+    "omitted-internal": [
+        {
+            "ac": "grinder-stabilization-phase-1/AC-006",
+            "reason": "Dependency-boundary hygiene gate. No user-visible behaviour."
+        },
+        {
+            "ac": "grinder-stabilization-phase-1/AC-008",
+            "reason": "Test-layout requirement. No user-visible behaviour."
+        },
+        { "ac": "grinder-stabilization-phase-1/AC-009", "reason": "Historical-diff constraint on the change itself." },
+        { "ac": "grinder-stabilization-phase-1/AC-010", "reason": "Historical-diff constraint on the change itself." },
+        { "ac": "grinder-stabilization-phase-2/AC-007", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "grinder-stabilization-phase-2/AC-009", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "grinder-stabilization-phase-2/AC-010", "reason": "Test-layout requirement." },
+        { "ac": "grinder-cab-reality-phase-4/AC-007", "reason": "Historical-diff constraint on the change itself." },
+        { "ac": "grinder-cab-reality-phase-4/AC-008", "reason": "Test-existence requirement." },
+        { "ac": "grinder-cab-reality-phase-4/AC-009", "reason": "Regression/build gate." },
+        { "ac": "grinder-cab-reality-phase-4/AC-010", "reason": "Regression/build gate." },
+        { "ac": "grinder-cab-reality-phase-4/AC-011", "reason": "Documentation bookkeeping." },
+        { "ac": "grinder-high-gain-phase-5/AC-008", "reason": "Regression/build gate." },
+        { "ac": "grinder-high-gain-phase-5/AC-009", "reason": "Test-existence requirement." },
+        { "ac": "grinder-high-gain-phase-5/AC-010", "reason": "Regression/build gate." },
+        { "ac": "grinder-neural-builtins-phase-7/AC-006", "reason": "Test-existence requirement." },
+        { "ac": "grinder-neural-external-models-phase-8/AC-009", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "grinder-neural-external-models-phase-8/AC-012", "reason": "Test-existence requirement." },
+        { "ac": "grinder-later-amp-voicing-phase-10/AC-008", "reason": "Regression/build gate." },
+        { "ac": "grinder-neural-library-management-phase-14/AC-006", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "grinder-modular-rig-graph/AC-014", "reason": "Dependency-boundary hygiene gate." },
 
-    { "ac": "grinder-later-amp-stability-phase-6/AC-002", "reason": "Sample-rate stability invariant. Audible only as the absence of a fault." },
-    { "ac": "grinder-later-amp-stability-phase-6/AC-003", "reason": "Numerical stability invariant." },
-    { "ac": "grinder-later-amp-stability-phase-6/AC-006", "reason": "Numerical stability invariant." },
-    { "ac": "grinder-later-amp-stability-phase-6/AC-007", "reason": "Numerical stability invariant." },
-    { "ac": "grinder-later-amp-stability-phase-6/AC-008", "reason": "Power-amp bias correctness bound. Reachable as a parameter, but the bound itself is internal." },
-    { "ac": "grinder-later-amp-voicing-phase-10/AC-004", "reason": "Internal voicing bound, not a control." },
-    { "ac": "grinder-later-amp-voicing-phase-10/AC-006", "reason": "Internal voicing bound, not a control." },
-    { "ac": "grinder-later-amp-voicing-phase-10/AC-007", "reason": "Internal voicing bound, not a control." },
-    { "ac": "grinder-extreme-gain-decay-phase-13/AC-005", "reason": "Internal decay bound, not a control." },
-    { "ac": "grinder-extreme-gain-decay-phase-13/AC-006", "reason": "Internal decay bound, not a control." },
-    { "ac": "grinder-extreme-gain-decay-phase-13/AC-007", "reason": "Internal decay bound, not a control." },
-    { "ac": "grinder-amp-family-voicing-phase-11/AC-004", "reason": "Internal voicing bound, not a control." },
-    { "ac": "grinder-amp-family-voicing-phase-11/AC-005", "reason": "Internal voicing bound, not a control." },
-    { "ac": "grinder-amp-family-voicing-phase-11/AC-007", "reason": "Internal voicing bound, not a control." },
-    { "ac": "grinder-neural-external-models-phase-8/AC-008", "reason": "Internal model-loading invariant." },
-    { "ac": "grinder-neural-external-models-phase-8/AC-010", "reason": "Internal model-loading invariant." },
-    { "ac": "grinder-neural-external-models-phase-8/AC-011", "reason": "Internal model-loading invariant." },
-    { "ac": "grinder-live-rig-basics-phase-3/AC-006", "reason": "Internal snapshot-application invariant." },
-    { "ac": "grinder-live-rig-basics-phase-3/AC-008", "reason": "Internal snapshot-application invariant." },
-    { "ac": "grinder-stabilization-phase-1/AC-007", "reason": "Internal gate-timing invariant." },
+        {
+            "ac": "grinder-later-amp-stability-phase-6/AC-002",
+            "reason": "Sample-rate stability invariant. Audible only as the absence of a fault."
+        },
+        { "ac": "grinder-later-amp-stability-phase-6/AC-003", "reason": "Numerical stability invariant." },
+        { "ac": "grinder-later-amp-stability-phase-6/AC-006", "reason": "Numerical stability invariant." },
+        { "ac": "grinder-later-amp-stability-phase-6/AC-007", "reason": "Numerical stability invariant." },
+        {
+            "ac": "grinder-later-amp-stability-phase-6/AC-008",
+            "reason": "Power-amp bias correctness bound. Reachable as a parameter, but the bound itself is internal."
+        },
+        { "ac": "grinder-later-amp-voicing-phase-10/AC-004", "reason": "Internal voicing bound, not a control." },
+        { "ac": "grinder-later-amp-voicing-phase-10/AC-006", "reason": "Internal voicing bound, not a control." },
+        { "ac": "grinder-later-amp-voicing-phase-10/AC-007", "reason": "Internal voicing bound, not a control." },
+        { "ac": "grinder-extreme-gain-decay-phase-13/AC-005", "reason": "Internal decay bound, not a control." },
+        { "ac": "grinder-extreme-gain-decay-phase-13/AC-006", "reason": "Internal decay bound, not a control." },
+        { "ac": "grinder-extreme-gain-decay-phase-13/AC-007", "reason": "Internal decay bound, not a control." },
+        { "ac": "grinder-amp-family-voicing-phase-11/AC-004", "reason": "Internal voicing bound, not a control." },
+        { "ac": "grinder-amp-family-voicing-phase-11/AC-005", "reason": "Internal voicing bound, not a control." },
+        { "ac": "grinder-amp-family-voicing-phase-11/AC-007", "reason": "Internal voicing bound, not a control." },
+        { "ac": "grinder-neural-external-models-phase-8/AC-008", "reason": "Internal model-loading invariant." },
+        { "ac": "grinder-neural-external-models-phase-8/AC-010", "reason": "Internal model-loading invariant." },
+        { "ac": "grinder-neural-external-models-phase-8/AC-011", "reason": "Internal model-loading invariant." },
+        { "ac": "grinder-live-rig-basics-phase-3/AC-006", "reason": "Internal snapshot-application invariant." },
+        { "ac": "grinder-live-rig-basics-phase-3/AC-008", "reason": "Internal snapshot-application invariant." },
+        { "ac": "grinder-stabilization-phase-1/AC-007", "reason": "Internal gate-timing invariant." },
 
-    { "ac": "grinder-cab-reality-phase-4/AC-005", "reason": "Real-time safety invariant on the audio thread. Audible only as the absence of a fault." },
-    { "ac": "grinder-cab-reality-phase-4/AC-006", "reason": "Implementation constraint: reuse the existing cabinet path rather than add a parallel one." },
-    { "ac": "grinder-high-gain-phase-5/AC-005", "reason": "Numerical quality bound on alias mitigation. No control, no readout." },
-    { "ac": "grinder-high-gain-phase-5/AC-006", "reason": "Real-time safety invariant on the audio thread." },
-    { "ac": "grinder-high-gain-phase-5/AC-007", "reason": "Implementation constraint: reuse existing pedal types rather than add a parallel high-gain subsystem." },
-    { "ac": "grinder-input-conditioning-phase-12/AC-005", "reason": "Real-time safety invariant on the audio thread." },
-    { "ac": "grinder-neural-builtins-phase-7/AC-005", "reason": "Real-time safety invariant on the audio thread." }
-  ],
+        {
+            "ac": "grinder-cab-reality-phase-4/AC-005",
+            "reason": "Real-time safety invariant on the audio thread. Audible only as the absence of a fault."
+        },
+        {
+            "ac": "grinder-cab-reality-phase-4/AC-006",
+            "reason": "Implementation constraint: reuse the existing cabinet path rather than add a parallel one."
+        },
+        {
+            "ac": "grinder-high-gain-phase-5/AC-005",
+            "reason": "Numerical quality bound on alias mitigation. No control, no readout."
+        },
+        { "ac": "grinder-high-gain-phase-5/AC-006", "reason": "Real-time safety invariant on the audio thread." },
+        {
+            "ac": "grinder-high-gain-phase-5/AC-007",
+            "reason": "Implementation constraint: reuse existing pedal types rather than add a parallel high-gain subsystem."
+        },
+        {
+            "ac": "grinder-input-conditioning-phase-12/AC-005",
+            "reason": "Real-time safety invariant on the audio thread."
+        },
+        { "ac": "grinder-neural-builtins-phase-7/AC-005", "reason": "Real-time safety invariant on the audio thread." },
 
-  "omitted-unshipped": [
-    { "ac": "grinder-input-conditioning-phase-12/AC-001", "reason": "Input mode is unreachable: 'inputMode' is absent from AUDIO_SYNC_KEYS, so no patch or preset load ever sends it, and no control sets it." },
-    { "ac": "grinder-input-conditioning-phase-12/AC-002", "reason": "Same unreachable input-mode path." },
-    { "ac": "grinder-input-conditioning-phase-12/AC-003", "reason": "Same unreachable input-mode path." },
-    { "ac": "grinder-input-conditioning-phase-12/AC-004", "reason": "Bounds a mode change nothing can trigger." },
-    { "ac": "grinder-amp-family-voicing-phase-11/AC-006", "reason": "Directional family-voicing separation is not delivered; the shipped test asserts the inverse and records it as a known gap." },
-    { "ac": "grinder-modular-rig-graph/AC-001", "reason": "No modular rig editor. The patch is still fixed pre/post pedal arrays." },
-    { "ac": "grinder-modular-rig-graph/AC-002", "reason": "No graph to migrate to." },
-    { "ac": "grinder-modular-rig-graph/AC-003", "reason": "The engine runs a hardcoded chain; there is no compiled graph plan." },
-    { "ac": "grinder-modular-rig-graph/AC-004", "reason": "No routing graph exists." },
-    { "ac": "grinder-modular-rig-graph/AC-005", "reason": "The bridge sends fixed parameter names, not graph-aware ones." },
-    { "ac": "grinder-modular-rig-graph/AC-006", "reason": "Only four chain pedal types are reachable; no eq, amp, cab, IR-loader, gain, split, or merge blocks." },
-    { "ac": "grinder-modular-rig-graph/AC-007", "reason": "Only reorder and bypass on fixed slots. No create, duplicate, delete, solo, rename, or move." },
-    { "ac": "grinder-modular-rig-graph/AC-008", "reason": "Routing is a four-value preset; there is no split node or per-lane level and pan." },
-    { "ac": "grinder-modular-rig-graph/AC-009", "reason": "Dual-amp blends before the output, but the second branch is derived rather than independent." },
-    { "ac": "grinder-modular-rig-graph/AC-010", "reason": "No macro field or assignment exists." },
-    { "ac": "grinder-modular-rig-graph/AC-011", "reason": "Snapshots ship, but without the required count and without macro values." },
-    { "ac": "grinder-modular-rig-graph/AC-012", "reason": "No modular editor to disclose progressively." },
-    { "ac": "grinder-modular-rig-graph/AC-015", "reason": "No graph, so no graph validator." },
-    { "ac": "grinder-modular-rig-graph/AC-016", "reason": "Chain-order rebuild ships; the graph swap half has no subject." },
-    { "ac": "grinder-modular-rig-graph/AC-017", "reason": "No graph contract on either side." },
-    { "ac": "grinder-modular-rig-graph/AC-018", "reason": "The store holds a patch, not a graph." },
-    { "ac": "grinder-modular-rig-graph/AC-019", "reason": "No rig editor; reorder is discrete move controls." }
-  ],
+        {
+            "ac": "SPEC-levain-multi-instance/AC-001",
+            "reason": "Store keying. Musicians see separate panels, not the map."
+        },
+        { "ac": "SPEC-levain-multi-instance/AC-002", "reason": "Per-instance bridge. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-003", "reason": "No shared singleton. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-006", "reason": "Single-instance regression gate. No extra control." },
+        { "ac": "SPEC-levain-multi-instance/AC-007", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-levain-multi-instance/AC-008", "reason": "Bridge-message isolation. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-levain-multi-instance/AC-013", "reason": "Port teardown on remove. No control." },
+        { "ac": "SPEC-levain-multi-instance/AC-014", "reason": "Audio-thread lookup constraint. No control." },
+        { "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-006", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-orchestra-daw-integration/AC-005", "reason": "Dependency-boundary hygiene gate." },
 
-  "todo": []
+        { "ac": "SPEC-yeast/AC-003", "reason": "Emit-to-paint lag bound. Audible only as the absence of a fault." },
+        { "ac": "SPEC-yeast/AC-010", "reason": "Serialized processor-shape invariance. No control." },
+        { "ac": "SPEC-yeast/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-yeast/AC-015", "reason": "Extraction collision math. No control." },
+        { "ac": "SPEC-yeast/AC-017", "reason": "Allocation-free preview tap. No control." },
+        { "ac": "SPEC-yeast/AC-021", "reason": "Renderer technology constraint. The musician sees Phrase view." },
+        { "ac": "SPEC-yeast/AC-023", "reason": "One-frame preview update bound. No control." },
+        { "ac": "SPEC-yeast/AC-027", "reason": "Component-implementation constraint. No user-visible behaviour." },
+        { "ac": "SPEC-drum-machine/AC-002", "reason": "Real-time safety invariant on the audio thread." },
+        { "ac": "SPEC-drum-machine/AC-007", "reason": "Voice-steal policy. Audible only as the absence of a fault." },
+        { "ac": "SPEC-drum-machine/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-003",
+            "reason": "Timing-match bound. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-004",
+            "reason": "Round-trip invariance. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-005",
+            "reason": "Empty-pattern no-op. No extra control."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-006",
+            "reason": "Preview-and-commit protocol. The musician sees Template and Amount."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-007",
+            "reason": "The Template menu is the library. Names are not catalogued; Straight is the no-op."
+        },
+        { "ac": "SPEC-fermenter-ui/AC-006", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-unified-sampler-suite/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-slicer/AC-009", "reason": "Module isolation. No control." }
+    ],
+
+    "omitted-unshipped": [
+        {
+            "ac": "grinder-input-conditioning-phase-12/AC-001",
+            "reason": "Input mode is unreachable: 'inputMode' is absent from AUDIO_SYNC_KEYS, so no patch or preset load ever sends it, and no control sets it."
+        },
+        { "ac": "grinder-input-conditioning-phase-12/AC-002", "reason": "Same unreachable input-mode path." },
+        { "ac": "grinder-input-conditioning-phase-12/AC-003", "reason": "Same unreachable input-mode path." },
+        { "ac": "grinder-input-conditioning-phase-12/AC-004", "reason": "Bounds a mode change nothing can trigger." },
+        {
+            "ac": "grinder-amp-family-voicing-phase-11/AC-006",
+            "reason": "Directional family-voicing separation is not delivered; the shipped test asserts the inverse and records it as a known gap."
+        },
+        {
+            "ac": "grinder-modular-rig-graph/AC-001",
+            "reason": "No modular rig editor. The patch is still fixed pre/post pedal arrays."
+        },
+        { "ac": "grinder-modular-rig-graph/AC-002", "reason": "No graph to migrate to." },
+        {
+            "ac": "grinder-modular-rig-graph/AC-003",
+            "reason": "The engine runs a hardcoded chain; there is no compiled graph plan."
+        },
+        { "ac": "grinder-modular-rig-graph/AC-004", "reason": "No routing graph exists." },
+        {
+            "ac": "grinder-modular-rig-graph/AC-005",
+            "reason": "The bridge sends fixed parameter names, not graph-aware ones."
+        },
+        {
+            "ac": "grinder-modular-rig-graph/AC-006",
+            "reason": "Only four chain pedal types are reachable; no eq, amp, cab, IR-loader, gain, split, or merge blocks."
+        },
+        {
+            "ac": "grinder-modular-rig-graph/AC-007",
+            "reason": "Only reorder and bypass on fixed slots. No create, duplicate, delete, solo, rename, or move."
+        },
+        {
+            "ac": "grinder-modular-rig-graph/AC-008",
+            "reason": "Routing is a four-value preset; there is no split node or per-lane level and pan."
+        },
+        {
+            "ac": "grinder-modular-rig-graph/AC-009",
+            "reason": "Dual-amp blends before the output, but the second branch is derived rather than independent."
+        },
+        { "ac": "grinder-modular-rig-graph/AC-010", "reason": "No macro field or assignment exists." },
+        {
+            "ac": "grinder-modular-rig-graph/AC-011",
+            "reason": "Snapshots ship, but without the required count and without macro values."
+        },
+        { "ac": "grinder-modular-rig-graph/AC-012", "reason": "No modular editor to disclose progressively." },
+        { "ac": "grinder-modular-rig-graph/AC-015", "reason": "No graph, so no graph validator." },
+        {
+            "ac": "grinder-modular-rig-graph/AC-016",
+            "reason": "Chain-order rebuild ships; the graph swap half has no subject."
+        },
+        { "ac": "grinder-modular-rig-graph/AC-017", "reason": "No graph contract on either side." },
+        { "ac": "grinder-modular-rig-graph/AC-018", "reason": "The store holds a patch, not a graph." },
+        { "ac": "grinder-modular-rig-graph/AC-019", "reason": "No rig editor; reorder is discrete move controls." },
+        {
+            "ac": "SPEC-yeast/AC-022",
+            "reason": "Lookahead in beats has no control. Phrase view is fixed at four beats."
+        },
+        {
+            "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-001",
+            "reason": "Five-zone layout is not shipped. The panel is Lineup, Phrase stage, and Quick read."
+        },
+        {
+            "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-002",
+            "reason": "Play through Lab complexity chips are not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-orchestra-progressive-disclosure-ux/AC-003",
+            "reason": "Play-only musical-label surface is not shipped; Phrase, Lift, Spread, Stage, and Desk are always visible."
+        },
+        {
+            "ac": "SPEC-orchestra-daw-integration/AC-002",
+            "reason": "Not every panel control is a host-automatable lane. Four descriptor lanes ship; most Phrase, Lift, Spread, Stage, and Handle fields do not."
+        },
+        {
+            "ac": "SPEC-orchestra-daw-integration/AC-003",
+            "reason": "No orchestral template loads a pre-routed section set."
+        },
+        {
+            "ac": "SPEC-orchestra-daw-integration/AC-004",
+            "reason": "No Orchestra-specific insert surface. Track inserts are the DAW mixer, not this panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-001",
+            "reason": "Pad bay does not expose layers, insert FX, transient shaper, or output routing. Hit, Tone, Crunch, Level, Pan, and Bright ship."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-004",
+            "reason": "No sample drop, zones, or round-robin control on the shipped panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-005",
+            "reason": "The grid toggles steps and Alt-drags velocity. Probability, micro-timing, parameter locks, and conditionals have no editor."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-008",
+            "reason": "Per-pad send knobs and bus routing are not on the panel. Space and Spray are kit-global mixes."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-010",
+            "reason": "No dropped-loop auto-slice onto pads."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-011",
+            "reason": "Play through Lab complexity levels are not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-014",
+            "reason": "Ratchet count can appear on a step. There is no control to write it."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-015",
+            "reason": "No pattern-morph control."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-016",
+            "reason": "No 16 Levels mode."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-017",
+            "reason": "No Note Repeat control."
+        },
+        {
+            "ac": "SPEC-drum-machine/AC-018",
+            "reason": "No Fill-hold mode."
+        },
+        {
+            "ac": "SPEC-drum-machine-groove-templates/AC-001",
+            "reason": "No extract-from-pattern control on Toaster."
+        },
+
+        {
+            "ac": "SPEC-fermenter-ui/AC-003",
+            "reason": "Modulated knobs do not render per-source arc segments on the shipped panel."
+        },
+        {
+            "ac": "SPEC-fermenter-ui/AC-004",
+            "reason": "Empty layer or generator slots do not offer guided start actions."
+        },
+        {
+            "ac": "SPEC-fermenter-ui/AC-005",
+            "reason": "Layer rows have no bounce or freeze action."
+        },
+
+        {
+            "ac": "SPEC-slicer/AC-010",
+            "reason": "No Send to Toaster control on the shipped Crumbs panel."
+        },
+        {
+            "ac": "SPEC-slicer/AC-011",
+            "reason": "No Suggest button for complementary markers."
+        },
+        {
+            "ac": "SPEC-slicer/AC-014",
+            "reason": "No built-in step sequencer on Crumbs."
+        },
+        {
+            "ac": "SPEC-slicer/AC-016",
+            "reason": "Play through Lab disclosure is not on this panel."
+        },
+        {
+            "ac": "SPEC-slicer/AC-018",
+            "reason": "REX2 import is not a reachable control."
+        },
+        {
+            "ac": "SPEC-unified-sampler-suite/AC-015",
+            "reason": "Mod X/Y dual-deck is not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-unified-sampler-suite/AC-028",
+            "reason": "Granular warp parameter set is not on the shipped panel; Warp is a mode chip only."
+        }
+    ],
+
+    "todo": []
 }

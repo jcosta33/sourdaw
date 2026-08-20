@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest';
 
-import { getVisiblePitches, TOTAL_ROWS, BASE_PITCH } from '../pianoRollConstants';
+import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+import {
+    getVisiblePitches,
+    getPianoRollExtentBeats,
+    GRID_BEATS,
+    TOTAL_ROWS,
+    BASE_PITCH,
+    type PianoRollExtentSource,
+} from '../pianoRollConstants';
+
+const note = (startBeat: number, duration: number): MidiNote => ({
+    id: `${startBeat}-${duration}`,
+    pitch: 60,
+    startBeat,
+    duration,
+    velocity: 100,
+});
+
+/** Single-source call, matching the shape most existing tests exercise. */
+const extentOf = (clipLengthBeats: number, notes: readonly MidiNote[]): number =>
+    getPianoRollExtentBeats([{ clipLengthBeats, notes }]);
 
 describe('getVisiblePitches — unfolded (all pitches)', () => {
     it('returns all 60 pitches descending from 83 to 24 when unfolded', () => {
@@ -58,5 +78,93 @@ describe('getVisiblePitches — folded (scale-filtered)', () => {
         const pentatonicPitches = getVisiblePitches('pentatonicMajor', 0, true);
         // Pentatonic has 5 intervals vs major's 7.
         expect(pentatonicPitches.length).toBeLessThan(majorPitches.length);
+    });
+});
+
+describe('getPianoRollExtentBeats', () => {
+    it('floors at GRID_BEATS, rounded to a bar, plus one trailing bar, for an empty clip', () => {
+        // GRID_BEATS(32) is already a bar boundary → 32 + 4 trailing = 36.
+        expect(extentOf(0, [])).toBe(GRID_BEATS + 4);
+    });
+
+    it('is unaffected by a clip shorter than the GRID_BEATS floor', () => {
+        expect(extentOf(8, [])).toBe(GRID_BEATS + 4);
+    });
+
+    // Issue #2299: a clip longer than the floor must drive the extent, not
+    // just be silently capped at GRID_BEATS.
+    it('extends past GRID_BEATS to cover a clip longer than eight bars', () => {
+        // clip length 40 → already a bar boundary → 40 + 4 trailing = 44.
+        expect(extentOf(40, [])).toBe(44);
+    });
+
+    it('extends to cover a note ending past both the clip length and GRID_BEATS', () => {
+        // furthest note end 38 (36+2) exceeds clip length 10 and GRID_BEATS(32)
+        // → rounds up to bar 40, + 4 trailing = 44.
+        expect(extentOf(10, [note(36, 2)])).toBe(44);
+    });
+
+    it('takes the furthest note across multiple notes, not the last one in the array', () => {
+        expect(extentOf(0, [note(20, 1), note(2, 2), note(10, 1)])).toBe(extentOf(0, [note(20, 1)]));
+    });
+
+    it('rounds a non-bar-aligned content length up to the next bar before adding trailing room', () => {
+        // clip length 34 is not a multiple of 4 → rounds up to bar 36, + 4 trailing = 40.
+        expect(extentOf(34, [])).toBe(40);
+    });
+
+    // Gap: an opened clip (A9 multi-clip editing) is drawn in the same
+    // absolute beat coordinate space as the primary clip and is editable,
+    // not a read-only ghost — its content must grow the shared extent too,
+    // or its tail reproduces the exact "drawn past the canvas" bug this
+    // helper exists to fix, just through a second clip.
+    it('folds a second source (an opened clip) into the shared extent', () => {
+        const sources: PianoRollExtentSource[] = [
+            { clipLengthBeats: 8, notes: [] },
+            { clipLengthBeats: 0, notes: [note(50, 2)] },
+        ];
+        // furthest end across sources: 52 → bar 52, + 4 trailing = 56.
+        expect(getPianoRollExtentBeats(sources)).toBe(56);
+    });
+
+    it('takes the longer clip length across multiple sources, not just the first', () => {
+        const sources: PianoRollExtentSource[] = [
+            { clipLengthBeats: 8, notes: [] },
+            { clipLengthBeats: 48, notes: [] },
+        ];
+        expect(getPianoRollExtentBeats(sources)).toBe(extentOf(48, []));
+    });
+
+    // Gap: nothing upstream validates a clip's startBeat/endBeat, so a
+    // non-finite clipLengthBeats must degrade to the GRID_BEATS floor rather
+    // than poisoning the whole result via Math.max(NaN, ...) === NaN, which
+    // downstream coerces canvas.width to 0 and blanks the piano roll.
+    it('falls back to the GRID_BEATS floor when clipLengthBeats is NaN', () => {
+        expect(extentOf(NaN, [])).toBe(GRID_BEATS + 4);
+    });
+
+    it('falls back to the GRID_BEATS floor when clipLengthBeats is Infinity', () => {
+        expect(extentOf(Infinity, [])).toBe(GRID_BEATS + 4);
+    });
+
+    it('a non-finite source does not suppress a legitimate length from another source', () => {
+        const sources: PianoRollExtentSource[] = [
+            { clipLengthBeats: NaN, notes: [] },
+            { clipLengthBeats: 48, notes: [] },
+        ];
+        expect(getPianoRollExtentBeats(sources)).toBe(extentOf(48, []));
+    });
+
+    // The extent is a CSS layout measurement with no canvas dimension behind
+    // it, so content covers itself however long it is. Both earlier attempts
+    // at issue #2299 shipped a ceiling here — one a fixed beat count, one a
+    // pixel budget divided by the current zoom — and both truncated ordinary
+    // clips, because with a content-sized backing store reachable beats and
+    // zoom were two halves of one fixed product. Asserting *exact equality*
+    // with the unclamped rule is what makes a reintroduced ceiling fail here
+    // instead of silently shrinking the editor again.
+    it.each([200, 1_000, 100_000])('covers a clip of %i beats with no ceiling applied', (clipLengthBeats) => {
+        expect(extentOf(clipLengthBeats, [])).toBe(clipLengthBeats + 4);
+        expect(extentOf(0, [note(clipLengthBeats, 0)])).toBe(clipLengthBeats + 4);
     });
 });

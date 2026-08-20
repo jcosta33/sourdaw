@@ -111,6 +111,8 @@ type Note = HookArgs['notes'][number];
 const ROW = 16;
 const RULER = 22;
 const BEAT_W = 40;
+/** PITCH_RAIL_WIDTH — where the sticky canvas's left edge sits on screen. */
+const PITCH_RAIL_W = 40;
 
 /** clientY at the vertical middle of the row for a pitch. */
 const yForPitch = (pitch: number): number => RULER + (83 - pitch) * ROW + 8;
@@ -153,6 +155,7 @@ const setScrollX = vi.fn();
 const draw = vi.fn();
 
 const buildArgs = (overrides: Partial<HarnessArgs> = {}): HarnessArgs => ({
+    scrollRef: { current: null },
     clipId: 'clip-1',
     trackId: 'track-1',
     notes: [makeNote('n1', 60, 2, 2)],
@@ -209,6 +212,79 @@ describe('usePianoRollInteractions', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    // Issue #2299. The canvas covers the viewport, not the arrangement: it is
+    // pinned at the right edge of the pitch rail, so `clientX - rect.left` is
+    // a position inside the visible slice and says nothing about which beat
+    // was clicked. Every pointer conversion has to add the container's
+    // `scrollLeft`, and a beat that cannot be hit is as unreachable as one
+    // that was never laid out — the extent fix is only half the repair
+    // without this half.
+    describe('pointer coordinates under a scrolled viewport', () => {
+        /** Places the canvas where the sticky element actually sits on screen. */
+        const pinCanvasToContentEdge = (canvas: HTMLElement): void => {
+            canvas.getBoundingClientRect = (): DOMRect =>
+                ({ left: PITCH_RAIL_W, top: 0, right: PITCH_RAIL_W + 1200, bottom: 982 }) as DOMRect;
+        };
+
+        const scrolledViewport = (scrollLeft: number): { current: HTMLElement } => {
+            const element = document.createElement('div');
+            Object.defineProperty(element, 'scrollLeft', { value: scrollLeft, configurable: true });
+            return { current: element };
+        };
+
+        it('hits a note hundreds of beats in, scrolled into view at 400% zoom', () => {
+            // 400% zoom → beatWidth 160. The note spans content x 40000–40320;
+            // scrolled to 39500 it is painted 500–820px into the viewport.
+            const farNote = makeNote('far', 60, 250, 2);
+            const { canvas } = renderRoll({
+                notes: [farNote],
+                beatWidth: 160,
+                scrollRef: scrolledViewport(39_500),
+            });
+            pinCanvasToContentEdge(canvas);
+
+            fireEvent.mouseDown(canvas, { clientX: PITCH_RAIL_W + 560, clientY: yForPitch(60) });
+
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['far']));
+        });
+
+        it('hits a note on a second opened clip past the primary clip extent', () => {
+            const openedNote = makeNote('opened', 62, 250, 2);
+            const { canvas } = renderRoll({
+                notes: [],
+                openedClipNotes: { 'clip-2': [openedNote] },
+                beatWidth: 160,
+                scrollRef: scrolledViewport(39_500),
+            });
+            pinCanvasToContentEdge(canvas);
+
+            fireEvent.mouseDown(canvas, { clientX: PITCH_RAIL_W + 560, clientY: yForPitch(62) });
+
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['opened']));
+        });
+
+        it('stamps at the scrolled beat, not the beat under the same pixel at scroll 0', () => {
+            const { canvas } = renderRoll({ notes: [], scrollRef: scrolledViewport(400) });
+            pinCanvasToContentEdge(canvas);
+
+            // beatWidth 40, scrollLeft 400 → 10 beats scrolled past; 80px into
+            // the viewport is 2 more beats.
+            fireEvent.mouseDown(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 12, 1, 100);
+        });
+
+        it('reports the scrolled beat to the context menu', () => {
+            const { canvas } = renderRoll({ scrollRef: scrolledViewport(400) });
+            pinCanvasToContentEdge(canvas);
+
+            fireEvent.contextMenu(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
+
+            expect(latest.current?.ctxMenu?.beat).toBe(12);
+        });
     });
 
     describe('note stamping and selection', () => {

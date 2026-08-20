@@ -2,12 +2,13 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { freemem, platform, tmpdir, totalmem } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const RESOURCE_SESSION_ENV = 'SOURDAW_RESOURCE_SESSION';
+export const RESOURCE_ROOT_ENV = 'SOURDAW_RESOURCE_ROOT';
 const PROCESS_SESSION_ENV = 'SOURDAW_PROCESS_SESSION';
 
 type ResourceProfile = 'focused' | 'broad' | 'extended';
@@ -21,6 +22,22 @@ type LockOwner = {
     processStartedAt: string;
 };
 
+type ReservationOwner = LockOwner & {
+    reservedRssBytes: number;
+    processToken?: string;
+    orphanUntil?: number;
+};
+
+type ReservationState = {
+    recordedAt: number;
+    processToken: string;
+    childPid?: number;
+    childStartedAt?: string;
+    trackedProcesses?: Array<{ pid: number; startedAt: string }>;
+};
+
+type ReservationRecord = ReservationOwner & Partial<ReservationState>;
+
 export type ResourceLock = {
     path: string;
     token: string;
@@ -28,8 +45,10 @@ export type ResourceLock = {
 };
 
 export type ResourceSession = {
-    lockPath: string;
+    root: string;
+    reservationPath: string;
     token: string;
+    owned: boolean;
     release: () => void;
 };
 
@@ -47,7 +66,6 @@ type GuardedCommandInput = {
     command: string;
     args: string[];
     profile: ResourceProfile;
-    session?: ResourceSession;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     maxRssBytes?: number;
@@ -58,6 +76,8 @@ type GuardedCommandInput = {
     memoryReserveBytes?: number;
     sampleIntervalMs?: number;
     hostSampleIntervalMs?: number;
+    admissionRoot?: string;
+    admissionWaitIntervalMs?: number;
 };
 
 const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number }> = {
@@ -67,6 +87,7 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 };
 
 const lockName = 'sourdaw-validation.lock';
+const reservationName = 'sourdaw-validation.reservations';
 const defaultOutputLimitBytes = 16 * 1024;
 const defaultMemoryReserveBytes = 2 * 1024 ** 3;
 const minimumCommandBudgetBytes = 512 * 1024 ** 2;
@@ -99,6 +120,10 @@ function resourceLockPath(root: string): string {
     return join(root, lockName);
 }
 
+function resourceReservationRoot(root: string): string {
+    return join(root, reservationName);
+}
+
 function processStartedAt(pid: number): string | undefined {
     if (platform() === 'win32') {
         const result = spawnSync(
@@ -121,20 +146,20 @@ function processStartedAt(pid: number): string | undefined {
 }
 
 function isCurrentProcess(owner: LockOwner): boolean {
+    return isSameProcess(owner.pid, owner.processStartedAt);
+}
+
+function isSameProcess(pid: number, startedAt: string | undefined): boolean {
     try {
-        process.kill(owner.pid, 0);
+        process.kill(pid, 0);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
             return false;
         }
         return true;
     }
-    const currentStart = processStartedAt(owner.pid);
-    return (
-        currentStart === undefined ||
-        typeof owner.processStartedAt !== 'string' ||
-        currentStart === owner.processStartedAt
-    );
+    const currentStart = processStartedAt(pid);
+    return currentStart === undefined || startedAt === undefined || currentStart === startedAt;
 }
 
 function readOwner(path: string): LockOwner {
@@ -261,22 +286,339 @@ export function acquireResourceLock(input: { root?: string; command?: string } =
     };
 }
 
-export function enterResourceSession(input: { root?: string; command?: string } = {}): ResourceSession {
-    const path = resourceLockPath(input.root ?? tmpdir());
-    const inheritedToken = process.env[RESOURCE_SESSION_ENV];
-    if (inheritedToken !== undefined) {
+type ResourceSessionInput = {
+    root?: string;
+    command?: string;
+    requiredRssBytes?: number;
+    availableMemoryBytes?: number;
+    memorySampler?: () => number | undefined;
+    activeRssSampler?: (owner: ReservationRecord) => number | undefined;
+    memoryReserveBytes?: number;
+    waitIntervalMs?: number;
+    onWait?: (message: string) => void;
+    processToken?: string;
+    orphanTimeoutMs?: number;
+};
+
+function readReservation(path: string): ReservationOwner {
+    return JSON.parse(readFileSync(path, 'utf8')) as ReservationOwner;
+}
+
+function writeReservation(path: string, owner: ReservationOwner): void {
+    const candidate = `${path}.candidate-${randomUUID()}`;
+    writeFileSync(candidate, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
+    renameSync(candidate, path);
+}
+
+function reservationStatePrefix(path: string): string {
+    return `${path.slice(0, -'.json'.length)}.state.`;
+}
+
+function readReservationState(path: string): ReservationState | undefined {
+    const prefix = reservationStatePrefix(path);
+    let latest: ReservationState | undefined;
+    for (const name of readdirSync(dirname(path))) {
+        const statePath = join(dirname(path), name);
+        if (!statePath.startsWith(prefix) || !statePath.endsWith('.json')) {
+            continue;
+        }
         try {
-            const owner = readOwner(path);
-            if (owner.token === inheritedToken && isCurrentProcess(owner)) {
-                return { lockPath: path, token: inheritedToken, release: () => undefined };
+            const state = JSON.parse(readFileSync(statePath, 'utf8')) as ReservationState;
+            if (latest === undefined || state.recordedAt > latest.recordedAt) {
+                latest = state;
             }
         } catch {
-            // Invalid inherited state must compete for the lock normally.
+            // Incomplete candidates never replace the last complete state.
         }
     }
+    return latest;
+}
 
-    const lock = acquireResourceLock(input);
-    return { lockPath: lock.path, token: lock.token, release: lock.release };
+function writeReservationState(path: string, state: Omit<ReservationState, 'recordedAt'>): void {
+    const statePath = `${reservationStatePrefix(path)}${Date.now()}-${randomUUID()}.json`;
+    const candidate = `${statePath}.candidate`;
+    writeFileSync(candidate, `${JSON.stringify({ ...state, recordedAt: Date.now() }, null, 2)}\n`, 'utf8');
+    renameSync(candidate, statePath);
+    const prefix = reservationStatePrefix(path);
+    for (const name of readdirSync(dirname(path))) {
+        const previousPath = join(dirname(path), name);
+        if (previousPath !== statePath && previousPath.startsWith(prefix)) {
+            rmSync(previousPath, { force: true });
+        }
+    }
+}
+
+function removeReservation(path: string): void {
+    rmSync(path, { force: true });
+    const prefix = reservationStatePrefix(path);
+    for (const name of readdirSync(dirname(path))) {
+        const statePath = join(dirname(path), name);
+        if (statePath.startsWith(prefix)) {
+            rmSync(statePath, { force: true });
+        }
+    }
+}
+
+function reservationWithState(path: string): ReservationRecord {
+    return { ...readReservation(path), ...readReservationState(path) };
+}
+
+function reservationRssBytes(owner: ReservationRecord): number | undefined {
+    const tracked = new Map<number, string>();
+    for (const processIdentity of owner.trackedProcesses ?? []) {
+        if (isSameProcess(processIdentity.pid, processIdentity.startedAt)) {
+            tracked.set(processIdentity.pid, processIdentity.startedAt);
+        }
+    }
+    if (owner.childPid !== undefined && isSameProcess(owner.childPid, owner.childStartedAt)) {
+        tracked.set(owner.childPid, owner.childStartedAt ?? '');
+    }
+    if (tracked.size > 0) {
+        return sampleProcessTree(owner.childPid ?? -1, tracked, owner.processToken ?? 'unowned');
+    }
+    if (owner.processToken === undefined || platform() === 'win32') {
+        return 0;
+    }
+    const rows = processTable(owner.processToken);
+    if (rows === undefined) {
+        return undefined;
+    }
+    return rows.filter((row) => row.sessionOwned).reduce((total, row) => total + row.rssBytes, 0);
+}
+
+function reservationIsLive(owner: ReservationRecord): boolean {
+    if (isCurrentProcess(owner)) {
+        return true;
+    }
+    if (owner.childPid !== undefined && isSameProcess(owner.childPid, owner.childStartedAt)) {
+        return true;
+    }
+    if ((reservationRssBytes(owner) ?? 0) > 0) {
+        return true;
+    }
+    return owner.processToken !== undefined && (owner.orphanUntil ?? 0) > Date.now();
+}
+
+function liveReservations(root: string): Array<{ owner: ReservationRecord; path: string }> {
+    mkdirSync(root, { recursive: true });
+    const live: Array<{ owner: ReservationRecord; path: string }> = [];
+    for (const name of readdirSync(root)) {
+        if (!name.endsWith('.json') || name.includes('.state.')) {
+            continue;
+        }
+        const path = join(root, name);
+        try {
+            const owner = reservationWithState(path);
+            if (reservationIsLive(owner)) {
+                live.push({ owner, path });
+            } else {
+                removeReservation(path);
+            }
+        } catch {
+            removeReservation(path);
+        }
+    }
+    return live;
+}
+
+function inheritedResourceSession(root: string): ResourceSession | undefined {
+    const inheritedToken = process.env[RESOURCE_SESSION_ENV];
+    if (inheritedToken === undefined) {
+        return undefined;
+    }
+    const path = join(resourceReservationRoot(root), `${inheritedToken}.json`);
+    try {
+        const owner = readReservation(path);
+        if (owner.token === inheritedToken && isCurrentProcess(owner)) {
+            return { root, reservationPath: path, token: inheritedToken, owned: false, release: () => undefined };
+        }
+    } catch {
+        // Invalid inherited state must seek fresh admission.
+    }
+    return undefined;
+}
+
+export async function enterResourceSession(input: ResourceSessionInput = {}): Promise<ResourceSession> {
+    const root = input.root ?? process.env[RESOURCE_ROOT_ENV] ?? tmpdir();
+    const inherited = inheritedResourceSession(root);
+    if (inherited !== undefined) {
+        return inherited;
+    }
+
+    const reservationsRoot = resourceReservationRoot(root);
+    const requiredRssBytes = Math.max(
+        input.requiredRssBytes ?? profiles.focused.maxRssBytes,
+        minimumCommandBudgetBytes
+    );
+    const reserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
+    const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
+    const sampleActiveRss = input.activeRssSampler ?? reservationRssBytes;
+    const waitIntervalMs = input.waitIntervalMs ?? 1_000;
+    const token = randomUUID();
+    const reservationPath = join(reservationsRoot, `${token}.json`);
+    const processStart = processStartedAt(process.pid);
+    if (processStart === undefined) {
+        throw new Error('cannot identify the current process for validation admission');
+    }
+    const owner: ReservationOwner = {
+        token,
+        pid: process.pid,
+        cwd: process.cwd(),
+        command: input.command ?? process.argv.join(' '),
+        startedAt: new Date().toISOString(),
+        processStartedAt: processStart,
+        reservedRssBytes: requiredRssBytes,
+        ...(input.processToken === undefined ? {} : { processToken: input.processToken }),
+        ...(input.processToken === undefined
+            ? {}
+            : { orphanUntil: Date.now() + (input.orphanTimeoutMs ?? profiles.focused.timeoutMs) }),
+    };
+    let waitReported = false;
+
+    while (true) {
+        let lock: ResourceLock | undefined;
+        try {
+            lock = acquireResourceLock({ root, command: 'validation admission' });
+            const availableBytes = readAvailableMemory();
+            if (availableBytes === undefined) {
+                throw new Error('available memory could not be measured');
+            }
+            const reservations = liveReservations(reservationsRoot);
+            let activeHeadroomBytes = 0;
+            for (const reservation of reservations) {
+                const rssBytes = sampleActiveRss(reservation.owner);
+                if (rssBytes === undefined) {
+                    throw new Error('active validation memory could not be measured');
+                }
+                activeHeadroomBytes += Math.max(0, reservation.owner.reservedRssBytes - rssBytes);
+            }
+            const requiredAvailableBytes = reserveBytes + requiredRssBytes + activeHeadroomBytes;
+            if (availableBytes >= requiredAvailableBytes) {
+                writeReservation(reservationPath, owner);
+                return {
+                    root,
+                    reservationPath,
+                    token,
+                    owned: true,
+                    release: () => removeReservation(reservationPath),
+                };
+            }
+            const message = `waiting for validation capacity: need ${Math.ceil(requiredAvailableBytes / 1024 ** 2)} MiB, ${Math.floor(availableBytes / 1024 ** 2)} MiB available`;
+            if (!waitReported) {
+                input.onWait?.(message);
+                waitReported = true;
+            }
+        } catch (error) {
+            if (!(error instanceof Error) || !error.message.startsWith('validation is busy:')) {
+                throw error;
+            }
+        } finally {
+            lock?.release();
+        }
+        await new Promise((resolve) => setTimeout(resolve, waitIntervalMs));
+    }
+}
+
+function setSessionProcessIdentity(session: ResourceSession, processToken: string, childPid: number): void {
+    if (!session.owned) {
+        return;
+    }
+    const owner = readReservation(session.reservationPath);
+    if (owner.token === session.token && isCurrentProcess(owner)) {
+        writeReservationState(session.reservationPath, {
+            processToken,
+            childPid,
+            childStartedAt: processStartedAt(childPid),
+            trackedProcesses: [],
+        });
+    }
+}
+
+function publishTrackedProcesses(session: ResourceSession, tracked: Map<number, string>): boolean {
+    if (!session.owned) {
+        return true;
+    }
+    try {
+        const owner = reservationWithState(session.reservationPath);
+        if (owner.token !== session.token || !isCurrentProcess(owner)) {
+            return false;
+        }
+        writeReservationState(session.reservationPath, {
+            processToken: owner.processToken ?? 'unowned',
+            ...(owner.childPid === undefined ? {} : { childPid: owner.childPid }),
+            ...(owner.childStartedAt === undefined ? {} : { childStartedAt: owner.childStartedAt }),
+            trackedProcesses: [...tracked].map(([pid, startedAt]) => ({ pid, startedAt })),
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function parseCgroupAvailableBytes(limit: string, usage: string): number | undefined {
+    if (limit.trim() === 'max') {
+        return undefined;
+    }
+    const limitBytes = Number(limit.trim());
+    const usageBytes = Number(usage.trim());
+    if (!Number.isFinite(limitBytes) || !Number.isFinite(usageBytes) || limitBytes <= 0 || usageBytes < 0) {
+        return undefined;
+    }
+    if (limitBytes >= 2 ** 60) {
+        return undefined;
+    }
+    return Math.max(0, limitBytes - usageBytes);
+}
+
+function cgroupAvailableMemoryBytes(): number | undefined {
+    const candidates: Array<readonly [string, string]> = [];
+    const addHierarchy = (root: string, relativePath: string, limitName: string, usageName: string) => {
+        const segments = relativePath.split('/').filter(Boolean);
+        while (true) {
+            candidates.push([join(root, ...segments, limitName), join(root, ...segments, usageName)]);
+            if (segments.length === 0) {
+                break;
+            }
+            segments.pop();
+        }
+    };
+    try {
+        for (const line of readFileSync('/proc/self/cgroup', 'utf8').trim().split('\n')) {
+            const [hierarchy, controllers, cgroupPath] = line.split(':');
+            if (cgroupPath === undefined) {
+                continue;
+            }
+            const relativePath = cgroupPath.replace(/^\/+/, '');
+            if (hierarchy === '0' && controllers === '') {
+                addHierarchy('/sys/fs/cgroup', relativePath, 'memory.max', 'memory.current');
+            } else if ((controllers ?? '').split(',').includes('memory')) {
+                addHierarchy('/sys/fs/cgroup/memory', relativePath, 'memory.limit_in_bytes', 'memory.usage_in_bytes');
+            }
+        }
+    } catch {
+        // Standard root paths remain valid outside Linux cgroup namespaces.
+    }
+    if (candidates.length === 0) {
+        candidates.push(
+            ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory.current'],
+            ['/sys/fs/cgroup/memory/memory.limit_in_bytes', '/sys/fs/cgroup/memory/memory.usage_in_bytes']
+        );
+    }
+    let minimumAvailable: number | undefined;
+    for (const [limitPath, usagePath] of candidates) {
+        try {
+            const available = parseCgroupAvailableBytes(
+                readFileSync(limitPath, 'utf8'),
+                readFileSync(usagePath, 'utf8')
+            );
+            if (available !== undefined) {
+                minimumAvailable = minimumAvailable === undefined ? available : Math.min(minimumAvailable, available);
+            }
+        } catch {
+            // Try the next cgroup layout.
+        }
+    }
+    return minimumAvailable;
 }
 
 export function availableMemoryBytes(): number | undefined {
@@ -294,7 +636,10 @@ export function availableMemoryBytes(): number | undefined {
         try {
             const memAvailableBytes = parseMemAvailableBytes(readFileSync('/proc/meminfo', 'utf8'));
             if (memAvailableBytes !== undefined) {
-                return memAvailableBytes;
+                const cgroupAvailableBytes = cgroupAvailableMemoryBytes();
+                return cgroupAvailableBytes === undefined
+                    ? memAvailableBytes
+                    : Math.min(memAvailableBytes, cgroupAvailableBytes);
             }
         } catch {
             // Fall through to freemem() when /proc/meminfo is unreadable.
@@ -437,6 +782,7 @@ function boundedEnvironment(
     return {
         ...source,
         [RESOURCE_SESSION_ENV]: session.token,
+        [RESOURCE_ROOT_ENV]: session.root,
         [PROCESS_SESSION_ENV]: processToken,
         NODE_OPTIONS: boundedNodeOptions(source.NODE_OPTIONS),
         CARGO_BUILD_JOBS: boundedPositiveInteger(source.CARGO_BUILD_JOBS, 2),
@@ -501,16 +847,44 @@ async function waitForProcessTreeExit(
 }
 
 export async function runGuardedCommand(input: GuardedCommandInput): Promise<GuardedCommandResult> {
-    const ownedSession = input.session === undefined;
-    const session = input.session ?? enterResourceSession({ command: [input.command, ...input.args].join(' ') });
     const profile = profiles[input.profile];
     const timeoutMs = input.timeoutMs ?? profile.timeoutMs;
     const output = new OutputTail(input.outputLimitBytes ?? defaultOutputLimitBytes);
     const memoryReserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
     const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
+    const maxRssBytes = input.maxRssBytes ?? profile.maxRssBytes;
+    const processToken = randomUUID();
+    let session: ResourceSession | undefined;
+    let recheckWaitReported = false;
+    while (session === undefined) {
+        const candidate = await enterResourceSession({
+            root: input.admissionRoot,
+            command: [input.command, ...input.args].join(' '),
+            requiredRssBytes: maxRssBytes,
+            memorySampler: readAvailableMemory,
+            memoryReserveBytes,
+            waitIntervalMs: input.admissionWaitIntervalMs,
+            onWait: (message) => console.error(message),
+            processToken,
+            orphanTimeoutMs: timeoutMs,
+        });
+        const recheckedAvailableBytes = readAvailableMemory();
+        if (recheckedAvailableBytes !== undefined && recheckedAvailableBytes >= memoryReserveBytes + maxRssBytes) {
+            session = candidate;
+            break;
+        }
+        candidate.release();
+        if (!recheckWaitReported) {
+            console.error('waiting for validation capacity: memory changed during admission');
+            recheckWaitReported = true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, input.admissionWaitIntervalMs ?? 1_000));
+    }
+    const ownedSession = session.owned;
     const availableBytes = readAvailableMemory();
     const permittedRssBytes = availableBytes === undefined ? 0 : availableBytes - memoryReserveBytes;
-    if (availableBytes === undefined || permittedRssBytes < minimumCommandBudgetBytes) {
+    const requiredBudgetBytes = ownedSession ? maxRssBytes : minimumCommandBudgetBytes;
+    if (availableBytes === undefined || permittedRssBytes < requiredBudgetBytes) {
         if (ownedSession) {
             session.release();
         }
@@ -521,7 +895,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             output:
                 availableBytes === undefined
                     ? 'available memory could not be measured'
-                    : `available memory leaves less than ${Math.ceil(minimumCommandBudgetBytes / 1024 ** 2)} MiB after the system reserve`,
+                    : `available memory leaves less than ${Math.ceil(requiredBudgetBytes / 1024 ** 2)} MiB after the system reserve`,
             omittedBytes: 0,
             peakRssBytes: 0,
             durationMs: 0,
@@ -541,16 +915,29 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             durationMs: 0,
         };
     }
-    const maxRssBytes = Math.min(input.maxRssBytes ?? profile.maxRssBytes, permittedRssBytes);
-
     const startedAt = Date.now();
-    const processToken = randomUUID();
+    const tracked = new Map<number, string>();
     const child = spawn(input.command, input.args, {
         cwd: input.cwd ?? process.cwd(),
         env: boundedEnvironment(session, input.env ?? process.env, processToken),
         detached: platform() !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (child.pid !== undefined) {
+        const childStartedAt = processStartedAt(child.pid);
+        if (childStartedAt !== undefined) {
+            tracked.set(child.pid, childStartedAt);
+        }
+        try {
+            setSessionProcessIdentity(session, processToken, child.pid);
+        } catch (error) {
+            terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+            if (ownedSession) {
+                session.release();
+            }
+            throw new Error('validation process identity could not be published', { cause: error });
+        }
+    }
     child.stdout.on('data', (chunk: Buffer) => output.append(chunk));
     child.stderr.on('data', (chunk: Buffer) => output.append(chunk));
 
@@ -561,13 +948,6 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     let processSamplerFailures = 0;
     let hostSamplerFailures = 0;
     let lastHostPressureSample = 0;
-    const tracked = new Map<number, string>();
-    if (child.pid !== undefined) {
-        const childStartedAt = processStartedAt(child.pid);
-        if (childStartedAt !== undefined) {
-            tracked.set(child.pid, childStartedAt);
-        }
-    }
     const stop = (nextReason: NonNullable<GuardedCommandResult['reason']>) => {
         const childPid = child.pid;
         if (reason !== undefined || childPid === undefined) {
@@ -609,6 +989,10 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         const now = Date.now();
         if (now - lastHostPressureSample >= (input.hostSampleIntervalMs ?? hostPressureSampleIntervalMs)) {
             lastHostPressureSample = now;
+            if (!publishTrackedProcesses(session, tracked)) {
+                stop('monitor');
+                return;
+            }
             const currentAvailableBytes = readAvailableMemory();
             if (currentAvailableBytes === undefined) {
                 hostSamplerFailures += 1;
@@ -721,6 +1105,7 @@ export function hasExplicitTarget(args: string[]): boolean {
 
 type CliInput = {
     profile: ResourceProfile;
+    maxRssBytes?: number;
     requireTarget: boolean;
     showOutput: boolean;
     command: string;
@@ -729,6 +1114,7 @@ type CliInput = {
 
 export function parseCliArgs(args: string[]): CliInput {
     let profile: ResourceProfile = 'focused';
+    let maxRssBytes: number | undefined;
     let requireTarget = false;
     let showOutput = false;
     let index = 0;
@@ -751,6 +1137,15 @@ export function parseCliArgs(args: string[]): CliInput {
             requireTarget = true;
             continue;
         }
+        if (argument === '--max-rss-mib') {
+            const value = Number(args[index + 1]);
+            if (!Number.isInteger(value) || value < 512) {
+                throw new Error('--max-rss-mib requires an integer of at least 512');
+            }
+            maxRssBytes = value * 1024 ** 2;
+            index += 1;
+            continue;
+        }
         if (argument === '--show-output') {
             showOutput = true;
             continue;
@@ -762,7 +1157,7 @@ export function parseCliArgs(args: string[]): CliInput {
         throw new Error('missing command after --');
     }
     const commandArgs = args.slice(index + 1);
-    return { profile, requireTarget, showOutput, command, args: commandArgs };
+    return { profile, maxRssBytes, requireTarget, showOutput, command, args: commandArgs };
 }
 
 async function main(): Promise<number> {
@@ -771,7 +1166,12 @@ async function main(): Promise<number> {
         if (input.requireTarget && !hasExplicitTarget(input.args)) {
             throw new Error('target required; specify an affected file, crate, or filter');
         }
-        const result = await runGuardedCommand({ command: input.command, args: input.args, profile: input.profile });
+        const result = await runGuardedCommand({
+            command: input.command,
+            args: input.args,
+            profile: input.profile,
+            maxRssBytes: input.maxRssBytes,
+        });
         return emitGuardedResult(input.command, result, input.showOutput);
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
