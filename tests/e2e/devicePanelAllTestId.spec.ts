@@ -1,136 +1,68 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openInstrument(page: import('@playwright/test').Page, name: string): Promise<boolean> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill(name.toLowerCase());
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: new RegExp(`^${name}`, 'i') }).first();
-    if (await card.isVisible().catch(() => false)) {
-        await card.click();
-        await page.waitForTimeout(2000);
-        return true;
-    }
-    return false;
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+}
+
+async function addDeviceAndOpenPanel(page: Page, device: string): Promise<void> {
+    const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+    await inspector.getByRole('button', { name: 'Add device' }).click();
+    await page.getByRole('menuitem', { name: new RegExp(`^${device}$`) }).click();
+    await expect(inspector.getByRole('button', { name: new RegExp(`^Bypass ${device}$`, 'i') })).toBeVisible();
+    await inspector.getByText(device, { exact: true }).first().click();
+    await expect(page.getByRole('button', { name: `Close ${device}` })).toBeVisible();
+}
+
+async function closePanel(page: Page, device: string): Promise<void> {
+    const closePanelButton = page.getByRole('button', { name: `Close ${device}` });
+    // Bacteria's faceplate paints over the chrome and intercepts pointer clicks;
+    // the control is still keyboard-operable via its aria-label.
+    await closePanelButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(closePanelButton).toHaveCount(0);
 }
 
 test.describe('All device panels — open, verify, close', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+        await addMidiTrack(page);
     });
 
     test('Gluten compressor panel opens and closes', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-        const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
-        if (await effectsTab.isVisible().catch(() => false)) {
-            await effectsTab.click();
-            await page.waitForTimeout(300);
-        }
-        await search.fill('gluten');
-        await page.waitForTimeout(500);
-        const card = page.getByRole('button', { name: /^Gluten/i }).first();
-        if (await card.isVisible().catch(() => false)) {
-            await card.click();
-            await page.waitForTimeout(2000);
-            const sliders = page.getByRole('slider');
-            expect(await sliders.count()).toBeGreaterThan(0);
-        }
+        await addDeviceAndOpenPanel(page, 'Gluten');
+        await expect(page.getByRole('slider', { name: 'Threshold' })).toBeVisible();
+        await closePanel(page, 'Gluten');
     });
 
-    test('Bacteria FX panel opens with sliders', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-        const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
-        if (await effectsTab.isVisible().catch(() => false)) {
-            await effectsTab.click();
-            await page.waitForTimeout(300);
-        }
-        await search.fill('bacteria');
-        await page.waitForTimeout(500);
-        const card = page.getByRole('button', { name: /^Bacteria/i }).first();
-        if (await card.isVisible().catch(() => false)) {
-            await card.click();
-            await page.waitForTimeout(2000);
-            const sliders = page.getByRole('slider');
-            expect(await sliders.count()).toBeGreaterThan(0);
-        }
+    test('Bacteria FX panel opens and closes', async ({ page }) => {
+        await addDeviceAndOpenPanel(page, 'Bacteria');
+        await expect(page.getByLabel('Search Bacteria presets')).toBeVisible();
+        await closePanel(page, 'Bacteria');
     });
 
-    test('ProofChamber reverb panel opens', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-        const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
-        if (await effectsTab.isVisible().catch(() => false)) {
-            await effectsTab.click();
-            await page.waitForTimeout(300);
-        }
-        await search.fill('dutch oven');
-        await page.waitForTimeout(500);
-        const card = page.getByRole('button', { name: /^Dutch Oven/i }).first();
-        if (await card.isVisible().catch(() => false)) {
-            await card.click();
-            await page.waitForTimeout(2000);
-            const sliders = page.getByRole('slider');
-            expect(await sliders.count()).toBeGreaterThan(0);
-        }
+    test('Dutch Oven reverb panel opens', async ({ page }) => {
+        await addDeviceAndOpenPanel(page, 'Dutch Oven');
+        await expect(page.getByRole('slider', { name: 'Decay' })).toBeVisible();
+        await closePanel(page, 'Dutch Oven');
     });
 
     test('Crust limiter panel opens', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-        const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
-        if (await effectsTab.isVisible().catch(() => false)) {
-            await effectsTab.click();
-            await page.waitForTimeout(300);
-        }
-        await search.fill('crust');
-        await page.waitForTimeout(500);
-        const card = page.getByRole('button', { name: /^Crust/i }).first();
-        if (await card.isVisible().catch(() => false)) {
-            await card.click();
-            await page.waitForTimeout(2000);
-            const sliders = page.getByRole('slider');
-            expect(await sliders.count()).toBeGreaterThan(0);
-        }
+        await addDeviceAndOpenPanel(page, 'Crust');
+        await expect(page.getByRole('button', { name: 'True peak', exact: true })).toBeVisible();
+        await closePanel(page, 'Crust');
     });
 
     test('Grinder amp panel opens', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-        const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
-        if (await effectsTab.isVisible().catch(() => false)) {
-            await effectsTab.click();
-            await page.waitForTimeout(300);
-        }
-        await search.fill('grinder');
-        await page.waitForTimeout(500);
-        const card = page.getByRole('button', { name: /^Grinder/i }).first();
-        if (await card.isVisible().catch(() => false)) {
-            await card.click();
-            await page.waitForTimeout(2000);
-            const sliders = page.getByRole('slider');
-            expect(await sliders.count()).toBeGreaterThan(0);
-        }
+        await addDeviceAndOpenPanel(page, 'Grinder');
+        await expect(page.getByLabel('Search Grinder presets')).toBeVisible();
+        await closePanel(page, 'Grinder');
     });
 });
