@@ -250,4 +250,16 @@ describe('StatusBar', () => {
             expect(btn).toBeInTheDocument();
         });
     });
+
+    describe('legal notice', () => {
+        it('opens the shipped third-party notice', () => {
+            const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+            renderWithTooltip(<StatusBar />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Third-party licenses' }));
+
+            expect(open).toHaveBeenCalledWith('/legal/THIRD-PARTY-NOTICES.md', '_blank');
+            open.mockRestore();
+        });
+    });
 });
