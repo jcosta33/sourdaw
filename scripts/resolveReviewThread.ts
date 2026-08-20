@@ -83,6 +83,7 @@ export function resolveReviewThread(
     let replyAttempted = false;
     let replyId: string | undefined;
     let resolveAttempted = false;
+    let resolvedByReceipt = false;
     try {
         replyAttempted = true;
         const reply = port.replyDone(threadId);
@@ -93,13 +94,24 @@ export function resolveReviewThread(
         assertResolvableThread(afterReply.thread, threadId);
         resolveAttempted = true;
         port.resolve(threadId);
+        resolvedByReceipt = true;
         const verified = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(verified.head, expectedHead);
         if (verified.thread?.id !== threadId || !verified.thread.isResolved) {
             fail(`review thread ${threadId} was not resolved`);
         }
     } catch (error) {
-        compensateResolution(number, threadId, before, replyAttempted, replyId, resolveAttempted, port, error);
+        compensateResolution(
+            number,
+            threadId,
+            before,
+            replyAttempted,
+            replyId,
+            resolveAttempted,
+            resolvedByReceipt,
+            port,
+            error
+        );
     }
     const success = `review-thread-resolved:${number}:${threadId}`;
     port.log(success);
@@ -113,6 +125,7 @@ function compensateResolution(
     replyAttempted: boolean,
     replyId: string | undefined,
     resolveAttempted: boolean,
+    resolvedByReceipt: boolean,
     port: ResolveReviewThreadPort,
     original: unknown
 ): never {
@@ -124,8 +137,10 @@ function compensateResolution(
     if (current === undefined || current.thread === null || before.thread === null) {
         failures.push('cannot determine ambiguous review transaction state');
     } else {
-        if (resolveAttempted && current.thread.isResolved !== before.thread.isResolved) {
+        if (resolvedByReceipt && current.thread.isResolved !== before.thread.isResolved) {
             attempt(failures, 'unresolve review thread', () => port.unresolve(threadId));
+        } else if (resolveAttempted && current.thread.isResolved !== before.thread.isResolved) {
+            failures.push('ambiguous review-thread resolution; refusing to unresolve an unverified transition');
         }
         if (replyAttempted) {
             if (replyId === undefined) {

@@ -17,13 +17,14 @@ type Input = {
     replacementState?: string;
     throwAfterComment?: boolean;
     concurrentCommentOnThrow?: boolean;
-    throwAfterClose?: boolean;
+    throwCloseWithConcurrentState?: boolean;
     failDelete?: boolean;
 };
 function fakePort(input: Input = {}) {
     const calls: string[] = [];
     let index = 0;
     let state = 'OPEN';
+    let closeCalled = false;
     let comments = [oldComment];
     const snapshot = (number: number) =>
         number === 2244
@@ -46,6 +47,9 @@ function fakePort(input: Input = {}) {
     const port: SupersedePullRequestPort = {
         inspect: (number) => {
             calls.push(`inspect:${number}`);
+            if (number === 2244 && input.throwCloseWithConcurrentState && closeCalled) {
+                state = 'CLOSED';
+            }
             return snapshot(number);
         },
         comment: (number, body) => {
@@ -75,10 +79,11 @@ function fakePort(input: Input = {}) {
         },
         close: (number) => {
             calls.push(`close:${number}`);
-            state = 'CLOSED';
-            if (input.throwAfterClose) {
+            closeCalled = true;
+            if (input.throwCloseWithConcurrentState) {
                 throw new Error('close transport lost');
             }
+            state = 'CLOSED';
         },
         reopen: (number) => {
             calls.push(`reopen:${number}`);
@@ -198,10 +203,13 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(state().comments.map((comment) => comment.id)).toEqual(['IC_old', 'IC_new', 'IC_concurrent']);
     });
-    it('compensates a close that committed before its mutation threw', () => {
-        const { port, authorLogin, state } = fakePort({ throwAfterClose: true });
-        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/close transport lost$/);
-        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+    it('does not reopen a concurrent state after close throws without a receipt', () => {
+        const { port, authorLogin, state, calls } = fakePort({ throwCloseWithConcurrentState: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /close transport lost[\s\S]*ambiguous PR closure/i
+        );
+        expect(calls.filter((call) => call.startsWith('reopen:'))).toEqual([]);
+        expect(state().state).toBe('CLOSED');
     });
     it('rolls back after a post-comment head move', () => {
         const { port, authorLogin, state, calls } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
