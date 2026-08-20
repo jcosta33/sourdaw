@@ -1,0 +1,60 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_2175fca1f07426::t_4c8e9aa1c5fb4e 6,242,252,264,275,287,293,299,315,321,324,346,359,365,393,398,446
+src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx
+  s_2175fca1f07426::t_caf06594e840c8 10,225,242-243,248,270,275,280,283
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_2175fca1f07426::t_871c0d698c4842 8,325,355,369,393,403,405,454,470,499,510,518,523,543,546-550,576-577,599-600,613
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_2175fca1f07426::t_a218ff290c7635 175,199,242-245,249,265,321
+  s_2175fca1f07426::t_8e3c6d4a4daf89 5
+src/modules/ContentBrowser/presentations/components/Sidebar/RailBackBar.tsx
+  s_487e9aa1e46063::t_6ba7f685a635f4 3,14,39
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_2175fca1f07426::t_75178689abb5c4 7,54,67,70,96,112,146
+src/modules/ContentBrowser/presentations/views/Sidebar/ProjectTab.tsx
+  s_487e9aa1e46063::t_cac8ff56a06ab5 5,24,27-28,31-32,35-36,41,43,48,67,70,72,74
+src/modules/ContentBrowser/presentations/views/Sidebar/MacrosPanel.tsx
+  s_2175fca1f07426::t_8f49995eb78b00 16,115,122,124,126-128,160-164,205,207,209
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_2175fca1f07426::t_10368ecd7b4f44 27,173,178,199-201,224-225,232-233,243-245
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_2175fca1f07426::t_65fcc372c756d4 5
+  s_487e9aa1e46063::t_49015ca1c45d4b 39-41,46,88-89,98-99
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_437171107810c3 218-226,284,416-424,641-649,797,1427,2324-2332,2696,2748-2751,2753-2754,2831,3062-3070,3209,3245,4010,4514,4709-4717,4784,4790-4798,4880-4888,5612,5816-5824,6053,6080,6356-6364,6482-6490,7079,7634-7642,7680-7683,7685-7686,7761,7763-7764,7767,7898,8087,8150,8318-8326,8597-8605,8732-8740,8759-8767,8930-8938,9032,9272-9280,9806,10766-10774,10841,10922,11108-11116,11183,11777,11819-11827,12560,12980-12988,13016-13024,13352,13538-13546,14141-14149,14276-14284,14339-14347,14648,15644-15652,16655,16700,16904-16912,17312,17409,17411-17412,17415,17573,17579-17587,17750-17758,17834,18356,19028-19036,19274,19400,19658-19666,19823,19892-19900,19910-19918,19976,20327,20369-20377,20498,20567-20575,20936-20944,22259-22267,22853-22861,23078-23086,23618-23626,23672-23680,24302-24310,24449,24752-24760
+src/modules/ContentBrowser/presentations/components/Sidebar/EmptyState.tsx
+  s_2175fca1f07426::t_acdf396b457182 4
+  s_24b1bdbc3c31ad::t_fa6125215a485b 3,10,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "56abbde4150bfc02d18086700c981982d10e942c",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
