@@ -33,8 +33,30 @@ const mocks = vi.hoisted(() => {
         stepRecordNoteOff: vi.fn(),
         getTransportState: vi.fn(),
         stepRecordState: { currentPitch: 62 },
+        trackState: {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'midi',
+                    clips: [{ id: 'clip-1', type: 'midi' }],
+                },
+                {
+                    id: 'track-2',
+                    kind: 'midi',
+                    clips: [{ id: 'clip-2', type: 'midi' }],
+                },
+            ],
+        },
     };
 });
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackState;
+        },
+    },
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     playAuditionNote: mocks.playAuditionNote,
@@ -714,6 +736,40 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+        });
+
+        it('velocity preset digits set velocity on cross-clip selection in their respective owner clips', () => {
+            const { canvas } = renderRoll({
+                stepInput: true,
+                selectedNoteIds: new Set(['n1', 'n2']),
+                openedClipNotes: {
+                    'clip-2': [makeNote('n2', 65, 4, 2, 80)],
+                },
+            });
+
+            fireEvent.keyDown(canvas, { key: '5' });
+
+            expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n1', 90);
+            expect(mocks.setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 90);
+            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
+                'Set velocity',
+                expect.any(Function),
+                expect.any(Function)
+            );
+        });
+    });
+
+    describe('cross-clip audition', () => {
+        it('auditioning a secondary-clip note plays through its own track instrument on mousedown', () => {
+            const { canvas } = renderRoll({
+                openedClipNotes: {
+                    'clip-2': [makeNote('n2', 65, 4, 2, 80)],
+                },
+            });
+
+            fireEvent.mouseDown(canvas, { clientX: 180, clientY: yForPitch(65) });
+
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80);
         });
     });
 
