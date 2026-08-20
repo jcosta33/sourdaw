@@ -2072,7 +2072,7 @@
   {
     "id": "ui-12beb1beb1ec62c6",
     "file": "src/modules/Toaster/presentations/components/StepSequencer.tsx",
-    "line": 68,
+    "line": 69,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -4034,7 +4034,7 @@
   {
     "id": "ui-26f7d5f65018c2d1",
     "file": "src/modules/Toaster/presentations/components/StepSequencer.tsx",
-    "line": 69,
+    "line": 70,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -6050,7 +6050,7 @@
   {
     "id": "ui-3baf80967ddc8bfb",
     "file": "src/modules/Toaster/presentations/components/PadMixer.tsx",
-    "line": 122,
+    "line": 123,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6716,7 +6716,7 @@
   {
     "id": "ui-4211f3f7e6d1b3d5",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 109,
+    "line": 110,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -7751,7 +7751,7 @@
   {
     "id": "ui-4bd4e05952a8e6bb",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 149,
+    "line": 150,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8588,7 +8588,7 @@
   {
     "id": "ui-54e00db97663830b",
     "file": "src/modules/Toaster/presentations/components/StepSequencer.tsx",
-    "line": 76,
+    "line": 77,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -11324,7 +11324,7 @@
   {
     "id": "ui-710cf4d6de975504",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 63,
+    "line": 64,
     "fingerprint": "div\tgrid grid-cols-4 gap-1.5",
     "kind": "layout",
     "mapping": "Grid",
@@ -13061,7 +13061,7 @@
   {
     "id": "ui-80da635f2555bd81",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 127,
+    "line": 128,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14510,7 +14510,7 @@
   {
     "id": "ui-8e8774e622ab8b59",
     "file": "src/modules/Toaster/presentations/components/PadMixer.tsx",
-    "line": 16,
+    "line": 17,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -19667,7 +19667,7 @@
   {
     "id": "ui-c493d9536d5d17b7",
     "file": "src/modules/Toaster/presentations/components/PadMixer.tsx",
-    "line": 109,
+    "line": 110,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -19721,7 +19721,7 @@
   {
     "id": "ui-c54bef597f1bcb86",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 126,
+    "line": 127,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20135,7 +20135,7 @@
   {
     "id": "ui-ca5dc3d0abc3bde2",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 108,
+    "line": 109,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21080,7 +21080,7 @@
   {
     "id": "ui-d32d9aec5c6223ad",
     "file": "src/modules/Toaster/presentations/components/PadMixer.tsx",
-    "line": 110,
+    "line": 111,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22403,7 +22403,7 @@
   {
     "id": "ui-e1fee532f4aaab04",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 70,
+    "line": 71,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22439,7 +22439,7 @@
   {
     "id": "ui-e2730c2550684a35",
     "file": "src/modules/Toaster/presentations/components/PadMixer.tsx",
-    "line": 18,
+    "line": 19,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
