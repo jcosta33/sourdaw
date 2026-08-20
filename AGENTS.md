@@ -175,25 +175,28 @@ review.
 head. A reviewer agent gets that bundle, not the author transcript. `review:publish` prints the
 review id and posts as `jcosta33-reviewer[bot]` only when GitHub's head still matches the bundle.
 
-The GitHub pull request is the team's review of this head: what changed and why, comments on the
-diff, a merge decision. Session logs, stance names, unpublished rounds, and repair diaries stay
-off GitHub.
+Write the pull request for a teammate who was not in the session. Title it with the HEAD
+subject. Under the four template headings, say what changed, why, and how to test. Put
+`Closes #<issue>` in Related tickets. Leave session diaries, unpublished rounds, and mutation
+tables off the pull request.
+
+Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge,
+read the surrounding code. When something is wrong, comment on that line: what is wrong, why it
+matters, what done looks like. One problem per comment. Talk about the code, not the author.
+
+Request changes when this head must not merge. Post every blocking comment with that review.
+The summary is a short pointer to those comments, not a report.
 
 Approve when the change improves the system, even if it is not perfect. Do not approve a change
-that makes it worse. Style-guide violations block; personal style does not.
+that makes it worse. Style-guide violations block; personal style does not. Leave the approval
+empty or write one sentence about the code. Prefix non-blocking notes `Nit:` or `Optional:` and
+put them on the approval.
 
-`review.json` event is `REQUEST_CHANGES` or `APPROVE`. Blocking findings are line comments posted
-now. `REQUEST_CHANGES` body is a short pointer. `APPROVE` body is empty or one sentence about the
-code. Non-blocking notes are `Nit:` or `Optional:` line comments on an `APPROVE`.
+When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence.
+Clarify the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a
+conversation only when the current head actually addresses it. A new head needs a new review.
 
-Line comments sit on the changed line, one finding, one paragraph: what is wrong, why it matters,
-what done looks like. Comment on the code, never the author.
-
-Push the fix. Reply `Done` plus where, or why not, in one sentence. Clarify the code, not the
-thread. File out-of-scope feedback. Resolve a conversation only when that is true of the current
-head. A new head needs a new review of that SHA.
-
-Owner proof of delegated work (a test that fails when reverted, a measurement at the user
+Proof that a delegated change works (a test that fails when reverted, a measurement at the user
 boundary) stays in the session. It is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
