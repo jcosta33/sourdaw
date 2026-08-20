@@ -125,7 +125,8 @@
         {
             "ac": "SPEC-drum-machine-groove-templates/AC-007",
             "reason": "The Template menu is the library. Names are not catalogued; Straight is the no-op."
-        }
+        },
+        { "ac": "SPEC-fermenter-ui/AC-006", "reason": "Dependency-boundary hygiene gate." }
     ],
 
     "omitted-unshipped": [
@@ -259,6 +260,19 @@
         {
             "ac": "SPEC-drum-machine-groove-templates/AC-001",
             "reason": "No extract-from-pattern control on Toaster."
+        },
+
+        {
+            "ac": "SPEC-fermenter-ui/AC-003",
+            "reason": "Modulated knobs do not render per-source arc segments on the shipped panel."
+        },
+        {
+            "ac": "SPEC-fermenter-ui/AC-004",
+            "reason": "Empty layer or generator slots do not offer guided start actions."
+        },
+        {
+            "ac": "SPEC-fermenter-ui/AC-005",
+            "reason": "Layer rows have no bounce or freeze action."
         }
     ],
 
