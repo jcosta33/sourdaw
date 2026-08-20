@@ -57,9 +57,9 @@ export type IssueRelationship = 'closes' | 'relates';
 
 export function issueRelationshipFromBody(body: string, issue: number | undefined): IssueRelationship | undefined {
     const heading = REQUIRED_BODY_HEADINGS.at(-1);
-    const headingIndex = heading === undefined ? -1 : body.lastIndexOf(heading);
-    if (heading === undefined || headingIndex < 0) {
-        fail('pull-request body is missing its Related tickets section');
+    const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
+    if (heading === undefined || headingIndex < 0 || headingIndex !== body.lastIndexOf(heading)) {
+        fail('pull-request body must contain exactly one Related tickets section');
     }
     const lines = body
         .slice(headingIndex + heading.length)
@@ -69,7 +69,7 @@ export function issueRelationshipFromBody(body: string, issue: number | undefine
         .filter((line) => line !== '');
     const relationships = lines.flatMap((line) => {
         const match = /^(Closes|Related) #([1-9][0-9]*)$/.exec(line);
-        return match === null ? [] : [{ label: match[1], issue: Number(match[2]) }];
+        return match === null ? [] : [{ label: match[1], issue: match[2] }];
     });
     if (issue === undefined) {
         if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {
@@ -77,7 +77,7 @@ export function issueRelationshipFromBody(body: string, issue: number | undefine
         }
         return undefined;
     }
-    if (relationships.length !== 1 || relationships[0]?.issue !== issue || lines.includes(NO_RELATED_TICKETS)) {
+    if (relationships.length !== 1 || relationships[0]?.issue !== String(issue) || lines.includes(NO_RELATED_TICKETS)) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
     return relationships[0].label === 'Closes' ? 'closes' : 'relates';

@@ -285,6 +285,21 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
+    it('preserves None on a later issueless update', () => {
+        const { port, bodies } = fakePort({
+            trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+            cwd: CLEANUP_LANE,
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nNone.',
+        });
+
+        publishLane(undefined, port);
+
+        expect(bodies.at(-1)).toContain('### 📌 Related tickets & additional notes\nNone.');
+        expect(bodies.at(-1)).not.toContain('Closes #');
+        expect(bodies.at(-1)).not.toContain('Related #');
+    });
+
     it('rejects --relates on an issueless lane', () => {
         const { port } = fakePort({
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
