@@ -1,0 +1,25 @@
+src/modules/WorkspaceShell/presentations/views/Transport/AutoScrollToggle.tsx
+  s_24b1bdbc3c31ad::t_bd8c4555a3a5be 27
+tests/e2e/undoRedoAutoScrollTestId.spec.ts
+  s_24b1bdbc3c31ad::t_3b4138f1ce8e9b 68
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/AutoScrollToggle.spec.tsx
+  s_24b1bdbc3c31ad::t_0d382652edd6ba 5
+  s_24b1bdbc3c31ad::t_afe76d07398eb8 44-65
+  s_24b1bdbc3c31ad::t_3dc81adf6e2991 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "08e11052edfa5ed49f6e7f0a19aa334a7ed9b33b",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
