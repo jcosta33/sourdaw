@@ -155,6 +155,22 @@ describe('lane removal', () => {
         ['foreign repository', target, { pullRequests: [pullRequest({ headRepository: 'jcosta33/fork' })] }, /foreign/],
         ['reused branch', target, { pullRequests: [pullRequest(), pullRequest({ number: 43 })] }, /one pull request/],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
+        [
+            'merged PR with a mismatched head',
+            target,
+            { pullRequests: [pullRequest({ headRefOid: 'ahead' })] },
+            /ownership is unproven/,
+        ],
+        [
+            'superseded PR with a mismatched head',
+            target,
+            {
+                remoteHead: null,
+                pullRequests: [supersededPullRequest({ headRefOid: 'ahead' })],
+                comments: [supersessionReceipt(99)],
+            },
+            /ownership is unproven/,
+        ],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
 
@@ -205,6 +221,14 @@ describe('lane removal', () => {
             {
                 pullRequests: [supersededPullRequest()],
                 comments: [supersessionReceipt(99, { authorLogin: 'drive-by', authorType: 'User' })],
+            },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'closed carrying a receipt from a different installed app',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99, { authorLogin: 'other-app[bot]' })],
             },
             /closed without a supersession receipt/,
         ],
