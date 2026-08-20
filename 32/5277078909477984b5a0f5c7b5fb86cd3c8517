@@ -1,0 +1,23 @@
+src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts
+  s_27578aec2aab3b::t_f575e7e5f32cf3 47-48,135-142,144,194,261-262,265-268,276-278,280-284,289-301,425-426,476-481,483,485,490-545,556-557,559-561
+  s_27578aec2aab3b::t_8382c7869deeb0 196,546-555
+src/modules/BrowserAi/workers/__tests__/modelStorageWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_f8692e937d1b0c 1203-1204,1206-1407
+  s_27578aec2aab3b::t_f6baad6e34fae3 1205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "325277078909477984b5a0f5c7b5fb86cd3c8517",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
