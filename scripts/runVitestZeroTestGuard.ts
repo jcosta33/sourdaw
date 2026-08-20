@@ -19,16 +19,30 @@ import {
 } from './vitestZeroTestReport.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const vitestBin = join(repoRoot, 'node_modules', '.bin', 'vitest');
+const productionVitestBin = join(repoRoot, 'node_modules', '.bin', 'vitest');
 
-function main(): number {
+export type ZeroTestGuardOptions = {
+    vitestBin: string;
+    args: readonly string[];
+    cwd: string;
+    stdio?: 'inherit' | 'pipe';
+    env?: NodeJS.ProcessEnv;
+};
+
+export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-vitest-json-'));
     const jsonPath = join(directory, 'report.json');
     try {
         const result = spawnSync(
-            vitestBin,
-            ['run', ...process.argv.slice(2), '--reporter=default', '--reporter=json', `--outputFile=${jsonPath}`],
-            { cwd: repoRoot, encoding: 'utf8', stdio: 'inherit', shell: false }
+            options.vitestBin,
+            ['run', ...options.args, '--reporter=default', '--reporter=json', `--outputFile=${jsonPath}`],
+            {
+                cwd: options.cwd,
+                encoding: 'utf8',
+                stdio: options.stdio ?? 'inherit',
+                shell: false,
+                env: options.env === undefined ? undefined : { ...process.env, ...options.env },
+            }
         );
         const vitestStatus = result.status ?? 1;
         let report: VitestJsonReport;
@@ -46,6 +60,14 @@ function main(): number {
     } finally {
         rmSync(directory, { recursive: true, force: true });
     }
+}
+
+function main(): number {
+    return runZeroTestGuard({
+        vitestBin: productionVitestBin,
+        args: process.argv.slice(2),
+        cwd: repoRoot,
+    });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
