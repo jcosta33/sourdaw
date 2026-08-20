@@ -1,0 +1,51 @@
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_494c9c135ae8fd 371-377,521,528
+  s_27578aec2aab3b::t_a23db8783c74af 529-533
+tests/e2e/ddspRenderProbe.ts
+  s_27578aec2aab3b::t_2b88d5cbbeabbe 57
+  s_27578aec2aab3b::t_fed811177619a6 15,18-21,23-38,49,61,66,75
+  s_27578aec2aab3b::t_442cf28adf081c 7
+  s_27578aec2aab3b::t_b91f99aa5499b6 1-5
+  s_27578aec2aab3b::t_8d1499d3f02527 8-10
+  s_27578aec2aab3b::t_94e9f2f34d8c72 11-14,16-17,22,47-48,50-52,67-69,78,81
+  s_27578aec2aab3b::t_8d766379a0f5cb 6,40-46,53-56,58-60,62-65,70-74,76-77,79-80,82-90
+  s_27578aec2aab3b::t_f03168401bc353 39
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_27578aec2aab3b::t_8d766379a0f5cb 136,144-145
+  s_27578aec2aab3b::t_0cf2a46ced4b2b 3
+  s_27578aec2aab3b::t_c77caeb3f55bc5 39-41,89-90
+  s_27578aec2aab3b::t_3fa72f48c006a2 98
+  s_27578aec2aab3b::t_e8aed43327e32d 6,34-38,42,46,49-50,55,59,64-65,92-93,141-143,150
+  s_27578aec2aab3b::t_d85ac7405ee145 4,91,94-95,102-103,114,125-126,134-135,146-149
+tests/e2e/ddspRender.playwright.config.ts
+  s_27578aec2aab3b::t_b91f99aa5499b6 8
+  s_27578aec2aab3b::t_8d766379a0f5cb 1-7,9-25
+tests/e2e/ddspRender.spec.ts
+  s_27578aec2aab3b::t_b91f99aa5499b6 9,15-17
+  s_27578aec2aab3b::t_f6f7fe04f4f4a8 29
+  s_27578aec2aab3b::t_8d766379a0f5cb 1-8,10-14,18-28,30
+src/modules/BrowserAi/models/InferenceRequest.ts
+  s_27578aec2aab3b::t_8d766379a0f5cb 120-121,134
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_8d766379a0f5cb 272,296,302-305
+package.json
+  s_27578aec2aab3b::t_8d766379a0f5cb 29
+tests/e2e/ddspRenderProbe.html
+  s_27578aec2aab3b::t_8d766379a0f5cb 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6ce6834b8a50ae6b8eec228b281ae813501c40ff",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
