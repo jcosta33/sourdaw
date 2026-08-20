@@ -106,8 +106,10 @@
  *   - **Note timing, loop iterations, comping and render tails.** One audio
  *     clip with its two user fades is fixtured; nothing MIDI is.
  *     `offlineNoteScheduleTiming.spec.ts` covers the note path.
- *   - **A stretched clip.** `playbackRate != 1` is deliberately unfixtured
- *     while jcosta33/sourdaw#2098 is open; see `ClipFixture` below.
+ *   - **Stretch beyond one constant rate.** A half-speed clip is fixtured, so
+ *     the seam's destination-vs-source duration law is measured; a rate that
+ *     *changes* across a render is not, and neither is a stretched clip whose
+ *     material runs out under it.
  *
  * ── Fixture constraints ───────────────────────────────────────────────────
  *
@@ -167,6 +169,7 @@ import {
     createFixtureSignal,
     createNullTestRenderHarness,
     nullTest,
+    type HarnessAudioBuffer,
     type HarnessContextOptions,
     type HarnessRenderContext,
     type NullTestResult,
@@ -1893,21 +1896,32 @@ describe('live/offline null test — automation writes across the backend seam',
 const CLIP_MATERIAL = createFixtureAudioBuffer({ frames: RENDER_FRAMES, sampleRate: SAMPLE_RATE });
 
 /**
+ * The same material, twice as long.
+ *
+ * A clip sped up past unity consumes more source seconds than the destination
+ * span it fills, so a fixture that shares the render's own length would hit the
+ * end of the buffer and fall silent for that reason instead of the one under
+ * test.
+ */
+const LONG_CLIP_MATERIAL = createFixtureAudioBuffer({ frames: RENDER_FRAMES * 2, sampleRate: SAMPLE_RATE });
+
+/**
  * One playback, with a user fade in and a user fade out.
  *
- * **`playbackRate` is fixed at 1 and there is deliberately no stretched
- * variant.** The two web runtimes disagree today about what `durationSeconds`
- * means for a stretched clip — `AudioGraphClipPlayback.durationSeconds` records
- * the divergence and jcosta33/sourdaw#2098 owns it — so a `playbackRate != 1`
- * fixture added now would red for that reason and not for anything a backend
- * did. Add it when #2098 lands; a red fixture standing in for a filed defect is
- * a fixture nobody trusts.
+ * `playDurationSec` is destination seconds whatever `playbackRate` is — that is
+ * the law `AudioGraphClipPlayback.durationSeconds` states — so a stretched
+ * variant of a fixture keeps every one of its absolute times and changes only
+ * how much material is consumed to fill them.
  */
 type ClipFixture = {
     strip: TrackFixture;
+    /** What is played. Both legs read the same buffer, sample for sample. */
+    material: HarnessAudioBuffer;
     startSec: number;
     bufferOffsetSec: number;
     playDurationSec: number;
+    /** Source frames consumed per destination frame; `1` is unstretched. */
+    playbackRate: number;
     /** Absolute destination time the user's fade in reaches full level. */
     fadeInReachesFullAt: number;
     /** Absolute destination time the user's fade out begins. */
@@ -1920,13 +1934,50 @@ const CLIP_DURATION_SEC = 0.4;
 
 const CLIP_FIXTURE: ClipFixture = {
     strip: { ...BASE_TRACK, name: 'Clip', gain: 0.8, devices: [FIXTURE_DEVICES.filter] },
+    material: CLIP_MATERIAL,
     startSec: CLIP_START_SEC,
     bufferOffsetSec: 0.02,
     playDurationSec: CLIP_DURATION_SEC,
+    playbackRate: 1,
     fadeInReachesFullAt: CLIP_START_SEC + 0.06,
     fadeOutBeginsAt: CLIP_START_SEC + CLIP_DURATION_SEC - 0.08,
     clipGain: 0.7,
 };
+
+/**
+ * The same playback, stretched — once each side of unity.
+ *
+ * A stretched clip is its own divergence class, and it is the only one this
+ * file could not see before: `durationSeconds` is destination seconds while
+ * `AudioBufferSourceNode.start`'s third argument is source seconds, and at
+ * rate 1 those are the same number, so every fixture above is green whichever
+ * one a runtime hands over. Hand the wrong one here and the clip sounds for
+ * `duration / rate` — half of its region, or twice it.
+ *
+ * Both directions are fixtured, but only the sped-up one can red at the
+ * rendered-frame level today: too fast falls silent inside the region, where
+ * nothing masks it. Too slow overruns the region, and the clip's own fade out
+ * ramps the gain to zero at the region end — so an over-long half-speed
+ * source is fully masked on its final iteration and the slowed fixture's span
+ * assertions pass even against the pre-fix scheduler. It stays fixtured for
+ * the unmasked failure modes (rate misread, source-time duration misread) and
+ * so a future looped-clip fixture, where non-final iterations get no fade
+ * out, inherits it (see #2217).
+ */
+const SLOWED_CLIP_FIXTURE: ClipFixture = {
+    ...CLIP_FIXTURE,
+    strip: { ...CLIP_FIXTURE.strip, name: 'Half-speed clip' },
+    playbackRate: 0.5,
+};
+
+const SPED_UP_CLIP_FIXTURE: ClipFixture = {
+    ...CLIP_FIXTURE,
+    strip: { ...CLIP_FIXTURE.strip, name: 'Sped-up clip' },
+    material: LONG_CLIP_MATERIAL,
+    playbackRate: 1.5,
+};
+
+const STRETCHED_CLIP_FIXTURES = [SLOWED_CLIP_FIXTURE, SPED_UP_CLIP_FIXTURE];
 
 /**
  * The reference leg: `scheduleOfflineClipSource` called directly, which is what
@@ -1951,11 +2002,11 @@ async function renderClipOffline(fixture: ClipFixture): Promise<LegRender> {
     scheduleOfflineClipSource({
         context: context as unknown as BaseAudioContext,
         destinationNode: strip.inputNode,
-        buffer: CLIP_MATERIAL as unknown as AudioBuffer,
+        buffer: fixture.material as unknown as AudioBuffer,
         startSec: fixture.startSec,
         bufferOffsetSec: fixture.bufferOffsetSec,
         playDuration: fixture.playDurationSec,
-        playbackRate: 1,
+        playbackRate: fixture.playbackRate,
         clipGainValue: fixture.clipGain,
         fadeIn: { userEndSec: fixture.fadeInReachesFullAt },
         fadeOut: { userStartSec: fixture.fadeOutBeginsAt },
@@ -1999,11 +2050,11 @@ async function renderClipThroughContract(fixture: ClipFixture): Promise<LegRende
                 kind: 'schedule-clip',
                 playback: {
                     trackId: FIXTURE_TRACK_ID,
-                    source: { sourceId: 'fixture-take', buffer: CLIP_MATERIAL as unknown as AudioBuffer },
+                    source: { sourceId: 'fixture-take', buffer: fixture.material as unknown as AudioBuffer },
                     startTime: fixture.startSec,
                     sourceOffsetSeconds: fixture.bufferOffsetSec,
                     durationSeconds: fixture.playDurationSec,
-                    playbackRate: 1,
+                    playbackRate: fixture.playbackRate,
                     gain: fixture.clipGain,
                     fade: {
                         fadeIn: { reachesFullAt: fixture.fadeInReachesFullAt },
@@ -2111,5 +2162,74 @@ describe('live/offline null test — a scheduled clip and its fades', () => {
         });
 
         expectNull(await nullTestClip({ fixture: CLIP_FIXTURE }));
+    });
+});
+
+describe('live/offline null test — a stretched clip', () => {
+    it.each(STRETCHED_CLIP_FIXTURES)('nulls $strip.name through the contract-backed backend', async (fixture) => {
+        expectNull(await nullTestClip({ fixture }));
+    });
+
+    /**
+     * The nulls above are only worth their ink if the fixtures occupy the
+     * destination span the contract promised them. Both legs run one body, so
+     * a body that read `durationSeconds` in the source's own time would shorten
+     * or lengthen *both* renders and null anyway — the span is therefore
+     * measured against the rendered frames rather than inferred from a null.
+     *
+     * The window is the last tenth of a second before the clip's end: it is
+     * inside the region for every rate, and it is past where a source-seconds
+     * reading would have stopped a sped-up clip.
+     */
+    it.each(STRETCHED_CLIP_FIXTURES)(
+        'sounds $strip.name for its destination span, not its source span',
+        async (fixture) => {
+            const rendered = await renderClipThroughContract(fixture);
+            const channel = rendered.buffer.getChannelData(0);
+            const endSec = fixture.startSec + fixture.playDurationSec;
+
+            function peakBetween(fromSec: number, toSec: number): number {
+                let peak = 0;
+                for (let frame = Math.round(fromSec * SAMPLE_RATE); frame < Math.round(toSec * SAMPLE_RATE); frame++) {
+                    peak = Math.max(peak, Math.abs(channel[frame] ?? 0));
+                }
+                return peak;
+            }
+
+            const settled = peakBetween(fixture.fadeInReachesFullAt, fixture.fadeInReachesFullAt + 0.05);
+            expect(settled).toBeGreaterThan(0);
+            expect(peakBetween(endSec - 0.1, endSec - 0.05)).toBeGreaterThan(settled * 0.2);
+            // And it stops where the destination span ends. Bounded rather than
+            // zeroed because the strip's filter rings past its last input.
+            expect(peakBetween(endSec + 0.01, RENDER_FRAMES / SAMPLE_RATE)).toBeLessThan(settled * 0.001);
+        }
+    );
+
+    /**
+     * The divergences this fixture exists for. A backend that drops the rate,
+     * or states the duration in the wrong frame of reference, moves which
+     * frames of the material land where — and at rate 1 both misreads are
+     * invisible, which is why they are asked here and not above.
+     */
+    it.each([
+        {
+            name: 'plays the clip at unmodified rate',
+            misread: (fixture: ClipFixture): ClipFixture => ({ ...fixture, playbackRate: 1 }),
+        },
+        {
+            name: "reads the clip's duration in the source's own time",
+            misread: (fixture: ClipFixture): ClipFixture => ({
+                ...fixture,
+                playDurationSec: fixture.playDurationSec * fixture.playbackRate,
+            }),
+        },
+    ])('reds when the contract-backed backend $name', async (divergence) => {
+        expectPerturbedRed({
+            result: await nullTestClip({ fixture: SLOWED_CLIP_FIXTURE, misread: divergence.misread }),
+            band: 'audible',
+            leg: 'stretched clip leg',
+        });
+
+        expectNull(await nullTestClip({ fixture: SLOWED_CLIP_FIXTURE }));
     });
 });

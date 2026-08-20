@@ -885,6 +885,11 @@ export async function scheduleTrackClips({
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
 
                 const iterDurationSec = iterEndTime - iterStartTime;
+                // Destination seconds, like every other quantity in this block:
+                // the whole buffer read at this rate sounds for
+                // `buffer.duration / rate` of the timeline. `scheduleOfflineClipSource`
+                // scales the span back into source seconds for `start()`, so a
+                // ceiling stated here bounds the material that is read.
                 const maxBufferSec = buffer.duration / safeStretchRatio;
                 const availableSec = Math.min(iterDurationSec, maxBufferSec);
 
