@@ -48,6 +48,7 @@ describe('modelStorageWorkerBridge', () => {
 
     afterEach(() => {
         modelStorageWorkerBridge.terminate();
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
 
@@ -69,6 +70,38 @@ describe('modelStorageWorkerBridge', () => {
         const destinationPort = await promise;
         expect(destinationPort).toBeInstanceOf(MessagePort);
         expect(destinationPort).not.toBe(request.destinationPort);
+    });
+
+    it('closes the receiving channel port when the model is not found', async () => {
+        const close = vi.spyOn(MessagePort.prototype, 'close');
+        const promise = modelStorageWorkerBridge.readModel({ family: 'kokoro', modelId: 'missing.onnx' });
+        const request = lastRequest();
+
+        worker().reply({ type: 'read-complete', requestId: request.requestId, found: false });
+
+        await expect(promise).resolves.toBeNull();
+        expect(close).toHaveBeenCalledOnce();
+    });
+
+    it('closes the receiving channel port when the storage worker rejects the read', async () => {
+        const close = vi.spyOn(MessagePort.prototype, 'close');
+        const promise = modelStorageWorkerBridge.readModel({ family: 'kokoro', modelId: 'broken.onnx' });
+        const request = lastRequest();
+
+        worker().reply({ type: 'error', requestId: request.requestId, name: 'Error', message: 'opfs failed' });
+
+        await expect(promise).rejects.toThrow('opfs failed');
+        expect(close).toHaveBeenCalledOnce();
+    });
+
+    it('closes the receiving channel port when the storage worker response is unreadable', async () => {
+        const close = vi.spyOn(MessagePort.prototype, 'close');
+        const promise = modelStorageWorkerBridge.readModel({ family: 'kokoro', modelId: 'unreadable.onnx' });
+
+        worker().onmessageerror?.({} as MessageEvent);
+
+        await expect(promise).rejects.toThrow('Model storage worker returned an unreadable response');
+        expect(close).toHaveBeenCalledOnce();
     });
 
     it('transfers bulk download bytes instead of serializing them into the worker request', async () => {

@@ -9,6 +9,8 @@ import {
 const MODELS_DIRECTORY = 'models';
 const RENDERS_DIRECTORY = 'renders';
 const READ_CHUNK_BYTES = 4 * 1024 * 1024;
+const TEMPORARY_MODEL_PREFIX = '.sourdaw-';
+const TEMPORARY_MODEL_SUFFIX = '.partial';
 
 type SyncAccessHandle = {
     close: () => void;
@@ -54,6 +56,13 @@ type CreateModelStorageRequestHandlerInput = {
 
 function isNotFoundError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'NotFoundError';
+}
+
+function getTemporaryWriteId(name: string): string | null {
+    if (!name.startsWith(TEMPORARY_MODEL_PREFIX) || !name.endsWith(TEMPORARY_MODEL_SUFFIX)) {
+        return null;
+    }
+    return name.slice(TEMPORARY_MODEL_PREFIX.length, -TEMPORARY_MODEL_SUFFIX.length);
 }
 
 function serializeError(error: unknown): { name: string; message: string } {
@@ -222,7 +231,7 @@ export function createModelStorageRequestHandler({
         }
         const root = await getRoot();
         const { directory, fileName } = await resolveModelLocation(root, request, true);
-        const temporaryName = `.sourdaw-${request.writeId}.partial`;
+        const temporaryName = `${TEMPORARY_MODEL_PREFIX}${request.writeId}${TEMPORARY_MODEL_SUFFIX}`;
         const rawFile = await directory.getFileHandle(temporaryName, { create: true });
         let access: SyncAccessHandle | null = null;
         let file: MovableSyncFileHandle;
@@ -340,15 +349,29 @@ export function createModelStorageRequestHandler({
         }
     }
 
-    async function measureDirectory(directory: FileSystemDirectoryHandle): Promise<number> {
+    async function measureDirectory(
+        directory: FileSystemDirectoryHandle,
+        scavengeModelPartials: boolean
+    ): Promise<number> {
         let usedBytes = 0;
-        for await (const [, handle] of directory as AsyncIterable<
+        for await (const [name, handle] of directory as AsyncIterable<
             [string, FileSystemFileHandle | FileSystemDirectoryHandle]
         >) {
             if (handle.kind === 'file') {
+                const temporaryWriteId = scavengeModelPartials ? getTemporaryWriteId(name) : null;
+                if (temporaryWriteId !== null) {
+                    if (!writes.has(temporaryWriteId)) {
+                        await directory.removeEntry(name).catch((error: unknown) => {
+                            if (!isNotFoundError(error)) {
+                                throw error;
+                            }
+                        });
+                    }
+                    continue;
+                }
                 usedBytes += (await handle.getFile()).size;
             } else {
-                usedBytes += await measureDirectory(handle);
+                usedBytes += await measureDirectory(handle, scavengeModelPartials);
             }
         }
         return usedBytes;
@@ -433,7 +456,10 @@ export function createModelStorageRequestHandler({
             let usedBytes = 0;
             for (const name of [MODELS_DIRECTORY, RENDERS_DIRECTORY]) {
                 try {
-                    usedBytes += await measureDirectory(await root.getDirectoryHandle(name, { create: false }));
+                    usedBytes += await measureDirectory(
+                        await root.getDirectoryHandle(name, { create: false }),
+                        name === MODELS_DIRECTORY
+                    );
                 } catch (error) {
                     if (!isNotFoundError(error)) {
                         throw error;

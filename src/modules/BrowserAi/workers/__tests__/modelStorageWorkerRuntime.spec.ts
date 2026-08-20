@@ -77,7 +77,65 @@ describe('modelStorageWorkerRuntime', () => {
         expect(new Uint8Array(transferred?.modelData ?? new ArrayBuffer(0))).toEqual(expectedBytes);
         expect(destinationPostMessage.mock.calls[0]?.[1]).toEqual([transferred?.modelData]);
         expect(responses).toContainEqual({ type: 'read-complete', requestId: 'read-1', found: true });
+        expect(destinationPort.close).toHaveBeenCalledOnce();
         expect(syncAccess.close).toHaveBeenCalledOnce();
+    });
+
+    it('closes the destination port when a model is not found', async () => {
+        const destinationPort = {
+            postMessage: vi.fn(),
+            close: vi.fn(),
+        } as unknown as MessagePort;
+        const responses: ModelStorageWorkerResponse[] = [];
+        const handler = createModelStorageRequestHandler({
+            getRoot: () => Promise.reject(new DOMException('missing', 'NotFoundError')),
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'read-model',
+            requestId: 'read-missing',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            destinationPort,
+        });
+
+        expect(destinationPort.postMessage).not.toHaveBeenCalled();
+        expect(destinationPort.close).toHaveBeenCalledOnce();
+        expect(responses).toContainEqual({ type: 'read-complete', requestId: 'read-missing', found: false });
+    });
+
+    it('posts the read error and closes the destination port when model access fails', async () => {
+        const destinationPort = {
+            postMessage: vi.fn(),
+            close: vi.fn(),
+        } as unknown as MessagePort;
+        const responses: ModelStorageWorkerResponse[] = [];
+        const handler = createModelStorageRequestHandler({
+            getRoot: () => Promise.reject(new Error('opfs failed')),
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'read-model',
+            requestId: 'read-error',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            destinationPort,
+        });
+
+        expect(destinationPort.postMessage).toHaveBeenCalledWith({
+            type: 'model-error',
+            name: 'Error',
+            message: 'opfs failed',
+        });
+        expect(destinationPort.close).toHaveBeenCalledOnce();
+        expect(responses).toContainEqual({
+            type: 'error',
+            requestId: 'read-error',
+            name: 'Error',
+            message: 'opfs failed',
+        });
     });
 
     it('streams writes through an exclusive readwrite handle and publishes the temporary file by move', async () => {
@@ -323,10 +381,8 @@ describe('modelStorageWorkerRuntime', () => {
         writeAccess.write = vi.fn((input) => input.byteLength);
         const readOnlyAccess = readAccess(stored);
         const createSyncAccessHandle = vi.fn().mockResolvedValueOnce(writeAccess).mockResolvedValueOnce(readOnlyAccess);
-        const temporaryFile = {
-            createSyncAccessHandle,
-            move: vi.fn(() => Promise.resolve()),
-        } as unknown as FileSystemFileHandle;
+        const move = vi.fn(() => Promise.resolve());
+        const temporaryFile = { createSyncAccessHandle, move } as unknown as FileSystemFileHandle;
         const removeEntry = vi.fn(() => Promise.resolve());
         const familyDirectory = {
             getFileHandle: vi.fn(() => Promise.resolve(temporaryFile)),
@@ -364,6 +420,8 @@ describe('modelStorageWorkerRuntime', () => {
         await handler({ type: 'commit-model-write', requestId: 'commit-unsafe', writeId: 'write-unsafe' });
 
         expect(removeEntry).toHaveBeenCalledWith('.sourdaw-write-unsafe.partial');
+        expect(move).not.toHaveBeenCalled();
+        expect(responses).not.toContainEqual(expect.objectContaining({ type: 'write-committed' }));
         expect(responses).toContainEqual({
             type: 'error',
             requestId: 'commit-unsafe',
@@ -626,6 +684,88 @@ describe('modelStorageWorkerRuntime', () => {
         expect(responses).toContainEqual({
             type: 'storage-measured',
             requestId: 'measure-1',
+            usedBytes: 120,
+        });
+    });
+
+    it('scavenges orphan model partials while preserving an active write partial', async () => {
+        const activeWriteId = 'write-active';
+        const activeTemporaryName = `.sourdaw-${activeWriteId}.partial`;
+        const orphanTemporaryName = '.sourdaw-write-orphan.partial';
+        const file = (size: number) =>
+            ({
+                kind: 'file',
+                getFile: vi.fn(() => Promise.resolve({ size })),
+            }) as unknown as FileSystemFileHandle;
+        const activeAccess = readAccess(new Uint8Array(0));
+        const activeTemporaryFile = {
+            kind: 'file',
+            createSyncAccessHandle: vi.fn(() => Promise.resolve(activeAccess)),
+            getFile: vi.fn(() => Promise.resolve({ size: 40 })),
+            move: vi.fn(() => Promise.resolve()),
+        } as unknown as FileSystemFileHandle;
+        const removeEntry = vi.fn(() => Promise.resolve());
+        const familyDirectory = {
+            kind: 'directory',
+            getFileHandle: vi.fn((name: string) => {
+                if (name === activeTemporaryName) {
+                    return Promise.resolve(activeTemporaryFile);
+                }
+                return Promise.reject(new Error(`Unexpected file: ${name}`));
+            }),
+            removeEntry,
+            async *[Symbol.asyncIterator]() {
+                yield ['model.onnx', file(100)] as const;
+                yield [orphanTemporaryName, file(30)] as const;
+                yield [activeTemporaryName, activeTemporaryFile] as const;
+            },
+        } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            kind: 'directory',
+            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+            async *[Symbol.asyncIterator]() {
+                yield ['kokoro', familyDirectory] as const;
+            },
+        } as unknown as FileSystemDirectoryHandle;
+        const rendersDirectory = {
+            kind: 'directory',
+            async *[Symbol.asyncIterator]() {
+                yield ['phrase.pcm', file(20)] as const;
+            },
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn((name: string) => {
+                if (name === 'models') {
+                    return Promise.resolve(modelsDirectory);
+                }
+                if (name === 'renders') {
+                    return Promise.resolve(rendersDirectory);
+                }
+                return Promise.reject(new Error(`Unexpected directory: ${name}`));
+            }),
+        } as unknown as FileSystemDirectoryHandle;
+        const responses: ModelStorageWorkerResponse[] = [];
+        const handler = createModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'begin-model-write',
+            requestId: 'begin-active',
+            writeId: activeWriteId,
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        await handler({ type: 'measure-storage', requestId: 'measure-partials' });
+
+        expect(removeEntry).toHaveBeenCalledOnce();
+        expect(removeEntry).toHaveBeenCalledWith(orphanTemporaryName);
+        expect(removeEntry).not.toHaveBeenCalledWith(activeTemporaryName);
+        expect(responses).toContainEqual({
+            type: 'storage-measured',
+            requestId: 'measure-partials',
             usedBytes: 120,
         });
     });
