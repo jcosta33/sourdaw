@@ -1,0 +1,49 @@
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_4566bea6118da6 47,135
+  s_487e9aa1e46063::t_2f9478db705cee 412-428
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_0a8b3dc881a00b 354-361
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_487e9aa1e46063::t_a9fb8e15a03b1f 119-124
+  s_487e9aa1e46063::t_424c0d3133341a 470-472,481,540,542-560,562-563
+  s_487e9aa1e46063::t_e20a329add3d96 381-390
+  s_487e9aa1e46063::t_3abfc8c9396691 478,492
+  s_487e9aa1e46063::t_c23c5964b43a68 516
+  s_487e9aa1e46063::t_ad0de86064f23e 473-477,479-480,482,488-491,502-515,517-519,521-538,541
+  s_487e9aa1e46063::t_ee839e1055b61a 25
+  s_487e9aa1e46063::t_fcb20b5f1cdca3 392-393,395,406,409
+  s_487e9aa1e46063::t_e9e2eb72afed09 483,493,497-501
+  s_487e9aa1e46063::t_32a8d33f2df2ca 7-10,12
+  s_487e9aa1e46063::t_5d4289e24c541b 580,585,589-590,593-595,598-599
+  s_487e9aa1e46063::t_758153c1ba0f27 321-379,396-397,402,410-413,432,440-441,443-445,447-451,453,455-469,484-487,494-496,539,561,564-579,581-584,586-588,591-592,596-597
+  s_487e9aa1e46063::t_1322365bfd602e 380,391,394,398-401,403-405,407-408
+  s_487e9aa1e46063::t_53fd221f371ccd 446,452,454
+  s_487e9aa1e46063::t_afc076ac8aacc9 414-428,431,436,442
+  s_487e9aa1e46063::t_34a8dd6797fa4c 520
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_8598c794e118cb::t_0812624e29603f 6,12,134-140,182-186,228-232,249-255,276-283,329-336,377-455,491-495
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d8628454d050d735e0e0cfb1daf8760b81e41fab",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8598c794e118cb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "15ca1455-5482-4084-88d1-8dd47611278d",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
