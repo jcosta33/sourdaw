@@ -7,6 +7,7 @@ import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
@@ -146,10 +147,10 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
                     ) : null}
 
                     {isAnalyzing ? (
-                        <div className="flex items-center gap-2 pt-4 text-muted-foreground">
+                        <Row gap={2} className="pt-4 text-muted-foreground">
                             <Loader2 className="size-4 animate-spin" />
                             <span>Mentor is thinking...</span>
-                        </div>
+                        </Row>
                     ) : null}
                 </DawDialogSection>
             </DawDialogBody>
