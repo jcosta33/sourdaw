@@ -1,0 +1,20 @@
+tests/e2e/effectPanelsTestId.spec.ts
+  s_24b1bdbc3c31ad::t_b25d4d1c7675a4 1,5,7-15,17-21,26,29,33-37,41-47,51-58,62-67
+  s_24b1bdbc3c31ad::t_55f195d9a8df56 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "717c580045cad7ba50a45e70e51a25c5e730fda3",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
