@@ -1,0 +1,40 @@
+AGENTS.md
+  s_0a3429e31e555d::t_649e686259b570 99-100,103-107
+scripts/__tests__/resourceGuard.spec.ts
+  s_0a3429e31e555d::t_710f7e3f629237 115,121,129-130
+  s_0a3429e31e555d::t_13ef5b53303238 23,69,82-114,116-120,122-128,131-140,205,209,211,215,246,251,263,284,439,448-451
+  s_487e9aa1e46063::t_1c1a9b2bda7428 452
+docs/06-testing.md
+  s_0a3429e31e555d::t_649e686259b570 695-701
+scripts/resourceGuard.ts
+  s_0a3429e31e555d::t_dc3b51cdb22e53 357-360,380,410,412
+  s_0a3429e31e555d::t_8f163d696f4336 891,900,923-931,943,952-957
+  s_0a3429e31e555d::t_9fd0aa76a2b734 5,24-28,36,38,67-68,78,111-112
+  s_0a3429e31e555d::t_403bfb243dc665 113,277-306,308-312,315-356,361-379,381-409,411,413-419,421,423,425-436
+  s_0a3429e31e555d::t_4c598d8bf75e86 667-678,714
+  s_487e9aa1e46063::t_03dce4bdac8145 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "86e3ac9369d7973323e03bcc18e9959e21564a55",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
