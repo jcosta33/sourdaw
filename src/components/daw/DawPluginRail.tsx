@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
+import { Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginRailProps = HTMLAttributes<HTMLElement> & {
@@ -13,15 +14,8 @@ export const DawPluginRail = ({
     className,
     children,
     ...props
-}: DawPluginRailProps): ReactElement => {
-    const Component = as;
-
-    return (
-        <Component
-            className={cn('flex min-h-0 flex-col gap-3', scrollable ? 'overflow-y-auto pr-1' : '', className)}
-            {...props}
-        >
-            {children}
-        </Component>
-    );
-};
+}: DawPluginRailProps): ReactElement => (
+    <Stack as={as} gap={3} className={cn(scrollable ? 'overflow-y-auto pr-1' : '', className)} {...props}>
+        {children}
+    </Stack>
+);
