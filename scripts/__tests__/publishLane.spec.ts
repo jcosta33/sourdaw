@@ -51,7 +51,7 @@ type FakeInput = {
     remoteSha?: string;
     ancestor?: boolean;
     existing?: number;
-    existingBody?: string;
+    existingBody?: unknown;
     issueExists?: boolean;
 };
 
@@ -82,7 +82,13 @@ function fakePort(input: FakeInput = {}) {
         existingOpenPullRequest: () =>
             input.existing === undefined
                 ? undefined
-                : { number: input.existing, body: input.existingBody ?? 'Closes #12' },
+                : {
+                      number: input.existing,
+                      body:
+                          input.existingBody === undefined
+                              ? '### 📌 Related tickets & additional notes\nCloses #12'
+                              : input.existingBody,
+                  },
         createPullRequest: ({ title, body, branch }) => {
             bodies.push(body);
             calls.push(`create:${branch}:${title}:${body.includes('Closes #12') ? 'closes' : 'missing'}`);
@@ -204,9 +210,24 @@ describe('lane publish', () => {
     });
 
     it('preserves Related on a later flagless update', () => {
-        const { port, bodies } = fakePort({ existing: 41, existingBody: 'Related #12' });
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nRelated #12',
+        });
 
         publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain('Related #12');
+        expect(bodies.at(-1)).not.toContain('Closes #12');
+    });
+
+    it('changes a valid existing relationship only when requested', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+        });
+
+        publishLane(12, port, 'relates');
 
         expect(bodies.at(-1)).toContain('Related #12');
         expect(bodies.at(-1)).not.toContain('Closes #12');
@@ -215,7 +236,28 @@ describe('lane publish', () => {
     it('validates existing state before an explicit relationship change', () => {
         const { port, calls } = fakePort({ existing: 41, existingBody: 'None.' });
 
-        expect(() => publishLane(12, port, 'relates')).toThrow(/exactly one relationship/);
+        expect(() => publishLane(12, port, 'relates')).toThrow(/Related tickets/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('validates existing state before a flagless update', () => {
+        const { port, calls } = fakePort({ existing: 41, existingBody: null });
+
+        expect(() => publishLane(12, port)).toThrow(/body is unreadable/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('validates an existing issueless pull request', () => {
+        const { port, calls } = fakePort({
+            trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+            cwd: CLEANUP_LANE,
+            existing: 41,
+            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+        });
+
+        expect(() => publishLane(undefined, port)).toThrow(/issueless pull-request body/);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });

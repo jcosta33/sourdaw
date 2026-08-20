@@ -31,13 +31,16 @@ describe('pull-request contract', () => {
     });
 
     it('recovers one existing issue relationship', () => {
-        expect(issueRelationshipFromBody('Closes #2164', 2164)).toBe('closes');
-        expect(issueRelationshipFromBody('Related #2164', 2164)).toBe('relates');
-        expect(() => issueRelationshipFromBody('Closes #21640', 2164)).toThrow(/exactly one relationship/);
-        expect(() => issueRelationshipFromBody('None.', 2164)).toThrow(/exactly one relationship/);
-        expect(() => issueRelationshipFromBody('Closes #2164\nRelated #2164', 2164)).toThrow(
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(issueRelationshipFromBody(`${prefix}Closes #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Related #2164`, 2164)).toBe('relates');
+        expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody(`${prefix}None.`, 2164)).toThrow(/exactly one relationship/);
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toThrow(
             /exactly one relationship/
         );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {

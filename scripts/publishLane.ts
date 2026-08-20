@@ -36,7 +36,7 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
-export type ExistingPullRequest = { number: number; body: string };
+export type ExistingPullRequest = { number: number; body: unknown };
 
 export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number] [--relates]';
 
@@ -209,10 +209,11 @@ export function publishLane(
         fail(`refusing non-fast-forward push of ${lane.branch}`);
     }
     const existing = port.existingOpenPullRequest(lane.branch);
+    if (existing !== undefined && typeof existing.body !== 'string') {
+        fail('existing pull-request body is unreadable');
+    }
     const existingRelationship =
-        existing !== undefined && laneIssue !== undefined
-            ? issueRelationshipFromBody(existing.body, laneIssue)
-            : undefined;
+        existing === undefined ? undefined : issueRelationshipFromBody(existing.body as string, laneIssue);
     const resolvedRelationship = relationship ?? existingRelationship ?? 'closes';
     const body = composePublishBody(laneIssue, title, resolvedRelationship);
     port.push(lane.path, lane.branch);

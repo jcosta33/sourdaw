@@ -55,12 +55,32 @@ export const NO_RELATED_TICKETS = 'None.';
 
 export type IssueRelationship = 'closes' | 'relates';
 
-export function issueRelationshipFromBody(body: string, issue: number): IssueRelationship {
-    const matches = [...body.matchAll(new RegExp(`^(Closes|Related) #${issue}\\r?$`, 'gm'))];
-    if (matches.length !== 1) {
+export function issueRelationshipFromBody(body: string, issue: number | undefined): IssueRelationship | undefined {
+    const heading = REQUIRED_BODY_HEADINGS.at(-1);
+    const headingIndex = heading === undefined ? -1 : body.lastIndexOf(heading);
+    if (heading === undefined || headingIndex < 0) {
+        fail('pull-request body is missing its Related tickets section');
+    }
+    const lines = body
+        .slice(headingIndex + heading.length)
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+    const relationships = lines.flatMap((line) => {
+        const match = /^(Closes|Related) #([1-9][0-9]*)$/.exec(line);
+        return match === null ? [] : [{ label: match[1], issue: Number(match[2]) }];
+    });
+    if (issue === undefined) {
+        if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {
+            fail('issueless pull-request body must start its Related tickets section with None.');
+        }
+        return undefined;
+    }
+    if (relationships.length !== 1 || relationships[0]?.issue !== issue) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
-    return matches[0]?.[1] === 'Closes' ? 'closes' : 'relates';
+    return relationships[0].label === 'Closes' ? 'closes' : 'relates';
 }
 
 export function composePublishBody(
