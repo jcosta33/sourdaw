@@ -1,0 +1,19 @@
+tests/e2e/deviceAndModulator.spec.ts
+  s_24b1bdbc3c31ad::t_c1d5ade0e65337 78-80,82-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "145c9a03b44d14a2ec01a9402a21a7058f1eca70",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
