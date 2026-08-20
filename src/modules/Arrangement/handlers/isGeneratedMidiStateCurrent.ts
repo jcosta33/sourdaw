@@ -7,7 +7,7 @@ import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { getEnvelope } from '../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../stores/takeLaneStore';
-import { warpStates } from '../stores/warpStates';
+import { hasNonDefaultWarpState } from '../stores/warpStates';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 type IsGeneratedMidiStateCurrentInput = {
@@ -19,7 +19,7 @@ type IsGeneratedMidiStateCurrentInput = {
 
 function hasClipSatelliteState(clipIds: readonly string[]): boolean {
     const clipIdSet = new Set(clipIds);
-    if (clipIds.some((clipId) => getEnvelope(clipId) !== undefined || warpStates.has(clipId))) {
+    if (clipIds.some((clipId) => getEnvelope(clipId) !== undefined || hasNonDefaultWarpState(clipId))) {
         return true;
     }
     return getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId));
