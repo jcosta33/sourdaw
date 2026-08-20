@@ -1,0 +1,25 @@
+scripts/publishLane.ts
+  s_0a3429e31e555d::t_c0acf5abc3fa4b 225-227
+scripts/prContract.ts
+  s_0a3429e31e555d::t_6b749b23a9d23d 65,116,128
+  s_0a3429e31e555d::t_3fffa273984638 92-94
+  s_0a3429e31e555d::t_c0acf5abc3fa4b 59-61,64,66-78,82-83,85-91,95,100-104,119-125,134,137-145,148-149
+scripts/__tests__/prContract.spec.ts
+  s_0a3429e31e555d::t_c0acf5abc3fa4b 38-43,64-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c6bdac984d41f2ffe0b4166299975e8011adb13d",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
