@@ -1,0 +1,28 @@
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_a40848e8f8cca9::t_36782da28053c0 157-162,297-315
+  s_a40848e8f8cca9::t_8512c0c36b1e65 3-4,147-156,163-171
+  s_a40848e8f8cca9::t_4ba4a3f1f42b56 172
+  s_a40848e8f8cca9::t_7012b75a95ad98 316
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_a40848e8f8cca9::t_f5ae737b2beb64 205-219
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_a40848e8f8cca9::t_19d18abc59d9de 22,31-34,140-152,159,163-165,257,261-263,286,290-292
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_a40848e8f8cca9::t_19d18abc59d9de 26,37-39,123-124,159-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ee6bed335bb78225aa127b7fe8616c91d8ccbc27",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
