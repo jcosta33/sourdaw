@@ -130,6 +130,30 @@ function diffSingerRequest(requestId: string): Extract<WorkerRequest, { type: 'r
 }
 
 describe('inferenceWorkerBridge — ONNX session lifecycle', () => {
+    it('hands a storage-worker model port directly to the ONNX worker as a transfer', async () => {
+        const modelDataPort = new MessageChannel().port1;
+        const promise = inferenceWorkerBridge.loadOnnxSession({ modelId: 'kokoro-82m-q8', modelDataPort });
+        await flush();
+
+        const worker = onnxWorker();
+        const [request, transfer] = lastCall(worker);
+        expect(request).toMatchObject({
+            type: 'create-session-from-model-port',
+            modelId: 'kokoro-82m-q8',
+            modelDataPort,
+            options: {},
+        });
+        expect(transfer).toEqual([modelDataPort]);
+
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'kokoro-82m-q8',
+            executionProviders: ['wasm'],
+        });
+        await expect(promise).resolves.toEqual(['wasm']);
+    });
+
     it('spawns one ONNX worker and posts create-session with the model buffer as a transfer', async () => {
         const modelData = new ArrayBuffer(8);
         const promise = inferenceWorkerBridge.loadOnnxSession({ modelId: 'kokoro-82m-q8', modelData });

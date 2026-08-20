@@ -30,6 +30,14 @@ export type WorkerRequest =
           options: SessionOptions;
       }
     | {
+          type: 'create-session-from-model-port';
+          /** UUID used to correlate with the session-created response */
+          requestId: string;
+          modelId: string;
+          modelDataPort: MessagePort;
+          options: SessionOptions;
+      }
+    | {
           type: 'run-inference';
           modelId: string;
           feeds: Record<string, TensorData>;

@@ -1,84 +1,61 @@
-/**
- * Regression tests for the model download manager.
- *
- * Covers the memory / main-thread and cancellation bugs:
- *  - A single BroadcastChannel is held for the whole download, not constructed
- *    and closed per progress event.
- *  - Raw (non-ZIP, unverified) downloads stream chunks straight to an OPFS
- *    writable instead of accumulating every chunk in memory.
- *  - High-frequency progress updates are throttled (~10 Hz).
- *  - An AbortSignal interrupts the retry backoff: a cancelled download stops and
- *    does not mark the model 'error' after the user moved on.
- */
-
-import { createHash } from 'node:crypto';
-
-import { zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { extractGuardedZip, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
+import { ZipArchiveError } from '#/infra/archive/extractGuardedZip';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
+import { type ModelStorageWriteStage } from '../../models/ModelStorageWorkerProtocol';
 import { downloadModel } from '../modelDownloadManager';
+import { type ModelStoragePort } from '../modelStorageWorkerBridge';
 
-// --- OPFS writable capture --------------------------------------------------
+type Deferred<T> = {
+    promise: Promise<T>;
+    reject: (reason: unknown) => void;
+    resolve: (value: T) => void;
+};
 
-type WriteCall = number; // byteLength of each streamed chunk
-let lastWritable: { writes: WriteCall[]; closed: boolean; aborted: boolean } | null = null;
-let pendingWrite: { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void } | null = null;
-let pendingStorageEstimate: { promise: Promise<StorageEstimate>; resolve: () => void } | null = null;
-let removedEntries = 0;
-
-function installStorage(): void {
-    function makeWritable(): FileSystemWritableFileStream {
-        const state = { writes: [] as WriteCall[], closed: false, aborted: false };
-        lastWritable = state;
-        return {
-            write(chunk: ArrayBufferView | ArrayBuffer): Promise<void> {
-                state.writes.push('byteLength' in chunk ? chunk.byteLength : (chunk as ArrayBuffer).byteLength);
-                return pendingWrite?.promise ?? Promise.resolve();
-            },
-            close(): Promise<void> {
-                state.closed = true;
-                return Promise.resolve();
-            },
-            abort(): Promise<void> {
-                state.aborted = true;
-                pendingWrite?.reject(new DOMException('Aborted', 'AbortError'));
-                return Promise.resolve();
-            },
-        } as unknown as FileSystemWritableFileStream;
-    }
-
-    const fileHandle = {
-        kind: 'file',
-        createWritable: vi.fn(() => Promise.resolve(makeWritable())),
-    };
-    const leafDir = {
-        kind: 'directory',
-        getDirectoryHandle: vi.fn(() => Promise.resolve(leafDir)),
-        getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
-        removeEntry: vi.fn(() => {
-            removedEntries += 1;
-            return Promise.resolve();
-        }),
-        // Empty directory — getStorageStatus iterates but measures nothing here.
-        [Symbol.asyncIterator](): AsyncIterator<unknown> {
-            return { next: () => Promise.resolve({ done: true, value: undefined }) };
-        },
-    };
-    Object.defineProperty(globalThis.navigator, 'storage', {
-        configurable: true,
-        value: {
-            getDirectory: vi.fn(() => Promise.resolve(leafDir)),
-            estimate: vi.fn(() => pendingStorageEstimate?.promise ?? Promise.resolve({ quota: 1e12, usage: 0 })),
-            persisted: vi.fn(() => Promise.resolve(false)),
-            persist: vi.fn(() => Promise.resolve(true)),
-        },
+function deferred<T>(): Deferred<T> {
+    let resolvePromise: ((value: T) => void) | undefined;
+    let rejectPromise: ((reason: unknown) => void) | undefined;
+    const promise = new Promise<T>((resolve, reject) => {
+        resolvePromise = resolve;
+        rejectPromise = reject;
     });
+    return {
+        promise,
+        resolve(value) {
+            resolvePromise?.(value);
+        },
+        reject(reason) {
+            rejectPromise?.(reason);
+        },
+    };
 }
 
-// --- BroadcastChannel capture ----------------------------------------------
+function streamingResponse(chunks: Uint8Array[], totalBytes: number, cancel = vi.fn()): Response {
+    let index = 0;
+    return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: (name: string) => (name === 'content-length' ? String(totalBytes) : null) },
+        body: {
+            getReader() {
+                return {
+                    cancel,
+                    read(): Promise<{ done: boolean; value?: Uint8Array }> {
+                        if (index < chunks.length) {
+                            const value = chunks[index];
+                            index += 1;
+                            return Promise.resolve({ done: false, value });
+                        }
+                        return Promise.resolve({ done: true });
+                    },
+                };
+            },
+        },
+    } as unknown as Response;
+}
 
 let channelConstructions = 0;
 let openChannels = 0;
@@ -94,114 +71,28 @@ class FakeBroadcastChannel {
     }
 }
 
-// --- guarded ZIP worker ----------------------------------------------------
+const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), setWriters: vi.fn(), warn: vi.fn() };
+const deleteModel = vi.fn<(input: { family: string; modelId: string }) => Promise<void>>();
+const getStorageStatus = vi.fn(() =>
+    Promise.resolve({ usedBytes: 0, limitBytes: 2 * 1024 * 1024 * 1024, persisted: true, availableBytes: 1e12 })
+);
+const requestPersistentStorage = vi.fn(() => Promise.resolve(true));
+const beginModelWrite = vi.fn<ModelStoragePort['beginModelWrite']>();
+const writeModelChunk = vi.fn<ModelStoragePort['writeModelChunk']>();
+const commitModelWrite = vi.fn<ModelStoragePort['commitModelWrite']>();
+const abortModelWrite = vi.fn<ModelStoragePort['abortModelWrite']>();
 
-type GuardedZipWorkerRequest = { bytes: ArrayBuffer; suffix: string };
-type GuardedZipWorkerResponse =
-    | { type: 'success'; path: string; data: ArrayBuffer }
-    | {
-          type: 'error';
-          code: 'invalid-archive';
-          message: string;
-      };
-
-class FakeGuardedZipWorker {
-    static instances: FakeGuardedZipWorker[] = [];
-    static holdResponses = false;
-    onmessage: ((event: MessageEvent<GuardedZipWorkerResponse>) => void) | null = null;
-    onerror: ((event: ErrorEvent) => void) | null = null;
-    onmessageerror: ((event: MessageEvent) => void) | null = null;
-    postMessage = vi.fn((request: GuardedZipWorkerRequest) => {
-        if (FakeGuardedZipWorker.holdResponses) {
-            return;
-        }
-        queueMicrotask(() => {
-            try {
-                let selectedPath: string | undefined;
-                const extracted = extractGuardedZip({
-                    bytes: new Uint8Array(request.bytes),
-                    validateInventory: (paths) => {
-                        const matches = paths.filter((path) => path.endsWith(request.suffix));
-                        if (matches.length !== 1) {
-                            throw new Error(`Expected exactly one ${request.suffix} entry`);
-                        }
-                        selectedPath = matches[0];
-                    },
-                    include: (path) => path === selectedPath,
-                });
-                if (!selectedPath) {
-                    throw new Error('Missing selected ZIP entry');
-                }
-                const data = extracted[selectedPath];
-                if (!data) {
-                    throw new Error('Missing extracted ZIP entry');
-                }
-                this.onmessage?.({
-                    data: { type: 'success', path: selectedPath, data: data.slice().buffer },
-                } as MessageEvent<GuardedZipWorkerResponse>);
-            } catch (error) {
-                this.onmessage?.({
-                    data: {
-                        type: 'error',
-                        code: 'invalid-archive',
-                        message: error instanceof Error ? error.message : String(error),
-                    },
-                } as MessageEvent<GuardedZipWorkerResponse>);
-            }
-        });
-    });
-    terminate = vi.fn();
-
-    constructor() {
-        FakeGuardedZipWorker.instances.push(this);
-    }
-}
-
-// --- fetch helpers ----------------------------------------------------------
-
-function streamingResponse(chunks: Uint8Array[], totalBytes: number, cancel = vi.fn()): Response {
-    let i = 0;
-    return {
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        headers: { get: (h: string) => (h === 'content-length' ? String(totalBytes) : null) },
-        body: {
-            getReader() {
-                return {
-                    cancel,
-                    read(): Promise<{ done: boolean; value?: Uint8Array }> {
-                        if (i < chunks.length) {
-                            return Promise.resolve({ done: false, value: chunks[i++] });
-                        }
-                        return Promise.resolve({ done: true, value: undefined });
-                    },
-                };
-            },
-        },
-    } as unknown as Response;
-}
-
-// --- setup / teardown -------------------------------------------------------
-
-beforeEach(() => {
-    channelConstructions = 0;
-    openChannels = 0;
-    lastWritable = null;
-    pendingWrite = null;
-    pendingStorageEstimate = null;
-    removedEntries = 0;
-    FakeGuardedZipWorker.instances = [];
-    FakeGuardedZipWorker.holdResponses = false;
-    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
-    vi.stubGlobal('Worker', FakeGuardedZipWorker);
-    installStorage();
-});
-
-afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-});
+const modelStorageWorkerBridge: ModelStoragePort = {
+    abortModelWrite,
+    beginModelWrite,
+    checkModel: vi.fn(),
+    commitModelWrite,
+    deleteModel: vi.fn(),
+    measureStorage: vi.fn(),
+    readModel: vi.fn(),
+    verifyModel: vi.fn(),
+    writeModelChunk,
+};
 
 const baseSpec = {
     modelId: 'violin-1',
@@ -210,383 +101,327 @@ const baseSpec = {
     sizeBytes: 30,
 };
 
-describe('downloadModel — streaming + single channel', () => {
-    it('streams each chunk straight to the OPFS writable for a raw .onnx download', async () => {
-        const chunks = [new Uint8Array(10), new Uint8Array(10), new Uint8Array(10)];
+beforeEach(() => {
+    channelConstructions = 0;
+    openChannels = 0;
+    vi.clearAllMocks();
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    beginModelWrite.mockResolvedValue('write-1');
+    writeModelChunk.mockImplementation(({ chunk }) => Promise.resolve(chunk.byteLength));
+    commitModelWrite.mockResolvedValue({ storedBytes: baseSpec.sizeBytes, extractedPath: null });
+    abortModelWrite.mockResolvedValue(undefined);
+    deleteModel.mockResolvedValue(undefined);
+    getStorageStatus.mockResolvedValue({
+        usedBytes: 0,
+        limitBytes: 2 * 1024 * 1024 * 1024,
+        persisted: true,
+        availableBytes: 1e12,
+    });
+    requestPersistentStorage.mockResolvedValue(true);
+    injectDependencies(downloadModel, {
+        logger,
+        deleteModel,
+        getStorageStatus,
+        modelStorageWorkerBridge,
+        requestPersistentStorage,
+    });
+});
+
+afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+});
+
+describe('downloadModel storage worker stream', () => {
+    it('keeps one network chunk in flight and transfers every chunk to the worker', async () => {
+        const firstWrite = deferred<number>();
+        let writes = 0;
+        writeModelChunk.mockImplementation(({ chunk }) => {
+            writes += 1;
+            return writes === 1 ? firstWrite.promise : Promise.resolve(chunk.byteLength);
+        });
+        const read = vi.fn();
+        const response = streamingResponse([new Uint8Array(10), new Uint8Array(10), new Uint8Array(10)], 30);
+        const originalReader = response.body?.getReader();
+        if (!originalReader) {
+            throw new Error('Expected a response reader');
+        }
+        read.mockImplementation(() => originalReader.read());
+        Object.defineProperty(response.body, 'getReader', { value: () => ({ ...originalReader, read }) });
         vi.stubGlobal(
             'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse(chunks, 30)))
+            vi.fn(() => Promise.resolve(response))
         );
 
-        await downloadModel({ spec: baseSpec });
+        const promise = downloadModel({ spec: baseSpec });
+        await vi.waitFor(() => expect(writeModelChunk).toHaveBeenCalledTimes(1));
+        expect(read).toHaveBeenCalledTimes(1);
+        firstWrite.resolve(10);
+        await promise;
 
-        expect(lastWritable).not.toBeNull();
-        // Each network chunk was written to OPFS as it arrived — not buffered and
-        // written once at the end.
-        expect(lastWritable?.writes).toEqual([10, 10, 10]);
-        expect(lastWritable?.closed).toBe(true);
+        expect(writeModelChunk.mock.calls.map(([input]) => input.chunk.byteLength)).toEqual([10, 10, 10]);
+        expect(beginModelWrite).toHaveBeenCalledWith({
+            family: 'ddsp',
+            modelId: 'violin-1',
+            expectedSizeBytes: 30,
+            expectedSha256: undefined,
+            archive: false,
+        });
+        expect(commitModelWrite).toHaveBeenCalledOnce();
+        expect(abortModelWrite).not.toHaveBeenCalled();
     });
 
-    it('rejects and discards a streamed artifact whose byte count does not match its manifest', async () => {
-        const bytes = new Uint8Array(3);
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)))
-        );
-
-        await expect(downloadModel({ spec: { ...baseSpec, sizeBytes: bytes.length + 1 } })).rejects.toThrow(
-            'Size check failed'
-        );
-
-        expect(lastWritable?.aborted).toBe(true);
-        expect(lastWritable?.closed).toBe(false);
-    });
-
-    it('constructs exactly one BroadcastChannel for the whole download and closes it', async () => {
-        const chunks = Array.from({ length: 20 }, () => new Uint8Array(10));
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse(chunks, 200)))
-        );
-
-        await downloadModel({ spec: { ...baseSpec, sizeBytes: 200 } });
-
-        // One channel for the entire download (the old code built+closed one per chunk).
-        expect(channelConstructions).toBe(1);
-        // ...and it was closed (no leak).
-        expect(openChannels).toBe(0);
-    });
-
-    it('throttles in-loop downloading progress to ~10 Hz', async () => {
-        // 50 chunks delivered effectively instantly — without throttling this would
-        // emit ~50 'downloading' events. At 10 Hz from a single timestamp window it
-        // emits far fewer.
+    it('keeps one BroadcastChannel for progress and closes it after completion', async () => {
         const chunks = Array.from({ length: 50 }, () => new Uint8Array(4));
         vi.stubGlobal(
             'fetch',
             vi.fn(() => Promise.resolve(streamingResponse(chunks, 200)))
         );
-
         const downloadingEvents: number[] = [];
+
         await downloadModel({
             spec: { ...baseSpec, sizeBytes: 200 },
-            onProgress: (p: ModelDownloadProgressPayload) => {
-                if (p.stage === 'downloading') {
-                    downloadingEvents.push(p.progress);
+            onProgress: (payload: ModelDownloadProgressPayload) => {
+                if (payload.stage === 'downloading') {
+                    downloadingEvents.push(payload.progress);
                 }
             },
         });
 
-        // 50 chunks would be 50 events un-throttled; throttling collapses the burst.
-        expect(downloadingEvents.length).toBeLessThan(50);
-    });
-});
-
-describe('downloadModel — cancellation', () => {
-    it('interrupts the retry backoff and does not mark the model error after abort', async () => {
-        const controller = new AbortController();
-        // fetch always fails, so the manager enters its exponential backoff between
-        // attempts. We abort during the first backoff window.
-        const fetchMock = vi.fn((_url: string, init?: { signal?: AbortSignal }) => {
-            if (init?.signal?.aborted) {
-                return Promise.reject(new DOMException('Aborted', 'AbortError'));
-            }
-            return Promise.reject(new Error('network down'));
-        });
-        vi.stubGlobal('fetch', fetchMock);
-
-        const errorEvents: string[] = [];
-        const promise: Promise<void> = downloadModel({
-            spec: baseSpec,
-            signal: controller.signal,
-            onProgress: (p: ModelDownloadProgressPayload) => {
-                if (p.stage === 'error') {
-                    errorEvents.push(p.stage);
-                }
-            },
-        });
-
-        // Let the first attempt fail and enter the 1000ms backoff, then abort.
-        await Promise.resolve();
-        await Promise.resolve();
-        controller.abort();
-
-        await expect(promise).rejects.toThrow();
-
-        // The download was cancelled, not failed: no 'error' stage emitted, and the
-        // channel was still cleaned up.
-        expect(errorEvents).toEqual([]);
+        expect(channelConstructions).toBe(1);
         expect(openChannels).toBe(0);
+        expect(downloadingEvents.length).toBeLessThan(chunks.length);
     });
 
-    it('passes the AbortSignal through to fetch', async () => {
+    it('passes the caller AbortSignal through to fetch', async () => {
         const controller = new AbortController();
-        const fetchMock = vi.fn((_url: string, _init?: { signal?: AbortSignal }) =>
-            Promise.resolve(streamingResponse([new Uint8Array(30)], 30))
-        );
+        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)));
         vi.stubGlobal('fetch', fetchMock);
 
         await downloadModel({ spec: baseSpec, signal: controller.signal });
 
-        const init = fetchMock.mock.calls[0]?.[1];
-        expect(init?.signal).toBe(controller.signal);
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { signal: controller.signal });
     });
 
-    it('terminates in-flight archive extraction and publishes no model after abort', async () => {
-        FakeGuardedZipWorker.holdResponses = true;
-        const controller = new AbortController();
-        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+    it('passes exact release verification and archive extraction to the storage worker', async () => {
+        const bytes = new Uint8Array([1, 2, 3, 4]);
         vi.stubGlobal(
             'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.byteLength)))
         );
-
+        commitModelWrite.mockImplementation(({ onProgress }) => {
+            for (const stage of ['verifying', 'extracting', 'storing'] satisfies ModelStorageWriteStage[]) {
+                onProgress?.(stage);
+            }
+            return Promise.resolve({ storedBytes: 64, extractedPath: 'package/model.onnx' });
+        });
         const stages: string[] = [];
-        const promise = downloadModel({
-            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
-            signal: controller.signal,
-            onProgress: (payload) => stages.push(payload.stage),
-        });
-
-        await vi.waitFor(() => expect(FakeGuardedZipWorker.instances).toHaveLength(1));
-        controller.abort();
-
-        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-        expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
-        expect(lastWritable).toBeNull();
-        expect(stages).not.toContain('complete');
-    });
-
-    it('aborts a pending final OPFS write without publishing the model', async () => {
-        let resolveWrite: (() => void) | undefined;
-        let rejectWrite: ((error: unknown) => void) | undefined;
-        pendingWrite = {
-            promise: new Promise<void>((resolve, reject) => {
-                resolveWrite = resolve;
-                rejectWrite = reject;
-            }),
-            resolve: () => resolveWrite?.(),
-            reject: (error) => rejectWrite?.(error),
-        };
-        const controller = new AbortController();
-        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
-        );
-        const stages: string[] = [];
-        const promise = downloadModel({
-            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
-            signal: controller.signal,
-            onProgress: (payload) => stages.push(payload.stage),
-        });
-
-        await vi.waitFor(() => expect(lastWritable?.writes).toEqual([4]));
-        controller.abort();
-
-        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-        expect(lastWritable?.aborted).toBe(true);
-        expect(lastWritable?.closed).toBe(false);
-        expect(stages).not.toContain('complete');
-    });
-
-    it('aborts a pending streamed write when cancellation arrives', async () => {
-        let resolveWrite: (() => void) | undefined;
-        let rejectWrite: ((error: unknown) => void) | undefined;
-        pendingWrite = {
-            promise: new Promise<void>((resolve, reject) => {
-                resolveWrite = resolve;
-                rejectWrite = reject;
-            }),
-            resolve: () => resolveWrite?.(),
-            reject: (error) => rejectWrite?.(error),
-        };
-        const controller = new AbortController();
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
-        );
-
-        const promise = downloadModel({ spec: baseSpec, signal: controller.signal });
-        await vi.waitFor(() => expect(lastWritable?.writes).toEqual([30]));
-        controller.abort();
-
-        await vi.waitFor(() => expect(lastWritable?.aborted).toBe(true));
-        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-        expect(lastWritable?.closed).toBe(false);
-    });
-
-    it('removes a committed model when cancellation arrives during the final storage check', async () => {
-        let resolveEstimate: (() => void) | undefined;
-        pendingStorageEstimate = {
-            promise: new Promise<StorageEstimate>((resolve) => {
-                resolveEstimate = () => resolve({ quota: 1e12, usage: 0 });
-            }),
-            resolve: () => resolveEstimate?.(),
-        };
-        const controller = new AbortController();
-        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
-        );
-        const stages: string[] = [];
-        const promise = downloadModel({
-            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
-            signal: controller.signal,
-            onProgress: (payload) => stages.push(payload.stage),
-        });
-
-        await vi.waitFor(() => expect(lastWritable?.closed).toBe(true));
-        controller.abort();
-        pendingStorageEstimate.resolve();
-
-        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-        expect(removedEntries).toBe(1);
-        expect(stages).not.toContain('complete');
-    });
-});
-
-describe('downloadModel — buffered path (sha256 verification + ZIP extraction)', () => {
-    it('stops before concatenation and verification when the final download progress callback cancels', async () => {
-        const controller = new AbortController();
-        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
-        );
-        const stages: string[] = [];
-
-        const promise = downloadModel({
-            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
-            signal: controller.signal,
-            onProgress: (payload) => {
-                stages.push(payload.stage);
-                if (payload.stage === 'downloading') {
-                    controller.abort();
-                }
-            },
-        });
-
-        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-        expect(stages).not.toContain('verifying');
-        expect(stages).not.toContain('extracting');
-        expect(FakeGuardedZipWorker.instances).toEqual([]);
-    });
-
-    it('verifies a matching sha256 and writes the fully-buffered data via writeModel', async () => {
-        const bytes = new Uint8Array([1, 2, 3, 4, 5]);
-        const sha256 = createHash('sha256').update(bytes).digest('hex');
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)))
-        );
-
-        const stages: string[] = [];
-        await downloadModel({
-            spec: { ...baseSpec, sizeBytes: bytes.length, sha256 },
-            onProgress: (p: ModelDownloadProgressPayload) => stages.push(p.stage),
-        });
-
-        // Buffered path writes once, through writeModel — not the streaming writable.
-        expect(lastWritable?.writes).toEqual([bytes.length]);
-        expect(lastWritable?.closed).toBe(true);
-        expect(stages).toContain('verifying');
-        expect(stages).toContain('complete');
-        expect(stages).not.toContain('extracting');
-    });
-
-    it('rejects a verified artifact whose byte count does not match its manifest', async () => {
-        vi.useFakeTimers();
-        const bytes = new Uint8Array([1, 2, 3]);
-        const sha256 = createHash('sha256').update(bytes).digest('hex');
-        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)));
-        vi.stubGlobal('fetch', fetchMock);
-
-        try {
-            const promise = downloadModel({
-                spec: { ...baseSpec, sizeBytes: bytes.length + 1, sha256 },
-            });
-            const errorPromise: Promise<unknown> = promise.catch((error: unknown) => error);
-            await vi.runAllTimersAsync();
-            const error = await errorPromise;
-
-            expect(error).toBeInstanceOf(Error);
-            expect(String(error)).toContain('Size check failed');
-            expect(fetchMock).toHaveBeenCalledTimes(3);
-            expect(lastWritable).toBeNull();
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-
-    it('retries and ultimately fails when the sha256 does not match', async () => {
-        const bytes = new Uint8Array([9, 9, 9]);
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)))
-        );
-
-        const errorEvents: ModelDownloadProgressPayload[] = [];
-        const promise = downloadModel({
-            spec: { ...baseSpec, sizeBytes: bytes.length, sha256: 'deadbeefdeadbeef' },
-            onProgress: (p: ModelDownloadProgressPayload) => {
-                if (p.stage === 'error') {
-                    errorEvents.push(p);
-                }
-            },
-        });
-
-        // Real exponential backoff between the 3 attempts (~1s + ~2s) — no fake
-        // timers here since the sha256 digest is a genuine async WebCrypto call.
-        await expect(promise).rejects.toThrow(/Failed to download/);
-        expect(errorEvents).toHaveLength(1);
-        expect(errorEvents[0]?.error).toContain('Integrity check failed');
-    }, 10_000);
-
-    it('extracts the .onnx entry from a .zip package and stores only its bytes', async () => {
-        const onnxBytes = new Uint8Array([10, 20, 30, 40]);
-        const zipped = zipSync({ 'model/weights.onnx': onnxBytes });
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
-        );
-
-        const stages: string[] = [];
-        await downloadModel({
-            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
-            onProgress: (p: ModelDownloadProgressPayload) => stages.push(p.stage),
-        });
-
-        expect(stages).toContain('extracting');
-        expect(stages).toContain('complete');
-        // Only the extracted .onnx bytes reach OPFS — not the whole ZIP.
-        expect(lastWritable?.writes).toEqual([onnxBytes.length]);
-        expect(FakeGuardedZipWorker.instances).toHaveLength(1);
-        expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
-    });
-
-    it('recognizes container pathnames regardless of URL query, fragment, or extension case', async () => {
-        const onnxBytes = new Uint8Array([10, 20, 30, 40]);
-        const zipped = zipSync({ 'model/weights.onnx': onnxBytes });
-        vi.stubGlobal(
-            'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
-        );
 
         await downloadModel({
             spec: {
                 ...baseSpec,
                 url: 'https://cdn.example/violin-1.ZIP?download=1#model',
-                sizeBytes: zipped.length,
+                sizeBytes: bytes.byteLength,
+                sha256: 'verified',
             },
+            onProgress: (payload: ModelDownloadProgressPayload) => stages.push(payload.stage),
         });
 
-        expect(FakeGuardedZipWorker.instances).toHaveLength(1);
-        expect(lastWritable?.writes).toEqual([onnxBytes.length]);
+        expect(beginModelWrite).toHaveBeenCalledWith({
+            family: 'ddsp',
+            modelId: 'violin-1',
+            expectedSizeBytes: bytes.byteLength,
+            expectedSha256: 'verified',
+            archive: true,
+        });
+        expect(stages).toEqual(expect.arrayContaining(['verifying', 'extracting', 'storing', 'complete']));
+        expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('package/model.onnx'));
     });
 
-    it('cancels the reader before buffering a declared oversized archive', async () => {
+    it('aborts every partial worker write when the exact byte count fails across retries', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(3)], 3)))
+        );
+
+        const promise = downloadModel({ spec: { ...baseSpec, sizeBytes: 4 } });
+        const errorPromise = promise.catch((error: unknown) => error);
+        await vi.runAllTimersAsync();
+
+        expect(String(await errorPromise)).toContain('Size check failed');
+        expect(beginModelWrite).toHaveBeenCalledTimes(3);
+        expect(abortModelWrite).toHaveBeenCalledTimes(3);
+        expect(commitModelWrite).not.toHaveBeenCalled();
+    });
+
+    it('aborts every partial worker write when an OPFS chunk write fails', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+        writeModelChunk.mockRejectedValue(new Error('write failed'));
+
+        const errorPromise = downloadModel({ spec: baseSpec }).catch((error: unknown) => error);
+        await vi.runAllTimersAsync();
+
+        expect(String(await errorPromise)).toContain('write failed');
+        expect(beginModelWrite).toHaveBeenCalledTimes(3);
+        expect(abortModelWrite).toHaveBeenCalledTimes(3);
+        expect(commitModelWrite).not.toHaveBeenCalled();
+    });
+
+    it('retries transient commit failures and emits one terminal error', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+        commitModelWrite.mockRejectedValue(new Error('integrity failed'));
+        const errors: ModelDownloadProgressPayload[] = [];
+
+        const promise = downloadModel({
+            spec: baseSpec,
+            onProgress: (payload: ModelDownloadProgressPayload) => {
+                if (payload.stage === 'error') {
+                    errors.push(payload);
+                }
+            },
+        });
+        const errorPromise = promise.catch((error: unknown) => error);
+        await vi.runAllTimersAsync();
+
+        expect(String(await errorPromise)).toContain('Failed to download');
+        expect(commitModelWrite).toHaveBeenCalledTimes(3);
+        expect(abortModelWrite).toHaveBeenCalledTimes(3);
+        expect(errors).toHaveLength(1);
+    });
+
+    it('requests persistent storage and warns when the owned cache is over quota', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+        getStorageStatus.mockResolvedValue({
+            usedBytes: 11,
+            limitBytes: 10,
+            persisted: false,
+            availableBytes: 100,
+        });
+
+        await downloadModel({ spec: baseSpec });
+
+        expect(requestPersistentStorage).toHaveBeenCalledOnce();
+        expect(logger.warn).toHaveBeenCalledWith('[ModelDownload] Storage limit exceeded — LRU eviction needed');
+    });
+});
+
+describe('downloadModel cancellation and cleanup', () => {
+    it('interrupts retry backoff without publishing an error stage', async () => {
+        const controller = new AbortController();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.reject(new Error('network down')))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: baseSpec,
+            signal: controller.signal,
+            onProgress: (payload: ModelDownloadProgressPayload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('network down')));
+        controller.abort();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(stages).not.toContain('error');
+        expect(openChannels).toBe(0);
+    });
+
+    it('aborts an in-flight worker write and publishes no completed model', async () => {
+        const controller = new AbortController();
+        const pendingWrite = deferred<number>();
+        writeModelChunk.mockReturnValue(pendingWrite.promise);
+        abortModelWrite.mockImplementation(() => {
+            pendingWrite.reject(new DOMException('Aborted', 'AbortError'));
+            return Promise.resolve();
+        });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: baseSpec,
+            signal: controller.signal,
+            onProgress: (payload: ModelDownloadProgressPayload) => stages.push(payload.stage),
+        });
+        await vi.waitFor(() => expect(writeModelChunk).toHaveBeenCalledOnce());
+
+        controller.abort();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(abortModelWrite).toHaveBeenCalledWith('write-1');
+        expect(deleteModel).toHaveBeenCalledWith({ family: 'ddsp', modelId: 'violin-1' });
+        expect(stages).not.toContain('complete');
+    });
+
+    it('stops before commit when the final download progress callback cancels', async () => {
+        const controller = new AbortController();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+        const stages: string[] = [];
+
+        await expect(
+            downloadModel({
+                spec: baseSpec,
+                signal: controller.signal,
+                onProgress: (payload: ModelDownloadProgressPayload) => {
+                    stages.push(payload.stage);
+                    if (payload.stage === 'downloading') {
+                        controller.abort();
+                    }
+                },
+            })
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(abortModelWrite).toHaveBeenCalledWith('write-1');
+        expect(commitModelWrite).not.toHaveBeenCalled();
+        expect(stages).not.toContain('verifying');
+        expect(stages).not.toContain('complete');
+    });
+
+    it('removes a committed model when cancellation arrives during the final storage check', async () => {
+        const controller = new AbortController();
+        const status = deferred<Awaited<ReturnType<typeof getStorageStatus>>>();
+        getStorageStatus.mockReturnValue(status.promise);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: baseSpec,
+            signal: controller.signal,
+            onProgress: (payload: ModelDownloadProgressPayload) => stages.push(payload.stage),
+        });
+        await vi.waitFor(() => expect(commitModelWrite).toHaveBeenCalledOnce());
+
+        controller.abort();
+        status.resolve({ usedBytes: 0, limitBytes: 1, persisted: true, availableBytes: 1 });
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(deleteModel).toHaveBeenCalledWith({ family: 'ddsp', modelId: 'violin-1' });
+        expect(stages).not.toContain('complete');
+    });
+});
+
+describe('downloadModel archive guards', () => {
+    it('cancels the reader before starting a declared oversized archive', async () => {
         const cancel = vi.fn(() => Promise.resolve());
         vi.stubGlobal(
             'fetch',
@@ -594,44 +429,48 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
         );
 
         await expect(
-            downloadModel({
-                spec: { ...baseSpec, url: 'https://cdn.example/oversized.zip', sizeBytes: 1 },
-            })
+            downloadModel({ spec: { ...baseSpec, url: 'https://cdn.example/oversized.zip', sizeBytes: 1 } })
         ).rejects.toThrow(/archive byte limit/);
         expect(cancel).toHaveBeenCalledOnce();
-        expect(FakeGuardedZipWorker.instances).toEqual([]);
-        expect(lastWritable).toBeNull();
+        expect(beginModelWrite).not.toHaveBeenCalled();
     });
 
-    it('rejects an unsafe model archive without publishing an OPFS artifact', async () => {
-        vi.useFakeTimers();
-        const zipped = zipSync({ '../weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+    it('aborts the partial write when an archive stream exceeds a smaller declared length', async () => {
+        const cancel = vi.fn(() => Promise.resolve());
+        const oversizedChunk = {
+            byteLength: 2 * 1024 * 1024 * 1024 + 1,
+        } as unknown as Uint8Array;
         vi.stubGlobal(
             'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+            vi.fn(() => Promise.resolve(streamingResponse([oversizedChunk], 1, cancel)))
         );
+
+        await expect(
+            downloadModel({ spec: { ...baseSpec, url: 'https://cdn.example/oversized.zip', sizeBytes: 1 } })
+        ).rejects.toThrow(/archive byte limit/);
+
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(abortModelWrite).toHaveBeenCalledWith('write-1');
+        expect(writeModelChunk).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a guarded archive rejection and cleans the temporary write', async () => {
+        const bytes = new Uint8Array([1, 2, 3]);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.byteLength)))
+        );
+        commitModelWrite.mockRejectedValue(new ZipArchiveError('Unsafe archive path'));
         const stages: string[] = [];
 
-        try {
-            const promise = downloadModel({
-                spec: { ...baseSpec, url: 'https://cdn.example/unsafe.zip', sizeBytes: zipped.length },
-                onProgress: (payload) => stages.push(payload.stage),
-            });
-            const errorPromise: Promise<unknown> = promise.catch((error: unknown) => error);
-            await vi.runAllTimersAsync();
-            const error = await errorPromise;
-
-            expect(error).toBeInstanceOf(ZipArchiveError);
-            if (!(error instanceof Error)) {
-                throw new Error('Expected an archive error');
-            }
-            expect(error.message).toContain('Unsafe archive path');
-            expect(FakeGuardedZipWorker.instances).toHaveLength(1);
-            expect(lastWritable).toBeNull();
-            expect(stages).not.toContain('storing');
-            expect(stages).not.toContain('complete');
-        } finally {
-            vi.useRealTimers();
-        }
+        await expect(
+            downloadModel({
+                spec: { ...baseSpec, url: 'https://cdn.example/unsafe.zip', sizeBytes: bytes.byteLength },
+                onProgress: (payload: ModelDownloadProgressPayload) => stages.push(payload.stage),
+            })
+        ).rejects.toBeInstanceOf(ZipArchiveError);
+        expect(commitModelWrite).toHaveBeenCalledOnce();
+        expect(abortModelWrite).toHaveBeenCalledOnce();
+        expect(stages).not.toContain('complete');
     });
 });

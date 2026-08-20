@@ -56,6 +56,31 @@ describe('onnxInferenceWorker session provider reporting', () => {
         } satisfies WorkerResponse);
     });
 
+    it('receives model bytes from the storage-worker port without a renderer buffer request', async () => {
+        const modelData = new ArrayBuffer(12);
+        const channel = new MessageChannel();
+        channel.port2.postMessage({ type: 'model-data', modelData }, [modelData]);
+        const request: WorkerRequest = {
+            type: 'create-session-from-model-port',
+            requestId: 'from-storage',
+            modelId: 'model-from-storage',
+            modelDataPort: channel.port1,
+            options: {},
+        };
+
+        await (self.onmessage as WorkerMessageHandler)({ data: request } as MessageEvent<WorkerRequest>);
+
+        const receivedModelData = createSession.mock.calls[0]?.[0] as ArrayBuffer | undefined;
+        expect(receivedModelData?.byteLength).toBe(12);
+        expect(createSession.mock.calls[0]?.[1]).toEqual({ executionProviders: ['wasm'] });
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'from-storage',
+            modelId: 'model-from-storage',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+    });
+
     it('reports only the provider whose single-provider session creation succeeded', async () => {
         vi.resetModules();
         installNavigator({ gpu: {} });

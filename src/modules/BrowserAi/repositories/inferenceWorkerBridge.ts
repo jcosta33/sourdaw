@@ -141,10 +141,7 @@ function sendRequest(
     });
 }
 
-type LoadSessionInput = {
-    modelId: string;
-    modelData: ArrayBuffer;
-};
+type LoadSessionInput = { modelId: string; modelData: ArrayBuffer } | { modelId: string; modelDataPort: MessagePort };
 
 type RunKokoroInput = {
     requestId: string;
@@ -170,12 +167,31 @@ function isOnnxExecutionProviderList(value: unknown): value is Array<'webgpu' | 
  * Module-level singleton — not injectable because it owns worker lifecycle state.
  */
 export const inferenceWorkerBridge = {
-    async loadOnnxSession({ modelId, modelData }: LoadSessionInput): Promise<string[]> {
+    async loadOnnxSession(input: LoadSessionInput): Promise<string[]> {
+        const { modelId } = input;
         logger.info(`[WorkerBridge] Loading ONNX session: ${modelId}`);
         const worker = await getOnnxWorker();
         const requestId = crypto.randomUUID();
-        const request: WorkerRequest = { type: 'create-session', requestId, modelId, modelData, options: {} };
-        const response = await sendRequest(worker, workerState.onnx, request, [modelData]);
+        let response: WorkerResponse;
+        if ('modelDataPort' in input) {
+            const request: WorkerRequest = {
+                type: 'create-session-from-model-port',
+                requestId,
+                modelId,
+                modelDataPort: input.modelDataPort,
+                options: {},
+            };
+            response = await sendRequest(worker, workerState.onnx, request, [input.modelDataPort]);
+        } else {
+            const request: WorkerRequest = {
+                type: 'create-session',
+                requestId,
+                modelId,
+                modelData: input.modelData,
+                options: {},
+            };
+            response = await sendRequest(worker, workerState.onnx, request, [input.modelData]);
+        }
         if (
             response.type !== 'session-created' ||
             response.modelId !== modelId ||
