@@ -21,7 +21,7 @@ type Input = {
     authorLogin?: string;
     throwAfterReply?: boolean;
     concurrentReplyOnThrow?: boolean;
-    throwAfterResolve?: boolean;
+    throwResolveWithConcurrentState?: boolean;
     failDelete?: boolean;
     rootAuthorLogin?: string | null;
     isResolved?: boolean;
@@ -30,6 +30,7 @@ function fakePort(input: Input = {}) {
     const calls: string[] = [];
     let index = 0;
     let resolved = input.isResolved ?? false;
+    let resolveCalled = false;
     let comments = [
         {
             id: rootId,
@@ -41,6 +42,9 @@ function fakePort(input: Input = {}) {
     const port: ResolveReviewThreadPort = {
         inspect: () => {
             calls.push(`inspect:${++index}`);
+            if (input.throwResolveWithConcurrentState && resolveCalled) {
+                resolved = true;
+            }
             return {
                 head: input.heads?.[index - 1] ?? head,
                 thread: {
@@ -77,10 +81,11 @@ function fakePort(input: Input = {}) {
         },
         resolve: (id) => {
             calls.push(`resolve:${id}`);
-            resolved = true;
-            if (input.throwAfterResolve) {
+            resolveCalled = true;
+            if (input.throwResolveWithConcurrentState) {
                 throw new Error('resolve transport lost');
             }
+            resolved = true;
         },
         unresolve: (id) => {
             calls.push(`unresolve:${id}`);
@@ -250,10 +255,13 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         expect(state().comments.map((comment) => comment.id)).toEqual([rootId, replyId, 'PRRC_concurrent']);
     });
-    it('compensates a resolution that committed before its mutation threw', () => {
-        const { port, authorLogin, state } = fakePort({ throwAfterResolve: true });
-        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/resolve transport lost$/);
-        expect(state()).toMatchObject({ resolved: false, comments: [{ id: rootId }] });
+    it('does not unresolve a concurrent state after resolve throws without a receipt', () => {
+        const { port, authorLogin, state, calls } = fakePort({ throwResolveWithConcurrentState: true });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(
+            /resolve transport lost[\s\S]*ambiguous review-thread resolution/i
+        );
+        expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+        expect(state().resolved).toBe(true);
     });
     it('deletes the exact new reply when the head moves after replying', () => {
         const { port, authorLogin, state, calls } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });

@@ -89,6 +89,7 @@ export function supersedePullRequest(
     let commentAttempted = false;
     let commentId: string | undefined;
     let closeAttempted = false;
+    let closedByReceipt = false;
     try {
         commentAttempted = true;
         const comment = port.comment(oldNumber, body);
@@ -97,6 +98,7 @@ export function supersedePullRequest(
         assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead);
         closeAttempted = true;
         port.close(oldNumber);
+        closedByReceipt = true;
         const verified = port.inspect(oldNumber);
         if (verified.head !== expectedHead) {
             fail('pull-request head moved after mutation; compensating');
@@ -105,7 +107,16 @@ export function supersedePullRequest(
             fail(`PR #${oldNumber} was not closed`);
         }
     } catch (error) {
-        compensateSupersession(oldNumber, before, commentAttempted, commentId, closeAttempted, port, error);
+        compensateSupersession(
+            oldNumber,
+            before,
+            commentAttempted,
+            commentId,
+            closeAttempted,
+            closedByReceipt,
+            port,
+            error
+        );
     }
     const success = `pull-request-superseded:${oldNumber}:${replacementNumber}`;
     port.log(success);
@@ -118,6 +129,7 @@ function compensateSupersession(
     commentAttempted: boolean,
     commentId: string | undefined,
     closeAttempted: boolean,
+    closedByReceipt: boolean,
     port: SupersedePullRequestPort,
     original: unknown
 ): never {
@@ -129,12 +141,14 @@ function compensateSupersession(
     if (current === undefined) {
         failures.push('cannot determine ambiguous supersession transaction state');
     } else {
-        if (closeAttempted && current.state !== before.state) {
+        if (closedByReceipt && current.state !== before.state) {
             if (current.state === 'CLOSED' && before.state === 'OPEN') {
                 attempt(failures, 'reopen pull request', () => port.reopen(number));
             } else {
                 failures.push(`cannot safely restore PR #${number} from ${current.state}`);
             }
+        } else if (closeAttempted && current.state !== before.state) {
+            failures.push(`ambiguous PR closure for #${number}; refusing to reopen an unverified transition`);
         }
         if (commentAttempted) {
             if (commentId === undefined) {
