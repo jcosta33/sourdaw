@@ -1,5 +1,10 @@
 export type WebGpuUnavailableReason =
-    'missing-surface' | 'adapter-unavailable' | 'fallback-adapter' | 'device-unavailable';
+    | 'missing-surface'
+    | 'adapter-unavailable'
+    | 'fallback-adapter'
+    | 'device-unavailable'
+    /** The worker bridge could not complete, so no adapter or device verdict was observed. */
+    | 'probe-failed';
 
 export type WebGpuProbeResult = { status: 'supported' } | { status: 'unavailable'; reason: WebGpuUnavailableReason };
 

@@ -30,6 +30,7 @@ const WEBGPU_UNAVAILABLE_LABELS: Record<WebGpuUnavailableReason, string> = {
     'adapter-unavailable': 'No core WebGPU adapter is available',
     'fallback-adapter': 'Only a software WebGPU fallback adapter is available',
     'device-unavailable': 'The WebGPU adapter could not create a device',
+    'probe-failed': 'The WebGPU usability check could not complete',
 };
 
 export function CapabilityReportPanel(): ReactElement {

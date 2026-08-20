@@ -306,6 +306,24 @@ describe('detectCapabilities', () => {
         expect(report.webGpu).toEqual({ status: 'supported' });
     });
 
+    it('should reuse a cached unsupported report with an explicit probe failure', async () => {
+        install_supported_browser();
+        const { probe } = install(measured(3));
+        const cached_report: CapabilityReport = {
+            ...valid_cached_report,
+            capability: 'unsupported-browser',
+            webGpu: { status: 'unavailable', reason: 'probe-failed' },
+            webGpuTier: 'not-measured',
+            inference: { status: 'not-measured', reason: 'no-webgpu' },
+        };
+        window.localStorage.setItem(storage_key, JSON.stringify(cached_report));
+
+        const report = await detectCapabilities();
+
+        expect(report).toEqual(cached_report);
+        expect(probe).not.toHaveBeenCalled();
+    });
+
     it('should ignore invalid cache shapes and run fresh detection', async () => {
         install_supported_browser();
         install(measured(3));
@@ -397,6 +415,28 @@ describe('detectCapabilities', () => {
             expect(measure).not.toHaveBeenCalled();
         }
     );
+
+    it('should fail closed without measuring inference when the WebGPU worker probe rejects', async () => {
+        install_supported_browser();
+        const measure = vi.fn<MeasureThroughput>().mockResolvedValue(measured(3));
+        const logger = create_logger_mock();
+        injectDependencies(detectCapabilities, {
+            logger,
+            measureInferenceThroughput: measure,
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockRejectedValue(new Error('WebGPU probe worker timed out')),
+        });
+
+        const report = await detectCapabilities({ forceRefresh: true, measureInference: true });
+
+        expect(report.capability).toBe('unsupported-browser');
+        expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'probe-failed' });
+        expect(report.webGpuTier).toBe('not-measured');
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
+        expect(measure).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+            '[BrowserAi] WebGPU usability probe failed — browser AI disabled'
+        );
+    });
 
     /**
      * macOS used to be gated out wholesale, because the desktop app ran on

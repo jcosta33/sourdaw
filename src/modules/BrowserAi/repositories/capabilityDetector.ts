@@ -183,7 +183,8 @@ function is_web_gpu_probe_result(value: unknown): value is WebGpuProbeResult {
         (value.reason === 'missing-surface' ||
             value.reason === 'adapter-unavailable' ||
             value.reason === 'fallback-adapter' ||
-            value.reason === 'device-unavailable')
+            value.reason === 'device-unavailable' ||
+            value.reason === 'probe-failed')
     );
 }
 
@@ -264,7 +265,13 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
             }
 
             const chromeVersion = detectChromeVersion();
-            const webGpu = await probeWebGpuUsability();
+            let webGpu: WebGpuProbeResult;
+            try {
+                webGpu = await probeWebGpuUsability();
+            } catch {
+                webGpu = { status: 'unavailable', reason: 'probe-failed' };
+                logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
+            }
             const sharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
             const opfsAvailable =
                 typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
