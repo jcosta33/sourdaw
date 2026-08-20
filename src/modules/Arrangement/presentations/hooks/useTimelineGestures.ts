@@ -1,7 +1,6 @@
 import { type RefObject, useEffect } from 'react';
 
 import { transportStore } from '#/modules/Transport/stores';
-import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 
 import {
     zoomTimeline,
@@ -19,25 +18,10 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
             return undefined;
         }
 
-        let lastScale = 1;
-
-        const onGestureStart = (event: Event): void => {
-            event.preventDefault();
-            lastScale = 1;
-        };
-
-        const onGestureChange = (event: Event): void => {
-            event.preventDefault();
-            const ge = event as GestureEvent;
-            const delta = ge.scale - lastScale;
-            lastScale = ge.scale;
-            zoomTimeline(delta * 2);
-        };
-
-        const onGestureEnd = (event: Event): void => {
-            event.preventDefault();
-        };
-
+        // Trackpad pinch arrives here as a ctrl-modified `wheel` event. The
+        // WebKit `gesturestart`/`gesturechange`/`gestureend` trio is not a
+        // second source to merge in: Chromium never dispatches it, and every
+        // shipped renderer is Chromium.
         const onWheel = (event: WheelEvent): void => {
             event.preventDefault();
             if (event.ctrlKey || event.metaKey) {
@@ -61,15 +45,9 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
             }
         };
 
-        canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
-        canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
-        canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
         canvas.addEventListener('wheel', onWheel, { passive: false });
 
         return () => {
-            canvas.removeEventListener('gesturestart', onGestureStart);
-            canvas.removeEventListener('gesturechange', onGestureChange);
-            canvas.removeEventListener('gestureend', onGestureEnd);
             canvas.removeEventListener('wheel', onWheel);
         };
     }, [canvasRef]);

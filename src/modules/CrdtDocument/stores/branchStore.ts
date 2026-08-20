@@ -271,8 +271,9 @@ export function restoreBranchStateFromSessionBackup(): BranchStateRestoreOutcome
     }
 
     // Dropping the backup is a removal, which a full quota does not reject —
-    // but Safari private mode refuses every `localStorage` operation, and this
-    // runs from the composition root where a throw is still the whole boot. The
+    // but an origin whose storage access is blocked refuses every
+    // `localStorage` operation, and this runs from the composition root where a
+    // throw is still the whole boot. The
     // result is not discardable: a backup that survives is applied again at the
     // next boot, so reporting this as a clean restore would pin the branch list
     // to the pre-session snapshot silently and permanently.

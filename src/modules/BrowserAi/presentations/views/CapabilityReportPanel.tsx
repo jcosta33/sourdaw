@@ -68,21 +68,12 @@ export function CapabilityReportPanel(): ReactElement {
     const { report } = state;
 
     if (report.capability !== 'supported') {
-        const reason =
-            report.capability === 'unsupported-platform'
-                ? 'macOS/Linux desktop webview lacks WebGPU'
-                : 'Non-Chrome browser — AI features require Chrome latest';
-
-        const summary =
-            report.capability === 'unsupported-platform' ? 'Use Sourdaw in Chrome for browser AI.' : undefined;
-
         return (
             <DawBlockedState
                 compact
                 eyebrow="Browser AI"
                 title="Browser AI Unavailable"
-                description={reason}
-                summary={summary}
+                description="Non-Chrome browser — AI features require Chrome latest"
                 action={<DawMicroBadge tone="danger">Unsupported</DawMicroBadge>}
             />
         );

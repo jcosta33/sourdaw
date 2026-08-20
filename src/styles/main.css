@@ -631,7 +631,7 @@
     scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 
-/* Chrome / Safari / Edge (WebKit) */
+/* Chromium's scrollbar pseudo-elements; every renderer this app ships on. */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

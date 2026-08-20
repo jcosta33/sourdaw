@@ -69,20 +69,6 @@ describe('CapabilityReportPanel', () => {
         expect(mocks.detectCapabilities).toHaveBeenCalledWith(REFRESH_ARGS);
     });
 
-    it('should direct unsupported desktop platforms to Chrome', () => {
-        capabilityStore.set({
-            phase: 'done',
-            report: { ...SUPPORTED_REPORT, capability: 'unsupported-platform' },
-        });
-
-        render(<CapabilityReportPanel />);
-
-        expect(screen.getByText('Browser AI Unavailable')).toBeInTheDocument();
-        expect(screen.getByText('macOS/Linux desktop webview lacks WebGPU')).toBeInTheDocument();
-        expect(screen.getByText('Use Sourdaw in Chrome for browser AI.')).toBeInTheDocument();
-        expect(screen.getByText('Unsupported')).toBeInTheDocument();
-    });
-
     it('should render the unsupported-browser reason without a summary', () => {
         capabilityStore.set({
             phase: 'done',
@@ -91,7 +77,9 @@ describe('CapabilityReportPanel', () => {
 
         render(<CapabilityReportPanel />);
 
+        expect(screen.getByText('Browser AI Unavailable')).toBeInTheDocument();
         expect(screen.getByText('Non-Chrome browser — AI features require Chrome latest')).toBeInTheDocument();
+        expect(screen.getByText('Unsupported')).toBeInTheDocument();
     });
 
     it('should render full readouts for a supported report with a fast WebGPU tier', () => {

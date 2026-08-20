@@ -27,7 +27,7 @@ const validFeatureBranch = {
 } satisfies BranchRecord;
 
 /**
- * Safari private mode and a full origin quota both surface as a throw from
+ * Blocked storage access and a full origin quota both surface as a throw from
  * `setItem` — `SecurityError` and `QuotaExceededError` respectively. Neither is
  * distinguishable at the adapter, and both must be survivable.
  */
@@ -49,8 +49,8 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
     });
 
     it('evaluates the module when the origin quota rejects the seed write', async () => {
-        // Safari private mode: `getItem` returns null, so `createStore` seeds —
-        // and the seed is the first durable write of the boot.
+        // `getItem` returns null, so `createStore` seeds — and the seed is the
+        // first durable write of the boot.
         blockEveryDurableWrite();
 
         await expect(import('../branchStore')).resolves.toBeDefined();
@@ -101,8 +101,8 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
     });
 
     /**
-     * The removal is the second half of consuming the backup, and Safari private
-     * mode — the motivating case for the whole change — refuses it too. Before
+     * The removal is the second half of consuming the backup, and an origin
+     * whose storage access is blocked outright refuses it too. Before
      * this it reported a clean restore: nothing logged, nothing shown, and a
      * backup left on disk that every subsequent boot re-applies, pinning the
      * branch list to the pre-session snapshot permanently.
