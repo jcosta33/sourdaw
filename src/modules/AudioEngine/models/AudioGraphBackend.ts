@@ -509,7 +509,16 @@ export type AudioGraphCommandBatch = Readonly<{
     commands: readonly AudioGraphCommand[];
 }>;
 
-/** What a strip-creating command actually built. */
+/**
+ * What one strip a batch touched actually holds after the whole batch.
+ *
+ * One report law for every backend: a batch reports every strip it created
+ * **or whose device chain it edited** (`insert-device`, `remove-device`),
+ * each report reading the realized post-batch chain. A backend that refuses
+ * chain edits outright (the web backend refuses `insert-device` and
+ * `remove-device`) satisfies the law with creation reports alone — the only
+ * chain-touching commands it can apply are creates.
+ */
 export type AudioGraphStripReport = Readonly<{
     kind: 'track' | 'bus';
     id: string;

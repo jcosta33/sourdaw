@@ -5,7 +5,8 @@ use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
 use crate::scheduler::{
-    AudioScheduler, GraphCommand, RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
+    graph_progress_channel, AudioScheduler, GraphCommand, GraphProgressSnapshot,
+    RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -195,11 +196,13 @@ fn reclaim_retired<T>(retired: T) {
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
+    let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
     let (engine_event_tx, _engine_event_rx) = engine_event_channel();
     spawn_audio_thread_with_diagnostics(
         command_rx,
         diagnostics_tx,
         timeline_diagnostics_tx,
+        graph_progress_tx,
         engine_event_tx,
         false,
     )
@@ -218,6 +221,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
+    graph_progress_tx: Input<GraphProgressSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
 ) -> Result<
@@ -239,6 +243,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             retired_tx,
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
+            graph_progress_tx,
             engine_event_tx,
             force_default_buffer,
             &sample_rate_slot,
@@ -360,6 +365,7 @@ fn build_audio_stream(
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
+    graph_progress_tx: Input<GraphProgressSnapshot>,
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
@@ -386,6 +392,7 @@ fn build_audio_stream(
         sample_rate,
         midi_rt_diagnostics_tx,
         timeline_rt_diagnostics_tx,
+        graph_progress_tx,
     );
 
     // Ask the device for a period the callback and the plugin bridge can carry,
@@ -456,6 +463,11 @@ fn build_audio_stream(
 
                         scheduler.publish_midi_rt_diagnostics();
                         scheduler.publish_timeline_rt_diagnostics();
+                        // Published last, after every block of this callback:
+                        // the snapshot's happens-before (GraphProgressSnapshot)
+                        // holds because everything it vouches for has already
+                        // been drained, rendered and popped above.
+                        scheduler.publish_graph_progress();
                     },
                     err_fn,
                     None,

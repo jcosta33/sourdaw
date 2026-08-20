@@ -18,7 +18,50 @@ use crate::timeline::{
 };
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
-use triple_buffer::Input;
+use triple_buffer::{Input, Output};
+
+/// The audio thread's progress echo, for the control-side queue ledger
+/// (`GraphRegistry` in `sourdaw-native`): how far the engine has provably
+/// consumed what control pushed.
+///
+/// The two fields are written together at the end of one callback, after
+/// `update_graph` and every `process_block` of that callback, so one snapshot
+/// is coherent by construction and carries this happens-before guarantee:
+/// **every write from a fenced batch numbered at or below `batches_applied`,
+/// stamped strictly before `playhead_frame`, has left its fixed engine queue
+/// by the time the snapshot is read.** An automation write leaves
+/// `RampedParam`'s pending queue when the block walk reaches its start frame
+/// (`RampedParam::value_at`), and a device-parameter write leaves
+/// `DeviceParamQueue` when `apply_due_device_params` reaches its stamp — both
+/// strictly before the published playhead, whether or not the transport is
+/// rolling, because parameters advance on every rendered block. The echo may
+/// lag (it is read between callbacks), so a consumer may under-release —
+/// never over-release.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GraphProgressSnapshot {
+    /// Fenced batches ([`GraphCommand::BeginBatch`]) applied whole, in order.
+    /// Loose commands do not count: only a fence marks a control-side unit
+    /// the ledger numbers.
+    pub batches_applied: u64,
+    /// The absolute frame the last rendered block ended on while playing, or
+    /// stood on while stopped.
+    pub playhead_frame: u64,
+}
+
+pub struct GraphProgressReader {
+    output: Output<GraphProgressSnapshot>,
+}
+
+impl GraphProgressReader {
+    pub fn snapshot(&mut self) -> GraphProgressSnapshot {
+        *self.output.read()
+    }
+}
+
+pub(crate) fn graph_progress_channel() -> (Input<GraphProgressSnapshot>, GraphProgressReader) {
+    let (input, output) = triple_buffer::triple_buffer(&GraphProgressSnapshot::default());
+    (input, GraphProgressReader { output })
+}
 
 pub enum MidiFxKind {
     Arpeggiator,
@@ -515,6 +558,9 @@ pub struct AudioScheduler {
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
+    /// Fenced batches applied whole, for [`GraphProgressSnapshot`].
+    batches_applied: u64,
+    graph_progress_tx: Input<GraphProgressSnapshot>,
 }
 
 impl AudioScheduler {
@@ -536,12 +582,14 @@ impl AudioScheduler {
     ) -> Self {
         let (timeline_diagnostics_tx, _timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
+        let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
         Self::with_rt_diagnostics(
             command_rx,
             retired_tx,
             sample_rate,
             midi_rt_diagnostics_tx,
             timeline_diagnostics_tx,
+            graph_progress_tx,
         )
     }
 
@@ -551,6 +599,7 @@ impl AudioScheduler {
         sample_rate: f32,
         midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
         timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
+        graph_progress_tx: Input<GraphProgressSnapshot>,
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
@@ -571,6 +620,8 @@ impl AudioScheduler {
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
+            batches_applied: 0,
+            graph_progress_tx,
         }
     }
 
@@ -584,6 +635,22 @@ impl AudioScheduler {
     pub(crate) fn publish_timeline_rt_diagnostics(&mut self) {
         self.timeline_rt_diagnostics_tx
             .write(self.timeline.diagnostics());
+    }
+
+    /// The progress echo, read directly by same-thread drivers (the offline
+    /// renderer, tests). The live path publishes the same value through
+    /// [`Self::publish_graph_progress`] at the end of each callback.
+    pub const fn graph_progress(&self) -> GraphProgressSnapshot {
+        GraphProgressSnapshot {
+            batches_applied: self.batches_applied,
+            playhead_frame: self.playhead_frames,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn publish_graph_progress(&mut self) {
+        let snapshot = self.graph_progress();
+        self.graph_progress_tx.write(snapshot);
     }
 
     /// The routed graph, for callers proving what a command did to it.
@@ -632,6 +699,10 @@ impl AudioScheduler {
                     let retire_ok = self.apply_and_retire(cmd);
                     debug_assert!(retire_ok, "batch_ready reserved retirement slots");
                 }
+                // Counted only here, after the whole fenced body applied: the
+                // progress echo's `batches_applied` must never number a batch
+                // the graph has not fully absorbed.
+                self.batches_applied = self.batches_applied.saturating_add(1);
                 continue;
             }
 

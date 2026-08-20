@@ -8,16 +8,17 @@
  * onto the wire mirror in `crates/sourdaw-native/src/commands/graph.rs`,
  * register clip material into the native sample pool, and drive the render.
  *
- * ── Why `apply` renders one frame ─────────────────────────────────────────
+ * ── Why `apply` maps, and renders nothing ─────────────────────────────────
  *
  * The contract requires a batch to be refused **at apply time**, whole, before
  * any of it is applied — and the native side's validation (`map_batch`, with
  * every refusal reason this backend is accountable for: `stretched-clip-
  * unsupported`, `smoothed-write-unsupported`, `bus-to-track-routing-
- * unsupported`, the queue-capacity refusals) lives behind the render command.
- * So `apply` probes: it renders the accumulated batch at one frame, which maps
- * and validates every command against a fresh registry and costs one block of
- * arithmetic. A probe that refuses rolls the incoming commands back, so a
+ * unsupported`, the queue-capacity refusals) lives on the native side. So
+ * `apply` probes through `map_graph_batch`: the commands committed so far
+ * replay as the prior graph, the incoming batch maps against it, and the
+ * answer is the native apply-result itself — refusal reasons and strip
+ * reports — with nothing rendered. A probe that refuses commits nothing, so a
  * rejected batch changes nothing this backend will ever render — the same
  * whole-or-nothing law `apply_graph_commands` keeps on the live path. One
  * honest caveat: clip material is sent to the native sample pool *before* the
@@ -29,35 +30,26 @@
  *
  * An offline backend deliberately never calls `apply_graph_commands`: that
  * command lazily starts the live CPAL engine (#1984), and a bounce must not
- * open an audio device. Live adoption is the D3.c cutover (#2223).
+ * open an audio device. Live adoption is the D3.c.2 cutover (#2225).
  *
  * ── The strip reports ─────────────────────────────────────────────────────
  *
- * `render_graph_offline` answers PCM, not reports, so an accepted batch's
- * reports are a **TS-side restatement**, computed here from the caller's own
- * commands by mirroring the one law `map_device` applies to a batch it
- * *accepts*: a device is built exactly when it is the built-in Knead engine
- * and not an externally hosted plugin. Every other pairing either refused the
- * batch (a non-realisable device on a contributing strip, an external plugin
- * anywhere) — unreachable in an accepted batch — or degraded (a
- * non-realisable device on a non-contributing strip), which the contract
- * defines as absent from the report. The contract calls `deviceIds` an
- * observation; this restatement observes nothing native and is unguarded
- * against native drift until reports cross the wire. What actually covers
- * strip presence today is the null test's audio residual plus the offline
- * diagnostics backstop (`offline-render-dropped-commands` in `graph.rs`).
- * Carrying native reports across the wire lands with the D3.c cutover
- * (jcosta33/sourdaw#2223), when reports become production-consumed.
+ * Reports are the native mapping's own observations, carried across the wire:
+ * the same touched-strip reports `graph.rs` builds from its post-batch
+ * registry on the live path, scoped to the incoming batch by the
+ * prior/incoming split of `map_graph_batch`. Nothing is restated TS-side —
+ * a device the native side degraded is absent because the native side
+ * observed it absent. The `runtimeRevision` in the result stays this
+ * backend's own counter: a mapping has no runtime, so the wire result
+ * deliberately carries none.
  */
 
 import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
-    type AudioGraphCommand,
     type AudioGraphCommandBatch,
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
-import { type Device } from '../../models/TrackViewTypes';
 
 import { collectBufferedClipSources } from './collectBufferedClipSources';
 import { deinterleaveStereoPcm, type PlanarStereo } from './deinterleaveStereoPcm';
@@ -90,39 +82,66 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
         render: (frames: number) => Promise<PlanarStereo>;
     }>;
 
-/**
- * Whether an accepted batch's device is in the built chain — the TS
- * restatement of `map_device`'s law for accepted batches (see the header).
- */
-function isNativelyRealizedDevice(device: Device): boolean {
-    return (
-        device.externalPluginId === undefined &&
-        device.externalInstanceId === undefined &&
-        device.type.toLowerCase() === 'knead'
-    );
-}
-
-function deriveStripReports(commands: readonly AudioGraphCommand[]): AudioGraphStripReport[] {
-    const reports: AudioGraphStripReport[] = [];
-    for (const command of commands) {
-        if (command.kind !== 'create-track-strip' && command.kind !== 'create-bus-strip') {
-            continue;
-        }
-        reports.push({
-            kind: command.kind === 'create-track-strip' ? 'track' : 'bus',
-            id: command.kind === 'create-track-strip' ? command.trackId : command.busId,
-            deviceIds: command.devices.filter(isNativelyRealizedDevice).map((device) => device.id),
-        });
-    }
-    return reports;
-}
-
 function rejected(reason: string): AudioGraphApplyResult {
     return { acceptance: 'rejected', application: 'not-applied', reason };
 }
 
 function reasonOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function readStringArray(value: unknown): string[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    const out: string[] = [];
+    for (const entry of value as readonly unknown[]) {
+        if (typeof entry !== 'string') {
+            return null;
+        }
+        out.push(entry);
+    }
+    return out;
+}
+
+function readStripReports(value: unknown): AudioGraphStripReport[] {
+    if (!Array.isArray(value)) {
+        throw new TypeError(`map_graph_batch answered without reports: ${JSON.stringify(value)}`);
+    }
+    return (value as readonly unknown[]).map((entry) => {
+        const report = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
+        const kind = report?.kind;
+        const id = report?.id;
+        const deviceIds = readStringArray(report?.deviceIds);
+        if ((kind !== 'track' && kind !== 'bus') || typeof id !== 'string' || deviceIds === null) {
+            throw new Error(`map_graph_batch answered a malformed strip report: ${JSON.stringify(entry)}`);
+        }
+        return { kind, id, deviceIds };
+    });
+}
+
+type MappedOutcome =
+    | Readonly<{ outcome: 'rejected'; reason: string }>
+    | Readonly<{ outcome: 'mapped'; reports: readonly AudioGraphStripReport[] }>;
+
+/**
+ * Read the mapping wire's apply-result mirror. It speaks exactly two
+ * outcomes — `rejected` and accepted+`applied` — so any other shape is a
+ * seam defect and throws rather than passing as a result.
+ */
+function readMappedResult(value: unknown): MappedOutcome {
+    const payload = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+    if (payload?.acceptance === 'rejected') {
+        const reason = payload.reason;
+        return {
+            outcome: 'rejected',
+            reason: typeof reason === 'string' ? reason : 'refused without a reason',
+        };
+    }
+    if (payload?.acceptance === 'accepted' && payload.application === 'applied') {
+        return { outcome: 'mapped', reports: readStripReports(payload.reports) };
+    }
+    throw new Error(`map_graph_batch answered an unknown outcome: ${JSON.stringify(value)}`);
 }
 
 export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendDeps): NativeOfflineGraphBackend {
@@ -177,22 +196,28 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 sentSourceIds.push(source.sourceId);
             }
 
-            // The whole-batch probe (see the header). One frame maps and
-            // validates everything applied so far plus this batch; a refusal
-            // reaches the caller as the native side's own reasons and commits
-            // nothing. Cost note: every probe re-serializes and re-sends the
-            // whole accumulated command list, so a bounce of N batches crosses
-            // the wire O(N²) commands in total. Harmless at bounce sizes
-            // today; the D3.c consumer (#2223) must either diff batches or cap
-            // the accumulation before adopting this path for live-sized runs.
+            // The whole-batch probe (see the header): the committed commands
+            // replay as the prior graph, the incoming batch maps against it,
+            // nothing renders. A refusal is the native side's own reasons and
+            // commits nothing; an acceptance carries the native reports. Cost
+            // note: every probe re-serializes and re-sends the whole
+            // accumulated command list, so a bounce of N batches crosses the
+            // wire O(N²) commands in total. Harmless at bounce sizes today;
+            // the D3.c.2 consumer (#2225) must either diff batches or cap the
+            // accumulation before adopting this path for live-sized runs.
+            let mappedRaw: unknown;
             try {
-                await transport.renderGraphOffline({
-                    batch: { ...incoming, commands: [...wireCommands, ...incoming.commands] },
-                    frames: 1,
+                mappedRaw = await transport.mapGraphBatch({
+                    prior: wireCommands,
+                    batch: incoming,
                     sampleRate,
                 });
             } catch (error) {
                 return rejected(reasonOf(error));
+            }
+            const mapped = readMappedResult(mappedRaw);
+            if (mapped.outcome === 'rejected') {
+                return rejected(mapped.reason);
             }
 
             wireCommands = [...wireCommands, ...incoming.commands];
@@ -205,7 +230,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 application: 'applied',
                 ...(batch.correlation ? { correlation: batch.correlation } : {}),
                 runtimeRevision,
-                reports: deriveStripReports(batch.commands),
+                reports: mapped.reports,
             };
         },
 

@@ -65,14 +65,31 @@
 //! The result's `reports` are observations of the post-batch registry, never
 //! echoes of the request: every strip a batch creates or whose chain it
 //! touches (`insert-device`, `remove-device`) reports its realized
-//! `deviceIds` after the whole batch. A device that degraded on a
-//! non-contributing strip is therefore visibly absent, and no chain edit
-//! through this backend is silent — a degraded `insert-device` still produces
-//! a report whose ids reflect reality. The offline render wire
-//! (`render_graph_offline`) answers PCM bytes only, so these reports do not
-//! cross it; the TS offline backend
-//! restates them from its own commands (`createNativeOfflineGraphBackend.ts`),
-//! a derivation D3.c pins until reports ride a richer offline result.
+//! `deviceIds` after the whole batch — the touched-strip law
+//! `AudioGraphBackend.ts` states for `AudioGraphStripReport`. A device that
+//! degraded on a non-contributing strip is therefore visibly absent, and no
+//! chain edit through this backend is silent — a degraded `insert-device`
+//! still produces a report whose ids reflect reality. The offline render wire
+//! (`render_graph_offline`) answers PCM bytes only; reports reach the TS
+//! offline backend over their own wire, [`map_graph_batch`] — the same
+//! mapping this file applies, run against the backend's already-committed
+//! commands plus the incoming batch, with nothing rendered. The TS side never
+//! restates reports from its own commands.
+//!
+//! ## Correlation
+//!
+//! A live batch that carries a `correlation` claims the runtime revision it
+//! was built against (`RuntimeGraphCorrelation.appRevision`);
+//! [`apply_graph_commands`] validates that claim against the registry's
+//! `runtime_revision` **before** the lazy engine bootstrap, so a batch that
+//! lost its race is `rejected` before the graph changes — and before a batch
+//! that will not apply can start an engine. A batch without a correlation is
+//! simply not correlated (the offline bounce renders a snapshot no live
+//! document races) and skips validation. `projectRevision` is project-truth's
+//! coordinate; the TS side owns comparing it (`acceptCorrelation` in the web
+//! backend), so this side neither stores nor checks it. The offline paths
+//! (`render_graph_offline`, `map_graph_batch`) echo a correlation verbatim
+//! and never validate: a mapping has no live graph to race.
 //!
 //! ## The transport ownership law
 //!
@@ -99,26 +116,10 @@
 //! - `bus -> track` routing refuses with its own reason — the D3 obligation
 //!   named at `AudioGraphBackend.ts` (routing constraint): buses are summed
 //!   after every track, so the edge cannot carry audio today.
-//! - `correlation` is accepted and echoed but not validated against a live
-//!   document revision — **decided semantics as of D3.b, not an open TODO**.
-//!   The TS-side backend forwards a batch's correlation verbatim and echoes
-//!   it in results, and the one production consumer (the offline bounce)
-//!   deliberately sends none: a render of a snapshot cannot go stale, because
-//!   no live document races it (`AudioGraphBackend.ts`, batch law). Echoing
-//!   is therefore the whole truthful behaviour for every batch that exists
-//!   today. Validation against a live revision becomes meaningful — and lands
-//!   here — with the D3.c live cutover (jcosta33/sourdaw#2223), where
-//!   `apply_graph_commands` batches race a live document.
-//! - Strip reports here cover every strip a batch *touched* — created,
-//!   inserted into, or removed from — a superset of the contract's
-//!   strip-creating scope (`AudioGraphBackend.ts`, `AudioGraphStripReport`),
-//!   which the web backend implements literally: it reports creates only
-//!   (`createWebAudioOfflineBackend.ts`). jcosta33/sourdaw#2223 reconciles
-//!   the two to one law — widen the web backend or the contract doc.
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::scheduler::GraphCommand;
+use daw_engine::scheduler::{GraphCommand, GraphProgressSnapshot};
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
     ClipPlayback, DeviceKind, DeviceParam, RampShape, RouteTarget, TimelineBus, TimelineClip,
@@ -439,6 +440,24 @@ impl GraphApplyResultPayload {
         }
     }
 
+    /// The result of a mapping that applied to no live engine
+    /// ([`map_graph_batch`]): accepted and applied — to the carried
+    /// registry — with the touched-strip reports, but with no
+    /// `runtimeRevision`, because there is no runtime; the TS offline
+    /// backend owns its own revision counter and must not adopt one from a
+    /// mapping.
+    fn mapped(correlation: Option<Value>, reports: Vec<StripReportPayload>) -> Self {
+        Self {
+            acceptance: "accepted",
+            application: "applied",
+            reason: None,
+            compensation: None,
+            correlation,
+            runtime_revision: None,
+            reports: Some(reports),
+        }
+    }
+
     fn needs_reconcile(
         reason: String,
         correlation: Option<Value>,
@@ -501,14 +520,14 @@ struct DeviceEntry {
 /// The registry also carries the cross-batch queue ledger (see
 /// [`QueueBudgets`]): what earlier accepted batches left queued on the
 /// engine's fixed per-parameter queues, so a later batch cannot overflow a
-/// queue an earlier one filled. The ledger cannot see the playhead landing
-/// an event, so its release laws are exactly these: device-param depths are
-/// **monotonic** — no release law exists, and a device whose window fills
-/// stays full for the life of this engine session; automation stamps are
-/// **forward-locate-inert** — released only by a replace/hold's
-/// stale-cancellation or by a backward locate past the stamps. It never
-/// under-refuses; the release mechanism (the engine echoing landed depths
-/// back to this side) is jcosta33/sourdaw#2223's obligation. An offline
+/// queue an earlier one filled. Stamps leave the ledger by exactly three
+/// laws, each a mirror of an engine law, never a guess: a replace/hold's
+/// stale-cancellation and a backward locate mirror the queues' own
+/// cancellation ([`QueueBudgets`]); and [`Self::release_landed`] subtracts
+/// what the engine's progress echo **proves** has left its queue —
+/// admitted-batch and stamp both behind the echoed horizon. The echo lags
+/// the engine, so the ledger may over-refuse for a batch or two; it never
+/// under-refuses, because nothing is released ahead of proof. An offline
 /// render's fresh registry keeps the ledger exact for its one
 /// self-contained batch.
 #[derive(Clone, Debug)]
@@ -520,8 +539,14 @@ pub struct GraphRegistry {
     next_node_id: usize,
     next_effect_id: usize,
     runtime_revision: u64,
+    /// Fenced batches this registry has committed onto the live engine's
+    /// ring — the control-side twin of the drain's `batches_applied` count.
+    /// Every send is one fence ([`daw_engine::EngineHandle::send_graph_batch`])
+    /// and this module is that fence's only producer, so batch `n` here is
+    /// batch `n` in the engine's echo.
+    batches_sent: u64,
     automation_pending: HashMap<AutomationTarget, Vec<PendingStamp>>,
-    device_param_pending: HashMap<usize, usize>,
+    device_param_pending: HashMap<usize, Vec<DeviceParamStamp>>,
 }
 
 impl Default for GraphRegistry {
@@ -534,6 +559,7 @@ impl Default for GraphRegistry {
             next_node_id: 1,
             next_effect_id: FIRST_GRAPH_EFFECT_ID,
             runtime_revision: 0,
+            batches_sent: 0,
             automation_pending: HashMap::new(),
             device_param_pending: HashMap::new(),
         }
@@ -581,6 +607,37 @@ impl GraphRegistry {
         }
         true
     }
+
+    /// Subtract from the ledger exactly what the engine's progress echo
+    /// proves has left its fixed queue — never a count, always a per-stamp
+    /// proof, because a stamp the ledger's own mirrored cancellations already
+    /// removed must not release a second slot.
+    ///
+    /// The proof is the echo's happens-before guarantee
+    /// ([`GraphProgressSnapshot`]): a write is gone from its engine queue
+    /// once its admitting fenced batch is at or behind the echoed batch
+    /// horizon **and** its stamp sits strictly before the echoed playhead.
+    /// Strictly — a stamp at the playhead itself is not yet proven popped.
+    /// Both queue kinds pop by that law every rendered block, playing or
+    /// stopped: `RampedParam` frees a slot when the playhead reaches a
+    /// write's start frame, `DeviceParamQueue` pops everything due within
+    /// the block. A stale echo, an engine restart, or a stamp the engine
+    /// dropped by a law with no mirror here (a foreign seek, a stop-edge
+    /// hold) all degrade the same direction: the stamp stays charged and the
+    /// ledger over-refuses until a later echo — never under-refuses.
+    fn release_landed(&mut self, progress: GraphProgressSnapshot) {
+        let proven_landed = |admitted_batch: u64, at_frame: u64| {
+            admitted_batch <= progress.batches_applied && at_frame < progress.playhead_frame
+        };
+        self.automation_pending.retain(|_, queued| {
+            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            !queued.is_empty()
+        });
+        self.device_param_pending.retain(|_, queued| {
+            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            !queued.is_empty()
+        });
+    }
 }
 
 // ── Validation and mapping ─────────────────────────────────────────────────
@@ -603,12 +660,25 @@ impl std::fmt::Debug for MappedBatch {
 }
 
 /// One write the ledger believes a queue still holds: the stamp it starts at
-/// (what a locate's `cancel_from` filters on) and the frame it lands at (what
-/// a replace's `cancel_stale` filters on). A step lands at its own stamp.
+/// (what a locate's `cancel_from` filters on and what the progress echo's
+/// landed proof compares against), the frame it lands at (what a replace's
+/// `cancel_stale` filters on), and the fenced batch that admitted it (what
+/// the echo's batch horizon compares against). A step lands at its own stamp.
 #[derive(Clone, Copy, Debug)]
 struct PendingStamp {
     at_frame: u64,
     lands_at: u64,
+    admitted_batch: u64,
+}
+
+/// One device-parameter change the ledger believes a device's pending window
+/// still holds. Device queues have no cancellation laws to mirror — no
+/// replace, no locate ([`daw_engine::timeline::DeviceParamQueue`]) — so the
+/// only way a stamp leaves is the progress echo proving it popped.
+#[derive(Clone, Copy, Debug)]
+struct DeviceParamStamp {
+    at_frame: u64,
+    admitted_batch: u64,
 }
 
 /// Control-side ledger of what accepted batches queue on the engine's fixed
@@ -629,16 +699,22 @@ struct PendingStamp {
 ///
 /// The ledger is seeded from the registry's carried state and written back
 /// on success, so it models the queues *across* batches, not one batch
-/// against an empty engine. It cannot see the playhead landing an event, so
-/// it is deliberately conservative: over-refusal is possible, silent
-/// render-side drops are not.
+/// against an empty engine. Landed writes leave it through
+/// [`GraphRegistry::release_landed`] — the engine's progress echo, applied
+/// at admission before the seed — so between echoes it is deliberately
+/// conservative: over-refusal is possible, silent render-side drops are not.
 ///
 /// [`DeviceParamQueue`]: daw_engine::timeline::DeviceParamQueue
 #[derive(Default)]
 struct QueueBudgets {
     /// Per target, the stamps of every write the ledger believes is queued.
     automation: HashMap<AutomationTarget, Vec<PendingStamp>>,
-    device_params: HashMap<usize, usize>,
+    /// Per native effect id, the stamps of every pending device change.
+    device_params: HashMap<usize, Vec<DeviceParamStamp>>,
+    /// The fence number the batch being charged will carry when the engine
+    /// drains it — what [`GraphRegistry::release_landed`] later holds each
+    /// stamp's proof against.
+    charging_batch: u64,
 }
 
 impl QueueBudgets {
@@ -646,6 +722,7 @@ impl QueueBudgets {
         Self {
             automation: registry.automation_pending.clone(),
             device_params: registry.device_param_pending.clone(),
+            charging_batch: registry.batches_sent + 1,
         }
     }
 
@@ -672,35 +749,37 @@ impl QueueBudgets {
                 "automation-queue-capacity — this parameter's native queue is full: \
                  {AUTOMATION_QUEUE_CAPACITY} unlanded writes are pending, counting this \
                  batch and every earlier accepted one; the engine would drop further \
-                 writes silently, so the batch refuses whole. The control-side ledger \
-                 cannot see writes land, so splitting across batches frees nothing — \
-                 these slots release only when a replace or hold cancels the stale \
-                 writes, or a locate behind their stamps drops them (the engine's \
-                 landed-depth echo is jcosta33/sourdaw#2223)"
+                 writes silently, so the batch refuses whole. These slots release when \
+                 the engine's progress echo proves earlier writes landed (playback \
+                 passing their stamps frees them for the next batch), when a replace or \
+                 hold cancels the stale writes, or when a locate behind their stamps \
+                 drops them"
             ));
         }
         queued.push(PendingStamp {
             at_frame: start,
             lands_at,
+            admitted_batch: self.charging_batch,
         });
         Ok(())
     }
 
-    fn charge_device_param(&mut self, effect_id: usize) -> Result<(), String> {
-        let depth = self.device_params.entry(effect_id).or_insert(0);
-        if *depth == DEVICE_PARAM_QUEUE_CAPACITY {
+    fn charge_device_param(&mut self, effect_id: usize, at_frame: u64) -> Result<(), String> {
+        let queued = self.device_params.entry(effect_id).or_default();
+        if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
             return Err(format!(
                 "device-param-queue-capacity — this device's pending window is full: \
-                 {DEVICE_PARAM_QUEUE_CAPACITY} changes are charged, counting this batch and \
-                 every earlier accepted one, and the ledger has no release law for device \
-                 params — it cannot see changes land, so splitting across batches frees \
-                 nothing and this device refuses further parameter writes for the life of \
-                 this engine session, until the engine's landed-depth echo lands \
-                 (jcosta33/sourdaw#2223); the engine would drop the writes silently, so \
-                 the batch refuses whole instead"
+                 {DEVICE_PARAM_QUEUE_CAPACITY} changes are charged, counting this batch \
+                 and every earlier accepted one; the engine would drop the writes \
+                 silently, so the batch refuses whole instead. The window frees as the \
+                 engine's progress echo proves earlier changes landed — playback passing \
+                 their stamps releases them for the next batch"
             ));
         }
-        *depth += 1;
+        queued.push(DeviceParamStamp {
+            at_frame,
+            admitted_batch: self.charging_batch,
+        });
         Ok(())
     }
 
@@ -926,6 +1005,12 @@ fn map_batch(
 
     registry.automation_pending = budgets.automation;
     registry.device_param_pending = budgets.device_params;
+    // The fence horizon advances with the ledger it numbers. `registry` is
+    // the caller's working clone: a batch that maps but is never sent (a
+    // refused push, an offline mapping) discards the clone and the count
+    // with it, so a committed registry's count is exactly the fences the
+    // engine has been handed.
+    registry.batches_sent += 1;
 
     // The reports are a final pass over the post-batch registry: what each
     // touched strip's chain really holds after everything applied, never an
@@ -1393,6 +1478,11 @@ fn map_command(
                 },
             });
             registry.devices.remove(device_id);
+            // The retirement takes the device's `DeviceParamQueue` with it,
+            // pending changes and all, and graph effect ids are never reused
+            // (the allocator is monotonic) — so the ledger's window for this
+            // effect is exactly gone, not guessed gone.
+            budgets.device_params.remove(&device.native_effect_id);
             registry
                 .strips
                 .get_mut(track_id)
@@ -1433,14 +1523,15 @@ fn map_command(
                 }
             };
             let StepWritePayload::Step { value, time } = write;
+            let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
             budgets
-                .charge_device_param(device.native_effect_id)
+                .charge_device_param(device.native_effect_id, at_frame)
                 .map_err(|reason| format!("write-device-parameter: {reason}"))?;
             ops.push(GraphCommand::AutomateDeviceParam {
                 effect_id: device.native_effect_id,
                 param,
                 value: finite(*value, "write-device-parameter value")? as f32,
-                at_frame: seconds_to_frames(*time, sample_rate, "write-device-parameter time")?,
+                at_frame,
             });
             Ok(())
         }
@@ -1798,6 +1889,40 @@ fn parse_batch(batch: Value) -> Result<GraphBatchPayload, String> {
     serde_json::from_value(batch).map_err(|error| format!("Invalid graph command batch: {error}"))
 }
 
+/// What a live batch's correlation claims — the runtime revision it was
+/// built against. `projectRevision` rides the same object but belongs to
+/// project truth; the TS side owns comparing it, so it is not read here.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CorrelationClaims {
+    app_revision: u64,
+}
+
+/// The batch law's race check (`AudioGraphBackend.ts`): a correlated batch
+/// claims the live-engine revision it was built against, and a claim the
+/// engine has moved past means the batch already lost — it refuses here,
+/// before the graph changes. No correlation means "not correlated": the one
+/// uncorrelated producer renders a snapshot no live document races, so there
+/// is nothing to validate. A correlation that cannot be read is a refusal
+/// too, never a silent skip — a claim this side cannot check must not pass
+/// as checked.
+fn validate_correlation(correlation: Option<&Value>, runtime_revision: u64) -> Result<(), String> {
+    let Some(correlation) = correlation else {
+        return Ok(());
+    };
+    let claims: CorrelationClaims = serde_json::from_value(correlation.clone())
+        .map_err(|error| format!("correlation-malformed: {error}"))?;
+    if claims.app_revision != runtime_revision {
+        return Err(format!(
+            "correlation-stale — the batch was built against live-engine revision {}, but \
+             the engine is at revision {runtime_revision}; the batch lost its race and \
+             refuses before the graph changes",
+            claims.app_revision
+        ));
+    }
+    Ok(())
+}
+
 fn result_json(payload: &GraphApplyResultPayload) -> Result<Value, String> {
     serde_json::to_value(payload).map_err(|error| format!("Result did not serialize: {error}"))
 }
@@ -1874,6 +1999,20 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
     };
 
+    let mut registry_guard = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+
+    // The race check runs before the lazy bootstrap: a batch that already
+    // lost refuses before the graph changes, and a batch that cannot apply
+    // must not be the one that starts an engine.
+    if let Err(reason) =
+        validate_correlation(batch.correlation.as_ref(), registry_guard.runtime_revision)
+    {
+        return result_json(&GraphApplyResultPayload::rejected(reason));
+    }
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -1890,14 +2029,16 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
     }
     let engine = engine_guard.as_mut().expect("engine started above");
 
+    // Admission opens by subtracting what the engine has proven landed since
+    // the last batch: the queue ledger releases exactly the stamps the
+    // progress echo covers, so a slow writer never fills a queue forever.
+    let progress = engine.graph_progress_snapshot();
+    registry_guard.release_landed(progress);
+
     let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
-    let mut registry_guard = state
-        .graph
-        .lock()
-        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
 
     let correlation = batch.correlation.clone();
     let mut working = registry_guard.clone();
@@ -1952,6 +2093,69 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
         revision,
         mapped.reports,
     ))
+}
+
+/// Map one batch against the graph a prior command sequence built — the
+/// report wire of the offline seam, with nothing rendered.
+///
+/// This is how `createNativeOfflineGraphBackend.ts` gets strip reports and
+/// refusals from the mapping that owns them instead of restating them
+/// TS-side: `prior` is the backend's already-committed wire commands
+/// (replayed as one synthetic batch onto a fresh registry, exactly the graph
+/// its next render would rebuild), `batch` is the incoming batch mapped
+/// against that carried registry. The split is what scopes the result: the
+/// reports cover only the strips the *incoming* batch touched, and a refusal
+/// names its commands by the incoming batch's indices.
+///
+/// The result is the same `rejected`/`applied` vocabulary
+/// `apply_graph_commands` speaks, minus a `runtimeRevision` — there is no
+/// runtime here, and the TS backend owns its own revision counter
+/// ([`GraphApplyResultPayload::mapped`]). A correlation is echoed, never
+/// validated: a mapping has no live graph to race. A `prior` that fails to
+/// replay is a transport error, not a refusal — those commands were already
+/// accepted once, so a registry that no longer takes them is a broken seam
+/// invariant, and reporting it as a refusal of the *incoming* batch would
+/// blame the wrong commands.
+pub async fn map_graph_batch(
+    prior: Value,
+    batch: Value,
+    sample_rate: f64,
+    state: &AppState,
+) -> Result<Value, String> {
+    if !(sample_rate.is_finite() && sample_rate > 0.0) {
+        return Err("Sample rate must be a positive, finite number".to_string());
+    }
+    let prior_commands: Vec<GraphCommandPayload> = serde_json::from_value(prior)
+        .map_err(|error| format!("Invalid prior command sequence: {error}"))?;
+    let batch = match parse_batch(batch) {
+        Ok(batch) => batch,
+        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+    };
+
+    let samples = state
+        .timeline_samples
+        .lock()
+        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+
+    let mut registry = GraphRegistry::default();
+    if !prior_commands.is_empty() {
+        let replay = GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            commands: prior_commands,
+        };
+        map_batch(&replay, &mut registry, &samples, sample_rate as f32)
+            .map_err(|reason| format!("previously applied commands no longer map: {reason}"))?;
+    }
+
+    let correlation = batch.correlation.clone();
+    match map_batch(&batch, &mut registry, &samples, sample_rate as f32) {
+        Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
+            correlation,
+            mapped.reports,
+        )),
+        Err(reason) => result_json(&GraphApplyResultPayload::rejected(reason)),
+    }
 }
 
 /// Map one self-contained batch for an offline render: fresh registry, no
@@ -2688,6 +2892,303 @@ mod tests {
         .expect("the locate releases the ledger for the write behind it");
     }
 
+    fn knead_insert(track: &str, device: &str) -> Value {
+        json!({ "kind": "insert-device", "trackId": track, "index": 0,
+                "device": { "id": device, "type": "knead", "bypassed": false,
+                            "parameterValues": {} } })
+    }
+
+    fn device_step(track: &str, device: &str, value: f64, time: f64) -> Value {
+        json!({ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": track, "deviceId": device,
+                            "parameterId": "shift_semitones" },
+                "write": { "shape": "step", "value": value, "time": time } })
+    }
+
+    /// Push one mapped batch behind a fence, exactly as
+    /// `EngineHandle::send_graph_batch` publishes the live ones — the fence
+    /// is what the drain counts, so the ledger's batch numbers only line up
+    /// when the test fences too.
+    fn send_mapped(renderer: &mut OfflineRenderer, ops: Vec<GraphCommand>) {
+        renderer
+            .push(GraphCommand::BeginBatch {
+                commands: ops.len(),
+            })
+            .expect("the fence fits");
+        for op in ops {
+            renderer.push(op).expect("the batch fits");
+        }
+    }
+
+    /// The full admission cycle of one live batch, driven synchronously:
+    /// release what the echo proves landed, map against a working clone,
+    /// send behind a fence, commit the clone.
+    fn admit_and_send(
+        registry: &mut GraphRegistry,
+        renderer: &mut OfflineRenderer,
+        commands: Value,
+        samples: &HashMap<String, TimelineSample>,
+    ) -> Result<(), String> {
+        registry.release_landed(renderer.graph_progress());
+        let mut working = registry.clone();
+        let mapped = map_batch(&batch(commands), &mut working, samples, 48_000.0)?;
+        send_mapped(renderer, mapped.ops);
+        *registry = working;
+        Ok(())
+    }
+
+    /// Debt 1+2's discriminating case: more sequential single-write batches
+    /// than either fixed queue holds, against one device parameter and one
+    /// automation parameter, with the engine draining between batches. Every
+    /// batch admits, because the progress echo releases what landed — under
+    /// the old monotonic ledger the ninth device write refused for the life
+    /// of the session.
+    #[test]
+    fn landed_writes_release_the_ledger_for_later_batches() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                knead_insert("t1", "d1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        renderer.render(512);
+
+        for round in 0..=(DEVICE_PARAM_QUEUE_CAPACITY + AUTOMATION_QUEUE_CAPACITY) {
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    device_step("t1", "d1", round as f64, 0.0),
+                    pan_step("t1", 0.1, 0.0),
+                ]),
+                &samples,
+            )
+            .unwrap_or_else(|reason| {
+                panic!("write round {round} must admit once earlier writes landed: {reason}")
+            });
+            renderer.render(512);
+        }
+
+        // Everything sent has landed and the last echo covers it: the ledger
+        // drains to empty, not merely below capacity.
+        registry.release_landed(renderer.graph_progress());
+        assert!(registry.device_param_pending.is_empty());
+        assert!(registry.automation_pending.is_empty());
+    }
+
+    /// The release law's other half: the ledger subtracts nothing the echo
+    /// has not proven. A stale echo (taken before the writes rendered)
+    /// releases nothing and the next write refuses; the fresh echo then
+    /// frees the window. A landed batch whose stamp is still ahead of the
+    /// playhead stays charged too — both halves of the proof are required.
+    #[test]
+    fn the_ledger_never_releases_ahead_of_the_echo() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                knead_insert("t1", "d1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        renderer.render(512);
+        // The echo the fill batch will lag behind: batch 1 applied, one
+        // block rendered.
+        let stale = renderer.graph_progress();
+
+        let fill: Vec<Value> = (0..DEVICE_PARAM_QUEUE_CAPACITY)
+            .map(|index| device_step("t1", "d1", index as f64, 0.0))
+            .collect();
+        admit_and_send(&mut registry, &mut renderer, Value::Array(fill), &samples)
+            .expect("filling the window exactly maps");
+
+        // The fill batch is sent but its echo has not arrived: releasing
+        // against the stale snapshot must free nothing — its stamps sit at
+        // frame 0, behind the stale playhead, so only the batch horizon
+        // stands between this ledger and an under-refusal.
+        registry.release_landed(stale);
+        let mut working = registry.clone();
+        let refusal = map_batch(
+            &batch(json!([device_step("t1", "d1", 9.0, 0.0)])),
+            &mut working,
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a write past the unproven window must refuse");
+        assert!(refusal.contains("device-param-queue-capacity"));
+
+        // The engine drains the fill; the fresh echo proves it landed.
+        renderer.render(512);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([device_step("t1", "d1", 9.0, 0.0)]),
+            &samples,
+        )
+        .expect("the write admits once the echo proves the window landed");
+        renderer.render(512);
+
+        // A write stamped ahead of the playhead is applied but not landed:
+        // its batch is behind the echoed horizon, its stamp is not, so it
+        // stays charged.
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([device_step("t1", "d1", 10.0, 100.0)]),
+            &samples,
+        )
+        .expect("a future-stamped write admits into a freed window");
+        renderer.render(512);
+        registry.release_landed(renderer.graph_progress());
+        let pending: usize = registry.device_param_pending.values().map(Vec::len).sum();
+        assert_eq!(
+            pending, 1,
+            "the unreached future stamp must stay charged after every landed one released"
+        );
+    }
+
+    /// Debt 3, refusal ordering: a batch that lost its revision race rejects
+    /// with the contract's semantics — refused before the graph changed —
+    /// and before the lazy bootstrap, so a lost batch never starts an
+    /// engine. A correlation this side cannot read refuses the same way.
+    #[test]
+    fn a_stale_or_unreadable_correlation_rejects_before_the_engine_bootstraps() {
+        let state = AppState::default();
+        let stale = json!({ "schemaVersion": 1,
+            "correlation": { "appRevision": 5, "projectRevision": "p1" },
+            "commands": [] });
+
+        let result = block_on_test(apply_graph_commands(stale, &state))
+            .expect("a stale correlation resolves to a result, not a throw");
+        assert_eq!(result["acceptance"], "rejected");
+        assert_eq!(result["application"], "not-applied");
+        let reason = result["reason"]
+            .as_str()
+            .expect("the reason names the race");
+        assert!(reason.contains("correlation-stale"), "got: {reason}");
+        assert!(reason.contains("revision 5"), "got: {reason}");
+
+        let malformed = json!({ "schemaVersion": 1,
+            "correlation": { "appRevision": "not-a-revision" },
+            "commands": [] });
+        let result = block_on_test(apply_graph_commands(malformed, &state))
+            .expect("an unreadable correlation resolves to a result");
+        assert_eq!(result["acceptance"], "rejected");
+        assert!(result["reason"]
+            .as_str()
+            .expect("the reason names the parse")
+            .contains("correlation-malformed"));
+
+        // Both refusals preceded the lazy bootstrap: no engine was started
+        // for a batch that could not apply.
+        assert!(state.engine.lock().expect("engine lock").is_none());
+    }
+
+    /// The correlation contract's other two legs: a claim matching the live
+    /// revision passes, and an absent correlation means "not correlated" —
+    /// no validation, exactly what the uncorrelated offline bounce sends.
+    #[test]
+    fn a_current_correlation_passes_and_an_absent_one_skips_validation() {
+        assert_eq!(validate_correlation(None, 7), Ok(()));
+        let current = json!({ "appRevision": 7, "projectRevision": "p1" });
+        assert_eq!(validate_correlation(Some(&current), 7), Ok(()));
+        let stale = json!({ "appRevision": 7, "projectRevision": "p1" });
+        let reason = validate_correlation(Some(&stale), 8).expect_err("a passed-by claim refuses");
+        assert!(reason.contains("correlation-stale"), "got: {reason}");
+    }
+
+    /// Debt 4's report wire: `map_graph_batch` answers the incoming batch's
+    /// touched-strip reports against the graph the prior commands built —
+    /// with nothing rendered and no `runtimeRevision`, which the TS backend
+    /// owns.
+    #[test]
+    fn map_graph_batch_reports_the_incoming_batches_touched_strips() {
+        let state = AppState::default();
+        let prior = json!([track_strip("t1"), knead_insert("t1", "d1")]);
+        let incoming = json!({ "schemaVersion": 1,
+            "correlation": { "appRevision": 3, "projectRevision": "p1" },
+            "commands": [
+                { "kind": "insert-device", "trackId": "t1", "index": 1,
+                  "device": { "id": "d2", "type": "knead", "bypassed": false,
+                              "parameterValues": {} } },
+                track_strip("t2"),
+            ] });
+
+        let result = block_on_test(map_graph_batch(prior, incoming, 48_000.0, &state))
+            .expect("a mappable batch resolves");
+
+        assert_eq!(result["acceptance"], "accepted");
+        assert_eq!(result["application"], "applied");
+        // No runtime ran, so no runtime revision may be claimed.
+        assert!(result.get("runtimeRevision").is_none());
+        // The correlation is echoed, not validated: a mapping races nothing.
+        assert_eq!(result["correlation"]["appRevision"], 3);
+        // Reports cover exactly the strips the *incoming* batch touched —
+        // and t1's chain is the realized one the prior built plus this
+        // batch's insert, which only the carried registry can know.
+        assert_eq!(
+            result["reports"],
+            json!([
+                { "kind": "track", "id": "t1", "deviceIds": ["d1", "d2"] },
+                { "kind": "track", "id": "t2", "deviceIds": [] },
+            ])
+        );
+    }
+
+    /// The two failure vocabularies of the mapping wire: an incoming batch
+    /// that cannot map is the contract's `rejected` result naming its own
+    /// command indices; a prior sequence that no longer replays is a
+    /// transport error — those commands were accepted once, so blaming the
+    /// incoming batch would name the wrong commands.
+    #[test]
+    fn map_graph_batch_rejects_the_incoming_batch_and_faults_a_broken_prior() {
+        let state = AppState::default();
+
+        let result = block_on_test(map_graph_batch(
+            json!([track_strip("t1")]),
+            json!({ "schemaVersion": 1, "commands": [
+                { "kind": "set-track-output", "trackId": "missing",
+                  "target": { "kind": "master" } }
+            ] }),
+            48_000.0,
+            &state,
+        ))
+        .expect("a refusal resolves to a result");
+        assert_eq!(result["acceptance"], "rejected");
+        assert!(result["reason"]
+            .as_str()
+            .expect("the reason names the command")
+            .contains("commands[0]"));
+
+        let fault = block_on_test(map_graph_batch(
+            json!([track_strip("t1"), track_strip("t1")]),
+            json!({ "schemaVersion": 1, "commands": [] }),
+            48_000.0,
+            &state,
+        ))
+        .expect_err("a prior that no longer maps is a transport fault");
+        assert!(
+            fault.contains("previously applied commands no longer map"),
+            "got: {fault}"
+        );
+    }
+
     /// A payload that does not deserialize resolves to the contract's
     /// `rejected` result — one failure vocabulary, not a thrown transport
     /// error beside it. `index: -1` is the likeliest live trigger: the
@@ -2807,6 +3308,26 @@ mod tests {
             applied,
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
+                r#""reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}]}"#
+            )
+        );
+
+        // A mapped result is `applied` with no `runtimeRevision` at all —
+        // the TS backend must never read a revision out of a mapping.
+        let mapped = serde_json::to_string(&GraphApplyResultPayload::mapped(
+            Some(json!({ "appRevision": 1, "projectRevision": "p1" })),
+            vec![StripReportPayload {
+                kind: "track",
+                id: "t1".to_string(),
+                device_ids: vec!["d1".to_string()],
+            }],
+        ))
+        .expect("mapped serializes");
+        assert_eq!(
+            mapped,
+            concat!(
+                r#"{"acceptance":"accepted","application":"applied","#,
+                r#""correlation":{"appRevision":1,"projectRevision":"p1"},"#,
                 r#""reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}]}"#
             )
         );

@@ -16,7 +16,10 @@ use midi::diagnostics::{
 };
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
-use scheduler::{GraphCommand, RetiredGraphObjects};
+use scheduler::{
+    graph_progress_channel, GraphCommand, GraphProgressReader, GraphProgressSnapshot,
+    RetiredGraphObjects,
+};
 use std::sync::mpsc::Sender;
 use timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
@@ -78,6 +81,7 @@ pub struct EngineHandle {
     next_plugin_id: usize,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
+    graph_progress: GraphProgressReader,
     engine_events: Consumer<EngineEvent>,
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
@@ -108,12 +112,14 @@ impl EngineHandle {
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
         let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
+        let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (thread_handle, sample_rate, retired_adoption_tx) =
             spawn_audio_thread_with_diagnostics(
                 rx,
                 diagnostics_tx,
                 timeline_diagnostics_tx,
+                graph_progress_tx,
                 engine_event_tx,
                 force_default_buffer,
             )?;
@@ -125,6 +131,7 @@ impl EngineHandle {
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
+            graph_progress: graph_progress_reader,
             engine_events: engine_event_rx,
             sample_rate,
         })
@@ -248,6 +255,16 @@ impl EngineHandle {
     /// refusal is the alternative to allocating inside the audio deadline.
     pub fn timeline_rt_diagnostics_snapshot(&mut self) -> TimelineRtDiagnosticsSnapshot {
         self.timeline_rt_diagnostics.snapshot()
+    }
+
+    /// Read the audio thread's latest progress echo outside the callback.
+    ///
+    /// This is the control-side queue ledger's release evidence: see
+    /// [`GraphProgressSnapshot`] for the happens-before it guarantees and the
+    /// lag it may carry. A consumer subtracts only what the snapshot proves
+    /// landed, so a lagging echo over-refuses and never under-refuses.
+    pub fn graph_progress_snapshot(&mut self) -> GraphProgressSnapshot {
+        self.graph_progress.snapshot()
     }
 
     /// Take every engine event published since the last drain.
@@ -562,6 +579,7 @@ fn engine_handle_for_command_capture(
     let (command_tx, command_rx) = RingBuffer::new(capacity);
     let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
+    let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
@@ -573,6 +591,7 @@ fn engine_handle_for_command_capture(
             next_plugin_id: 1000,
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
+            graph_progress: graph_progress_reader,
             engine_events: engine_event_rx,
             sample_rate: 48_000.0,
         },
