@@ -14,7 +14,7 @@ import {
     type ShellRunner,
     type StackedPullRequest,
 } from '../deliverPullRequest';
-import { GITHUB_HTTPS_REMOTE } from '../githubAppIdentity.ts';
+import { GITHUB_HTTPS_REMOTE, REQUIRED_BASE_BRANCH } from '../githubAppIdentity.ts';
 
 const body = `### 🎯 What does this PR do?
 Change.
@@ -283,6 +283,71 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port)).toThrow(/baseRefName changed/);
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A retarget moves the base and leaves the head, the approval and the merge state untouched, so
+     * every other gate here still reads green while the squash lands on a branch nobody reviewed
+     * the change against.
+     */
+    it('refuses a pull request retargeted away from the trunk before delivery', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ baseRefName: 'release/1.0' }), pullRequest({ baseRefName: 'release/1.0' })],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(calls, 'a pull request retargeted to release/1.0 was squash-merged onto it').not.toContain(
+            'merge:42:head'
+        );
+        expect(String(thrown)).toMatch(/PR #42 targets release\/1\.0, not main; deliver merges into main only/);
+        expect(calls.some((call) => call.startsWith('retarget:'))).toBe(false);
+    });
+
+    /**
+     * The already-merged path does not merge anything, but it does retarget every dependent onto
+     * the merged pull request's base. A substituted base there moves the whole stack onto it.
+     */
+    it('refuses to repair dependents onto a substituted base', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', baseRefName: 'release/1.0' })],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(calls, 'dependents were retargeted onto the substituted base release/1.0').not.toContainEqual(
+            expect.stringMatching(/^retarget:/)
+        );
+        expect(String(thrown)).toMatch(/PR #42 targets release\/1\.0, not main/);
+    });
+
+    it('names the base it found, the base it requires, and the way out', () => {
+        const { port } = fakePort({
+            primary: [pullRequest({ baseRefName: 'agent/parent' }), pullRequest({ baseRefName: 'agent/parent' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(
+            /targets agent\/parent, not main.*Deliver the pull request this one is stacked on, which retargets this one/s
+        );
+    });
+
+    it('delivers the trunk base the lane tooling opens every pull request against', () => {
+        expect(REQUIRED_BASE_BRANCH).toBe('main');
+        const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest()] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
     });
 
     it('rejects unresolved review before merge', () => {

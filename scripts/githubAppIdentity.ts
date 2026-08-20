@@ -18,6 +18,12 @@ export function isAuthorBotLogin(login: string | undefined | null): boolean {
     return login === AUTHOR_BOT_LOGIN || login === AUTHOR_GRAPHQL_LOGIN;
 }
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
+/**
+ * The one branch a pull request may target. `lane:publish` opens every pull request against it and
+ * `deliver` merges into nothing else, so a base that is not this branch is a retarget the delivery
+ * scripts did not make.
+ */
+export const REQUIRED_BASE_BRANCH = 'main';
 export const GITHUB_HTTPS_REMOTE = `https://github.com/${REQUIRED_REPOSITORY}.git`;
 export function githubAuthenticatedRemote(token: string): string {
     return `https://x-access-token:${token}@github.com/${REQUIRED_REPOSITORY}.git`;
