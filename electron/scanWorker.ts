@@ -5,9 +5,10 @@
  * arguments the addon reads:
  *
  * 1. **Leaf worker.** Started by the Rust scan policy, once per plugin, with
- *    `--sourdaw-plugin-scan-worker <plugin> <response>`. `runPluginScanWorker`
- *    extracts the descriptor and returns the exit code this process must end
- *    with. This is the only place a CLAP entry point is ever loaded.
+ *    `--sourdaw-plugin-scan-worker <format> <plugin> <response>`.
+ *    `runPluginScanWorker` extracts the descriptor and returns the exit code
+ *    this process must end with. This is the only place a CLAP entry point is
+ *    ever loaded.
  * 2. **Supervisor.** Forked by the main process. It runs the scan and answers
  *    with the result.
  *

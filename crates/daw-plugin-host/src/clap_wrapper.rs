@@ -1108,7 +1108,7 @@ impl ClapWrapper {
     /// re-read, and return the freshly queried latency. CLAP forbids latency
     /// changes while active, so latency is only re-queried after this cycle.
     ///
-    /// Main/control-thread only: the caller (the `SharedClapPlugin` control seam)
+    /// Main/control-thread only: the caller (the `SharedHostedPlugin` control seam)
     /// holds the exclusive control lock, so the RT `process` path cannot run
     /// concurrently — which is also why the audio thread cannot perform the stop
     /// this cycle needs, and why the off-audio-thread fallback is used and

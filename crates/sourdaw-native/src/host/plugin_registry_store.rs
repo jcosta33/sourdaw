@@ -62,9 +62,11 @@ use crate::state::PluginRegistryEntry;
 ///
 /// Bumped to 3 when `clap_id` became `descriptor_id`: the column holds the same
 /// move-survivable identity, now named for the concept rather than for the one
-/// format that had it. Same policy, and for the same reason — a version 2
-/// document would deserialize with an empty `descriptor_id` on every row, which
-/// silently drops the secondary key a moved plugin resolves by.
+/// format that had it. `descriptor_id` carries no serde default, so a version 2
+/// document actually fails to deserialize at all — `read_registry_document`
+/// discards the whole document before the schema check ever runs. The version
+/// gate is belt-and-braces here, not the mechanism that drops the secondary key
+/// a moved plugin resolves by.
 const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 3;
 
 const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";

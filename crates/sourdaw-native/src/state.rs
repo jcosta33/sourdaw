@@ -344,7 +344,7 @@ mod tests {
     /// implemented. Restore either downcast and every assertion in
     /// `a_non_clap_backend_is_reached_through_the_trait` fails.
     struct EditorBackedTestPlugin {
-        editor_open: bool,
+        editor_open: Arc<std::sync::atomic::AtomicBool>,
     }
 
     impl AudioPlugin for EditorBackedTestPlugin {
@@ -373,12 +373,14 @@ mod tests {
         }
 
         fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
-            self.editor_open = true;
+            self.editor_open
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             Ok((640, 480))
         }
 
         fn close_gui(&mut self) {
-            self.editor_open = false;
+            self.editor_open
+                .store(false, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
@@ -405,8 +407,11 @@ mod tests {
 
     #[test]
     fn a_non_clap_backend_is_reached_through_the_trait() {
+        let editor_open = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut instance = PluginInstanceData {
-            plugin: Box::new(EditorBackedTestPlugin { editor_open: false }),
+            plugin: Box::new(EditorBackedTestPlugin {
+                editor_open: Arc::clone(&editor_open),
+            }),
         };
 
         assert_eq!(instance.get_name(), "Test Backend Plugin");
@@ -419,7 +424,16 @@ mod tests {
             Ok((640, 480)),
             "the editor size must come from the plugin, not from a downcast that missed"
         );
+        assert!(
+            editor_open.load(std::sync::atomic::Ordering::SeqCst),
+            "open_gui must mark the editor open"
+        );
+
         instance.close_gui();
+        assert!(
+            !editor_open.load(std::sync::atomic::Ordering::SeqCst),
+            "close_gui must mark the editor closed"
+        );
     }
 
     /// The defaults are answers a backend can stand behind, and none of them
