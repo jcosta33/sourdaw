@@ -933,6 +933,76 @@ describe('versioned command contract', () => {
         ).toThrow('Device version is unavailable for command setDeviceParameter');
     });
 
+    it('accepts a glueClips envelope whose clipAutomationLanes carries a fully-populated automation lane', () => {
+        const automationPoint = {
+            id: 'point-cutoff-1',
+            beat: 4,
+            value: 0.62,
+            curve: 'exponential',
+            tension: 0.3,
+            stairSteps: 8,
+            cp1: { x: 0.25, y: 0.1 },
+            cp2: { x: 0.75, y: 0.9 },
+        };
+        const automationObject = {
+            id: 'automation-object-1',
+            laneId: 'lane-filter-cutoff',
+            startBeat: 0,
+            endBeat: 8,
+            points: [automationPoint],
+            poolId: 'pool-filter-cutoff',
+            loopLength: 4,
+            overrides: { muted: false },
+            name: 'Filter Sweep',
+        };
+        const clipAutomationLane = {
+            id: 'lane-filter-cutoff',
+            trackId: 'track-drums',
+            clipId: 'clip-drums-1',
+            clipAutomationMode: 'additive' as const,
+            parameterId: 'param-filter-cutoff',
+            parameterName: 'Filter Cutoff',
+            points: [automationPoint],
+            trimPoints: [automationPoint],
+            objects: [automationObject],
+            ghostPoints: [automationPoint],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            linkedLaneId: 'lane-filter-resonance',
+            linkScale: 1,
+            minValue: 0,
+            maxValue: 1,
+            viewMinValue: 0.1,
+            viewMaxValue: 0.9,
+            color: '#ff8800',
+        };
+
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'glueClips',
+                payload: {
+                    clipIds: ['clip-drums-1', 'clip-drums-2'],
+                    expected: {
+                        trackId: 'track-drums',
+                        clips: [],
+                        clipOrder: [],
+                        midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+                        clipSatellites: [],
+                        clipAutomationLanes: [clipAutomationLane],
+                    },
+                },
+            },
+            expectedEffect: 'Glue two drum clips, preserving the filter cutoff automation lane.',
+            normalizedProjectRevision: 'revision-1',
+        });
+
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(command.envelope))).toEqual({
+            status: 'valid',
+            envelope: command.envelope,
+        });
+    });
+
     it('rejects execution after an application-owned device contract changes', async () => {
         const execute = vi.fn(() => ({ status: 'written' as const }));
         registerHandlerMap({
