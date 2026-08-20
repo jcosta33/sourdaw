@@ -662,6 +662,24 @@ type ProcessRow = {
     command: string;
 };
 
+const psColumns = 'pid=,ppid=,pgid=,rss=,command=';
+
+export function psSamplingArgs(hostPlatform: NodeJS.Platform, sessionToken: string | undefined): string[] {
+    // BSD `ps` (macOS) accepts the mixed form `eww -axo`, and that is what Darwin keeps,
+    // unchanged. procps-ng 4.x (current Linux) rejects mixing the undashed BSD prefix with
+    // dashed `-axo` — "must set personality to get -x option" — which stopped every
+    // guard-wrapped run with reason 'monitor' on such hosts before a command could start.
+    // The undashed `axo` selects the same every-process set and is accepted by procps 3.x,
+    // 4.x, and BSD alike, so every non-Darwin host samples through it.
+    if (sessionToken === undefined) {
+        return ['-axo', psColumns];
+    }
+    if (hostPlatform === 'darwin') {
+        return ['eww', '-axo', psColumns];
+    }
+    return ['eww', 'axo', psColumns];
+}
+
 function processTable(sessionToken?: string): ProcessRow[] | undefined {
     if (platform() === 'win32') {
         const result = spawnSync(
@@ -693,13 +711,8 @@ function processTable(sessionToken?: string): ProcessRow[] | undefined {
             return undefined;
         }
     }
-    const result = spawnSync(
-        'ps',
-        sessionToken === undefined
-            ? ['-axo', 'pid=,ppid=,pgid=,rss=,command=']
-            : ['eww', '-axo', 'pid=,ppid=,pgid=,rss=,command='],
-        { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }
-    );
+    const samplingArgs = psSamplingArgs(platform(), sessionToken);
+    const result = spawnSync('ps', samplingArgs, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     if (result.status !== 0) {
         return undefined;
     }
@@ -923,6 +936,14 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         detached: platform() !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // Handlers must exist before the blocking post-spawn work below (start-time probing,
+    // identity publication): until they are registered, a SIGINT or SIGTERM kills this
+    // process by default disposition — orphaning the just-spawned, detached child this
+    // guard exists to contain. They cannot run before the current synchronous region,
+    // which initializes every binding they read, has finished, because libuv delivers
+    // signals to the event loop, never mid-tick.
+    process.on('SIGINT', onSigint);
+    process.on('SIGTERM', onSigterm);
     if (child.pid !== undefined) {
         const childStartedAt = processStartedAt(child.pid);
         if (childStartedAt !== undefined) {
@@ -935,6 +956,8 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             if (ownedSession) {
                 session.release();
             }
+            process.removeListener('SIGINT', onSigint);
+            process.removeListener('SIGTERM', onSigterm);
             throw new Error('validation process identity could not be published', { cause: error });
         }
     }
@@ -957,18 +980,22 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         terminateProcessTree(childPid, 'SIGTERM', tracked, processToken);
         forceKillTimer = setTimeout(() => terminateProcessTree(childPid, 'SIGKILL', tracked, processToken), 5_000);
     };
-    const onInterrupt = (signal: NodeJS.Signals) => {
+    // Hoisted so the process.on registrations above the spawn-gap comment can name them
+    // before these lines execute; they only ever run on a later loop turn.
+    function onSigint(): void {
+        onInterrupt('SIGINT');
+    }
+    function onSigterm(): void {
+        onInterrupt('SIGTERM');
+    }
+    function onInterrupt(signal: NodeJS.Signals): void {
         if (interruptedSignal !== undefined && child.pid !== undefined) {
             terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
             return;
         }
         interruptedSignal = signal;
         stop('signal');
-    };
-    const onSigint = () => onInterrupt('SIGINT');
-    const onSigterm = () => onInterrupt('SIGTERM');
-    process.on('SIGINT', onSigint);
-    process.on('SIGTERM', onSigterm);
+    }
     const sample = () => {
         if (child.pid === undefined) {
             return;
@@ -1007,7 +1034,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             }
         }
     };
-    sample();
+    try {
+        sample();
+    } catch (error) {
+        process.removeListener('SIGINT', onSigint);
+        process.removeListener('SIGTERM', onSigterm);
+        throw error;
+    }
     const sampleTimer = setInterval(sample, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
