@@ -97,7 +97,7 @@
 //! field, not by path: the graph's `set-transport` owns `is_playing` and the
 //! song position (`GraphCommand::SetTransportPlayback`), while tempo and time
 //! signature are owned by the plugin-transport path
-//! (`update_plugin_transport`, `GraphCommand::SetTransport`). A graph
+//! (`GraphCommand::SetTransport`). A graph
 //! transport write leaves plugin-visible tempo and time signature untouched;
 //! the engine re-derives the beat position from the tempo it already holds.
 //!

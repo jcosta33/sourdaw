@@ -135,7 +135,6 @@ export const DENIED_COMMANDS = [
     'read_audio_file',
     'send_plugin_midi',
     'show_all_plugin_guis',
-    'update_plugin_transport',
     'write_audio_file',
 ] as const;
 

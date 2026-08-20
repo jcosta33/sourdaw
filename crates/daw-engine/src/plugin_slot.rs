@@ -20,8 +20,8 @@ pub struct MidiNoteEvent {
 /// Transport state for plugins that need tempo/position info.
 ///
 /// Ownership is split by field, not by writer: tempo and time signature are
-/// owned by the plugin-transport path (`update_plugin_transport`, applied via
-/// `GraphCommand::SetTransport`), while `is_playing` and the song position
+/// owned by the plugin-transport path (`GraphCommand::SetTransport`), while
+/// `is_playing` and the song position
 /// are also written by the graph path (`GraphCommand::SetTransportPlayback`),
 /// which merges into the held state and re-derives `song_pos_beats` from the
 /// tempo it does not own. A graph transport write can never move a
