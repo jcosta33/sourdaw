@@ -141,12 +141,19 @@ describe('probeWebGpuUsability', () => {
     });
 
     it('rejects worker failures and terminates the worker', async () => {
+        vi.useFakeTimers();
         const result = probeWebGpuUsability();
         const worker = installedWorker();
 
         worker.onerror?.(new ErrorEvent('error', { error: new Error('worker crashed') }));
 
         await expect(result).rejects.toThrow('WebGPU probe worker failed');
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(10_001);
+
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
 
@@ -185,5 +192,7 @@ describe('probeWebGpuUsability', () => {
 
         await rejection;
         expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(worker.onmessage).toBeNull();
+        expect(worker.onerror).toBeNull();
     });
 });

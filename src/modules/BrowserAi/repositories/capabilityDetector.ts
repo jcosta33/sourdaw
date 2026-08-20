@@ -257,8 +257,8 @@ function read_reusable_legacy_inference(value: unknown): MeasuredInferenceThroug
     }
     if (
         !is_web_gpu_tier(value.webGpuTier) ||
-        typeof value.sharedArrayBuffer !== 'boolean' ||
-        typeof value.opfsAvailable !== 'boolean' ||
+        value.sharedArrayBuffer !== true ||
+        value.opfsAvailable !== true ||
         !is_finite_number(value.chromeVersion) ||
         !is_finite_number(value.detectedAt) ||
         !is_measured_inference_throughput(value.inference)

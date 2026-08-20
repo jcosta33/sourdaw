@@ -342,6 +342,33 @@ describe('detectCapabilities', () => {
         expect(report.webGpuTier).toBe('not-measured');
     });
 
+    it.each(['sharedArrayBuffer', 'opfsAvailable'] as const)(
+        'should not reuse retired measured throughput when %s was unavailable',
+        async (required_fact) => {
+            install_supported_browser();
+            install(measured(3));
+            window.localStorage.setItem(
+                storage_key,
+                JSON.stringify({
+                    capability: 'supported',
+                    webGpu: { status: 'supported' },
+                    webGpuTier: 'webgpu-fast',
+                    sharedArrayBuffer: true,
+                    opfsAvailable: true,
+                    chromeVersion: 133,
+                    inference: measured(8.75),
+                    detectedAt: detected_at - 86_400_000,
+                    [required_fact]: false,
+                })
+            );
+
+            const report = await detectCapabilities();
+
+            expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+            expect(report.webGpuTier).toBe('not-measured');
+        }
+    );
+
     it('should probe current hardware while reusing cached measured throughput', async () => {
         install_supported_browser();
         const { measure, probe } = install(measured(3));
