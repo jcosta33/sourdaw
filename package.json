@@ -26,6 +26,7 @@
         "census:ui": "node scripts/uiRestatementCensus.ts",
         "test:e2e": "playwright test",
         "test:e2e:browser-ai-webgpu-admission": "playwright test --config tests/e2e/browserAiWebGpuAdmission.playwright.config.ts",
+        "test:e2e:ddsp-render": "playwright test --config tests/e2e/ddspRender.playwright.config.ts",
         "deliver": "node scripts/deliverPullRequest.ts",
         "lane:open": "node scripts/openLane.ts",
         "lane:publish": "node scripts/publishLane.ts",

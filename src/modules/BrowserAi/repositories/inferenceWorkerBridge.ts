@@ -269,7 +269,7 @@ export const inferenceWorkerBridge = {
     }: {
         modelId: string;
         artifacts: Array<Omit<DdspStoredArtifact, 'modelDataPort'>>;
-    }): Promise<void> {
+    }): Promise<string> {
         logger.info(`[WorkerBridge] Loading DDSP (TF.js) session from verified OPFS: ${modelId}`);
         const worker = await getTfjsWorker();
         const requestId = crypto.randomUUID();
@@ -293,12 +293,16 @@ export const inferenceWorkerBridge = {
                 modelId,
                 artifacts: streamedArtifacts,
             };
-            await sendRequest(
+            const response = await sendRequest(
                 worker,
                 workerState.tfjs,
                 request,
                 streamedArtifacts.map((artifact) => artifact.modelDataPort)
             );
+            if (response.type !== 'session-created' || response.modelId !== modelId || response.backend !== 'webgpu') {
+                throw new Error(`DDSP did not initialize the required WebGPU backend: ${response.type}`);
+            }
+            return response.backend;
         } catch (error) {
             for (const artifact of streamedArtifacts) {
                 artifact.modelDataPort.close();

@@ -1,21 +1,9 @@
-import {
-    concat,
-    loadGraphModel,
-    ready,
-    registerOp,
-    setBackend,
-    split,
-    tensor1d,
-    type GraphModel,
-    type NamedTensorMap,
-    type Tensor,
-    type io,
-} from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-backend-webgpu';
-
 import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
 
+import type { GraphModel, NamedTensorMap, Tensor, io } from '@tensorflow/tfjs';
+
 const sessions = new Map<string, GraphModel>();
+let tfModule: typeof import('@tensorflow/tfjs') | undefined;
 type WeightSpec = {
     name: string;
     shape: number[];
@@ -43,28 +31,38 @@ async function readArtifact(artifact: DdspStoredArtifact): Promise<ArrayBuffer> 
     });
 }
 
-async function loadTfjs(): Promise<void> {
+async function loadTfjs(): Promise<typeof import('@tensorflow/tfjs')> {
+    if (tfModule) {
+        return tfModule;
+    }
+    const tf = await import('@tensorflow/tfjs');
+    // Vite's worker define can expose a partial `process`; TF.js prefers it over
+    // the WorkerGlobalScope unless this points its environment back at the worker.
+    tf.env().global = globalThis;
+    await import('@tensorflow/tfjs-backend-webgpu');
     if (typeof navigator === 'undefined' || !navigator.gpu) {
         throw new Error('DDSP requires WebGPU');
     }
-    if ((await setBackend('webgpu')) !== true) {
+    if ((await tf.setBackend('webgpu')) !== true) {
         throw new Error('TF.js could not initialize its required WebGPU backend');
     }
-    await ready();
-    registerOp('Roll', (node) => {
+    await tf.ready();
+    tf.registerOp('Roll', (node) => {
         const input = node.inputs[0];
         if (!input) {
             throw new Error('DDSP Roll operation received no input');
         }
-        const [first, second] = split(input, 2, 2);
+        const [first, second] = tf.split(input, 2, 2);
         if (!first || !second) {
             throw new Error('DDSP Roll operation could not split its input');
         }
-        const result = concat([second, first], 2);
+        const result = tf.concat([second, first], 2);
         first.dispose();
         second.dispose();
         return result;
     });
+    tfModule = tf;
+    return tf;
 }
 
 function firstTensor(output: Tensor | Tensor[] | NamedTensorMap): Tensor {
@@ -88,14 +86,21 @@ async function createSession(
     request: Extract<WorkerRequest, { type: 'create-session-from-model-storage' }>
 ): Promise<void> {
     if (sessions.has(request.modelId)) {
-        post({ type: 'session-created', requestId: request.requestId, modelId: request.modelId });
+        const tf = await loadTfjs();
+        post({
+            type: 'session-created',
+            requestId: request.requestId,
+            modelId: request.modelId,
+            backend: tf.getBackend(),
+        });
         return;
     }
-    await loadTfjs();
+    const tf = await loadTfjs();
     const artifacts = new Map(request.artifacts.map((artifact) => [artifact.path, artifact]));
     const modelArtifact = artifacts.get('model.json');
     const shard = artifacts.get('group1-shard1of1.bin');
-    if (!modelArtifact || !shard || !artifacts.has('settings.json')) {
+    const settings = artifacts.get('settings.json');
+    if (!modelArtifact || !shard || !settings) {
         throw new Error('DDSP manifest is incomplete');
     }
     const modelJson = JSON.parse(new TextDecoder().decode(await readArtifact(modelArtifact))) as {
@@ -106,6 +111,7 @@ async function createSession(
         convertedBy?: string;
     };
     const weightData = await readArtifact(shard);
+    await readArtifact(settings);
     const handler: io.IOHandler = {
         load: async () => ({
             modelTopology: modelJson.modelTopology,
@@ -116,8 +122,8 @@ async function createSession(
             convertedBy: modelJson.convertedBy,
         }),
     };
-    sessions.set(request.modelId, await loadGraphModel(handler));
-    post({ type: 'session-created', requestId: request.requestId, modelId: request.modelId });
+    sessions.set(request.modelId, await tf.loadGraphModel(handler));
+    post({ type: 'session-created', requestId: request.requestId, modelId: request.modelId, backend: tf.getBackend() });
 }
 
 async function runInference(request: Extract<WorkerRequest, { type: 'run-ddsp-inference' }>): Promise<void> {
@@ -125,13 +131,23 @@ async function runInference(request: Extract<WorkerRequest, { type: 'run-ddsp-in
     if (!session) {
         throw new Error(`DDSP session not found: ${request.modelId}`);
     }
-    const pitch = tensor1d(request.pitchHz);
-    const loudness = tensor1d(request.loudnessDb);
+    const tf = await loadTfjs();
+    const pitch = tf.tensor1d(request.pitchHz);
+    const loudness = tf.tensor1d(request.loudnessDb);
     let outputTensor: Tensor | undefined;
     try {
         outputTensor = firstTensor(session.predict({ f0_hz: pitch, loudness_db: loudness }));
         const audio = Float32Array.from(await outputTensor.data());
-        post({ type: 'ddsp-result', requestId: request.requestId, audio, nativeSampleRate: 16_000 }, [audio.buffer]);
+        post(
+            {
+                type: 'ddsp-result',
+                requestId: request.requestId,
+                audio,
+                nativeSampleRate: 16_000,
+                backend: tf.getBackend(),
+            },
+            [audio.buffer]
+        );
     } finally {
         pitch.dispose();
         loudness.dispose();

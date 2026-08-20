@@ -117,6 +117,8 @@ export type WorkerResponse =
           requestId: string;
           modelId: string;
           executionProviders?: OnnxExecutionProvider[];
+          /** Set by DDSP after TF.js has selected the required runtime backend. */
+          backend?: string;
       }
     | {
           type: 'inference-result';
@@ -129,6 +131,7 @@ export type WorkerResponse =
           /** PCM audio at model native sample rate */
           audio: Float32Array;
           nativeSampleRate: number;
+          backend: string;
       }
     | {
           type: 'tts-result';

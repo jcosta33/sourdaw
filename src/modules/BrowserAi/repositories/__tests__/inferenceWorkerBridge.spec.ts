@@ -368,8 +368,13 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
         });
         expect(lastCall(tfjs)[1]).toEqual([modelDataPort]);
 
-        reply(tfjs, { type: 'session-created', requestId: lastRequestId(tfjs), modelId: 'violin-1' });
-        await expect(ddspLoad).resolves.toBeUndefined();
+        reply(tfjs, {
+            type: 'session-created',
+            requestId: lastRequestId(tfjs),
+            modelId: 'violin-1',
+            backend: 'webgpu',
+        });
+        await expect(ddspLoad).resolves.toBe('webgpu');
     });
 });
 
@@ -513,13 +518,19 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
 
     it('schedules a TF.js idle-destroy when releasing a DDSP session', async () => {
         vi.useFakeTimers();
+        model_storage_mocks.readModel.mockResolvedValue(new MessageChannel().port1);
         const load = inferenceWorkerBridge.loadDdspSession({
             modelId: 'violin-1',
             artifacts: [{ modelId: 'violin-1/model.json', path: 'model.json', sizeBytes: 1, sha256: 'a'.repeat(64) }],
         });
         await flush();
         const worker = tfjsWorker();
-        reply(worker, { type: 'session-created', requestId: lastRequestId(worker), modelId: 'violin-1' });
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'violin-1',
+            backend: 'webgpu',
+        });
         await load;
 
         await inferenceWorkerBridge.releaseDdspSession('violin-1');
