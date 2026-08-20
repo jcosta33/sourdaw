@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     failLifecycle: vi.fn<(input: { token: number }) => void>(),
     executeAppAction: vi.fn<(action: AppAction) => void | Promise<void>>(),
     getTrackStoreState: vi.fn<() => TrackStateForMixAnalysis | null>(),
+    getTransportState: vi.fn<() => { masterGain: number } | null>(),
     loggerError: vi.fn(),
 }));
 
@@ -35,6 +36,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('#/modules/Transport/useCases', () => ({
+    getTransportState: mocks.getTransportState,
 }));
 
 vi.mock('../../../useCases/analyzeMix', () => ({
@@ -94,6 +99,8 @@ describe('handleAutoFixMix', () => {
         mocks.executeAppAction.mockReset();
         mocks.getTrackStoreState.mockReset();
         mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.getTransportState.mockReset();
+        mocks.getTransportState.mockReturnValue(null);
         mocks.loggerError.mockReset();
         vi.mocked(analyzeMix).mockReset();
     });
@@ -309,6 +316,35 @@ describe('handleAutoFixMix', () => {
         expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
         expect(mocks.loggerError).toHaveBeenCalledWith(later_failure);
         expect(isAppActionCommittedError(reported_error)).toBe(true);
+    });
+
+    it('should reduce the master fader relative to its current position, not from the measured peak alone', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.getTransportState.mockReturnValue({ masterGain: 20 }); // 20% = 0.2
+
+        vi.mocked(analyzeMix).mockResolvedValueOnce(
+            create_analysis_result({
+                trackLevels: [],
+                overallLevel: { peakDb: -1 },
+            })
+        );
+        vi.mocked(analyzeMix).mockResolvedValueOnce(create_analysis_result());
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        const masterCall = mocks.executeAppAction.mock.calls
+            .map(([action]) => action)
+            .find((action): action is Extract<AppAction, { type: 'setMasterGain' }> => action.type === 'setMasterGain');
+
+        if (!masterCall) {
+            throw new Error('Expected setMasterGain call');
+        }
+
+        // Overshoot = -1 - (-6) = +5 dB. Factor = 10 ** (-5 / 20) = 0.56234
+        // Expected gain = 0.2 * 0.56234 ≈ 0.112468
+        // Old bug gave 10 ** (-6 / 20) ≈ 0.501187 (which would boost a 0.2 fader)
+        expect(masterCall.payload.gain).toBeLessThan(0.2);
+        expect(masterCall.payload.gain).toBeCloseTo(0.2 * 10 ** (-5 / 20), 5);
     });
 
     afterEach(() => {
