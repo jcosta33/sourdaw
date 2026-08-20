@@ -996,12 +996,27 @@ impl LevainVoice {
         shaped * env * gain
     }
 
-    /// Voice stealing score: higher = more likely to be stolen.
+    /// Voice stealing score: higher = more likely to be stolen. The ordering
+    /// holds for every input, free voices included, so a caller may rank the
+    /// whole pool on this one number: an inactive slot is `u32::MAX` because
+    /// reusing it costs nothing at all.
     pub fn steal_priority(&self) -> u32 {
         if !self.active {
-            return 0;
+            return u32::MAX;
         }
-        if self.amp_env.is_releasing() && self.energy < 1e-4 {
+        // Past audibility takes both readings, because neither alone bounds
+        // what is left to hear. `energy` is an exponential mean of output
+        // already produced, so it reads zero for a note let go while the
+        // recording's own head was still quiet, with every sample still ahead
+        // of the playhead at full scale. The envelope supplies the missing
+        // ceiling: in Release `level` only shrinks, so under `1e-3` the whole
+        // remaining tail is bounded at -60 dBFS whatever the recording holds.
+        // The tier has to be that strict — stealing is a hard switch into
+        // `trigger`, which resets the envelope and restarts playback from
+        // sample 0 with no fade, so a voice caught here wrongly is cut to
+        // silence mid-sound.
+        if self.amp_env.is_releasing() && self.energy < 1e-4 && self.amp_env.current_level() < 1e-3
+        {
             let age_score = self.age.min(10000);
             return 10000 + age_score; // release tails past audibility sort above every sounding voice
         }
@@ -1120,9 +1135,209 @@ impl VoicePool {
 mod tests {
     use super::*;
 
+    const SAMPLE_RATE: f32 = 44100.0;
+
+    /// Put a voice in Release with its envelope at roughly `level_target`,
+    /// driving the real stage machine rather than writing `level` by hand, and
+    /// leaving `energy` alone so the two readings can be varied independently.
+    fn releasing_at(level_target: f32) -> LevainVoice {
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.active = true;
+        voice.amp_env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 0.0,
+            sustain: 1.0,
+            release: 0.05,
+        });
+        voice.amp_env.trigger();
+        while voice.amp_env.current_level() < 1.0 {
+            voice.amp_env.tick();
+        }
+        voice.amp_env.release();
+        while voice.amp_env.current_level() > level_target {
+            voice.amp_env.tick();
+        }
+        assert!(
+            voice.amp_env.is_releasing(),
+            "helper must leave the voice in Release, not idled at {}",
+            voice.amp_env.current_level()
+        );
+        voice
+    }
+
+    /// One-channel sample: `head_frames` of recorded silence, then a
+    /// full-scale body. The shape of a struck instrument whose recording
+    /// opens below the noise floor.
+    fn silent_headed_sample(head_frames: u32, body_frames: u32) -> (SamplePool, Zone) {
+        let frames = head_frames + body_frames;
+        let data: Vec<f32> = (0..frames)
+            .map(|frame| {
+                if frame < head_frames {
+                    0.0
+                } else {
+                    let seconds = (frame - head_frames) as f32 / SAMPLE_RATE;
+                    (seconds * 220.0 * std::f32::consts::TAU).sin()
+                }
+            })
+            .collect();
+        let mut pool = SamplePool::new();
+        let sample_id = pool
+            .add(data, frames, 1, SAMPLE_RATE)
+            .expect("test sample should fit the pool");
+        let zone = Zone {
+            id: 0,
+            key: KeyRange { lo: 0, hi: 127 },
+            vel: VelRange { lo: 0, hi: 127 },
+            articulation: 0,
+            rr_pos: 0,
+            rr_len: 1,
+            mic: 0,
+            is_release: false,
+            sample: SampleRef {
+                sample_id,
+                root_key: 60,
+                tune_cents: 0,
+                start: 0,
+                end: frames,
+                loop_mode: LoopMode::NoLoop,
+                loop_start: 0,
+                loop_end: frames,
+                loop_crossfade: 0,
+            },
+            amp_env: AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 1.0,
+            },
+            gain_db: 0.0,
+        };
+        (pool, zone)
+    }
+
+    /// `energy` is a lagging mean of output the voice has *already* produced,
+    /// so on its own it cannot say what a releasing voice still has to play.
+    /// These two voices agree on every reading the score used before the
+    /// envelope ceiling was conjoined — both releasing, both at zero energy,
+    /// same age — and differ only in how much envelope is left. The one still
+    /// near full scale must be the more protected of the two.
+    #[test]
+    fn a_release_tail_still_at_full_envelope_outranks_a_spent_one() {
+        let mut still_open = releasing_at(0.2);
+        still_open.energy = 0.0;
+        still_open.age = 500;
+
+        let mut spent = releasing_at(5e-4);
+        spent.energy = 0.0;
+        spent.age = 500;
+
+        assert!(
+            still_open.steal_priority() < spent.steal_priority(),
+            "a tail at envelope level {} (every remaining sample bounded at \
+             {:.1} dBFS) scored {}, against {} for one at level {} that really \
+             is finished — equal or above means the score read only `energy`, \
+             which is 0.0 for both",
+            still_open.amp_env.current_level(),
+            20.0 * still_open.amp_env.current_level().log10(),
+            still_open.steal_priority(),
+            spent.steal_priority(),
+            spent.amp_env.current_level()
+        );
+    }
+
+    /// The shape an energy-only reading gets wrong, played rather than
+    /// stipulated: a zone whose recorded head is silent, struck and let go
+    /// inside that head. The voice has emitted nothing, so `energy` is 0.0 —
+    /// but the envelope is still open and the recording's body is still ahead
+    /// of the playhead, so the slot holds sound nobody has heard yet. The
+    /// oracle here is that rendered body, a quantity the score never reads.
+    #[test]
+    fn a_zero_energy_release_tail_can_still_have_an_audible_body_to_render() {
+        const HEAD_FRAMES: u32 = 22_050; // 0.5 s of recorded silence
+        const BODY_FRAMES: u32 = 44_100; // 1.0 s of full-scale body
+        const HELD_FRAMES: usize = 4_410; // 0.1 s: struck and let go
+        const RELEASED_FRAMES: usize = 8_820; // 0.2 s more, still inside the head
+
+        let (pool, zone) = silent_headed_sample(HEAD_FRAMES, BODY_FRAMES);
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+
+        let mut heard_while_held = 0.0_f32;
+        for _ in 0..HELD_FRAMES {
+            heard_while_held = heard_while_held.max(voice.tick(&pool).abs());
+        }
+        voice.release();
+        for _ in 0..RELEASED_FRAMES {
+            heard_while_held = heard_while_held.max(voice.tick(&pool).abs());
+        }
+
+        assert_eq!(
+            heard_while_held, 0.0,
+            "the note must be let go before the recording says anything, or \
+             this is not the shape under test"
+        );
+        assert!(
+            voice.energy < 1e-4,
+            "the score's own audibility reading must be past its threshold \
+             here: energy {}",
+            voice.energy
+        );
+        assert!(voice.amp_env.is_releasing(), "the voice must be releasing");
+
+        let tail_score = voice.steal_priority();
+        let mut spent = releasing_at(5e-4);
+        spent.energy = 0.0;
+        spent.age = voice.age;
+        let spent_score = spent.steal_priority();
+
+        // What stealing this slot would have thrown away.
+        let mut discarded_peak = 0.0_f32;
+        for _ in 0..(HEAD_FRAMES + BODY_FRAMES) as usize {
+            discarded_peak = discarded_peak.max(voice.tick(&pool).abs());
+        }
+
+        assert!(
+            discarded_peak > 0.05,
+            "the tail must still render something plainly audible for this \
+             test to mean anything: peak {discarded_peak}"
+        );
+        assert!(
+            tail_score < spent_score,
+            "a voice with {discarded_peak} peak ({:.1} dBFS) of unheard body \
+             left to render scored {tail_score}, at or above the {spent_score} \
+             of a voice that really is past audibility — stealing is a hard \
+             switch into `trigger`, so that body is cut off, not faded",
+            20.0 * discarded_peak.log10()
+        );
+    }
+
+    /// The score is a total order over the whole pool, so it has to answer
+    /// for a free voice too: taking one costs nothing, which is the top of
+    /// the range. `VoicePool::allocate` reaches free voices by its own
+    /// short-circuit and never asks, but the score is public and the next
+    /// caller reads the ordering, not that short-circuit.
+    #[test]
+    fn a_free_voice_is_the_top_of_the_stealing_order() {
+        let free = LevainVoice::new(SAMPLE_RATE);
+        assert!(!free.active);
+
+        let mut spent = releasing_at(5e-4);
+        spent.energy = 0.0;
+        spent.age = 10_000;
+
+        assert_eq!(free.steal_priority(), u32::MAX);
+        assert!(
+            free.steal_priority() > spent.steal_priority(),
+            "a free voice scored {}, at or below the {} of the most stealable \
+             active voice there is",
+            free.steal_priority(),
+            spent.steal_priority()
+        );
+    }
+
     #[test]
     fn steal_priority_prefers_inaudible_release_tail_over_sounding_voice() {
-        let sample_rate = 44100.0;
+        let sample_rate = SAMPLE_RATE;
         let mut sounding = LevainVoice::new(sample_rate);
         sounding.active = true;
         sounding.energy = 0.5;
