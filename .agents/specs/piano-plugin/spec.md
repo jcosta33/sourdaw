@@ -5,7 +5,7 @@ title: Grand Boule release admission
 status: blocked
 owner: The Sourdaw team
 sources:
-    - ../../decisions/0031-withhold-grand-boule-from-release.md
+    - ../../decisions/0032-withhold-grand-boule-from-release.md
 ---
 
 # Grand Boule release admission

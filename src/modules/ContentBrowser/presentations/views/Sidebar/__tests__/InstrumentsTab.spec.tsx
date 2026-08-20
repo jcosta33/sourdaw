@@ -44,6 +44,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: commandMocks.executeAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
+    pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('#/modules/Toaster/useCases', () => ({

@@ -261,11 +261,14 @@ freshness.
 `lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
 it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
 standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, titles the PR with the HEAD subject (`type(scope): subject`), keeps the four headings in
+`--force`, titles the PR with the newest non-merge commit the lane holds above `origin/main`
+(`type(scope): subject`), so merging `origin/main` in never retitles it, keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
 bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
 there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
-branch carries no issue. It does not enable auto-merge or post a review.
+branch carries no issue. It refuses a lane with uncommitted changes, and one carrying no non-merge
+commit above `origin/main`: commit the work yourself with a conventional subject first. It does not
+enable auto-merge or post a review.
 
 Write the pull request for a teammate who was not in the session. Under the four template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
@@ -299,9 +302,27 @@ only when the current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
-there, and run the affected checks. An approval alone is weak evidence, so every consequential claim
-carries discriminating proof — a test that fails when the change is reverted, a measurement at the
-boundary users experience. That proof stays in the session; it is not the GitHub review.
+there, and run the checks this diff can break. What that run leaves out, `main` absorbs. Name it
+instead of gesturing at it: the tests covering the changed files, the typecheck for every surface
+the diff touches, lint on the changed files, `pnpm deps:validate` whenever the change crosses a
+module boundary, and any other check this diff can turn red. Formatting belongs to the run but is
+not one of those checks — it rewrites rather than reports, so run it on the changed files and stage
+what it rewrote instead of reading it as a pass. The `Checks` table holds the commands.
+
+Affected-only is the shape of that run, not a discount on it. Resource Safety already sets the
+outer edge, and the one condition that moves it; the obligation here is everything that can fail
+because of these changed files. They are one boundary read from both sides: a check this diff can
+break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
+lane, on the head being merged — `lane:publish` refuses a lane that is not strictly ahead of
+`origin/main`, and `deliver` refuses a pull request whose base its own fetch does not match. A
+branch-local run stands in for the merge result only while the branch is current, so merging
+`origin/main` back into the lane — the routine answer when `deliver` reports a base mismatch —
+makes a new head and stales every run that preceded it. Run them again on the head that will
+actually merge.
+
+An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
+test that fails when the change is reverted, a measurement at the boundary users experience. That
+proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
 pull request is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any

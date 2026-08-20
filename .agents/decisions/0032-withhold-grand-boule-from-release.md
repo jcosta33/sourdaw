@@ -1,6 +1,6 @@
 ---
 type: adr
-id: 0031
+id: 0032
 title: Withhold Grand Boule from release
 status: accepted
 date: 2026-08-20

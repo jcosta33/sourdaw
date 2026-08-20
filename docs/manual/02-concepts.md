@@ -73,7 +73,7 @@ Three kinds:
 - **MIDI effects** change notes before they reach the instrument.
 
 Devices come from two places: the built-in devices documented in this manual, and — in the desktop
-app only — VST, AU, and CLAP plugins you already own. In a browser the plugin browser is present but
+app only — the CLAP plugins you already own. In a browser the plugin browser is present but
 disabled.
 
 ## Parameters and automation

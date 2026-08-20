@@ -72,8 +72,8 @@ The Rust backend should mirror the system architecture, not replace it.
                 ▼                             ▼
 ┌───────────────────────┐          ┌───────────────────────────────┐
 │        daw-dsp        │          │       daw-plugin-host         │
-│ pure DSP algorithms   │          │ CLAP/VST3 hosting, scanning,  │
-│ math, filters, etc.   │          │ editor windows, lifecycle     │
+│ pure DSP algorithms   │          │ native plugin hosting,        │
+│ math, filters, etc.   │          │ scanning, editors, lifecycle  │
 └───────────────────────┘          └───────────────────────────────┘
                 │                             │
                 └──────────────┬──────────────┘
@@ -274,17 +274,43 @@ It may depend on math and DSP libraries, but not on shell/runtime integration la
 
 ## 5.4 `daw-plugin-host`
 
-This crate owns native plugin hosting.
+This crate owns native plugin hosting: scanning and metadata extraction, per-format integration,
+instance lifecycle, the parameter access surface, editor window lifecycle support, and host/plugin
+state bridging.
 
-It contains:
+### Which formats it hosts
 
-- plugin scanning
-- metadata extraction
-- CLAP/VST3 integration
-- instance lifecycle
-- parameter access surface
-- editor window lifecycle support
-- host/plugin state bridging
+CLAP is the format Sourdaw hosts. VST3 is committed to and not yet implemented. VST2 and Audio Units
+are permanently excluded. [ADR 0031](../../.agents/decisions/0031-native-plugin-format-strategy.md)
+is the record, including the licensing basis for each and the obligations VST3 carries.
+
+A format this crate does not load is still recognised, and the refusal names the format and the
+reason — during a scan and again at activation, from one set of constants. Silently passing a file
+over leaves a user with an empty plugin list and nothing to act on, and "unsupported" sends them
+looking for a setting to turn on. A refusal for a format that will never arrive says so; one for a
+format that is coming says that instead.
+
+A refusal is only ever attached to a file the refusal is true of. Recognising an extension a scan
+cannot legitimately meet does not add information — it manufactures a claim about whatever else
+happens to carry that extension inside the roots the scan does walk.
+
+A scan reports refusals separately from failures. A refused format is the expected outcome of a
+healthy scan, and putting it on the channel that means "this scan went wrong" makes success
+unreachable for any user who owns a plugin in a format Sourdaw does not load — which is most of
+them — and trains them to ignore the failures that matter.
+
+### What a scan may claim
+
+Discovery reports what it read from the plugin and nothing else. A capability the scan did not query
+— because the plugin does not implement the extension that answers it, or because the bounded worker
+did not run — is published as a default _with the reason recorded beside it_. A default that reaches
+a consumer without its reason is indistinguishable from a measurement, and the browse list, the
+device factory manifest, and the persisted registry all read those fields.
+
+Plugin entry points are loaded only inside the bounded scan worker
+([ADR 0004](../../.agents/decisions/0004-plugin-hosting-security-policy.md)). Extending what
+discovery asks a plugin does not extend where it asks: a new query goes to the instance the worker
+already created, never to a new process and never to the application process.
 
 ### Rule
 
@@ -824,13 +850,7 @@ my-daw/
 │   │       ├── delay.rs
 │   │       ├── reverb.rs
 │   │       └── waveform.rs
-│   ├── daw-plugin-host/
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── scanner.rs
-│   │       ├── instance.rs
-│   │       ├── clap_host.rs
-│   │       └── vst3_host.rs
+│   ├── daw-plugin-host/         # contract in § 5.4; no file list, it drifts
 │   ├── daw-io/
 │   │   └── src/
 │   │       ├── lib.rs

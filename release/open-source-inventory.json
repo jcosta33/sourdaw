@@ -497,7 +497,7 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": ["public/faust/**"],
             "sources": ["https://www.npmjs.com/package/@grame/faustwasm", "public/faust/"],
-            "revisions": ["checked files match @grame/faustwasm 0.15.7; package lock selects 0.16.5"],
+            "revisions": ["checked files match @grame/faustwasm 0.15.7; package lock selects 0.16.7"],
             "digests": ["pending:OS-07-version-matched-package-proof"],
             "licenses": ["LGPL-3.0"],
             "productSurfaces": ["browser Faust compiler", "desktop Faust compiler"],
@@ -691,7 +691,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "8800f79c8725efc8e0c102adee3cd9841b5781b84d62c65223b18d849913d304"
+            "sha256": "1a11c851e7f3b61179a556c8fd2730af974532dfc8a597571e9df8913323910b"
         },
         {
             "path": "server/package.json",
@@ -703,15 +703,15 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "9154e917357ca7bc62566fdbc0b601f27c56c3e8c62c5a19378c1f60f0a925b6"
+            "sha256": "f4a793c9674e94f0f8928957a5d9b1521a86ed70892a679e7762f5983530293d"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "e85adc66b6784e57afe9221680b920c3e00017fd135c3d490f66de4cf7e47cc7"
+            "sha256": "b262f0a313e3396fc0376799364b947775f05832f8c4b7a8d3f7858ab8db2f45"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "cb0bd276c9b7494e4195492c00150d425bbf94d310499224ecf5edff2f06a9db"
+            "sha256": "f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -719,7 +719,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "f236166a115586e2e53556fc809cba44ed2195b0222b43d2c985b1a5ff8a50f2"
+            "sha256": "9ff9f519be41d2b0cb9d3252c4c6e018630cf766d0830b3081c1975d051fcca2"
         }
     ],
     "externalReferences": [
