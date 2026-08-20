@@ -1,0 +1,23 @@
+docs/manual/devices/18-crumbs.md
+  s_8ddfabd1166b5d::t_d3a69697c2560d 1-157
+docs/manual/README.md
+  s_8ddfabd1166b5d::t_439b0fa56aa0d2 37-38
+docs/manual/coverage-exceptions.json
+  s_8ddfabd1166b5d::t_53060819641506 129-131,278-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c6c9848e81aa1361dfe5c7cfa37c223172dc5ecf",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
