@@ -2,14 +2,24 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
 import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
+import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { isGeneratedMidiStateCurrent } from '../../../handlers/isGeneratedMidiStateCurrent';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { removeWarpState, warpStates } from '../../../stores/warpStates';
+import { duplicateClipCore } from '../../clip/duplicateClipCore';
+import { addManualWarpMarker } from '../../warp/addManualWarpMarker';
+import { enableWarp } from '../../warp/enableWarp';
+import { setStretchMode } from '../../warp/setStretchMode';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
+import { hasClipGlueDependencies } from '../hasClipGlueDependencies';
+import { prepareClipGlue } from '../prepareClipGlue';
+import { restoreClipGlueState } from '../restoreClipGlueState';
 
 describe('glueClips MIDI state integration', () => {
     beforeEach(() => {
@@ -53,6 +63,7 @@ describe('glueClips MIDI state integration', () => {
         takeLaneStore.set({ lanes: [] });
         stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+        warpStates.clear();
     });
 
     afterEach(() => {
@@ -62,6 +73,7 @@ describe('glueClips MIDI state integration', () => {
         takeLaneStore.set({ lanes: [] });
         stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+        warpStates.clear();
     });
 
     it('projects only adjacent plain source pairs without hidden clip dependencies', () => {
@@ -348,5 +360,150 @@ describe('glueClips MIDI state integration', () => {
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         expect(trackStore.value!.ghostClips).toMatchObject([{ id: 'clip-ghost', parentClipId: 'clip-a' }]);
+    });
+
+    it('keeps a duplicated MIDI clip glue-eligible (regression: spurious default warp entry blocked gluing)', () => {
+        // Duplicate clip-b immediately after itself so the copy is adjacent to
+        // an existing plain MIDI clip and would be a valid glue candidate on
+        // its own merits. Neither clip-b nor its copy ever had warp markers.
+        expect(
+            duplicateClipCore({
+                clipId: 'clip-b',
+                targetClipId: 'clip-b-copy',
+                computeStartBeat: () => 16,
+            })
+        ).toBe(true);
+
+        // `hasClipGlueDependencies` (clipEditing/hasClipGlueDependencies.ts)
+        // must not treat the duplicate as carrying warp state it never had.
+        expect(hasClipGlueDependencies(['clip-b-copy'])).toBe(false);
+
+        // And the production surface the UI uses to offer gluing must list the
+        // duplicate as a real candidate, not silently drop it forever.
+        expect(getGlueEligibleClipPairs()).toEqual([
+            ['clip-a', 'clip-b'],
+            ['clip-b', 'clip-b-copy'],
+        ]);
+    });
+
+    it('does not count a clip whose warp state was written but is content-identical to default as carrying satellite state', () => {
+        // A real write path — not a poke at the map — that leaves the clip's
+        // warp state value-identical to `defaultWarpState`: the clip has no
+        // prior entry, and `repitch` is already `defaultWarpState.stretchMode`.
+        setStretchMode('clip-a', 'repitch');
+        expect(warpStates.has('clip-a')).toBe(true);
+
+        // `hasClipGlueDependencies` must not block gluing a clip whose only
+        // warp-state footprint is a value-identical-to-default map entry.
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(false);
+        expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
+
+        // `isGeneratedMidiStateCurrent`'s undo guard must still admit the clip:
+        // an exact entity/MIDI match with no *real* satellite state is current.
+        const clip = trackStore.value!.tracks[0]!.clips.find((candidate) => candidate.id === 'clip-a')!;
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: 'clip-a',
+                entityType: 'clip',
+                guard: {
+                    entityJson: JSON.stringify(clip),
+                    midiByClipIdJson: serializeMidiStateForClips(['clip-a']),
+                },
+            })
+        ).toBe(true);
+    });
+
+    it('still counts a clip with a real warp marker, enabled warp, or a non-default stretch mode as carrying satellite state', () => {
+        const clip = trackStore.value!.tracks[0]!.clips.find((candidate) => candidate.id === 'clip-a')!;
+        // `clip` itself never changes across these cases — only the warp store
+        // does — so the same guard is reused for every sub-case.
+        const guard = { entityJson: JSON.stringify(clip), midiByClipIdJson: serializeMidiStateForClips(['clip-a']) };
+        const isCurrent = () => isGeneratedMidiStateCurrent({ entityId: 'clip-a', entityType: 'clip', guard });
+
+        addManualWarpMarker({ clipId: 'clip-a', beat: 1 });
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
+        expect(isCurrent()).toBe(false);
+        removeWarpState('clip-a');
+
+        enableWarp('clip-a');
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
+        expect(isCurrent()).toBe(false);
+        removeWarpState('clip-a');
+
+        setStretchMode('clip-a', 'complex');
+        expect(hasClipGlueDependencies(['clip-a'])).toBe(true);
+        expect(isCurrent()).toBe(false);
+    });
+
+    it('sweeps the consumed source clips warp state when a glue with a content-default entry commits', () => {
+        // Real write path, not a map poke: `repitch` is `defaultWarpState.stretchMode`,
+        // so this is exactly the regression scenario above — content-identical to
+        // default, which the content-aware gate now lets through.
+        setStretchMode('clip-a', 'repitch');
+        expect(warpStates.has('clip-a')).toBe(true);
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
+
+        // Both consumed source clip ids must be gone from the map — a stale
+        // entry keyed to a retired clip id can never re-attach (ids are never
+        // reused) but it still has to be swept, not left to leak forever.
+        expect(warpStates.has('clip-a')).toBe(false);
+        expect(warpStates.has('clip-b')).toBe(false);
+    });
+
+    it('does not destroy a source clip warp entry through a full apply/undo/redo round trip', () => {
+        // Every entry below is content-default on purpose: `hasClipGlueDependencies`
+        // gates both the apply *and* the restore direction on the same
+        // `expected`/`replacement` participant set, so a genuinely non-default
+        // entry on any of them would block the call outright rather than
+        // exercise the sweep. Content-default is exactly the shape the
+        // content-aware gate lets through, and its presence in the map is
+        // still observable via `warpStates.has`, which is what this test
+        // exercises.
+        setStretchMode('clip-a', 'repitch');
+        const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
+        expect(plan).not.toBeNull();
+        const { previous, next, targetClipId: gluedId } = plan!;
+
+        expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
+        expect(warpStates.has('clip-a')).toBe(false);
+        expect(warpStates.has('clip-b')).toBe(false);
+
+        // Normal usage after gluing: the glued clip picks up its own warp
+        // footprint. This is what undo must retire — it is the clip undo
+        // consumes.
+        setStretchMode(gluedId, 'repitch');
+        expect(warpStates.has(gluedId)).toBe(true);
+
+        // A real map entry sitting under the restored clips' ids at the moment
+        // undo runs — exactly what an unconditional sweep (one that clears
+        // both sides of the operation, or the wrong side) would destroy the
+        // instant it reinserts `clip-a` and `clip-b` back onto the track.
+        setStretchMode('clip-a', 'repitch');
+        setStretchMode('clip-b', 'repitch');
+
+        expect(restoreClipGlueState({ expected: next, replacement: previous })).toBe(true);
+
+        // The glued clip's own entry is gone — it is the id undo consumed.
+        expect(warpStates.has(gluedId)).toBe(false);
+        // The restored clips keep whatever satellite state they had.
+        expect(warpStates.has('clip-a')).toBe(true);
+        expect(warpStates.has('clip-b')).toBe(true);
+
+        // Redo: the third step a user actually performs — glue, undo to hear
+        // the parts again, redo. `handleGlueClips.describe` captures
+        // `plan.previous`/`plan.next` exactly once and wires `redoAction` as
+        // the same forward direction the initial apply used, never a freshly
+        // recomputed snapshot — so this call reuses the very `previous`/`next`
+        // objects from the original `prepareClipGlue`, not a new call to it.
+        // Redo re-consumes `clip-a` and `clip-b`, so their entries (set again
+        // above, right before undo ran) must be swept a second time, landing
+        // on exactly the state the first apply produced: no entry for either
+        // source id, and none for the glued id either, since nothing wrote
+        // one for it between undo and redo.
+        expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);
+        expect(warpStates.has(gluedId)).toBe(false);
+        expect(warpStates.has('clip-a')).toBe(false);
+        expect(warpStates.has('clip-b')).toBe(false);
     });
 });
