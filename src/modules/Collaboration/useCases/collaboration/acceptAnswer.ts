@@ -73,15 +73,28 @@ export async function acceptAnswer(answerString: string): Promise<void> {
             );
         }
 
+        const state = collaborationStore.value;
+        if (state && answer.peerId === state.localPeerId) {
+            peerManager.removePeer(answer.pendingPeerId);
+            throw createCollaborationError(
+                'Invalid answer — peer ID is already in use by another session peer or the host'
+            );
+        }
+
+        if (answer.pendingPeerId !== answer.peerId) {
+            const rekeyed = peerManager.rekeyPeer(answer.pendingPeerId, answer.peerId, state?.localPeerId);
+            if (!rekeyed) {
+                peerManager.removePeer(answer.pendingPeerId);
+                throw createCollaborationError(
+                    'Invalid answer — peer ID is already in use by another session peer or the host'
+                );
+            }
+        }
+
         await peer.acceptAnswer(answer.sdp);
         runtime.state.pendingInviteId = null;
 
-        if (answer.pendingPeerId !== answer.peerId) {
-            peerManager.rekeyPeer(answer.pendingPeerId, answer.peerId);
-        }
-
         // Add the joiner to our peer list
-        const state = collaborationStore.value;
         if (state) {
             const joinerInfo: CollaborationPeer = {
                 id: answer.peerId,

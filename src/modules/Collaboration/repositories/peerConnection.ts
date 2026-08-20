@@ -397,10 +397,14 @@ export class PeerConnectionManager {
 
     /**
      * Re-key an existing peer connection from a pending slot to its confirmed peer ID.
+     * Rejects collisions if `newPeerId` is already registered or matches the host's local peer ID.
      */
-    rekeyPeer(oldPeerId: PeerId, newPeerId: PeerId): boolean {
+    rekeyPeer(oldPeerId: PeerId, newPeerId: PeerId, localPeerId?: PeerId | null): boolean {
         const peer = this.peers.get(oldPeerId);
         if (!peer || oldPeerId === newPeerId) {
+            return false;
+        }
+        if (this.peers.has(newPeerId) || (localPeerId != null && newPeerId === localPeerId)) {
             return false;
         }
         this.peers.delete(oldPeerId);

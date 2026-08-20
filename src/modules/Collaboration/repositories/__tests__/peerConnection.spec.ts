@@ -546,5 +546,20 @@ describe('PeerConnectionManager', () => {
             manager.createPeer('same-id');
             expect(manager.rekeyPeer('same-id', 'same-id')).toBe(false);
         });
+
+        it('refuses collision when newPeerId already belongs to another peer or matches local host ID', () => {
+            const rekeyManager = new PeerConnectionManager(noopCallbacks);
+            const peer1 = rekeyManager.createPeer('pending-1');
+            const peer2 = rekeyManager.createPeer('existing-peer-2');
+
+            // Refuse collision with already-registered peer2
+            expect(rekeyManager.rekeyPeer('pending-1', 'existing-peer-2')).toBe(false);
+            expect(rekeyManager.getPeer('pending-1')).toBe(peer1);
+            expect(rekeyManager.getPeer('existing-peer-2')).toBe(peer2);
+
+            // Refuse collision with host's own local peer ID
+            expect(rekeyManager.rekeyPeer('pending-1', 'host-local-id', 'host-local-id')).toBe(false);
+            expect(rekeyManager.getPeer('pending-1')).toBe(peer1);
+        });
     });
 });

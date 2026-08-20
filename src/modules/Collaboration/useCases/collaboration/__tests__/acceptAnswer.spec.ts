@@ -49,7 +49,11 @@ describe('acceptAnswer', () => {
         mockRuntime.state.pendingInviteId = 'stale-pending-id';
         acceptAnswerOnPeer = vi.fn().mockResolvedValue(undefined);
         getPeer = vi.fn().mockReturnValue({ acceptAnswer: acceptAnswerOnPeer });
-        mockRuntime.state.peerManager = { getPeer, rekeyPeer: vi.fn() } as unknown as PeerConnectionManager;
+        mockRuntime.state.peerManager = {
+            getPeer,
+            rekeyPeer: vi.fn().mockReturnValue(true),
+            removePeer: vi.fn(),
+        } as unknown as PeerConnectionManager;
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
         mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
     });
@@ -214,7 +218,7 @@ describe('acceptAnswer', () => {
     });
 
     it('re-keys the peer in peerManager from pendingPeerId to answer.peerId', async () => {
-        const rekeyPeer = vi.fn();
+        const rekeyPeer = vi.fn().mockReturnValue(true);
         mockRuntime.state.peerManager = { getPeer, rekeyPeer } as unknown as PeerConnectionManager;
         mockRuntime.decompressInvite.mockResolvedValueOnce(
             JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'joiner-actual-99' }))
@@ -222,6 +226,33 @@ describe('acceptAnswer', () => {
 
         await acceptAnswer('raw');
 
-        expect(rekeyPeer).toHaveBeenCalledWith('pending-slot-42', 'joiner-actual-99');
+        expect(rekeyPeer).toHaveBeenCalledWith('pending-slot-42', 'joiner-actual-99', 'host-local');
+    });
+
+    it('rejects answer and closes pending connection if answer.peerId collides with host localPeerId', async () => {
+        collaborationStore.set({
+            ...baseState,
+            localPeerId: 'host-peer-id',
+        });
+        const removePeer = vi.fn();
+        mockRuntime.state.peerManager = { getPeer, removePeer } as unknown as PeerConnectionManager;
+        mockRuntime.decompressInvite.mockResolvedValueOnce(
+            JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'host-peer-id' }))
+        );
+
+        await expect(acceptAnswer('raw')).rejects.toThrow('Invalid answer — peer ID is already in use');
+        expect(removePeer).toHaveBeenCalledWith('pending-slot-42');
+    });
+
+    it('rejects answer and closes pending connection if rekeyPeer fails due to duplicate peer ID', async () => {
+        const rekeyPeer = vi.fn().mockReturnValue(false);
+        const removePeer = vi.fn();
+        mockRuntime.state.peerManager = { getPeer, rekeyPeer, removePeer } as unknown as PeerConnectionManager;
+        mockRuntime.decompressInvite.mockResolvedValueOnce(
+            JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'duplicate-peer-id' }))
+        );
+
+        await expect(acceptAnswer('raw')).rejects.toThrow('Invalid answer — peer ID is already in use');
+        expect(removePeer).toHaveBeenCalledWith('pending-slot-42');
     });
 });
