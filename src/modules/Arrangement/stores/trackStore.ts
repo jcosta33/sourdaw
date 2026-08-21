@@ -258,6 +258,9 @@ function normalize_clip(value: unknown): Clip | null {
     if (typeof value.audioBufferId === 'string') {
         clip.audioBufferId = value.audioBufferId;
     }
+    if (typeof value.fileId === 'string') {
+        clip.fileId = value.fileId;
+    }
     if (typeof value.assetHash === 'string') {
         clip.assetHash = value.assetHash;
     }

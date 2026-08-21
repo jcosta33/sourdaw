@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 
+import { hydrateArrangementTracks } from '../hydrateArrangementTracks';
 import { serializeArrangementTracks } from '../serializeArrangementTracks';
 
 describe('serializeArrangementTracks (clip-shape mapping)', () => {
@@ -139,5 +140,41 @@ describe('serializeArrangementTracks (clip-shape mapping)', () => {
 
         const [serialized] = serializeArrangementTracks([track]);
         expect(serialized?.alternatives[0]?.clips[0]?.bufferId).toBe('buf-alt');
+    });
+
+    it('serializes clip fileId and preserves it across serialization and hydration round-trip', () => {
+        const track = normalizeTrack({
+            id: 'track-5',
+            name: 'Vocal',
+            kind: 'audio',
+            clips: [
+                {
+                    id: 'clip-5',
+                    trackId: 'track-5',
+                    name: 'lead-vocal',
+                    startBeat: 0,
+                    endBeat: 8,
+                    type: 'audio',
+                    audioBufferId: 'buf-vocal',
+                    fileId: '/projects/audio/lead_pitch.wav',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#fff',
+                    locked: false,
+                    muted: false,
+                },
+            ],
+        });
+
+        const [serialized] = serializeArrangementTracks([track]);
+        expect(serialized).toBeDefined();
+        if (!serialized) {
+            throw new Error('serialized track is undefined');
+        }
+        expect(serialized.clips[0]?.fileId).toBe('/projects/audio/lead_pitch.wav');
+
+        const [hydrated] = hydrateArrangementTracks([serialized]);
+        expect(hydrated?.clips[0]?.fileId).toBe('/projects/audio/lead_pitch.wav');
     });
 });
