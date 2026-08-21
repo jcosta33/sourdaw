@@ -1,0 +1,21 @@
+tests/e2e/clipDragDeleteTestId.spec.ts
+  s_24b1bdbc3c31ad::t_ba34799d537b18 40,49-50
+  s_24b1bdbc3c31ad::t_65aeda422a705a 1-30,34-37,48
+  s_24b1bdbc3c31ad::t_5a9d789c222ff5 42-47,51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f8f6a03384d37b774b9c550a8ef5c1b7f8ead1b7",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
