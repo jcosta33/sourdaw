@@ -780,6 +780,39 @@ describe('inferenceWorkerBridge — TF.js cancellation', () => {
         await expect(retried).resolves.toMatchObject({ requestId: 'retried', backend: 'webgpu' });
     });
 
+    it('rejects every pending TF.js request on a fatal worker response and permits a clean retry', async () => {
+        const first = inferenceWorkerBridge.runDdspInference(ddspRequest('first'));
+        const second = inferenceWorkerBridge.runDdspInference(ddspRequest('second'));
+        const firstResult = first.catch((error: unknown) => error);
+        const secondResult = second.catch((error: unknown) => error);
+        await flush();
+        const crashed = tfjsWorker();
+
+        reply(crashed, { type: 'worker-fatal-error', error: 'TF.js worker received an unreadable request' });
+        await flush();
+
+        expect(crashed.terminate).toHaveBeenCalledOnce();
+        await expect(firstResult).resolves.toEqual(
+            expect.objectContaining({ message: expect.stringContaining('unreadable') })
+        );
+        await expect(secondResult).resolves.toEqual(
+            expect.objectContaining({ message: expect.stringContaining('unreadable') })
+        );
+
+        const retried = inferenceWorkerBridge.runDdspInference(ddspRequest('retried-after-fatal'));
+        await flush();
+        expect(installedWorkers).toHaveLength(2);
+        const replacement = tfjsWorker();
+        reply(replacement, {
+            type: 'ddsp-result',
+            requestId: 'retried-after-fatal',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
+        await expect(retried).resolves.toMatchObject({ requestId: 'retried-after-fatal', backend: 'webgpu' });
+    });
+
     it('terminates the TF.js worker and rejects all pending requests', async () => {
         const a = inferenceWorkerBridge.runDdspInference(ddspRequest('a'));
         const b = inferenceWorkerBridge.runDdspInference(ddspRequest('b'));

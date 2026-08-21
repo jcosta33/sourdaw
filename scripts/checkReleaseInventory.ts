@@ -151,6 +151,10 @@ export type RepositorySnapshot = {
     markPaths: Record<string, string[]>;
 };
 
+export type ReleaseInventoryCheckReceipt = {
+    validatedSurfaceIds: string[];
+};
+
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
 const markExtensions = new Set([...scannedExtensions, '.css', '.html', '.md', '.toml', '.txt', '.yaml', '.yml']);
 const ignoredUrlHosts = new Set([
@@ -786,7 +790,7 @@ export function loadRepositorySnapshot(
     };
 }
 
-export function checkReleaseInventory(root: string): void {
+export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceipt {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
     const snapshot = loadRepositorySnapshot(root, inventory);
@@ -794,26 +798,45 @@ export function checkReleaseInventory(root: string): void {
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
+    const validatedSurfaceIds: string[] = [];
+    const validateSurface = (surfaceId: string, validate: () => void): void => {
+        validate();
+        validatedSurfaceIds.push(surfaceId);
+    };
     execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
         cwd: root,
         stdio: 'inherit',
     });
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
-    assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
+    validateSurface('project-wasm', () =>
+        assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
+    );
     const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
-    assertGrandBouleReleaseInventory(root, grandBouleSurface);
+    validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));
     const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
-    assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
+    validateSurface('audio-worklet-sources', () =>
+        assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet')
+    );
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
-    assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
+    validateSurface('third-party-marks', () =>
+        assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark')
+    );
     const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
-    assertSurfaceContract(
-        ownerVisualAssetSurface,
-        ownerVisualAssetReleaseInventoryContract(root),
-        'owner visual asset'
+    validateSurface('owner-visual-assets', () =>
+        assertSurfaceContract(
+            ownerVisualAssetSurface,
+            ownerVisualAssetReleaseInventoryContract(root),
+            'owner visual asset'
+        )
     );
     const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    assertSurfaceContract(ddspTfjsRuntimeSurface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
+    validateSurface('ddsp-tfjs-runtime', () =>
+        assertSurfaceContract(
+            ddspTfjsRuntimeSurface,
+            ddspTfjsRuntimeReleaseInventoryContract(root),
+            'DDSP TF.js runtime'
+        )
+    );
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
@@ -821,6 +844,7 @@ export function checkReleaseInventory(root: string): void {
             throw new Error(`Electron release inventory ${field} does not match provenance`);
         }
     }
+    validatedSurfaceIds.push('desktop-shell');
     checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
     const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
@@ -835,9 +859,11 @@ export function checkReleaseInventory(root: string): void {
             throw new Error(`Levain release inventory ${field} does not match provenance`);
         }
     }
+    validatedSurfaceIds.push('levain-sample-bank');
     process.stdout.write(
         `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
+    return { validatedSurfaceIds };
 }
 
 const entry = process.argv[1];

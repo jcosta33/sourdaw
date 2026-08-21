@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
     assertGrandBouleReleaseInventory,
     audioWorkletReleaseInventoryContract,
+    checkReleaseInventory,
     DDSP_TFJS_RUNTIME_PATHS,
     ddspTfjsRuntimeReleaseInventoryContract,
     grandBouleReleaseInventoryContract,
@@ -63,6 +64,10 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
+        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    });
+
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
         for (const path of DDSP_TFJS_RUNTIME_PATHS) {

@@ -81,28 +81,58 @@ type ModelJson = {
 const DDSP_NATIVE_SAMPLE_RATE = 16_000;
 const REQUIRED_ARTIFACT_PATHS = ['model.json', 'group1-shard1of1.bin', 'settings.json'] as const;
 
+export type VerifiedWebGpuDevice = {
+    adapter: GPUAdapter;
+    device: GPUDevice;
+};
+
 /** Fail closed unless Chrome exposes a core adapter proven not to be a software fallback. */
-export async function requireHardwareWebGpu(gpu: GPU | undefined): Promise<void> {
+export async function requireHardwareWebGpu(gpu: GPU | undefined): Promise<VerifiedWebGpuDevice> {
     if (gpu === undefined) {
         throw new Error('DDSP requires hardware WebGPU');
     }
     let adapter: GPUAdapter | null;
     try {
         adapter = await gpu.requestAdapter({
+            powerPreference: 'high-performance',
             featureLevel: 'core',
             forceFallbackAdapter: false,
         });
     } catch (error) {
         throw new Error('DDSP requires hardware WebGPU', { cause: error });
     }
+    if (adapter === null) {
+        throw new Error('DDSP requires hardware WebGPU');
+    }
     let isFallbackAdapter: unknown;
     try {
-        isFallbackAdapter = adapter === null ? undefined : Reflect.get(adapter.info, 'isFallbackAdapter');
+        isFallbackAdapter = Reflect.get(adapter.info, 'isFallbackAdapter');
     } catch (error) {
         throw new Error('DDSP requires hardware WebGPU', { cause: error });
     }
     if (isFallbackAdapter !== false) {
         throw new Error('DDSP requires hardware WebGPU');
+    }
+    const requiredFeatures: GPUFeatureName[] = [];
+    if (adapter.features.has('timestamp-query')) {
+        requiredFeatures.push('timestamp-query');
+    }
+    if (adapter.features.has('bgra8unorm-storage')) {
+        requiredFeatures.push('bgra8unorm-storage');
+    }
+    const requiredLimits = {
+        maxComputeWorkgroupStorageSize: adapter.limits.maxComputeWorkgroupStorageSize,
+        maxComputeWorkgroupsPerDimension: adapter.limits.maxComputeWorkgroupsPerDimension,
+        maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+        maxBufferSize: adapter.limits.maxBufferSize,
+        maxComputeWorkgroupSizeX: adapter.limits.maxComputeWorkgroupSizeX,
+        maxComputeInvocationsPerWorkgroup: adapter.limits.maxComputeInvocationsPerWorkgroup,
+    };
+    try {
+        const device = await adapter.requestDevice({ requiredFeatures, requiredLimits });
+        return { adapter, device };
+    } catch (error) {
+        throw new Error('DDSP requires hardware WebGPU', { cause: error });
     }
 }
 
@@ -594,10 +624,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
     }
 
     function releaseSession(sessionKey: string): Promise<void> {
-        const existingRelease = modelReleases.get(sessionKey);
-        if (existingRelease) {
-            return existingRelease;
-        }
+        const priorRelease = modelReleases.get(sessionKey);
         const load = sessionLoads.get(sessionKey);
         load?.controller.abort();
         const matchingRequests = [...activeRequests.values()].filter((request) => request.sessionKey === sessionKey);
@@ -605,6 +632,9 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             request.controller.abort();
         }
         const release = (async (): Promise<void> => {
+            if (priorRelease) {
+                await priorRelease;
+            }
             await Promise.allSettled(matchingRequests.map(({ settled }) => settled));
             if (load) {
                 await load.promise.catch(() => undefined);

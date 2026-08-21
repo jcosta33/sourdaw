@@ -127,6 +127,11 @@ export type WorkerRequest =
 // Worker → Main thread
 export type WorkerResponse =
     | {
+          /** Worker-level protocol failure that cannot be correlated to one request. */
+          type: 'worker-fatal-error';
+          error: string;
+      }
+    | {
           type: 'session-created';
           requestId: string;
           modelId: string;

@@ -204,12 +204,39 @@ describe('tfjsInferenceWorkerRuntime', () => {
     });
 
     it('admits only a proven non-fallback core WebGPU adapter', async () => {
-        const requestAdapter = vi.fn().mockResolvedValue({ info: { isFallbackAdapter: false } });
+        const device = {} as GPUDevice;
+        const requestDevice = vi.fn().mockResolvedValue(device);
+        const adapter = {
+            features: new Set<GPUFeatureName>(['timestamp-query', 'bgra8unorm-storage']),
+            info: { isFallbackAdapter: false },
+            limits: {
+                maxComputeWorkgroupStorageSize: 1,
+                maxComputeWorkgroupsPerDimension: 2,
+                maxStorageBufferBindingSize: 3,
+                maxBufferSize: 4,
+                maxComputeWorkgroupSizeX: 5,
+                maxComputeInvocationsPerWorkgroup: 6,
+            },
+            requestDevice,
+        } as unknown as GPUAdapter;
+        const requestAdapter = vi.fn().mockResolvedValue(adapter);
 
-        await expect(requireHardwareWebGpu({ requestAdapter } as unknown as GPU)).resolves.toBeUndefined();
+        await expect(requireHardwareWebGpu({ requestAdapter } as unknown as GPU)).resolves.toEqual({ adapter, device });
         expect(requestAdapter).toHaveBeenCalledExactlyOnceWith({
+            powerPreference: 'high-performance',
             featureLevel: 'core',
             forceFallbackAdapter: false,
+        });
+        expect(requestDevice).toHaveBeenCalledExactlyOnceWith({
+            requiredFeatures: ['timestamp-query', 'bgra8unorm-storage'],
+            requiredLimits: {
+                maxComputeWorkgroupStorageSize: 1,
+                maxComputeWorkgroupsPerDimension: 2,
+                maxStorageBufferBindingSize: 3,
+                maxBufferSize: 4,
+                maxComputeWorkgroupSizeX: 5,
+                maxComputeInvocationsPerWorkgroup: 6,
+            },
         });
     });
 
@@ -398,6 +425,24 @@ describe('tfjsInferenceWorkerRuntime', () => {
             throw new Error('Expected one output tensor');
         }
         expect(output.dispose).toHaveBeenCalledOnce();
+    });
+
+    it('rechecks the WebGPU backend before inference after a session is loaded', async () => {
+        const harness = createHarness();
+        await harness.runtime.handleRequest(sessionRequest('load'));
+        harness.backend.value = 'wasm';
+
+        await harness.runtime.handleRequest(inferenceRequest('backend-changed'));
+
+        expect(harness.model.predict).not.toHaveBeenCalled();
+        expect(harness.responses).toContainEqual({
+            type: 'error',
+            requestId: 'backend-changed',
+            error: expect.stringContaining('wasm'),
+        });
+        expect(harness.responses).not.toContainEqual(
+            expect.objectContaining({ type: 'ddsp-result', requestId: 'backend-changed' })
+        );
     });
 
     it.each([
@@ -639,6 +684,63 @@ describe('tfjsInferenceWorkerRuntime', () => {
         for (const artifact of queuedPorts) {
             expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
         }
+    });
+
+    it('treats consecutive releases as ordered barriers around queued session work', async () => {
+        const activeOutput = deferred<Float32Array>();
+        const harness = createHarness({ output: fakeTensor(new Float32Array(4), { data: activeOutput.promise }) });
+        const replacementModel: TfjsWorkerModel = {
+            dispose: vi.fn(),
+            predict: vi.fn(() => fakeTensor(Float32Array.from([1, 2, 3, 4]))),
+        };
+        harness.loadGraphModel
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return harness.model;
+            })
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return replacementModel;
+            });
+        await harness.runtime.handleRequest(sessionRequest('initial-load'));
+        const inference = harness.runtime.handleRequest(inferenceRequest('active'));
+        await vi.waitFor(() => expect(harness.model.predict).toHaveBeenCalledOnce());
+
+        const release1 = harness.runtime.handleRequest({
+            type: 'release-ddsp-session',
+            requestId: 'release-1',
+            sessionKey: 'ddsp-violin:v1:fingerprint',
+        });
+        const queuedPorts = artifacts();
+        const queuedBeforeRelease2 = harness.runtime.handleRequest(
+            sessionRequest('queued-before-release-2', queuedPorts)
+        );
+        const release2 = harness.runtime.handleRequest({
+            type: 'release-ddsp-session',
+            requestId: 'release-2',
+            sessionKey: 'ddsp-violin:v1:fingerprint',
+        });
+        const afterRelease2 = harness.runtime.handleRequest(sessionRequest('after-release-2'));
+
+        activeOutput.resolve(new Float32Array(4));
+        await Promise.all([inference, release1, queuedBeforeRelease2, release2, afterRelease2]);
+
+        expect(harness.responses).toContainEqual({
+            type: 'error',
+            requestId: 'queued-before-release-2',
+            error: 'DDSP request cancelled',
+        });
+        expect(harness.responses).not.toContainEqual(
+            expect.objectContaining({ type: 'session-created', requestId: 'queued-before-release-2' })
+        );
+        expect(harness.responses).toContainEqual(
+            expect.objectContaining({ type: 'session-created', requestId: 'after-release-2' })
+        );
+        expect(harness.loadGraphModel).toHaveBeenCalledTimes(2);
+        for (const artifact of queuedPorts) {
+            expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
+        }
+        expect(replacementModel.dispose).not.toHaveBeenCalled();
     });
 
     it('drains all active work before acknowledging worker disposal', async () => {

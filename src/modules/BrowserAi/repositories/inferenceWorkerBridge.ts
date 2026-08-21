@@ -48,9 +48,14 @@ const workerState: {
 
 const TFJS_IDLE_TIMEOUT_MS = 60_000; // 1 minute — destroy TF.js worker after idle
 
-function createMessageHandler(state: WorkerState): (event: MessageEvent<WorkerResponse>) => void {
+function createMessageHandler(state: WorkerState, worker: Worker): (event: MessageEvent<WorkerResponse>) => void {
     return (event: MessageEvent<WorkerResponse>): void => {
         const msg = event.data;
+
+        if (msg.type === 'worker-fatal-error') {
+            resetWorkerAfterFailure(state, worker, new Error(msg.error));
+            return;
+        }
 
         // Progress events don't resolve a pending request
         if (msg.type === 'inference-progress') {
@@ -157,7 +162,7 @@ async function getOnnxWorker(): Promise<Worker> {
     }
 
     const worker = new Worker(new URL('../workers/onnxInferenceWorker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = createMessageHandler(workerState.onnx);
+    worker.onmessage = createMessageHandler(workerState.onnx, worker);
     workerState.onnx.worker = worker;
     workerState.onnx.initialized = true;
     installFailureHandlers(workerState.onnx, worker, 'ONNX');
@@ -181,7 +186,7 @@ async function getTfjsWorker(): Promise<Worker> {
     }
 
     const worker = new Worker(new URL('../workers/tfjsInferenceWorker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = createMessageHandler(workerState.tfjs);
+    worker.onmessage = createMessageHandler(workerState.tfjs, worker);
     workerState.tfjs.worker = worker;
     workerState.tfjs.initialized = true;
     installFailureHandlers(workerState.tfjs, worker, 'TF.js');

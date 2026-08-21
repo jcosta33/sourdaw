@@ -14,11 +14,13 @@ let rollRegistered = false;
 
 /** Initialize only the hardware WebGPU backend; no CPU, WebGL, or software success path exists. */
 async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
-    await requireHardwareWebGpu(typeof navigator === 'undefined' ? undefined : navigator.gpu);
+    const verified = await requireHardwareWebGpu(typeof navigator === 'undefined' ? undefined : navigator.gpu);
     const tf = await import('@tensorflow/tfjs-core');
     const converter = await import('@tensorflow/tfjs-converter');
     tf.env().global = globalThis;
-    await import('@tensorflow/tfjs-backend-webgpu');
+    const webgpu = await import('@tensorflow/tfjs-backend-webgpu');
+    tf.removeBackend('webgpu');
+    tf.registerBackend('webgpu', () => new webgpu.WebGPUBackend(verified.device, verified.adapter.info), 3);
     if ((await tf.setBackend('webgpu')) !== true) {
         throw new Error('TF.js could not initialize its required WebGPU backend');
     }
@@ -115,5 +117,6 @@ self.onmessage = (event: MessageEvent<WorkerRequest>): void => {
 };
 
 self.onmessageerror = (): void => {
+    postResponse({ type: 'worker-fatal-error', error: 'TF.js worker received an unreadable request' });
     void runtime.dispose();
 };
