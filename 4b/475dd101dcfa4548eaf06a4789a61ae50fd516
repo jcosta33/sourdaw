@@ -1,0 +1,25 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_37194ab854be28 869,1895,2372,2759,4154,4475-4483,5645-5653,5954,7988,8438,8960,9239,9815,10157,11273,12839,13073,13919,15440,15818,18950,20507,21254,21749,21992,22298,22763-22771,24377,24671-24679,25007,25259
+src/modules/Metering/presentations/views/AnalysisPanel.tsx
+  s_2175fca1f07426::t_4142bcc5378f9b 5,48,50,60,138
+src/modules/Metering/presentations/views/LUFSMeter.tsx
+  s_2175fca1f07426::t_316434c7ac123b 9,185,201
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  s_2175fca1f07426::t_79cb3c3b33a701 4,221,231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4b475dd101dcfa4548eaf06a4789a61ae50fd516",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
