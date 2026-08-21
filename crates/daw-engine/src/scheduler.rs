@@ -391,12 +391,21 @@ struct ActiveEffect {
 
 pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
 
-/// The fixed capacity of the scheduler's effect table. The table is built
-/// once with this capacity and never grown: a push past it is refused,
-/// counted, and the rejected effect retired over the retirement channel —
+/// The fixed capacity of the scheduler's effect table, and with it the number
+/// of devices a project may hold natively at once. The table is built once
+/// with this capacity and never grown: a push past it is refused and counted —
 /// growing the vector inside the audio deadline is the allocation ADR 0020
-/// forbids.
-pub(crate) const EFFECT_TABLE_CAPACITY: usize = 128;
+/// forbids, and `ActiveEffect` is large enough (its plugin core, MIDI buffer,
+/// and parameter queue all live inline) that both the reservation and the
+/// memmove `remove_effect` performs scale with it, so the ceiling cannot
+/// simply be raised to cover every chain slot the timeline admits.
+///
+/// The audio thread's refusal is the last line, not the reported one: it is a
+/// counter, and a device refused there is a device the user never sees in the
+/// chain. Control-side callers must hold the project below this ceiling
+/// themselves, where a refusal can be returned — which is why the constant is
+/// public.
+pub const EFFECT_TABLE_CAPACITY: usize = 128;
 
 /// The fixed capacity of the bridge table, on the same contract as
 /// [`EFFECT_TABLE_CAPACITY`].
@@ -789,10 +798,12 @@ impl AudioScheduler {
         {
             let retired = match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
-                    self.add_builtin_effect(id, plugin_type, EffectPlacement::MasterChain)
+                    self.add_builtin_effect(id, plugin_type, EffectPlacement::MasterChain);
+                    None
                 }
                 GraphCommand::AddDetachedEffect(id, plugin_type) => {
-                    self.add_builtin_effect(id, plugin_type, EffectPlacement::Detached)
+                    self.add_builtin_effect(id, plugin_type, EffectPlacement::Detached);
+                    None
                 }
                 #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
@@ -1178,33 +1189,38 @@ impl AudioScheduler {
         self.effects.iter().any(|effect| effect.id == id)
     }
 
-    /// Register a built-in effect at the given placement, retiring the fresh
-    /// instance instead when the id already names a live effect or the effect
-    /// table is full.
+    /// Register a built-in effect at the given placement, counting a refusal
+    /// instead when the id already names a live effect or the effect table is
+    /// full.
+    ///
+    /// Both refusals are decided *before* the instance exists, and that order
+    /// is the contract. Unlike `AddPlugin`, whose instance is built control-
+    /// side and merely carried across the ring, a built-in is constructed
+    /// here, on the audio thread: `KneadEngine::new` allocates and zeroes its
+    /// analysis and overlap buffers. Constructing one only to hand it
+    /// straight back over the retirement channel would put exactly the heap
+    /// traffic ADR 0020 forbids inside the audio deadline, on the path whose
+    /// whole purpose is to refuse. A refused built-in therefore costs
+    /// nothing and retires nothing — there is no object to hand off.
     fn add_builtin_effect(
         &mut self,
         id: usize,
         plugin_type: BuiltinEffectType,
         placement: EffectPlacement,
-    ) -> Option<RetiredGraphObjects> {
-        let instance = match plugin_type {
-            BuiltinEffectType::Knead => PluginCore::Knead(KneadEngine::new(self.sample_rate)),
-        };
+    ) {
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return;
         }
         if self.effects.len() == EFFECT_TABLE_CAPACITY {
             self.timeline.record_capacity_refusal();
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return;
         }
+        let instance = match plugin_type {
+            BuiltinEffectType::Knead => PluginCore::Knead(KneadEngine::new(self.sample_rate)),
+        };
         self.effects
             .push(ActiveEffect::with_placement(id, instance, placement));
-        None
     }
 
     /// Record where an effect now runs, after a chain has accepted it.
@@ -2382,14 +2398,43 @@ mod tests {
     }
 
     /// The command vocabulary may not carry an owning payload onto the audio
-    /// thread: consuming the command there frees it (ADR 0020). These two
-    /// types are what `AddEffect`/`AddDetachedEffect` and `SetParam` carry,
-    /// and reverting either to a `String` fails this test at compile time.
+    /// thread: consuming the command there frees it (ADR 0020). Reading each
+    /// payload *out of a shared reference to the command* is what pins that —
+    /// moving out of a `&` compiles only while the payload is `Copy`, so
+    /// reverting `AddEffect`/`AddDetachedEffect`'s type or `SetParam`'s
+    /// parameter to a `String` fails this test at compile time rather than
+    /// leaving a `Copy` bound on some other type still satisfied.
     #[test]
     fn the_effect_type_and_parameter_payloads_are_copy_addresses() {
-        fn assert_copy<T: Copy>() {}
-        assert_copy::<BuiltinEffectType>();
-        assert_copy::<DeviceParam>();
+        fn copied_effect_type(command: &GraphCommand) -> Option<BuiltinEffectType> {
+            match command {
+                GraphCommand::AddEffect(_, plugin_type)
+                | GraphCommand::AddDetachedEffect(_, plugin_type) => Some(*plugin_type),
+                _ => None,
+            }
+        }
+        fn copied_param(command: &GraphCommand) -> Option<DeviceParam> {
+            match command {
+                GraphCommand::SetParam(_, param, _) => Some(*param),
+                _ => None,
+            }
+        }
+
+        assert_eq!(
+            copied_effect_type(&GraphCommand::AddEffect(1, BuiltinEffectType::Knead)),
+            Some(BuiltinEffectType::Knead)
+        );
+        assert_eq!(
+            copied_effect_type(&GraphCommand::AddDetachedEffect(
+                1,
+                BuiltinEffectType::Knead
+            )),
+            Some(BuiltinEffectType::Knead)
+        );
+        assert_eq!(
+            copied_param(&GraphCommand::SetParam(1, DeviceParam::ShiftSemitones, 0.0)),
+            Some(DeviceParam::ShiftSemitones)
+        );
     }
 
     /// `from_name` is the inverse of `name`, so the named boundary and the
@@ -2403,8 +2448,12 @@ mod tests {
         assert_eq!(BuiltinEffectType::from_name("not-a-real-effect"), None);
     }
 
+    /// A built-in add past the table's capacity is refused before its engine
+    /// is built, so the refusal allocates nothing and has nothing to retire; a
+    /// native plugin arrives already built from the control side, so its
+    /// refusal still hands the instance off.
     #[test]
-    fn an_effect_past_the_tables_capacity_is_refused_and_retired_rather_than_grown() {
+    fn an_effect_past_the_tables_capacity_is_refused_rather_than_grown() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         for id in 0..EFFECT_TABLE_CAPACITY {
             command_tx
@@ -2426,11 +2475,13 @@ mod tests {
         assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
         assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
         assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
-        assert!(retired_rx
-            .pop()
-            .expect("the refused effect must be handed off, never dropped on the callback")
-            .effect
-            .is_some());
+        // Nothing crosses the retirement channel, because nothing was built:
+        // a retirement here is the receipt for a `KneadEngine` the callback
+        // allocated and zeroed only to throw away (ADR 0020).
+        assert!(
+            retired_rx.pop().is_err(),
+            "a refused built-in must not construct an engine to hand back"
+        );
 
         // The same full table refuses a native plugin on its own arm.
         command_tx
@@ -2447,6 +2498,81 @@ mod tests {
             .expect("the refused plugin must be handed off")
             .effect
             .is_some());
+    }
+
+    /// The id-collision refusal is decided on the same side of the
+    /// construction as the capacity refusal: a built-in whose id is already
+    /// taken never reaches `KneadEngine::new`, so it neither allocates on the
+    /// callback nor produces a retirement.
+    #[test]
+    fn a_colliding_builtin_add_is_refused_before_its_engine_is_built() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.effects.len(), 1);
+
+        command_tx
+            .push(GraphCommand::AddDetachedEffect(7, BuiltinEffectType::Knead))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.effects.len(), 1);
+        assert_eq!(
+            scheduler.effects[0].placement,
+            EffectPlacement::MasterChain,
+            "the living effect must not be displaced by the refused one"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .effect_id_collisions,
+            1
+        );
+        assert!(
+            retired_rx.pop().is_err(),
+            "a refused built-in must not construct an engine to hand back"
+        );
+    }
+
+    /// A full effect table refuses `AddPluginWithBridge` on its own, with the
+    /// bridge table empty — the ordinary state, since `AddEffect`/`AddPlugin`
+    /// fill `effects` without touching `audio_bridges`. Without the effect
+    /// disjunct of that guard the push reallocates the effect table on the
+    /// callback, moving every live `ActiveEffect` with it.
+    #[test]
+    fn a_plugin_with_bridge_is_refused_when_only_the_effect_table_is_full() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        for id in 0..EFFECT_TABLE_CAPACITY {
+            command_tx
+                .push(GraphCommand::AddEffect(id, BuiltinEffectType::Knead))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+        assert!(scheduler.audio_bridges.is_empty());
+
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(EFFECT_TABLE_CAPACITY);
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                EFFECT_TABLE_CAPACITY,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+        assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
+        assert!(scheduler.audio_bridges.is_empty());
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+        let retired = retired_rx
+            .pop()
+            .expect("the refused plugin and its bridge must be handed off");
+        assert!(retired.effect.is_some());
+        assert!(retired.audio_bridge.is_some());
     }
 
     #[test]

@@ -119,7 +119,9 @@
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::scheduler::{BuiltinEffectType, GraphCommand, GraphProgressSnapshot};
+use daw_engine::scheduler::{
+    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, EFFECT_TABLE_CAPACITY,
+};
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
     ClipPlayback, DeviceKind, DeviceParam, RampShape, RouteTarget, TimelineBus, TimelineClip,
@@ -911,6 +913,22 @@ fn map_device(
         }
     }
 
+    // The scheduler's effect table is fixed at `EFFECT_TABLE_CAPACITY` and
+    // every native device in the project — track chain or bus chain — holds
+    // one of its slots, while the timeline admits far more chain slots than
+    // that. Past the ceiling the engine refuses the registration with a
+    // counter on the callback, the chain splice that follows lands with no
+    // instance behind it, and the batch reports a device the user cannot
+    // hear. Refusing here instead is the whole difference between a device
+    // that reports it could not be added and one that silently vanishes: the
+    // batch fails, its working registry clone is discarded, and no chain
+    // entry is written.
+    if registry.devices.len() == EFFECT_TABLE_CAPACITY {
+        return Err(format!(
+            "device '{}': the project holds its maximum of {EFFECT_TABLE_CAPACITY} native devices",
+            device.id
+        ));
+    }
     let effect_id = registry.allocate_effect_id();
     // Detached, never `AddEffect`: commands cross the ring one at a time, so
     // a callback can drain between this registration and the chain splice
@@ -2884,6 +2902,69 @@ mod tests {
                 device_ids: vec!["d-front".to_string()],
             }]
         );
+    }
+
+    /// Every native device the project holds — on any track or bus — occupies
+    /// one slot of the scheduler's fixed effect table, and the timeline admits
+    /// many more chain slots than that table has. The batch refuses past the
+    /// ceiling and names it. The engine's own refusal cannot stand in for this
+    /// one: it is a counter on the audio callback, so the chain splice that
+    /// follows would land with no instance behind it and the batch would
+    /// report a device the user cannot hear.
+    #[test]
+    fn a_device_past_the_project_wide_device_ceiling_refuses_the_batch() {
+        let mut commands: Vec<Value> = Vec::new();
+        let mut built = 0usize;
+        let mut track = 0usize;
+        while built < EFFECT_TABLE_CAPACITY {
+            let count = MAX_TRACK_DEVICES.min(EFFECT_TABLE_CAPACITY - built);
+            let devices: Vec<Value> = (0..count)
+                .map(|index| {
+                    json!({ "id": format!("d-{track}-{index}"), "type": "knead",
+                            "bypassed": false, "parameterValues": {} })
+                })
+                .collect();
+            commands.push(json!({
+                "kind": "create-track-strip", "trackId": format!("t{track}"), "name": "T",
+                "state": strip_state(1.0), "devices": devices,
+                "honorMuted": true, "contributesAudio": true
+            }));
+            built += count;
+            track += 1;
+        }
+
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &batch(json!(commands)),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a project that fills the table exactly must map");
+        assert_eq!(registry.devices.len(), EFFECT_TABLE_CAPACITY);
+
+        // A fresh strip, so the per-strip chain ceiling cannot be what
+        // refuses: only the project-wide one is left to catch this.
+        let overflow = batch(json!([
+            { "kind": "create-track-strip", "trackId": format!("t{track}"), "name": "T",
+              "state": strip_state(1.0),
+              "devices": [ { "id": "d-overflow", "type": "knead", "bypassed": false,
+                             "parameterValues": {} } ],
+              "honorMuted": true, "contributesAudio": true }
+        ]));
+        let mut working = registry.clone();
+        let refusal = map_batch(&overflow, &mut working, &sample_pool(), 48_000.0)
+            .expect_err("a device past the project-wide ceiling must refuse the batch");
+
+        assert!(
+            refusal.contains(&EFFECT_TABLE_CAPACITY.to_string())
+                && refusal.contains("native devices"),
+            "the refusal must name the ceiling it hit, got: {refusal}"
+        );
+        // The committed registry never saw the refused batch, so the chain the
+        // engine renders and the chain the registry believes in still agree.
+        assert_eq!(registry.devices.len(), EFFECT_TABLE_CAPACITY);
+        assert!(!registry.strips.contains_key(&format!("t{track}")));
     }
 
     #[test]
