@@ -6,8 +6,12 @@ import { describe, expect, it } from 'vitest';
 import { coordinateDelivery } from '../deliverPullRequest.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
+    BOOTSTRAP_PATH,
     executeTrustedSnapshot,
+    hoistToOriginBootstrap,
+    REPOSITORY_ROOT_ENV,
     runTrustedGithubWriteCommand,
+    shouldHoistToOrigin,
     trustedDependencyPaths,
 } from '../trustedGithubWriteBootstrap.ts';
 
@@ -155,6 +159,41 @@ describe('package scripts and gitignore', () => {
         expect(result).toBe(17);
         expect(resolves).toBe(1);
         expect(originReads).toEqual(paths.map((path) => `pinned-sha:${path}`));
+    });
+
+    it('hands the invocation to origin/main when the executing loader differs', async () => {
+        const origin = `loader ${REPOSITORY_ROOT_ENV}`;
+
+        expect(shouldHoistToOrigin(origin, origin)).toBe(false);
+        expect(shouldHoistToOrigin('lane loader', origin)).toBe(true);
+        // An origin copy that predates the root-from-caller contract derives the
+        // repository root from its own module URL, so hoisting to it out of a
+        // temporary directory would run git against that directory.
+        expect(shouldHoistToOrigin('lane loader', 'loader without the contract')).toBe(false);
+    });
+
+    it('runs the hoisted loader from origin bytes and tells it the repository root', async () => {
+        const seen: Array<{ source: string; argv: string[]; repositoryRoot: string }> = [];
+        const exitCode = await hoistToOriginBootstrap(
+            `origin loader ${REPOSITORY_ROOT_ENV}`,
+            '/repo/root',
+            ['deliver', '2633'],
+            (entryPath, argv, repositoryRoot) => {
+                seen.push({ source: readFileSync(entryPath, 'utf8'), argv, repositoryRoot });
+                return 7;
+            }
+        );
+
+        expect(exitCode).toBe(7);
+        expect(seen).toEqual([
+            { source: `origin loader ${REPOSITORY_ROOT_ENV}`, argv: ['deliver', '2633'], repositoryRoot: '/repo/root' },
+        ]);
+    });
+
+    it('keeps the loader inside its own trusted closure', () => {
+        for (const command of ['deliver', 'issue:reconcile'] as const) {
+            expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
+        }
     });
 
     it('cleans the exact-byte snapshot tree after success and failure', async () => {
