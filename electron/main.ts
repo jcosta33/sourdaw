@@ -97,10 +97,14 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
         return { action: decision.action };
     });
 
-    if (isDevShell) {
-        window.webContents.on('console-message', (details) => {
-            console.log(`[renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`);
-        });
+    if (isDevShell || isProductionCspProbe) {
+        if (isDevShell) {
+            window.webContents.on('console-message', (details) => {
+                console.log(
+                    `[renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`
+                );
+            });
+        }
         window.webContents.once('did-finish-load', () => {
             if (isDevShell) {
                 void runIsolationProbe(window);
