@@ -58,7 +58,10 @@ import {
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
-import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import {
+    type OfflinePpqEndpointProjector,
+    type OfflineTempoAtBeatResolver,
+} from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
@@ -80,6 +83,13 @@ export type NativeOfflineRenderInput = Readonly<{
     defaultTempo: number;
     changes: TempoMapStoreState['changes'];
     projectPpqEndpoints: OfflinePpqEndpointProjector;
+    /**
+     * Flat tempo at a beat — what a clip's buffer-content offset converts
+     * through. Required for the same reason the web path requires it: a
+     * default-tempo fallback seeks to the wrong point in the source for every
+     * project carrying a tempo map, inaudibly until someone listens.
+     */
+    resolveTempoAtBeat: OfflineTempoAtBeatResolver;
     /** Every strip this render builds, in project order. */
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix — audible plus cue-send-only. */
@@ -151,6 +161,7 @@ export async function renderOfflineWithNativeEngine(
         defaultTempo,
         changes,
         projectPpqEndpoints,
+        resolveTempoAtBeat,
         renderableTracks,
         scheduledTracks,
         scheduledTrackIds,
@@ -172,6 +183,11 @@ export async function renderOfflineWithNativeEngine(
             sampleRate,
             changes,
         }).startSeconds;
+    }
+    // The flat rate at a beat, not the integrated map — the web path's law for a
+    // clip's source-content offset, applied identically here.
+    function resolveClipTempo(beat: number): number {
+        return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
     const regionStartBeat = 0;
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
@@ -361,6 +377,7 @@ export async function renderOfflineWithNativeEngine(
                 durationSeconds,
                 compensationDelay,
                 projectBeatToSeconds,
+                resolveTempoAtBeat: resolveClipTempo,
             });
             for (const playback of playbacks) {
                 commands.push({

@@ -227,24 +227,53 @@ export function scheduleAudioClips(
                 const now = getCurrentTime();
                 const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
                 const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
+                // A negative offset — reachable and unfloored from both write
+                // paths, `slipClipContent` and a leftward left-edge drag in
+                // `trimClipStart` — puts the clip's head before the start of
+                // its source. Handing that number to `start()` is the
+                // `RangeError` the Web Audio specification requires, and this
+                // call sits in the scheduler tick with no `catch` around it, so
+                // the throw also skips that tick's automation, VCA and
+                // modulation passes.
+                //
+                // The professional answer (Live, Cubase) is silence across the
+                // negative span and then the file from sample 0, which is what
+                // the offline render bounces. The span is source seconds, so
+                // crossing it costs `span / rate` of the timeline; the
+                // iteration still ends where the clip says it does, so the
+                // pre-roll shortens what is heard rather than moving the tail.
+                const sourceOffsetSeconds = Math.max(0, clipAudioOffsetSeconds);
+                const preRollSeconds = Math.max(0, -clipAudioOffsetSeconds) / stretchRatio;
+                const soundStartTime = iterStartTime + preRollSeconds;
                 const playDuration = Math.min(
-                    iterDurationSeconds,
-                    (buffer.duration - clipAudioOffsetSeconds) / stretchRatio
+                    iterDurationSeconds - preRollSeconds,
+                    (buffer.duration - sourceOffsetSeconds) / stretchRatio
                 );
 
-                if (iterStartTime >= now) {
-                    source.start(iterStartTime, clipAudioOffsetSeconds, playDuration * stretchRatio);
+                // Nothing audible remains: the pre-roll swallowed the iteration,
+                // or the offset already sits past the end of the material.
+                // Starting a zero-length source would only burn a node.
+                if (playDuration <= 0) {
+                    releaseGainNode(fadeGain, ctx);
+                    if (envGainNode) {
+                        releaseGainNode(envGainNode, ctx);
+                    }
+                    continue;
+                }
+
+                if (soundStartTime >= now) {
+                    source.start(soundStartTime, sourceOffsetSeconds, playDuration * stretchRatio);
                 } else {
-                    const elapsed = now - iterStartTime;
-                    const bufferOffset = elapsed * stretchRatio + clipAudioOffsetSeconds;
+                    const elapsed = now - soundStartTime;
+                    const bufferOffset = elapsed * stretchRatio + sourceOffsetSeconds;
                     if (
                         bufferOffset < buffer.duration &&
-                        bufferOffset < playDuration * stretchRatio + clipAudioOffsetSeconds
+                        bufferOffset < playDuration * stretchRatio + sourceOffsetSeconds
                     ) {
                         source.start(
                             now,
                             bufferOffset,
-                            playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset
+                            playDuration * stretchRatio + sourceOffsetSeconds - bufferOffset
                         );
                     } else {
                         // Source isn't started, release resources immediately
@@ -257,7 +286,13 @@ export function scheduleAudioClips(
                 }
 
                 if (fadeGain) {
-                    const effectiveStart = Math.max(iterStartTime, now);
+                    // Anchored to where sound begins, not to the clip's head:
+                    // with no pre-roll the two are the same instant, and with
+                    // one there is nothing to ramp until the source reaches
+                    // sample 0. The fade *window* below stays measured from the
+                    // clip head, so a pre-roll that outruns it leaves the gain
+                    // already at 1 — the ramp happened during the silence.
+                    const effectiveStart = Math.max(soundStartTime, now);
 
                     if (isFirstIter && clip.fadeInBeats > 0) {
                         // A fade length is a span of the timeline, so it is measured
@@ -275,6 +310,20 @@ export function scheduleAudioClips(
                             const progressRatio = Math.max(0, effectiveStart - iterStartTime) / fadeInSeconds;
                             fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
                             fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
+                        } else if (preRollSeconds > 0) {
+                            // The drawn fade window fully elapsed inside the pre-roll
+                            // silence, so `effectiveStart` lands past `fadeInEnd` with
+                            // nothing left to ramp — but drawing a fade is the gesture
+                            // that says "no click here", and the source is about to
+                            // start on a discontinuity regardless. Give it the same
+                            // anti-click MICRO_FADE_SECONDS gives an undrawn fade,
+                            // rather than jumping straight to unity. This leaves the
+                            // no-pre-roll transport-resume case (preRollSeconds === 0)
+                            // alone: that one starts mid-buffer, where the
+                            // discontinuity is unavoidable and a ramp would only mask
+                            // real material.
+                            fadeGain.gain.setValueAtTime(0, effectiveStart);
+                            fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
                         } else {
                             fadeGain.gain.setValueAtTime(1, effectiveStart);
                         }
