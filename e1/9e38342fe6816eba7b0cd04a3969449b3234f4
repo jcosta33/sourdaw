@@ -1,0 +1,20 @@
+tests/e2e/audioMidiMisc.spec.ts
+  s_24b1bdbc3c31ad::t_744eda2eb0ce95 21,27-29,32
+  s_24b1bdbc3c31ad::t_046f2755567484 1,3,5-13,15,18,22,24-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e19e38342fe6816eba7b0cd04a3969449b3234f4",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
