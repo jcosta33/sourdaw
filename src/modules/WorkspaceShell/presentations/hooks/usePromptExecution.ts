@@ -65,7 +65,7 @@ type PromptPreview = {
     requiresConfirmation: boolean;
     projectRevision: string;
     executionMode?: 'atomic';
-    confirm?: (signal?: AbortSignal) => Promise<void>;
+    confirm?: (signal?: AbortSignal) => Promise<unknown>;
     cancel?: () => Promise<void>;
 };
 
@@ -76,6 +76,19 @@ function createPromptPreview(input: PromptPreview): PromptPreview {
         cancel: { value: cancel },
     });
     return visible;
+}
+
+function cancelPromptPreview(proposal: PromptPreview | null, message: string): void {
+    if (!proposal?.cancel) {
+        return;
+    }
+    try {
+        void proposal.cancel().catch((error: unknown) => {
+            logger.error(new Error(message, { cause: error }));
+        });
+    } catch (error) {
+        logger.error(new Error(message, { cause: error }));
+    }
 }
 
 // ── Hook return type ────────────────────────────────────────────────────
@@ -131,15 +144,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             operationRef.current = null;
             previewRef.current = null;
             operation?.abort();
-            if (retainedPreview?.cancel) {
-                try {
-                    void retainedPreview.cancel().catch((error: unknown) => {
-                        logger.error(new Error('Prompt preview cancellation failed during unmount', { cause: error }));
-                    });
-                } catch (error) {
-                    logger.error(new Error('Prompt preview cancellation failed during unmount', { cause: error }));
-                }
-            }
+            cancelPromptPreview(retainedPreview, 'Prompt preview cancellation failed during unmount');
         },
         []
     );
@@ -384,10 +389,8 @@ export const usePromptExecution = (): PromptExecutionState => {
             operationRef.current.abort();
             return;
         }
-        if (proposal?.cancel) {
-            void proposal.cancel();
-        }
         clearPreview();
+        cancelPromptPreview(proposal, 'Prompt preview cancellation failed');
     };
 
     const cancelProcessing = (): void => {

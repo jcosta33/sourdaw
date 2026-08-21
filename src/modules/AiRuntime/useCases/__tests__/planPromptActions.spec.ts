@@ -20,6 +20,7 @@ vi.mock('../parsePromptToActions', () => ({
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { planPromptActions } from '../planPromptActions';
 
 describe('planPromptActions', () => {
@@ -150,6 +151,36 @@ describe('planPromptActions', () => {
         expect(agentRunLifecycle.get('agent-run-00000000-0000-0000-0000-000000000002')).toMatchObject({
             phase: 'cancelled',
             cancellation: { generation: 1 },
+        });
+    });
+
+    it('keeps a shared admitted run cancelled when provider planning rejects after abort', async () => {
+        const runId = 'shared-admitted-run';
+        const controller = new AbortController();
+        agentRunLifecycle.create({ runId, request: 'do something', mode: 'apply', createdRevision: 'rev-1' });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: 'rev-1' });
+        controller.signal.addEventListener(
+            'abort',
+            () => void agentRunCancellation.cancel({ runId, reason: 'Originating request aborted.' }),
+            { once: true }
+        );
+        mocks.parsePromptToActions.mockImplementation(async () => {
+            controller.abort();
+            throw new DOMException('Provider planning aborted.', 'AbortError');
+        });
+
+        await expect(
+            planPromptActions({
+                prompt: 'do something',
+                signal: controller.signal,
+                streamIdentity: { runId, requestId: 'request-1', cancellationGeneration: 0 },
+            })
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { generation: 1 },
+            errors: [expect.objectContaining({ category: 'cancellation' })],
         });
     });
 });

@@ -171,28 +171,29 @@ describe('usePromptExecution', () => {
                     'Command not executed: one or more actions are not available through the approved command boundary.',
                     []
                 );
-                return;
+                return { status: 'failed' as const };
             }
             const execution = await executionUseCaseMocks.executePlannedActions(input);
             if (execution.status === 'committed' || execution.status === 'executed') {
-                return;
+                return { status: execution.status };
             }
             if (execution.status === 'invalidated' || execution.status === 'failed') {
                 notifyAiChange(`Command not executed: ${execution.reason}`, []);
-                return;
+                return { status: 'failed' as const };
             }
             if (execution.status === 'ambiguous') {
                 notifyAiChange(
                     `Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`,
                     []
                 );
-                return;
+                return { status: 'ambiguous' as const };
             }
             if (execution.status === 'cancelled') {
                 notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
-                return;
+                return { status: 'cancelled' as const };
             }
             notifyAiChange('No project changes were needed.', []);
+            return { status: 'no-op' as const };
         });
         executionUseCaseMocks.submitAdmittedPromptRequest.mockReset();
         executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementation(async (input) => {
@@ -248,13 +249,13 @@ describe('usePromptExecution', () => {
             if (input.signal?.aborted) {
                 return { status: 'rejected' as const, runId: 'prompt-run-1' };
             }
-            await executionUseCaseMocks.executePromptActionGroup({
+            const execution = await executionUseCaseMocks.executePromptActionGroup({
                 actions,
                 prompt: input.prompt,
                 projectRevision: planned.projectRevision,
                 signal: input.signal,
             });
-            return { status: 'completed' as const, runId: 'prompt-run-1' };
+            return { status: execution.status, runId: 'prompt-run-1' };
         });
         vi.mocked(isComplexPrompt).mockReturnValue(false);
         vi.mocked(getAvailablePresets).mockReturnValue([]);
@@ -275,7 +276,7 @@ describe('usePromptExecution', () => {
 
     it('submits prompt-bar requests through application-owned admission before provider planning', async () => {
         executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
-            status: 'completed',
+            status: 'committed',
             runId: 'prompt-run-1',
         });
         const { result } = renderHook(() => usePromptExecution());
@@ -775,6 +776,45 @@ describe('usePromptExecution', () => {
         expect(result.current.value).toBe('');
     });
 
+    it.each(['synchronous', 'asynchronous'] as const)(
+        'handles a %s approval-preview cancellation failure without retaining the preview',
+        async (failureMode) => {
+            const cancellationError = new Error(`${failureMode} cancellation failed`);
+            const cancel = vi.fn(() => {
+                if (failureMode === 'synchronous') {
+                    throw cancellationError;
+                }
+                return Promise.reject(cancellationError);
+            });
+            executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
+                status: 'awaiting-approval',
+                runId: 'prompt-run-1',
+                preview: {
+                    actions: [{ type: 'togglePlayback' }],
+                    actionLabels: ['Toggle playback'],
+                    projectRevision: 'revision-1',
+                    confirm: vi.fn().mockResolvedValue(undefined),
+                    cancel,
+                },
+            });
+            const { result } = renderHook(() => usePromptExecution());
+            act(() => result.current.setValue('Play'));
+            await act(async () => result.current.handleSubmit(formEvent as never));
+            expect(result.current.preview).not.toBeNull();
+
+            await act(async () => {
+                result.current.cancelPreview();
+                await Promise.resolve();
+            });
+
+            expect(cancel).toHaveBeenCalledOnce();
+            expect(result.current.preview).toBeNull();
+            expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+                expect.objectContaining({ message: 'Prompt preview cancellation failed' })
+            );
+        }
+    );
+
     it('flags willUseLlm only for non-empty, complex prompts', () => {
         vi.mocked(isComplexPrompt).mockImplementation((text: string) => text === 'complex query');
         const { result } = renderHook(() => usePromptExecution());
@@ -896,7 +936,7 @@ describe('usePromptExecution', () => {
 
     it('keeps a TrackList-seeded draft visible until the user explicitly submits it', async () => {
         executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
-            status: 'completed',
+            status: 'committed',
             runId: 'prompt-run-1',
         });
         const { result } = renderHook(() => usePromptExecution());

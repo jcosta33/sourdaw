@@ -205,7 +205,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 retry: category === 'provider' ? 'read-only' : 'never',
                 knownDomain: category !== 'provider',
             }),
-            terminal: true,
+            terminal: category !== 'cancellation',
         });
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);

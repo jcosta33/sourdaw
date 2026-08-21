@@ -225,12 +225,14 @@ describe('executePromptActionGroup', () => {
             seedRun();
             mocks.executePlannedActions.mockResolvedValue(result);
 
-            await executePromptActionGroup({
-                actions: [action],
-                prompt: 'Play',
-                projectRevision: 'revision-1',
-                ...admitted(),
-            });
+            await expect(
+                executePromptActionGroup({
+                    actions: [action],
+                    prompt: 'Play',
+                    projectRevision: 'revision-1',
+                    ...admitted(),
+                })
+            ).resolves.toEqual({ status: result.status === 'invalidated' ? 'failed' : result.status });
 
             expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
                 phase,
@@ -276,12 +278,14 @@ describe('executePromptActionGroup', () => {
         seedRun();
         mocks.executePlannedActions.mockResolvedValue({ status: 'committed', actions: [], receipt });
 
-        await executePromptActionGroup({
-            actions: [action],
-            prompt: 'Play',
-            projectRevision: 'revision-1',
-            ...admitted(),
-        });
+        await expect(
+            executePromptActionGroup({
+                actions: [action],
+                prompt: 'Play',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'ambiguous' });
 
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
             phase: 'partially-completed',
@@ -340,7 +344,7 @@ describe('executePromptActionGroup', () => {
                     projectRevision: 'revision-1',
                     ...admitted(),
                 })
-            ).resolves.toBeUndefined();
+            ).resolves.toEqual({ status: 'committed' });
 
             expect(mocks.notifyAiChange).toHaveBeenCalledWith(
                 expect.stringMatching(/project change committed.*do not retry automatically/i),
@@ -378,12 +382,14 @@ describe('executePromptActionGroup', () => {
         });
         vi.spyOn(agentRunWorkLease, 'settle').mockReturnValueOnce({ status: 'stale' });
 
-        await executePromptActionGroup({
-            actions: [action],
-            prompt: 'Play',
-            projectRevision: 'revision-1',
-            ...admitted(),
-        });
+        await expect(
+            executePromptActionGroup({
+                actions: [action],
+                prompt: 'Play',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'committed' });
 
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
             phase: 'partially-completed',
@@ -438,12 +444,14 @@ describe('executePromptActionGroup', () => {
     it('terminalizes actions rejected by the approved command boundary', async () => {
         seedRun();
 
-        await executePromptActionGroup({
-            actions: [{ type: 'removeAllTracks' }],
-            prompt: 'Delete everything',
-            projectRevision: 'revision-1',
-            ...admitted(),
-        });
+        await expect(
+            executePromptActionGroup({
+                actions: [{ type: 'removeAllTracks' }],
+                prompt: 'Delete everything',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'failed' });
 
         expect(mocks.executePlannedActions).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({

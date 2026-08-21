@@ -30,12 +30,15 @@ type AdmittedPromptPreview = {
     actions: readonly AppAction[];
     actionLabels: readonly string[];
     projectRevision: string;
-    confirm: (signal?: AbortSignal) => Promise<void>;
+    confirm: (signal?: AbortSignal) => ReturnType<typeof executePromptActionGroup>;
     cancel: () => Promise<void>;
 };
 
 export type SubmitAdmittedPromptRequestResult =
-    | { status: 'completed' | 'rejected' | 'no-op'; runId: string }
+    | {
+          status: Awaited<ReturnType<typeof executePromptActionGroup>>['status'] | 'rejected';
+          runId: string;
+      }
     | { status: 'awaiting-approval'; runId: string; preview: AdmittedPromptPreview };
 
 function getPromptRunMode(_source: PromptRequestSource): AgentExecutionMode {
@@ -254,7 +257,7 @@ export async function submitAdmittedPromptRequest(
         const execute = async (
             successVerb?: 'Confirmed',
             signal: AbortSignal | undefined = input.signal
-        ): Promise<void> =>
+        ): ReturnType<typeof executePromptActionGroup> =>
             executePromptActionGroup({
                 actions: planned.result.actions,
                 prompt,
@@ -285,8 +288,8 @@ export async function submitAdmittedPromptRequest(
             };
         }
 
-        await execute();
-        return { status: 'completed', runId };
+        const execution = await execute();
+        return { status: execution.status, runId };
     } catch (error) {
         recordPendingProviderResult(true);
         if (input.signal?.aborted) {

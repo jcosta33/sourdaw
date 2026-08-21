@@ -32,6 +32,10 @@ type ExecutePromptActionGroupInput = {
     };
 };
 
+type ExecutePromptActionGroupResult = {
+    status: 'committed' | 'executed' | 'failed' | 'cancelled' | 'ambiguous' | 'no-op';
+};
+
 const TERMINAL_RUN_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative.';
@@ -143,7 +147,9 @@ function rejectPreparedBatch(input: { runId: string; batchId: string; reason: st
     throw new Error(input.reason);
 }
 
-export async function executePromptActionGroup(input: ExecutePromptActionGroupInput): Promise<void> {
+export async function executePromptActionGroup(
+    input: ExecutePromptActionGroupInput
+): Promise<ExecutePromptActionGroupResult> {
     const parsed = parseVersionedCommandBatchEnvelope(
         input.prepared.commandBatch.serialized,
         input.prepared.commandBatch.authority
@@ -181,7 +187,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
         transitionRunIfLive(input.runId, 'failed');
         notifyAiChange(`Command not executed: ${reason}`, []);
-        return;
+        return { status: 'failed' };
     }
 
     const receiptIdentity = `command:${input.runId}:${envelope.batchId}`;
@@ -227,7 +233,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
         await cancelCommand();
         notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
         input.signal.removeEventListener('abort', onAbort);
-        return;
+        return { status: 'cancelled' };
     }
 
     const group = generateGroupId(input.prompt);
@@ -276,7 +282,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
-            return;
+            return { status: 'ambiguous' };
         }
         if (execution.receipt.runId !== input.runId || execution.receipt.batchId !== envelope.batchId) {
             const reason = 'Command execution returned a receipt for a different admitted batch.';
@@ -289,7 +295,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
-            return;
+            return { status: 'ambiguous' };
         }
         const leaseSettlement = settleCommittedCommandLease(commandLease);
         const receiptIdentity = getReceiptIdentity(execution.receipt);
@@ -319,13 +325,13 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
             ),
             actionTypes: execution.actions.map((entry) => entry.actionType),
         });
-        return;
+        return { status: execution.status };
     }
 
     if (execution.status === 'cancelled') {
         await cancelCommand();
         notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
-        return;
+        return { status: 'cancelled' };
     }
 
     if (execution.status === 'invalidated' || execution.status === 'failed') {
@@ -334,7 +340,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
             transitionRunIfLive(input.runId, 'failed');
         }
         notifyAiChange(`Command not executed: ${execution.reason}`, []);
-        return;
+        return { status: 'failed' };
     }
 
     if (execution.status === 'ambiguous') {
@@ -343,7 +349,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
             transitionRunIfLive(input.runId, 'partially-completed');
         }
         notifyAiChange(`Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`, []);
-        return;
+        return { status: 'ambiguous' };
     }
 
     if (settleCommand('completed')) {
@@ -351,4 +357,5 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
         agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'completed' });
     }
     notifyAiChange('No project changes were needed.', []);
+    return { status: 'no-op' };
 }

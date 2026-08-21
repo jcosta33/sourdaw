@@ -108,7 +108,7 @@ describe('submitAdmittedPromptRequest', () => {
                 commands: [{ commandId: 'command-1' }],
             },
         });
-        mocks.executePromptActionGroup.mockResolvedValue(undefined);
+        mocks.executePromptActionGroup.mockResolvedValue({ status: 'committed' });
         mocks.planPromptActions.mockResolvedValue({
             context: { tracks: [] },
             result: { actions: [], rawText: 'Arrange this project', requiresConfirmation: false },
@@ -278,4 +278,20 @@ describe('submitAdmittedPromptRequest', () => {
             batches: [{ batchId: 'batch-1', status: 'waiting-for-approval' }],
         });
     });
+
+    it.each(['committed', 'executed', 'failed', 'cancelled', 'ambiguous', 'no-op'] as const)(
+        'returns the exact %s command outcome through the admitted submission boundary',
+        async (status) => {
+            mocks.compileAgentActionExecution.mockReturnValue({
+                ...compiled,
+                agentApproval: null,
+                requiresConfirmation: false,
+            });
+            mocks.executePromptActionGroup.mockResolvedValue({ status });
+
+            await expect(
+                submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar', actions: [action] })
+            ).resolves.toEqual({ status, runId: RUN_ID });
+        }
+    );
 });
