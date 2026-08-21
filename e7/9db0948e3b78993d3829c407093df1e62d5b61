@@ -1,0 +1,23 @@
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_27578aec2aab3b::t_bd86b46563aa39 206-209,212,216-221,224-227,229-235
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_bba6ef040b4613 328,347,384-385
+  s_27578aec2aab3b::t_7a75aad8410f0f 4,213-230,327,329-346,348-383
+  s_27578aec2aab3b::t_bd86b46563aa39 267,273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e79db0948e3b78993d3829c407093df1e62d5b61",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
