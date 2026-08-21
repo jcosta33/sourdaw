@@ -1,0 +1,44 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_f5817b85ce1ca8 186-189
+  s_a40848e8f8cca9::t_5fa3b9bdb1805d 2,7-11,90,93-101,105,108,113-118,122-130,132-135,139-141,143-161,174-185,190-196
+  s_a40848e8f8cca9::t_44e0386798b977 162-173
+  s_a40848e8f8cca9::t_724f6f9e879e5a 131,136-138,142
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_a40848e8f8cca9::t_5fa3b9bdb1805d 454-485,490-493
+scripts/__tests__/reconcileTrackerIssue.spec.ts
+  s_a40848e8f8cca9::t_5fa3b9bdb1805d 2,321-326
+  s_24b1bdbc3c31ad::t_a62819f2ea08a0 327-328
+scripts/reconcileTrackerIssue.ts
+  s_a40848e8f8cca9::t_8d33c2e0a66016 120-123
+scripts/trustedGithubWriteBootstrap.ts
+  s_a40848e8f8cca9::t_f5817b85ce1ca8 26,124,137-138,144-157,166-168,170,172
+  s_a40848e8f8cca9::t_b68131adb884ec 139,158-162
+  s_a40848e8f8cca9::t_1cec40e9a8a05a 141
+  s_a40848e8f8cca9::t_c27a70619e434c 3-5,10-14,16-23,27,46-50,57,62-63,67-69,104-117,120-123,125-136,140,142-143,175-178,180-181,183,188-192
+scripts/deliverPullRequest.ts
+  s_a40848e8f8cca9::t_84bff42a35cd98 178-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "260d5e9db87776cf57cac96e4c9789c7bb043318",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
