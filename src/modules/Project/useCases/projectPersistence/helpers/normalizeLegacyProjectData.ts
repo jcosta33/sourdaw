@@ -13,21 +13,12 @@ import {
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
 
-import { CURRENT_PROJECT_VERSION, deriveDeterministicProjectId } from '../../../models/ProjectData';
+import { createProjectId, CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function findStableIdentityEntropy(value: UnknownRecord): string | undefined {
-    const meta = isRecord(value.meta) ? value.meta : undefined;
-    const brief = isRecord(meta?.productionBrief) ? meta.productionBrief : undefined;
-    if (typeof brief?.id === 'string' && brief.id.length > 0 && brief.id !== 'production-brief') {
-        return `brief:${brief.id}`;
-    }
-    return undefined;
 }
 
 function migrateVersion1ProjectIdentity(value: unknown): unknown {
@@ -39,7 +30,7 @@ function migrateVersion1ProjectIdentity(value: unknown): unknown {
         version: CURRENT_PROJECT_VERSION,
         meta: {
             ...value.meta,
-            projectId: deriveDeterministicProjectId(String(value.meta.createdAt), findStableIdentityEntropy(value)),
+            projectId: createProjectId(),
         },
     };
 }

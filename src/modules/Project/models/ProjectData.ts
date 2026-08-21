@@ -24,10 +24,16 @@ export const CURRENT_PROJECT_VERSION = 2;
  */
 export const MIN_SUPPORTED_PROJECT_VERSION = 1;
 
-const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** RFC 9562 UUID versions 1-8 in the interoperable 10xx variant. */
 export function isCanonicalProjectId(value: unknown): value is string {
     return typeof value === 'string' && PROJECT_ID_PATTERN.test(value);
+}
+
+/** Mint a collision-resistant project address once, at project creation or migration. */
+export function createProjectId(): string {
+    return crypto.randomUUID();
 }
 
 function hashProjectIdentitySeed(value: string): readonly [number, number, number, number] {
@@ -176,16 +182,8 @@ export type ProjectMeta = {
     productionBrief?: ProductionBrief;
 };
 
-function getStableProjectEntropy(meta: ProjectMeta): string | undefined {
-    const briefId = meta.productionBrief?.id;
-    if (briefId && briefId !== 'production-brief') {
-        return `brief:${briefId}`;
-    }
-    return undefined;
-}
-
 export function deriveProjectIdFromMeta(meta: ProjectMeta): string {
-    return deriveDeterministicProjectId(String(meta.createdAt), getStableProjectEntropy(meta));
+    return deriveDeterministicProjectId(String(meta.createdAt));
 }
 
 export function getProjectId(data: ProjectData): string {

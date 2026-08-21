@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type ProjectData } from '../../models/ProjectData';
+import { isCanonicalProjectId, type ProjectData } from '../../models/ProjectData';
 import { getAgentProjectModelContract } from '../getAgentProjectModelContract';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
 
 const LEGACY_CREATED_AT = 1_700_000_000_000;
 const EXPECTED_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
-const EXPECTED_OTHER_PROJECT_ID = 'e832fe1d-5533-8612-8815-c1893514f986';
+const buildProjectDataMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({ buildProjectData: buildProjectDataMock }));
 
 function projectData(): ProjectData {
     return {
@@ -141,7 +143,7 @@ function projectData(): ProjectData {
                             deviceState: { version: 3, data: { mode: 'clean' } },
                         },
                     ],
-                    sends: [{ busId: 'master', level: 0.25, preFader: false }],
+                    sends: [{ busId: 'master', level: 0.25, preFader: true }],
                     midiFx: [],
                     frozen: true,
                     frozenBufferId: 'freeze-1',
@@ -159,7 +161,7 @@ function projectData(): ProjectData {
                     collapsed: false,
                     inputMonitoring: 'on',
                     hidden: false,
-                    disabled: false,
+                    disabled: true,
                     height: 80,
                     outputId: 'master',
                     automationMode: 'read',
@@ -277,6 +279,21 @@ function projectData(): ProjectData {
 }
 
 describe('agent project model contract', () => {
+    beforeEach(() => {
+        buildProjectDataMock.mockReset();
+    });
+
+    it('builds the no-input contract through project persistence without exposing media bytes', async () => {
+        buildProjectDataMock.mockResolvedValueOnce({ data: projectData(), missingBufferCount: 0 });
+
+        const contract = await getAgentProjectModelContract();
+
+        expect(buildProjectDataMock).toHaveBeenCalledOnce();
+        expect(contract?.identity.projectId).toBe(EXPECTED_PROJECT_ID);
+        expect(JSON.stringify(contract)).not.toContain('PCM-LEFT');
+        expect(JSON.stringify(contract)).not.toContain('channelData');
+    });
+
     it('projects every AC-002 semantic without exposing large media bytes', async () => {
         const contract = await getAgentProjectModelContract({ projectData: projectData() });
 
@@ -357,17 +374,48 @@ describe('agent project model contract', () => {
             provenance: null,
         });
 
-        expect(contract?.routing).toContainEqual(
-            expect.objectContaining({
-                id: 'sidechain-1',
-                type: 'sidechain',
-                gain: 0.5,
-                faderMode: 'pre',
-                channelMap: null,
-                cyclePolicy: 'reject',
-                enabled: true,
-                groupId: null,
-            })
+        expect(contract?.routing).toEqual(
+            expect.arrayContaining([
+                {
+                    id: 'route:output:track-1',
+                    type: 'output',
+                    source: { trackId: 'track-1', portId: null },
+                    target: { trackId: 'master', deviceId: null, parameterId: null },
+                    gain: 0.8,
+                    faderMode: 'post',
+                    channelMap: null,
+                    sidechain: false,
+                    cyclePolicy: 'reject',
+                    enabled: false,
+                    groupId: 'group-1',
+                },
+                {
+                    id: 'route:send:track-1:master:0',
+                    type: 'send',
+                    source: { trackId: 'track-1', portId: null },
+                    target: { trackId: 'master', deviceId: null, parameterId: null },
+                    gain: 0.25,
+                    faderMode: 'pre',
+                    channelMap: null,
+                    sidechain: false,
+                    cyclePolicy: 'reject',
+                    enabled: false,
+                    groupId: 'group-1',
+                },
+                {
+                    id: 'sidechain-1',
+                    type: 'sidechain',
+                    source: { trackId: 'track-1', portId: null },
+                    target: { trackId: 'master', deviceId: 'master-device', parameterId: 'sidechain' },
+                    gain: 0.5,
+                    faderMode: 'pre',
+                    channelMap: null,
+                    sidechain: true,
+                    cyclePolicy: 'reject',
+                    enabled: true,
+                    groupId: null,
+                },
+            ])
         );
         expect(contract?.assets).toContainEqual(
             expect.objectContaining({
@@ -386,35 +434,50 @@ describe('agent project model contract', () => {
         expect(JSON.stringify(contract)).not.toContain('channelData');
     });
 
-    it('migrates legacy identity forward deterministically and idempotently', () => {
+    function legacyProject(): ProjectData {
         const legacy = projectData();
         legacy.version = 1;
+        delete legacy.meta.projectId;
+        legacy.meta.productionBrief = {
+            ...legacy.meta.productionBrief!,
+            id: 'production-brief',
+        };
+        return legacy;
+    }
 
-        const migrated = normalizeLegacyProjectData(legacy);
-        expect(migrated).toMatchObject({
-            version: 2,
-            meta: { projectId: EXPECTED_PROJECT_ID },
-        });
-        expect(isHydratableProjectData(migrated)).toBe(true);
-        expect(normalizeLegacyProjectData(migrated)).toEqual(migrated);
+    function migrateLegacy(data: ProjectData) {
+        const migrated = normalizeLegacyProjectData(data);
+        if (!isHydratableProjectData(migrated)) {
+            throw new Error('expected a hydratable migrated project');
+        }
+        return migrated;
+    }
+
+    it('mints distinct identities for same-createdAt default-brief legacy projects', () => {
+        const first = migrateLegacy(legacyProject());
+        const second = migrateLegacy(legacyProject());
+
+        expect(isCanonicalProjectId(first.meta.projectId)).toBe(true);
+        expect(isCanonicalProjectId(second.meta.projectId)).toBe(true);
+        expect(first.meta.projectId).not.toBe(second.meta.projectId);
     });
 
-    it('does not collapse same-createdAt projects when persisted stable entropy differs', () => {
-        const first = projectData();
-        first.version = 1;
-        const second = projectData();
-        second.version = 1;
-        second.meta.productionBrief = {
-            ...second.meta.productionBrief!,
-            id: 'brief-other-project',
+    it('preserves migrated identity across production-brief replacement', () => {
+        const migrated = migrateLegacy(legacyProject());
+        const replacement = structuredClone(migrated);
+        replacement.meta.productionBrief = {
+            ...replacement.meta.productionBrief!,
+            id: 'replacement-production-brief',
+            supersedesBriefId: 'production-brief',
         };
 
-        expect(normalizeLegacyProjectData(first)).toMatchObject({
-            meta: { projectId: EXPECTED_PROJECT_ID },
-        });
-        expect(normalizeLegacyProjectData(second)).toMatchObject({
-            meta: { projectId: EXPECTED_OTHER_PROJECT_ID },
-        });
-        expect(EXPECTED_OTHER_PROJECT_ID).not.toBe(EXPECTED_PROJECT_ID);
+        expect(normalizeLegacyProjectData(replacement)).toEqual(replacement);
+        expect(replacement.meta.projectId).toBe(migrated.meta.projectId);
+    });
+
+    it('normalizes an already migrated project idempotently', () => {
+        const migrated = migrateLegacy(legacyProject());
+
+        expect(normalizeLegacyProjectData(migrated)).toEqual(migrated);
     });
 });

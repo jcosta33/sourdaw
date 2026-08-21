@@ -3,7 +3,7 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
 
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../models/ProductionBrief';
-import { deriveDeterministicProjectId, deriveProjectIdFromMeta, isCanonicalProjectId } from '../models/ProjectData';
+import { createProjectId, deriveProjectIdFromMeta, isCanonicalProjectId } from '../models/ProjectData';
 
 const DOC_PREFIX_ROOT = 'root';
 const TUNING_FREQUENCY_COUNT = 128;
@@ -34,7 +34,7 @@ export type ProjectStoreState = {
 const DEFAULT_PROJECT_CREATED_AT = Date.now();
 
 export const defaultProjectStoreState: ProjectStoreState = {
-    projectId: deriveDeterministicProjectId(String(DEFAULT_PROJECT_CREATED_AT)),
+    projectId: createProjectId(),
     name: 'Untitled Project',
     createdAt: DEFAULT_PROJECT_CREATED_AT,
     updatedAt: DEFAULT_PROJECT_CREATED_AT,

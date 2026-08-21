@@ -94,7 +94,10 @@ describe('projectStore', () => {
 
         expect(() => projectStore.hydrate()).not.toThrow();
 
-        expect(projectStore.value).toEqual(defaultProjectStoreState);
+        expect(projectStore.value).toEqual({
+            ...defaultProjectStoreState,
+            projectId: deriveProjectIdFromMeta(defaultProjectStoreState),
+        });
     });
 
     it('should hydrate valid durable metadata with cold-start transient defaults', () => {
@@ -124,6 +127,24 @@ describe('projectStore', () => {
             initialized: false,
         });
     });
+
+    it.each(['not-a-uuid', '123e4567-e89b-42d3-7456-426614174000'])(
+        'replaces malformed persisted identity %s with the deterministic compatibility identity',
+        (projectId) => {
+            const persistedMeta = { ...create_valid_meta(), projectId };
+            fake_doc.projectMeta = persistedMeta;
+
+            projectStore.hydrate();
+
+            expect(projectStore.value).toEqual({
+                ...persistedMeta,
+                projectId: deriveProjectIdFromMeta(persistedMeta),
+                dirty: false,
+                loading: true,
+                initialized: false,
+            });
+        }
+    );
 
     it('should ignore legacy persisted transient flags on cold-start hydration', () => {
         fake_doc.projectMeta = {

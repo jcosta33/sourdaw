@@ -12,6 +12,7 @@ import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHos
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { createDefaultProductionBrief } from '../../models/ProductionBrief';
+import { createProjectId } from '../../models/ProjectData';
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore, type ProjectStoreState } from '../../stores/projectStore';
@@ -113,6 +114,7 @@ async function activateNewProject({
     runCommittedStep('project metadata publication', () => {
         const createdAt = Date.now();
         projectStore.set({
+            projectId: createProjectId(),
             name,
             createdAt,
             updatedAt: createdAt,

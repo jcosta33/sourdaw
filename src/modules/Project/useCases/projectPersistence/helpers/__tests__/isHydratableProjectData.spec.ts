@@ -177,6 +177,39 @@ describe('isHydratableProjectData', () => {
         expect(isHydratableProjectData(buildValidProjectData())).toBe(true);
     });
 
+    it('accepts a native RFC-variant UUIDv4 project identity', () => {
+        const project = buildValidProjectData();
+        project.meta.projectId = '123e4567-e89b-42d3-a456-426614174000';
+
+        expect(isHydratableProjectData(project)).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'missing identity',
+            mutate: (project: HydratableProjectData) => {
+                delete project.meta.projectId;
+            },
+        },
+        {
+            name: 'malformed identity',
+            mutate: (project: HydratableProjectData) => {
+                project.meta.projectId = 'not-a-uuid';
+            },
+        },
+        {
+            name: 'disallowed UUID variant',
+            mutate: (project: HydratableProjectData) => {
+                project.meta.projectId = '123e4567-e89b-42d3-7456-426614174000';
+            },
+        },
+    ])('rejects version-2 project data with $name', ({ mutate }) => {
+        const project = buildValidProjectData();
+        mutate(project);
+
+        expect(isHydratableProjectData(project)).toBe(false);
+    });
+
     it('accepts a project with every optional section populated', () => {
         const data: HydratableProjectData = {
             ...buildValidProjectData(),

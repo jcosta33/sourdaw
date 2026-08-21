@@ -13,6 +13,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
+import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
@@ -132,6 +133,23 @@ describe('newProject injectable', () => {
 
         expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
+    });
+
+    it('mints unique canonical identities for projects created in the same millisecond', async () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+        try {
+            await expect(newProject('First')).resolves.toBe(true);
+            const firstProjectId = projectStore.value?.projectId;
+
+            await expect(newProject('Second')).resolves.toBe(true);
+            const secondProjectId = projectStore.value?.projectId;
+
+            expect(isCanonicalProjectId(firstProjectId)).toBe(true);
+            expect(isCanonicalProjectId(secondProjectId)).toBe(true);
+            expect(secondProjectId).not.toBe(firstProjectId);
+        } finally {
+            now.mockRestore();
+        }
     });
 
     it('does not replace authority when superseded during native teardown', async () => {
