@@ -19,7 +19,11 @@ import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { CURRENT_PROJECT_VERSION } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
 import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
+import { semanticProjectIndex } from '../semanticProjectIndex';
 import { querySemanticProject } from '../semanticProjectQueries';
+
+const SEMANTIC_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
+const SECOND_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368d';
 
 function seedProject(): void {
     const drums = createTrack({ id: 'track-drums', name: 'Drums', kind: 'audio' });
@@ -144,6 +148,7 @@ function seedProject(): void {
     const productionBrief = createDefaultProductionBrief(100);
     projectStore.set({
         ...structuredClone(defaultProjectStoreState),
+        projectId: SEMANTIC_PROJECT_ID,
         name: 'Semantic Query Project',
         createdAt: 42,
         updatedAt: 200,
@@ -195,7 +200,7 @@ describe('semantic project queries', () => {
         expect(first).toMatchObject({
             schema: 'sourdaw.semantic-project-query',
             schemaVersion: 1,
-            projectId: '42',
+            projectId: SEMANTIC_PROJECT_ID,
             projectSchemaVersion: CURRENT_PROJECT_VERSION,
             queryType: 'object',
             page: { limit: 1, total: 3 },
@@ -229,6 +234,71 @@ describe('semantic project queries', () => {
                 page: { limit: 1, cursor: first.nextCursor! },
             })
         ).toThrow('stale semantic query cursor');
+    });
+
+    it('uses canonical project UUIDs for receipts, metadata index entries, and retained diffs', () => {
+        const first = querySemanticProject({ type: 'object' });
+        const repeated = querySemanticProject({ type: 'object' });
+
+        expect(first.projectId).toBe(SEMANTIC_PROJECT_ID);
+        expect(repeated.projectId).toBe(SEMANTIC_PROJECT_ID);
+        expect(first.items).toContainEqual(
+            expect.objectContaining({ id: SEMANTIC_PROJECT_ID, kind: 'project-metadata' })
+        );
+
+        const renamed = projectStore.value!;
+        projectStore.set({ ...renamed, name: 'Renamed semantic project' });
+        const afterRename = querySemanticProject({ type: 'object' });
+        const renameDiff = querySemanticProject({ type: 'diff', sinceRevision: first.revisionToken });
+
+        expect(afterRename.projectId).toBe(SEMANTIC_PROJECT_ID);
+        expect(renameDiff.items).toEqual([
+            expect.objectContaining({ id: SEMANTIC_PROJECT_ID, kind: 'project-metadata', change: 'updated' }),
+        ]);
+
+        projectStore.set({
+            ...projectStore.value!,
+            projectId: SECOND_PROJECT_ID,
+            name: 'Second project with the same creation time',
+            createdAt: renamed.createdAt,
+        });
+        const second = querySemanticProject({ type: 'object' });
+        const crossProjectDiff = querySemanticProject({ type: 'diff', sinceRevision: afterRename.revisionToken });
+
+        expect(second.projectId).toBe(SECOND_PROJECT_ID);
+        expect(second.items).toContainEqual(
+            expect.objectContaining({ id: SECOND_PROJECT_ID, kind: 'project-metadata' })
+        );
+        expect(crossProjectDiff.items).toEqual([]);
+        expect(crossProjectDiff.warnings).toContain(
+            'The requested revision is outside the retained semantic diff window.'
+        );
+    });
+
+    it.each([
+        { name: 'is missing', projectId: undefined, identityMigrationPending: false },
+        { name: 'is malformed', projectId: 'not-a-project-uuid', identityMigrationPending: false },
+        { name: 'is pending durability', projectId: SEMANTIC_PROJECT_ID, identityMigrationPending: true },
+    ])('fails closed when the project identity $name', ({ projectId, identityMigrationPending }) => {
+        const before = querySemanticProject({ type: 'object' });
+        const canonicalState = projectStore.value!;
+        projectStore.set({ ...canonicalState, projectId, identityMigrationPending });
+
+        expect(semanticProjectIndex.read().entities).not.toContainEqual(
+            expect.objectContaining({ kind: 'project-metadata' })
+        );
+        expect(() => querySemanticProject({ type: 'object' })).toThrow('canonical project identity');
+        expect(() => querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken })).toThrow(
+            'canonical project identity'
+        );
+
+        projectStore.set(canonicalState);
+        const restoredDiff = querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken });
+
+        expect(restoredDiff.items).toEqual([]);
+        expect(restoredDiff.warnings).not.toContain(
+            'The requested revision is outside the retained semantic diff window.'
+        );
     });
 
     it('supports every query family, filters, and hierarchical production context', () => {
@@ -401,7 +471,7 @@ describe('semantic project queries', () => {
         });
         expect(projectDiff.items).toEqual(
             expect.arrayContaining([
-                expect.objectContaining({ id: '42', kind: 'project-metadata', change: 'updated' }),
+                expect.objectContaining({ id: SEMANTIC_PROJECT_ID, kind: 'project-metadata', change: 'updated' }),
                 expect.objectContaining({ id: 'production-brief', kind: 'production-brief', change: 'updated' }),
             ])
         );

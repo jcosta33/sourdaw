@@ -6,13 +6,14 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
+import { isCanonicalProjectId } from '../models/ProjectData';
 import {
     type SemanticIndexDiagnostics,
     type SemanticIndexEntity,
     type SemanticProjectIndexSnapshot,
     type SemanticProjectRevision,
 } from '../models/SemanticProjectQuery';
-import { projectStore } from '../stores/projectStore';
+import { type ProjectStoreState, projectStore } from '../stores/projectStore';
 
 import { semanticRangeOverlaps } from './semanticRangeOverlap';
 
@@ -21,6 +22,11 @@ type PartitionName = keyof SemanticIndexDiagnostics;
 type PartitionCache = {
     sources: readonly unknown[];
     entities: SemanticIndexEntity[];
+};
+
+type ProjectWithSemanticIdentity = ProjectStoreState & {
+    projectId: string;
+    identityMigrationPending?: false | undefined;
 };
 
 const partitionCache: Record<PartitionName, PartitionCache> = {
@@ -44,6 +50,12 @@ const diagnostics: SemanticIndexDiagnostics = {
     brief: 0,
     selection: 0,
 };
+
+export function isSemanticProjectIdentityReady(
+    project: ProjectStoreState | null | undefined
+): project is ProjectWithSemanticIdentity {
+    return Boolean(project && isCanonicalProjectId(project.projectId) && !project.identityMigrationPending);
+}
 
 function emptyEntity(input: Pick<SemanticIndexEntity, 'id' | 'kind'>): SemanticIndexEntity {
     return {
@@ -318,13 +330,13 @@ function buildHistoryEntities(): SemanticIndexEntity[] {
 
 function buildBriefEntities(): SemanticIndexEntity[] {
     const project = projectStore.value;
-    if (!project) {
+    if (!isSemanticProjectIdentityReady(project)) {
         return [];
     }
     const brief = project.productionBrief;
     return [
         {
-            ...emptyEntity({ id: String(project.createdAt), kind: 'project-metadata' }),
+            ...emptyEntity({ id: project.projectId, kind: 'project-metadata' }),
             name: project.name,
             createdAt: project.createdAt,
             keyRoot: project.keyRoot,
@@ -511,6 +523,8 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
     const brief = refreshPartition(
         'brief',
         [
+            projectState?.projectId,
+            projectState?.identityMigrationPending,
             projectState?.name,
             projectState?.createdAt,
             projectState?.keyRoot,
