@@ -1,0 +1,87 @@
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_9d290168f35c2f 3-8,12-13,15-18
+  s_0a3429e31e555d::t_e320db04384575 9-11,14
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_b74e5e335a4200 85,95,103,112-116,123
+  s_0a3429e31e555d::t_9d290168f35c2f 80-84,86-94,96-102,104-111,118-121
+  s_0a3429e31e555d::t_b0e228bf699a77 124-125
+  s_0a3429e31e555d::t_5118f73a5d297f 766
+  s_0a3429e31e555d::t_066b1751084387 798-805,811-820,845-863,869-879
+  s_0a3429e31e555d::t_475a97523f78aa 806-810,829-834,839-844,864-868
+  s_0a3429e31e555d::t_7f2f7c7cb54e11 821-828,835-838
+public/legal/RELINKING.md
+  s_0a3429e31e555d::t_e320db04384575 23-24,27-31
+  s_0a3429e31e555d::t_2e60994a3847de 25-26
+  s_0a3429e31e555d::t_b0e228bf699a77 5-6
+  s_0a3429e31e555d::t_69a5981cd87729 7-8
+package.json
+  s_0a3429e31e555d::t_9d290168f35c2f 25-26
+scripts/checkLgplRuntimeProvenance.ts
+  s_0a3429e31e555d::t_0b70634049786c 393-394
+scripts/__tests__/checkElectronRuntimeProvenance.spec.ts
+  s_0a3429e31e555d::t_a5ab539b995a5d 9
+  s_0a3429e31e555d::t_406266040d53dd 1-7,10-23,97-118,124-149,161-211,251-252
+  s_0a3429e31e555d::t_edbff0eb2ca1f9 8,212-219,233
+  s_0a3429e31e555d::t_8c7e45aa5e714d 24-32,35-41,51-83,91-93,95-96,150,234-250
+  s_0a3429e31e555d::t_be338b28fd4fdf 33-34,84-90,119-123,151-153,155-160,220-224,230-232
+  s_0a3429e31e555d::t_e22ca9e3ccaeef 42,94
+  s_0a3429e31e555d::t_97dd46e03ee8ee 43-50
+  s_0a3429e31e555d::t_44ea3576225fbd 154
+  s_0a3429e31e555d::t_6b8d51fd09d73f 225-229
+public/legal/ELECTRON-SOURCES.json
+  s_0a3429e31e555d::t_5534b024b9157e 21-25,32-38
+  s_0a3429e31e555d::t_76adc1188035c9 1-20,26-31,39-56
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_17a20c7cfd7d10 9,571-576
+  s_0a3429e31e555d::t_9d290168f35c2f 570
+scripts/electronRuntimeContract.ts
+  s_0a3429e31e555d::t_76adc1188035c9 1-28,34-56,62-67,75-109
+  s_0a3429e31e555d::t_5534b024b9157e 29-33,57-61,68-74
+electron-builder.yml
+  s_0a3429e31e555d::t_652539f6204515 92-95
+scripts/checkElectronRuntimeProvenance.ts
+  s_0a3429e31e555d::t_652539f6204515 10,164,198-200
+  s_0a3429e31e555d::t_76adc1188035c9 1-9,12-48,88-100,102-134,137-143,158,162,165-171,174-176,178-186,188-197,201-203,205-210,279-308
+  s_0a3429e31e555d::t_e320db04384575 55,63,72-76,80,85,101,135-136,154-157,159-161,204,259-278
+  s_0a3429e31e555d::t_44ea3576225fbd 150-151
+  s_0a3429e31e555d::t_b0e228bf699a77 11,144-149,152-153,163
+  s_0a3429e31e555d::t_17a20c7cfd7d10 49-54,56-62,64-71,77-79,81-84,86-87,172-173,177,187,211-258
+scripts/flipElectronFuses.ts
+  s_0a3429e31e555d::t_3dbe3645271e1d 51,62,74,83-87,89,91-94,108-109,112,114,118-119,121-122,124,130,136,138
+  s_0a3429e31e555d::t_9d7192a976ef04 57-61,111,113,120,135
+  s_0a3429e31e555d::t_652539f6204515 52,88,90,110,115-117,123,131,137,170
+  s_0a3429e31e555d::t_5534b024b9157e 95-107,125-129,134,139,145,148-153,157-169,225
+  s_0a3429e31e555d::t_b0e228bf699a77 132-133,141-144,146-147,154-156
+  s_487e9aa1e46063::t_bed0f0bdca8477 140
+scripts/__tests__/stageElectronLegalFiles.spec.ts
+  s_0a3429e31e555d::t_652539f6204515 101
+  s_0a3429e31e555d::t_406266040d53dd 1-7,16-49,55-60,68-91,93,98,102-111,135-145
+  s_0a3429e31e555d::t_a5ab539b995a5d 14-15
+  s_0a3429e31e555d::t_6b8d51fd09d73f 92,94
+  s_0a3429e31e555d::t_be338b28fd4fdf 8,10-13,50-54,61-67,112-114,116-134
+  s_0a3429e31e555d::t_b0e228bf699a77 9,95-97,99-100,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "700efa1fe0097973a57760b6f46d26b9794648b4",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
