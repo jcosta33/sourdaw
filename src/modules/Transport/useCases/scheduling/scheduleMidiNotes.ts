@@ -139,12 +139,25 @@ type NoteVoicingLookupTrack = {
  * whole guard exists to close, so it must not survive in a corner of it.
  *
  * The track's own devices are asked first, and the parent only if they answer
- * nothing, so a child that carries its own withheld instrument *and* sits under
- * a toaster parent is still silenced — by its own device, which is the more
- * specific answer. Either arm silencing the track is the point; which one
- * reports it is not. The two arms cannot contradict each other over a toaster,
- * because admission is asked of the device *type*: an own toaster and a parent
- * toaster are both `'toaster'`, so they are withheld or admitted together.
+ * nothing.
+ *
+ * **A result here is not a claim that the track is silent.** It names the
+ * withheld device the track would otherwise have been voiced on, and its only
+ * sanctioned use is the terminal fallback branch: suppressing the builtin synth
+ * and the `getSynthParamsForTrack` call that configures it. Do not read it as
+ * audibility anywhere else, because for one topology the track sounds with this
+ * set — a child whose own rack holds a withheld instrument, under a parent
+ * carrying an *admitted* toaster with a live node. The own arm returns the
+ * child's device, but the dispatch gives the parent's toaster precedence over
+ * the child's whole rack: the parent branch reassigns `toasterDevice`, and both
+ * the worklet and Faust categories are gated on `!toasterRoute`. So the notes
+ * audibly reach the toaster while this reports a withheld device.
+ *
+ * That is the right sound — the toaster is what the dispatch selects — and it is
+ * harmless today only because both consumers sit on a branch the toaster route
+ * preempts. A second consumer that treats this as "the track is silent", a
+ * warning or a freeze refusal, would be wrong about exactly that track. Such a
+ * consumer needs the dispatch's precedence, not this flag.
  */
 function findWithheldNoteVoicingDevice(
     track: NoteVoicingLookupTrack,
