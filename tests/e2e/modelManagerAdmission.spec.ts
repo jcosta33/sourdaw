@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { DDSP_INSTRUMENT_CATALOG } from '../../src/modules/BrowserAi/models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT } from '../../src/modules/BrowserAi/models/KokoroArtifactManifest';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
@@ -28,9 +27,9 @@ test.describe('Browser AI model admission', () => {
 
         await expect(dialog.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ })).toBeVisible();
         await expect(dialog.getByText('DDSP Instruments', { exact: true })).toBeVisible();
-        for (const instrument of DDSP_INSTRUMENT_CATALOG) {
+        for (const instrumentName of ['Violin', 'Flute', 'Trumpet', 'Tenor Saxophone']) {
             await expect(
-                dialog.getByRole('button', { name: new RegExp(`^Download ${instrument.name} \\(`) })
+                dialog.getByRole('button', { name: new RegExp(`^Download ${instrumentName} \\(`) })
             ).toBeVisible();
         }
         await expect(

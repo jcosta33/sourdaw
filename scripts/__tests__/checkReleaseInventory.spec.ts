@@ -7,12 +7,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleRustWasmBoundary,
     assertGrandBouleWithheldFromWasm,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
+    DDSP_ADMISSION_DECISION_PATH,
+    DDSP_MODEL_PATHS,
     DDSP_TFJS_RUNTIME_PATHS,
+    ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
     GRAND_BOULE_PRESERVATION_REGISTRY,
@@ -306,6 +310,57 @@ describe('release inventory', () => {
 
     it('composes the admitted DDSP model contract into live release inventory validation', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    });
+
+    it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
+        const contract = ddspModelsReleaseInventoryContract(repositoryRoot);
+
+        expect(contract.retention).toBe('keep-with-obligations');
+        expect(contract.paths).toEqual(DDSP_MODEL_PATHS);
+        expect(contract.paths).toEqual(
+            expect.arrayContaining([
+                'src/modules/BrowserAi/useCases/downloadModel.ts',
+                'src/modules/BrowserAi/useCases/removeModel.ts',
+                'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+            ])
+        );
+        expect(contract.digests?.filter((digest) => digest.includes(':bytes:'))).toHaveLength(12);
+        expect(contract.licenses).toEqual(['unverified:exact-GCS-checkpoint-artifacts']);
+        expect(contract.obligations).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('checkpoint license explicitly unverified'),
+                expect.stringContaining('MODEL_RELEASE_ADMISSION.ddsp to false'),
+            ])
+        );
+    });
+
+    it.each([
+        DDSP_ADMISSION_DECISION_PATH,
+        'public/legal/THIRD-PARTY-NOTICES.md',
+        'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+    ])('rejects admitted DDSP provenance drift in %s', (changedPath) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-model-admission-'));
+        const hashedPaths = [
+            DDSP_ADMISSION_DECISION_PATH,
+            'public/legal/THIRD-PARTY-NOTICES.md',
+            'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+        ];
+        for (const path of hashedPaths) {
+            mkdirSync(dirname(join(root, path)), { recursive: true });
+            writeFileSync(join(root, path), `baseline:${path}`);
+        }
+
+        try {
+            const admitted = ddspModelsReleaseInventoryContract(root);
+            expect(() => assertDdspModelsReleaseInventory(root, admitted)).not.toThrow();
+
+            writeFileSync(join(root, changedPath), `changed:${changedPath}`);
+            expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
+                'DDSP models release inventory digests does not match provenance'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('keeps the public DDSP notice truthful about active downloads and the unverified checkpoint license', () => {

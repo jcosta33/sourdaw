@@ -114,7 +114,10 @@ export const DDSP_MODEL_PATHS = [
     'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
     'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
     'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/downloadModel.ts',
     'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeModel.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
@@ -682,6 +685,10 @@ function assertSurfaceContract(
     }
 }
 
+export function assertDdspModelsReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
+    assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
+}
+
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
@@ -1175,9 +1182,7 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         )
     );
     const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    validateSurface('ddsp-models', () =>
-        assertSurfaceContract(ddspModelsSurface, ddspModelsReleaseInventoryContract(root), 'DDSP models')
-    );
+    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

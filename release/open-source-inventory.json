@@ -407,7 +407,10 @@
                 "src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts",
                 "src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
-                "src/modules/BrowserAi/useCases/initBrowserAi.ts"
+                "src/modules/BrowserAi/useCases/downloadModel.ts",
+                "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "src/modules/BrowserAi/useCases/removeModel.ts",
+                "src/modules/BrowserAi/useCases/renderDdspInstrument.ts"
             ],
             "sources": [
                 "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md",

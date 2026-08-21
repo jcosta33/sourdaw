@@ -11,6 +11,9 @@ import { ModelManagerPanel } from '../ModelManagerPanel';
 const mocks = vi.hoisted((): { registryState: ModelRegistryState | undefined } => ({
     registryState: undefined,
 }));
+const release_gate = vi.hoisted(() => ({ ddsp: true, kokoro: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: release_gate }));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store: unknown, defaultValue: ModelRegistryState): ModelRegistryState => {
@@ -72,11 +75,27 @@ function create_base_registry(): ModelRegistryState {
 describe('ModelManagerPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        release_gate.ddsp = true;
+        release_gate.kokoro = true;
         mocks.registryState = undefined;
         use_case_mocks.downloadDdspInstrument.mockResolvedValue(undefined);
         use_case_mocks.downloadModel.mockResolvedValue(undefined);
         use_case_mocks.removeDdspInstrument.mockResolvedValue(undefined);
         use_case_mocks.removeModel.mockResolvedValue(undefined);
+    });
+
+    it('hides every DDSP surface when release admission is disabled', () => {
+        release_gate.ddsp = false;
+        mocks.registryState = create_registry_with_ddsp({ 'ddsp-violin': 'ready' });
+
+        render(<ModelManagerPanel />);
+
+        expect(screen.queryByText('DDSP Instruments', { exact: true })).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole('button', {
+                name: /(?:Download|Remove|Retry).*(?:Violin|Flute|Trumpet|Tenor Saxophone)/,
+            })
+        ).not.toBeInTheDocument();
     });
 
     it('shows exactly the four admitted catalog instruments with download actions from registry state', () => {
