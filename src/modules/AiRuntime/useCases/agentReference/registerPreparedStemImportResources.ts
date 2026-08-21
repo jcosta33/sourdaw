@@ -1,6 +1,9 @@
+import { type getVersionedCommandBatchIdempotentReplay } from '#/modules/Command/useCases';
+
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
+import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
 
 import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
 
@@ -8,8 +11,15 @@ const CLEANUP_OWNER = 'stem-import-preparation';
 type PreparedStemImportRegistration = {
     unregister: () => void;
     protected: boolean;
+    stem: StemImportPromptScope['actionSeed']['stems'][number];
+    recovery: {
+        batchId: string;
+        commandBatch: Parameters<typeof getVersionedCommandBatchIdempotentReplay>[0];
+    } | null;
 };
 const registrations = new Map<string, PreparedStemImportRegistration>();
+type PreparedStemImportRecoveryResult = { status: 'discarded' | 'missing' | 'retained' | 'transferred' };
+const reconciliations = new Map<string, Promise<PreparedStemImportRecoveryResult>>();
 
 function key(runId: string, assetId: string): string {
     return `${runId}\u0000${assetId}`;
@@ -27,7 +37,12 @@ function registerPreparedStemImportResources(input: {
             kind: 'import',
             cleanupOwner: CLEANUP_OWNER,
         });
-        const registration: PreparedStemImportRegistration = { unregister: () => undefined, protected: false };
+        const registration: PreparedStemImportRegistration = {
+            unregister: () => undefined,
+            protected: false,
+            stem,
+            recovery: null,
+        };
         registration.unregister = agentRunCancellation.registerTemporaryAssetCleanup({
             runId: input.runId,
             assetId: stem.audioBufferId,
@@ -46,11 +61,18 @@ function registerPreparedStemImportResources(input: {
 function protectPreparedStemImportResources(input: {
     runId: string;
     stems: StemImportPromptScope['actionSeed']['stems'];
+    recovery?: {
+        batchId: string;
+        commandBatch: Parameters<typeof getVersionedCommandBatchIdempotentReplay>[0];
+    };
 }): void {
     for (const stem of input.stems) {
         const registration = registrations.get(key(input.runId, stem.audioBufferId));
         if (registration) {
             registration.protected = true;
+            if (input.recovery) {
+                registration.recovery = input.recovery;
+            }
         }
     }
 }
@@ -58,6 +80,10 @@ function protectPreparedStemImportResources(input: {
 function retainPreparedStemImportResourcesForRecovery(input: {
     runId: string;
     stems: StemImportPromptScope['actionSeed']['stems'];
+    recovery?: {
+        batchId: string;
+        commandBatch: Parameters<typeof getVersionedCommandBatchIdempotentReplay>[0];
+    };
 }): void {
     protectPreparedStemImportResources(input);
     for (const stem of input.stems) {
@@ -73,6 +99,61 @@ function retainPreparedStemImportResourcesForRecovery(input: {
             cleanupOwner: CLEANUP_OWNER,
         });
     }
+}
+
+async function reconcilePreparedStemImportResourcesOnce(input: {
+    runId: string;
+    batchId: string;
+    getVerifiedReceipt: (
+        commandBatch: Parameters<typeof getVersionedCommandBatchIdempotentReplay>[0]
+    ) => ReturnType<typeof getVersionedCommandBatchIdempotentReplay>;
+}): Promise<PreparedStemImportRecoveryResult> {
+    const registrationsForBatch = [...registrations.entries()].filter(
+        ([registrationKey, registration]) =>
+            registrationKey.startsWith(`${input.runId}\u0000`) && registration.recovery?.batchId === input.batchId
+    );
+    const recovery = registrationsForBatch[0]?.[1].recovery;
+    if (!recovery) {
+        return { status: 'missing' };
+    }
+    const stems = registrationsForBatch.map(([, registration]) => registration.stem);
+    const receipt = await input.getVerifiedReceipt(recovery.commandBatch);
+    if (!receipt || receipt.runId !== input.runId || receipt.batchId !== input.batchId) {
+        retainPreparedStemImportResourcesForRecovery({ runId: input.runId, stems });
+        return { status: 'retained' };
+    }
+    const disposition = getVerifiedBatchReplayDisposition(receipt);
+    if (disposition.status === 'committed' || disposition.status === 'executed') {
+        releasePreparedStemImportResources({ runId: input.runId, stems });
+        return { status: 'transferred' };
+    }
+    if (disposition.status === 'ambiguous') {
+        retainPreparedStemImportResourcesForRecovery({ runId: input.runId, stems });
+        return { status: 'retained' };
+    }
+    await discardRegisteredPreparedStemImportResources({ runId: input.runId, stems });
+    return { status: 'discarded' };
+}
+
+function reconcilePreparedStemImportResources(input: {
+    runId: string;
+    batchId: string;
+    getVerifiedReceipt: (
+        commandBatch: Parameters<typeof getVersionedCommandBatchIdempotentReplay>[0]
+    ) => ReturnType<typeof getVersionedCommandBatchIdempotentReplay>;
+}): Promise<PreparedStemImportRecoveryResult> {
+    const reconciliationKey = key(input.runId, input.batchId);
+    const active = reconciliations.get(reconciliationKey);
+    if (active) {
+        return active;
+    }
+    const reconciliation = reconcilePreparedStemImportResourcesOnce(input).finally(() => {
+        if (reconciliations.get(reconciliationKey) === reconciliation) {
+            reconciliations.delete(reconciliationKey);
+        }
+    });
+    reconciliations.set(reconciliationKey, reconciliation);
+    return reconciliation;
 }
 
 function releasePreparedStemImportResources(input: {
@@ -141,6 +222,7 @@ export const preparedStemImportResources = {
     register: registerPreparedStemImportResources,
     protect: protectPreparedStemImportResources,
     retainForRecovery: retainPreparedStemImportResourcesForRecovery,
+    reconcile: reconcilePreparedStemImportResources,
     release: releasePreparedStemImportResources,
     discard: discardRegisteredPreparedStemImportResources,
 };

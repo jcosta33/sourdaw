@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
+    getVersionedCommandBatchIdempotentReplay: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -144,4 +145,126 @@ describe('prepared stem import resource cleanup', () => {
             expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(recovery === 'discard' ? 1 : 0);
         }
     );
+
+    it.each([
+        { receiptOutcome: 'committed', settlement: 'transferred', physicalDeletes: 0 },
+        { receiptOutcome: 'failed', settlement: 'discarded', physicalDeletes: 1 },
+    ] as const)(
+        'settles retained exact stems once as $settlement from a proven $receiptOutcome Command receipt',
+        async ({ receiptOutcome, settlement, physicalDeletes }) => {
+            const runId = `stem-recovery-${receiptOutcome}`;
+            const batchId = `batch-${receiptOutcome}`;
+            const commandBatch = { authority: {} as never, serialized: `serialized-${receiptOutcome}` };
+            agentRunLifecycle.create({
+                runId,
+                request: 'Import stems.',
+                mode: 'plan',
+                createdRevision: 'r1',
+            });
+            preparedStemImportResources.register({ runId, stems });
+            preparedStemImportResources.protect({
+                runId,
+                stems,
+                recovery: { batchId, commandBatch },
+            });
+            preparedStemImportResources.retainForRecovery({ runId, stems });
+            mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
+                schemaVersion: 1,
+                runId,
+                batchId,
+                outcome: receiptOutcome,
+                links: { render: [], analysis: [] },
+                warnings: [],
+                errors: [],
+                modelSummary: receiptOutcome,
+            });
+
+            const settlements = await Promise.all([
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                }),
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                }),
+            ]);
+
+            expect(settlements).toEqual([{ status: settlement }, { status: settlement }]);
+            await expect(
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                })
+            ).resolves.toEqual({ status: 'missing' });
+
+            expect(mocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledOnce();
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(physicalDeletes);
+            expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(physicalDeletes);
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+        }
+    );
+
+    it.each([
+        { label: 'missing', receipt: null },
+        {
+            label: 'mismatched',
+            receipt: {
+                schemaVersion: 1,
+                runId: 'different-run',
+                batchId: 'different-batch',
+                outcome: 'committed',
+                links: { render: [], analysis: [] },
+                warnings: [],
+                errors: [],
+                modelSummary: 'mismatched',
+            },
+        },
+    ])('retains exact recovery ownership for a $label receipt until later proof settles it', async ({ receipt }) => {
+        const runId = `stem-recovery-${receipt ? 'mismatched' : 'missing'}`;
+        const batchId = `batch-${runId}`;
+        const commandBatch = { authority: {} as never, serialized: `serialized-${runId}` };
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems });
+        preparedStemImportResources.protect({ runId, stems, recovery: { batchId, commandBatch } });
+        preparedStemImportResources.retainForRecovery({ runId, stems });
+        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(receipt);
+
+        await expect(
+            preparedStemImportResources.reconcile({
+                runId,
+                batchId,
+                getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+            })
+        ).resolves.toEqual({ status: 'retained' });
+        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
+        ]);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+
+        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
+            schemaVersion: 1,
+            runId,
+            batchId,
+            outcome: 'failed',
+            links: { render: [], analysis: [] },
+            warnings: [],
+            errors: ['not committed'],
+            modelSummary: 'not committed',
+        });
+        await expect(
+            preparedStemImportResources.reconcile({
+                runId,
+                batchId,
+                getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+            })
+        ).resolves.toEqual({ status: 'discarded' });
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+    });
 });

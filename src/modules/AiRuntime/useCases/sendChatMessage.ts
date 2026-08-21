@@ -807,7 +807,10 @@ export async function sendChatMessage(
                         groupId: commandGroup.groupId,
                         groupLabel: commandGroup.groupLabel,
                         projectRevision,
-                        resourceLease: createStemImportConfirmationResourceLease(runId, result.actions),
+                        resourceLease: createStemImportConfirmationResourceLease(runId, result.actions, {
+                            batchId: parsedCommandBatch.envelope.batchId,
+                            commandBatch,
+                        }),
                     });
                     if (!confirmation) {
                         const reason = 'Prepared action resources exceed the live confirmation limit.';

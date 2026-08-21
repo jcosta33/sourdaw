@@ -274,7 +274,11 @@ export async function executePromptActionGroup(
             group,
             commandBatch,
             onProjectCommitPrepared: () =>
-                preparedStemImportResources.protect({ runId: input.runId, stems: importedStems }),
+                preparedStemImportResources.protect({
+                    runId: input.runId,
+                    stems: importedStems,
+                    recovery: { batchId: envelope.batchId, commandBatch },
+                }),
         });
     } catch (error) {
         const reason = getErrorMessage(error);
@@ -300,6 +304,7 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
+            preparedStemImportResources.retainForRecovery({ runId: input.runId, stems: importedStems });
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -313,6 +318,7 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
+            preparedStemImportResources.retainForRecovery({ runId: input.runId, stems: importedStems });
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -370,6 +376,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'partially-completed');
         }
+        preparedStemImportResources.retainForRecovery({ runId: input.runId, stems: importedStems });
         notifyAiChange(`Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`, []);
         return { status: 'ambiguous' };
     }

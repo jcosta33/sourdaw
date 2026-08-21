@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     parseVersionedCommandBatchEnvelope: vi.fn(),
     issueApprovalBinding: vi.fn(() => ({ token: 'exact-approval' })),
     protectPreparedStemImportResources: vi.fn(),
+    retainPreparedStemImportResources: vi.fn(),
     releasePreparedStemImportResources: vi.fn(),
     discardPreparedStemImportResources: vi.fn(),
 }));
@@ -35,6 +36,7 @@ vi.mock('../issueAgentCommandApprovalBinding', () => ({
 vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
     preparedStemImportResources: {
         protect: mocks.protectPreparedStemImportResources,
+        retainForRecovery: mocks.retainPreparedStemImportResources,
         release: mocks.releasePreparedStemImportResources,
         discard: mocks.discardPreparedStemImportResources,
     },
@@ -294,6 +296,10 @@ describe('executePromptActionGroup', () => {
 
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
         expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
+        expect(mocks.retainPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
     });
 
     it.each([
@@ -438,6 +444,10 @@ describe('executePromptActionGroup', () => {
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(warning, []);
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
         expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
+        expect(mocks.retainPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
     });
 
     it('reconciles a thrown execution before propagating the failure', async () => {
