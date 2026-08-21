@@ -22,7 +22,16 @@ import { join } from 'node:path';
 import { net, protocol } from 'electron';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { APP_ORIGIN, handleAppProtocol, ISOLATION_HEADERS, PRODUCTION_CSP, type ContentRoots } from '../protocol.js';
+import {
+    APP_ORIGIN,
+    DDSP_CHECKPOINT_CSP_SOURCE,
+    DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL,
+    handleAppProtocol,
+    ISOLATION_HEADERS,
+    isUrlAllowedByCspSource,
+    PRODUCTION_CSP,
+    type ContentRoots,
+} from '../protocol.js';
 import { withTrustedSender, type SenderFrameCarrier } from '../router.js';
 import {
     ALLOWED_PERMISSIONS,
@@ -112,6 +121,21 @@ describe('the production Content-Security-Policy', () => {
         // in front of a musician. This scan fails the same mistake at test
         // time instead.
         expect(readProductionTypescript('src')).not.toMatch(/new\s+Worker\s*\(\s*URL\.createObjectURL/gu);
+    });
+
+    it('refuses the exact CORS-readable outside-prefix probe that a wider checkpoint source would admit', () => {
+        expect(DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL).toBe(
+            'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json'
+        );
+        expect(isUrlAllowedByCspSource(DDSP_CHECKPOINT_CSP_SOURCE, DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL)).toBe(
+            false
+        );
+        expect(
+            isUrlAllowedByCspSource(
+                'https://storage.googleapis.com/magentadata/js/checkpoints/',
+                DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL
+            )
+        ).toBe(true);
     });
 
     it('closes the directives an injected document would reach for', () => {

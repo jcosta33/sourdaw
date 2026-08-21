@@ -140,25 +140,24 @@ describe('ddspModelStorage generation index', () => {
 
     it('publishes v2 before deleting the exact indexed v1 generation and leaves v2 ready', async () => {
         const v1 = 'v1';
-        const v1Generation = generation(v1, [
-            `${instrument.id}/${v1}/model.json`,
-            `${instrument.id}/${v1}/weights.bin`,
-        ]);
+        const v1Generation = generation(v1);
+        const foreignPath = `${instrument.id}/foreign/not-indexed.bin`;
         const files = new Map<string, ArrayBuffer>([
             [indexModelId, bytes({ schemaVersion: 1, currentVersion: v1, generations: { [v1]: v1Generation } })],
+            [foreignPath, bytes('foreign')],
         ]);
         const testStorage = storageBridge({ files });
         injectStorage(testStorage.bridge);
 
         await ddspModelStorage.publishDdspInstrumentGeneration(storage);
 
-        const firstIndexCommit = testStorage.events.indexOf(`commit:${indexModelId}`);
-        const firstStaleDelete = testStorage.events.findIndex((event) => event.startsWith('delete:'));
-        expect(testStorage.events.slice(0, firstIndexCommit)).toEqual([
+        expect(testStorage.events).toEqual([
             `commit:${instrument.id}/${storage.version}/.ready.json`,
+            `commit:${indexModelId}`,
+            `delete:${v1Generation.readyMarkerId}`,
+            ...v1Generation.artifactIds.map((artifactId) => `delete:${artifactId}`),
+            `commit:${indexModelId}`,
         ]);
-        expect(firstIndexCommit).toBeGreaterThanOrEqual(0);
-        expect(firstStaleDelete).toBeGreaterThan(firstIndexCommit);
         expect(testStorage.bridge.deleteModel.mock.calls.map(([input]) => input.modelId)).toEqual([
             v1Generation.readyMarkerId,
             ...v1Generation.artifactIds,
@@ -166,6 +165,8 @@ describe('ddspModelStorage generation index', () => {
         expect(testStorage.bridge.deleteModel).not.toHaveBeenCalledWith(
             expect.objectContaining({ modelId: expect.stringContaining(`/${storage.version}/`) })
         );
+        expect(testStorage.bridge.deleteModel).not.toHaveBeenCalledWith({ modelId: foreignPath });
+        expect(files.has(foreignPath)).toBe(true);
         expect(decode(files.get(indexModelId))).toEqual({
             schemaVersion: 1,
             currentVersion: storage.version,
@@ -176,10 +177,7 @@ describe('ddspModelStorage generation index', () => {
 
     it('keeps v2 current and ready with stale metadata when indexed v1 cleanup partially fails', async () => {
         const v1 = 'v1';
-        const v1Generation = generation(v1, [
-            `${instrument.id}/${v1}/model.json`,
-            `${instrument.id}/${v1}/weights.bin`,
-        ]);
+        const v1Generation = generation(v1);
         const failedPath = v1Generation.artifactIds[1]!;
         const files = new Map<string, ArrayBuffer>([
             [indexModelId, bytes({ schemaVersion: 1, currentVersion: v1, generations: { [v1]: v1Generation } })],
@@ -217,6 +215,7 @@ describe('ddspModelStorage generation index', () => {
     it('clears current before removal and preserves cleanup metadata after an artifact delete fails', async () => {
         const currentGeneration = generation(storage.version);
         const failedPath = currentGeneration.artifactIds[1]!;
+        const foreignPath = `${instrument.id}/foreign/not-indexed.bin`;
         const files = new Map<string, ArrayBuffer>([
             [
                 indexModelId,
@@ -226,6 +225,7 @@ describe('ddspModelStorage generation index', () => {
                     generations: { [storage.version]: currentGeneration },
                 }),
             ],
+            [foreignPath, bytes('foreign')],
         ]);
         const testStorage = storageBridge({ files, failDeletes: new Set([failedPath]) });
         injectStorage(testStorage.bridge);
@@ -234,14 +234,18 @@ describe('ddspModelStorage generation index', () => {
             'OPFS denied'
         );
 
-        const firstIndexCommit = testStorage.events.indexOf(`commit:${indexModelId}`);
-        const firstDelete = testStorage.events.findIndex((event) => event.startsWith('delete:'));
-        expect(firstIndexCommit).toBeGreaterThanOrEqual(0);
-        expect(firstDelete).toBeGreaterThan(firstIndexCommit);
+        expect(testStorage.events).toEqual([
+            `commit:${indexModelId}`,
+            `delete:${currentGeneration.readyMarkerId}`,
+            ...currentGeneration.artifactIds.map((artifactId) => `delete:${artifactId}`),
+            `commit:${indexModelId}`,
+        ]);
         expect(testStorage.bridge.deleteModel.mock.calls.map(([input]) => input.modelId)).toEqual([
             currentGeneration.readyMarkerId,
             ...currentGeneration.artifactIds,
         ]);
+        expect(testStorage.bridge.deleteModel).not.toHaveBeenCalledWith({ modelId: foreignPath });
+        expect(files.has(foreignPath)).toBe(true);
         expect(decode(files.get(indexModelId))).toEqual({
             schemaVersion: 1,
             currentVersion: null,

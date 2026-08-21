@@ -105,6 +105,13 @@ describe('initBrowserAi', () => {
         expect(detect_capabilities_repo).toHaveBeenCalledWith({ forceRefresh: true, measureInference: false });
         expect(capabilityStore.value).toEqual({ phase: 'done', report: fresh_capability_report });
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((instrument) => ({
+                ...instrument,
+                status: 'not-downloaded',
+                downloadProgress: 0,
+            }))
+        );
     });
 
     it('derives DDSP readiness from the complete validated OPFS artifact set', async () => {

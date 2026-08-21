@@ -329,27 +329,114 @@
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
+                "package.json",
+                "pnpm-lock.yaml",
+                "electron-builder.yml",
                 "electron/main.ts",
                 "electron/protocol.ts",
+                "electron/security.ts",
+                "electron/__tests__/webviewSecurity.spec.ts",
+                "scripts/electronE2EIsolation.ts",
+                "scripts/runElectronE2E.ts",
+                "scripts/checkReleaseInventory.ts",
+                "scripts/__tests__/checkReleaseInventory.spec.ts",
+                "scripts/__tests__/electronE2EIsolation.spec.ts",
+                "scripts/__tests__/runElectronE2E.spec.ts",
                 "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/BrowserAi/models/BrowserModel.ts",
                 "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/models/InferenceRequest.ts",
+                "src/modules/BrowserAi/models/ModelDownloadProgress.ts",
+                "src/modules/BrowserAi/models/ModelStorageWorkerProtocol.ts",
+                "src/modules/BrowserAi/models/RenderProgress.ts",
+                "src/modules/BrowserAi/models/StorageStatus.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "src/modules/BrowserAi/repositories/abortWritable.ts",
+                "src/modules/BrowserAi/repositories/computeRenderCacheKey.ts",
                 "src/modules/BrowserAi/repositories/ddspModelStorage.ts",
+                "src/modules/BrowserAi/repositories/getStorageStatus.ts",
+                "src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
+                "src/modules/BrowserAi/repositories/isNotFoundError.ts",
+                "src/modules/BrowserAi/repositories/modelDownloadManager.ts",
+                "src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
+                "src/modules/BrowserAi/repositories/readRenderCache.ts",
+                "src/modules/BrowserAi/repositories/sha256ArrayBuffer.ts",
+                "src/modules/BrowserAi/repositories/storageConstants.ts",
+                "src/modules/BrowserAi/repositories/toOpfsPath.ts",
+                "src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
+                "src/modules/BrowserAi/repositories/writeRenderCache.ts",
+                "src/modules/BrowserAi/services/audioResampler.ts",
+                "src/modules/BrowserAi/services/midiToDdspInput.ts",
+                "src/modules/BrowserAi/stores/inferenceProgressStore.ts",
+                "src/modules/BrowserAi/stores/modelRegistryStore.ts",
+                "src/modules/BrowserAi/stores/renderQueueStore.ts",
+                "src/modules/BrowserAi/useCases/cancelRender.ts",
                 "src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
-                "src/modules/BrowserAi/useCases/initBrowserAi.ts"
+                "src/modules/BrowserAi/useCases/index.ts",
+                "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "src/modules/BrowserAi/useCases/isDdspInstrumentId.ts",
+                "src/modules/BrowserAi/useCases/removeDdspInstrument.ts",
+                "src/modules/BrowserAi/useCases/renderDdspInstrument.ts",
+                "src/modules/BrowserAi/workers/modelStorageWorker.ts",
+                "src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
+                "src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
+                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
+                "tests/e2e/ddspProductionCspElectron.playwright.config.ts",
+                "tests/e2e/ddspProductionCspElectron.spec.ts",
+                "tests/e2e/ddspRender.playwright.config.ts",
+                "tests/e2e/ddspRender.spec.ts",
+                "tests/e2e/ddspRenderElectron.playwright.config.ts",
+                "tests/e2e/ddspRenderElectron.spec.ts",
+                "tests/e2e/ddspRenderProbe.html",
+                "tests/e2e/ddspRenderProbe.ts",
+                "tests/e2e/modelManagerAdmission.spec.ts"
             ],
-            "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
-            "revisions": ["magenta-js-ddsp-2020-01-05"],
-            "digests": ["sha256:pinned-per-file-in-DdspArtifactManifest"],
-            "licenses": ["first-party:Magenta checkpoint-specific direct-use permission"],
+            "sources": [
+                "https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md",
+                "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp",
+                "package.json",
+                "pnpm-lock.yaml"
+            ],
+            "revisions": [
+                "magenta-js 0692eb2b79681f062c6b6dd53a0361967f298caa music/checkpoints/README.md",
+                "magenta-js-ddsp-2020-01-05",
+                "@tensorflow/tfjs 4.22.0",
+                "@tensorflow/tfjs-backend-webgpu 4.22.0"
+            ],
+            "digests": [
+                "sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json",
+                "sha256:e2df331d82cf56ed58c202c7af545b305f6794c655897dfc45535620a0d2fc12:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/group1-shard1of1.bin",
+                "sha256:9cfae64cf6e36007192a479f6f74e26356ed0e6d4521d242498bcb4e04723269:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/settings.json",
+                "sha256:81a2187d58ca5d02e30b755aaa9abed171b0269a7cf2207f445a177af9add434:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/model.json",
+                "sha256:1ce83914040927c5713ad80131c9bfa7eed960b696ca8f17176392b7287ad745:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/group1-shard1of1.bin",
+                "sha256:d4b754db5cd6fe4937de3bd205c4db1aa6d824b8a35571f62047b7a546628fc3:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/settings.json",
+                "sha256:20cf69198fc87decefce850fc5315562f2d72c01da89cd16581dc868f1daa5b5:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/model.json",
+                "sha256:4785eff16aef6d5e620f70866b865e3cb6462f0670edeeb9711603a354170538:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/group1-shard1of1.bin",
+                "sha256:60e26d8fd06c963b2828c112f70d4e5667fc9cd328fe6a65977fe839d6393e93:173:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/settings.json",
+                "sha256:1b334b0639c2dd7f19e904a977339c7e4b53fe7fde4f56cc7c9797c99789787e:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/model.json",
+                "sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin",
+                "sha256:4632398ffae90dc12dccf6bb9480102c6947f5c5eb5829415108f25d8cf0a7fe:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json"
+            ],
+            "licenses": [
+                "permission:Magenta-checkpoints-README-direct-application-loading-or-self-hosting",
+                "unverified:checkpoint-weights-no-license-grant-established",
+                "Apache-2.0:@tensorflow/tfjs",
+                "Apache-2.0:@tensorflow/tfjs-backend-webgpu"
+            ],
             "productSurfaces": ["browser DDSP instruments", "desktop DDSP instruments"],
             "evidence": [
-                "Magenta.js documents direct application loading for these exact checkpoint directories.",
-                "Sourdaw validates every direct-download artifact against its pinned size and SHA-256 before OPFS readiness."
+                "The immutable Magenta checkpoint README permits direct application loading and downloading/self-hosting for the four named DDSP checkpoint directories.",
+                "The manifest pins the exact URL, byte count, and SHA-256 of all twelve runtime-downloaded artifacts before OPFS readiness.",
+                "Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface."
             ],
             "obligations": [
-                "Download only at runtime from Magenta; do not bundle, mirror, or redistribute checkpoint weights."
+                "Do not describe the checkpoint weights as Apache-2.0; the cited checkpoint permission does not establish that license.",
+                "Preserve per-file size and SHA-256 admission before readiness or inference.",
+                "Keep TensorFlow.js Apache-2.0 attribution and notices with distributed source and desktop builds.",
+                "Download checkpoint weights at runtime only until redistribution rights are independently established."
             ]
         },
         {
@@ -1149,13 +1236,78 @@
         },
         {
             "surface": "ddsp-models",
-            "file": "electron/main.ts",
+            "file": "electron/protocol.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/group1-shard1of1.bin"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/model.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/settings.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/model.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/group1-shard1of1.bin"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/model.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/settings.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/group1-shard1of1.bin"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json"
         },
         {
             "surface": "ddsp-models",
-            "file": "electron/main.ts",
-            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json"
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/settings.json"
         },
         {
             "surface": "ddsp-models",

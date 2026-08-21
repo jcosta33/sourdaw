@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { _electron as electron, expect, test } from '@playwright/test';
 
+import { terminateChildProcess, withIsolatedElectronUserData } from '../../scripts/electronE2EIsolation';
+
 type DdspProbe = {
     prepare: () => Promise<{ ready: boolean; artifactCount: number }>;
     renderOffline: () => Promise<{ backend: string; pcmLength: number; finite: boolean }>;
@@ -43,30 +45,39 @@ function assertCurrentDevShellOutput(): void {
 test('Electron renderer recreates the WebGPU DDSP worker offline from OPFS', async () => {
     assertCurrentDevShellOutput();
 
-    const app = await electron.launch({
-        executablePath: ELECTRON_EXECUTABLE,
-        args: [MAIN_ENTRY],
-        env: {
-            ...process.env,
-            SOURDAW_DESKTOP_DEV: '1',
-            SOURDAW_DEV_SERVER_URL: PROBE_URL,
-            SOURDAW_DESKTOP_PROBE_EXIT_MS: '170000',
+    await withIsolatedElectronUserData({
+        launch: ({ argument }) =>
+            electron.launch({
+                executablePath: ELECTRON_EXECUTABLE,
+                args: [MAIN_ENTRY, argument],
+                env: {
+                    ...process.env,
+                    SOURDAW_DESKTOP_DEV: '1',
+                    SOURDAW_DEV_SERVER_URL: PROBE_URL,
+                    SOURDAW_DESKTOP_PROBE_EXIT_MS: '170000',
+                },
+            }),
+        run: async (app) => {
+            const page = await app.firstWindow();
+            await page.waitForURL(PROBE_URL);
+            await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_PROBE__)).toBe('object');
+
+            const prepared = await page.evaluate(() => window.__SOURDAW_DDSP_PROBE__!.prepare());
+            expect(prepared).toEqual({ ready: true, artifactCount: 3 });
+            await page
+                .context()
+                .route('https://storage.googleapis.com/magentadata/**', (route) => route.abort('blockedbyclient'));
+
+            const rendered = await page.evaluate(() => window.__SOURDAW_DDSP_PROBE__!.renderOffline());
+            expect(rendered).toEqual({ backend: 'webgpu', pcmLength: 22_050, finite: true });
+        },
+        shutdown: async (app) => {
+            const child = app.process();
+            try {
+                await app.close();
+            } finally {
+                await terminateChildProcess(child);
+            }
         },
     });
-    try {
-        const page = await app.firstWindow();
-        await page.waitForURL(PROBE_URL);
-        await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_PROBE__)).toBe('object');
-
-        const prepared = await page.evaluate(() => window.__SOURDAW_DDSP_PROBE__!.prepare());
-        expect(prepared).toEqual({ ready: true, artifactCount: 3 });
-        await page
-            .context()
-            .route('https://storage.googleapis.com/magentadata/**', (route) => route.abort('blockedbyclient'));
-
-        const rendered = await page.evaluate(() => window.__SOURDAW_DDSP_PROBE__!.renderOffline());
-        expect(rendered).toEqual({ backend: 'webgpu', pcmLength: 22_050, finite: true });
-    } finally {
-        await app.close();
-    }
 });

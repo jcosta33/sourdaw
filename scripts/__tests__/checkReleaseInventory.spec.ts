@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
     audioWorkletReleaseInventoryContract,
+    DDSP_RELEASE_INVENTORY_CONTRACT,
+    DDSP_RELEASE_INVENTORY_PATHS,
     loadRepositorySnapshot,
+    REQUIRED_COMPONENT_PATHS,
     REQUIRED_SNAPSHOT_PATHS,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
@@ -56,6 +59,21 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('pins the complete DDSP execution surface without laundering checkpoint weights into Apache', () => {
+        expect(REQUIRED_COMPONENT_PATHS['ddsp-models']).toEqual(DDSP_RELEASE_INVENTORY_PATHS);
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.sources[0]).toBe(
+            'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md'
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.digests).toHaveLength(12);
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.digests).toContain(
+            'sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin'
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).toContain(
+            'unverified:checkpoint-weights-no-license-grant-established'
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
+    });
+
     it('binds the shipped trademark notice', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-trademark-notice-'));
         const legal = join(root, 'public/legal');

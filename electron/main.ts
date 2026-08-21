@@ -21,7 +21,15 @@ import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
-import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
+import {
+    APP_ENTRY_URL,
+    APP_ORIGIN,
+    DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL,
+    DDSP_CSP_ALLOWED_PROBE_URL,
+    handleAppProtocol,
+    registerAppScheme,
+    resolveContentRoots,
+} from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
@@ -270,8 +278,8 @@ const runProductionCspProbe = async (window: BrowserWindow): Promise<void> => {
             }
         };
         const [allowed, denied] = await Promise.all([
-            fetchOutcome('https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json'),
-            fetchOutcome('https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json'),
+            fetchOutcome(${JSON.stringify(DDSP_CSP_ALLOWED_PROBE_URL)}),
+            fetchOutcome(${JSON.stringify(DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL)}),
         ]);
         return JSON.stringify({ allowed, denied });
     })()`;

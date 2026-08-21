@@ -1,11 +1,18 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
-type Provenance = { head: string; files: Record<string, string> };
+import { terminateChildProcess, withIsolatedElectronUserData } from '../../scripts/electronE2EIsolation';
+
+type Provenance = {
+    schemaVersion: 2;
+    head: string;
+    files: Record<string, string>;
+    unpacked: { path: string; state: 'absent' } | { path: string; state: 'present'; files: Record<string, string> };
+};
 type FetchOutcome = { resolved: boolean; ok?: boolean; status?: number; message?: string };
 type ProbeResult = {
     allowed: FetchOutcome;
@@ -25,20 +32,69 @@ const PACKAGED_EXECUTABLE = join(
     'Sourdaw'
 );
 const PROVENANCE_PATH = join(process.cwd(), 'release', 'desktop', 'ddsp-csp-e2e-provenance.json');
+const APP_CONTENTS = join(PACKAGED_EXECUTABLE, '..', '..');
+const APP_ASAR = join(APP_CONTENTS, 'Resources', 'app.asar');
+const INFO_PLIST = join(APP_CONTENTS, 'Info.plist');
+const APP_ASAR_UNPACKED = join(APP_CONTENTS, 'Resources', 'app.asar.unpacked');
+const OUTSIDE_CSP_PROBE_URL =
+    'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json';
 
 function digest(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function relativePath(path: string): string {
+    return relative(process.cwd(), path).split(sep).join('/');
+}
+
+function directoryDigests(directory: string): Record<string, string> {
+    const entries: Array<[string, string]> = [];
+    const visit = (current: string): void => {
+        for (const entry of readdirSync(current, { withFileTypes: true }).sort((left, right) =>
+            left.name.localeCompare(right.name)
+        )) {
+            const path = join(current, entry.name);
+            if (entry.isDirectory()) {
+                visit(path);
+                continue;
+            }
+            const value = lstatSync(path).isSymbolicLink()
+                ? createHash('sha256')
+                      .update(`symlink:${readlinkSync(path)}`)
+                      .digest('hex')
+                : digest(path);
+            entries.push([relativePath(path), value]);
+        }
+    };
+    visit(directory);
+    return Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)));
+}
+
 function assertCurrentPackagedOutput(): void {
-    expect(existsSync(PACKAGED_EXECUTABLE)).toBe(true);
+    for (const path of [PACKAGED_EXECUTABLE, APP_ASAR, INFO_PLIST]) {
+        expect(existsSync(path), `${relativePath(path)} must exist`).toBe(true);
+    }
     expect(existsSync(PROVENANCE_PATH)).toBe(true);
     const provenance = JSON.parse(readFileSync(PROVENANCE_PATH, 'utf8')) as Provenance;
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).trim();
+    expect(provenance.schemaVersion).toBe(2);
     expect(provenance.head).toBe(head);
-    expect(provenance.files[`release/desktop/mac-${process.arch}/Sourdaw.app/Contents/MacOS/Sourdaw`]).toBe(
-        digest(PACKAGED_EXECUTABLE)
-    );
+    for (const path of [APP_ASAR, INFO_PLIST, PACKAGED_EXECUTABLE]) {
+        expect(provenance.files[relativePath(path)]).toBe(digest(path));
+    }
+    const infoPlist = readFileSync(INFO_PLIST, 'utf8');
+    expect(infoPlist).toContain('ElectronAsarIntegrity');
+    expect(infoPlist).toContain('Resources/app.asar');
+
+    if (existsSync(APP_ASAR_UNPACKED)) {
+        expect(provenance.unpacked).toEqual({
+            path: relativePath(APP_ASAR_UNPACKED),
+            state: 'present',
+            files: directoryDigests(APP_ASAR_UNPACKED),
+        });
+    } else {
+        expect(provenance.unpacked).toEqual({ path: relativePath(APP_ASAR_UNPACKED), state: 'absent' });
+    }
 }
 
 function productionEnvironment(): Record<string, string> {
@@ -49,12 +105,20 @@ function productionEnvironment(): Record<string, string> {
     );
 }
 
-function runPackagedCspProbe(): Promise<ProbeResult> {
+async function assertOutsideTargetIsCorsReadable(): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+        const response = await fetch(OUTSIDE_CSP_PROBE_URL, { cache: 'no-store', signal: controller.signal });
+        expect(response.ok).toBe(true);
+        expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function runPackagedCspProbe(process: ChildProcess): Promise<ProbeResult> {
     return new Promise((resolve, reject) => {
-        const process = spawn(PACKAGED_EXECUTABLE, [], {
-            env: { ...productionEnvironment(), SOURDAW_DESKTOP_CSP_PROBE: '1' },
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
         let output = '';
         let settled = false;
         const finish = (callback: () => void): void => {
@@ -65,9 +129,6 @@ function runPackagedCspProbe(): Promise<ProbeResult> {
             }
         };
         const timeout = setTimeout(() => {
-            if (!process.killed) {
-                process.kill('SIGKILL');
-            }
             finish(() => reject(new Error(`packaged CSP probe did not exit within 25 seconds: ${output}`)));
         }, 25_000);
         const collect = (chunk: Buffer): void => {
@@ -94,8 +155,19 @@ function runPackagedCspProbe(): Promise<ProbeResult> {
 
 test('packaged app CSP admits only the exact Magenta DDSP checkpoint path', async ({ browserName: _browserName }) => {
     assertCurrentPackagedOutput();
+    await assertOutsideTargetIsCorsReadable();
 
-    const result = await runPackagedCspProbe();
+    const result = await withIsolatedElectronUserData({
+        launch: ({ argument }) =>
+            Promise.resolve(
+                spawn(PACKAGED_EXECUTABLE, [argument], {
+                    env: { ...productionEnvironment(), SOURDAW_DESKTOP_CSP_PROBE: '1' },
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                })
+            ),
+        run: runPackagedCspProbe,
+        shutdown: terminateChildProcess,
+    });
 
     expect(result).toMatchObject({
         allowed: { resolved: true, ok: true, status: 200 },

@@ -26,6 +26,23 @@ export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 // protocol handler serves `index.html` for `/` either way.
 export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
 
+export const DDSP_CHECKPOINT_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
+export const DDSP_CSP_ALLOWED_PROBE_URL = `${DDSP_CHECKPOINT_CSP_SOURCE}violin/model.json`;
+/**
+ * A public object that answers with `Access-Control-Allow-Origin: *`, but sits
+ * beside rather than below the DDSP checkpoint prefix. The packaged probe
+ * proves CSP — not a missing object or CORS — is what refuses it.
+ */
+export const DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL =
+    'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json';
+
+/** The path-prefix matching used by the two Magenta CSP regression assertions. */
+export function isUrlAllowedByCspSource(source: string, candidate: string): boolean {
+    const sourceUrl = new URL(source);
+    const candidateUrl = new URL(candidate);
+    return sourceUrl.origin === candidateUrl.origin && candidateUrl.pathname.startsWith(sourceUrl.pathname);
+}
+
 /**
  * The Content-Security-Policy every `app://` response carries.
  *
@@ -74,7 +91,10 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
  */
 export const PRODUCTION_CSP = [
     "default-src 'self'",
-    "connect-src 'self' http://localhost:* http://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/",
+    [
+        "connect-src 'self' http://localhost:* http://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com",
+        DDSP_CHECKPOINT_CSP_SOURCE,
+    ].join(' '),
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
     "style-src 'self' 'unsafe-inline'",
