@@ -6,8 +6,10 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
+import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -20,7 +22,7 @@ type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
-type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
+type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
 
 const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
@@ -129,13 +131,13 @@ describe('executeAppActionBatch', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         mocks.agentProjectRepairStateStore.value = null;
-        productionBriefAdmissionPort.setGuard(() => true);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
     });
 
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        productionBriefAdmissionPort.setGuard(() => true);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
     });
 
     it('commits every action as one project document mutation', async () => {
@@ -279,10 +281,9 @@ describe('executeAppActionBatch', () => {
         });
     });
 
-    it('aborts a project batch when a collaborator locks its target before commit', async () => {
+    it('aborts a project batch when a collaborator locks the removed clip range before commit', async () => {
         const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
-        projectStore.set(structuredClone(defaultProjectStoreState));
-        productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
 
         let releaseHandler: (() => void) | undefined;
         let markHandlerStarted: (() => void) | undefined;
@@ -292,24 +293,48 @@ describe('executeAppActionBatch', () => {
         const handlerRelease = new Promise<void>((resolve) => {
             releaseHandler = resolve;
         });
-        const document: Record<string, unknown> = { trackGain: { value: 1 } };
+        const clipId = 'clip-vocal-verse';
+        const initialTrack = createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio' });
+        const document: Record<string, unknown> = {};
         configureAutomergeStoragePort({
             getDoc: () => document,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
             mutateDoc: ({ changeFn }) => changeFn(document),
         });
-        const storage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
-        expect(storage.hydrate?.()).toBe(true);
-        const action: SetTrackGainAction = {
-            type: 'setTrackGain',
-            payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 1 },
-        };
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [initialTrack] });
+        const initialClip = addClip({
+            id: clipId,
+            trackId: initialTrack.id,
+            name: 'Vocal verse',
+            type: 'audio',
+            startBeat: 8,
+            endBeat: 16,
+        });
+        if (!initialClip) {
+            throw new Error('Expected the range-lock fixture clip');
+        }
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        flushAutomergeStorageWrites();
+        productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+
+        const action: RemoveClipAction = { type: 'removeClip', payload: { clipId } };
         const afterCommit = vi.fn();
         registerHandlerMap({
-            setTrackGain: createHandler<SetTrackGainAction>({
+            removeClip: createHandler<RemoveClipAction>({
                 execute: async () => {
-                    storage.set({ value: 0.7 });
+                    const currentTracks = trackStore.value;
+                    if (!currentTracks) {
+                        throw new Error('Expected current tracks');
+                    }
+                    setTrackStoreState({
+                        ...currentTracks,
+                        tracks: currentTracks.tracks.map((track) =>
+                            track.id === initialTrack.id
+                                ? { ...track, clips: track.clips.filter((clip) => clip.id !== clipId) }
+                                : track
+                        ),
+                    });
                     markHandlerStarted?.();
                     await handlerRelease;
                     return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
@@ -321,6 +346,7 @@ describe('executeAppActionBatch', () => {
         try {
             const execution = executeAppActionBatch([action]);
             await handlerStarted;
+            expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
             const currentProject = projectStore.value;
             if (!currentProject) {
                 throw new Error('Expected a current project');
@@ -333,15 +359,14 @@ describe('executeAppActionBatch', () => {
                     locks: [
                         {
                             id: 'collaborator-track-lock',
-                            scope: { kind: 'track', trackId: 'track-vocal' },
-                            statement: 'Keep the vocal gain fixed',
+                            scope: { kind: 'range', startBeat: 8, endBeat: 16 },
+                            statement: 'Keep the vocal verse fixed',
                             createdAt: currentProject.productionBrief.updatedAt + 1,
                         },
                     ],
                     updatedAt: currentProject.productionBrief.updatedAt + 1,
                 },
             });
-            expect(doesProductionBriefAllowActionBatch([action])).toBe(false);
             releaseHandler?.();
 
             await expect(execution).resolves.toEqual({
@@ -350,8 +375,8 @@ describe('executeAppActionBatch', () => {
                 actions: [],
                 failureKind: 'verification',
             });
-            expect(document.trackGain).toEqual({ value: 1 });
-            expect(storage.get()).toEqual({ value: 1 });
+            expect(trackStore.value?.tracks[0]?.clips).toEqual([initialClip]);
+            expect(document).toHaveProperty('tracks.tracks.0.clips', [initialClip]);
             expect(afterCommit).not.toHaveBeenCalled();
             expect(mocks.recordAction).not.toHaveBeenCalled();
             expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
@@ -360,6 +385,9 @@ describe('executeAppActionBatch', () => {
             releaseHandler?.();
             if (previousProject) {
                 projectStore.set(previousProject);
+            }
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
             }
         }
     });
@@ -1229,7 +1257,7 @@ describe('executeAppActionBatch', () => {
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({ execute }),
         });
-        productionBriefAdmissionPort.setGuard(() => false);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
 
         const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
 

@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
     AutomergeStorageTransactionCommittedError,
+    AutomergeStorageTransactionValidationError,
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -138,7 +139,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type);
             }
 
-            if (!productionBriefAdmissionPort.allows([action])) {
+            const production_brief_admission = productionBriefAdmissionPort.capture([action]);
+            if (!production_brief_admission.allowsCurrent()) {
                 throw new AppActionConflictError(action.type);
             }
 
@@ -196,11 +198,13 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw error;
             }
             storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
-            storage_transaction.validateCommit(() =>
-                productionBriefAdmissionPort.allows([action])
-                    ? null
-                    : `Action conflicts with current project state: ${action.type}`
-            );
+            let production_brief_commit_denied = false;
+            storage_transaction.validateCommit(() => {
+                production_brief_commit_denied = !production_brief_admission.allowsCurrent();
+                return production_brief_commit_denied
+                    ? `Action conflicts with current project state: ${action.type}`
+                    : null;
+            });
             try {
                 execution_result = await storage_transaction.value;
             } catch (error) {
@@ -256,6 +260,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
                     throw committed_error;
+                }
+                if (production_brief_commit_denied && error instanceof AutomergeStorageTransactionValidationError) {
+                    throw new AppActionConflictError(action.type);
                 }
                 logger.error(new Error(`Action storage commit failed for action: ${action.type}`, { cause: error }));
                 throw error;

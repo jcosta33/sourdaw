@@ -6,8 +6,10 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
+import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 
 import {
     AppActionCommittedError,
@@ -16,12 +18,15 @@ import {
 } from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { undoStore } from '../../stores/undoStore';
 import { createAppActionCommittedError } from '../createAppActionCommittedError';
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
+import { redo } from '../redo';
 
 import type { ActionHandler, AppAction, HandlerDescribeResult, HandlerExecutionResult } from '#/utils/handlerContract';
+import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 
 type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
@@ -33,6 +38,7 @@ type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
+type RemoveDeviceAction = Extract<AppAction, { type: 'removeDevice' }>;
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
@@ -118,7 +124,7 @@ describe('executeAppAction', () => {
         clearActionReplayCapabilities();
         mocks.recordActionHistoryMetadata.mockReturnValue([]);
         configureAutomergeStoragePort(null);
-        productionBriefAdmissionPort.setGuard(() => true);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
     });
 
     afterEach(() => {
@@ -150,17 +156,126 @@ describe('executeAppAction', () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const handler = create_mock_handler<SetEditingToolAction>();
         registerHandlerMap({ [action.type]: handler });
-        productionBriefAdmissionPort.setGuard(() => false);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
 
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('aborts a singleton project write when a collaborator locks its target before commit', async () => {
+    it('aborts with a replayable conflict when a collaborator locks a removed device parent before commit', async () => {
         const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const trackId = 'track-vocal';
+        const deviceId = 'device-vocal-eq';
+        const initialTrack = {
+            ...createTrack({ id: trackId, name: 'Vocal', kind: 'audio' }),
+            devices: [
+                {
+                    id: deviceId,
+                    name: 'Vocal EQ',
+                    type: 'builtin-eq',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ],
+        };
+        const document: Record<string, unknown> = {};
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [initialTrack] });
         projectStore.set(structuredClone(defaultProjectStoreState));
-        productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+        flushAutomergeStorageWrites();
+        productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+
+        const action: RemoveDeviceAction = { type: 'removeDevice', payload: { deviceId } };
+        const afterCommit = vi.fn();
+        const onCommitted = vi.fn();
+        const handler = create_mock_handler<RemoveDeviceAction>({
+            execute: async () => {
+                const currentTracks = trackStore.value;
+                if (!currentTracks) {
+                    throw new Error('Expected current tracks');
+                }
+                setTrackStoreState({
+                    ...currentTracks,
+                    tracks: currentTracks.tracks.map((track) =>
+                        track.id === trackId
+                            ? { ...track, devices: track.devices.filter((device) => device.id !== deviceId) }
+                            : track
+                    ),
+                });
+                markHandlerStarted?.();
+                await handlerRelease;
+                return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+        expect(doesProductionBriefAllowActionBatch([action])).toBe(true);
+
+        try {
+            const execution = executeAppAction(action, { onCommitted });
+            await handlerStarted;
+            expect(trackStore.value?.tracks[0]?.devices).toEqual([]);
+            const currentProject = projectStore.value;
+            if (!currentProject) {
+                throw new Error('Expected a current project');
+            }
+            projectStore.set({
+                ...currentProject,
+                productionBrief: {
+                    ...currentProject.productionBrief,
+                    revision: currentProject.productionBrief.revision + 1,
+                    locks: [
+                        {
+                            id: 'collaborator-track-lock',
+                            scope: { kind: 'track', trackId },
+                            statement: 'Keep the vocal device chain fixed',
+                            createdAt: currentProject.productionBrief.updatedAt + 1,
+                        },
+                    ],
+                    updatedAt: currentProject.productionBrief.updatedAt + 1,
+                },
+            });
+            releaseHandler?.();
+
+            await expect(execution).rejects.toBeInstanceOf(AppActionConflictError);
+            expect(trackStore.value?.tracks[0]?.devices).toEqual(initialTrack.devices);
+            expect(document).toHaveProperty('tracks.tracks.0.devices', initialTrack.devices);
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(afterCommit).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            releaseHandler?.();
+            if (previousProject) {
+                projectStore.set(previousProject);
+            }
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+        }
+    });
+
+    it('keeps a redo replay pending when production intent changes before singleton commit', async () => {
+        const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 
         let releaseHandler: (() => void) | undefined;
         let markHandlerStarted: (() => void) | undefined;
@@ -183,21 +298,29 @@ describe('executeAppAction', () => {
             type: 'setTrackGain',
             payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 1 },
         };
-        const afterCommit = vi.fn();
-        const onCommitted = vi.fn();
-        const handler = create_mock_handler<SetTrackGainAction>({
-            execute: async () => {
-                storage.set({ value: 0.7 });
-                markHandlerStarted?.();
-                await handlerRelease;
-                return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
-            },
+        registerHandlerMap({
+            setTrackGain: create_mock_handler<SetTrackGainAction>({
+                execute: async () => {
+                    storage.set({ value: 0.7 });
+                    markHandlerStarted?.();
+                    await handlerRelease;
+                    return { status: 'written' };
+                },
+            }),
         });
-        registerHandlerMap({ [action.type]: handler });
-        expect(doesProductionBriefAllowActionBatch([action])).toBe(true);
+        const replayEntry: ActionUndoEntry = {
+            kind: 'action',
+            id: 'production-brief-replay',
+            label: 'Set vocal gain',
+            timestamp: 1,
+            source: 'manual',
+            action,
+            inverseAction: null,
+        };
+        undoStore.set({ past: [], future: [replayEntry] });
 
         try {
-            const execution = executeAppAction(action, { onCommitted });
+            const replay = redo();
             await handlerStarted;
             const currentProject = projectStore.value;
             if (!currentProject) {
@@ -219,21 +342,20 @@ describe('executeAppAction', () => {
                     updatedAt: currentProject.productionBrief.updatedAt + 1,
                 },
             });
-            expect(doesProductionBriefAllowActionBatch([action])).toBe(false);
             releaseHandler?.();
 
-            await expect(execution).rejects.toThrow('Action conflicts with current project state: setTrackGain');
+            await expect(replay).resolves.toBeUndefined();
             expect(document.trackGain).toEqual({ value: 1 });
             expect(storage.get()).toEqual({ value: 1 });
-            expect(onCommitted).not.toHaveBeenCalled();
-            expect(afterCommit).not.toHaveBeenCalled();
+            expect(undoStore.value).toEqual({ past: [], future: [replayEntry] });
             expect(mocks.recordAction).not.toHaveBeenCalled();
-            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
-            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         } finally {
             releaseHandler?.();
             if (previousProject) {
                 projectStore.set(previousProject);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
             }
         }
     });
