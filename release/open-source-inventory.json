@@ -330,6 +330,7 @@
             "releaseModes": ["web", "desktop"],
             "paths": [
                 "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts"
@@ -596,11 +597,11 @@
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
                 "daw-dsp sha256:e4697af164e2a57f5e3b5bac4b7501b4181c58ff21a897e4b3e76e9eef5cf579",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
-                "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
+                "proof-chamber sha256:3d5c8eb0168f12bc9503c5d3b74ca788d19e462b2beb6d05251cfae19207f386",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:9886cbd2e420ebd9efe777c2143f16e68828f5a1a402161f6e0bf6a8f87af759:public/wasm/manifest.json"
+                "sha256:b5c8edbd2e7f9ea7c9fc9e5ab9a8a01373f52fba08409bab30fbfa83fa918a21:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -854,7 +855,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "9886cbd2e420ebd9efe777c2143f16e68828f5a1a402161f6e0bf6a8f87af759"
+            "sha256": "b5c8edbd2e7f9ea7c9fc9e5ab9a8a01373f52fba08409bab30fbfa83fa918a21"
         }
     ],
     "externalReferences": [
@@ -1153,7 +1154,7 @@
         },
         {
             "surface": "ddsp-models",
-            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+            "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
         },
         {

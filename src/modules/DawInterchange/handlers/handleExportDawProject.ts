@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHandler } from '#/utils/createHandler';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { exportDawProject } from '../useCases/exportDawProject';
 import { saveDawProjectNativeFile } from '../useCases/saveDawProjectNativeFile';

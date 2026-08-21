@@ -445,7 +445,9 @@ fn each_band_lengthens_its_own_part_of_the_spectrum() {
 const MIN_ISOLATED_OCTAVES: f64 = 2.5;
 
 fn octaves_between(a: usize, b: usize) -> f64 {
-    (f64::from(BAND_FREQS[a]) / f64::from(BAND_FREQS[b])).log2().abs()
+    (f64::from(BAND_FREQS[a]) / f64::from(BAND_FREQS[b]))
+        .log2()
+        .abs()
 }
 
 /// Measured from neutral, so the clamp is **not** engaged: one band at 4.0x is
@@ -770,8 +772,8 @@ fn the_shaping_a_band_delivers_does_not_depend_on_the_decay_setting() {
             // stage would ask the same boost of a headroom running from about
             // 8 dB to about 1.4 dB on the plate, over-delivering at one end and
             // asking for more than the loop has at the other.
-            let mean = delivered.iter().map(|(_, value)| value).sum::<f64>()
-                / delivered.len() as f64;
+            let mean =
+                delivered.iter().map(|(_, value)| value).sum::<f64>() / delivered.len() as f64;
             for (decay, value) in delivered.iter() {
                 assert!(
                     (value - mean).abs() < mean * 0.2,

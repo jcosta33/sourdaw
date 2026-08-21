@@ -21,21 +21,42 @@ struct Measurement {
 
 const EXPECTED_SIGNAL: [[Measurement; 3]; 2] = [
     [
-        Measurement { rms: 0.303_318_23, high_frequency_rms: 0.388_374_57 },
-        Measurement { rms: 0.274_717_24, high_frequency_rms: 0.330_152_12 },
-        Measurement { rms: 0.236_572_74, high_frequency_rms: 0.220_032_45 },
+        Measurement {
+            rms: 0.303_318_23,
+            high_frequency_rms: 0.388_374_57,
+        },
+        Measurement {
+            rms: 0.274_717_24,
+            high_frequency_rms: 0.330_152_12,
+        },
+        Measurement {
+            rms: 0.236_572_74,
+            high_frequency_rms: 0.220_032_45,
+        },
     ],
     [
-        Measurement { rms: 0.303_324_85, high_frequency_rms: 0.367_476_25 },
-        Measurement { rms: 0.272_278_13, high_frequency_rms: 0.306_728_2 },
-        Measurement { rms: 0.233_388_59, high_frequency_rms: 0.214_636_03 },
+        Measurement {
+            rms: 0.303_324_85,
+            high_frequency_rms: 0.367_476_25,
+        },
+        Measurement {
+            rms: 0.272_278_13,
+            high_frequency_rms: 0.306_728_2,
+        },
+        Measurement {
+            rms: 0.233_388_59,
+            high_frequency_rms: 0.214_636_03,
+        },
     ],
 ];
 const SEVENTIES_NOISE_RMS: f32 = 0.000_407_652_43;
 
 fn assert_near(name: &str, measured: f32, expected: f32) {
     let error = (measured - expected).abs() / expected.max(1.0e-12);
-    assert!(error <= 0.01, "{name} changed: measured {measured:.9}, expected {expected:.9}");
+    assert!(
+        error <= 0.01,
+        "{name} changed: measured {measured:.9}, expected {expected:.9}"
+    );
 }
 
 fn rms(samples: &[f32]) -> f32 {
@@ -100,15 +121,26 @@ fn vintage_modes_keep_their_bandwidth_and_noise_character() {
         let measured = [modern, eighties, seventies];
         for (mode_index, mode) in ["Modern", "Eighties", "Seventies"].into_iter().enumerate() {
             let expected = EXPECTED_SIGNAL[rate_index][mode_index];
-            assert_near(&format!("{mode} {sample_rate:.0} Hz RMS"), measured[mode_index].rms, expected.rms);
+            assert_near(
+                &format!("{mode} {sample_rate:.0} Hz RMS"),
+                measured[mode_index].rms,
+                expected.rms,
+            );
             assert_near(
                 &format!("{mode} {sample_rate:.0} Hz high-frequency RMS"),
                 measured[mode_index].high_frequency_rms,
                 expected.high_frequency_rms,
             );
         }
-        assert_eq!(modern_silence.rms, 0.0, "Modern injected noise into silence");
-        assert_near("Seventies noise-floor RMS", seventies_silence.rms, SEVENTIES_NOISE_RMS);
+        assert_eq!(
+            modern_silence.rms, 0.0,
+            "Modern injected noise into silence"
+        );
+        assert_near(
+            "Seventies noise-floor RMS",
+            seventies_silence.rms,
+            SEVENTIES_NOISE_RMS,
+        );
         assert!(
             measured[1].high_frequency_rms < measured[0].high_frequency_rms * 0.9
                 && measured[2].high_frequency_rms < measured[1].high_frequency_rms * 0.75,

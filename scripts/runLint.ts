@@ -43,8 +43,8 @@ export function parseArgs(args: string[]): Options {
     return { files, fix, full };
 }
 
-function runStep(label: string, args: string[]): void {
-    const result = spawnSync('pnpm', args, { stdio: 'inherit' });
+function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
+    const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
     if (result.error !== undefined) {
         throw new Error(`${label} failed to start: ${result.error.message}`);
     }
@@ -67,17 +67,27 @@ function main(): number {
             ...(options.fix ? ['--fix'] : []),
             ...targets,
         ]);
-        runStep('eslint', [
-            'exec',
+        runStep(
             'eslint',
-            '--quiet',
-            '--concurrency=off',
-            '--cache',
-            '--cache-location',
-            'node_modules/.cache/eslint/',
-            ...(options.fix ? ['--fix'] : []),
-            ...eslintTargets,
-        ]);
+            [
+                'exec',
+                'eslint',
+                '--quiet',
+                '--concurrency=off',
+                '--cache',
+                '--cache-location',
+                'node_modules/.cache/eslint/',
+                ...(options.fix ? ['--fix'] : []),
+                ...eslintTargets,
+            ],
+            // A cold `--cache` run holds the whole type-aware program in one
+            // process and exhausts Node's default heap: the run aborts with an
+            // OOM mark-compact failure instead of reporting lint results, so a
+            // green run and a crashed run are told apart only by reading the
+            // output. A fresh worktree and a CI runner both start cold, which
+            // is exactly where the ceiling has to hold.
+            { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=8192`.trim() }
+        );
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);

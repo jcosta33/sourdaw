@@ -6,6 +6,15 @@ node_modules
 target
 dist
 public/wasm
+
+# wasm-bindgen output fingerprinted by public/wasm/manifest.json. Formatting it
+# drifts the committed artifact from its recorded hash, and it carries no review
+# value because nothing here is hand-maintained. The specs beside it are.
+src/modules/AudioEngine/wasm/
+!src/modules/AudioEngine/wasm/__tests__/
+
+# TanStack Router output.
+src/routeTree.gen.ts
 .github
 .git
 .vscode

@@ -75,11 +75,13 @@ describe('useStoreSelector', () => {
         switchTarget = 'a';
         const { getByTestId, rerender } = render(<ClosureSwitchTestComponent />);
         expect(getByTestId('switch-selection').textContent).toBe('5');
+        const rendersAfterMount = closureSwitchRenders;
 
         // Same store snapshot, new closure target: the selection must follow
         // the closure, not the stale cache.
         switchTarget = 'b';
         rerender(<ClosureSwitchTestComponent />);
         expect(getByTestId('switch-selection').textContent).toBe('2');
+        expect(closureSwitchRenders).toBeGreaterThan(rendersAfterMount);
     });
 });
