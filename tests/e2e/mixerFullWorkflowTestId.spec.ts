@@ -1,86 +1,63 @@
-import { test, expect } from '@playwright/test';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { expect, test, type Page } from '@playwright/test';
 
-async function openMixer(page: import('@playwright/test').Page): Promise<void> {
-    const dock = page.getByTestId('toggle-bottom-dock');
-    if ((await dock.getAttribute('aria-pressed')) === 'false') {
+import { launch_from_template, setupWorkspace } from './e2eUtils';
+
+async function openMixer(page: Page): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock', exact: true });
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
         await dock.click();
-        await page.waitForTimeout(500);
     }
-    const mixerTab = page.locator('#bottom-dock-tab-mixer');
-    if (await mixerTab.isVisible().catch(() => false)) {
-        await mixerTab.click();
-        await page.waitForTimeout(500);
-    }
+    await expect(page.getByRole('region', { name: 'Mixer panel', exact: true })).toBeVisible();
 }
 
-test.describe('Mixer full workflow — EDM template', () => {
+test.describe('Mixer mute, pan, snapshot, and master', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'EDM' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_from_template({ page, template_name: 'EDM' });
         await openMixer(page);
     });
 
-    test('mute first channel, solo second, verify states', async ({ page }) => {
-        const mutes = page.locator('[data-testid^="channel-mute-"]');
-        const solos = page.locator('[data-testid^="channel-solo-"]');
+    test('muting Kick on the mixer leaves Bass unmuted', async ({ page }) => {
+        const mixer = page.getByRole('region', { name: 'Mixer panel', exact: true });
+        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
+        const bass = mixer.getByRole('group', { name: 'Bass channel', exact: true });
 
-        await expect(mutes.first()).toBeVisible({ timeout: 15_000 });
+        await expect(kick.getByRole('button', { name: 'Mute', exact: true })).toHaveAttribute('data-active', 'false');
+        await expect(bass.getByRole('button', { name: 'Mute', exact: true })).toHaveAttribute('data-active', 'false');
 
-        await mutes.nth(0).click();
-        await expect(mutes.nth(0)).toHaveAttribute('data-active', 'true');
-
-        if ((await solos.count()) > 1) {
-            await solos.nth(1).click();
-            await expect(solos.nth(1)).toHaveAttribute('data-active', 'true');
-        }
+        await kick.getByRole('button', { name: 'Mute', exact: true }).click();
+        await expect(kick.getByRole('button', { name: 'Unmute', exact: true })).toHaveAttribute('data-active', 'true');
+        await expect(bass.getByRole('button', { name: 'Mute', exact: true })).toHaveAttribute('data-active', 'false');
     });
 
-    test('pan knob keyboard increment changes value', async ({ page }) => {
-        const pan = page.locator('[data-testid^="channel-pan-"]').first();
-        await expect(pan).toBeVisible({ timeout: 15_000 });
-
-        const slider = pan.getByRole('slider');
-        if (await slider.isVisible().catch(() => false)) {
-            const before = await slider.getAttribute('aria-valuenow');
-            await slider.focus();
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(200);
-            const after = await slider.getAttribute('aria-valuenow');
-            if (Number(before) < 50) {
-                expect(Number(after)).toBeGreaterThan(Number(before));
-            }
-        }
+    test('Kick pan starts centered and steps right', async ({ page }) => {
+        const pan = page
+            .getByRole('group', { name: 'Kick channel', exact: true })
+            .getByRole('slider', { name: 'Kick pan', exact: true });
+        await pan.scrollIntoViewIfNeeded();
+        await expect(pan).toHaveAttribute('aria-valuenow', '0');
+        await pan.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(pan).toHaveAttribute('aria-valuenow', '0.5');
     });
 
-    test('channel width cycle button changes label', async ({ page }) => {
-        const width = page.getByTestId('mixer-channel-width');
-        await expect(width).toBeVisible({ timeout: 15_000 });
-
-        const before = await width.getAttribute('aria-label');
-        await width.click();
-        await page.waitForTimeout(300);
-        const after = await width.getAttribute('aria-label');
-        expect(after).not.toBe(before);
-    });
-
-    test('save snapshot button is clickable', async ({ page }) => {
-        const save = page.getByTestId('mixer-save-snapshot');
-        await expect(save).toBeVisible({ timeout: 15_000 });
+    test('saving a mixer snapshot enables recall', async ({ page }) => {
+        const save = page.getByRole('button', { name: 'Save mixer snapshot', exact: true });
+        const recall = page.getByRole('button', { name: 'Recall mixer snapshot', exact: true });
+        await expect(recall).toBeDisabled();
         await save.click();
-        await page.waitForTimeout(500);
-        // Should not crash.
-        await expect(save).toBeVisible();
+        await expect(recall).toBeEnabled();
+        await recall.click();
+        await expect(page.getByRole('button', { name: 'Snapshot 1', exact: true })).toBeVisible();
     });
 
-    test('master gain present with rendered children', async ({ page }) => {
-        const master = page.getByTestId('master-gain');
-        await expect(master).toBeAttached({ timeout: 15_000 });
-        const childCount = await master.evaluate((el) => el.children.length);
-        expect(childCount).toBeGreaterThan(0);
+    test('master gain starts at 0.8 and steps up', async ({ page }) => {
+        const gain = page.getByTestId('master-gain').getByRole('slider', { name: 'Master gain', exact: true });
+        await gain.scrollIntoViewIfNeeded();
+        await expect(gain).toHaveAttribute('aria-valuenow', '0.8');
+        await gain.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(gain).toHaveAttribute('aria-valuenow', '0.81');
     });
 });
