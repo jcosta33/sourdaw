@@ -1,0 +1,89 @@
+crates/daw-dsp/src/levain/engine.rs
+  s_2175fca1f07426::t_e53eadaf72a9f3 2765-2766,2769-2770,2772-2835,2837-2849,2851-2905,2908-2909,2911-2920
+crates/daw-dsp/src/levain/voice.rs
+  s_2175fca1f07426::t_8e75520be11e31 572,638,658,681,696-717,819,844,936-937,940,947,955,962-967,969,1009,1011-1012,1015,1018-1038,1040,1042-1043,1045-1060,1089,1091-1092,1177,1250,1262-1265,1269-1272,1295,1302-1306,1316,1320,1331-1332,1336,1343-1351,1358-1359,1368-1431,1433-1548
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2175fca1f07426::t_b67149c0dd2e43 1,844-914,1048
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2175fca1f07426::t_df097bc580954b 1,5-75,209
+public/wasm/manifest.json
+  s_2175fca1f07426::t_93c613cca64cd4 12,16-18,21
+src/modules/AiGeneration/presentations/views/PatternBrowser.tsx
+  s_2175fca1f07426::t_7c35391f4b6b46 10,114,129,147-148,151,166,223,231,321,323,346,349,376,379,410,413,416,429
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  s_2175fca1f07426::t_f3226451151f57 248-274
+src/modules/Arrangement/stores/__tests__/trackStore.spec.ts
+  s_2175fca1f07426::t_47372d0292db93 7,323-347
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2175fca1f07426::t_5d9abcbe957981 1,844-914,1048
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  s_2175fca1f07426::t_f5a550127e973d 10,181-182,189,273,281-282,339,380,418,432,463-464,474,481,495,499,546,558
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_2175fca1f07426::t_d30b636ce7dff2 7,39,43,68-69,72,83,86,102
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  s_2175fca1f07426::t_8e172d311b89b2 19-20,44,50,56-58,80,83,87,92,109,112,114
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_2175fca1f07426::t_99492440573337 8,1402,1446
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_2175fca1f07426::t_bcab289347a659 14,136-138,159
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_2175fca1f07426::t_29241281587d4b 8,149,175
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_2175fca1f07426::t_b7852fb2cbca0a 7,66,83,89,101,107,119,158,161,181,186,216,242-245,252-253
+src/modules/Collaboration/presentations/components/CollaborationBlock.tsx
+  s_2175fca1f07426::t_298f839e658f30 4,32,35
+src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx
+  s_2175fca1f07426::t_cd7b238c4c7820 4,15-18,32
+src/modules/Collaboration/presentations/views/CollaborationPanel.tsx
+  s_2175fca1f07426::t_483f10f2ae3f99 9,208,221,231,242,267,382
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  s_2175fca1f07426::t_b90ea2937d0cdf 4,71,86
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_2175fca1f07426::t_1c821bbb12aa98 9,97-104,231
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_2175fca1f07426::t_a1b74598735099 5,31-32,181-223
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_2175fca1f07426::t_e82c9fa3cdfc11 4,174,181,324,326-328,345,347,365,388,402,406,420,423,438,460-463,470-471
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_2175fca1f07426::t_dbe823ecd57a12 16,390,416
+src/modules/Metering/presentations/views/AnalysisPanel.tsx
+  s_2175fca1f07426::t_8ae5126f130e1f 5,48,50,60,138
+src/modules/Metering/presentations/views/LUFSMeter.tsx
+  s_2175fca1f07426::t_c6f7c082dd7ec2 9,185,201
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  s_2175fca1f07426::t_249a93569cd6c0 4,221,231
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_2175fca1f07426::t_23b5089800901e 17,231,234,246,249,288-290,320
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_2175fca1f07426::t_426bbaba84e6d0 5,236,257,275,285,298,318,370,382,390,416
+src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx
+  s_2175fca1f07426::t_62699e297eb9ac 7,66,84
+src/modules/Routing/presentations/views/RoutingGraph.tsx
+  s_2175fca1f07426::t_476c8792fa8e2e 5,239,245,256-257,260-261,264-265,268-269
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_2175fca1f07426::t_162f3daf319242 8,77-79,215
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_2175fca1f07426::t_4b5bdf8bfad2fe 17,275,277,329,333,353,400,416,421,425,438,454,465,478,481,561,563
+src/modules/Setlist/presentations/views/SetlistPanel.tsx
+  s_2175fca1f07426::t_0b0152f00d5bc9 18,152-153,185,233,249,268-269,300-304,308,329,361,390,441,461
+tests/e2e/grooveExtractionCommit.spec.ts
+  s_2175fca1f07426::t_92bb58b12db1e7 5-46,48-50,55,62-69,73,76,81-82,84,87,92-100,105,109,111
+tests/e2e/inspectorTestId.spec.ts
+  s_2175fca1f07426::t_962a2f3495a08b 1,5-13,15-17,20,22,25-26,29-41,44-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "49416416b19ae92aa8c7d47d72d096a31e1c5948",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
