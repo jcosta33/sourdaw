@@ -263,7 +263,7 @@ describe('downloadModel storage worker stream', () => {
         );
     });
 
-    it('rejects a DDSP redirect before opening an OPFS write', async () => {
+    it('should reject a DDSP redirect before opening an OPFS write', async () => {
         vi.useFakeTimers();
         const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
             if (init?.redirect === 'error') {

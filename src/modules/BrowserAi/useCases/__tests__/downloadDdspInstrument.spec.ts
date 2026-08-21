@@ -56,19 +56,22 @@ describe('downloadDdspInstrument', () => {
         modelRegistryStore.set(registry());
     });
 
-    it('refuses withheld DDSP downloads before resolving a catalog entry, acquiring a lock, or touching storage', async () => {
+    it('should refuse withheld DDSP downloads before resolving a catalog entry, acquiring a lock, or touching storage', async () => {
         releaseGate.ddsp = false;
+        const cleanupUnpublishedDdspGeneration = vi.fn();
         const downloadModelRepo = vi.fn<DownloadModelRepo>();
         const checkDdspInstrumentReady = vi.fn();
+        const getStorageStatus = vi.fn();
+        const publishDdspInstrumentGeneration = vi.fn();
         const stageDdspInstrumentGeneration = vi.fn();
         const withDdspInstrumentLock = vi.fn();
         injectDependencies(downloadDdspInstrument, {
             logger: { warn: vi.fn() },
             downloadModelRepo,
             checkDdspInstrumentReady,
-            cleanupUnpublishedDdspGeneration: vi.fn(),
-            getStorageStatus: vi.fn(),
-            publishDdspInstrumentGeneration: vi.fn(),
+            cleanupUnpublishedDdspGeneration,
+            getStorageStatus,
+            publishDdspInstrumentGeneration,
             stageDdspInstrumentGeneration,
             withDdspInstrumentLock,
         });
@@ -77,7 +80,10 @@ describe('downloadDdspInstrument', () => {
 
         expect(withDdspInstrumentLock).not.toHaveBeenCalled();
         expect(checkDdspInstrumentReady).not.toHaveBeenCalled();
+        expect(cleanupUnpublishedDdspGeneration).not.toHaveBeenCalled();
         expect(stageDdspInstrumentGeneration).not.toHaveBeenCalled();
+        expect(publishDdspInstrumentGeneration).not.toHaveBeenCalled();
+        expect(getStorageStatus).not.toHaveBeenCalled();
         expect(downloadModelRepo).not.toHaveBeenCalled();
     });
 

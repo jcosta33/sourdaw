@@ -17,6 +17,50 @@ function injectStorage(bridge: ReturnType<typeof createDdspStorageTestHarness>['
 }
 
 describe('checkDdspInstrumentReady', () => {
+    it('should return true only for a current index with an exact ready marker and verified artifacts', async () => {
+        const harness = createDdspStorageTestHarness();
+        const current = harness.generation(harness.storage.version);
+        const marker = harness.readyMarkerBytes();
+        harness.files.set(
+            harness.indexModelId,
+            harness.bytes({
+                schemaVersion: 1,
+                currentVersion: harness.storage.version,
+                generations: { [harness.storage.version]: current },
+            })
+        );
+        harness.files.set(current.readyMarkerId, marker);
+        harness.metadata.set(current.readyMarkerId, { sizeBytes: marker.byteLength, sha256: harness.digest(marker) });
+        injectStorage(harness.bridge);
+
+        await expect(checkDdspInstrumentReady(harness.storage)).resolves.toBe(true);
+
+        expect(harness.bridge.verifyModel).toHaveBeenCalledTimes(harness.storage.artifacts.length);
+    });
+
+    it('should return false when one artifact metadata record is corrupt after an exact ready marker', async () => {
+        const harness = createDdspStorageTestHarness();
+        const current = harness.generation(harness.storage.version);
+        const marker = harness.readyMarkerBytes();
+        const corruptArtifactId = current.artifactIds[0]!;
+        harness.files.set(
+            harness.indexModelId,
+            harness.bytes({
+                schemaVersion: 1,
+                currentVersion: harness.storage.version,
+                generations: { [harness.storage.version]: current },
+            })
+        );
+        harness.files.set(current.readyMarkerId, marker);
+        harness.metadata.set(current.readyMarkerId, { sizeBytes: marker.byteLength, sha256: harness.digest(marker) });
+        harness.metadata.set(corruptArtifactId, { sizeBytes: 1, sha256: '0'.repeat(64) });
+        injectStorage(harness.bridge);
+
+        await expect(checkDdspInstrumentReady(harness.storage)).resolves.toBe(false);
+
+        expect(harness.bridge.verifyModel).toHaveBeenCalledTimes(harness.storage.artifacts.length);
+    });
+
     it.each([
         [
             'invalid JSON',
@@ -41,7 +85,46 @@ describe('checkDdspInstrumentReady', () => {
                     },
                 }),
         ],
-    ])('fails closed before artifact verification for %s', async (_case, indexBytes) => {
+        [
+            'a forged ready marker id',
+            (harness: ReturnType<typeof createDdspStorageTestHarness>) =>
+                harness.bytes({
+                    schemaVersion: 1,
+                    currentVersion: harness.storage.version,
+                    generations: {
+                        [harness.storage.version]: {
+                            ...harness.generation(harness.storage.version),
+                            readyMarkerId: `${harness.instrument.id}/${harness.storage.version}/forged.json`,
+                        },
+                    },
+                }),
+        ],
+        [
+            'an unsafe version key',
+            (harness: ReturnType<typeof createDdspStorageTestHarness>) =>
+                harness.bytes({
+                    schemaVersion: 1,
+                    currentVersion: '../unsafe',
+                    generations: { '../unsafe': harness.generation(harness.storage.version) },
+                }),
+        ],
+        [
+            'duplicate artifact ids',
+            (harness: ReturnType<typeof createDdspStorageTestHarness>) => {
+                const generation = harness.generation(harness.storage.version);
+                return harness.bytes({
+                    schemaVersion: 1,
+                    currentVersion: harness.storage.version,
+                    generations: {
+                        [harness.storage.version]: {
+                            ...generation,
+                            artifactIds: [generation.artifactIds[0], generation.artifactIds[0]],
+                        },
+                    },
+                });
+            },
+        ],
+    ])('should fail closed before artifact verification for %s', async (_case, indexBytes) => {
         const harness = createDdspStorageTestHarness();
         harness.files.set(harness.indexModelId, indexBytes(harness));
         injectStorage(harness.bridge);
@@ -52,7 +135,7 @@ describe('checkDdspInstrumentReady', () => {
     });
 
     it.each(['missing', 'wrong'] as const)(
-        'fails closed with a current index and valid artifacts but a %s ready marker',
+        'should fail closed with a current index and valid artifacts but a %s ready marker',
         async (kind) => {
             const harness = createDdspStorageTestHarness();
             const current = harness.generation(harness.storage.version);
@@ -79,7 +162,7 @@ describe('checkDdspInstrumentReady', () => {
         }
     );
 
-    it('fails closed and closes a corrupt metadata-transfer port exactly once', async () => {
+    it('should fail closed and close a corrupt metadata-transfer port exactly once', async () => {
         let failedHandler: ((event: MessageEvent) => void) | null = null;
         let messageHandler: ((event: MessageEvent) => void) | null = null;
         const port = {

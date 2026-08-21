@@ -136,7 +136,7 @@ describe('withDdspInstrumentLock', () => {
         );
     });
 
-    it('uses a distinct exact lock name for each instrument so unrelated work is independent', async () => {
+    it('should use a distinct exact lock name for each instrument so unrelated work is independent', async () => {
         const manager = createLockManager();
         injectDependencies(withDdspInstrumentLock, { locks: manager.locks });
         const blocked = gate();

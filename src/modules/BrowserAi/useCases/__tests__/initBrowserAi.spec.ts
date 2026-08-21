@@ -8,6 +8,10 @@ const subscribe_to_midi_store = vi.hoisted(() =>
     )
 );
 
+const release_gate = vi.hoisted(() => ({ ddsp: false, kokoro: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: release_gate }));
+
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {
         subscribe: subscribe_to_midi_store,
@@ -76,6 +80,8 @@ const fresh_capability_report: CapabilityReport = {
 describe('initBrowserAi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        release_gate.ddsp = false;
+        release_gate.kokoro = true;
         capabilityStore.set({ phase: 'idle' });
         modelRegistryStore.set({
             ddspInstruments: [],
@@ -138,6 +144,60 @@ describe('initBrowserAi', () => {
             sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
         });
         expect(modelRegistryStore.value?.vocoder).toBeNull();
+    });
+
+    it('should mark only shared-lock-verified DDSP generations ready at startup', async () => {
+        release_gate.ddsp = true;
+        const check_ddsp_instrument_ready = vi.fn(async ({ id }: { id: string }) => id === 'ddsp-violin');
+        const with_ddsp_instrument_lock = vi.fn(
+            (_id: string, _mode: 'exclusive' | 'shared', operation: () => Promise<boolean>) => operation()
+        );
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            withDdspInstrumentLock: with_ddsp_instrument_lock,
+        });
+
+        await initBrowserAi();
+
+        expect(check_ddsp_instrument_ready).toHaveBeenCalledTimes(DDSP_INSTRUMENT_CATALOG.length);
+        expect(check_ddsp_instrument_ready).toHaveBeenCalledWith({
+            id: 'ddsp-violin',
+            version: DDSP_INSTRUMENT_CATALOG[0]?.artifactVersion,
+            artifacts: DDSP_INSTRUMENT_CATALOG[0]?.artifacts,
+        });
+        expect(with_ddsp_instrument_lock).toHaveBeenCalledWith('ddsp-violin', 'shared', expect.any(Function));
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((instrument) =>
+                expect.objectContaining({
+                    id: instrument.id,
+                    status: instrument.id === 'ddsp-violin' ? 'ready' : 'not-downloaded',
+                })
+            )
+        );
+    });
+
+    it('should fail closed when a startup DDSP readiness lock cannot be acquired', async () => {
+        release_gate.ddsp = true;
+        const logger_mock = create_logger_mock();
+        injectDependencies(initBrowserAi, {
+            logger: logger_mock,
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(true),
+            withDdspInstrumentLock: vi.fn().mockRejectedValue(new Error('lock failed')),
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((instrument) =>
+                expect.objectContaining({ id: instrument.id, status: 'not-downloaded', downloadProgress: 0 })
+            )
+        );
+        expect(logger_mock.warn).toHaveBeenCalledTimes(DDSP_INSTRUMENT_CATALOG.length);
     });
 
     it('reports Kokoro ready only after the cached artifact is verified', async () => {

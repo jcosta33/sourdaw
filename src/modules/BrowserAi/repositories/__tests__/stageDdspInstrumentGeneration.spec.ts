@@ -7,7 +7,7 @@ import { stageDdspInstrumentGeneration } from '../stageDdspInstrumentGeneration'
 import { createDdspStorageTestHarness } from './ddspGenerationStorageTestSupport';
 
 describe('stageDdspInstrumentGeneration', () => {
-    it('records the candidate in .generations.json while preserving the older current version', async () => {
+    it('should record the candidate in .generations.json while preserving the older current version', async () => {
         const harness = createDdspStorageTestHarness();
         const current = harness.generation('v1');
         harness.files.set(

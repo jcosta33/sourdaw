@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { DDSP_ARTIFACTS } from '../DdspArtifactManifest';
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../DdspArtifactManifest';
 import { DDSP_INSTRUMENT_CATALOG, type DdspInstrumentId, resolveDdspInstrument } from '../DdspInstrumentCatalog';
 
 const MAGENTA_CHECKPOINT_BASE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp';
 
 describe('DDSP checkpoint catalog', () => {
-    it('pins exactly the four admitted Magenta checkpoints and every verified artifact', () => {
+    it('should pin exactly the four admitted Magenta checkpoints and every verified artifact', () => {
         expect(DDSP_INSTRUMENT_CATALOG.map(({ id, instrument }) => [id, instrument])).toEqual([
             ['ddsp-violin', 'violin'],
             ['ddsp-flute', 'flute'],
@@ -98,7 +98,12 @@ describe('DDSP checkpoint catalog', () => {
         });
     });
 
-    it('resolves only admitted identifiers, never a caller-provided manifest', () => {
+    it('should assign the exact checkpoint version to every catalog entry', () => {
+        expect(DDSP_CHECKPOINT_VERSION).toBe('magenta-js-ddsp-2020-01-05');
+        expect(DDSP_INSTRUMENT_CATALOG.every((entry) => entry.artifactVersion === DDSP_CHECKPOINT_VERSION)).toBe(true);
+    });
+
+    it('should resolve only admitted identifiers, never a caller-provided manifest', () => {
         const forgedId: string = 'ddsp-synth';
         expect(resolveDdspInstrument('ddsp-violin').artifacts).toBe(DDSP_INSTRUMENT_CATALOG[0]?.artifacts);
         expect(() => resolveDdspInstrument(forgedId as DdspInstrumentId)).toThrow('DDSP instrument is not admitted');
