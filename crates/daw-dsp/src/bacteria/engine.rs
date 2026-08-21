@@ -850,6 +850,12 @@ pub struct BacteriaEngine {
     /// present its reported latency at every mix value, not only fully wet.
     dry_alignment: AlignmentDelay,
 
+    /// Holds the side signal back when Mid/Side routing runs at bandCount 1.
+    /// Band 0 processes the mid signal and carries its stage latency plus
+    /// alignment; without this, the untouched side signal recombines
+    /// out-of-phase with the delayed mid signal, smearing the stereo image.
+    side_alignment: AlignmentDelay,
+
     /// What the device actually delays by, accumulated in `realign_bands` from
     /// each band's programmed delay.
     ///
@@ -951,6 +957,7 @@ impl BacteriaEngine {
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
             dry_alignment: AlignmentDelay::new(DRY_ALIGNMENT_RING_LEN),
+            side_alignment: AlignmentDelay::new(DRY_ALIGNMENT_RING_LEN),
             reported_latency: 0,
             param_offsets: [0.0; PARAM_OFFSET_COUNT],
         };
@@ -1044,6 +1051,20 @@ impl BacteriaEngine {
         // spent. Same figure the host is handed, from the same accumulation.
         self.reported_latency = device_delay.round() as u32;
         self.dry_alignment.set_delay(self.reported_latency as usize);
+
+        // When Mid/Side routing runs at bandCount 1, side has no band 1 and
+        // passes through untouched. To prevent phase-tearing and stereo smearing
+        // against mid (which carries band 0's latency), side is delayed by
+        // band 0's delivered delay.
+        let side_delay = if self.routing == RoutingMode::MidSide && self.band_count == 1 {
+            self.reported_latency as usize
+        } else {
+            0
+        };
+        self.side_alignment.set_delay(side_delay);
+        if side_delay == 0 {
+            self.side_alignment.reset();
+        }
     }
 
     /// Zero the meter of every band past `bandCount`.
@@ -1334,6 +1355,7 @@ impl BacteriaEngine {
             // moment bypass is released.
             for i in 0..len {
                 self.dry_alignment.process(left[i], right[i]);
+                self.side_alignment.process(0.0, 0.0);
                 for band in self.bands.iter_mut().take(self.band_count) {
                     band.skip_sample();
                 }
@@ -1447,6 +1469,9 @@ impl BacteriaEngine {
                     };
                     let (ps, _) = if self.band_count > 1 {
                         self.bands[1].process_sample(side, side, self.param_offsets[2])
+                    } else if self.band_count == 1 {
+                        let (aligned_s, _) = self.side_alignment.process(side, side);
+                        (aligned_s, aligned_s)
                     } else {
                         (side, side)
                     };
@@ -2780,6 +2805,72 @@ mod tests {
             (centroid - reported).abs() < 8.0,
             "the spectral band reports {reported} samples of delay and delivers a \
              centroid of {centroid:.1} — half its output is arriving a window early"
+        );
+    }
+
+    #[test]
+    fn mid_side_single_band_delays_side_signal_matching_mid_delay() {
+        const BLOCK: usize = 512;
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        // RoutingMode::MidSide = 2.0
+        engine.set_param("routing", 2.0);
+        engine.set_param("bandCount", 1.0);
+        engine.set_param("mix", 1.0);
+        // Enable oversampling on band 0 so mid carries group delay
+        engine.set_param("band0_distortionEnabled", 1.0);
+        engine.set_param("band0_oversampling", 2.0);
+        engine.set_param("band0_drive", 0.0);
+
+        let latency = engine.latency_samples() as f32;
+        assert!(
+            latency > 0.0,
+            "oversampled band 0 must present non-zero latency"
+        );
+
+        // 1. Pure Side impulse: L = 1.0, R = -1.0 (mid = 0, side = 1.0)
+        let mut side_in_l = vec![0.0_f32; BLOCK];
+        let mut side_in_r = vec![0.0_f32; BLOCK];
+        side_in_l[0] = 1.0;
+        side_in_r[0] = -1.0;
+        engine.process_block(&mut side_in_l, &mut side_in_r);
+
+        // Side output is (out_l - out_r) * 0.5
+        let side_out: Vec<f32> = side_in_l
+            .iter()
+            .zip(&side_in_r)
+            .map(|(&l, &r)| (l - r) * 0.5)
+            .collect();
+        let side_centroid = impulse_centroid(&side_out);
+
+        // 2. Pure Mid impulse on fresh engine: L = 1.0, R = 1.0 (mid = 1.0, side = 0)
+        let mut mid_engine = BacteriaEngine::new(SAMPLE_RATE);
+        mid_engine.set_param("routing", 2.0);
+        mid_engine.set_param("bandCount", 1.0);
+        mid_engine.set_param("mix", 1.0);
+        mid_engine.set_param("band0_distortionEnabled", 1.0);
+        mid_engine.set_param("band0_oversampling", 2.0);
+        mid_engine.set_param("band0_drive", 0.0);
+
+        let mut mid_in_l = vec![0.0_f32; BLOCK];
+        let mut mid_in_r = vec![0.0_f32; BLOCK];
+        mid_in_l[0] = 1.0;
+        mid_in_r[0] = 1.0;
+        mid_engine.process_block(&mut mid_in_l, &mut mid_in_r);
+
+        let mid_out: Vec<f32> = mid_in_l
+            .iter()
+            .zip(&mid_in_r)
+            .map(|(&l, &r)| (l + r) * 0.5)
+            .collect();
+        let mid_centroid = impulse_centroid(&mid_out);
+
+        assert!(
+            (side_centroid - latency).abs() < 1.0,
+            "side signal centroid {side_centroid:.2} must match engine latency {latency:.2}"
+        );
+        assert!(
+            (side_centroid - mid_centroid).abs() < 0.5,
+            "side centroid {side_centroid:.2} and mid centroid {mid_centroid:.2} must match"
         );
     }
 }
