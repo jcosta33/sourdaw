@@ -6,26 +6,29 @@ import { withDdspInstrumentLock } from '../withDdspInstrumentLock';
 
 type PendingLock = { mode: LockMode; start: (finish: () => void) => void };
 
-function createLockManager(): Pick<LockManager, 'request'> {
-    const queue: PendingLock[] = [];
-    let activeExclusive = false;
-    let activeShared = 0;
-    const drain = (): void => {
-        if (activeExclusive || queue.length === 0) {
+function createLockManager(): { locks: Pick<LockManager, 'request'>; names: string[] } {
+    const queues = new Map<string, PendingLock[]>();
+    const active = new Map<string, { exclusive: boolean; shared: number }>();
+    const names: string[] = [];
+    const drain = (name: string): void => {
+        const queue = queues.get(name) ?? [];
+        const lock = active.get(name) ?? { exclusive: false, shared: 0 };
+        if (lock.exclusive || queue.length === 0) {
             return;
         }
         if (queue[0]?.mode === 'exclusive') {
-            if (activeShared > 0) {
+            if (lock.shared > 0) {
                 return;
             }
             const next = queue.shift();
             if (next === undefined) {
                 return;
             }
-            activeExclusive = true;
+            lock.exclusive = true;
+            active.set(name, lock);
             next.start(() => {
-                activeExclusive = false;
-                drain();
+                lock.exclusive = false;
+                drain(name);
             });
             return;
         }
@@ -34,10 +37,11 @@ function createLockManager(): Pick<LockManager, 'request'> {
             if (next === undefined) {
                 return;
             }
-            activeShared += 1;
+            lock.shared += 1;
+            active.set(name, lock);
             next.start(() => {
-                activeShared -= 1;
-                drain();
+                lock.shared -= 1;
+                drain(name);
             });
         }
     };
@@ -46,7 +50,7 @@ function createLockManager(): Pick<LockManager, 'request'> {
         request<T>(name: string, callback: LockGrantedCallback<T>): Promise<Awaited<T>>;
         request<T>(name: string, options: LockOptions, callback: LockGrantedCallback<T>): Promise<Awaited<T>>;
         request<T>(
-            _name: string,
+            name: string,
             optionsOrCallback: LockOptions | LockGrantedCallback<T>,
             suppliedCallback?: LockGrantedCallback<T>
         ): Promise<Awaited<T>> {
@@ -56,18 +60,21 @@ function createLockManager(): Pick<LockManager, 'request'> {
                 return Promise.reject(new TypeError('Lock callback is required'));
             }
             return new Promise((resolve, reject) => {
+                names.push(name);
+                const queue = queues.get(name) ?? [];
+                queues.set(name, queue);
                 queue.push({
                     mode: options.mode ?? 'exclusive',
                     start: (finish) => {
                         void Promise.resolve(callback(null)).then(resolve, reject).finally(finish);
                     },
                 });
-                drain();
+                drain(name);
             });
         }
     }
 
-    return new FakeLockManager();
+    return { locks: new FakeLockManager(), names };
 }
 
 function gate(): { open: () => void; promise: Promise<void> } {
@@ -80,7 +87,7 @@ function gate(): { open: () => void; promise: Promise<void> } {
 
 describe('withDdspInstrumentLock', () => {
     beforeEach(() => {
-        injectDependencies(withDdspInstrumentLock, { locks: createLockManager() });
+        injectDependencies(withDdspInstrumentLock, { locks: createLockManager().locks });
     });
 
     it('allows concurrent readers but queues download and removal until every reader releases', async () => {
@@ -127,5 +134,25 @@ describe('withDdspInstrumentLock', () => {
         await expect(withDdspInstrumentLock('ddsp-violin', 'shared', async () => undefined)).rejects.toThrow(
             'Web Locks API'
         );
+    });
+
+    it('uses a distinct exact lock name for each instrument so unrelated work is independent', async () => {
+        const manager = createLockManager();
+        injectDependencies(withDdspInstrumentLock, { locks: manager.locks });
+        const blocked = gate();
+        const events: string[] = [];
+        const violin = withDdspInstrumentLock('ddsp-violin', 'exclusive', async () => {
+            events.push('violin-start');
+            await blocked.promise;
+            events.push('violin-end');
+        });
+        const flute = withDdspInstrumentLock('ddsp-flute', 'exclusive', async () => {
+            events.push('flute');
+        });
+
+        await vi.waitFor(() => expect(events).toEqual(['violin-start', 'flute']));
+        expect(manager.names).toEqual(['sourdaw:ddsp:ddsp-violin', 'sourdaw:ddsp:ddsp-flute']);
+        blocked.open();
+        await Promise.all([violin, flute]);
     });
 });

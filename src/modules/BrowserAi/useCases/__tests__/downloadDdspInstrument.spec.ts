@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
+const releaseGate = vi.hoisted(() => ({ ddsp: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
+
 import { DDSP_INSTRUMENT_CATALOG, type DdspInstrumentId } from '../../models/DdspInstrumentCatalog';
 import { type StorageStatus } from '../../models/StorageStatus';
 import { type ModelRegistryState, modelRegistryStore } from '../../stores/modelRegistryStore';
@@ -48,7 +52,33 @@ function passThroughLock(_id: string, _mode: 'exclusive' | 'shared', operation: 
 
 describe('downloadDdspInstrument', () => {
     beforeEach(() => {
+        releaseGate.ddsp = true;
         modelRegistryStore.set(registry());
+    });
+
+    it('refuses withheld DDSP downloads before resolving a catalog entry, acquiring a lock, or touching storage', async () => {
+        releaseGate.ddsp = false;
+        const downloadModelRepo = vi.fn<DownloadModelRepo>();
+        const checkDdspInstrumentReady = vi.fn();
+        const stageDdspInstrumentGeneration = vi.fn();
+        const withDdspInstrumentLock = vi.fn();
+        injectDependencies(downloadDdspInstrument, {
+            logger: { warn: vi.fn() },
+            downloadModelRepo,
+            checkDdspInstrumentReady,
+            cleanupUnpublishedDdspGeneration: vi.fn(),
+            getStorageStatus: vi.fn(),
+            publishDdspInstrumentGeneration: vi.fn(),
+            stageDdspInstrumentGeneration,
+            withDdspInstrumentLock,
+        });
+
+        await expect(downloadDdspInstrument(instrument.id)).rejects.toThrow('DDSP model artifacts are not admitted');
+
+        expect(withDdspInstrumentLock).not.toHaveBeenCalled();
+        expect(checkDdspInstrumentReady).not.toHaveBeenCalled();
+        expect(stageDdspInstrumentGeneration).not.toHaveBeenCalled();
+        expect(downloadModelRepo).not.toHaveBeenCalled();
     });
 
     it.each(DDSP_INSTRUMENT_CATALOG)(
@@ -60,13 +90,11 @@ describe('downloadDdspInstrument', () => {
             injectDependencies(downloadDdspInstrument, {
                 logger: { warn: vi.fn() },
                 downloadModelRepo,
-                ddspModelStorage: {
-                    checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
-                    cleanupUnpublishedDdspGeneration: vi.fn().mockResolvedValue(undefined),
-                    publishDdspInstrumentGeneration,
-                    stageDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
-                },
+                checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+                cleanupUnpublishedDdspGeneration: vi.fn().mockResolvedValue(undefined),
                 getStorageStatus,
+                publishDdspInstrumentGeneration,
+                stageDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
                 withDdspInstrumentLock: passThroughLock,
             });
 
@@ -109,13 +137,11 @@ describe('downloadDdspInstrument', () => {
                 .fn<DownloadModelRepo>()
                 .mockResolvedValueOnce(undefined)
                 .mockRejectedValueOnce(cancelled),
-            ddspModelStorage: {
-                checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
-                cleanupUnpublishedDdspGeneration,
-                publishDdspInstrumentGeneration: vi.fn(),
-                stageDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
-            },
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            cleanupUnpublishedDdspGeneration,
             getStorageStatus: vi.fn().mockResolvedValue(storageStatus),
+            publishDdspInstrumentGeneration: vi.fn(),
+            stageDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
             withDdspInstrumentLock: passThroughLock,
         });
 
@@ -158,13 +184,11 @@ describe('downloadDdspInstrument', () => {
         injectDependencies(downloadDdspInstrument, {
             logger: { warn: vi.fn() },
             downloadModelRepo,
-            ddspModelStorage: {
-                checkDdspInstrumentReady: vi.fn(async () => ready),
-                cleanupUnpublishedDdspGeneration: vi.fn(),
-                publishDdspInstrumentGeneration,
-                stageDdspInstrumentGeneration,
-            },
+            checkDdspInstrumentReady: vi.fn(async () => ready),
+            cleanupUnpublishedDdspGeneration: vi.fn(),
             getStorageStatus: vi.fn().mockResolvedValue(storageStatus),
+            publishDdspInstrumentGeneration,
+            stageDdspInstrumentGeneration,
             withDdspInstrumentLock,
         });
 

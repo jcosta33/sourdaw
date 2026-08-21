@@ -37,8 +37,8 @@ describe('removeDdspInstrument', () => {
             (_id: string, _mode: 'exclusive' | 'shared', operation: () => Promise<void>) => operation()
         );
         injectDependencies(removeDdspInstrument, {
-            ddspModelStorage: { removeDdspInstrumentGenerations },
             getStorageStatus,
+            removeDdspInstrumentGenerations,
             withDdspInstrumentLock,
         });
 
@@ -56,10 +56,8 @@ describe('removeDdspInstrument', () => {
     it('invalidates ready truth even when physical cleanup only partially succeeds', async () => {
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         injectDependencies(removeDdspInstrument, {
-            ddspModelStorage: {
-                removeDdspInstrumentGenerations: vi.fn().mockRejectedValue(new Error('OPFS denied')),
-            },
             getStorageStatus,
+            removeDdspInstrumentGenerations: vi.fn().mockRejectedValue(new Error('OPFS denied')),
             withDdspInstrumentLock: async (
                 _id: string,
                 _mode: 'exclusive' | 'shared',

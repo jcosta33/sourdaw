@@ -1,10 +1,14 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInstrumentCatalog';
-import { ddspModelStorage } from '../repositories/ddspModelStorage';
+import { checkDdspInstrumentReady } from '../repositories/checkDdspInstrumentReady';
+import { cleanupUnpublishedDdspGeneration } from '../repositories/cleanupUnpublishedDdspGeneration';
 import { getStorageStatus } from '../repositories/getStorageStatus';
 import { downloadModel as downloadModelRepo } from '../repositories/modelDownloadManager';
+import { publishDdspInstrumentGeneration } from '../repositories/publishDdspInstrumentGeneration';
+import { stageDdspInstrumentGeneration } from '../repositories/stageDdspInstrumentGeneration';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setStorageUsed, updateModelStatus } from '../stores/modelRegistryStore';
 
@@ -19,16 +23,31 @@ function throwIfAborted(signal?: AbortSignal): void {
 /** Downloads one catalog-pinned generation and publishes it only after complete verification. */
 export const downloadDdspInstrument = inject({
     logger,
-    ddspModelStorage,
+    checkDdspInstrumentReady,
+    cleanupUnpublishedDdspGeneration,
     downloadModelRepo,
     getStorageStatus,
+    publishDdspInstrumentGeneration,
+    stageDdspInstrumentGeneration,
     withDdspInstrumentLock,
 })(
-    ({ logger, ddspModelStorage, downloadModelRepo, getStorageStatus, withDdspInstrumentLock }) =>
+    ({
+        logger,
+        checkDdspInstrumentReady,
+        cleanupUnpublishedDdspGeneration,
+        downloadModelRepo,
+        getStorageStatus,
+        publishDdspInstrumentGeneration,
+        stageDdspInstrumentGeneration,
+        withDdspInstrumentLock,
+    }) =>
         function downloadDdspInstrument(
             instrumentId: DdspInstrumentId,
             { signal }: DownloadDdspInstrumentOptions = {}
         ): Promise<void> {
+            if (!MODEL_RELEASE_ADMISSION.ddsp) {
+                return Promise.reject(new Error('DDSP model artifacts are not admitted in this release'));
+            }
             const instrument = resolveDdspInstrument(instrumentId);
             return withDdspInstrumentLock(instrument.id, 'exclusive', async () => {
                 const storage = {
@@ -37,7 +56,7 @@ export const downloadDdspInstrument = inject({
                     artifacts: instrument.artifacts,
                 };
                 throwIfAborted(signal);
-                if (await ddspModelStorage.checkDdspInstrumentReady(storage)) {
+                if (await checkDdspInstrumentReady(storage)) {
                     updateModelStatus(instrument.id, { status: 'ready', downloadProgress: 1 });
                     return;
                 }
@@ -46,7 +65,7 @@ export const downloadDdspInstrument = inject({
                 let staged = false;
                 let published = false;
                 try {
-                    await ddspModelStorage.stageDdspInstrumentGeneration(storage);
+                    await stageDdspInstrumentGeneration(storage);
                     staged = true;
                     for (const [index, artifact] of instrument.artifacts.entries()) {
                         throwIfAborted(signal);
@@ -66,17 +85,15 @@ export const downloadDdspInstrument = inject({
                         });
                     }
                     throwIfAborted(signal);
-                    await ddspModelStorage.publishDdspInstrumentGeneration(storage);
+                    await publishDdspInstrumentGeneration(storage);
                     published = true;
                 } catch (error) {
                     if (staged && !published) {
-                        await ddspModelStorage
-                            .cleanupUnpublishedDdspGeneration(storage)
-                            .catch((cleanupError: unknown) => {
-                                logger.warn(
-                                    `[BrowserAi] Failed to clean unpublished DDSP generation ${instrument.id}: ${String(cleanupError)}`
-                                );
-                            });
+                        await cleanupUnpublishedDdspGeneration(storage).catch((cleanupError: unknown) => {
+                            logger.warn(
+                                `[BrowserAi] Failed to clean unpublished DDSP generation ${instrument.id}: ${String(cleanupError)}`
+                            );
+                        });
                     }
                     updateModelStatus(instrument.id, { status: 'error', downloadProgress: 0 });
                     throw error;

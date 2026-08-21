@@ -17,8 +17,8 @@ import { type DdspInstrument, type KokoroModel, type ModelDownloadStatus } from 
 import { DDSP_INSTRUMENT_CATALOG } from '../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroArtifactManifest';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
+import { checkDdspInstrumentReady } from '../repositories/checkDdspInstrumentReady';
 import { checkVerifiedModel } from '../repositories/checkVerifiedModel';
-import { ddspModelStorage } from '../repositories/ddspModelStorage';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
@@ -26,8 +26,6 @@ import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
 let midiStaleSubscription: (() => void) | undefined;
-const checkDdspInstrumentReady = ddspModelStorage.checkDdspInstrumentReady;
-
 export const KOKORO_MODEL_ENTRY: KokoroModel = {
     id: KOKORO_MODEL_ARTIFACT.id,
     name: 'Kokoro TTS (q8f16)',
