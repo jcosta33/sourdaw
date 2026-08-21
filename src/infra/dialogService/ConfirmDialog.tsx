@@ -50,7 +50,7 @@ export const ConfirmDialog = (): ReactElement | null => {
                     </h2>
                 ) : null}
                 <p className="text-xs text-foreground/90 leading-relaxed">{pending.message}</p>
-                <Row justify="end" gap={2} className="mt-4">
+                <Row align="stretch" justify="end" gap={2} className="mt-4">
                     <Button variant="ghost" size="sm" onClick={cancel} autoFocus={!isDanger}>
                         {pending.cancelLabel ?? 'Cancel'}
                     </Button>

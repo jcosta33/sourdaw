@@ -60,7 +60,7 @@ export const PromptDialog = (): ReactElement | null => {
                     className="mt-3"
                     autoFocus
                 />
-                <Row justify="end" gap={2} className="mt-4">
+                <Row align="stretch" justify="end" gap={2} className="mt-4">
                     <Button variant="ghost" size="sm" onClick={cancel}>
                         {pending.cancelLabel ?? 'Cancel'}
                     </Button>

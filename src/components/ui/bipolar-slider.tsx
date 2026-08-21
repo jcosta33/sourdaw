@@ -78,7 +78,7 @@ export const BipolarSlider = ({
                 />
             </Row>
             {!label ? (
-                <Row justify="center">
+                <Row align="stretch" justify="center">
                     <span className="text-[9px] font-mono text-muted-foreground">{formatValue(value)}</span>
                 </Row>
             ) : null}
