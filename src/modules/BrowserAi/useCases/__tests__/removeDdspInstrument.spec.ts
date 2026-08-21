@@ -40,6 +40,7 @@ describe('removeDdspInstrument', () => {
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         injectDependencies(removeDdspInstrument, {
             ddspModelStorage: { deleteDdspInstrumentArtifacts },
+            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
             getStorageStatus,
         });
 
@@ -53,10 +54,11 @@ describe('removeDdspInstrument', () => {
         expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
     });
 
-    it('keeps persisted-ready truth and storage usage when user removal cannot delete OPFS artifacts', async () => {
+    it('invalidates ready truth and refreshes usage when generation cleanup partially fails', async () => {
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         injectDependencies(removeDdspInstrument, {
             ddspModelStorage: { deleteDdspInstrumentArtifacts: vi.fn().mockRejectedValue(new Error('OPFS denied')) },
+            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
             getStorageStatus,
         });
 
@@ -64,8 +66,11 @@ describe('removeDdspInstrument', () => {
             removeDdspInstrument(instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId)
         ).rejects.toThrow('OPFS denied');
 
-        expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({ status: 'ready', downloadProgress: 1 });
-        expect(modelRegistryStore.value?.storageUsedBytes).toBe(1_024);
-        expect(getStorageStatus).not.toHaveBeenCalled();
+        expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({
+            status: 'not-downloaded',
+            downloadProgress: 0,
+        });
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
+        expect(getStorageStatus).toHaveBeenCalledTimes(1);
     });
 });

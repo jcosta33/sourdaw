@@ -68,6 +68,7 @@ describe('downloadDdspInstrument', () => {
                     deleteDdspInstrumentArtifacts: vi.fn(),
                     cleanupDdspInstrumentArtifacts: vi.fn(),
                 },
+                withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
                 getStorageStatus,
             });
 
@@ -116,6 +117,7 @@ describe('downloadDdspInstrument', () => {
                 deleteDdspInstrumentArtifacts: vi.fn(),
                 cleanupDdspInstrumentArtifacts,
             },
+            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
             getStorageStatus: vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus),
         });
 
@@ -148,6 +150,7 @@ describe('downloadDdspInstrument', () => {
                 deleteDdspInstrumentArtifacts: vi.fn(),
                 cleanupDdspInstrumentArtifacts: vi.fn(),
             },
+            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
             getStorageStatus: vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus),
         });
 

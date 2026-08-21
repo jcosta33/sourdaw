@@ -3,19 +3,25 @@ import { inject } from '#/infra/di/inject';
 import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInstrumentCatalog';
 import { ddspModelStorage } from '../repositories/ddspModelStorage';
 import { getStorageStatus } from '../repositories/getStorageStatus';
+import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setStorageUsed, updateModelStatus } from '../stores/modelRegistryStore';
 
-export const removeDdspInstrument = inject({ ddspModelStorage, getStorageStatus })(
-    ({ ddspModelStorage, getStorageStatus }) =>
+export const removeDdspInstrument = inject({ ddspModelStorage, getStorageStatus, withDdspInstrumentLock })(
+    ({ ddspModelStorage, getStorageStatus, withDdspInstrumentLock }) =>
         async function removeDdspInstrument(instrumentId: DdspInstrumentId): Promise<void> {
             const instrument = resolveDdspInstrument(instrumentId);
-            await ddspModelStorage.deleteDdspInstrumentArtifacts({
-                id: instrument.id,
-                version: instrument.artifactVersion,
-                artifacts: instrument.artifacts,
+            await withDdspInstrumentLock(instrument.id, async () => {
+                try {
+                    await ddspModelStorage.deleteDdspInstrumentArtifacts({
+                        id: instrument.id,
+                        version: instrument.artifactVersion,
+                        artifacts: instrument.artifacts,
+                    });
+                } finally {
+                    updateModelStatus(instrument.id, { status: 'not-downloaded', downloadProgress: 0 });
+                    const status = await getStorageStatus();
+                    setStorageUsed(status.usedBytes);
+                }
             });
-            updateModelStatus(instrument.id, { status: 'not-downloaded', downloadProgress: 0 });
-            const status = await getStorageStatus();
-            setStorageUsed(status.usedBytes);
         }
 );

@@ -4,12 +4,18 @@ import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInst
 import { ddspModelStorage } from '../repositories/ddspModelStorage';
 import { getStorageStatus } from '../repositories/getStorageStatus';
 import { downloadModel as downloadModelRepo } from '../repositories/modelDownloadManager';
+import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setStorageUsed, updateModelStatus } from '../stores/modelRegistryStore';
 
 const activeDownloads = new Map<string, Promise<void>>();
 
-export const downloadDdspInstrument = inject({ downloadModelRepo, ddspModelStorage, getStorageStatus })(
-    ({ downloadModelRepo, ddspModelStorage, getStorageStatus }) =>
+export const downloadDdspInstrument = inject({
+    downloadModelRepo,
+    ddspModelStorage,
+    getStorageStatus,
+    withDdspInstrumentLock,
+})(
+    ({ downloadModelRepo, ddspModelStorage, getStorageStatus, withDdspInstrumentLock }) =>
         function downloadDdspInstrument(instrumentId: DdspInstrumentId): Promise<void> {
             const instrument = resolveDdspInstrument(instrumentId);
             const operationKey = `${instrument.id}:${instrument.artifactVersion}`;
@@ -18,7 +24,7 @@ export const downloadDdspInstrument = inject({ downloadModelRepo, ddspModelStora
                 return active;
             }
 
-            const operation = (async (): Promise<void> => {
+            const operation = withDdspInstrumentLock(instrument.id, async (): Promise<void> => {
                 updateModelStatus(instrument.id, { status: 'downloading', downloadProgress: 0 });
                 const storage = {
                     id: instrument.id,
@@ -49,7 +55,7 @@ export const downloadDdspInstrument = inject({ downloadModelRepo, ddspModelStora
                 updateModelStatus(instrument.id, { status: 'ready', downloadProgress: 1 });
                 const status = await getStorageStatus();
                 setStorageUsed(status.usedBytes);
-            })();
+            });
             activeDownloads.set(operationKey, operation);
             void operation.finally(() => activeDownloads.delete(operationKey)).catch(() => undefined);
             return operation;

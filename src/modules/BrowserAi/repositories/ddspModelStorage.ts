@@ -98,11 +98,19 @@ const writeDdspReadyMarker = inject({ modelStorageWorkerBridge, sha256ArrayBuffe
 const deleteDdspInstrumentArtifacts = inject({ modelStorageWorkerBridge })(
     ({ modelStorageWorkerBridge }) =>
         async function deleteDdspInstrumentArtifacts(input: DdspStorageInput): Promise<void> {
+            // Readiness is the publication pointer: invalidate it before any
+            // generation cleanup so a partial deletion cannot look usable.
+            await modelStorageWorkerBridge.deleteModel({
+                family: 'ddsp',
+                modelId: readyModelId(input.id, input.version),
+            });
             await Promise.all(
-                [
-                    ...input.artifacts.map((artifact) => artifactModelId(input.id, input.version, artifact.path)),
-                    readyModelId(input.id, input.version),
-                ].map(async (modelId) => modelStorageWorkerBridge.deleteModel({ family: 'ddsp', modelId }))
+                input.artifacts.map(async (artifact) =>
+                    modelStorageWorkerBridge.deleteModel({
+                        family: 'ddsp',
+                        modelId: artifactModelId(input.id, input.version, artifact.path),
+                    })
+                )
             );
         }
 );
