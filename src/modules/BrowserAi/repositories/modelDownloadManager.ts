@@ -147,7 +147,10 @@ export const downloadModel = inject({
                             `[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`
                         );
 
-                        const response = await fetch(url, signal ? { signal } : undefined);
+                        // Every admitted artifact is pinned to an exact Magenta URL. A
+                        // redirect would otherwise turn that admission into an unchecked
+                        // write from another origin before OPFS integrity verification.
+                        const response = await fetch(url, { redirect: 'error', signal });
                         if (!response.ok) {
                             throw new Error(`HTTP ${String(response.status)}: ${response.statusText}`);
                         }

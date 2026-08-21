@@ -242,7 +242,7 @@ describe('downloadModel storage worker stream', () => {
 
         await downloadModel({ spec: baseSpec, signal: controller.signal });
 
-        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { signal: controller.signal });
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'error', signal: controller.signal });
     });
 
     it('passes exact release verification and archive extraction to the storage worker', async () => {

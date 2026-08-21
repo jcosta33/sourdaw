@@ -271,7 +271,7 @@ const runProductionCspProbe = async (window: BrowserWindow): Promise<void> => {
         };
         const [allowed, denied] = await Promise.all([
             fetchOutcome('https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json'),
-            fetchOutcome('https://storage.googleapis.com/magentadata/not-ddsp/probe.json'),
+            fetchOutcome('https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json'),
         ]);
         return JSON.stringify({ allowed, denied });
     })()`;

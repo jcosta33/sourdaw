@@ -1155,7 +1155,7 @@
         {
             "surface": "ddsp-models",
             "file": "electron/main.ts",
-            "value": "https://storage.googleapis.com/magentadata/not-ddsp/probe.json"
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json"
         },
         {
             "surface": "ddsp-models",
