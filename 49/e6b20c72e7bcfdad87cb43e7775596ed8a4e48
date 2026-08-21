@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_4831552a5b25fd 35-38,150-152,190,236,285,298,328,334,343,352,360
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_ae09ee74932b59 779-817
+  s_a40848e8f8cca9::t_e28ab744077792 174,178,182,189,193,196,252,258,279,939
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_ae09ee74932b59 23,156-184
+  s_a40848e8f8cca9::t_81e56288396b15 185
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_e28ab744077792 68
+  s_a40848e8f8cca9::t_4831552a5b25fd 81-93,147,393
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_4831552a5b25fd 33,38-41,260,291-292
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_4831552a5b25fd 208
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_bc1b898e6104b8 228-235,281-288,347,385-392,447-454
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_ae09ee74932b59 281-296
+  s_a40848e8f8cca9::t_e28ab744077792 111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "49e6b20c72e7bcfdad87cb43e7775596ed8a4e48",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
