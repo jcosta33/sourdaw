@@ -372,10 +372,10 @@ describe('installation mint', () => {
         expect(requests[0]?.body).not.toContain('workflows');
     });
 
-    it('requests only pull_requests write for tracker maintenance', async () => {
+    it('requests only issues write for tracker maintenance', async () => {
         const { requests, request } = mintClient({
             login: AUTHOR_BOT_LOGIN,
-            permissions: { pull_requests: 'write' },
+            permissions: { issues: 'write' },
         });
         await mintInstallationToken({
             appId: '4650613',
@@ -387,14 +387,14 @@ describe('installation mint', () => {
         });
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
         expect(requests[0]?.body).not.toContain('contents');
-        expect(requests[0]?.body).not.toContain('issues');
+        expect(requests[0]?.body).not.toContain('pull_requests');
     });
 
-    it('creates an isolated pull-requests-only tracker author session', async () => {
+    it('creates an isolated issues-only tracker author session', async () => {
         const parent: NodeJS.ProcessEnv = { PATH: '/usr/bin', GH_TOKEN: 'inherited' };
         const { requests, request } = mintClient({
             login: AUTHOR_BOT_LOGIN,
-            permissions: { pull_requests: 'write' },
+            permissions: { issues: 'write' },
             token: 'ghs_tracker',
         });
         const auth = await authenticateTrackerAuthor({
@@ -417,14 +417,14 @@ describe('installation mint', () => {
         const request: GitHubJsonClient = async (url, init) => {
             requests.push({ url, body: init.body });
             if (url.includes('/access_tokens')) {
-                if (init.body !== JSON.stringify({ permissions: { pull_requests: 'write' } })) {
+                if (init.body !== JSON.stringify({ permissions: { issues: 'write' } })) {
                     return { status: 422, body: { message: 'permissions exceed installation grants' } };
                 }
                 return {
                     status: 201,
                     body: {
                         token: 'ghs_tracker',
-                        permissions: { pull_requests: 'write', metadata: 'read' },
+                        permissions: { issues: 'write', metadata: 'read' },
                     },
                 };
             }
@@ -438,7 +438,7 @@ describe('installation mint', () => {
             env: { PATH: '/usr/bin' },
         });
         try {
-            expect(auth.minted.permissions).toEqual({ pull_requests: 'write', metadata: 'read' });
+            expect(auth.minted.permissions).toEqual({ issues: 'write', metadata: 'read' });
             expect(requests.map((entry) => entry.url)).toEqual([
                 'https://api.github.com/app/installations/154969409/access_tokens',
                 'https://api.github.com/app',
@@ -452,7 +452,7 @@ describe('installation mint', () => {
     it('refuses extra write grants on a tracker maintenance token', async () => {
         const { requests, request } = mintClient({
             login: AUTHOR_BOT_LOGIN,
-            permissions: { pull_requests: 'write', contents: 'write' },
+            permissions: { issues: 'write', contents: 'write' },
         });
         await expect(
             mintInstallationToken({
