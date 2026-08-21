@@ -5,6 +5,7 @@ import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { modelRegistryStore } from '#/modules/BrowserAi/stores';
 import { downloadModel, KOKORO_MODEL_ENTRY, renderDdspInstrument, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
@@ -352,6 +353,8 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
     beforeEach(() => {
         vi.clearAllMocks();
         midiStoreMock.state = null;
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
         ttsCalls = newCallLog();
         variationCalls = newCallLog();
         variationTokenSinks.length = 0;
@@ -371,6 +374,8 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             vocoder: null,
             storageUsedBytes: 0,
         });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
     });
 
     // ADR 0015 — a launch stops owning the panel two independent ways, and both are driven in
@@ -398,9 +403,11 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
     });
 
-    it('renders a verified DDSP instrument through the typed browser-AI caller', async () => {
+    it('uses the transport default tempo when the tempo map is empty', async () => {
         setDdspReadyRegistry();
         const nonzeroTimelineClip = { ...clipA, startBeat: 8, endBeat: 12 };
+        transportStore.set({ ...defaultTransportState, tempo: 90 });
+        tempoMapStore.set({ changes: [] });
         midiStoreMock.state = {
             notesByClipId: {
                 [nonzeroTimelineClip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 1 }],
@@ -421,13 +428,90 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         fireEvent.click(screen.getByRole('button', { name: /Render Instrument/ }));
 
         await screen.findByTestId('ai-render-preview');
-        expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input).toEqual(
             expect.objectContaining({
                 phraseId: `${nonzeroTimelineClip.id}-ddsp`,
-                instrument: ddspInstrument,
-                notes: [expect.objectContaining({ startSec: 0.5 })],
+                instrumentId: ddspInstrument.id,
+                signal: expect.any(AbortSignal),
             })
         );
+        expect(input?.durationSec).toBeCloseTo(8 / 3, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(2 / 3, 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(2 / 3, 9);
+    });
+
+    it('integrates a mid-clip tempo step for clip-relative DDSP timing', async () => {
+        setDdspReadyRegistry();
+        const clip = { ...clipA, startBeat: 8, endBeat: 12 };
+        tempoMapStore.set({
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'step', beat: 10, tempo: 60, curve: 'instant' },
+            ],
+        });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [clip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 2 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue(makeRenderOutput());
+
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.click(ddspButton());
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input?.durationSec).toBeCloseTo(3, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(0.5, 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(1.5, 9);
+    });
+
+    it('integrates a tempo ramp crossed by the clip and its note', async () => {
+        setDdspReadyRegistry();
+        const clip = { ...clipA, startBeat: 8, endBeat: 12 };
+        tempoMapStore.set({
+            changes: [
+                { id: 'ramp', beat: 8, tempo: 60, curve: 'linear' },
+                { id: 'target', beat: 12, tempo: 120, curve: 'instant' },
+            ],
+        });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [clip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 2 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue(makeRenderOutput());
+
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.click(ddspButton());
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input?.durationSec).toBeCloseTo(4 * Math.LN2, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(4 * Math.log(75 / 60), 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(4 * Math.log(105 / 75), 9);
+    });
+
+    it('uses a tempo-map event before the clip while keeping note timing clip-relative', async () => {
+        setDdspReadyRegistry();
+        const clip = { ...clipA, startBeat: 8, endBeat: 12 };
+        tempoMapStore.set({ changes: [{ id: 'prior', beat: 4, tempo: 150, curve: 'instant' }] });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [clip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 1 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue(makeRenderOutput());
+
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.click(ddspButton());
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input?.durationSec).toBeCloseTo(1.6, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(0.4, 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(0.4, 9);
     });
 
     it('drops a DDSP completion after switching clips while the current launch still paints and notifies', async () => {

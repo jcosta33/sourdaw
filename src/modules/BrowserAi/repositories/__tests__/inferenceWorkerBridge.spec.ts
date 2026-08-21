@@ -376,6 +376,28 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
         });
         await expect(ddspLoad).resolves.toBe('webgpu');
     });
+
+    it('aborts a pending DDSP session load and terminates its worker when it is the only request', async () => {
+        const controller = new AbortController();
+        model_storage_mocks.readModel.mockResolvedValue(new MessageChannel().port1);
+        const ddspLoad = inferenceWorkerBridge.loadDdspSession(
+            {
+                modelId: 'violin-1',
+                artifacts: [
+                    { modelId: 'violin-1/model.json', path: 'model.json', sizeBytes: 1, sha256: 'a'.repeat(64) },
+                ],
+            },
+            controller.signal
+        );
+        void ddspLoad.catch(() => undefined);
+        await flush();
+        const worker = tfjsWorker();
+
+        controller.abort();
+
+        await expect(ddspLoad).rejects.toMatchObject({ name: 'AbortError' });
+        expect(worker.terminate).toHaveBeenCalledOnce();
+    });
 });
 
 describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
@@ -622,6 +644,19 @@ describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
 });
 
 describe('inferenceWorkerBridge — TF.js cancellation', () => {
+    it('turns an AbortSignal into targeted DDSP worker cancellation', async () => {
+        const controller = new AbortController();
+        const render = inferenceWorkerBridge.runDdspInference(ddspRequest('abort-me'), controller.signal);
+        void render.catch(() => undefined);
+        await flush();
+        const worker = tfjsWorker();
+
+        controller.abort();
+
+        await expect(render).rejects.toMatchObject({ name: 'AbortError' });
+        expect(worker.terminate).toHaveBeenCalledOnce();
+    });
+
     it('clears a pending idle-destroy timer when cancelling the last in-flight DDSP request', async () => {
         vi.useFakeTimers();
         const a = inferenceWorkerBridge.runDdspInference(ddspRequest('a'));

@@ -9,7 +9,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { clearActiveRender, inferenceProgressStore } from '../stores/inferenceProgressStore';
-import { cancelQueuedRender, updateRenderStatus, renderQueueStore } from '../stores/renderQueueStore';
+import { cancelQueuedRender, renderQueueStore } from '../stores/renderQueueStore';
 
 type CancelRenderInput = {
     phraseId: string;
@@ -28,7 +28,9 @@ export const cancelRender = inject({ logger })(
             // Kokoro renders. When the pipeline is unknown, cancel nothing on the
             // worker side and only unwind the queue/status bookkeeping below.
             const activeRender = inferenceProgressStore.value?.activeRenders[requestId];
-            const queueEntry = renderQueueStore.value?.entries.find((event) => event.phraseId === phraseId);
+            const queueEntry = renderQueueStore.value?.entries.find(
+                (event) => event.phraseId === phraseId && event.requestId === requestId
+            );
             const pipeline = activeRender?.pipeline ?? queueEntry?.pipeline;
 
             // Cancel only THIS request on its worker — sibling renders are untouched.
@@ -40,8 +42,7 @@ export const cancelRender = inject({ logger })(
             }
             // Unknown pipeline → no worker teardown (avoid collateral cancellation).
 
-            cancelQueuedRender(phraseId);
+            cancelQueuedRender(phraseId, requestId);
             clearActiveRender(requestId);
-            updateRenderStatus(phraseId, 'not-rendered');
         }
 );

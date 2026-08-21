@@ -19,10 +19,12 @@ import {
     renderDiffSingerPhrase,
     downloadModel,
     KOKORO_MODEL_ENTRY,
+    isDdspInstrumentId,
     renderDdspInstrument,
 } from '#/modules/BrowserAi/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { tempoMapStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -207,8 +209,12 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('No MIDI notes in this clip to render', 'error');
             return;
         }
-        const bpm = tempoMapStore.value?.changes[0]?.tempo ?? 120;
-        const secondsPerBeat = 60 / bpm;
+        if (!isDdspInstrumentId(instrument.id)) {
+            notifyUser('The selected DDSP instrument is not admitted in this release', 'error');
+            return;
+        }
+        const tempoChanges = tempoMapStore.value?.changes ?? [];
+        const defaultTempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
         setIsRenderingDdsp(true);
         setDdspResult(null);
         ddspLaunchRef.current?.abort();
@@ -219,14 +225,23 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         try {
             const result = await renderDdspInstrument({
                 phraseId: `${clip.id}-ddsp`,
-                instrumentId: instrument.id as Parameters<typeof renderDdspInstrument>[0]['instrumentId'],
-                durationSec: (clip.endBeat - clip.startBeat) * secondsPerBeat,
-                notes: notes.map((note) => ({
-                    pitch: note.pitch,
-                    velocity: note.velocity,
-                    startSec: note.startBeat * secondsPerBeat,
-                    durationSec: note.duration * secondsPerBeat,
-                })),
+                instrumentId: instrument.id,
+                durationSec: secondsBetweenBeats(tempoChanges, clip.startBeat, clip.endBeat, defaultTempo),
+                notes: notes.map((note) => {
+                    const absoluteStartBeat = clip.startBeat + note.startBeat;
+                    return {
+                        pitch: note.pitch,
+                        velocity: note.velocity,
+                        startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, absoluteStartBeat, defaultTempo),
+                        durationSec: secondsBetweenBeats(
+                            tempoChanges,
+                            absoluteStartBeat,
+                            absoluteStartBeat + note.duration,
+                            defaultTempo
+                        ),
+                    };
+                }),
+                signal,
             });
             if (!stillOwnsPanel({ signal, launchClipId })) {
                 return;
@@ -254,10 +269,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('Download the voice model first', 'error');
             return;
         }
-        const tempoState = tempoMapStore.value;
-        const bpm = tempoState?.changes[0]?.tempo ?? 120;
-        const beatsPerSecond = bpm / 60;
-        const targetDurationSec = (clip.endBeat - clip.startBeat) / beatsPerSecond;
+        const tempoChanges = tempoMapStore.value?.changes ?? [];
+        const defaultTempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
+        const targetDurationSec = secondsBetweenBeats(tempoChanges, clip.startBeat, clip.endBeat, defaultTempo);
 
         const baseSpeed = parseFloat(ttsSpeed);
         if (!isFinite(baseSpeed) || baseSpeed <= 0) {
@@ -360,14 +374,22 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             const voiceName = activeVoicebank?.name ?? selectedVoicebankId;
             const lyrics = diffSingerLyrics.trim() || 'la la la';
             const lyricsPreview = lyrics.slice(0, 20) + (lyrics.length > 20 ? '…' : '');
-            const tempo = tempoMapStore.value?.changes[0]?.tempo ?? 120;
-            const secondsPerBeat = 60 / tempo;
-            const timedNotes = notes.map((note) => ({
-                pitch: note.pitch,
-                velocity: note.velocity,
-                startSec: note.startBeat * secondsPerBeat,
-                durationSec: note.duration * secondsPerBeat,
-            }));
+            const tempoChanges = tempoMapStore.value?.changes ?? [];
+            const defaultTempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
+            const timedNotes = notes.map((note) => {
+                const absoluteStartBeat = clip.startBeat + note.startBeat;
+                return {
+                    pitch: note.pitch,
+                    velocity: note.velocity,
+                    startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, absoluteStartBeat, defaultTempo),
+                    durationSec: secondsBetweenBeats(
+                        tempoChanges,
+                        absoluteStartBeat,
+                        absoluteStartBeat + note.duration,
+                        defaultTempo
+                    ),
+                };
+            });
             // Sequential — the ONNX worker is single-threaded so parallel
             // calls would serialize anyway, just with noisier logs.
             const results: RenderResult[] = [];

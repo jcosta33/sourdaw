@@ -122,7 +122,6 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
             if (!voice) {
                 throw new Error(`Unknown Kokoro voice "${speakerId}"`);
             }
-
             // Deterministic cache key
             const textEncoder = new TextEncoder();
             const durationKey =
@@ -136,6 +135,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
 
             // Check render cache
             const cached = await readRenderCache({ cacheKey });
+            enqueueRender({ phraseId, requestId, pipeline: 'kokoro', status: 'preparing', queuedAt: Date.now() });
             if (cached) {
                 logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
                 const provenance: RenderProvenance = {
@@ -145,11 +145,10 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     renderedAt: Date.now(),
                     tier: 'browser-preview',
                 };
-                markRenderComplete(phraseId, cacheKey);
+                markRenderComplete(phraseId, requestId, cacheKey);
                 return { audio: cached, sampleRate: 44100, provenance };
             }
 
-            enqueueRender({ phraseId, requestId, pipeline: 'kokoro', status: 'preparing', queuedAt: Date.now() });
             startActiveRender({
                 requestId,
                 phraseId,
@@ -161,7 +160,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
             });
 
             try {
-                updateRenderStatus(phraseId, 'rendering-browser');
+                updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
                 // 1. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
@@ -220,7 +219,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                 applyFades(finalAudio, FADE_SAMPLES);
 
                 await writeRenderCache({ cacheKey, audio: finalAudio });
-                markRenderComplete(phraseId, cacheKey);
+                markRenderComplete(phraseId, requestId, cacheKey);
 
                 const provenance: RenderProvenance = {
                     modelId: KOKORO_MODEL_ID,
@@ -233,7 +232,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                 logger.info(`[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / 44100)}s)`);
                 return { audio: finalAudio, sampleRate: 44100, provenance };
             } catch (error) {
-                updateRenderStatus(phraseId, 'error');
+                updateRenderStatus(phraseId, requestId, 'error');
                 throw error;
             } finally {
                 clearActiveRender(requestId);

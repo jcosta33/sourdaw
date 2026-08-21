@@ -81,6 +81,35 @@ function toError(reason: unknown, fallback: string): Error {
     return new Error(typeof reason === 'string' && reason ? reason : fallback);
 }
 
+function createAbortError(): DOMException {
+    return new DOMException('Render cancelled', 'AbortError');
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+    if (signal?.aborted) {
+        throw createAbortError();
+    }
+}
+
+async function waitForAbortableTfjsRequest<TResult>(
+    request: Promise<TResult>,
+    requestId: string,
+    signal: AbortSignal | undefined
+): Promise<TResult> {
+    if (!signal) {
+        return request;
+    }
+    const cancel = (): void => {
+        inferenceWorkerBridge.cancelTfjsRequest(requestId);
+    };
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+        return await request;
+    } finally {
+        signal.removeEventListener('abort', cancel);
+    }
+}
+
 function resetWorkerAfterFailure(state: WorkerState, failedWorker: Worker, reason: Error): void {
     if (state.worker !== failedWorker) {
         return;
@@ -263,19 +292,25 @@ export const inferenceWorkerBridge = {
         return response.type === 'status' ? response.loadedModels : [];
     },
 
-    async loadDdspSession({
-        modelId,
-        artifacts,
-    }: {
-        modelId: string;
-        artifacts: Array<Omit<DdspStoredArtifact, 'modelDataPort'>>;
-    }): Promise<string> {
+    async loadDdspSession(
+        {
+            modelId,
+            artifacts,
+        }: {
+            modelId: string;
+            artifacts: Array<Omit<DdspStoredArtifact, 'modelDataPort'>>;
+        },
+        signal?: AbortSignal
+    ): Promise<string> {
+        throwIfAborted(signal);
         logger.info(`[WorkerBridge] Loading DDSP (TF.js) session from verified OPFS: ${modelId}`);
         const worker = await getTfjsWorker();
+        throwIfAborted(signal);
         const requestId = crypto.randomUUID();
         const streamedArtifacts: DdspStoredArtifact[] = [];
         try {
             for (const artifact of artifacts) {
+                throwIfAborted(signal);
                 const modelDataPort = await modelStorageWorkerBridge.readModel({
                     family: 'ddsp',
                     modelId: artifact.modelId,
@@ -286,6 +321,7 @@ export const inferenceWorkerBridge = {
                     throw new Error(`Verified DDSP artifact is missing: ${artifact.path}`);
                 }
                 streamedArtifacts.push({ ...artifact, modelDataPort });
+                throwIfAborted(signal);
             }
             const request: WorkerRequest = {
                 type: 'create-session-from-model-storage',
@@ -293,12 +329,17 @@ export const inferenceWorkerBridge = {
                 modelId,
                 artifacts: streamedArtifacts,
             };
-            const response = await sendRequest(
-                worker,
-                workerState.tfjs,
-                request,
-                streamedArtifacts.map((artifact) => artifact.modelDataPort)
+            const response = await waitForAbortableTfjsRequest(
+                sendRequest(
+                    worker,
+                    workerState.tfjs,
+                    request,
+                    streamedArtifacts.map((artifact) => artifact.modelDataPort)
+                ),
+                requestId,
+                signal
             );
+            throwIfAborted(signal);
             if (response.type !== 'session-created' || response.modelId !== modelId || response.backend !== 'webgpu') {
                 throw new Error(`DDSP did not initialize the required WebGPU backend: ${response.type}`);
             }
@@ -330,9 +371,19 @@ export const inferenceWorkerBridge = {
         return response as Extract<WorkerResponse, { type: 'diffsinger-result' }>;
     },
 
-    async runDdspInference(input: RunDdspInput): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
+    async runDdspInference(
+        input: RunDdspInput,
+        signal?: AbortSignal
+    ): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
+        throwIfAborted(signal);
         const worker = await getTfjsWorker();
-        const response = await sendRequest(worker, workerState.tfjs, input);
+        throwIfAborted(signal);
+        const response = await waitForAbortableTfjsRequest(
+            sendRequest(worker, workerState.tfjs, input),
+            input.requestId,
+            signal
+        );
+        throwIfAborted(signal);
         scheduleTfjsDestroy();
         if (response.type !== 'ddsp-result' || response.backend !== 'webgpu') {
             throw new Error(`DDSP inference did not return required WebGPU PCM: ${response.type}`);
@@ -411,7 +462,7 @@ export const inferenceWorkerBridge = {
         const pending = workerState.tfjs.pendingRequests.get(requestId);
         if (pending) {
             workerState.tfjs.pendingRequests.delete(requestId);
-            pending.reject(new Error('Render cancelled'));
+            pending.reject(createAbortError());
         }
         if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
             workerState.tfjs.worker.terminate();
