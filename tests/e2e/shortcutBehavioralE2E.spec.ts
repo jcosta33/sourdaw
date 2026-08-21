@@ -95,7 +95,7 @@ test.describe('Panel shortcuts', () => {
         await expect(toggle).toHaveAttribute('aria-pressed', 'true');
         await expect(tabs).toBeVisible();
 
-        await page.getByRole('button', { name: 'Close bottom dock' }).click();
+        await page.keyboard.press(`${MOD}+m`);
         await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
         await expect(tabs).toHaveCount(0);
     });
