@@ -756,19 +756,26 @@ fn bandlimited_tap_count(speed: f64) -> usize {
 }
 
 /// Kaiser beta for the anti-alias window, from the transition budget the
-/// kernel radius leaves: `radius * cutoff` source samples span the band the
-/// kernel has to roll off in.
+/// kernel radius leaves. The budget is computed exactly as below —
+/// `(tap_count / 2) · cutoff` on the odd tap count, so half a sample more
+/// than `radius · cutoff` — and `bandlimited_tap_count` ceils the grown
+/// radius, so within one radius step the budget falls as speed rises and
+/// jumps back up at the next step. Those steps are why a tier boundary is a
+/// small band rather than a point.
 ///
 /// A wide budget carries the sharper window (beta 9), whose passband stays
 /// flat enough that a read landing on whole source frames returns them to
 /// within 2e-5 — the accuracy chromatic octaves are measured against. It
-/// holds while the budget is at least 10: unity through roughly 2.8x
-/// (+18 st). A budget of at least 6 still carries beta 7, the widest window
-/// that keeps both that passband and the 42 dB stop-band from 4x up, through
-/// 8x (+36 st). Past that the growth rule's budget has fallen below 6 — not
+/// holds while the budget is at least 10: unity through 2.85x (+18.13 st).
+/// A budget of at least 6 still carries beta 7, the widest window that keeps
+/// both that passband and the 42 dB stop-band from 4x up — through 8.4167x
+/// (+36.88 st). Past that the growth rule's budget has fallen below 6 — not
 /// the radius cap, which first binds at the 16x pitch ceiling itself — and
 /// the window drops to beta 5, which still meets the stop-band but gives up
-/// passband flatness no measurement at those ratios pins.
+/// passband flatness no measurement at those ratios pins. The ceil staircase
+/// flips that drop once: the step beginning at 8.50x lifts the budget back
+/// over 6, so beta 7 returns for 8.50–8.58x (+37.05–37.22 st) before beta 5
+/// holds for good.
 fn kaiser_beta(tap_count: usize, cutoff: f32) -> f32 {
     let budget = (tap_count as f64 / 2.0) * f64::from(cutoff);
     if budget >= 10.0 {
