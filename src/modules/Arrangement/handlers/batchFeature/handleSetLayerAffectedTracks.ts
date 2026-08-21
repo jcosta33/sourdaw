@@ -7,5 +7,5 @@ export const handleSetLayerAffectedTracks = createHandler<'setLayerAffectedTrack
         setLayerAffectedTracks(a.payload.layerId, a.payload.trackIds);
     },
     describe: () => ({ label: 'Set Layer Affected Tracks' }),
-    undoable: true,
+    undoable: false,
 });

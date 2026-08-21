@@ -7,5 +7,5 @@ export const handleSetLayerParameter = createHandler<'setLayerParameter'>({
         setLayerParameter(a.payload.layerId, a.payload.paramName, a.payload.value);
     },
     describe: () => ({ label: 'Set Layer Parameter' }),
-    undoable: true,
+    undoable: false,
 });

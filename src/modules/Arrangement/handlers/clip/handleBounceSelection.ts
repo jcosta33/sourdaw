@@ -15,5 +15,5 @@ export const handleBounceSelection = createHandler<'bounceSelection'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: () => ({ label: 'Bounce selection to audio' }),
-    undoable: true,
+    undoable: false,
 });

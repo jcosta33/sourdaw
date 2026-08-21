@@ -20,5 +20,5 @@ export const handleCreateAdjustmentLayer = createHandler<'createAdjustmentLayer'
         });
     },
     describe: () => ({ label: 'Create Adjustment Layer' }),
-    undoable: true,
+    undoable: false,
 });

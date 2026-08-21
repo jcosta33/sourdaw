@@ -202,6 +202,29 @@ describe('bounceTrack', () => {
         expect(didWrite).toBe(true);
     });
 
+    it('files no callback undo entry when the caller owns the undo unit, but still writes the bounce', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceTrack = createAudioTrack({ clips: [createAudioClip({ id: 'clip-source' })] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: true,
+            normalization: 'protection',
+            tailHandling: 'off',
+            destination: 'replace',
+            recordUndoEntry: false,
+        });
+
+        // The suppression is only about history: the project write still has to land, or
+        // the caller's own inverse would be guarding a post-state that never happened.
+        expect(didWrite).toBe(true);
+        expect(mocks.trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('bounce-track-1-1234567890');
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
     it('rejects dormant VCA bounce before render, cache, IDs, history, or project work', async () => {
         const sourceTrack = createAudioTrack();
         Object.defineProperty(sourceTrack, 'kind', { value: 'vca' });

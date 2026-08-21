@@ -5,7 +5,12 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-export function reverseClip(clipId: string): boolean {
+/**
+ * `reversedBufferId` is resolved by the command layer before dispatch rather than minted
+ * here, so the handler's `describe()` can name the buffer this run will produce and guard
+ * its inverse on it. A caller outside the command path may omit it.
+ */
+export function reverseClip(clipId: string, reversedBufferId?: string): boolean {
     const target = resolveEligibleClipWriteTarget({ clipId });
     if (target.status !== 'eligible' || !('clipId' in target)) {
         return false;
@@ -37,7 +42,7 @@ export function reverseClip(clipId: string): boolean {
         }
     }
 
-    const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
+    const newId = reversedBufferId ?? `reversed-${clip.audioBufferId}-${Date.now()}`;
     const didWrite = updateClip(target.clipId, (candidate) => {
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
         return {

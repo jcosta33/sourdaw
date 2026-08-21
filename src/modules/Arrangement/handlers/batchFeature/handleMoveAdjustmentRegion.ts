@@ -7,5 +7,5 @@ export const handleMoveAdjustmentRegion = createHandler<'moveAdjustmentRegion'>(
         moveAdjustmentRegion(a.payload.regionId, a.payload.startBeat, a.payload.endBeat);
     },
     describe: () => ({ label: 'Move Adjustment Region' }),
-    undoable: true,
+    undoable: false,
 });

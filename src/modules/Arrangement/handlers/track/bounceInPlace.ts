@@ -9,5 +9,5 @@ export const handleBounceInPlace = createHandler<'bounceInPlace'>({
         return toHandlerExecutionResult(didWrite);
     },
     describe: () => ({ label: 'Bounce in place' }),
-    undoable: true,
+    undoable: false,
 });

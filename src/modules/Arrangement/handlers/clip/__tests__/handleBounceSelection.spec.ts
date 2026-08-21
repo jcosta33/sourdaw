@@ -63,7 +63,10 @@ describe('handleBounceSelection', () => {
         expect(desc.label).toBe('Bounce selection to audio');
     });
 
-    it('is undoable', () => {
-        expect(handleBounceSelection.undoable).toBe(true);
+    // Undo for a selection bounce is filed by `bounceSelection` itself, as a callback entry.
+    // Marking the handler undoable as well would put a second entry on the stack for one
+    // command, and that one has no inverse action to run.
+    it('is not command-undoable, because the use case files its own undo entry', () => {
+        expect(handleBounceSelection.undoable).toBe(false);
     });
 });

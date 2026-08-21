@@ -7,5 +7,5 @@ export const handleSetLayerInsertionIndex = createHandler<'setLayerInsertionInde
         setLayerInsertionIndex(a.payload.layerId, a.payload.insertionIndex);
     },
     describe: () => ({ label: 'Set Layer Insertion Index' }),
-    undoable: true,
+    undoable: false,
 });

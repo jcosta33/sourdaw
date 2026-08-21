@@ -33,6 +33,22 @@ describe('bounceInPlace', () => {
         expect(didWrite).toBe(true);
     });
 
+    it('forwards undo-entry suppression to the bounce and leaves the preset otherwise intact', async () => {
+        mocks.bounceTrack.mockResolvedValue(true);
+
+        await bounceInPlace('track-42', { recordUndoEntry: false });
+
+        expect(mocks.bounceTrack).toHaveBeenCalledWith('track-42', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: true,
+            normalization: 'protection',
+            tailHandling: 'auto',
+            destination: 'replace',
+            recordUndoEntry: false,
+        });
+    });
+
     it('propagates a rejected bounce as no-write', async () => {
         mocks.bounceTrack.mockResolvedValue(false);
 

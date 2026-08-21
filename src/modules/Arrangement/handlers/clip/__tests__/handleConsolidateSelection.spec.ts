@@ -52,7 +52,10 @@ describe('handleConsolidateSelection', () => {
         expect(desc.label).toBe('Consolidate selection');
     });
 
-    it('is undoable', () => {
-        expect(handleConsolidateSelection.undoable).toBe(true);
+    // Undo for a selection consolidate is filed by `bounceSelection` itself, as a callback
+    // entry. Marking the handler undoable as well would put a second entry on the stack for
+    // one command, and that one has no inverse action to run.
+    it('is not command-undoable, because the use case files its own undo entry', () => {
+        expect(handleConsolidateSelection.undoable).toBe(false);
     });
 });

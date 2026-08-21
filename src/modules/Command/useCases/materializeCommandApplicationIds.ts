@@ -32,6 +32,10 @@ export const COMMAND_APPLICATION_ID_RULES: Partial<Record<AppActionType, Applica
     duplicateClip: { argument: 'targetClipId', prefix: 'clip-command-' },
     duplicateClipToNextBar: { argument: 'targetClipId', prefix: 'clip-command-' },
     duplicateTrack: { argument: 'targetTrackId', prefix: 'track-command-' },
+    createCompGroup: { argument: 'groupId', prefix: 'comp-group-command-' },
+    createFolder: { argument: 'folderTrackId', prefix: 'folder-command-' },
+    freezeTrack: { argument: 'freezeId', prefix: 'freeze-command-' },
+    reverseClip: { argument: 'reversedBufferId', prefix: 'reversed-command-' },
     splitClip: { argument: 'rightClipId', prefix: 'clip-command-' },
 };
 

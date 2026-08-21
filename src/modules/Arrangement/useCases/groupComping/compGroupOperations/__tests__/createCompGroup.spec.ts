@@ -31,7 +31,7 @@ describe('createCompGroup', () => {
     });
 
     it('creates a new comp group and sets it as active', () => {
-        createCompGroup('Drums', ['t1', 't2']);
+        expect(createCompGroup('Drums', ['t1', 't2'])).toBe(true);
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledTimes(1);
         const setCall = mocks.groupCompingStoreSet.mock.calls[0];
@@ -48,10 +48,12 @@ describe('createCompGroup', () => {
         expect(newState.activeGroupId).toBe('grp-123');
     });
 
-    it('is a no-op when the group-comping store has not loaded', () => {
+    it('is a no-op when the group-comping store has not loaded, and says so', () => {
         mocks.groupCompingStoreValue.value = null;
 
-        createCompGroup('Drums', ['t1']);
+        // The caller files an undo entry off this answer, so "nothing happened" has to
+        // be reported rather than swallowed.
+        expect(createCompGroup('Drums', ['t1'])).toBe(false);
 
         expect(mocks.groupCompingStoreSet).not.toHaveBeenCalled();
         // The id generator is never consulted when there is no store.

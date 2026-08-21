@@ -17,6 +17,16 @@ export type BounceOptions = {
     normalization: 'off' | 'protection' | 'full';
     tailHandling: 'auto' | 'manual' | 'off';
     destination: 'new-track' | 'replace';
+    /**
+     * Whether this bounce files its own callback undo entry. Defaults to `true`, because a
+     * bounce invoked on its own is the whole of what the user did and nothing else records
+     * it. A caller that already owns one atomic undo unit covering the whole command — the
+     * `consolidateAllTracks` handler, which bounces every eligible track behind a single
+     * `restoreTrackClipStates` inverse — passes `false`: a nested entry there would sit
+     * *below* the command's own entry holding a snapshot taken part-way through the loop,
+     * so undoing past the command would re-apply the bounces it just reverted.
+     */
+    recordUndoEntry?: boolean;
 };
 
 export async function bounceTrack(trackId: string, options: BounceOptions): Promise<boolean> {
@@ -153,6 +163,10 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         const tracks = [...freshState.tracks];
         tracks.splice(insertIndex, 0, newTrack);
         trackStore.set({ ...freshState, tracks });
+    }
+
+    if (options.recordUndoEntry === false) {
+        return true;
     }
 
     // Register undo for the bounce operation
