@@ -43,6 +43,31 @@ export function parseArgs(args: string[]): Options {
     return { files, fix, full };
 }
 
+const ESLINT_HEAP_MIB = 6_144;
+const HEAP_FLAG = /--max[-_]old[-_]space[-_]size(?:=|\s+)(\d+)/;
+
+/**
+ * A cold `--cache` eslint run holds the whole type-aware program in one process
+ * and needs more heap than Node's default gives it on a small machine, so the
+ * run aborts with an OOM mark-compact failure instead of reporting lint results
+ * — a crash a caller tells from a pass only by reading the output.
+ *
+ * An ancestor that already set `--max-old-space-size` is obeyed rather than
+ * overridden. `pnpm guard` is such an ancestor, and V8 honours the last
+ * occurrence of a repeated flag, so appending a larger one would silently
+ * defeat exactly the ceiling the guard exists to impose. A run that needs more
+ * heap than the guard allows has to say so through the guard, not around it —
+ * today it cannot, which is #2678, and until that lands this command does not
+ * complete under the guard from a cold cache.
+ */
+export function eslintEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const current = source.NODE_OPTIONS ?? '';
+    if (HEAP_FLAG.test(current)) {
+        return source;
+    }
+    return { ...source, NODE_OPTIONS: `${current} --max-old-space-size=${ESLINT_HEAP_MIB}`.trim() };
+}
+
 function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
     const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
     if (result.error !== undefined) {
@@ -80,13 +105,7 @@ function main(): number {
                 ...(options.fix ? ['--fix'] : []),
                 ...eslintTargets,
             ],
-            // A cold `--cache` run holds the whole type-aware program in one
-            // process and exhausts Node's default heap: the run aborts with an
-            // OOM mark-compact failure instead of reporting lint results, so a
-            // green run and a crashed run are told apart only by reading the
-            // output. A fresh worktree and a CI runner both start cold, which
-            // is exactly where the ceiling has to hold.
-            { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=8192`.trim() }
+            eslintEnvironment(process.env)
         );
         return 0;
     } catch (error) {
