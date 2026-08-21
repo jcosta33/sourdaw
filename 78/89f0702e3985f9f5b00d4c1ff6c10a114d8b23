@@ -1,0 +1,99 @@
+src/modules/AiRuntime/useCases/voiceInput/__tests__/localVoiceCommandBoundary.spec.ts
+  s_a40848e8f8cca9::t_9ee7d10d0894bd 1-2,5,11-12,14-17,19-20,27,32,34-39,44-51
+  s_a40848e8f8cca9::t_235c9e94020395 6
+  s_a40848e8f8cca9::t_2c88dc1924d1c6 4,13,26,33
+  s_a40848e8f8cca9::t_13c5fa4bc42168 40-43
+  s_780d04a949cfed::t_1bdd42819db2ee 52
+electron/channels.ts
+  s_a40848e8f8cca9::t_d7472ad005f5fb 31
+  s_a40848e8f8cca9::t_becb972d51cd47 32-33,144
+crates/sourdaw-native/src/commands/speech.rs
+  s_a40848e8f8cca9::t_286b431cf987ab 12,60,126,132-184,193-213,245,726,734,886,1012,1016,1025
+  s_a40848e8f8cca9::t_481d01f4d50541 185-192,725
+  s_a40848e8f8cca9::t_25217527304b61 798-799
+  s_a40848e8f8cca9::t_ec891649643872 46-47
+  s_a40848e8f8cca9::t_f6c6fc9912a488 2,62-98,261,303-312,497-500,526,563-567,571,573-575,582,624,627-628,721,898-899
+  s_a40848e8f8cca9::t_30fe6db00877c3 10,18-20
+  s_a40848e8f8cca9::t_0f7181fb8960d9 57-59,723,984-999,1005,1017
+  s_a40848e8f8cca9::t_1f37a44da5704f 9,61,109,214,233,254,722,724,727-733,735-737,747,796-797,806-815,820-825,887-897,1000-1004,1006-1011,1013-1015,1018-1024
+src/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationError.ts
+  s_a40848e8f8cca9::t_becb972d51cd47 1,15-19
+src/modules/AiRuntime/useCases/voiceDictation/onDictationError.ts
+  s_a40848e8f8cca9::t_3ac71597c2083d 8-9
+  s_a40848e8f8cca9::t_44862ea6c9f1b1 10-11
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/onDictationError.spec.ts
+  s_a40848e8f8cca9::t_79fae4d120aaa5 14-20,23,25-26
+  s_a40848e8f8cca9::t_46223f02e1d2fd 27-29
+src/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationResult.ts
+  s_a40848e8f8cca9::t_becb972d51cd47 1,16-20
+crates/sourdaw-native/src/commands/model_download.rs
+  s_a40848e8f8cca9::t_0cfb1e32920048 3,141-152,215-226
+  s_a40848e8f8cca9::t_e69f5f0e555cf5 554-567,569
+  s_a40848e8f8cca9::t_6688d47e8d94b9 568
+src/modules/AiRuntime/presentations/hooks/__tests__/useVoiceRecording.spec.tsx
+  s_a40848e8f8cca9::t_092123f612a62b 15-16
+  s_a40848e8f8cca9::t_b3e389797d2f1e 14,17,19,21-22,46-47,82,86,114,172
+src/modules/AiRuntime/useCases/voiceDictation/onDictationResult.ts
+  s_a40848e8f8cca9::t_3ac71597c2083d 12-13
+electron/bridge.ts
+  s_a40848e8f8cca9::t_d7472ad005f5fb 29,118-126,129,137,154-166,170-174,179,206-221,321,332,336
+  s_a40848e8f8cca9::t_becb972d51cd47 32,177,339-348
+  s_a40848e8f8cca9::t_a3293d959d6bfa 349
+src/modules/AiRuntime/presentations/hooks/useVoiceRecording.ts
+  s_a40848e8f8cca9::t_3ac71597c2083d 88,106
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/onDictationResult.spec.ts
+  s_a40848e8f8cca9::t_79fae4d120aaa5 14,16-21,26
+  s_a40848e8f8cca9::t_a99564a9380277 28-29
+electron/voiceDictation.ts
+  s_a40848e8f8cca9::t_d7472ad005f5fb 4,45-50,70,84
+src/modules/Command/useCases/__tests__/agentControlBoundary.spec.ts
+  s_a40848e8f8cca9::t_2c88dc1924d1c6 3,11-13,15,19-20
+  s_a40848e8f8cca9::t_fa0ed7a2149b99 4-6
+  s_a40848e8f8cca9::t_11bc1c6b0ce9fd 9,21
+src/types/sourdaw-desktop.d.ts
+  s_a40848e8f8cca9::t_becb972d51cd47 59
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/onDictationError.spec.ts
+  s_a40848e8f8cca9::t_092123f612a62b 3,8,14,22
+  s_a40848e8f8cca9::t_66d4461653cefa 15-16,33-38
+  s_a40848e8f8cca9::t_20846520dd87ba 17-18,24,39-40,44
+src/modules/WorkspaceShell/presentations/components/Transport/VoiceButton.tsx
+  s_a40848e8f8cca9::t_d7472ad005f5fb 43
+electron/__tests__/bridge.spec.ts
+  s_a40848e8f8cca9::t_aa399318fa8fd8 20-22,119-131,151-157
+  s_a40848e8f8cca9::t_f918aefca0fa20 23,88
+  s_a40848e8f8cca9::t_407c01f301f3c8 132-150
+  s_a40848e8f8cca9::t_ca3f205bdecdfa 158,246-267
+  s_a40848e8f8cca9::t_4dc443c024dc84 159-160
+src/utils/desktopBridge.ts
+  s_a40848e8f8cca9::t_becb972d51cd47 137-146
+electron/main.ts
+  s_a40848e8f8cca9::t_eb676708660219 19,339-349
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/onDictationResult.spec.ts
+  s_a40848e8f8cca9::t_092123f612a62b 3,8,14,23
+  s_a40848e8f8cca9::t_66d4461653cefa 16-17,31-35
+  s_a40848e8f8cca9::t_c525dae31cae3d 18-19,25,36-37,41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7889f0702e3985f9f5b00d4c1ff6c10a114d8b23",
+  "prompts": {},
+  "sessions": {
+    "s_780d04a949cfed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a024bb-1a78-7ed0-933d-864943faec3d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
