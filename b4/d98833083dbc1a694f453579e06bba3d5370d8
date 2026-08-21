@@ -1,0 +1,29 @@
+scripts/ui-restatement-census.json
+  s_24b1bdbc3c31ad::t_5b15eb87f19003 653,680,869,1058,4316,5927,6170,6278,8924,9203,9344-9352,9788,11090-11098,11246,12731,12812,14306,15800,16277,16691,17237-17245,18959,19991-19999,21143-21151,21272,21434,22001,22307,22568,22604,23657,24266-24274,24386,24647,24680-24688,25214,25259
+src/modules/Setlist/presentations/views/SetlistPanel.tsx
+  s_a40848e8f8cca9::t_e764dbbaf9eccd 18,152-153,185,233,249,268-269,300-304,308,329,361,390,441,461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "b4d98833083dbc1a694f453579e06bba3d5370d8",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
