@@ -11,10 +11,39 @@ import {
 import type { NamedTensorMap, Tensor } from '@tensorflow/tfjs-core';
 
 let rollRegistered = false;
+let fatalReported = false;
+const observedDevices = new WeakSet<GPUDevice>();
+
+function fatalErrorMessage(reason: string, message: string): string {
+    const detail = message.trim();
+    return `TF.js WebGPU device lost (${reason || 'unknown'})${detail ? `: ${detail}` : ''}`;
+}
+
+function reportFatalWorkerError(error: string): void {
+    if (fatalReported) {
+        return;
+    }
+    fatalReported = true;
+    postResponse({ type: 'worker-fatal-error', error });
+    void runtime.dispose();
+}
+
+function observeDeviceLoss(device: GPUDevice): void {
+    if (observedDevices.has(device)) {
+        return;
+    }
+    observedDevices.add(device);
+    void device.lost.then(
+        (info) => reportFatalWorkerError(fatalErrorMessage(info.reason, info.message)),
+        (error: unknown) =>
+            reportFatalWorkerError(fatalErrorMessage('unknown', error instanceof Error ? error.message : String(error)))
+    );
+}
 
 /** Initialize only the hardware WebGPU backend; no CPU, WebGL, or software success path exists. */
 async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
     const verified = await requireHardwareWebGpu(typeof navigator === 'undefined' ? undefined : navigator.gpu);
+    observeDeviceLoss(verified.device);
     const tf = await import('@tensorflow/tfjs-core');
     const converter = await import('@tensorflow/tfjs-converter');
     tf.env().global = globalThis;
@@ -117,6 +146,5 @@ self.onmessage = (event: MessageEvent<WorkerRequest>): void => {
 };
 
 self.onmessageerror = (): void => {
-    postResponse({ type: 'worker-fatal-error', error: 'TF.js worker received an unreadable request' });
-    void runtime.dispose();
+    reportFatalWorkerError('TF.js worker received an unreadable request');
 };

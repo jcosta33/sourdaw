@@ -7,6 +7,11 @@ type HandlerInput = Parameters<RuntimeModule['createTfjsInferenceRequestHandler'
 type Runtime = ReturnType<RuntimeModule['createTfjsInferenceRequestHandler']>;
 type WorkerTensor = import('../tfjsInferenceWorkerRuntime').TfjsWorkerTensor;
 
+type Deferred<TValue> = {
+    promise: Promise<TValue>;
+    resolve: (value: TValue) => void;
+};
+
 const shellMocks = vi.hoisted(() => {
     class TensorMock {
         readonly data: ReturnType<typeof vi.fn<() => Promise<ArrayLike<number>>>>;
@@ -94,6 +99,14 @@ let capturedInput: HandlerInput | undefined;
 let runtime: Runtime;
 let postMessage: ReturnType<typeof vi.fn>;
 
+function deferred<TValue>(): Deferred<TValue> {
+    let resolveDeferred: (value: TValue) => void = () => undefined;
+    const promise = new Promise<TValue>((resolve) => {
+        resolveDeferred = resolve;
+    });
+    return { promise, resolve: resolveDeferred };
+}
+
 function requireCapturedInput(): HandlerInput {
     if (capturedInput === undefined) {
         throw new Error('TF.js worker shell did not create its runtime');
@@ -161,7 +174,7 @@ describe('tfjsInferenceWorker', () => {
         shellMocks.requireHardwareWebGpu.mockReset();
         shellMocks.requireHardwareWebGpu.mockResolvedValue({
             adapter: { info: { isFallbackAdapter: false } } as GPUAdapter,
-            device: {} as GPUDevice,
+            device: { lost: new Promise<GPUDeviceLostInfo>(() => undefined) } as GPUDevice,
         });
         shellMocks.backendImported.mockReset();
         shellMocks.concat.mockReset();
@@ -248,7 +261,7 @@ describe('tfjsInferenceWorker', () => {
     });
 
     it('pins TF.js to the exact verified hardware device and registers the Roll operation', async () => {
-        const device = {} as GPUDevice;
+        const device = { lost: new Promise<GPUDeviceLostInfo>(() => undefined) } as GPUDevice;
         const verifiedInfo = { isFallbackAdapter: false, vendor: 'verified-hardware' } as GPUAdapterInfo;
         const verifiedAdapter = { info: verifiedInfo } as GPUAdapter;
         const fallbackAdapter = { info: { isFallbackAdapter: true } } as GPUAdapter;
@@ -310,6 +323,28 @@ describe('tfjsInferenceWorker', () => {
         expect(shellMocks.concat).toHaveBeenCalledExactlyOnceWith([second, first], 2);
         expect(first.dispose).toHaveBeenCalledOnce();
         expect(second.dispose).toHaveBeenCalledOnce();
+    });
+
+    it('reports verified device loss exactly once and disposes the runtime', async () => {
+        const deviceLost = deferred<GPUDeviceLostInfo>();
+        const device = { lost: deviceLost.promise } as GPUDevice;
+        shellMocks.requireHardwareWebGpu.mockResolvedValueOnce({
+            adapter: { info: { isFallbackAdapter: false } } as GPUAdapter,
+            device,
+        });
+        installNavigatorGpu({});
+        await importShell();
+        await requireCapturedInput().initializeTfjs();
+
+        deviceLost.resolve({ reason: 'unknown', message: 'GPU process reset' } as GPUDeviceLostInfo);
+        await vi.waitFor(() => expect(runtime.dispose).toHaveBeenCalledOnce());
+        requireWorkerHandler('onmessageerror')(new MessageEvent('messageerror'));
+
+        expect(postMessage).toHaveBeenCalledExactlyOnceWith(
+            { type: 'worker-fatal-error', error: 'TF.js WebGPU device lost (unknown): GPU process reset' },
+            undefined
+        );
+        expect(runtime.dispose).toHaveBeenCalledOnce();
     });
 
     it('adapts GraphModel loading and maps only wrapped tensor feeds back through the WeakMap', async () => {
