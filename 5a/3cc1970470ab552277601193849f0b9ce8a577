@@ -1,0 +1,55 @@
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_701b00aa3c8382 38-43
+public/legal/SOURDAW-NOTICE.txt
+  s_0a3429e31e555d::t_caf7b063199461 4
+public/legal/MI-PLAITS-DSP-RS-MIT.txt
+  s_0a3429e31e555d::t_701b00aa3c8382 1-21
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_132dcf898d46c9 58,91-93,104-106,195,536-550,552-553,556-569,571-581
+  s_0a3429e31e555d::t_bf81aea59307a8 570
+  s_0a3429e31e555d::t_c1941168379c64 681,687,941
+server/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_701b00aa3c8382 1-26
+server/LICENSE
+  s_0a3429e31e555d::t_07a9b25f8b98ed 1-201
+server/NOTICE
+  s_0a3429e31e555d::t_701b00aa3c8382 1-4
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_0a3429e31e555d::t_bfddebdd563d4a 8,37-38,41,43-44,46-47,72-77,79,82-84,88,91,116-117,122
+  s_0a3429e31e555d::t_0aa88fadf73cec 92-93,113-115,118-121
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_0fd1e3f37ef556 568
+  s_0a3429e31e555d::t_fce007778f2a77 69-76,200-203,205-213,564-567,569-573,725-726,742-747
+  s_0a3429e31e555d::t_bf81aea59307a8 204
+scripts/checkProjectLicense.ts
+  s_0a3429e31e555d::t_caf7b063199461 12,16-17,45,50-54,58-63
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_0e3d1dec6fc2a6 8-10,12,133-151,255-279
+  s_0a3429e31e555d::t_c53ed6a308502b 280
+crates/daw-dsp/src/toaster/engines/kick_808.rs
+  s_0a3429e31e555d::t_701b00aa3c8382 13
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0a3429e31e555d::t_31128697ecc78e 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0a3429e31e555d::t_ca7bfa2b2d79ba 1
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_1f47e4d9ca862c 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0a3429e31e555d::t_afd31adfaca240 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5a3cc1970470ab552277601193849f0b9ce8a577",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
