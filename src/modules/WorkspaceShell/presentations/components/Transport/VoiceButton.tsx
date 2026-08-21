@@ -40,6 +40,7 @@ export const VoiceButton = ({
                     onClick={handleClick}
                     data-testid="voice-command-button"
                     data-voice-command-control="true"
+                    data-voice-command-intent={active ? 'stop' : 'start'}
                     className={cn(
                         'transition-all',
                         active &&

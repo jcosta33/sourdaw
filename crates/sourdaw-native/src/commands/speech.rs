@@ -1,17 +1,22 @@
 use crate::events::{EventSink, EventSinkExt};
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use audioadapter_buffers::{direct::SequentialSliceOfVecs, owned::InterleavedOwned};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
     Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{filesystem, model_download};
+
+#[cfg(test)]
+static F64_ERASURES: AtomicUsize = AtomicUsize::new(0);
 
 // ── Managed state ───────────────────────────────────────────────────────
 
@@ -38,6 +43,8 @@ impl Drop for SensitiveF64Buffers {
     fn drop(&mut self) {
         for buffer in &mut self.0 {
             buffer.zeroize();
+            #[cfg(test)]
+            F64_ERASURES.fetch_add(1, Ordering::SeqCst);
         }
     }
 }
@@ -47,6 +54,48 @@ struct SensitiveF64Buffer(Vec<f64>);
 impl Drop for SensitiveF64Buffer {
     fn drop(&mut self) {
         self.0.zeroize();
+        #[cfg(test)]
+        F64_ERASURES.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Owns rubato's output allocation until every success, error, or panic path
+/// has erased it. `InterleavedOwned` otherwise drops an ordinary `Vec<f64>`.
+struct SensitiveResamplerOutput(Option<InterleavedOwned<f64>>);
+
+impl SensitiveResamplerOutput {
+    fn buffer_mut(&mut self) -> &mut InterleavedOwned<f64> {
+        self.0
+            .as_mut()
+            .expect("resampler output is present until extracted")
+    }
+
+    fn take_data(&mut self) -> SensitiveF64Buffer {
+        SensitiveF64Buffer(
+            self.0
+                .take()
+                .expect("resampler output is present until extracted")
+                .take_data(),
+        )
+    }
+}
+
+impl Drop for SensitiveResamplerOutput {
+    fn drop(&mut self) {
+        if let Some(output) = self.0.take() {
+            let mut data = output.take_data();
+            data.zeroize();
+        }
+    }
+}
+
+/// `rubato::Async` retains f64 working/history buffers. Its documented reset
+/// clears those buffers, so Drop guarantees cleanup on all exit paths.
+struct SensitiveResampler(Async<f64>);
+
+impl Drop for SensitiveResampler {
+    fn drop(&mut self) {
+        self.0.reset();
     }
 }
 
@@ -57,6 +106,7 @@ pub struct DictationState {
     stop_flag: Arc<AtomicBool>,
     cancel_flag: Arc<AtomicBool>,
     active_session_id: Arc<Mutex<Option<String>>>,
+    session_terminal: Arc<SessionTerminalControl>,
     /// Set for the lifetime of one record-then-transcribe session so a
     /// second `start_dictation` while one is in flight is rejected instead
     /// of silently resetting `stop_flag` and racing a second mic stream
@@ -73,8 +123,92 @@ impl Default for DictationState {
             stop_flag: Arc::new(AtomicBool::new(false)),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             active_session_id: Arc::new(Mutex::new(None)),
+            session_terminal: Arc::new(SessionTerminalControl::default()),
             session_active: Arc::new(AtomicBool::new(false)),
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SessionTerminalState {
+    Idle,
+    Active,
+    Cancelling,
+    ResultPublished,
+    Complete,
+}
+
+struct SessionTerminalControl {
+    state: Mutex<SessionTerminalState>,
+    complete: Condvar,
+}
+
+impl Default for SessionTerminalControl {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(SessionTerminalState::Idle),
+            complete: Condvar::new(),
+        }
+    }
+}
+
+impl SessionTerminalControl {
+    fn begin(&self) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| format!("Lock error: {error}"))?;
+        *state = SessionTerminalState::Active;
+        Ok(())
+    }
+
+    fn claim_result(&self) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if *state != SessionTerminalState::Active {
+            return false;
+        }
+        *state = SessionTerminalState::ResultPublished;
+        true
+    }
+
+    fn cancel_and_wait(&self) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| format!("Lock error: {error}"))?;
+        if *state == SessionTerminalState::ResultPublished
+            || *state == SessionTerminalState::Complete
+        {
+            return Err("Dictation session already resolved.".to_string());
+        }
+        if *state != SessionTerminalState::Active && *state != SessionTerminalState::Cancelling {
+            return Err("Dictation session is not active.".to_string());
+        }
+        *state = SessionTerminalState::Cancelling;
+        while *state != SessionTerminalState::Complete {
+            state = self
+                .complete
+                .wait(state)
+                .map_err(|error| format!("Lock error: {error}"))?;
+        }
+        Ok(())
+    }
+
+    fn finish(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            *state = SessionTerminalState::Complete;
+            self.complete.notify_all();
+        }
+    }
+
+    #[cfg(test)]
+    fn is_cancelling(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| *state == SessionTerminalState::Cancelling)
+            .unwrap_or(false)
     }
 }
 
@@ -96,6 +230,7 @@ struct DictationSessionGuard {
     events: Arc<dyn EventSink>,
     session_id: String,
     active_session_id: Arc<Mutex<Option<String>>>,
+    terminal: Arc<SessionTerminalControl>,
     /// Set by `emit_result`/`emit_error` once the session has told the
     /// frontend what happened, so `Drop`'s fallback below does not also
     /// double-emit for a path that already resolved normally.
@@ -107,6 +242,7 @@ impl DictationSessionGuard {
         Self::with_session(
             session_active,
             Arc::new(Mutex::new(None)),
+            Arc::new(SessionTerminalControl::default()),
             events,
             "test-session".to_string(),
         )
@@ -115,12 +251,14 @@ impl DictationSessionGuard {
     fn with_session(
         session_active: Arc<AtomicBool>,
         active_session_id: Arc<Mutex<Option<String>>>,
+        terminal: Arc<SessionTerminalControl>,
         events: Arc<dyn EventSink>,
         session_id: String,
     ) -> Self {
         Self {
             session_active,
             active_session_id,
+            terminal,
             events,
             session_id,
             emitted: false,
@@ -148,12 +286,6 @@ impl DictationSessionGuard {
 
 impl Drop for DictationSessionGuard {
     fn drop(&mut self) {
-        self.session_active.store(false, Ordering::SeqCst);
-        if let Ok(mut active) = self.active_session_id.lock() {
-            if active.as_deref() == Some(self.session_id.as_str()) {
-                *active = None;
-            }
-        }
         // Every ordinary exit path calls `emit_result`/`emit_error` before
         // returning. A path that did not — a panic unwinding out of
         // `transcribe` (whisper FFI included), or the closure never running
@@ -168,6 +300,16 @@ impl Drop for DictationSessionGuard {
                 },
             );
         }
+        // A successful cancellation acknowledgement may only be released
+        // after the terminal event and every local sensitive buffer have
+        // unwound from the worker scope.
+        self.session_active.store(false, Ordering::SeqCst);
+        if let Ok(mut active) = self.active_session_id.lock() {
+            if active.as_deref() == Some(self.session_id.as_str()) {
+                *active = None;
+            }
+        }
+        self.terminal.finish();
     }
 }
 
@@ -352,6 +494,10 @@ pub async fn start_dictation(
     };
 
     try_begin_dictation_session(&state.session_active)?;
+    if let Err(error) = state.session_terminal.begin() {
+        state.session_active.store(false, Ordering::SeqCst);
+        return Err(error);
+    }
     {
         let mut active = match state.active_session_id.lock() {
             Ok(active) => active,
@@ -377,6 +523,7 @@ pub async fn start_dictation(
     let mut session_guard = DictationSessionGuard::with_session(
         state.session_active.clone(),
         state.active_session_id.clone(),
+        state.session_terminal.clone(),
         events,
         session_id.clone(),
     );
@@ -413,18 +560,26 @@ pub async fn start_dictation(
                     Zeroizing::new(std::mem::take(&mut *mono_audio))
                 };
 
+                if cancelled.load(Ordering::SeqCst) {
+                    session_guard.emit_error("Dictation session was cancelled.".to_string());
+                    return;
+                }
+
                 // Run Whisper inference
                 match transcribe(&ctx, &audio_16k) {
                     Ok(text) => {
+                        let mut text = Zeroizing::new(text);
                         let duration_ms = start.elapsed().as_millis() as u64;
-                        if cancelled.load(Ordering::SeqCst) {
+                        if cancelled.load(Ordering::SeqCst)
+                            || !session_guard.terminal.claim_result()
+                        {
                             session_guard
                                 .emit_error("Dictation session was cancelled.".to_string());
                             return;
                         }
                         match resolve_dictation_emission(
                             session_guard.session_id.clone(),
-                            text,
+                            std::mem::take(&mut *text),
                             duration_ms,
                         ) {
                             DictationEmission::Result(result) => {
@@ -466,8 +621,11 @@ fn control_active_session(
     if active.as_deref() != Some(session_id) {
         return Err("Dictation session is not active.".to_string());
     }
+    drop(active);
     if cancelled {
         state.cancel_flag.store(true, Ordering::SeqCst);
+        state.stop_flag.store(true, Ordering::SeqCst);
+        return state.session_terminal.cancel_and_wait();
     }
     state.stop_flag.store(true, Ordering::SeqCst);
     Ok(())
@@ -560,6 +718,23 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
 
     drop(stream);
 
+    let buffer = Arc::try_unwrap(buffer)
+        .map_err(|_| "Microphone capture did not release its callback buffer.".to_string())?
+        .into_inner()
+        .map_err(|error| format!("Lock error: {error}"))?;
+    let samples = finish_capture_after_stream_status(buffer, &stream_failed, &stream_failure)?;
+
+    Ok((samples, sample_rate, channels))
+}
+
+/// CPAL's error callback is authoritative: do not extract a partial capture
+/// after it fired. Dropping the owned buffer on this error path zeroizes its
+/// contents before the dictation worker can resample or transcribe anything.
+fn finish_capture_after_stream_status(
+    mut buffer: SensitiveCaptureBuffer,
+    stream_failed: &AtomicBool,
+    stream_failure: &Mutex<Option<String>>,
+) -> Result<Vec<f32>, String> {
     if stream_failed.load(Ordering::SeqCst) {
         let error = stream_failure
             .lock()
@@ -569,10 +744,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
         return Err(error);
     }
 
-    let mut buffer = buffer.lock().map_err(|e| format!("Lock error: {e}"))?;
-    let samples = std::mem::take(&mut buffer.0);
-
-    Ok((samples, sample_rate, channels))
+    Ok(std::mem::take(&mut buffer.0))
 }
 
 /// Convert interleaved multi-channel audio to mono by averaging channels.
@@ -621,26 +793,36 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 
     let ratio = 16_000f64 / f64::from(src_rate);
 
-    let mut resampler = Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)
-        .map_err(|e| format!("Failed to create resampler: {e}"))?;
+    let mut resampler = SensitiveResampler(
+        Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)
+            .map_err(|e| format!("Failed to create resampler: {e}"))?,
+    );
 
     let input_f64 = input.iter().map(|&sample| sample as f64).collect();
     let frames = input.len();
     let resampled = with_sensitive_resampler_input(input_f64, |channels| {
         let adapter = SequentialSliceOfVecs::new(channels, 1, frames)
             .map_err(|error| format!("Resampler buffer error: {error}"))?;
-        let result = resampler.process_all(&adapter, frames, None);
+        let needed = resampler.0.process_all_needed_output_len(frames);
+        let mut output = SensitiveResamplerOutput(Some(InterleavedOwned::new(0.0, 1, needed)));
+        let result = resampler
+            .0
+            .process_all_into_buffer(&adapter, output.buffer_mut(), frames, None)
+            .map(|(_input, output_len)| {
+                let mut data = output.take_data();
+                data.0.truncate(output_len);
+                data
+            });
         drop(adapter);
         result.map_err(|error| format!("Resample error: {error}"))
     })?;
 
-    with_sensitive_resampler_output(resampled.take_data(), |resampled_data| {
-        Ok(resampled_data
-            .iter()
-            .copied()
-            .map(|sample| sample as f32)
-            .collect())
-    })
+    Ok(resampled
+        .0
+        .iter()
+        .copied()
+        .map(|sample| sample as f32)
+        .collect())
 }
 
 /// Run Whisper inference on 16 kHz mono f32 audio.
@@ -699,6 +881,20 @@ mod tests {
             .unwrap();
         }));
         assert!(unwind.is_err());
+    }
+
+    #[test]
+    fn production_rubato_resampler_erases_its_derived_f64_output_after_success() {
+        F64_ERASURES.store(0, Ordering::SeqCst);
+
+        let result = resample_to_16k(&vec![0.25; 4_800], 48_000).unwrap();
+
+        assert!(!result.is_empty());
+        // This runs the production `Async::process_all_into_buffer` path.
+        // One erase is the f64 input conversion and the other is the output
+        // returned by rubato's `take_data`, proving both allocations cross
+        // a zeroizing owner before this function returns.
+        assert!(F64_ERASURES.load(Ordering::SeqCst) >= 2);
     }
 
     #[test]
@@ -783,6 +979,48 @@ mod tests {
         // starting again is allowed.
         session_active.store(false, Ordering::SeqCst);
         assert!(try_begin_dictation_session(&session_active).is_ok());
+    }
+
+    #[test]
+    fn cancel_ack_linearizes_result_publication_until_worker_cleanup_completes() {
+        let terminal = Arc::new(SessionTerminalControl::default());
+        terminal.begin().unwrap();
+        let start_race = Arc::new(std::sync::Barrier::new(2));
+        let worker_terminal = terminal.clone();
+        let worker_race = start_race.clone();
+
+        let worker = std::thread::spawn(move || {
+            worker_race.wait();
+            while !worker_terminal.is_cancelling() {
+                std::thread::yield_now();
+            }
+            // The result edge loses to a successfully acknowledged cancel.
+            assert!(!worker_terminal.claim_result());
+            // This is the worker's final cleanup edge, after capture,
+            // resampling, and inference locals have unwound.
+            worker_terminal.finish();
+        });
+
+        start_race.wait();
+        assert!(terminal.cancel_and_wait().is_ok());
+        worker.join().unwrap();
+        assert!(!terminal.claim_result());
+    }
+
+    #[test]
+    fn cpal_runtime_error_rejects_before_capture_sample_extraction() {
+        let stream_failed = AtomicBool::new(true);
+        let stream_failure = Mutex::new(Some("Microphone stream failed: disconnected".to_string()));
+        let result = finish_capture_after_stream_status(
+            SensitiveCaptureBuffer(vec![0.2, -0.3]),
+            &stream_failed,
+            &stream_failure,
+        );
+
+        assert_eq!(
+            result,
+            Err("Microphone stream failed: disconnected".to_string())
+        );
     }
 
     /// Collects every event a mock `EventSink` receives, so a test can assert

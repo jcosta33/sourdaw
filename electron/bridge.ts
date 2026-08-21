@@ -26,8 +26,10 @@ import {
     STREAM_CHANNEL,
     VOICE_DICTATION_ARM_CHANNEL,
     VOICE_DICTATION_CANCEL_CHANNEL,
+    VOICE_DICTATION_DISARM_CHANNEL,
     VOICE_DICTATION_START_CHANNEL,
     VOICE_DICTATION_STOP_CHANNEL,
+    VOICE_DICTATION_TERMINAL_CHANNEL,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -113,12 +115,18 @@ const isVoiceControlDocument = (value: unknown): value is VoiceControlDocument =
  * actual voice control. Renderer code receives no token and cannot mint one
  * through a lookalike event or retained trusted event.
  */
-const createVoiceActivation = (ipc: RendererIpc): (() => Promise<string | null>) => {
+const discoveredVoiceDocument = (): VoiceControlDocument | undefined => {
+    const candidate: unknown = Reflect.get(globalThis, 'document');
+    return isVoiceControlDocument(candidate) ? candidate : undefined;
+};
+
+const createVoiceActivation = (
+    ipc: RendererIpc,
+    voiceDocument: VoiceControlDocument | undefined
+): { readonly consume: () => Promise<string | null>; readonly invalidate: () => Promise<void> } => {
     let activation:
         { readonly token: string; readonly createdAt: number; readonly armed: Promise<boolean> } | undefined;
-    const documentCandidate: unknown = Reflect.get(globalThis, 'document');
-    if (isVoiceControlDocument(documentCandidate)) {
-        const voiceDocument = documentCandidate;
+    if (voiceDocument !== undefined) {
         voiceDocument.addEventListener(
             'click',
             (event) => {
@@ -126,7 +134,7 @@ const createVoiceActivation = (ipc: RendererIpc): (() => Promise<string | null>)
                 if (
                     !event.isTrusted ||
                     !isVoiceControlTarget(target) ||
-                    target.closest('[data-voice-command-control="true"]') === null
+                    target.closest('[data-voice-command-intent="start"]') === null
                 ) {
                     return;
                 }
@@ -143,21 +151,32 @@ const createVoiceActivation = (ipc: RendererIpc): (() => Promise<string | null>)
             { capture: true }
         );
     }
-    return async () => {
-        const current = activation;
-        activation = undefined;
-        if (current === undefined || Date.now() - current.createdAt > VOICE_ACTIVATION_MAX_AGE_MS) {
-            return null;
-        }
-        return (await current.armed) ? current.token : null;
+    return {
+        consume: async () => {
+            const current = activation;
+            activation = undefined;
+            if (current === undefined || Date.now() - current.createdAt > VOICE_ACTIVATION_MAX_AGE_MS) {
+                return null;
+            }
+            return (await current.armed) ? current.token : null;
+        },
+        invalidate: async () => {
+            activation = undefined;
+            await ipc.invoke(VOICE_DICTATION_DISARM_CHANNEL);
+        },
     };
 };
 
-export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch()): SourdawBridge => {
+export const createSourdawBridge = (
+    ipc: RendererIpc,
+    epoch: string = bootEpoch(),
+    voiceDocument: VoiceControlDocument | undefined = discoveredVoiceDocument()
+): SourdawBridge => {
     const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
     const streamListeners = new Map<string, (payload: unknown) => void>();
+    const voiceTerminalListeners = new Map<string, Set<(event: string, payload: unknown) => void>>();
     let nextStreamId = 0;
-    const consumeVoiceActivation = createVoiceActivation(ipc);
+    const voiceActivation = createVoiceActivation(ipc, voiceDocument);
 
     ipc.on(EVENT_CHANNEL, (_event, ...args) => {
         const [name, payload] = args;
@@ -182,6 +201,22 @@ export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch(
             return;
         }
         streamListeners.get(streamId)?.(payload);
+    });
+
+    ipc.on(VOICE_DICTATION_TERMINAL_CHANNEL, (_event, ...args) => {
+        const [event, payload] = args;
+        if (
+            (event !== 'dictation-result' && event !== 'dictation-error') ||
+            typeof payload !== 'object' ||
+            payload === null ||
+            !('session_id' in payload) ||
+            typeof payload.session_id !== 'string'
+        ) {
+            return;
+        }
+        for (const listener of [...(voiceTerminalListeners.get(payload.session_id) ?? [])]) {
+            listener(event, payload);
+        }
     });
 
     return {
@@ -283,7 +318,7 @@ export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch(
 
         voiceDictation: {
             start: async (sessionId) => {
-                const activation = await consumeVoiceActivation();
+                const activation = await voiceActivation.consume();
                 if (activation === null) {
                     throw new Error('Voice dictation requires a current voice-control activation');
                 }
@@ -294,10 +329,23 @@ export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch(
                 return result;
             },
             stop: async (sessionId) => {
+                await voiceActivation.invalidate();
                 await ipc.invoke(VOICE_DICTATION_STOP_CHANNEL, sessionId);
             },
             cancel: async (sessionId) => {
+                await voiceActivation.invalidate();
                 await ipc.invoke(VOICE_DICTATION_CANCEL_CHANNEL, sessionId);
+            },
+            listenTerminal: (sessionId, callback) => {
+                const listeners = voiceTerminalListeners.get(sessionId) ?? new Set();
+                listeners.add(callback);
+                voiceTerminalListeners.set(sessionId, listeners);
+                return () => {
+                    listeners.delete(callback);
+                    if (listeners.size === 0) {
+                        voiceTerminalListeners.delete(sessionId);
+                    }
+                };
             },
         },
     };

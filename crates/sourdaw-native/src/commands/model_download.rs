@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::Mutex as AsyncMutex;
@@ -138,6 +138,18 @@ pub async fn read_verified_cached_model(model: &'static ModelDownload) -> Result
 }
 
 fn read_verified_cached_model_bytes(path: &Path, model: &ModelDownload) -> Result<Vec<u8>, String> {
+    read_verified_cached_model_bytes_after_read(path, model, || {})
+}
+
+/// Read the artifact exactly once, then hash the bytes that will be returned.
+/// The callback exists to pin the former verify-then-rewind boundary in a
+/// regression: replacing the on-disk file after this point cannot alter the
+/// already-owned buffer handed to Whisper.
+fn read_verified_cached_model_bytes_after_read(
+    path: &Path,
+    model: &ModelDownload,
+    after_read: impl FnOnce(),
+) -> Result<Vec<u8>, String> {
     let link_metadata = std::fs::symlink_metadata(path).map_err(|error| {
         format!(
             "Verified local model {} is not cached: {error}",
@@ -187,38 +199,6 @@ fn read_verified_cached_model_bytes(path: &Path, model: &ModelDownload) -> Resul
         ));
     }
 
-    let mut digest = Sha256::new();
-    let mut chunk = [0_u8; 64 * 1024];
-    loop {
-        let count = file.read(&mut chunk).map_err(|error| {
-            format!(
-                "Failed to hash verified local model {}: {error}",
-                model.filename
-            )
-        })?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&chunk[..count]);
-    }
-    let actual = digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    if actual != model.expected_sha256 {
-        return Err(format!(
-            "Verified local model {} failed hash validation.",
-            model.filename
-        ));
-    }
-
-    file.seek(SeekFrom::Start(0)).map_err(|error| {
-        format!(
-            "Failed to rewind verified local model {}: {error}",
-            model.filename
-        )
-    })?;
     let mut bytes = Vec::with_capacity(model.expected_size_bytes as usize);
     file.read_to_end(&mut bytes).map_err(|error| {
         format!(
@@ -232,6 +212,18 @@ fn read_verified_cached_model_bytes(path: &Path, model: &ModelDownload) -> Resul
             model.filename
         ));
     }
+    after_read();
+    let actual = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if actual != model.expected_sha256 {
+        return Err(format!(
+            "Verified local model {} failed hash validation.",
+            model.filename
+        ));
+    }
+
     Ok(bytes)
 }
 
@@ -554,6 +546,22 @@ mod tests {
 
         let bytes = read_verified_cached_model_bytes(&path, &SMALL_VERIFIED_MODEL)
             .expect("the verified file handle must return its bytes");
+
+        fs::remove_file(&path).expect("test artifact must be removed");
+        assert_eq!(bytes, b"abc");
+    }
+
+    #[test]
+    fn cached_voice_reader_hashes_the_exact_bytes_returned_when_the_path_is_overwritten_after_read()
+    {
+        let path = isolated_model_path("same-length-overwrite");
+        fs::write(&path, b"abc").expect("test artifact must be writable");
+
+        let bytes =
+            read_verified_cached_model_bytes_after_read(&path, &SMALL_VERIFIED_MODEL, || {
+                fs::write(&path, b"xyz").expect("same-length replacement must be writable");
+            })
+            .expect("the initially read, verified bytes must remain the returned bytes");
 
         fs::remove_file(&path).expect("test artifact must be removed");
         assert_eq!(bytes, b"abc");

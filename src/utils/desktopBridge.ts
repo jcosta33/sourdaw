@@ -134,6 +134,16 @@ export async function desktopCancelVoiceDictation(sessionId: string): Promise<vo
     await sourdawBridge().voiceDictation.cancel(sessionId);
 }
 
+/** Subscribe to one opaque dictation session's terminal payload outside the generic event bus. */
+export function desktopListenVoiceDictationTerminal(
+    sessionId: string,
+    handler: (event: string, payload: unknown) => void
+): () => void {
+    return sourdawBridge().voiceDictation.listenTerminal(sessionId, (event, payload) => {
+        handler(event, { event, payload });
+    });
+}
+
 type InvokeWithBinaryBodyInput = {
     command: string;
     bytes: Uint8Array;

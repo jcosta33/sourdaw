@@ -11,16 +11,21 @@ vi.mock('#/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationError', 
 }));
 
 describe('onDictationError (useCase)', () => {
-    it('forwards to the voiceNativeAdapter', async () => {
-        mocks.onVoiceDictationError.mockImplementation((handler: (payload: { message: string }) => void) => {
-            handler({ message: 'Transcription failed: whisper state error' });
-            return Promise.resolve(vi.fn()); // unlisten function
-        });
+    it('forwards one session-scoped terminal error to the voiceNativeAdapter', () => {
+        mocks.onVoiceDictationError.mockImplementation(
+            (_sessionId: string, handler: (payload: { session_id: string; message: string }) => void) => {
+                handler({ session_id: 'session-1', message: 'Transcription failed: whisper state error' });
+                return vi.fn();
+            }
+        );
 
         const callback = vi.fn();
-        await onDictationError(callback);
+        onDictationError('session-1', callback);
 
-        expect(mocks.onVoiceDictationError).toHaveBeenCalledTimes(1);
-        expect(callback).toHaveBeenCalledWith({ message: 'Transcription failed: whisper state error' });
+        expect(mocks.onVoiceDictationError).toHaveBeenCalledWith('session-1', expect.any(Function));
+        expect(callback).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            message: 'Transcription failed: whisper state error',
+        });
     });
 });

@@ -11,18 +11,21 @@ vi.mock('#/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationResult',
 }));
 
 describe('onDictationResult (useCase)', () => {
-    it('forwards to the voiceNativeAdapter and maps snake_case to camelCase', async () => {
+    it('forwards one session-scoped terminal result to the voiceNativeAdapter', () => {
         mocks.onVoiceDictationResult.mockImplementation(
-            (handler: (payload: { text: string; duration_ms: number }) => void) => {
-                handler({ text: 'test text', duration_ms: 2000 });
-                return Promise.resolve(vi.fn()); // unlisten function
+            (
+                _sessionId: string,
+                handler: (payload: { session_id: string; text: string; duration_ms: number }) => void
+            ) => {
+                handler({ session_id: 'session-1', text: 'test text', duration_ms: 2000 });
+                return vi.fn();
             }
         );
 
         const callback = vi.fn();
-        await onDictationResult(callback);
+        onDictationResult('session-1', callback);
 
-        expect(mocks.onVoiceDictationResult).toHaveBeenCalledTimes(1);
-        expect(callback).toHaveBeenCalledWith({ text: 'test text', durationMs: 2000 });
+        expect(mocks.onVoiceDictationResult).toHaveBeenCalledWith('session-1', expect.any(Function));
+        expect(callback).toHaveBeenCalledWith({ sessionId: 'session-1', text: 'test text', durationMs: 2000 });
     });
 });

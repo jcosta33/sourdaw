@@ -9,8 +9,8 @@ export type DictationResult = {
     durationMs: number;
 };
 
-export function onDictationResult(handler: (result: DictationResult) => void): Promise<() => void> {
-    return onVoiceDictationResult((result: NativeDictationResult) => {
+export function onDictationResult(sessionId: string, handler: (result: DictationResult) => void): () => void {
+    return onVoiceDictationResult(sessionId, (result: NativeDictationResult) => {
         handler({
             sessionId: result.session_id,
             text: result.text,

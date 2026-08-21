@@ -1,4 +1,4 @@
-import { desktopListen } from '#/utils/desktopBridge';
+import { desktopListenVoiceDictationTerminal } from '#/utils/desktopBridge';
 
 export type DictationError = {
     session_id: string;
@@ -12,14 +12,16 @@ const MAX_DICTATION_ERROR_MESSAGE_LENGTH = 2_048;
  * resampling, or transcription fails, or when a transcription result cannot
  * be delivered. Returns an unlisten function to clean up the listener.
  */
-export async function onDictationError(handler: (error: DictationError) => void): Promise<() => void> {
-    const unlisten = await desktopListen('dictation-error', (payload: unknown) => {
+export function onDictationError(sessionId: string, handler: (error: DictationError) => void): () => void {
+    return desktopListenVoiceDictationTerminal(sessionId, (event, payload: unknown) => {
+        if (event !== 'dictation-error') {
+            return;
+        }
         const error = readDictationError(payload);
         if (error) {
             handler(error);
         }
     });
-    return unlisten;
 }
 
 function readDictationError(event: unknown): DictationError | null {

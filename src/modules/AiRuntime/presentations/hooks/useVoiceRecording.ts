@@ -85,7 +85,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         try {
             cleanup();
             terminalRef.current = false;
-            const resultUnlisten = await onDictationResult((result) => {
+            const resultUnlisten = onDictationResult(sessionId, (result) => {
                 if (result.sessionId !== sessionId || !settleTerminal()) {
                     return;
                 }
@@ -103,7 +103,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 return;
             }
             resultUnlistenRef.current = resultUnlisten;
-            const errorUnlisten = await onDictationError((error) => {
+            const errorUnlisten = onDictationError(sessionId, (error) => {
                 if (error.sessionId !== sessionId || !settleTerminal()) {
                     return;
                 }

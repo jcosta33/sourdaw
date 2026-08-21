@@ -11,12 +11,15 @@ const mocks = vi.hoisted(() => ({
     cancelDictation: vi.fn<(sessionId: string) => Promise<void>>().mockResolvedValue(undefined),
     onDictationResult: vi
         .fn<
-            (handler: (result: { sessionId: string; text: string; durationMs: number }) => void) => Promise<() => void>
+            (
+                sessionId: string,
+                handler: (result: { sessionId: string; text: string; durationMs: number }) => void
+            ) => () => void
         >()
-        .mockResolvedValue(() => {}),
+        .mockReturnValue(() => {}),
     onDictationError: vi
-        .fn<(handler: (error: { sessionId: string; message: string }) => void) => Promise<() => void>>()
-        .mockResolvedValue(() => {}),
+        .fn<(sessionId: string, handler: (error: { sessionId: string; message: string }) => void) => () => void>()
+        .mockReturnValue(() => {}),
     consume: vi.fn<(value: unknown) => boolean>(() => false),
     setVoiceStatus: vi.fn((value: { isListening: boolean; transcribing: boolean }) => value),
 }));
@@ -40,8 +43,8 @@ describe('useVoiceRecording', () => {
         mocks.startDictation.mockImplementation(async (sessionId) => sessionId);
         mocks.stopDictation.mockResolvedValue(undefined);
         mocks.cancelDictation.mockResolvedValue(undefined);
-        mocks.onDictationResult.mockResolvedValue(() => {});
-        mocks.onDictationError.mockResolvedValue(() => {});
+        mocks.onDictationResult.mockReturnValue(() => {});
+        mocks.onDictationError.mockReturnValue(() => {});
         mocks.setVoiceStatus.mockImplementation((value) => value);
     });
 
@@ -76,11 +79,11 @@ describe('useVoiceRecording', () => {
             toggleListener = handler;
             return () => {};
         });
-        mocks.onDictationResult.mockImplementation(async (handler) => {
+        mocks.onDictationResult.mockImplementation((_sessionId, handler) => {
             resultListener = handler;
             return () => {};
         });
-        mocks.onDictationError.mockImplementation(async (handler) => {
+        mocks.onDictationError.mockImplementation((_sessionId, handler) => {
             errorListener = handler;
             return () => {};
         });
@@ -108,7 +111,7 @@ describe('useVoiceRecording', () => {
             toggleListener = handler;
             return () => {};
         });
-        mocks.onDictationError.mockImplementation(async (handler) => {
+        mocks.onDictationError.mockImplementation((_sessionId, handler) => {
             errorListener = handler;
             return () => {};
         });
@@ -166,7 +169,7 @@ describe('useVoiceRecording', () => {
             toggleListener = handler;
             return () => {};
         });
-        mocks.onDictationResult.mockImplementation(async (handler) => {
+        mocks.onDictationResult.mockImplementation((_sessionId, handler) => {
             resultListeners.push(handler);
             return () => {};
         });

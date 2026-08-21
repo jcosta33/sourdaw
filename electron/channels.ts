@@ -28,6 +28,9 @@ export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
 
 /** Preload-only capability channels for local microphone dictation. */
 export const VOICE_DICTATION_ARM_CHANNEL = 'sourdaw:voice-dictation:arm';
+export const VOICE_DICTATION_DISARM_CHANNEL = 'sourdaw:voice-dictation:disarm';
+/** Main → preload only: correlated final transcript/error, never a generic named event. */
+export const VOICE_DICTATION_TERMINAL_CHANNEL = 'sourdaw:voice-dictation:terminal';
 export const VOICE_DICTATION_START_CHANNEL = 'sourdaw:voice-dictation:start';
 export const VOICE_DICTATION_STOP_CHANNEL = 'sourdaw:voice-dictation:stop';
 export const VOICE_DICTATION_CANCEL_CHANNEL = 'sourdaw:voice-dictation:cancel';
@@ -138,5 +141,6 @@ export type SourdawBridge = {
         readonly start: (sessionId: string) => Promise<string>;
         readonly stop: (sessionId: string) => Promise<void>;
         readonly cancel: (sessionId: string) => Promise<void>;
+        readonly listenTerminal: (sessionId: string, callback: (event: string, payload: unknown) => void) => () => void;
     };
 };

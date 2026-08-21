@@ -1,6 +1,7 @@
 import {
     VOICE_DICTATION_ARM_CHANNEL,
     VOICE_DICTATION_CANCEL_CHANNEL,
+    VOICE_DICTATION_DISARM_CHANNEL,
     VOICE_DICTATION_START_CHANNEL,
     VOICE_DICTATION_STOP_CHANNEL,
 } from './channels.js';
@@ -42,6 +43,12 @@ export const registerVoiceDictation = ({ ipcMain, native, isTrustedFrameUrl }: R
         })
     );
     ipcMain.handle(
+        VOICE_DICTATION_DISARM_CHANNEL,
+        withTrustedSender('voice-dictation.disarm', isTrustedFrameUrl, () => {
+            activations.clear();
+        })
+    );
+    ipcMain.handle(
         VOICE_DICTATION_START_CHANNEL,
         withTrustedSender('voice-dictation.start', isTrustedFrameUrl, async (sessionId, activation) => {
             if (!validSessionId(sessionId) || !consumeActivation(activation)) {
@@ -60,6 +67,7 @@ export const registerVoiceDictation = ({ ipcMain, native, isTrustedFrameUrl }: R
             if (!validSessionId(sessionId)) {
                 throw new Error('voice-dictation.stop rejected: invalid session');
             }
+            activations.clear();
             const host = native();
             if (host === undefined) {
                 throw new Error('voice-dictation.stop rejected: the native host is not available');
@@ -73,6 +81,7 @@ export const registerVoiceDictation = ({ ipcMain, native, isTrustedFrameUrl }: R
             if (!validSessionId(sessionId)) {
                 throw new Error('voice-dictation.cancel rejected: invalid session');
             }
+            activations.clear();
             const host = native();
             if (host === undefined) {
                 throw new Error('voice-dictation.cancel rejected: the native host is not available');
