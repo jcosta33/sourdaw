@@ -843,6 +843,57 @@ describe('usePromptExecution', () => {
         expect(unsubscribe).toHaveBeenCalled();
     });
 
+    it('aborts active prompt work when the hook unmounts', async () => {
+        let activeSignal: AbortSignal | undefined;
+        executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementationOnce(
+            (input) =>
+                new Promise((resolve) => {
+                    activeSignal = input.signal;
+                    input.signal?.addEventListener(
+                        'abort',
+                        () => resolve({ status: 'rejected' as const, runId: 'prompt-run-1' }),
+                        { once: true }
+                    );
+                })
+        );
+        const { result, unmount } = renderHook(() => usePromptExecution());
+        act(() => result.current.setValue('Create a new drum groove'));
+
+        let submission = Promise.resolve();
+        act(() => {
+            submission = Promise.resolve(result.current.handleSubmit(formEvent as never));
+        });
+        expect(activeSignal?.aborted).toBe(false);
+
+        unmount();
+
+        expect(activeSignal?.aborted).toBe(true);
+        await submission;
+    });
+
+    it('cancels a retained awaiting-approval preview when the hook unmounts', async () => {
+        const cancel = vi.fn().mockResolvedValue(undefined);
+        executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
+            status: 'awaiting-approval',
+            runId: 'prompt-run-1',
+            preview: {
+                actions: [{ type: 'togglePlayback' }],
+                actionLabels: ['Toggle playback'],
+                projectRevision: 'revision-1',
+                confirm: vi.fn().mockResolvedValue(undefined),
+                cancel,
+            },
+        });
+        const { result, unmount } = renderHook(() => usePromptExecution());
+        act(() => result.current.setValue('Play'));
+        await act(async () => result.current.handleSubmit(formEvent as never));
+        expect(result.current.preview).not.toBeNull();
+
+        unmount();
+
+        expect(cancel).toHaveBeenCalledOnce();
+    });
+
     it('keeps a TrackList-seeded draft visible until the user explicitly submits it', async () => {
         executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
             status: 'completed',

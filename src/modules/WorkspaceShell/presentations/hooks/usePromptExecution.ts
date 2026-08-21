@@ -124,6 +124,26 @@ export const usePromptExecution = (): PromptExecutionState => {
     const operationRef = useRef<AbortController | null>(null);
     const previewRef = useRef<PromptPreview | null>(null);
 
+    useEffect(
+        () => () => {
+            const operation = operationRef.current;
+            const retainedPreview = previewRef.current;
+            operationRef.current = null;
+            previewRef.current = null;
+            operation?.abort();
+            if (retainedPreview?.cancel) {
+                try {
+                    void retainedPreview.cancel().catch((error: unknown) => {
+                        logger.error(new Error('Prompt preview cancellation failed during unmount', { cause: error }));
+                    });
+                } catch (error) {
+                    logger.error(new Error('Prompt preview cancellation failed during unmount', { cause: error }));
+                }
+            }
+        },
+        []
+    );
+
     const showPreview = (proposal: PromptPreview): void => {
         previewRef.current = proposal;
         setPreview(proposal);

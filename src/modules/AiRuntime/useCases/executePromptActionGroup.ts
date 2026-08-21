@@ -85,7 +85,7 @@ function recordCommittedCommandWarningSafe(input: {
     runId: string;
     receipt: Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
     actions: readonly AppAction[];
-    committedRevision: string;
+    committedRevision?: string;
     completesRun: boolean;
 }): string | null {
     try {
@@ -297,7 +297,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
             runId: input.runId,
             receipt: execution.receipt,
             actions: input.actions,
-            committedRevision: captureProjectRevision(),
+            ...(execution.status === 'committed' ? { committedRevision: captureProjectRevision() } : {}),
             completesRun: leaseSettlement.accepted,
         });
         if (!leaseSettlement.accepted && receiptPersistenceWarning === null) {

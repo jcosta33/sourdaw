@@ -100,11 +100,14 @@ function admitted(agentApproval: unknown = null) {
     };
 }
 
-function verifiedReceipt(outcome: 'committed' | 'executed' = 'committed') {
+function verifiedReceipt(
+    outcome: 'committed' | 'executed' = 'committed',
+    identity: { runId?: string; batchId?: string } = {}
+) {
     return {
         schemaVersion: 1,
-        runId: RUN_ID,
-        batchId: BATCH_ID,
+        runId: identity.runId ?? RUN_ID,
+        batchId: identity.batchId ?? BATCH_ID,
         outcome,
         links: { render: [], analysis: [] },
     } as never;
@@ -156,6 +159,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'committed', actions: [], receipt: verifiedReceipt('committed') },
             phase: 'completed',
+            committedRevision: 'revision-2',
             batchStatus: 'committed',
             leaseState: 'completed',
             receiptIdentity: '1:prompt-run-1:batch-1:committed',
@@ -164,6 +168,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'executed', actions: [], receipt: verifiedReceipt('executed') },
             phase: 'completed',
+            committedRevision: null,
             batchStatus: 'committed',
             leaseState: 'completed',
             receiptIdentity: '1:prompt-run-1:batch-1:executed',
@@ -172,6 +177,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'invalidated', reason: 'Revision changed' },
             phase: 'failed',
+            committedRevision: null,
             batchStatus: 'failed',
             leaseState: 'failed',
             receiptIdentity: null,
@@ -180,6 +186,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'failed', reason: 'Execution failed' },
             phase: 'failed',
+            committedRevision: null,
             batchStatus: 'failed',
             leaseState: 'failed',
             receiptIdentity: null,
@@ -188,6 +195,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'ambiguous', reason: 'Receipt missing' },
             phase: 'partially-completed',
+            committedRevision: null,
             batchStatus: 'failed',
             leaseState: 'failed',
             receiptIdentity: null,
@@ -196,6 +204,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'cancelled' },
             phase: 'cancelled',
+            committedRevision: null,
             batchStatus: 'cancelled',
             leaseState: 'cancelled',
             receiptIdentity: null,
@@ -204,6 +213,7 @@ describe('executePromptActionGroup', () => {
         {
             result: { status: 'no-op' },
             phase: 'completed',
+            committedRevision: null,
             batchStatus: 'no-op',
             leaseState: 'completed',
             receiptIdentity: null,
@@ -211,7 +221,7 @@ describe('executePromptActionGroup', () => {
         },
     ])(
         'reconciles $result.status to exact run, batch, lease, receipt, and notification truth',
-        async ({ result, phase, batchStatus, leaseState, receiptIdentity, notification }) => {
+        async ({ result, phase, committedRevision, batchStatus, leaseState, receiptIdentity, notification }) => {
             seedRun();
             mocks.executePlannedActions.mockResolvedValue(result);
 
@@ -224,6 +234,7 @@ describe('executePromptActionGroup', () => {
 
             expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
                 phase,
+                revisions: { committed: committedRevision },
                 batches: [{ batchId: BATCH_ID, status: batchStatus, receiptIdentity }],
                 workLeases: [
                     {
@@ -241,6 +252,46 @@ describe('executePromptActionGroup', () => {
             }
         }
     );
+
+    it.each([
+        {
+            label: 'missing',
+            receipt: undefined,
+            warning:
+                'Command outcome is uncertain: Command execution completed without an exact verified receipt. Inspect the project before retrying.',
+        },
+        {
+            label: 'different-run',
+            receipt: verifiedReceipt('committed', { runId: 'different-run' }),
+            warning:
+                'Command outcome is uncertain: Command execution returned a receipt for a different admitted batch. Inspect the project before retrying.',
+        },
+        {
+            label: 'different-batch',
+            receipt: verifiedReceipt('committed', { batchId: 'different-batch' }),
+            warning:
+                'Command outcome is uncertain: Command execution returned a receipt for a different admitted batch. Inspect the project before retrying.',
+        },
+    ])('keeps a $label committed receipt outcome uncertain', async ({ receipt, warning }) => {
+        seedRun();
+        mocks.executePlannedActions.mockResolvedValue({ status: 'committed', actions: [], receipt });
+
+        await executePromptActionGroup({
+            actions: [action],
+            prompt: 'Play',
+            projectRevision: 'revision-1',
+            ...admitted(),
+        });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'partially-completed',
+            revisions: { committed: null },
+            batches: [{ batchId: BATCH_ID, status: 'failed', receiptIdentity: null }],
+            workLeases: [{ workId: BATCH_ID, terminalState: 'failed' }],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(warning, []);
+    });
 
     it('reconciles a thrown execution before propagating the failure', async () => {
         seedRun();
@@ -317,6 +368,43 @@ describe('executePromptActionGroup', () => {
             });
         }
     );
+
+    it('keeps a committed receipt authoritative when lease settlement returns stale', async () => {
+        seedRun();
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            receipt: verifiedReceipt(),
+        });
+        vi.spyOn(agentRunWorkLease, 'settle').mockReturnValueOnce({ status: 'stale' });
+
+        await executePromptActionGroup({
+            actions: [action],
+            prompt: 'Play',
+            projectRevision: 'revision-1',
+            ...admitted(),
+        });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'partially-completed',
+            batches: [
+                {
+                    batchId: BATCH_ID,
+                    status: 'committed',
+                    receiptIdentity: '1:prompt-run-1:batch-1:committed',
+                },
+            ],
+            workLeases: [{ workId: BATCH_ID, terminalState: null }],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            expect.stringMatching(/project change committed.*cancelled or replaced.*do not retry automatically/i),
+            ['togglePlayback']
+        );
+        expect(mocks.notifyAiChange).not.toHaveBeenCalledWith(
+            expect.stringMatching(/command not executed/i),
+            expect.anything()
+        );
+    });
 
     it('rejects a prepared batch whose persisted run identity differs from the admitted run', async () => {
         seedRun();
