@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 
@@ -565,6 +566,13 @@ export function checkReleaseInventory(root: string): void {
     const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
+    }
+    checkElectronRuntimeProvenance(root);
+    const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
+    for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
+        if (JSON.stringify(electronSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
+            throw new Error(`Electron release inventory ${field} does not match provenance`);
+        }
     }
     checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
