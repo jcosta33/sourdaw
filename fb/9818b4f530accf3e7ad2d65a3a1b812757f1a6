@@ -1,0 +1,47 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_2175fca1f07426::t_934bccc6ba0e69 1602-1661
+crates/daw-dsp/src/levain/engine.rs
+  s_2175fca1f07426::t_157cbe729a163b 2836-2937
+crates/daw-dsp/tests/crumbs_voice_steal.rs
+  s_2175fca1f07426::t_95e51d00638cb2 121-122,464-465,658-659,698-699
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2175fca1f07426::t_3c2bbb28a5d73b 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2175fca1f07426::t_2cde62fb27a384 1
+public/wasm/manifest.json
+  s_2175fca1f07426::t_81de14e8baada0 12,17-18,21
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_4c8d017119df0e 137-145,239,578-586,635,968,2201,2345,2408,2414-2422,2468-2476,2765-2773,3017-3025,5513,5675,5981,6518-6526,6881,7004-7012,7427-7435,7610,7889,8915,8933,9002-9010,9293,9572,9758-9766,10211,10442-10450,10865-10873,11687,11777,11885,12569,12794,12884,13262,14018,14261,14324,14378,14531,14564-14572,15467,15674,15728,15737,15899,15998,16277,16517-16525,16592,16706-16714,16925,17339,17417-17425,17429,17642-17650,17705-17713,17733,17735-17736,17739,17831-17839,18029-18037,18068,18968,19325-19333,19841,19895,19994,20273,20522-20530,20993,21173,21305-21313,21584-21592,21767,22118,22307,22457-22465,22613,22766,22835-22843,23378,23612,23738,24332,24872,24881,24989
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2175fca1f07426::t_cb59d9fafd18ec 1
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  s_2175fca1f07426::t_83981f54104ab3 10,181-182,189,273,281-282,339,380,418,432,463-464,474,481,495,499,546,558
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_2175fca1f07426::t_fc98750962e8a4 7,39,43,68-69,72,83,86,102
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  s_2175fca1f07426::t_77f84b1e700ec3 19-20,44,50,56-58,80,83,87,92,109,112,114
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_2175fca1f07426::t_2add6415f9beb5 8,1402,1446
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_2175fca1f07426::t_4b447ae9037bf6 8,77-79,215
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_2175fca1f07426::t_c7ba1c05d4e139 17,275,277,329,333,353,400,416,421,425,438,454,465,478,481,561,563
+tests/e2e/inspectorTestId.spec.ts
+  s_2175fca1f07426::t_77bbf163f39d6c 1,5-13,15-17,20,22,25-26,29-41,44-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fb9818b4f530accf3e7ad2d65a3a1b812757f1a6",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
