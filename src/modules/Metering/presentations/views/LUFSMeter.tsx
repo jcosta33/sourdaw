@@ -6,6 +6,7 @@ import { type ReactElement, useRef, useEffect, useState } from 'react';
 
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { Stack } from '#/components/layout';
 import {
     getMasterAnalyser,
     getAudioSampleRate,
@@ -181,7 +182,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
     }, [height, width, target]);
 
     return (
-        <div className="flex flex-col items-center gap-1">
+        <Stack align="center" gap={1}>
             <DawMeterFrame overlay="vertical">
                 <canvas
                     ref={canvasRef}
@@ -197,6 +198,6 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
                 labelClassName="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70"
                 value={`${integrated > -70 ? integrated.toFixed(1) : '-∞'} LUFS`}
             />
-        </div>
+        </Stack>
     );
 };
