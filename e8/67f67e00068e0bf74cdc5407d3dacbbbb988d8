@@ -1,0 +1,19 @@
+tests/e2e/fermenterFxDistKnobsDepthTestId.spec.ts
+  s_24b1bdbc3c31ad::t_aed33f21bc86e8 3,5,10-14,17-24,26-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e867f67e00068e0bf74cdc5407d3dacbbbb988d8",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
