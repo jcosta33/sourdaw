@@ -1,0 +1,26 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_e296a7e83c186f 250-259
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineTransport.spec.ts
+  s_0a3429e31e555d::t_21f2f88f1b2527 10-12,18,166
+crates/daw-dsp/benches/quantum.rs
+  s_0a3429e31e555d::t_0d085fe507d414 273-274,760-765
+  s_0a3429e31e555d::t_21f2f88f1b2527 154,159-162,212,232-233,290,292-294,406-407,609-614,1100,1544-1546
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_21f2f88f1b2527 242-249,300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c7625f6fa28610c261691bb5d8269aa691660774",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
