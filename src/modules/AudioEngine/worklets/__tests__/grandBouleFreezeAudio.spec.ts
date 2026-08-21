@@ -31,6 +31,14 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
  * work: when the render comes back silent because the instrument is missing,
  * does freeze stop, or does it bake?
  *
+ * The refusal is only reachable because the withheld device stays in the chain
+ * as a silent stand-in (`createWithheldDeviceStrategy`). Drop it instead and
+ * `scheduleTrackClips` finds no instrument, substitutes the builtin fallback
+ * synth, and the bake *succeeds* — committing a sawtooth lead over the piano
+ * track and, through `flattenTrack`, deleting the Grand Boule device reference
+ * ADR 0032 exists to preserve. The harness oscillator sounds, so that outcome
+ * reds this file rather than passing as silence.
+ *
  * ## Why this spec lives here and not beside `freezeTrack`
  *
  * It mocks `getAudioContext`, an AudioEngine internal, and drives the real
@@ -40,9 +48,10 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
  * `cross-module-index-only`) and the barrel-mock guard both refuse. So the spec
  * sits on the side that owns the render and reaches `freezeTrack` through
  * Arrangement's public `useCases` barrel, which is the direction the boundary
- * permits. `silentBakeGuard.spec.ts` covers the same refusal from the policy
- * side with the render mocked out; this one proves the integration, with the
- * real device chain deciding.
+ * permits. `silentBakeGuard.spec.ts` owns the silent-bake policy itself with
+ * `renderOffline` mocked, and knows nothing about release admission — so
+ * nothing there can tell you what the real device chain does with a withheld
+ * device. This spec is the only one that closes that gap.
  *
  * Nothing under `freezeBounce/` is touched or mocked: this drives the real
  * `freezeTrack` -> real `renderTrackOffline` -> real `renderTrackSubgraphOffline`
@@ -298,16 +307,18 @@ describe('freezing a track whose instrument did not build refuses the bake', () 
         // ways this can go silently wrong. Without the first, the device
         // vanished from the render with nothing said. Without the second, freeze
         // stopped and the user was left looking at an unfrozen track wondering
-        // why.
+        // why. The first reads the admission-specific message rather than the
+        // generic device-load degrade, which fires for any environment fault
+        // and so cannot say which of the two happened.
         expect({
             froze,
             status: freezeState?.status,
             cachedBuffer: buffer !== undefined,
             trackFrozen: frozen?.frozen === true,
-            deviceDropReported: messages.some(
+            deviceWithholdingReported: messages.some(
                 ({ message, level }) =>
                     message.includes('grand-boule') &&
-                    message.includes('missing from the export') &&
+                    message.includes('withheld from this build') &&
                     level === 'warning'
             ),
             silentBakeRefused: messages.some(
@@ -318,7 +329,7 @@ describe('freezing a track whose instrument did not build refuses the bake', () 
             status: 'error',
             cachedBuffer: false,
             trackFrozen: false,
-            deviceDropReported: true,
+            deviceWithholdingReported: true,
             silentBakeRefused: true,
         });
     });

@@ -61,10 +61,13 @@ function describeTally(tally: RenderScheduleTally): string {
  *
  * **What it can actually catch** is narrower than "any silent export": an
  * instrument node that loads but emits zeros, a subgraph that resolves
- * disconnected, a worklet whose offline setup leaves it inert. A device that
- * fails to *load* is dropped with a warning and a MIDI track then falls back to
- * the builtin synth, which is audible; an unrenderable catalog device throws
- * out of `buildDeviceChain` before any of this runs.
+ * disconnected, a worklet whose offline setup leaves it inert, and an
+ * instrument release admission withholds — `buildDeviceChain` keeps that one in
+ * the chain as a silent stand-in precisely so the notes land somewhere this can
+ * see, rather than in a fallback synth it cannot. A device that fails to *load*
+ * is dropped with a warning and a MIDI track then falls back to the builtin
+ * synth, which is audible; an unrenderable catalog device throws out of
+ * `buildDeviceChain` before any of this runs.
  */
 export function detectSilentBake({
     track,
