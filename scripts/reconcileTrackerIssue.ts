@@ -117,10 +117,10 @@ export type Gh = (args: string[]) => string;
 type TrackerMutationLease = <Value>(operation: () => Value) => Value;
 
 /**
- * GitHub's issue PATCH endpoint has no conditional compare-and-swap. Sanctioned tracker writers
- * therefore cooperate through this repository-owned lease, held from the final read/digest check
- * through the verified PATCH. Writes outside the sanctioned commands cannot participate in that
- * serialization boundary and are still handled fail-closed by exact receipt/final-state checks.
+ * GitHub's issue PATCH endpoint has no conditional compare-and-swap.
+ * Only sanctioned local writers are serialized through this repository-owned lease, held from the
+ * final read/digest check through the verified PATCH. External GitHub issue body edits are unsupported
+ * because they cannot participate in this cooperative serialization boundary.
  */
 export function withRepositoryTrackerMutationLease<Value>(primaryRoot: string, operation: () => Value): Value {
     const leasePath = join(primaryRoot, '.git', 'sourdaw-tracker-mutation.lease');

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -316,6 +316,14 @@ describe('tracker issue reconciliation', () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it('documents that the lease only serializes sanctioned local writers', () => {
+        const source = readFileSync(join(import.meta.dirname, '../reconcileTrackerIssue.ts'), 'utf8');
+
+        expect(source).toContain('Only sanctioned local writers are serialized');
+        expect(source).toContain('External GitHub issue body edits are unsupported');
+        expect(source).not.toContain('out-of-band writes are handled fail-closed');
     });
 
     it('completes an issue while preserving its exact identity and body', () => {

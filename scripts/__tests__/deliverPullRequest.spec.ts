@@ -451,15 +451,46 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
     });
 
-    it('fails closed on a foreign or mismatched pre-merge delivery receipt', () => {
+    it('ignores foreign comments before parsing delivery receipts', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [
+                {
+                    id: 'IC_foreign_malformed',
+                    body: '<!-- sourdaw-delivery-receipt:v1\nmalformed -->',
+                    authorLogin: 'contributor',
+                    authorType: 'User',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_foreign_copy',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorLogin: 'jcosta33',
+                    authorType: 'User',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('add-receipt:42');
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it('fails closed on malformed, mismatched, or edited author-bot receipts', () => {
         const closes = relationshipBody('Closes #2372');
         const receipt = deliveryReceiptBody(42, 'head', closes, 2373);
         for (const existing of [
             {
-                id: 'IC_foreign',
-                body: deliveryReceiptBody(42, 'head', closes, 2372),
-                authorLogin: 'jcosta33',
-                authorType: 'User',
+                id: 'IC_malformed',
+                body: '<!-- sourdaw-delivery-receipt:v1\nmalformed -->',
+                authorLogin: 'jcosta33-author[bot]',
+                authorType: 'Bot',
                 createdAt: '2026-08-21T00:00:00Z',
                 updatedAt: '2026-08-21T00:00:00Z',
             },

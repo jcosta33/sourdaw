@@ -1,10 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { coordinateDelivery } from '../deliverPullRequest.ts';
-import { runTrustedGithubWriteCommand, trustedDependencyPaths } from '../trustedGithubWriteBootstrap.ts';
+import {
+    executeTrustedSnapshot,
+    runTrustedGithubWriteCommand,
+    trustedDependencyPaths,
+} from '../trustedGithubWriteBootstrap.ts';
 
 import type { DeliveryAuthentication, DeliveryCoordinatorDependencies, DeliveryPort } from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
@@ -83,34 +87,113 @@ describe('package scripts and gitignore', () => {
             'scripts/prContract.ts',
         ]);
         for (const changedPath of paths) {
-            let loaded = false;
+            let executed = false;
             await expect(
                 runTrustedGithubWriteCommand('deliver', ['42'], {
-                    readSource: (candidate) => (candidate === changedPath ? 'mutated' : 'trusted'),
-                    originMainSource: () => 'trusted',
-                    loadCommand: async () => {
-                        loaded = true;
-                        return async () => 0;
+                    resolveOriginMain: () => 'trusted-sha',
+                    readLocalSource: (candidate) => (candidate === changedPath ? 'mutated' : 'trusted'),
+                    readOriginSource: (commit) => {
+                        expect(commit).toBe('trusted-sha');
+                        return 'trusted';
+                    },
+                    executeSnapshot: async () => {
+                        executed = true;
+                        return 0;
                     },
                 })
             ).rejects.toThrow(new RegExp(changedPath.replaceAll('.', '\\.')));
-            expect(loaded).toBe(false);
+            expect(executed).toBe(false);
         }
 
-        let loadedUncheckedDependency = false;
+        let executedUncheckedDependency = false;
         const sourceFor = (candidate: string) =>
             candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted';
         await expect(
             runTrustedGithubWriteCommand('deliver', ['42'], {
-                readSource: sourceFor,
-                originMainSource: sourceFor,
-                loadCommand: async () => {
-                    loadedUncheckedDependency = true;
-                    return async () => 0;
+                resolveOriginMain: () => 'trusted-sha',
+                readLocalSource: sourceFor,
+                readOriginSource: (_commit, candidate) => sourceFor(candidate),
+                executeSnapshot: async () => {
+                    executedUncheckedDependency = true;
+                    return 0;
                 },
             })
         ).rejects.toThrow(/imports unchecked local dependency scripts\/unchecked\.ts/);
-        expect(loadedUncheckedDependency).toBe(false);
+        expect(executedUncheckedDependency).toBe(false);
+    });
+
+    it('pins one origin commit and executes only the verified snapshot after local mutation', async () => {
+        const paths = trustedDependencyPaths('deliver');
+        const trusted = new Map(paths.map((path) => [path, `trusted:${path}`]));
+        const local = new Map(trusted);
+        const originReads: string[] = [];
+        let resolves = 0;
+        let liveOrigin = 'pinned-sha';
+
+        const result = await runTrustedGithubWriteCommand('deliver', ['2495'], {
+            resolveOriginMain: () => {
+                resolves += 1;
+                const resolved = liveOrigin;
+                liveOrigin = 'advanced-sha';
+                return resolved;
+            },
+            readLocalSource: (path) => local.get(path) ?? '',
+            readOriginSource: (commit, path) => {
+                expect(liveOrigin).toBe('advanced-sha');
+                originReads.push(`${commit}:${path}`);
+                return trusted.get(path) ?? '';
+            },
+            executeSnapshot: async (command, args, snapshot) => {
+                local.set('scripts/deliverPullRequest.ts', 'mutated-after-verification');
+                expect(command).toBe('deliver');
+                expect(args).toEqual(['2495']);
+                expect(snapshot.commit).toBe('pinned-sha');
+                expect(snapshot.sources).toEqual(trusted);
+                return 17;
+            },
+        });
+
+        expect(result).toBe(17);
+        expect(resolves).toBe(1);
+        expect(originReads).toEqual(paths.map((path) => `pinned-sha:${path}`));
+    });
+
+    it('cleans the exact-byte snapshot tree after success and failure', async () => {
+        await expect(
+            executeTrustedSnapshot('deliver', ['2495'], {
+                commit: 'pinned-sha',
+                sources: new Map([
+                    [
+                        'scripts/deliverPullRequest.ts',
+                        "export async function runDeliverCli(args) { return args[0] === '2495' ? 0 : 1; }",
+                    ],
+                ]),
+            })
+        ).resolves.toBe(0);
+
+        let snapshotDirectory = '';
+        const execute = (fail: boolean) =>
+            executeTrustedSnapshot(
+                'deliver',
+                ['2495'],
+                {
+                    commit: 'pinned-sha',
+                    sources: new Map([['scripts/deliverPullRequest.ts', 'trusted delivery bytes']]),
+                },
+                async (entryPath) => {
+                    snapshotDirectory = dirname(dirname(entryPath));
+                    expect(readFileSync(entryPath, 'utf8')).toBe('trusted delivery bytes');
+                    if (fail) {
+                        throw new Error('command failed');
+                    }
+                    return 23;
+                }
+            );
+
+        await expect(execute(false)).resolves.toBe(23);
+        expect(existsSync(snapshotDirectory)).toBe(false);
+        await expect(execute(true)).rejects.toThrow('command failed');
+        expect(existsSync(snapshotDirectory)).toBe(false);
     });
 
     it('wires PR operations and tracker operations to distinct least-privilege sessions', async () => {

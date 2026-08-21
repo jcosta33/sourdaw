@@ -1,16 +1,29 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { posix, resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile';
 
-type TrustedSourcePort = {
-    readSource: (path: string) => string;
-    originMainSource: (path: string) => string | undefined;
-    loadCommand: (command: TrustedGithubWriteCommand) => Promise<(args: string[]) => Promise<number>>;
+export type TrustedSourceSnapshot = {
+    commit: string;
+    sources: ReadonlyMap<string, string>;
 };
+
+type TrustedSourcePort = {
+    resolveOriginMain: () => string;
+    readLocalSource: (path: string) => string;
+    readOriginSource: (commit: string, path: string) => string;
+    executeSnapshot: (
+        command: TrustedGithubWriteCommand,
+        args: string[],
+        snapshot: TrustedSourceSnapshot
+    ) => Promise<number>;
+};
+
+type SnapshotRunner = (entryPath: string, runner: string, args: string[]) => Promise<number>;
 
 const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
     deliver: [
@@ -30,24 +43,30 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     ],
 };
 
+const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
+    deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
+    'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
+};
+
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
     return trustedDependencyGraphs[command];
 }
 
 export function assertTrustedSourceGraph(
     command: TrustedGithubWriteCommand,
-    port: Omit<TrustedSourcePort, 'loadCommand'>
+    sources: ReadonlyMap<string, string>
 ): void {
     const paths = trustedDependencyPaths(command);
     const pathSet = new Set(paths);
-    const sources = new Map(paths.map((path) => [path, port.readSource(path)]));
     for (const path of paths) {
-        const originSource = port.originMainSource(path);
-        if (originSource !== undefined && sources.get(path) !== originSource) {
-            throw new Error(`${path} does not match origin/main; refusing to run a mutated copy`);
+        if (!sources.has(path)) {
+            throw new Error(`trusted snapshot is missing ${path}`);
         }
     }
     for (const [path, source] of sources) {
+        if (!pathSet.has(path)) {
+            throw new Error(`trusted snapshot contains unexpected source ${path}`);
+        }
         if (path === 'scripts/trustedGithubWriteBootstrap.ts') {
             continue;
         }
@@ -82,9 +101,75 @@ export async function runTrustedGithubWriteCommand(
     args: string[],
     port: TrustedSourcePort
 ): Promise<number> {
-    assertTrustedSourceGraph(command, port);
-    const run = await port.loadCommand(command);
-    return run(args);
+    const commit = port.resolveOriginMain();
+    if (commit.trim() === '') {
+        throw new Error('origin/main did not resolve to a commit');
+    }
+    const sources = new Map<string, string>();
+    for (const path of trustedDependencyPaths(command)) {
+        const trustedSource = port.readOriginSource(commit, path);
+        if (port.readLocalSource(path) !== trustedSource) {
+            throw new Error(`${path} does not match origin/main at ${commit}; refusing to run a mutated copy`);
+        }
+        sources.set(path, trustedSource);
+    }
+    assertTrustedSourceGraph(command, sources);
+    return port.executeSnapshot(command, args, { commit, sources });
+}
+
+export async function executeTrustedSnapshot(
+    command: TrustedGithubWriteCommand,
+    args: string[],
+    snapshot: TrustedSourceSnapshot,
+    runSnapshot: SnapshotRunner = runSnapshotModule
+): Promise<number> {
+    const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-write-'));
+    try {
+        for (const [path, source] of snapshot.sources) {
+            if (!path.startsWith('scripts/') || posix.normalize(path) !== path || path.includes('..')) {
+                throw new Error(`invalid trusted snapshot path ${path}`);
+            }
+            const target = resolve(snapshotRoot, path);
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, source, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+        }
+        const entry = commandEntries[command];
+        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args);
+        if (!Number.isSafeInteger(result)) {
+            throw new TypeError(`trusted ${command} snapshot returned an invalid exit code`);
+        }
+        return result;
+    } finally {
+        rmSync(snapshotRoot, { recursive: true, force: true });
+    }
+}
+
+async function runSnapshotModule(entryPath: string, runner: string, args: string[]): Promise<number> {
+    const source = [
+        "import { pathToFileURL } from 'node:url';",
+        'const [entryPath, runner, ...args] = process.argv.slice(1);',
+        'const loaded = await import(pathToFileURL(entryPath).href);',
+        'const command = Reflect.get(loaded, runner);',
+        "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
+        'const result = await command(args);',
+        "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
+        'process.exitCode = result;',
+    ].join('\n');
+    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', source, entryPath, runner, ...args], {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === null) {
+        throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+    }
+    if (result.status !== 0) {
+        throw new Error(`trusted snapshot failed with exit ${result.status}`);
+    }
+    return result.status;
 }
 
 function captureGit(repositoryRoot: string, args: string[]): string {
@@ -98,34 +183,13 @@ function captureGit(repositoryRoot: string, args: string[]): string {
     return result.stdout;
 }
 
-function originMainSource(repositoryRoot: string, path: string): string | undefined {
-    const exists = spawnSync('git', ['cat-file', '-e', `origin/main:${path}`], {
-        cwd: repositoryRoot,
-        encoding: 'utf8',
-        shell: false,
-    });
-    if (exists.error !== undefined) {
-        throw exists.error;
-    }
-    if (exists.status !== 0) {
-        return undefined;
-    }
-    return captureGit(repositoryRoot, ['show', `origin/main:${path}`]);
-}
-
 function defaultPort(repositoryRoot: string): TrustedSourcePort {
-    captureGit(repositoryRoot, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']);
     return {
-        readSource: (path) => readFileSync(resolve(repositoryRoot, path), 'utf8'),
-        originMainSource: (path) => originMainSource(repositoryRoot, path),
-        loadCommand: async (command) => {
-            if (command === 'deliver') {
-                const module = await import('./deliverPullRequest.ts');
-                return module.runDeliverCli;
-            }
-            const module = await import('./reconcileTrackerIssue.ts');
-            return module.runReconcileTrackerIssueCli;
-        },
+        resolveOriginMain: () =>
+            captureGit(repositoryRoot, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']).trim(),
+        readLocalSource: (path) => readFileSync(resolve(repositoryRoot, path), 'utf8'),
+        readOriginSource: (commit, path) => captureGit(repositoryRoot, ['show', `${commit}:${path}`]),
+        executeSnapshot: executeTrustedSnapshot,
     };
 }
 

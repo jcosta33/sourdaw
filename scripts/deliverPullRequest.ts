@@ -175,6 +175,9 @@ function deliveryReceiptCandidates(
 ): DeliveryReceiptComment[] {
     const candidates: DeliveryReceiptComment[] = [];
     for (const comment of comments) {
+        if (!isAuthorBotLogin(comment.authorLogin)) {
+            continue;
+        }
         const payload = parseDeliveryReceipt(comment.body);
         if (payload === undefined) {
             continue;
