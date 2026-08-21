@@ -331,6 +331,7 @@
             "paths": [
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts"
             ],
@@ -1153,7 +1154,7 @@
         },
         {
             "surface": "ddsp-models",
-            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+            "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
         },
         {
