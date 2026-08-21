@@ -8,7 +8,7 @@ const subscribe_to_midi_store = vi.hoisted(() =>
     )
 );
 
-const release_gate = vi.hoisted(() => ({ ddsp: false, kokoro: true }));
+const release_gate = vi.hoisted(() => ({ ddsp: true, kokoro: true }));
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: release_gate }));
 
@@ -80,7 +80,7 @@ const fresh_capability_report: CapabilityReport = {
 describe('initBrowserAi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        release_gate.ddsp = false;
+        release_gate.ddsp = true;
         release_gate.kokoro = true;
         capabilityStore.set({ phase: 'idle' });
         modelRegistryStore.set({
@@ -120,22 +120,27 @@ describe('initBrowserAi', () => {
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
     });
 
-    it('should keep withheld DDSP checkpoints out of the runtime registry', async () => {
+    it('should admit exactly four DDSP checkpoints as not-downloaded on a fresh profile', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
+        const check_ddsp_instrument_ready = vi.fn().mockResolvedValue(false);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
-            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
 
-        expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
-        expect(DDSP_INSTRUMENT_CATALOG.every((instrument) => instrument.license === 'Unverified')).toBe(true);
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((instrument) =>
+                expect.objectContaining({ id: instrument.id, status: 'not-downloaded', downloadProgress: 0 })
+            )
+        );
+        expect(check_ddsp_instrument_ready).toHaveBeenCalledTimes(4);
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
         expect(check_verified_model).toHaveBeenCalledWith({
             family: 'kokoro',

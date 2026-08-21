@@ -537,7 +537,7 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
     };
 }
 
-/** Exact distributed code and notice closure for the release-withheld DDSP worker runtime. */
+/** Exact distributed code and notice closure for the DDSP worker runtime. */
 export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceContract {
     return {
         kind: 'runtime-library',

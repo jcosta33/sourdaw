@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
@@ -10,10 +10,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 
-import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
+import { DDSP_INSTRUMENT_CATALOG, type DdspInstrumentId } from '../../models/DdspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
+import { downloadDdspInstrument } from '../../useCases/downloadDdspInstrument';
 import { downloadModel } from '../../useCases/downloadModel';
 import { KOKORO_MODEL_ENTRY } from '../../useCases/initBrowserAi';
+import { removeDdspInstrument } from '../../useCases/removeDdspInstrument';
 import { removeModel } from '../../useCases/removeModel';
 
 function formatBytes(bytes: number): string {
@@ -26,8 +28,140 @@ function formatBytes(bytes: number): string {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-const DDSP_UNAVAILABLE_DESCRIPTION = 'TF.js worker unavailable in this build';
-const DDSP_UNAVAILABLE_LABEL = 'DDSP browser rendering is not available in this build';
+type DdspAction = 'download' | 'remove';
+
+type DdspModelActionProps = {
+    id: DdspInstrumentId;
+    name: string;
+    sizeBytes: number;
+    status: 'not-downloaded' | 'downloading' | 'ready' | 'error' | 'stale' | undefined;
+    downloadProgress: number;
+};
+
+function DdspModelAction({ id, name, sizeBytes, status, downloadProgress }: DdspModelActionProps): ReactElement {
+    const [pendingAction, setPendingAction] = useState<DdspAction | null>(null);
+    const [failedAction, setFailedAction] = useState<DdspAction | null>(null);
+
+    const runAction = async (action: DdspAction): Promise<void> => {
+        if (pendingAction !== null) {
+            return;
+        }
+        setFailedAction(null);
+        setPendingAction(action);
+        try {
+            if (action === 'download') {
+                await downloadDdspInstrument(id);
+            } else {
+                await removeDdspInstrument(id);
+            }
+        } catch (error) {
+            setFailedAction(action);
+            logger.error(new Error(`[BrowserAi] Failed to ${action} DDSP instrument "${id}"`, { cause: error }));
+        } finally {
+            setPendingAction(null);
+        }
+    };
+
+    if (pendingAction === 'download' || status === 'downloading') {
+        const progress = status === 'downloading' ? downloadProgress : 0;
+        const progressPercent = Math.round(progress * 100);
+        return (
+            <Row gap={2}>
+                <div
+                    className="w-12 h-1 bg-border/40 rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={progressPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Downloading ${name}: ${String(progressPercent)}%`}
+                >
+                    <div
+                        className="h-full bg-[var(--color-accent-orange)] transition-all"
+                        style={{ width: `${String(progressPercent)}%` }}
+                    />
+                </div>
+                <span className="text-[9px] text-muted-foreground tabular-nums">{progressPercent}%</span>
+            </Row>
+        );
+    }
+
+    if (pendingAction === 'remove') {
+        return (
+            <Button
+                variant="bare"
+                size="bare"
+                type="button"
+                disabled
+                aria-label={`Removing ${name} from storage`}
+                className="text-[9px] text-muted-foreground"
+            >
+                Removing…
+            </Button>
+        );
+    }
+
+    const retryAction = failedAction ?? (status === 'error' ? 'download' : null);
+    if (retryAction !== null) {
+        return (
+            <Row gap={2}>
+                <DawMicroBadge tone="danger" role="alert" aria-label={`${name} ${retryAction} failed`}>
+                    Failed
+                </DawMicroBadge>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    onClick={() => void runAction(retryAction)}
+                    className="text-[9px] text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={`Retry ${retryAction === 'download' ? 'downloading' : 'removing'} ${name}`}
+                >
+                    Retry
+                </Button>
+            </Row>
+        );
+    }
+
+    if (status === 'ready') {
+        return (
+            <Row gap={2}>
+                <DawMicroBadge tone="success" aria-label={`${name} downloaded and ready`}>
+                    ✓ Ready
+                </DawMicroBadge>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    onClick={() => void runAction('remove')}
+                    className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    aria-label={`Remove ${name} from storage`}
+                >
+                    Remove
+                </Button>
+            </Row>
+        );
+    }
+
+    if (status === undefined) {
+        return (
+            <DawMicroBadge tone="muted" aria-label={`Checking ${name} download status`}>
+                Checking…
+            </DawMicroBadge>
+        );
+    }
+
+    return (
+        <Button
+            variant="bare"
+            size="bare"
+            type="button"
+            onClick={() => void runAction('download')}
+            className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
+            aria-label={`Download ${name} (${formatBytes(sizeBytes)})`}
+        >
+            Download
+        </Button>
+    );
+}
 
 type ModelActionProps = {
     id: string;
@@ -152,9 +286,7 @@ export function ModelManagerPanel(): ReactElement {
 
     const kokoroStatus = registry.kokoroModel?.status ?? 'not-downloaded';
     const kokoroProgress = registry.kokoroModel?.downloadProgress ?? 0;
-    // DDSP instruments: use registry status when available, fall back to static catalog
-    const registryInstruments = registry.ddspInstruments;
-    const instruments = registryInstruments.length > 0 ? registryInstruments : DDSP_INSTRUMENT_CATALOG;
+    const registryInstruments = new Map(registry.ddspInstruments.map((instrument) => [instrument.id, instrument]));
 
     const totalUsed = registry.storageUsedBytes;
     const limitBytes = 2 * 1024 * 1024 * 1024;
@@ -191,31 +323,21 @@ export function ModelManagerPanel(): ReactElement {
             {MODEL_RELEASE_ADMISSION.ddsp ? (
                 <DawUtilitySection title="DDSP Instruments" detail="Monophonic synthesis · Google Research">
                     <Stack gap={0.5}>
-                        {instruments.map((instrument) => {
-                            const status = 'status' in instrument ? instrument.status : 'error';
-                            const description =
-                                status === 'ready' ? 'CDN · ~15 MB · cached by browser' : DDSP_UNAVAILABLE_DESCRIPTION;
+                        {DDSP_INSTRUMENT_CATALOG.map((instrument) => {
+                            const registryInstrument = registryInstruments.get(instrument.id);
                             return (
                                 <DawPickerRow
                                     key={instrument.id}
                                     heading={instrument.name}
-                                    description={description}
+                                    description={`Pinned Magenta checkpoint · ${formatBytes(instrument.sizeBytes)}`}
                                     endSlot={
-                                        status === 'ready' ? (
-                                            <DawMicroBadge
-                                                tone="success"
-                                                aria-label={`${instrument.name} cached and ready`}
-                                            >
-                                                ✓ Cached
-                                            </DawMicroBadge>
-                                        ) : (
-                                            <DawMicroBadge
-                                                tone="danger"
-                                                aria-label={`${instrument.name} unavailable: ${DDSP_UNAVAILABLE_LABEL}`}
-                                            >
-                                                Unavailable
-                                            </DawMicroBadge>
-                                        )
+                                        <DdspModelAction
+                                            id={instrument.id}
+                                            name={instrument.name}
+                                            sizeBytes={instrument.sizeBytes}
+                                            status={registryInstrument?.status}
+                                            downloadProgress={registryInstrument?.downloadProgress ?? 0}
+                                        />
                                     }
                                 />
                             );

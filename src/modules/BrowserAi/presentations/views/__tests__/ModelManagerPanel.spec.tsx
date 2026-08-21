@@ -19,8 +19,14 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 const use_case_mocks = vi.hoisted(() => ({
+    downloadDdspInstrument: vi.fn(),
     downloadModel: vi.fn(),
+    removeDdspInstrument: vi.fn(),
     removeModel: vi.fn(),
+}));
+
+vi.mock('../../../useCases/downloadDdspInstrument', () => ({
+    downloadDdspInstrument: use_case_mocks.downloadDdspInstrument,
 }));
 
 vi.mock('../../../useCases/downloadModel', () => ({
@@ -31,12 +37,20 @@ vi.mock('../../../useCases/removeModel', () => ({
     removeModel: use_case_mocks.removeModel,
 }));
 
-function create_registry_with_unavailable_ddsp(): ModelRegistryState {
+vi.mock('../../../useCases/removeDdspInstrument', () => ({
+    removeDdspInstrument: use_case_mocks.removeDdspInstrument,
+}));
+
+function create_registry_with_ddsp(
+    statuses: Partial<
+        Record<(typeof DDSP_INSTRUMENT_CATALOG)[number]['id'], ModelRegistryState['ddspInstruments'][number]['status']>
+    > = {}
+): ModelRegistryState {
     return {
         ddspInstruments: DDSP_INSTRUMENT_CATALOG.map((instrument) => ({
             ...instrument,
-            status: 'error',
-            downloadProgress: 0,
+            status: statuses[instrument.id] ?? 'not-downloaded',
+            downloadProgress: statuses[instrument.id] === 'ready' ? 1 : 0,
         })),
         kokoroModel: null,
         diffSingerVoicebanks: [],
@@ -59,15 +73,122 @@ describe('ModelManagerPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.registryState = undefined;
+        use_case_mocks.downloadDdspInstrument.mockResolvedValue(undefined);
+        use_case_mocks.downloadModel.mockResolvedValue(undefined);
+        use_case_mocks.removeDdspInstrument.mockResolvedValue(undefined);
+        use_case_mocks.removeModel.mockResolvedValue(undefined);
     });
 
-    it('does not expose withheld DDSP checkpoints', () => {
-        mocks.registryState = create_registry_with_unavailable_ddsp();
+    it('shows exactly the four admitted catalog instruments with download actions from registry state', () => {
+        mocks.registryState = create_registry_with_ddsp();
 
         render(<ModelManagerPanel />);
 
-        expect(screen.queryByText('DDSP Instruments')).not.toBeInTheDocument();
-        expect(screen.queryByText(/DDSP:/)).not.toBeInTheDocument();
+        expect(screen.getByText('DDSP Instruments')).toBeInTheDocument();
+        expect(
+            screen.getAllByRole('button', { name: /^Download (Violin|Flute|Trumpet|Tenor Saxophone) \(/ })
+        ).toHaveLength(4);
+        expect(screen.queryByText('Unavailable', { exact: true })).not.toBeInTheDocument();
+        for (const instrument of DDSP_INSTRUMENT_CATALOG) {
+            expect(screen.getByText(instrument.name, { exact: true })).toBeInTheDocument();
+        }
+    });
+
+    it('delegates every DDSP download only to the pinned instrument use case', () => {
+        mocks.registryState = create_registry_with_ddsp();
+        render(<ModelManagerPanel />);
+
+        for (const instrument of DDSP_INSTRUMENT_CATALOG) {
+            fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Download ${instrument.name} \\(`) }));
+        }
+
+        expect(use_case_mocks.downloadDdspInstrument.mock.calls).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((instrument) => [instrument.id])
+        );
+        expect(use_case_mocks.downloadModel).not.toHaveBeenCalledWith(expect.objectContaining({ family: 'ddsp' }));
+    });
+
+    it('shows truthful checking state instead of fabricating readiness when registry entries are absent', () => {
+        mocks.registryState = create_base_registry();
+
+        render(<ModelManagerPanel />);
+
+        expect(screen.getAllByText('Checking…', { exact: true })).toHaveLength(4);
+        expect(screen.queryByRole('button', { name: /^Download (Violin|Flute|Trumpet|Tenor Saxophone)/ })).toBeNull();
+    });
+
+    it('shows DDSP progress, ready removal, and registry error retry states', () => {
+        const registry = create_registry_with_ddsp({
+            'ddsp-violin': 'downloading',
+            'ddsp-flute': 'ready',
+            'ddsp-trumpet': 'error',
+        });
+        registry.ddspInstruments[0] = { ...registry.ddspInstruments[0]!, downloadProgress: 0.42 };
+        mocks.registryState = registry;
+
+        render(<ModelManagerPanel />);
+
+        expect(screen.getByRole('progressbar', { name: 'Downloading Violin: 42%' })).toHaveAttribute(
+            'aria-valuenow',
+            '42'
+        );
+        expect(screen.getByLabelText('Flute downloaded and ready')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Flute from storage' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Retry downloading Trumpet' }));
+        expect(use_case_mocks.removeDdspInstrument).toHaveBeenCalledExactlyOnceWith('ddsp-flute');
+        expect(use_case_mocks.downloadDdspInstrument).toHaveBeenCalledExactlyOnceWith('ddsp-trumpet');
+    });
+
+    it('catches a DDSP action failure, makes it visible, and offers the exact retry', async () => {
+        mocks.registryState = create_registry_with_ddsp();
+        use_case_mocks.downloadDdspInstrument.mockRejectedValueOnce(new Error('network failed'));
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        render(<ModelManagerPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: /^Download Violin \(/ }));
+
+        expect(await screen.findByRole('alert', { name: 'Violin download failed' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry downloading Violin' }));
+        await vi.waitFor(() => expect(use_case_mocks.downloadDdspInstrument).toHaveBeenCalledTimes(2));
+        expect(loggerError).toHaveBeenCalledOnce();
+        loggerError.mockRestore();
+    });
+
+    it('catches a DDSP removal failure and retries only the pinned removal use case', async () => {
+        mocks.registryState = create_registry_with_ddsp({ 'ddsp-flute': 'ready' });
+        use_case_mocks.removeDdspInstrument.mockRejectedValueOnce(new Error('OPFS denied'));
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        render(<ModelManagerPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Flute from storage' }));
+
+        expect(await screen.findByRole('alert', { name: 'Flute remove failed' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry removing Flute' }));
+        await vi.waitFor(() => expect(use_case_mocks.removeDdspInstrument).toHaveBeenCalledTimes(2));
+        expect(use_case_mocks.removeModel).not.toHaveBeenCalledWith(expect.objectContaining({ family: 'ddsp' }));
+        expect(loggerError).toHaveBeenCalledOnce();
+        loggerError.mockRestore();
+    });
+
+    it('keeps each DDSP action single-flight while its use case is pending', async () => {
+        let finishDownload = (): void => undefined;
+        use_case_mocks.downloadDdspInstrument.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishDownload = resolve;
+                })
+        );
+        mocks.registryState = create_registry_with_ddsp();
+        render(<ModelManagerPanel />);
+        const button = screen.getByRole('button', { name: /^Download Violin \(/ });
+
+        fireEvent.click(button);
+        fireEvent.click(button);
+
+        expect(use_case_mocks.downloadDdspInstrument).toHaveBeenCalledExactlyOnceWith('ddsp-violin');
+        expect(screen.getByRole('progressbar', { name: 'Downloading Violin: 0%' })).toBeInTheDocument();
+        finishDownload();
+        await vi.waitFor(() => expect(screen.getByRole('button', { name: /^Download Violin \(/ })).toBeEnabled());
     });
 
     it('should download the Kokoro model when not-downloaded and show its download button', () => {

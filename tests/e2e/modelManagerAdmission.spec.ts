@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { DDSP_INSTRUMENT_CATALOG } from '../../src/modules/BrowserAi/models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT } from '../../src/modules/BrowserAi/models/KokoroArtifactManifest';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
@@ -22,13 +23,21 @@ test.describe('Browser AI model admission', () => {
         await open_preferences_ai_section(page);
     });
 
-    test('a fresh profile offers only the admitted model download', async ({ page }) => {
+    test('a fresh profile offers every admitted model download and no withheld surface', async ({ page }) => {
         const dialog = page.getByRole('dialog');
 
         await expect(dialog.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ })).toBeVisible();
+        await expect(dialog.getByText('DDSP Instruments', { exact: true })).toBeVisible();
+        for (const instrument of DDSP_INSTRUMENT_CATALOG) {
+            await expect(
+                dialog.getByRole('button', { name: new RegExp(`^Download ${instrument.name} \\(`) })
+            ).toBeVisible();
+        }
+        await expect(
+            dialog.getByRole('button', { name: /^Download (Violin|Flute|Trumpet|Tenor Saxophone) \(/ })
+        ).toHaveCount(4);
         await expect(dialog.getByRole('button', { name: /Remove .+ from storage/ })).toHaveCount(0);
         await expect(dialog.getByRole('button', { name: /Retry downloading .+/ })).toHaveCount(0);
-        await expect(dialog.getByText('DDSP Instruments', { exact: true })).toHaveCount(0);
         await expect(dialog.getByText('Unavailable', { exact: true })).toHaveCount(0);
     });
 
