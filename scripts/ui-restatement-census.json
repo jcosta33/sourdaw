@@ -290,7 +290,7 @@
   {
     "id": "ui-02d61b76654d2db6",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 330,
+    "line": 331,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -866,7 +866,7 @@
   {
     "id": "ui-07bf67b6554e5d20",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 273,
+    "line": 274,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1746,15 +1746,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0f56408ff7666cf6",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 207,
-    "fingerprint": "div\tflex flex-col gap-3 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0fb342ac5d6b636c",
     "file": "src/components/ui/bipolar-slider.tsx",
     "line": 56,
@@ -1780,15 +1771,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0fe002b8a82d2f00",
-    "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
-    "line": 31,
-    "fingerprint": "div\tmb-2 space-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0fe864462ac2a386",
@@ -1852,6 +1834,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
+  },
+  {
+    "id": "ui-10c9d6d0c9ad2d82",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 208,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-10cc2ff26766472d",
@@ -2423,7 +2414,7 @@
   {
     "id": "ui-15e49f97e9238bc9",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 284,
+    "line": 285,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -2999,7 +2990,7 @@
   {
     "id": "ui-1c752ccf46246b14",
     "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
-    "line": 32,
+    "line": 33,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -3494,7 +3485,7 @@
   {
     "id": "ui-2007e415609ebb5c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 290,
+    "line": 291,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3917,7 +3908,7 @@
   {
     "id": "ui-25765003287eb9bb",
     "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
-    "line": 24,
+    "line": 28,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -4421,7 +4412,7 @@
   {
     "id": "ui-29f73f36ec855299",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 346,
+    "line": 347,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -5177,7 +5168,7 @@
   {
     "id": "ui-315b2b0161e70ff4",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 242,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5312,7 +5303,7 @@
   {
     "id": "ui-32f562e2f4e94177",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 196,
+    "line": 197,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -5424,6 +5415,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-341c8d33b904389b",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 242,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -5933,7 +5933,7 @@
   {
     "id": "ui-39aafe9cd38d7efb",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 289,
+    "line": 290,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -8849,7 +8849,7 @@
   {
     "id": "ui-57cfbab0d9dc4f69",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 202,
+    "line": 203,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8939,7 +8939,7 @@
   {
     "id": "ui-5859d9f6a386b9ac",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 227,
+    "line": 228,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8953,15 +8953,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-586cc46ac08e843c",
-    "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
-    "line": 14,
-    "fingerprint": "div\tflex items-center gap-2 rounded-md border border-white/8 bg-black/20 px-2 py-1.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-58c26debbe46d45b",
@@ -9218,7 +9209,7 @@
   {
     "id": "ui-5b081ebc7a54b4ce",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 195,
+    "line": 196,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9794,7 +9785,7 @@
   {
     "id": "ui-6005ca0d9821321f",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 304,
+    "line": 305,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11252,7 +11243,7 @@
   {
     "id": "ui-707ca75742c7a46b",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 335,
+    "line": 336,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12818,7 +12809,7 @@
   {
     "id": "ui-7e5eabdbb49f8179",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 372,
+    "line": 373,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -13075,15 +13066,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-80c85647b7771686",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 220,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-80da635f2555bd81",
@@ -15266,7 +15248,7 @@
   {
     "id": "ui-97ce611dab27810b",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 267,
+    "line": 268,
     "fingerprint": "DawUtilityNotice\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
@@ -15543,6 +15525,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-9ae4b41118aff949",
+    "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
+    "line": 32,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9b0dbb15373f6390",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 244,
@@ -15806,7 +15797,7 @@
   {
     "id": "ui-9e8d0f0bba5e6fb0",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 351,
+    "line": 352,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -16049,7 +16040,7 @@
   {
     "id": "ui-a063ca6309e86a58",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 325,
+    "line": 326,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16472,7 +16463,7 @@
   {
     "id": "ui-a47afa9f4076aaa7",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 352,
+    "line": 353,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16643,7 +16634,7 @@
   {
     "id": "ui-a72f30885739545c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 341,
+    "line": 342,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -17057,7 +17048,7 @@
   {
     "id": "ui-aaf912beff7a1a06",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 188,
+    "line": 189,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -18956,7 +18947,7 @@
   {
     "id": "ui-be2d54d3138c0908",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 259,
+    "line": 260,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19068,15 +19059,6 @@
     "fingerprint": "div\tflex flex-col items-center gap-0 mt-auto",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c00ee151dec3c1bd",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 241,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -21260,7 +21242,7 @@
   {
     "id": "ui-d69512d95e56f8cc",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 181,
+    "line": 182,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -21476,7 +21458,7 @@
   {
     "id": "ui-d859a154b634dc9a",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 256,
+    "line": 257,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21998,7 +21980,7 @@
   {
     "id": "ui-de023df580db7737",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 244,
+    "line": 245,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22047,6 +22029,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-deb62c01b35836ca",
+    "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
+    "line": 15,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -22304,7 +22295,7 @@
   {
     "id": "ui-e1f4dabf76c236e2",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 319,
+    "line": 320,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23861,7 +23852,7 @@
   {
     "id": "ui-f179423460703a6c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 313,
+    "line": 314,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24383,7 +24374,7 @@
   {
     "id": "ui-f6f651a9393cbd58",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 168,
+    "line": 169,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -25128,6 +25119,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-fe3aefea6cc283ef",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 221,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fe43723e9ce197b6",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
     "line": 585,
@@ -25256,7 +25256,7 @@
   {
     "id": "ui-ff92cf3b7d042757",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 210,
+    "line": 211,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
