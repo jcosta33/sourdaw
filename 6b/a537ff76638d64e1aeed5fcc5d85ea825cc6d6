@@ -1,0 +1,66 @@
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_76628b532330e5 155-221,402,925,937
+  s_0a3429e31e555d::t_0a1867aa3110ca 154
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_76628b532330e5 14-16,293-321,324-325
+  s_0a3429e31e555d::t_df63a23771995d 322-323
+  s_0a3429e31e555d::t_3e5d74a92bb20c 326
+package.json
+  s_0a3429e31e555d::t_bf7cb3804c2b45 86-88
+pnpm-lock.yaml
+  s_0a3429e31e555d::t_95757a32fee7ec 35-43,2349-2354,2361-2365,2371-2375,2380-2383,2500-2502,2898-2900,7542-7547,7558-7562,7567-7570,7584-7595,7742-7743,8064-8065
+public/legal/Apache-2.0.txt
+  s_0a3429e31e555d::t_7548d13b086232 1-201
+public/legal/Magenta.js-NOTICE.txt
+  s_0a3429e31e555d::t_4e3deab1bd6489 1-22
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_e2d5c8cbfcc192 38-49
+public/legal/TensorFlow.js-NOTICE.txt
+  s_0a3429e31e555d::t_f2c7f30da303ca 1-35
+public/legal/seedrandom-MIT.txt
+  s_0a3429e31e555d::t_20ea8545daa8cf 1-52
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_4fcf573704ec3d 79-101,154-157,532-572,1046,1054-1058,1066-1068,1070,1072-1074,1076-1078,1080-1093,1102,1117,1121
+src/modules/BrowserAi/models/InferenceRequest.ts
+  s_0a3429e31e555d::t_4429acaae58021 22-29,32-41,74-75,77-84,89-91,129-133,140-147,159,161-162
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_0a3429e31e555d::t_66328eb0f6a949 11,14,17,36,38-44,46,49,51-56,81-84,106-112,148-149,364-366,371-409,411-456,458-465,475-481,485-487,499-505,511-517,526-532,550,635,637-644,648-662,665-667,753-760,769,778-779,781-846
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_0a3429e31e555d::t_8b222a944deeb5 18-20,23-24,41,46,51,55-59,93-137,146,165,180-183,189,196-209,211-215,219-228,279-332,341-352,384,407-455,477-481,483-496,508-511,515-533,583,591-598,601,613-615,621
+src/modules/BrowserAi/services/__tests__/computeDdspSessionKey.spec.ts
+  s_0a3429e31e555d::t_b97d4a4117954c 1-106
+src/modules/BrowserAi/services/computeDdspSessionKey.ts
+  s_0a3429e31e555d::t_20b8fb79271dcf 1-30
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorker.spec.ts
+  s_0a3429e31e555d::t_440be91835afe9 3,5-8,10-13,15-20,22-153,158-204,208-219,223-231,234-237,239-243,246-254,256-260,263-318,320-347,350-361,363-392
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_0a3429e31e555d::t_7e8f6fbab6a9cd 1-799
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_0a3429e31e555d::t_b35272e9a0017e 1,3-23,26-29,31-32,35-59,61-85,87-149
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_0a3429e31e555d::t_88d945e7716095 1-773
+src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts
+  s_0a3429e31e555d::t_9a4e6cd4d2c261 22,25-27,151,203,239-303,474
+src/modules/Project/useCases/semanticProjectIndex.ts
+  s_0a3429e31e555d::t_df44e712734295 9,16,27-31,54-59,333,339,526-527
+src/modules/Project/useCases/semanticProjectQueries.ts
+  s_0a3429e31e555d::t_e04a03976e21c9 19,272,310-317,403,631
+tests/e2e/clipDragDeleteTestId.spec.ts
+  s_0a3429e31e555d::t_c4eaa800704557 1-30,34-37,40,42-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6ba537ff76638d64e1aeed5fcc5d85ea825cc6d6",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
