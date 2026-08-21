@@ -380,7 +380,7 @@
   {
     "id": "ui-03b5faf04a9b6902",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 102,
+    "line": 104,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -1640,7 +1640,7 @@
   {
     "id": "ui-0f610b883be8cede",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 80,
+    "line": 82,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -2990,7 +2990,7 @@
   {
     "id": "ui-1ce566789acdef90",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 119,
+    "line": 121,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -7832,7 +7832,7 @@
   {
     "id": "ui-4d75a9ae30ee48d8",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 82,
+    "line": 84,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8030,7 +8030,7 @@
   {
     "id": "ui-4f0bc7dcc6ede3fd",
     "file": "src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx",
-    "line": 71,
+    "line": 68,
     "fingerprint": "DawInlineHint\t",
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
@@ -8246,7 +8246,7 @@
   {
     "id": "ui-51567864c0dda505",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 160,
+    "line": 162,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8903,7 +8903,7 @@
   {
     "id": "ui-5857ece969fd16d4",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 142,
+    "line": 144,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8921,7 +8921,7 @@
   {
     "id": "ui-585c8d894f433c84",
     "file": "src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx",
-    "line": 44,
+    "line": 41,
     "fingerprint": "div\tpointer-events-auto flex items-center gap-3 rounded-full bg-surface-overlay/95 border px-4 py-2 shadow-xl backdrop-blur-sm border-[var(--color-state-warning)]/40 border-[var(--color-state-danger)]/30",
     "kind": "layout",
     "mapping": "Row",
@@ -10343,7 +10343,7 @@
   {
     "id": "ui-662e4df3186f9ebf",
     "file": "src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx",
-    "line": 50,
+    "line": 47,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -18650,7 +18650,7 @@
   {
     "id": "ui-bad4f92b5aa1c566",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 129,
+    "line": 131,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -22457,7 +22457,7 @@
   {
     "id": "ui-e401e3f0d3e1572b",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 91,
+    "line": 93,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -25067,7 +25067,7 @@
   {
     "id": "ui-fd8d3165bb190453",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 63,
+    "line": 65,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
