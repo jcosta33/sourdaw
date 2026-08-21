@@ -44,6 +44,7 @@ export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
 
 export { setTrackGain } from './setTrackGainPan/setTrackGain';
+export { getTrackFaderCeiling } from './setTrackGainPan/getTrackFaderCeiling';
 export { setTrackPan } from './setTrackGainPan/setTrackPan';
 export { setTrackColor } from './setTrackGainPan/setTrackColor';
 export { setTrackNotes } from './setTrackGainPan/setTrackNotes';

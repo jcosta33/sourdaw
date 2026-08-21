@@ -4,6 +4,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { batchAddAutomationPoints } from '../../useCases/automation/batchAddAutomationPoints';
+import { getAutomationLaneCeiling } from '../../useCases/automation/getAutomationLaneCeiling';
 import { type AutomationStoreState } from '../automationStore';
 import { automationStore, sanitize_automation_store_state } from '../automationStore';
 
@@ -83,19 +84,23 @@ describe('automationStore', () => {
     });
 
     /**
-     * `maxValue` is durable CRDT state written once, at lane creation. A
-     * project authored before the fader gained its `+6 dB` of headroom keeps
-     * `maxValue: 1` on its gain lanes while every lane created after gets
-     * `FADER_MAX_GAIN` — so one project holds two gain lanes with different
-     * ceilings and different Y-axis scales, and `paintDrawPoint`, which clamps
-     * to `lane.maxValue`, cannot draw the older one into headroom the track's
-     * own fader now reaches.
+     * `maxValue` is durable CRDT state written once, at lane creation, and the
+     * inbound sanitizer must hand it back exactly as the document holds it.
+     *
+     * A project authored before the fader gained its `+6 dB` of headroom keeps
+     * `maxValue: 1` on its gain lanes. Raising that here would look like an
+     * upgrade and read as corruption: `createStore` registers this function as
+     * the slot's inbound sanitizer, and `findAutomergeStorageRawProjectionLosses`
+     * runs it over the raw document demanding `Object.is` equality on every
+     * scalar, so `1` becoming `FADER_MAX_GAIN` is a projection loss by
+     * definition — `projectCrdtToStores` would then stall the whole project at
+     * repair-required rather than open it. The widened ceiling is derived at
+     * read time by `getAutomationLaneCeiling` instead.
      *
      * The legacy state is *well formed*, so it takes the sanitizer's exact
-     * early-return path — which is why the migration cannot live in
-     * `normalize_automation_lane`.
+     * early-return path; the assertion below holds on both paths.
      */
-    it('should raise a legacy gain lane ceiling to the fader ceiling on load', () => {
+    it('should hydrate a legacy gain lane without rewriting its stored ceiling', () => {
         const legacy_gain_lane = {
             id: 'legacy-gain',
             trackId: 'track-1',
@@ -115,10 +120,11 @@ describe('automationStore', () => {
 
         automationStore.hydrate();
 
-        expect(automationStore.value?.lanes[0]?.maxValue).toBe(FADER_MAX_GAIN);
-        // Only the fader's own lane moves: a send lane's ceiling is unity and
-        // stays there.
+        expect(automationStore.value?.lanes[0]?.maxValue).toBe(1);
         expect(automationStore.value?.lanes[1]?.maxValue).toBe(1);
+        // The drawable ceiling is the fader's; the *stored* one is untouched.
+        expect(getAutomationLaneCeiling(legacy_gain_lane)).toBe(FADER_MAX_GAIN);
+        expect(getAutomationLaneCeiling(legacy_send_lane)).toBe(1);
     });
 
     it('should sanitize malformed CRDT hydration to an empty automation store without throwing', () => {

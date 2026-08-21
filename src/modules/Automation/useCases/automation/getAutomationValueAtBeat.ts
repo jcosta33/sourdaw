@@ -3,6 +3,8 @@ import { resolveLinkedLane } from '#/utils/automationLaneLink';
 import { interpolateAutomationPointValue } from '../../services/automationPointAlgorithms';
 import { automationStore } from '../../stores/automationStore';
 
+import { getAutomationLaneCeiling } from './getAutomationLaneCeiling';
+
 type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
 
 /**
@@ -28,12 +30,23 @@ const _laneByIdCache = new Map<string, AutomationLane>();
  * would wrongly flatten that. Defensive against non-finite bounds so a lane
  * fixture that never set them (several specs construct lanes with only the
  * fields their assertions touch) degrades to a no-op instead of NaN.
+ *
+ * The ceiling is {@link getAutomationLaneCeiling}, not the stored `maxValue`.
+ * A gain lane authored before the fader gained its `+6 dB` of headroom still
+ * stores `maxValue: 1` — deliberately, since rewriting that scalar reads as
+ * document corruption — and `paintDrawPoint` draws into the headroom on the
+ * derived ceiling. Clamping here on the stored one would make the live path
+ * hand back unity for a point drawn at `1.5`, while the offline path clamps
+ * the same lane with `clampFaderGain` (`automationScheduling.ts`) and renders
+ * it at `1.5`: the drawn curve, what is heard, and what is exported would be
+ * three different things, which is the live-versus-offline divergence #789
+ * exists to close.
  */
 function clampToLaneRange(value: number, lane: AutomationLane): number {
     if (!Number.isFinite(lane.minValue) || !Number.isFinite(lane.maxValue)) {
         return value;
     }
-    return Math.min(lane.maxValue, Math.max(lane.minValue, value));
+    return Math.min(getAutomationLaneCeiling(lane), Math.max(lane.minValue, value));
 }
 
 export function getAutomationValueAtBeat(

@@ -267,4 +267,32 @@ describe('getAutomationValueAtBeat — declared-range clamp', () => {
         automationStore.set({ lanes: [lane('l1', [point(0, 0.2), point(4, 0.8)])] });
         expect(getAutomationValueAtBeat('l1', 2)).toBeCloseTo(0.5, 10);
     });
+
+    /**
+     * The live half of the `+6 dB` fader headroom on a *legacy* gain lane.
+     *
+     * Such a lane stores `maxValue: 1` and keeps it — the scalar is durable
+     * CRDT state, and a sanitizer that rewrote it would read as document
+     * corruption — so the ceiling is derived here instead. That derivation is
+     * load-bearing rather than cosmetic: `paintDrawPoint` already draws into
+     * the headroom, and the offline path clamps the same lane with
+     * `clampFaderGain` (`automationScheduling.ts`). Clamping on the stored `1`
+     * here would play a point drawn at `1.5` back at unity while exporting it
+     * at `1.5` — the live-versus-offline divergence #789 exists to close.
+     */
+    it('plays a legacy gain lane back at the point drawn into its headroom', () => {
+        automationStore.set({
+            lanes: [lane('gain-lane', [point(0, 1.5), point(4, 1.5)], { parameterId: 'gain', maxValue: 1 })],
+        });
+
+        expect(getAutomationValueAtBeat('gain-lane', 2)).toBeCloseTo(1.5, 10);
+    });
+
+    it('still holds a non-gain lane to its own stored ceiling', () => {
+        automationStore.set({
+            lanes: [lane('send-lane', [point(0, 1.5), point(4, 1.5)], { parameterId: 'send-bus-1', maxValue: 1 })],
+        });
+
+        expect(getAutomationValueAtBeat('send-lane', 2)).toBe(1);
+    });
 });

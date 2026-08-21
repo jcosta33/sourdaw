@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { trackStore, type Track as ProjectTrack } from '#/modules/Arrangement/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
@@ -55,6 +56,49 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
     confirmUser: mocks.confirmUser,
 }));
 
+/**
+ * A project-side track, built here rather than borrowed from Arrangement's own
+ * test helpers: a spec reaching across a module boundary for a fixture is the
+ * same coupling the dependency gate forbids in production code.
+ */
+function createProjectTrack(overrides: Partial<ProjectTrack> = {}): ProjectTrack {
+    return {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        ...overrides,
+    };
+}
+
 const renderWithTooltip = (ui: React.ReactElement) => render(<TooltipProvider>{ui}</TooltipProvider>);
 
 const openContextMenu = () =>
@@ -100,6 +144,10 @@ describe('ExpandedChannelStrip', () => {
         vi.clearAllMocks();
         mocks.getVcaGroups.mockReturnValue([{ id: 'vca-1', name: 'Drums VCA', gain: 1, muted: false, trackIds: [] }]);
         mocks.confirmUser.mockResolvedValue(true);
+        // The strip reads the live track list (the fader's ceiling depends on
+        // whether this track mirrors a Toaster pad), so each case starts from
+        // an empty one rather than inheriting the previous case's fixture.
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('renders identity, gain readout, and pan readout', () => {
@@ -133,6 +181,53 @@ describe('ExpandedChannelStrip', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
         const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
         expect(Number(fader.getAttribute('aria-valuemax'))).toBeCloseTo(FADER_MAX_GAIN, 5);
+    });
+
+    /**
+     * A control that can request what the writer refuses does not merely fail
+     * to move — it costs the undo. `setTrackGain` holds a pad-mirrored track at
+     * `TOASTER_PAD_MAX_GAIN`, while `handleSetTrackGain` builds the inverse
+     * entry's `expectedGain` from the *request*. A strip offering travel to
+     * `FADER_MAX_GAIN` here would record an inverse expecting a gain the store
+     * never held, `execute`'s equality check would return `conflict` on the way
+     * back, and the pre-drag value would be unrecoverable.
+     */
+    it('bounds a Toaster-pad-mirrored strip at the ceiling its own writer enforces', () => {
+        trackStore.set({
+            tracks: [
+                createProjectTrack({
+                    id: 'toaster-bus',
+                    name: 'Toaster Bus',
+                    kind: 'bus',
+                    devices: [
+                        {
+                            id: 'toaster-device',
+                            name: 'Toaster',
+                            type: 'toaster',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                }),
+                createProjectTrack({ id: 'track-1', kind: 'audio', parentId: 'toaster-bus' }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        renderWithTooltip(
+            <ExpandedChannelStrip
+                track={{ ...mockTrack, parentId: 'toaster-bus' }}
+                isSelected={false}
+                widthClass="w-40"
+            />
+        );
+
+        const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
+        // `TOASTER_PAD_MAX_GAIN` — unity, what `crates/daw-dsp/src/toaster/pad.rs`
+        // accepts, and strictly below the fader law's own ceiling.
+        expect(Number(fader.getAttribute('aria-valuemax'))).toBe(1);
+        expect(FADER_MAX_GAIN).toBeGreaterThan(1);
     });
 
     // audit M-083: the gain fader is keyboard-operable now, and a keyboard write emits
