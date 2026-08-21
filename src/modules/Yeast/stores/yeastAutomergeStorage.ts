@@ -535,10 +535,12 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
             if (isRackCrdtState(parked) && activeDeviceId === resolveFirstYeastDeviceId()) {
                 // Adopt the legacy shared rack: it becomes this (first)
                 // device's rack and the parked copy is removed, so no second
-                // device can ever read it. Attach, then re-read — the
-                // attached value is what the document holds, and the sync
-                // must run against that, not against the parked local.
-                slot.racks[activeDeviceId] = parked;
+                // device can ever read it. The parked value is re-encoded to
+                // PLAIN data before attaching — an Automerge draft cannot
+                // reference an object that already lives in the document, and
+                // re-encoding is also what keeps the attachment
+                // completed-before-attach (see the comment above).
+                slot.racks[activeDeviceId] = legacySlotToRack(parked);
                 delete slot.racks[LEGACY_SHARED_RACK_DEVICE_ID];
                 const adopted = slot.racks[activeDeviceId];
                 if (isRackCrdtState(adopted)) {

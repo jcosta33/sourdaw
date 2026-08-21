@@ -265,6 +265,65 @@ describe('yeastStore', () => {
         expect(readYeastRack(SECOND_DEVICE_ID).processors).toEqual([]);
     });
 
+    it('adopts the legacy rack by project order even when a later Yeast track is selected', () => {
+        // Selection is concurrently-editable CRDT state: if it chose the
+        // adoption target, two peers with divergent selections would each
+        // adopt the parked rack under a different device id and the merged
+        // document would carry it twice. The target is therefore project
+        // order — identical on every peer — regardless of selection.
+        seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: trackStore.value?.tracks ?? [],
+            selectedTrackId: 'track-yeast-2',
+        });
+        // Distinct fixture from the sibling migration test above: the storage
+        // layer's hydrate dedupe keys on the slot's serialized JSON, so two
+        // byte-identical slots in sequence would leave the second hydrate a
+        // no-op and the decode mirror stale.
+        document = change(document, (draft) => {
+            draft.yeast = {
+                schemaVersion: 1,
+                processors: {
+                    'legacy-shared': {
+                        deleted: false,
+                        value: { id: 'legacy-shared', type: 'groove', name: 'Legacy shared', bypassed: false },
+                    },
+                },
+            };
+        });
+
+        // The SELECTED second instance displays its own empty rack…
+        setActiveYeastDevice(SECOND_DEVICE_ID);
+        yeastStore.hydrate();
+        expect(yeastStore.value?.processors).toEqual([]);
+
+        // …while the project-order FIRST instance is the one that reads the
+        // parked rack — selection does not move the adoption target.
+        expect(readYeastRack(DEVICE_ID).processors.map((entry) => entry.id)).toEqual(['legacy-shared']);
+
+        // A write through the selected second device must not adopt the
+        // parked rack: it lands under the second device's key only.
+        yeastStore.set({ processors: [processor('b-only')], uiLevel: 1 });
+        flushAutomergeStorageWrites();
+        const slot = document.yeast as {
+            schemaVersion: number;
+            racks: Record<string, { processors: Record<string, unknown> }>;
+        };
+        expect(Object.keys(slot.racks).sort()).toEqual([SECOND_DEVICE_ID, '__legacy_shared_rack__'].sort());
+        expect(Object.keys(persistedRack(SECOND_DEVICE_ID))).toEqual(['b-only']);
+
+        // The first device's first write adopts the parked rack, exactly as
+        // with selection on the first track.
+        setActiveYeastDevice(DEVICE_ID);
+        yeastStore.set({ processors: [processor('legacy-shared')], uiLevel: 1 });
+        flushAutomergeStorageWrites();
+        const adoptedSlot = document.yeast as { racks: Record<string, unknown> };
+        expect(Object.keys(adoptedSlot.racks).sort()).toEqual([DEVICE_ID, SECOND_DEVICE_ID].sort());
+        expect(Object.keys(persistedRack(DEVICE_ID))).toEqual(['legacy-shared']);
+        expect(persistedRack(DEVICE_ID)['legacy-shared']?.value.bypassed).toBe(false);
+    });
+
     it('round-trips a custom arp pattern through the project CRDT document', () => {
         const pattern = [
             { ...defaultStep(), active: false, octaveOffset: -2 },

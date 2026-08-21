@@ -5,7 +5,14 @@ import { createProcessor } from '../workers/processorFactory';
 
 type MusicalPosition = Omit<TransportInfo, 'sampleRate' | 'ppqPosition' | 'isPlaying'>;
 type CreateOfflineYeastRuntimeInput = {
-    projection: YeastProcessorProjection;
+    /**
+     * The projection a track's notes run through. One render spans every
+     * track, and each track's Yeast device owns its own rack (issue #2422),
+     * so the projection is resolved PER TRACK, not once per render. The
+     * resolver is expected to be stable for a given track across one render
+     * (identity-memoized by the caller), so a track's rack is built once.
+     */
+    resolveProjection: (trackId: string) => YeastProcessorProjection;
     resolveMusicalPosition: (ppqPosition: number) => MusicalPosition;
     resolvePpqPosition: (input: { samples: number; sampleRate: number }) => number;
 };
@@ -19,13 +26,14 @@ type ProcessOfflineYeastMidiInput = {
 type OfflineMidiEvent = MidiEvent & { timePpq: number };
 
 export function createOfflineYeastRuntime({
-    projection,
+    resolveProjection,
     resolveMusicalPosition,
     resolvePpqPosition,
 }: CreateOfflineYeastRuntimeInput) {
-    const racksByTrack = new Map<string, MidiRack>();
+    const racksByTrack = new Map<string, { rack: MidiRack; projection: YeastProcessorProjection }>();
 
     return (input: ProcessOfflineYeastMidiInput): OfflineMidiEvent[] => {
+        const projection = resolveProjection(input.trackId);
         if (projection.length === 0) {
             return input.events.map((event) => ({
                 ...event,
@@ -35,12 +43,14 @@ export function createOfflineYeastRuntime({
             }));
         }
 
-        let rack = racksByTrack.get(input.trackId);
-        if (!rack) {
-            rack = new MidiRack();
+        let entry = racksByTrack.get(input.trackId);
+        if (!entry || entry.projection !== projection) {
+            const rack = entry?.rack ?? new MidiRack();
             rack.replaceProjection(projection, createProcessor);
-            racksByTrack.set(input.trackId, rack);
+            entry = { rack, projection };
+            racksByTrack.set(input.trackId, entry);
         }
+        const rack = entry.rack;
 
         const preparedEvents = input.events.map((event) => {
             if (event.timePpq === undefined || event.tempoBpm !== undefined) {

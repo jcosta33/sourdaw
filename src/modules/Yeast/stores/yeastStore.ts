@@ -29,10 +29,35 @@ export type { YeastProcessorInfo, YeastProcessorType, YeastState } from '../mode
 const defaultState: YeastState = defaultYeastState;
 
 /**
- * First Yeast device id in the project — the instance that owns a legacy
- * shared rack. The selected track's first Yeast device wins, then project
- * order: the migration target should follow what the musician sees selected,
- * while staying a deterministic single instance.
+ * First Yeast device id in PROJECT ORDER — the instance a legacy shared rack
+ * migrates to. Deliberately selection-independent: the adoption target is a
+ * CRDT-side contract, and track selection is concurrently-editable state, so
+ * two peers with divergent selections would each adopt the parked rack under
+ * a different device id and the merged document would carry the rack twice —
+ * the "exactly one device" invariant the storage adapter states. Project
+ * order is identical on every peer, so concurrent adoptions collapse to one
+ * key under merge.
+ */
+function firstYeastDeviceIdInProjectOrder(): string | null {
+    const tracks = trackStore.value;
+    if (!tracks) {
+        return null;
+    }
+    for (const track of tracks.tracks) {
+        const device = track.devices.find((candidate) => candidate.type === 'yeast');
+        if (device) {
+            return device.id;
+        }
+    }
+    return null;
+}
+
+/**
+ * Device the store resolves when nothing is pinned: the selected track's
+ * first Yeast device, then project order — a DISPLAY choice, so the panel
+ * usually opens on what the musician sees selected. It must not be used for
+ * legacy-rack adoption; that owner is
+ * {@link firstYeastDeviceIdInProjectOrder}.
  */
 function firstYeastDeviceId(): string | null {
     const tracks = trackStore.value;
@@ -61,6 +86,14 @@ function activeYeastDeviceId(): string | null {
     return explicitActiveDeviceId ?? firstYeastDeviceId();
 }
 
+/** The Yeast device a track's rack lives under — its first Yeast instance. */
+function yeastDeviceIdForTrack(trackId: string): string | null {
+    const tracks = trackStore.value;
+    const track = tracks?.tracks.find((candidate) => candidate.id === trackId);
+    const device = track?.devices.find((candidate) => candidate.type === 'yeast');
+    return device?.id ?? null;
+}
+
 function readInitialYeastState(): YeastState | null {
     return null;
 }
@@ -69,7 +102,7 @@ const localStateReader: { read: () => YeastState | null } = { read: readInitialY
 const yeastStorageView = createYeastAutomergeStorage({
     getLocalState: (): YeastState | null => localStateReader.read(),
     getActiveDeviceId: activeYeastDeviceId,
-    resolveFirstYeastDeviceId: firstYeastDeviceId,
+    resolveFirstYeastDeviceId: firstYeastDeviceIdInProjectOrder,
 });
 
 export const yeastStore: Store<YeastState> = createStore<YeastState>({
@@ -115,6 +148,18 @@ export function setActiveYeastDevice(deviceId: string | null): void {
  */
 export function readYeastRack(deviceId: string): YeastState {
     return yeastStorageView.readRack(deviceId);
+}
+
+/**
+ * One TRACK's rack: the rack of the Yeast device that lives on that track —
+ * the per-instance read the offline render uses, because an offline render
+ * processes every track and must run each one's notes through its own
+ * device's processors. A track without a Yeast device renders through an
+ * EMPTY rack (pass-through), never another device's rack.
+ */
+export function readYeastRackForTrack(trackId: string): YeastState {
+    const deviceId = yeastDeviceIdForTrack(trackId);
+    return deviceId !== null ? readYeastRack(deviceId) : defaultYeastState;
 }
 
 // Device identity lives in the tracks slot: when it changes (a Yeast device
