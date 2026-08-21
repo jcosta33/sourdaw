@@ -53,7 +53,7 @@ export const AUTHOR_MINT_PERMISSIONS = {
 } as const;
 
 export const TRACKER_AUTHOR_MINT_PERMISSIONS = {
-    pull_requests: 'write',
+    issues: 'write',
 } as const;
 
 export const REVIEWER_MINT_PERMISSIONS = {
