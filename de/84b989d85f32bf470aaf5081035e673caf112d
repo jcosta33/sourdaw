@@ -1,0 +1,99 @@
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_a40848e8f8cca9::t_8abb3210ae057f 28,247
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_ca0a2115a3c96d 140-143
+  s_a40848e8f8cca9::t_f207ad177aeaff 202-207,226-228
+  s_a40848e8f8cca9::t_76946d8a925cca 31,54,274,279-287
+  s_a40848e8f8cca9::t_91b64b811c17ee 8
+  s_a40848e8f8cca9::t_dcc74fb1025b35 195
+  s_a40848e8f8cca9::t_cf215c04cf19d4 220-222,351-352,366-367,654-655,693-694,707-708,727-728,748-749
+  s_a40848e8f8cca9::t_f956536084332e 796
+  s_a40848e8f8cca9::t_d156df8cd844b2 233,238
+  s_a40848e8f8cca9::t_7cd9665f4345a3 196-201,208-210,219,223-225,229-232,234-237,239-244,248-256,275-278
+  s_a40848e8f8cca9::t_3efa573b6ee987 789,799,839-857
+  s_a40848e8f8cca9::t_2615ad4623edcb 818-819
+  s_a40848e8f8cca9::t_18736013a9fd26 211-218,245-247
+  s_a40848e8f8cca9::t_595264ce17ce85 17,33-38,40,73-75,77,139
+  s_27578aec2aab3b::t_fb41ddadda810b 288-289,858-859
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_3282b2ddc937c4 51
+  s_a40848e8f8cca9::t_595264ce17ce85 56
+  s_a40848e8f8cca9::t_5da17615741f63 55
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_a40848e8f8cca9::t_777699f8ac8a91 1-23,25-44,46-51
+  s_a40848e8f8cca9::t_3cb30ce61bbb2e 53
+src/modules/AiRuntime/useCases/injectVoicePromptDraft.ts
+  s_a40848e8f8cca9::t_5da17615741f63 1,5
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_777699f8ac8a91 75,325,1574,1610
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_551bfd15289552 18-23,37-38,41,43-44,48,51-52,62,67,72,76
+  s_a40848e8f8cca9::t_6013e4ec86e598 5,7,9,36,39-40,42,45-47,53
+  s_a40848e8f8cca9::t_ce3b69a3e06ff5 54-58
+src/modules/AiRuntime/useCases/onPromptDraft.ts
+  s_a40848e8f8cca9::t_595264ce17ce85 1-7
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_ee9738bf2845ea 228
+  s_a40848e8f8cca9::t_d156df8cd844b2 32,225,244
+  s_a40848e8f8cca9::t_c31dc949cc4c93 1-6,9-15,17,19-23,25-31,33-39,42-74,105-108,110-135,138-147,150-161,165-173,175,180-193,204-215,220-224,226-227,229-231,237-243,245-254,256-257,259-264
+  s_a40848e8f8cca9::t_195bc873c21e27 16,75-91,95-104
+  s_a40848e8f8cca9::t_cf215c04cf19d4 24,174
+  s_a40848e8f8cca9::t_595264ce17ce85 18,40-41,109,255,258
+  s_a40848e8f8cca9::t_ce3b69a3e06ff5 7-8
+  s_a40848e8f8cca9::t_2ac66fc043ebbd 92-94,162-164,176-179,216-219,232-236
+  s_a40848e8f8cca9::t_0e583ac9a9e057 136-137,148-149
+  s_a40848e8f8cca9::t_52c70d06f0c0d5 194-203
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_a40848e8f8cca9::t_8abb3210ae057f 117,436-437,440
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_cf215c04cf19d4 248
+  s_a40848e8f8cca9::t_b77d65372d6c2f 7,244,246-247,251-252,264-266,276-278,295,297,300-301,362,368
+  s_a40848e8f8cca9::t_2ac66fc043ebbd 78,253-263,302-312
+  s_a40848e8f8cca9::t_d156df8cd844b2 346
+  s_a40848e8f8cca9::t_f207ad177aeaff 68-69,337,367
+  s_a40848e8f8cca9::t_ee9738bf2845ea 72-77,79-80
+  s_a40848e8f8cca9::t_595264ce17ce85 12,190,201
+  s_a40848e8f8cca9::t_d929cb20bafae6 369
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_3aa2af331c1186 1-9,23-25,30-40,42-43,45-50,67-91,102-104
+  s_a40848e8f8cca9::t_2ac66fc043ebbd 61
+  s_a40848e8f8cca9::t_465d736b8c09d9 26-29
+  s_a40848e8f8cca9::t_2c40300b4cb1f2 10-22,41,44,51-60,62-66,92-101
+src/modules/AiRuntime/useCases/onVoicePromptDraft.ts
+  s_a40848e8f8cca9::t_595264ce17ce85 1,5
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_e78bae27e78483 14,27-29,52,54,98-119
+  s_a40848e8f8cca9::t_76946d8a925cca 13,26,76-78,81-83
+  s_a40848e8f8cca9::t_1b1f0702d62444 38-40,42-45,47-48,50-51,79-80,87,94-97
+  s_a40848e8f8cca9::t_7e7de2e3e82ad8 84-86,88-93
+  s_a40848e8f8cca9::t_b0d23b3a525d14 41
+  s_a40848e8f8cca9::t_af49662a1024a7 53,56,67,120-126
+src/modules/AiRuntime/useCases/promptInjectionState.ts
+  s_a40848e8f8cca9::t_5da17615741f63 1
+src/modules/AiRuntime/useCases/injectPromptDraft.ts
+  s_a40848e8f8cca9::t_5da17615741f63 1,3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "de84b989d85f32bf470aaf5081035e673caf112d",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
