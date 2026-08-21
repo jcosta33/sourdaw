@@ -38,15 +38,30 @@ describe('removeDdspInstrument', () => {
     it('only reports not-downloaded and refreshes usage after strict artifact deletion succeeds', async () => {
         const removeDdspInstrumentGenerations = vi.fn().mockResolvedValue(undefined);
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
+        const releaseDdspSession = vi.fn().mockResolvedValue(undefined);
+        const events: string[] = [];
+        releaseDdspSession.mockImplementation(async () => {
+            events.push('release-session');
+        });
+        removeDdspInstrumentGenerations.mockImplementation(async () => {
+            events.push('invalidate-and-delete');
+        });
+        const withDdspInstrumentLock = vi.fn(
+            (_id: string, _mode: 'shared' | 'exclusive', operation: () => Promise<void>) => operation()
+        );
         injectDependencies(removeDdspInstrument, {
             ddspModelStorage: { removeDdspInstrumentGenerations },
-            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
+            inferenceWorkerBridge: { releaseDdspSession },
+            withDdspInstrumentLock,
             getStorageStatus,
         });
 
         await removeDdspInstrument(instrument.id);
 
         expect(removeDdspInstrumentGenerations).toHaveBeenCalledWith({ id: instrument.id });
+        expect(releaseDdspSession).toHaveBeenCalledWith(`${instrument.id}:${instrument.artifactVersion}`);
+        expect(events).toEqual(['release-session', 'invalidate-and-delete']);
+        expect(withDdspInstrumentLock).toHaveBeenCalledWith(instrument.id, 'exclusive', expect.any(Function));
         expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({
             status: 'not-downloaded',
             downloadProgress: 0,
@@ -61,7 +76,12 @@ describe('removeDdspInstrument', () => {
             ddspModelStorage: {
                 removeDdspInstrumentGenerations: vi.fn().mockRejectedValue(new Error('OPFS denied')),
             },
-            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
+            inferenceWorkerBridge: { releaseDdspSession: vi.fn().mockResolvedValue(undefined) },
+            withDdspInstrumentLock: async (
+                _id: string,
+                _mode: 'shared' | 'exclusive',
+                operation: () => Promise<void>
+            ) => operation(),
             getStorageStatus,
         });
 
@@ -73,5 +93,26 @@ describe('removeDdspInstrument', () => {
         });
         expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
         expect(getStorageStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not invalidate storage when session release fails', async () => {
+        const removeDdspInstrumentGenerations = vi.fn();
+        injectDependencies(removeDdspInstrument, {
+            ddspModelStorage: { removeDdspInstrumentGenerations },
+            inferenceWorkerBridge: {
+                releaseDdspSession: vi.fn().mockRejectedValue(new Error('worker release failed')),
+            },
+            withDdspInstrumentLock: async (
+                _id: string,
+                _mode: 'shared' | 'exclusive',
+                operation: () => Promise<void>
+            ) => operation(),
+            getStorageStatus: vi.fn().mockResolvedValue(storageStatus),
+        });
+
+        await expect(removeDdspInstrument(instrument.id)).rejects.toThrow('worker release failed');
+
+        expect(removeDdspInstrumentGenerations).not.toHaveBeenCalled();
+        expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({ status: 'ready' });
     });
 });

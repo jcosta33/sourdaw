@@ -420,14 +420,21 @@ export const inferenceWorkerBridge = {
         workerState.onnx.worker.postMessage(request);
     },
 
-    // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API
     async releaseDdspSession(modelId: string): Promise<void> {
-        if (!workerState.tfjs.worker) {
+        const worker = workerState.tfjs.worker;
+        if (!worker) {
             return;
         }
-        const request: WorkerRequest = { type: 'release-session', modelId };
-        workerState.tfjs.worker.postMessage(request);
-        scheduleTfjsDestroy();
+        const requestId = crypto.randomUUID();
+        const request: WorkerRequest = { type: 'release-session', requestId, modelId };
+        try {
+            const response = await sendRequest(worker, workerState.tfjs, request);
+            if (response.type !== 'session-released' || response.modelId !== modelId) {
+                throw new Error(`TF.js worker did not confirm DDSP session release: ${response.type}`);
+            }
+        } finally {
+            scheduleTfjsDestroy();
+        }
     },
 
     /**

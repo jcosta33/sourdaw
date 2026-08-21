@@ -75,6 +75,37 @@ describe('release inventory', () => {
             'unverified:checkpoint-weights-no-license-grant-established'
         );
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toEqual(
+            expect.arrayContaining([
+                'src/modules/Transport/useCases/secondsBetweenBeats.ts',
+                'src/modules/Transport/useCases/index.ts',
+            ])
+        );
+    });
+
+    it('rejects an omitted DDSP timing dependency even when generic project source covers it', () => {
+        const value = inventory();
+        value.surfaces.push({
+            ...value.surfaces[0]!,
+            id: 'ddsp-models',
+            paths: ['src/modules/Transport/useCases/index.ts'],
+        });
+        const state = snapshot();
+        state.releaseFiles.push(
+            'src/modules/Transport/useCases/index.ts',
+            'src/modules/Transport/useCases/secondsBetweenBeats.ts'
+        );
+
+        expect(
+            validateReleaseInventory(value, state, [], {
+                'ddsp-models': [
+                    'src/modules/Transport/useCases/index.ts',
+                    'src/modules/Transport/useCases/secondsBetweenBeats.ts',
+                ],
+            })
+        ).toContain(
+            'ddsp-models: required component paths missing:\n- src/modules/Transport/useCases/secondsBetweenBeats.ts'
+        );
     });
 
     it('binds the shipped TensorFlow.js attribution and full Apache license bytes', () => {

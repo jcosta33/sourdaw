@@ -32,8 +32,13 @@ surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credentia
 (`audio_postprocess.rs`). Neither path loads a model artifact.
 
 **In-browser (BrowserAi):** Kokoro TTS runs through a dedicated worker and model registry. Its model
-and exposed voices are revision-pinned and SHA-256 verified. DDSP, RAVE, and singing synthesis stay
-withheld until exact model chains pass admission. BrowserAi initializes non-blocking at bootstrap.
+and exposed voices are revision-pinned and SHA-256 verified. DDSP admits only the exact Magenta
+checkpoint artifacts pinned by URL, size, and SHA-256 in the catalog. DDSP downloads reject
+redirects, and readiness comes from the versioned OPFS generation index plus the exact ready marker
+and artifacts. Rendering runs in the TF.js worker only after it confirms WebGPU. The Magenta
+checkpoint permission record and the TensorFlow.js Apache notices are separate; Sourdaw does not
+claim that the checkpoint weights are Apache-licensed. RAVE and singing synthesis stay withheld
+until exact model chains pass admission. BrowserAi initializes non-blocking at bootstrap.
 
 **Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via the
 admitted Spotify Basic Pitch package, and mix-vs-reference comparison. Stem separation stays

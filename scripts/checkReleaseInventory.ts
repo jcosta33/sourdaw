@@ -127,6 +127,8 @@ export const DDSP_RELEASE_INVENTORY_PATHS = [
     'src/modules/BrowserAi/workers/tfjsInferenceWorker.ts',
     'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
     'src/modules/Preferences/presentations/views/preferences/AiSection.tsx',
+    'src/modules/Transport/useCases/index.ts',
+    'src/modules/Transport/useCases/secondsBetweenBeats.ts',
     'src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx',
     'tests/e2e/ddspProductionCspElectron.playwright.config.ts',
     'tests/e2e/ddspProductionCspElectron.spec.ts',

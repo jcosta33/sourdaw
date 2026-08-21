@@ -45,6 +45,10 @@ const REQUEST_B = '00000000-0000-4000-8000-00000000000b';
 describe('renderDdspInstrument request ownership', () => {
     const readRenderCache = vi.fn().mockResolvedValue(null);
     const writeRenderCache = vi.fn().mockResolvedValue(undefined);
+    const checkDdspInstrumentReady = vi.fn().mockResolvedValue(true);
+    const withDdspInstrumentLock = vi.fn(
+        (_id: string, _mode: 'shared' | 'exclusive', operation: () => Promise<unknown>) => operation()
+    );
     const logger = {
         debug: vi.fn(),
         error: vi.fn(),
@@ -65,11 +69,20 @@ describe('renderDdspInstrument request ownership', () => {
         vi.restoreAllMocks();
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
+        checkDdspInstrumentReady.mockReset().mockResolvedValue(true);
+        withDdspInstrumentLock.mockClear();
         inferenceWorkerBridge.loadDdspSession.mockReset().mockResolvedValue('webgpu');
         inferenceWorkerBridge.runDdspInference.mockReset();
         inferenceProgressStore.set({ activeRenders: {} });
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
-        injectDependencies(renderDdspInstrument, { logger, readRenderCache, writeRenderCache });
+        injectDependencies(renderDdspInstrument, {
+            logger,
+            readRenderCache,
+            writeRenderCache,
+            ddspModelStorage: { checkDdspInstrumentReady },
+            inferenceWorkerBridge,
+            withDdspInstrumentLock,
+        });
     });
 
     it('returns the confirmed runtime backend and uses the versioned model key end to end', async () => {
@@ -79,6 +92,12 @@ describe('renderDdspInstrument request ownership', () => {
 
         const modelId = 'ddsp-violin:magenta-js-ddsp-2020-01-05';
         expect(rendered.backend).toBe('webgpu');
+        expect(withDdspInstrumentLock).toHaveBeenCalledWith('ddsp-violin', 'shared', expect.any(Function));
+        expect(checkDdspInstrumentReady).toHaveBeenCalledWith({
+            id: 'ddsp-violin',
+            version: 'magenta-js-ddsp-2020-01-05',
+            artifacts: expect.any(Array),
+        });
         expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledWith(
             expect.objectContaining({ modelId }),
             undefined
@@ -87,6 +106,49 @@ describe('renderDdspInstrument request ownership', () => {
             expect.objectContaining({ modelId }),
             undefined
         );
+    });
+
+    it('holds the shared generation lock through readiness, session creation, and inference', async () => {
+        const pending = deferred<ReturnType<typeof result>>();
+        let insideSharedLock = false;
+        withDdspInstrumentLock.mockImplementationOnce(async (_id, mode, operation) => {
+            expect(mode).toBe('shared');
+            insideSharedLock = true;
+            try {
+                return await operation();
+            } finally {
+                insideSharedLock = false;
+            }
+        });
+        checkDdspInstrumentReady.mockImplementationOnce(async () => {
+            expect(insideSharedLock).toBe(true);
+            return true;
+        });
+        inferenceWorkerBridge.loadDdspSession.mockImplementationOnce(async () => {
+            expect(insideSharedLock).toBe(true);
+            return 'webgpu';
+        });
+        inferenceWorkerBridge.runDdspInference.mockImplementationOnce(async () => {
+            expect(insideSharedLock).toBe(true);
+            return pending.promise;
+        });
+
+        const rendering = launch(60);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledOnce());
+        expect(insideSharedLock).toBe(true);
+        pending.resolve(result());
+        await rendering;
+        expect(insideSharedLock).toBe(false);
+    });
+
+    it('refuses a render starting after removal or seeing an unpublished/wrong generation', async () => {
+        checkDdspInstrumentReady.mockResolvedValueOnce(false);
+
+        await expect(launch(60)).rejects.toThrow('generation is not ready');
+
+        expect(inferenceWorkerBridge.loadDdspSession).not.toHaveBeenCalled();
+        expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
     });
 
     it('confirms the runtime backend before returning cached audio', async () => {

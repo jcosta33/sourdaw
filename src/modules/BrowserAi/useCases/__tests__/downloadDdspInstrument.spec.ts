@@ -9,7 +9,14 @@ import { type ModelRegistryState, modelRegistryStore } from '../../stores/modelR
 import { downloadDdspInstrument } from '../downloadDdspInstrument';
 
 type DownloadModelRepo = (input: {
-    spec: { family: 'ddsp'; modelId: string; url: string; sizeBytes: number; sha256: string };
+    spec: {
+        family: 'ddsp';
+        modelId: string;
+        url: string;
+        sizeBytes: number;
+        sha256: string;
+        redirectPolicy: 'reject';
+    };
     signal?: AbortSignal;
 }) => Promise<void>;
 type GetStorageStatus = () => Promise<StorageStatus>;
@@ -70,7 +77,11 @@ describe('downloadDdspInstrument', () => {
                     publishDdspInstrumentGeneration,
                     cleanupUnpublishedDdspGeneration: vi.fn().mockResolvedValue(undefined),
                 },
-                withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
+                withDdspInstrumentLock: async (
+                    _id: string,
+                    _mode: 'shared' | 'exclusive',
+                    operation: () => Promise<void>
+                ) => operation(),
                 getStorageStatus,
             });
 
@@ -83,6 +94,7 @@ describe('downloadDdspInstrument', () => {
                     url: artifact.url,
                     sizeBytes: artifact.sizeBytes,
                     sha256: artifact.sha256,
+                    redirectPolicy: 'reject',
                 }))
             );
             expect(publishDdspInstrumentGeneration).toHaveBeenCalledWith({
@@ -120,7 +132,11 @@ describe('downloadDdspInstrument', () => {
                 publishDdspInstrumentGeneration: vi.fn(),
                 cleanupUnpublishedDdspGeneration,
             },
-            withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
+            withDdspInstrumentLock: async (
+                _id: string,
+                _mode: 'shared' | 'exclusive',
+                operation: () => Promise<void>
+            ) => operation(),
             getStorageStatus: vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus),
         });
 
@@ -140,14 +156,16 @@ describe('downloadDdspInstrument', () => {
             releaseFirstArtifact = resolve;
         });
         let tail = Promise.resolve();
-        const withDdspInstrumentLock = vi.fn((_id: string, operation: () => Promise<void>) => {
-            const result = tail.then(operation, operation);
-            tail = result.then(
-                () => undefined,
-                () => undefined
-            );
-            return result;
-        });
+        const withDdspInstrumentLock = vi.fn(
+            (_id: string, _mode: 'shared' | 'exclusive', operation: () => Promise<void>) => {
+                const result = tail.then(operation, operation);
+                tail = result.then(
+                    () => undefined,
+                    () => undefined
+                );
+                return result;
+            }
+        );
         let ready = false;
         const downloadModelRepo = vi.fn<DownloadModelRepo>().mockImplementation(async () => {
             if (downloadModelRepo.mock.calls.length === 1) {
@@ -182,6 +200,7 @@ describe('downloadDdspInstrument', () => {
         expect(stageDdspInstrumentGeneration).toHaveBeenCalledOnce();
         expect(downloadModelRepo).toHaveBeenCalledTimes(instrument.artifacts.length);
         expect(publishDdspInstrumentGeneration).toHaveBeenCalledOnce();
+        expect(withDdspInstrumentLock).toHaveBeenCalledWith(instrument.id, 'exclusive', expect.any(Function));
     });
 
     it('finishes aborted cleanup before a queued retry publishes and never deletes the replacement', async () => {
@@ -192,14 +211,16 @@ describe('downloadDdspInstrument', () => {
             releaseCleanup = resolve;
         });
         let tail = Promise.resolve();
-        const withDdspInstrumentLock = vi.fn((_id: string, operation: () => Promise<void>) => {
-            const result = tail.then(operation, operation);
-            tail = result.then(
-                () => undefined,
-                () => undefined
-            );
-            return result;
-        });
+        const withDdspInstrumentLock = vi.fn(
+            (_id: string, _mode: 'shared' | 'exclusive', operation: () => Promise<void>) => {
+                const result = tail.then(operation, operation);
+                tail = result.then(
+                    () => undefined,
+                    () => undefined
+                );
+                return result;
+            }
+        );
         let downloadCall = 0;
         const downloadModelRepo = vi.fn<DownloadModelRepo>(async ({ signal }) => {
             downloadCall += 1;

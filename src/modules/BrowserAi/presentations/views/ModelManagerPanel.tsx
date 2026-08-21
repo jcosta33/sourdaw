@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
@@ -9,7 +9,7 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 
 import { type DdspInstrument } from '../../models/BrowserModel';
-import { DDSP_INSTRUMENT_CATALOG, type DdspInstrumentId } from '../../models/DdspInstrumentCatalog';
+import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadDdspInstrument } from '../../useCases/downloadDdspInstrument';
 import { downloadModel } from '../../useCases/downloadModel';
@@ -137,13 +137,22 @@ type AdmittedDdspInstrument = DdspInstrument & {
 };
 
 function DdspInstrumentAction({ instrument }: { instrument: AdmittedDdspInstrument }): ReactElement {
+    const [isDownloadPending, setIsDownloadPending] = useState(false);
     const handleDownload = (): void => {
-        void downloadDdspInstrument(instrument.id as DdspInstrumentId).catch((error: unknown) => {
-            logger.error(new Error('[BrowserAi] Failed to download DDSP instrument', { cause: error }));
-        });
+        if (isDownloadPending) {
+            return;
+        }
+        setIsDownloadPending(true);
+        void downloadDdspInstrument(instrument.id)
+            .catch((error: unknown) => {
+                logger.error(new Error('[BrowserAi] Failed to download DDSP instrument', { cause: error }));
+            })
+            .finally(() => {
+                setIsDownloadPending(false);
+            });
     };
     const handleRemove = (): void => {
-        void removeDdspInstrument(instrument.id as DdspInstrumentId).catch((error: unknown) => {
+        void removeDdspInstrument(instrument.id).catch((error: unknown) => {
             logger.error(new Error('[BrowserAi] Failed to remove DDSP instrument', { cause: error }));
         });
     };
@@ -189,14 +198,45 @@ function DdspInstrumentAction({ instrument }: { instrument: AdmittedDdspInstrume
         );
     }
 
+    if (instrument.status === 'error') {
+        return (
+            <div className="flex items-center gap-2">
+                <DawMicroBadge
+                    tone="danger"
+                    aria-label={`${instrument.name} download failed. Check the network, integrity verification, or model storage, then retry.`}
+                >
+                    Failed
+                </DawMicroBadge>
+                <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={isDownloadPending}
+                    className="text-[9px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label={
+                        isDownloadPending
+                            ? `Retrying ${instrument.name} download`
+                            : `Retry downloading ${instrument.name}`
+                    }
+                >
+                    {isDownloadPending ? 'Retrying…' : 'Retry'}
+                </button>
+            </div>
+        );
+    }
+
     return (
         <button
             type="button"
             onClick={handleDownload}
-            className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
-            aria-label={`Download ${instrument.name} from Magenta`}
+            disabled={isDownloadPending}
+            className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label={
+                isDownloadPending
+                    ? `Downloading ${instrument.name} from Magenta`
+                    : `Download ${instrument.name} from Magenta`
+            }
         >
-            Download
+            {isDownloadPending ? 'Downloading…' : 'Download'}
         </button>
     );
 }

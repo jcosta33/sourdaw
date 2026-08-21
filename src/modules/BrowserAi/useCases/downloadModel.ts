@@ -35,7 +35,7 @@ export const downloadModel = inject({ logger, downloadModelRepo, getStorageStatu
             logger.info(`[BrowserAi] Starting download: ${modelId}`);
 
             await downloadModelRepo({
-                spec: { modelId, family, url, sha256, sizeBytes },
+                spec: { modelId, family, url, sha256, sizeBytes, redirectPolicy: 'follow' },
                 onProgress,
             });
 

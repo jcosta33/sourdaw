@@ -5,8 +5,10 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInstrumentCatalog';
 import { type RenderProvenance } from '../models/RenderProgress';
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
+import { ddspModelStorage } from '../repositories/ddspModelStorage';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readRenderCache } from '../repositories/readRenderCache';
+import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { writeRenderCache } from '../repositories/writeRenderCache';
 import { applyFades, normalizePeak, resampleTo44100 } from '../services/audioResampler';
 import { type MidiNote, midiToDdspInput } from '../services/midiToDdspInput';
@@ -39,8 +41,15 @@ function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
 }
 
-export const renderDdspInstrument = inject({ logger, readRenderCache, writeRenderCache })(
-    ({ logger, readRenderCache, writeRenderCache }) =>
+export const renderDdspInstrument = inject({
+    ddspModelStorage,
+    inferenceWorkerBridge,
+    logger,
+    readRenderCache,
+    withDdspInstrumentLock,
+    writeRenderCache,
+})(
+    ({ ddspModelStorage, inferenceWorkerBridge, logger, readRenderCache, withDdspInstrumentLock, writeRenderCache }) =>
         async function renderDdspInstrument({
             phraseId,
             instrumentId,
@@ -61,42 +70,95 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
             new Float32Array(inputData, pitchHz.byteLength).set(loudnessDb);
             enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
             try {
-                const cacheKey = await computeRenderCacheKey({
-                    modelId,
-                    inputData,
-                    qualityParams: `ddsp-${String(nFrames)}`,
-                });
-                throwIfAborted(signal);
-                const cached = await readRenderCache({ cacheKey });
-                throwIfAborted(signal);
-                startActiveRender({
-                    requestId,
-                    phraseId,
-                    pipeline: 'ddsp',
-                    status: 'rendering-browser',
-                    stage: 'Loading verified DDSP model',
-                    progress: 0,
-                    startedAt: Date.now(),
-                });
-                updateRenderStatus(phraseId, requestId, 'rendering-browser');
-                const backend = await inferenceWorkerBridge.loadDdspSession(
-                    {
+                return await withDdspInstrumentLock(instrument.id, 'shared', async () => {
+                    const storage = {
+                        id: instrument.id,
+                        version: instrument.artifactVersion,
+                        artifacts: instrument.artifacts,
+                    };
+                    throwIfAborted(signal);
+                    if (!(await ddspModelStorage.checkDdspInstrumentReady(storage))) {
+                        throw new Error(
+                            `DDSP instrument generation is not ready: ${instrument.id}:${instrument.artifactVersion}`
+                        );
+                    }
+                    throwIfAborted(signal);
+                    const cacheKey = await computeRenderCacheKey({
                         modelId,
-                        artifacts: instrument.artifacts.map((artifact) => ({
-                            modelId: `${instrument.id}/${instrument.artifactVersion}/${artifact.path}`,
-                            path: artifact.path,
-                            sizeBytes: artifact.sizeBytes,
-                            sha256: artifact.sha256,
-                        })),
-                    },
-                    signal
-                );
-                throwIfAborted(signal);
-                if (cached) {
+                        inputData,
+                        qualityParams: `ddsp-${String(nFrames)}`,
+                    });
+                    throwIfAborted(signal);
+                    const cached = await readRenderCache({ cacheKey });
+                    throwIfAborted(signal);
+                    startActiveRender({
+                        requestId,
+                        phraseId,
+                        pipeline: 'ddsp',
+                        status: 'rendering-browser',
+                        stage: 'Loading verified DDSP model',
+                        progress: 0,
+                        startedAt: Date.now(),
+                    });
+                    updateRenderStatus(phraseId, requestId, 'rendering-browser');
+                    const backend = await inferenceWorkerBridge.loadDdspSession(
+                        {
+                            modelId,
+                            artifacts: instrument.artifacts.map((artifact) => ({
+                                modelId: `${instrument.id}/${instrument.artifactVersion}/${artifact.path}`,
+                                path: artifact.path,
+                                sizeBytes: artifact.sizeBytes,
+                                sha256: artifact.sha256,
+                            })),
+                        },
+                        signal
+                    );
+                    throwIfAborted(signal);
+                    if (cached) {
+                        markRenderComplete(phraseId, requestId, cacheKey);
+                        return {
+                            audio: cached,
+                            backend,
+                            sampleRate: 44_100,
+                            provenance: {
+                                modelId: instrument.id,
+                                renderQuality: 'standard',
+                                renderedAt: Date.now(),
+                                tier: 'browser-preview',
+                            },
+                        };
+                    }
+                    const result = await inferenceWorkerBridge.runDdspInference(
+                        {
+                            type: 'run-ddsp-inference',
+                            requestId,
+                            modelId,
+                            pitchHz,
+                            loudnessDb,
+                            frameRate: instrument.frameRate,
+                        },
+                        signal
+                    );
+                    throwIfAborted(signal);
+                    if (result.backend !== backend) {
+                        throw new Error(`DDSP backend changed during render: ${backend} -> ${result.backend}`);
+                    }
+                    if (result.audio.length === 0) {
+                        throw new Error('DDSP inference produced no audio');
+                    }
+                    const audio = await resampleTo44100({
+                        audio: result.audio,
+                        fromSampleRate: result.nativeSampleRate,
+                    });
+                    throwIfAborted(signal);
+                    normalizePeak(audio);
+                    applyFades(audio, FADE_SAMPLES);
+                    await writeRenderCache({ cacheKey, audio });
+                    throwIfAborted(signal);
                     markRenderComplete(phraseId, requestId, cacheKey);
                     return {
-                        audio: cached,
-                        backend,
+                        audio,
+                        backend: result.backend,
                         sampleRate: 44_100,
                         provenance: {
                             modelId: instrument.id,
@@ -105,43 +167,7 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
                             tier: 'browser-preview',
                         },
                     };
-                }
-                const result = await inferenceWorkerBridge.runDdspInference(
-                    {
-                        type: 'run-ddsp-inference',
-                        requestId,
-                        modelId,
-                        pitchHz,
-                        loudnessDb,
-                        frameRate: instrument.frameRate,
-                    },
-                    signal
-                );
-                throwIfAborted(signal);
-                if (result.backend !== backend) {
-                    throw new Error(`DDSP backend changed during render: ${backend} -> ${result.backend}`);
-                }
-                if (result.audio.length === 0) {
-                    throw new Error('DDSP inference produced no audio');
-                }
-                const audio = await resampleTo44100({ audio: result.audio, fromSampleRate: result.nativeSampleRate });
-                throwIfAborted(signal);
-                normalizePeak(audio);
-                applyFades(audio, FADE_SAMPLES);
-                await writeRenderCache({ cacheKey, audio });
-                throwIfAborted(signal);
-                markRenderComplete(phraseId, requestId, cacheKey);
-                return {
-                    audio,
-                    backend: result.backend,
-                    sampleRate: 44_100,
-                    provenance: {
-                        modelId: instrument.id,
-                        renderQuality: 'standard',
-                        renderedAt: Date.now(),
-                        tier: 'browser-preview',
-                    },
-                };
+                });
             } catch (error) {
                 if (signal?.aborted || isAbortError(error)) {
                     cancelQueuedRender(phraseId, requestId);

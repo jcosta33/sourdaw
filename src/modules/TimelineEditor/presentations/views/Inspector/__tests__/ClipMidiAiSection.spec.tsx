@@ -519,8 +519,14 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         setDdspNotes(clipA, clipB);
         const first = createGate();
         const second = createGate();
+        let firstSignal: AbortSignal | undefined;
+        let firstAbortCount = 0;
         vi.mocked(renderDdspInstrument)
-            .mockImplementationOnce(async () => {
+            .mockImplementationOnce(async ({ signal }) => {
+                firstSignal = signal;
+                signal?.addEventListener('abort', () => {
+                    firstAbortCount += 1;
+                });
                 await first.promise;
                 return makeRenderOutput();
             })
@@ -531,6 +537,8 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
         fireEvent.click(ddspButton());
         rerender(<ClipMidiAiSection clip={clipB} />);
+        expect(firstSignal?.aborted).toBe(true);
+        expect(firstAbortCount).toBe(1);
         fireEvent.click(ddspButton());
         await settleJobs(() => first.open());
         expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
@@ -538,6 +546,33 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         await settleJobs(() => second.open());
         expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
+        expect(firstAbortCount).toBe(1);
+    });
+
+    it('aborts the owned DDSP render on unmount and ignores its late completion', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA);
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        let abortCount = 0;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            signal?.addEventListener('abort', () => {
+                abortCount += 1;
+            });
+            await pending.promise;
+            return makeRenderOutput();
+        });
+
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        unmount();
+
+        expect(signal?.aborted).toBe(true);
+        expect(abortCount).toBe(1);
+        await settleJobs(() => pending.open());
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(abortCount).toBe(1);
     });
 
     it('supersedes a same-clip DDSP launch across an A→B→A panel reset', async () => {

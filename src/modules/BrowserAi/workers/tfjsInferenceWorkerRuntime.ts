@@ -535,6 +535,13 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         if (request.type === 'release-session') {
             cancelIdleCleanup();
             releaseSession(request.modelId);
+            if (request.requestId) {
+                input.postResponse({
+                    type: 'session-released',
+                    requestId: request.requestId,
+                    modelId: request.modelId,
+                });
+            }
             scheduleIdleCleanup();
             return;
         }

@@ -117,6 +117,15 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const ttsLaunchRef = useRef<AbortController | null>(null);
     const svsLaunchRef = useRef<AbortController | null>(null);
 
+    useEffect(
+        () => () => {
+            // A committed selection change or unmount ends this panel's ownership.
+            // Cancelling here also stops worker work instead of merely dropping its UI result.
+            ddspLaunchRef.current?.abort();
+        },
+        [clip.id]
+    );
+
     const stillOwnsPanel = ({ signal, launchClipId }: StillOwnsPanelInput): boolean => {
         if (signal.aborted) {
             return false;

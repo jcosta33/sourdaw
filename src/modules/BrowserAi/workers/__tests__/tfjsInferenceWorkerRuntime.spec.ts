@@ -245,8 +245,17 @@ describe('tfjsInferenceWorkerRuntime', () => {
         vi.useFakeTimers();
         const released = createHarness();
         await released.runtime.handleRequest(createSessionRequest('release-load'));
-        await released.runtime.handleRequest({ type: 'release-session', modelId: 'ddsp-violin:v1' });
+        await released.runtime.handleRequest({
+            type: 'release-session',
+            requestId: 'release-session',
+            modelId: 'ddsp-violin:v1',
+        });
         expect(released.model.dispose).toHaveBeenCalledOnce();
+        expect(released.responses.at(-1)).toEqual({
+            type: 'session-released',
+            requestId: 'release-session',
+            modelId: 'ddsp-violin:v1',
+        });
         await vi.advanceTimersByTimeAsync(1_000);
         expect(released.model.dispose).toHaveBeenCalledOnce();
 

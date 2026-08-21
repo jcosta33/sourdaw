@@ -35,6 +35,8 @@ type ModelDownloadSpec = {
     url: string;
     sha256?: string;
     sizeBytes: number;
+    /** Redirect handling is part of artifact admission; omitted DDSP requests still fail closed. */
+    redirectPolicy?: 'follow' | 'reject';
 };
 
 type DownloadModelInput = {
@@ -98,7 +100,8 @@ export const downloadModel = inject({
 })(
     ({ logger, getStorageStatus, modelStorageWorkerBridge, requestPersistentStorage }) =>
         async function downloadModel({ spec, onProgress, signal }: DownloadModelInput): DownloadModelOutput {
-            const { modelId, family, url, sha256, sizeBytes } = spec;
+            const { modelId, family, url, sha256, sizeBytes, redirectPolicy } = spec;
+            const fetchRedirect = redirectPolicy ?? (family === 'ddsp' ? 'reject' : 'follow');
 
             updateModelStatus(modelId, { status: 'downloading', downloadProgress: 0 });
 
@@ -147,10 +150,10 @@ export const downloadModel = inject({
                             `[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`
                         );
 
-                        // Every admitted artifact is pinned to an exact Magenta URL. A
-                        // redirect would otherwise turn that admission into an unchecked
-                        // write from another origin before OPFS integrity verification.
-                        const response = await fetch(url, { redirect: 'error', signal });
+                        const response = await fetch(url, {
+                            redirect: fetchRedirect === 'reject' ? 'error' : 'follow',
+                            signal,
+                        });
                         if (!response.ok) {
                             throw new Error(`HTTP ${String(response.status)}: ${response.statusText}`);
                         }

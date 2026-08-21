@@ -63,6 +63,8 @@ export type WorkerRequest =
     | {
           type: 'release-session';
           modelId: string;
+          /** Present when the caller must wait until disposal is complete. */
+          requestId?: string;
       }
     | {
           type: 'get-status';
@@ -141,6 +143,11 @@ export type WorkerResponse =
           audio: Float32Array;
           nativeSampleRate: number;
           backend: string;
+      }
+    | {
+          type: 'session-released';
+          requestId: string;
+          modelId: string;
       }
     | {
           type: 'tts-result';

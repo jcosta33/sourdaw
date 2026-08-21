@@ -603,7 +603,7 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         expect(worker.postMessage).toHaveBeenCalledWith({ type: 'release-session', modelId: 'm1' });
     });
 
-    it('schedules a TF.js idle-destroy when releasing a DDSP session', async () => {
+    it('waits for confirmed TF.js DDSP session disposal before resolving removal', async () => {
         vi.useFakeTimers();
         model_storage_mocks.readModel.mockResolvedValue(new MessageChannel().port1);
         const load = inferenceWorkerBridge.loadDdspSession({
@@ -620,8 +620,19 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         });
         await load;
 
-        await inferenceWorkerBridge.releaseDdspSession('violin-1');
-        expect(worker.postMessage).toHaveBeenCalledWith({ type: 'release-session', modelId: 'violin-1' });
+        const release = inferenceWorkerBridge.releaseDdspSession('violin-1');
+        await flush();
+        const requestId = lastRequestId(worker);
+        expect(lastRequest(worker)).toEqual({ type: 'release-session', requestId, modelId: 'violin-1' });
+        let resolved = false;
+        void release.then(() => {
+            resolved = true;
+        });
+        await flush();
+        expect(resolved).toBe(false);
+
+        reply(worker, { type: 'session-released', requestId, modelId: 'violin-1' });
+        await expect(release).resolves.toBeUndefined();
 
         await vi.advanceTimersByTimeAsync(60_000);
         expect(worker.terminate).toHaveBeenCalledTimes(1);

@@ -7,7 +7,14 @@ import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadModel } from '../downloadModel';
 
 type DownloadModelRepo = (input: {
-    spec: { modelId: string; family: string; url: string; sha256?: string; sizeBytes: number };
+    spec: {
+        modelId: string;
+        family: string;
+        url: string;
+        sha256?: string;
+        sizeBytes: number;
+        redirectPolicy: 'follow';
+    };
     onProgress?: (payload: unknown) => void;
 }) => Promise<void>;
 
@@ -75,6 +82,7 @@ describe('downloadModel', () => {
                 url: 'https://cdn.example.com/kokoro-82m.zip',
                 sha256: 'abc123',
                 sizeBytes: 82_000_000,
+                redirectPolicy: 'follow',
             },
             onProgress: on_progress,
         });
@@ -106,6 +114,7 @@ describe('downloadModel', () => {
                 url: 'https://cdn.example.com/ddsp-violin.zip',
                 sha256: undefined,
                 sizeBytes: 10_000,
+                redirectPolicy: 'follow',
             },
             onProgress: undefined,
         });

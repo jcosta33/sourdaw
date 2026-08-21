@@ -27,7 +27,7 @@ export const downloadDdspInstrument = inject({
             { signal }: DownloadDdspInstrumentOptions = {}
         ): Promise<void> {
             const instrument = resolveDdspInstrument(instrumentId);
-            return withDdspInstrumentLock(instrument.id, async (): Promise<void> => {
+            return withDdspInstrumentLock(instrument.id, 'exclusive', async (): Promise<void> => {
                 const storage = {
                     id: instrument.id,
                     version: instrument.artifactVersion,
@@ -54,6 +54,7 @@ export const downloadDdspInstrument = inject({
                                 url: artifact.url,
                                 sizeBytes: artifact.sizeBytes,
                                 sha256: artifact.sha256,
+                                redirectPolicy: 'reject',
                             },
                             signal,
                         });
