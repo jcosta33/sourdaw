@@ -127,6 +127,13 @@ const CONTROL_MAPPING: Record<string, string> = {
 const COMPLEX_GRID = /grid-cols-\[/;
 const RESPONSIVE_CLASS = /(?:sm|md|lg|xl|2xl):/;
 
+/** Hardware drawing shells. Token / knob / fader restyle is out of scope. */
+const HARDWARE_DRAWING_FILES = new Set([
+    'src/components/daw/Fader.tsx',
+    'src/components/daw/RotaryKnob.tsx',
+    'src/components/daw/MechanicalSwitch.tsx',
+]);
+
 function posixRelative(root: string, absolute: string): string {
     return relative(root, absolute).split(sep).join('/');
 }
@@ -297,6 +304,9 @@ function nativeControlDisposition(relativePath: string): UiRestatementDispositio
 function layoutDisposition(relativePath: string, classNames: string, dynamic: boolean): UiRestatementDisposition {
     if (relativePath.includes('/visualizers/')) {
         return 'renderer';
+    }
+    if (HARDWARE_DRAWING_FILES.has(relativePath)) {
+        return 'one-off';
     }
     if (relativePath.startsWith('src/components/layout/')) {
         return 'semantic-wrapper';

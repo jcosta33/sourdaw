@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 
@@ -29,8 +30,9 @@ export const PromptDialog = (): ReactElement | null => {
     }
 
     return (
-        <div
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        <Row
+            justify="center"
+            className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
             role="dialog"
             aria-modal="true"
             aria-labelledby={pending.title ? 'prompt-dialog-title' : undefined}
@@ -58,15 +60,15 @@ export const PromptDialog = (): ReactElement | null => {
                     className="mt-3"
                     autoFocus
                 />
-                <div className="mt-4 flex justify-end gap-2">
+                <Row justify="end" gap={2} className="mt-4">
                     <Button variant="ghost" size="sm" onClick={cancel}>
                         {pending.cancelLabel ?? 'Cancel'}
                     </Button>
                     <Button variant="default" size="sm" onClick={submit}>
                         {pending.confirmLabel ?? 'OK'}
                     </Button>
-                </div>
+                </Row>
             </div>
-        </div>
+        </Row>
     );
 };

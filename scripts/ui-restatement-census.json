@@ -360,15 +360,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-031bcff1742961fb",
-    "file": "src/routes/__root.tsx",
-    "line": 29,
-    "fingerprint": "div\tflex h-screen w-screen items-center justify-center bg-background",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0333b07281c41b15",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/AutomationLane.tsx",
     "line": 143,
@@ -630,15 +621,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-05777ad1f3f17871",
-    "file": "src/infra/dialogService/NotificationToast.tsx",
-    "line": 42,
-    "fingerprint": "div\tflex items-start gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-057dc3252ba45403",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
     "line": 35,
@@ -763,6 +745,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-06df5064662afdd8",
+    "file": "src/infra/dialogService/PromptDialog.tsx",
+    "line": 33,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-06df69f2f0f08a9f",
@@ -1271,7 +1262,7 @@
   {
     "id": "ui-0af915bf2a47e676",
     "file": "src/infra/dialogService/PromptDialog.tsx",
-    "line": 52,
+    "line": 54,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -1757,7 +1748,7 @@
   {
     "id": "ui-0fb342ac5d6b636c",
     "file": "src/components/ui/bipolar-slider.tsx",
-    "line": 56,
+    "line": 57,
     "fingerprint": "div\tflex flex-col gap-1 w-full",
     "kind": "layout",
     "mapping": "Stack",
@@ -1951,15 +1942,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-1183ef6e3e312ec0",
-    "file": "src/components/ui/dropdown-menu.tsx",
-    "line": 125,
-    "fingerprint": "span\tabsolute left-2 flex h-3.5 w-3.5 items-center justify-center text-accent-cyan",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-118730ecabc75b06",
@@ -3258,15 +3240,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-1de04ec96201b273",
-    "file": "src/infra/dialogService/PromptDialog.tsx",
-    "line": 61,
-    "fingerprint": "div\tmt-4 flex justify-end gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-1ded98a4f33fc8b3",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
     "line": 155,
@@ -3825,6 +3798,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-23f6aa41889072c9",
+    "file": "src/components/ui/bipolar-slider.tsx",
+    "line": 59,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-2410c195107046e9",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 628,
@@ -4120,15 +4102,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-27364484ff7f42c3",
-    "file": "src/components/ui/dropdown-menu.tsx",
-    "line": 151,
-    "fingerprint": "span\tabsolute left-2 flex h-3.5 w-3.5 items-center justify-center text-accent-cyan",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-2797247a6f535f1e",
@@ -5339,7 +5312,7 @@
   {
     "id": "ui-33b55a8a17fa6c65",
     "file": "src/infra/dialogService/ConfirmDialog.tsx",
-    "line": 55,
+    "line": 57,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5679,6 +5652,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-37a948e5e5ce0f86",
+    "file": "src/components/ui/dropdown-menu.tsx",
+    "line": 126,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-37a9b098a753fa98",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/MacrosPanel.tsx",
     "line": 179,
@@ -5983,15 +5965,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-3ad05e3b665e2494",
-    "file": "src/infra/dialogService/ConfirmDialog.tsx",
-    "line": 51,
-    "fingerprint": "div\tmt-4 flex justify-end gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-3ae4264a3bd2e590",
@@ -6594,7 +6567,7 @@
     "fingerprint": "div\trelative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-4082059b7fa996d2",
@@ -6649,15 +6622,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-40cddbe71fe03bae",
-    "file": "src/components/ui/bipolar-slider.tsx",
-    "line": 58,
-    "fingerprint": "div\tflex justify-between items-center px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-410a0d43221097c4",
@@ -7017,7 +6981,7 @@
     "fingerprint": "div\tabsolute top-1.5 w-full flex flex-col items-center gap-[2px] opacity-20",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-442417d2d051acc0",
@@ -7347,6 +7311,15 @@
     "id": "ui-474f58d6828ba7df",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 323,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-475a4f53bdf4d960",
+    "file": "src/components/ui/bipolar-slider.tsx",
+    "line": 64,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -10728,15 +10701,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6ab7785b960e82b6",
-    "file": "src/infra/dialogService/PromptDialog.tsx",
-    "line": 32,
-    "fingerprint": "div\tfixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6abb496b613e6f26",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/MacrosPanel.tsx",
     "line": 116,
@@ -10892,7 +10856,7 @@
   {
     "id": "ui-6cfbcd9a056d3883",
     "file": "src/infra/dialogService/NotificationToast.tsx",
-    "line": 52,
+    "line": 50,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10978,15 +10942,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6e05fc9647ff0dbb",
-    "file": "src/components/ui/bipolar-slider.tsx",
-    "line": 63,
-    "fingerprint": "div\trelative pt-2 pb-1 px-1 h-6 flex items-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6e09886dac764912",
@@ -11508,7 +11463,7 @@
     "fingerprint": "div\tabsolute w-8 h-10 left-1/2 -ml-4 rounded-sm z-10 transition-all duration-instant cursor-grabbing cursor-grab flex flex-col items-center justify-center gap-[2px]",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-7345220f3790310d",
@@ -11691,6 +11646,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-759793bd54b51372",
+    "file": "src/routes/__root.tsx",
+    "line": 30,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-759dda9dded2cb83",
     "file": "src/modules/SessionLauncher/presentations/views/SessionView.tsx",
     "line": 75,
@@ -11754,6 +11718,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-761c64e41fa364e5",
+    "file": "src/components/ui/bipolar-slider.tsx",
+    "line": 81,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-761ccadc5b69c814",
     "file": "src/modules/Collaboration/presentations/views/QrInvite.tsx",
     "line": 66,
@@ -11792,7 +11765,7 @@
   {
     "id": "ui-7633a90f28ea593a",
     "file": "src/infra/dialogService/PromptDialog.tsx",
-    "line": 65,
+    "line": 67,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12318,7 +12291,7 @@
     "fingerprint": "div\tgroup/knob relative flex flex-col items-center select-none touch-none cursor-not-allowed opacity-45 cursor-ns-resize",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-7ae96c6dd14da1be",
@@ -13488,7 +13461,7 @@
     "fingerprint": "div\tpointer-events-none absolute -left-6 top-0 bottom-0 flex w-5 flex-col justify-between",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-85883551f97df298",
@@ -14064,7 +14037,7 @@
     "fingerprint": "div\tflex flex-col items-center gap-1.5",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-8b935cf44eb84168",
@@ -14398,15 +14371,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-8ef5c9de2572e72b",
-    "file": "src/infra/dialogService/ConfirmDialog.tsx",
-    "line": 26,
-    "fingerprint": "div\tfixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8efc2bde4713c265",
@@ -16092,15 +16056,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-a20946b3edc4b144",
-    "file": "src/components/ui/bipolar-slider.tsx",
-    "line": 80,
-    "fingerprint": "div\tflex justify-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a2152770c60ddf43",
     "file": "src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx",
     "line": 103,
@@ -16166,7 +16121,7 @@
   {
     "id": "ui-a2996fa5fa4b524c",
     "file": "src/infra/dialogService/PromptDialog.tsx",
-    "line": 62,
+    "line": 64,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17640,6 +17595,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-b1aafe1ad48c44fa",
+    "file": "src/components/ui/dropdown-menu.tsx",
+    "line": 152,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b1adcbd7c56f9316",
     "file": "src/modules/Arrangement/presentations/views/BounceOptionsDialog.tsx",
     "line": 68,
@@ -19053,6 +19017,15 @@
     "disposition": "responsive-or-dynamic"
   },
   {
+    "id": "ui-c09379062137370d",
+    "file": "src/infra/dialogService/ConfirmDialog.tsx",
+    "line": 53,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c0b4bb19e3204aea",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 994,
@@ -19548,6 +19521,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-c5d8f3fbdc977f3a",
+    "file": "src/infra/dialogService/NotificationToast.tsx",
+    "line": 40,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c609688383c6f137",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
     "line": 149,
@@ -19573,6 +19555,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-c64788e115928803",
+    "file": "src/infra/dialogService/ConfirmDialog.tsx",
+    "line": 27,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c66036240f068d3a",
@@ -19761,7 +19752,7 @@
     "fingerprint": "div\trelative flex items-center select-none group outline-none focus-visible:ring-1 focus-visible:ring-border-focus",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-c9462c9d49c3a3c1",
@@ -20412,6 +20403,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-ce78f0713bfdd4ee",
+    "file": "src/infra/dialogService/PromptDialog.tsx",
+    "line": 63,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ce8e7dfc2b8f7239",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 173,
@@ -20607,7 +20607,7 @@
     "fingerprint": "div\tabsolute bottom-1.5 w-full flex flex-col items-center gap-[2px] opacity-20",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-d0affb517bbc97a5",
@@ -23150,7 +23150,7 @@
   {
     "id": "ui-eacaa9f4daedd345",
     "file": "src/infra/dialogService/ConfirmDialog.tsx",
-    "line": 52,
+    "line": 54,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
