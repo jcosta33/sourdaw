@@ -1,0 +1,43 @@
+scripts/__tests__/uiRestatementCensus.spec.ts
+  s_2175fca1f07426::t_5802ce625c9381 199-221
+scripts/uiRestatementCensus.ts
+  s_2175fca1f07426::t_962d3d731ec56f 130-136,308-310
+src/components/ui/bipolar-slider.tsx
+  s_2175fca1f07426::t_c9f1f473cecf52 3,59,62,64,79,81,83
+src/components/ui/dropdown-menu.tsx
+  s_2175fca1f07426::t_09702bf104d8c3 6,126,130,152,156
+src/infra/dialogService/ConfirmDialog.tsx
+  s_2175fca1f07426::t_3d335821c80e2c 3,27-29,53,65,67
+src/infra/dialogService/NotificationToast.tsx
+  s_2175fca1f07426::t_5cba4f054ca761 5,24-29,35,40,53
+src/infra/dialogService/PromptDialog.tsx
+  s_2175fca1f07426::t_e6ff5450ff1401 3,33-35,63,70,72
+src/routes/__root.tsx
+  s_2175fca1f07426::t_d6802dbb974248 6,30,37
+scripts/ui-restatement-census.json
+  s_a40848e8f8cca9::t_70876ba5d54954 749-757,1265,1751,3800-3808,5315,5654-5662,6570,6984,7319-7327,10859,11466,11648-11656,11720-11728,11768,12294,13464,14040,16124,17597-17605,19019-19027,19523-19531,19559-19567,19755,20405-20413,20610,23153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "da3b31d23745f047bbdeee1775f812c4f0b4efec",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
