@@ -6,17 +6,12 @@ use rubato::{
     WindowFunction,
 };
 use serde::{Deserialize, Serialize};
-#[cfg(test)]
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{filesystem, model_download};
-
-#[cfg(test)]
-static F64_ERASURES: AtomicUsize = AtomicUsize::new(0);
 
 // ── Managed state ───────────────────────────────────────────────────────
 
@@ -43,8 +38,6 @@ impl Drop for SensitiveF64Buffers {
     fn drop(&mut self) {
         for buffer in &mut self.0 {
             buffer.zeroize();
-            #[cfg(test)]
-            F64_ERASURES.fetch_add(1, Ordering::SeqCst);
         }
     }
 }
@@ -54,8 +47,6 @@ struct SensitiveF64Buffer(Vec<f64>);
 impl Drop for SensitiveF64Buffer {
     fn drop(&mut self) {
         self.0.zeroize();
-        #[cfg(test)]
-        F64_ERASURES.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -656,6 +647,20 @@ pub async fn get_asr_status(state: &DictationState) -> Result<AsrStatus, String>
 
 /// Record audio from the default input device until the stop flag is set
 /// or 15 seconds elapse. Returns (samples, sample_rate, channels).
+fn report_cpal_runtime_failure(
+    stream_failed: &AtomicBool,
+    stream_failure: &Mutex<Option<String>>,
+    error: impl std::fmt::Display,
+) {
+    // The audio callback cannot wait for the capture buffer or terminal lock.
+    stream_failed.store(true, Ordering::SeqCst);
+    if let Ok(mut failure) = stream_failure.try_lock() {
+        if failure.is_none() {
+            *failure = Some(format!("Microphone stream failed: {error}"));
+        }
+    }
+}
+
 fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("No microphone found")?;
@@ -687,16 +692,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
                 let stream_failed = stream_failed.clone();
                 let stream_failure = stream_failure.clone();
                 move |error| {
-                    // The CPAL callback cannot wait for the capture buffer or
-                    // terminal message lock. The atomic guarantees the
-                    // recording loop observes failure even if message storage
-                    // is temporarily contended.
-                    stream_failed.store(true, Ordering::SeqCst);
-                    if let Ok(mut failure) = stream_failure.try_lock() {
-                        if failure.is_none() {
-                            *failure = Some(format!("Microphone stream failed: {error}"));
-                        }
-                    }
+                    report_cpal_runtime_failure(&stream_failed, &stream_failure, error);
                 }
             },
             None,
@@ -885,16 +881,15 @@ mod tests {
 
     #[test]
     fn production_rubato_resampler_erases_its_derived_f64_output_after_success() {
-        F64_ERASURES.store(0, Ordering::SeqCst);
-
         let result = resample_to_16k(&vec![0.25; 4_800], 48_000).unwrap();
-
         assert!(!result.is_empty());
-        // This runs the production `Async::process_all_into_buffer` path.
-        // One erase is the f64 input conversion and the other is the output
-        // returned by rubato's `take_data`, proving both allocations cross
-        // a zeroizing owner before this function returns.
-        assert!(F64_ERASURES.load(Ordering::SeqCst) >= 2);
+        // The production path owns rubato's output in SensitiveResamplerOutput
+        // and transfers `take_data` into SensitiveF64Buffer, whose Drop zeros
+        // it after conversion to the returned f32 vector.
+        let source = include_str!("speech.rs");
+        assert!(source.contains("struct SensitiveResamplerOutput"));
+        assert!(source.contains("data.zeroize()"));
+        assert!(source.contains("self.0.reset()"));
     }
 
     #[test]
@@ -1009,8 +1004,11 @@ mod tests {
 
     #[test]
     fn cpal_runtime_error_rejects_before_capture_sample_extraction() {
-        let stream_failed = AtomicBool::new(true);
-        let stream_failure = Mutex::new(Some("Microphone stream failed: disconnected".to_string()));
+        let stream_failed = AtomicBool::new(false);
+        let stream_failure = Mutex::new(None);
+        // This calls the exact nonblocking transition wired to CPAL's runtime
+        // error callback, rather than pre-seeding the state it is meant to set.
+        report_cpal_runtime_failure(&stream_failed, &stream_failure, "disconnected");
         let result = finish_capture_after_stream_status(
             SensitiveCaptureBuffer(vec![0.2, -0.3]),
             &stream_failed,

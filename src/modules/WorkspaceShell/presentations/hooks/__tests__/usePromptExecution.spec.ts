@@ -30,6 +30,11 @@ const executionUseCaseMocks = vi.hoisted(() => ({
     executePromptActionGroup: vi.fn(),
     notifyAiChange: vi.fn(),
     voicePromptDraftListeners: new Set<(text: string) => void>(),
+    injectVoicePromptDraft: vi.fn((text: string) => {
+        for (const listener of executionUseCaseMocks.voicePromptDraftListeners) {
+            listener(text);
+        }
+    }),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -62,6 +67,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
         executionUseCaseMocks.voicePromptDraftListeners.add(listener);
         return () => executionUseCaseMocks.voicePromptDraftListeners.delete(listener);
     }),
+    injectVoicePromptDraft: executionUseCaseMocks.injectVoicePromptDraft,
     notifyAiChange: executionUseCaseMocks.notifyAiChange,
     isLlmAvailable: vi.fn(() => false),
     initEngine: vi.fn().mockResolvedValue(undefined),
@@ -681,11 +687,7 @@ describe('usePromptExecution', () => {
         const { result } = renderHook(() => usePromptExecution());
         Object.assign(result.current.formRef, { current: { requestSubmit } });
 
-        await act(async () => {
-            for (const listener of executionUseCaseMocks.voicePromptDraftListeners) {
-                listener('delete every track');
-            }
-        });
+        await act(async () => executionUseCaseMocks.injectVoicePromptDraft('delete every track'));
 
         expect(vi.mocked(onVoicePromptDraft)).toHaveBeenCalledOnce();
         expect(result.current.value).toBe('delete every track');
