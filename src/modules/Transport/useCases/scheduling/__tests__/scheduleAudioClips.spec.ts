@@ -117,13 +117,25 @@ function makeAudioClip(overrides: Record<string, unknown> = {}): unknown {
 
 type StartFn = (when: number, offset: number, duration: number) => void;
 
-/** A fresh fake AudioBufferSourceNode that records its start() arguments. */
+/**
+ * A fresh fake AudioBufferSourceNode that records its start() arguments.
+ *
+ * `start` rejects a negative offset because the real node does: the Web Audio
+ * specification requires `AudioBufferSourceNode.start()` to throw a
+ * `RangeError` when `offset` is negative. A permissive fake would let this
+ * suite go green on a scheduler that crashes the moment a musician slips a clip
+ * past the head of its file.
+ */
 function makeFakeSource(): { start: ReturnType<typeof vi.fn<StartFn>>; [k: string]: unknown } {
     return {
         buffer: null,
         playbackRate: { value: 1 },
         connect: vi.fn(),
-        start: vi.fn<StartFn>(),
+        start: vi.fn<StartFn>((_when, offset) => {
+            if (offset < 0) {
+                throw new RangeError('offset must be non-negative');
+            }
+        }),
         onended: null,
     };
 }
@@ -505,6 +517,38 @@ describe('scheduleAudioClips', () => {
         expect(when).toBe(5);
         // elapsed*stretch(1) + audioOffsetSeconds(1) = 2.
         expect(offset).toBeCloseTo(2, 6);
+    });
+
+    /// A clip slipped past the head of its own file. Both write paths reach a
+    /// negative `audioOffsetBeats` unfloored — `slipClipContent` stores the slid
+    /// value as-is, and `trimClipStart` adds a negative delta on a leftward
+    /// left-edge drag — and the store sanitiser checks only finiteness. Handing
+    /// that number to `start()` is a `RangeError` by specification, and this
+    /// call sits in the scheduler tick under a `try`/`finally` with no `catch`,
+    /// so the throw would also skip that tick's automation, VCA and modulation
+    /// passes. The answer is the professional one, and the one the export
+    /// bounces: silence across the negative span, then the file from sample 0.
+    it('pre-rolls silence for a negative audio offset instead of throwing', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        // clipBeatsPerSecond = 120/60 = 2; audioOffset -1 beat → -0.5 s.
+        mockResolveClips.mockReturnValue([makeAudioClip({ audioOffsetBeats: -1 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        expect(() => {
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+        }).not.toThrow();
+
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        // Clip head is at beat 8 → 4.0 s; the 0.5 s of missing material is
+        // crossed on the timeline before anything sounds.
+        expect(when).toBeCloseTo(4.5, 6);
+        // Entry into the file is its first sample, never a negative seek.
+        expect(offset).toBeCloseTo(0, 6);
+        // The tail stays put, so the pre-roll shortens the sound: the clip's
+        // 2.0 s span less the 0.5 s of silence at its head.
+        expect(duration).toBeCloseTo(1.5, 6);
     });
 
     it('moves the start across a tempo change while leaving the buffer content offset alone', () => {

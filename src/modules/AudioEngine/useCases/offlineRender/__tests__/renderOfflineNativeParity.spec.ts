@@ -494,7 +494,7 @@ function fixtureRenderContext(): OfflineRenderContext {
             };
         },
         processYeastMidi: null,
-        resolveTempoAtBeat: null,
+        resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
         evaluateAutomationValue: null,
     };
 }

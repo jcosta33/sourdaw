@@ -429,10 +429,7 @@ async function runSchedule({
             projectMidiEvents,
             projectPpqEndpoints,
             processYeastMidi,
-            // No clip here carries an audioOffsetBeats, so the flat-tempo
-            // resolver is unexercised; `null` is the unconfigured case and
-            // leaves the projection on the render's default tempo.
-            resolveTempoAtBeat: null,
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             selectMidiEventProbability: mocks.shouldPlayMidiEvent,
             projectChordPitch: mocks.projectChordPitch,
             evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -609,10 +606,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -666,10 +660,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -713,10 +704,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -800,10 +788,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -858,10 +843,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -893,10 +875,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -976,10 +955,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
@@ -1094,10 +1070,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
-                // No clip here carries an audioOffsetBeats, so the flat-tempo
-                // resolver is unexercised; `null` is the unconfigured case and
-                // leaves the projection on the render's default tempo.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,

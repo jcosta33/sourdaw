@@ -931,6 +931,40 @@ describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
         expect(sources[0]?.start).toHaveBeenCalledWith(0, 1, 0.75);
     });
 
+    it("seeks at the clip start beat's own tempo, not the project default", async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+
+        // The case the test above cannot see: this clip sits *after* a tempo
+        // change, so the flat tempo governing it (240) and the project default
+        // (120) disagree. Every clip starting at beat 0 reads the same number
+        // either way, which would let the whole resolver — the projector slot,
+        // the barrel export and the bootstrap registration behind it — be
+        // deleted with the suite still green.
+        const changes = [
+            { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' as const },
+            { id: 'tempo-b', beat: 4, tempo: 240, curve: 'instant' as const },
+        ];
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 4, // 2.0s in: four beats at 120
+                    endBeat: 6, // two beats at 240 is 0.5s of timeline
+                    audioOffsetBeats: 2,
+                }),
+            ],
+        });
+
+        await run({ track, ctx, changes, projector: projectTempoPpqEndpoints });
+
+        expect(sources).toHaveLength(1);
+        // 2 beats at the clip's own 240 BPM is 0.5s into the file. Resolving at
+        // the project default instead would seek 1.0s in — half a second of the
+        // wrong material, in the bounced file and nowhere else.
+        expect(sources[0]?.start).toHaveBeenCalledWith(2, 0.5, 0.5);
+    });
+
     it('opens silence for a negative audioOffsetBeats and enters the source at 0', async () => {
         const { ctx, sources } = makeRecordingOfflineCtx();
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
@@ -953,7 +987,9 @@ describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
         // The convention Live and Cubase follow: nothing sounds until the
         // source reaches sample 0, and the clip's tail stays where it is.
         // Clamping the offset to 0 instead would sound 0.5s of material the
-        // clip's head does not name.
+        // clip's head does not name. `scheduleAudioClips` applies the same
+        // pre-roll, and its own spec pins it, so this is parity rather than a
+        // rule the export invented for itself.
         expect(sources[0]?.start).toHaveBeenCalledWith(0.5, 0, 1.5);
     });
 });

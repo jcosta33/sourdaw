@@ -85,10 +85,11 @@ export type NativeOfflineRenderInput = Readonly<{
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     /**
      * Flat tempo at a beat — what a clip's buffer-content offset converts
-     * through. `null` leaves the render on its default tempo, the answer the
-     * law itself gives for a project with no tempo map.
+     * through. Required for the same reason the web path requires it: a
+     * default-tempo fallback seeks to the wrong point in the source for every
+     * project carrying a tempo map, inaudibly until someone listens.
      */
-    resolveTempoAtBeat: OfflineTempoAtBeatResolver | null;
+    resolveTempoAtBeat: OfflineTempoAtBeatResolver;
     /** Every strip this render builds, in project order. */
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix — audible plus cue-send-only. */
@@ -184,10 +185,9 @@ export async function renderOfflineWithNativeEngine(
         }).startSeconds;
     }
     // The flat rate at a beat, not the integrated map — the web path's law for a
-    // clip's source-content offset, and the same fallback when nothing is
-    // configured: `getTempoAtBeat` on an empty map is the default tempo.
+    // clip's source-content offset, applied identically here.
     function resolveClipTempo(beat: number): number {
-        return resolveTempoAtBeat?.({ changes, beat, defaultTempo }) ?? defaultTempo;
+        return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
     const regionStartBeat = 0;
     const regionStartSec = projectBeatToSeconds(regionStartBeat);

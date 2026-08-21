@@ -334,10 +334,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     };
                 },
                 processYeastMidi: null,
-                // Engine selection, not clip timing: no audio offset is
-                // projected here, so the unconfigured resolver is the honest
-                // fixture value.
-                resolveTempoAtBeat: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 evaluateAutomationValue: null,
             } satisfies OfflineRenderContext;
         });

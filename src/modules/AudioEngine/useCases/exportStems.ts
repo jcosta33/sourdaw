@@ -173,7 +173,13 @@ export const exportStems: ExportStemsFn = async function exportStems(
             onProgress?.(1);
             return stems;
         }
-        if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints || !projectChordPitch) {
+        if (
+            !projectMidiEvents ||
+            !selectMidiEventProbability ||
+            !projectPpqEndpoints ||
+            !projectChordPitch ||
+            !resolveTempoAtBeat
+        ) {
             throw new Error('Offline musical projection is not configured');
         }
 
