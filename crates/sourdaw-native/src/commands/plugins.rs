@@ -678,6 +678,17 @@ pub async fn load_plugin(
                         ));
                     }
 
+                    // The scheduler's effect table is shared with the project's
+                    // native devices and the crumbs capture slot, so a plugin
+                    // can be refused by a table this path never populated.
+                    // Refuse before anything is registered: past this point
+                    // the id is reserved, the instance is in `engine_plugins`
+                    // with its GUI and parameters, and the load reports
+                    // success — while the audio thread's own refusal is a
+                    // counter it cannot return to the user, leaving a plugin
+                    // in the rack that passes dry audio forever.
+                    engine.ensure_effect_table_headroom(1)?;
+
                     let id = engine.reserve_plugin_id();
                     let (bridge, bridge_handle) = create_audio_bridge(id);
                     let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));

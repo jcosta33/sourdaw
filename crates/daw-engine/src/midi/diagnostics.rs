@@ -9,12 +9,16 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// rather than silently misrouting later `SetParam`/`SetBypass`/
     /// `SendMidiNote`/etc. commands to whichever entry was inserted first.
     pub effect_id_collisions: u64,
-    /// An `AddEffect` command named a `plugin_type` with no built-in mapping
-    /// (only `"knead"` is currently mapped).
+    /// An `AddEffect` command named a `plugin_type` with no built-in mapping.
+    /// Unreachable from this engine since the command's payload became the
+    /// fixed-size `BuiltinEffectType` address: an unmapped name is refused
+    /// control-side by `BuiltinEffectType::from_name`. The field stays
+    /// published because the diagnostics surface is a contract; this engine
+    /// reads zero on it.
     pub unsupported_effect_additions: u64,
-    /// A `SetParam` command named a parameter with no mapping onto the
-    /// target effect (either the effect is not a built-in with a mapped
-    /// parameter table, or the name itself is unrecognized).
+    /// A `SetParam` command addressed a plugin whose parameters are not routed
+    /// there (a native plugin; the built-in's own mapping is total, and an
+    /// unrecognized name is refused control-side by `DeviceParam::from_name`).
     pub unmapped_set_param_calls: u64,
     /// A processed audio block the app never received because its return ring
     /// was full. The plugin's output for that block is gone.

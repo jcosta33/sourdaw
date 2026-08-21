@@ -68,13 +68,43 @@ pub enum MidiFxKind {
     VelocityScaler,
 }
 
+/// A built-in effect the graph can register, addressed without a name for the
+/// reason given on [`crate::timeline::AutomationTarget`]: a command carrying a
+/// `String` type name would have its allocation freed on the audio thread when
+/// the command is consumed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BuiltinEffectType {
+    Knead,
+}
+
+impl BuiltinEffectType {
+    /// The wire name this type is addressed by. Its inverse is
+    /// [`Self::from_name`], so the named and the addressed paths cannot drift
+    /// into meaning different things.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Knead => "knead",
+        }
+    }
+
+    /// Resolve a wire name onto its address. `None` refuses the name
+    /// control-side: the scheduler has no built-in under that name, and an
+    /// unknown name cannot cross the ring as a fixed-size address.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "knead" => Some(Self::Knead),
+            _ => None,
+        }
+    }
+}
+
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
     // Built-in effects
     /// Register a built-in effect on the master insert chain — the crate's
     /// original chain, and where the plugin-bridge path still runs a built-in
     /// it registers standalone.
-    AddEffect(usize, String),
+    AddEffect(usize, BuiltinEffectType),
     /// Register a built-in effect detached from every chain.
     ///
     /// The graph transport's form: its effect exists only once the
@@ -83,8 +113,8 @@ pub enum GraphCommand {
     /// the two. An effect registered onto the master chain in that window
     /// would render one block of the *entire mix* through a device the user
     /// put on one strip; a detached one renders nowhere until it is placed.
-    AddDetachedEffect(usize, String),
-    SetParam(usize, String, f32),
+    AddDetachedEffect(usize, BuiltinEffectType),
+    SetParam(usize, DeviceParam, f32),
     SetBypass(usize, bool),
 
     // External plugins (CLAP/VST3/AU)
@@ -299,30 +329,108 @@ pub enum GraphCommand {
     RegisterAudioBridge(PluginAudioBridge),
 }
 
+impl GraphCommand {
+    /// How this command changes the population of the scheduler's one effect
+    /// table, `AudioScheduler::effects`.
+    ///
+    /// That table is shared. Graph devices, engine-owned CLAP instances and
+    /// the crumbs capture slot all take their slots from it — the id space is
+    /// partitioned precisely because they do — so no single producer's own
+    /// bookkeeping is a count of it, and a ceiling built on one of them bounds
+    /// a strict subset of what the callback holds. This is the one
+    /// classification the control side's ledger reads
+    /// ([`crate::EngineHandle::registered_effect_count`]).
+    ///
+    /// The match carries no wildcard arm on purpose. A command that registers
+    /// or retires an effect does not compile until its effect on the table is
+    /// stated here, which is what keeps the ledger complete rather than a
+    /// count of whichever producers someone remembered.
+    ///
+    /// Every retirement is classified `-1`, and every retirement is
+    /// conditional on the callback finding its target:
+    /// `RemovePluginWithBridge` frees nothing for an id the table does not
+    /// hold, and the two `*Retired` variants free nothing when the strip they
+    /// name does not hold the effect they name. The classification is exact
+    /// under one control-side precondition — a retirement is only ever sent
+    /// for a target the sender has already resolved against the project it
+    /// holds — and a violated precondition drifts in the dangerous direction:
+    /// the ledger drops to N-1 while the table stays at N, so it *grants*
+    /// headroom that does not exist and the next registration is admitted
+    /// control-side and then refused silently on the callback, which is the
+    /// failure this ledger exists to remove.
+    ///
+    /// Exhaustiveness forces an author to write an arm, not to write the right
+    /// one, so it is not what keeps this classification honest. That is
+    /// `crate::tests::the_ledger_matches_the_scheduler_effect_table_it_counts`,
+    /// which drives a mixed stream through a real scheduler and asserts the
+    /// table's length against the ledger.
+    pub(crate) fn effect_table_delta(&self) -> isize {
+        match self {
+            Self::AddEffect(..)
+            | Self::AddDetachedEffect(..)
+            | Self::AddPlugin(..)
+            | Self::AddPluginWithBridge(..) => 1,
+            #[cfg(test)]
+            Self::RemovePlugin(..) => -1,
+            Self::RemovePluginWithBridge(..)
+            | Self::RemoveTrackDeviceRetired { .. }
+            | Self::RemoveBusDeviceRetired { .. } => -1,
+            // `RemoveTrack`, `RemoveBus`, `RemoveTrackDevice` and
+            // `RemoveBusDevice` leave the effect registered — detached, or
+            // back on the master chain — so none of them frees a slot.
+            Self::SetParam(..)
+            | Self::SetBypass(..)
+            | Self::SendMidiNote(..)
+            | Self::AddMidiFx(..)
+            | Self::RemoveMidiFx(..)
+            | Self::SetMidiFxParam(..)
+            | Self::SetTransport(..)
+            | Self::SetTransportPlayback { .. }
+            | Self::BeginBatch { .. }
+            | Self::SwapCommandChannel { .. }
+            | Self::AddTrack(..)
+            | Self::RemoveTrack(..)
+            | Self::SetTrackOutput(..)
+            | Self::SetTrackMute(..)
+            | Self::SetTrackSoloGate(..)
+            | Self::InsertTrackDevice { .. }
+            | Self::RemoveTrackDevice { .. }
+            | Self::InsertBusDevice { .. }
+            | Self::RemoveBusDevice { .. }
+            | Self::AddSend { .. }
+            | Self::RemoveSend { .. }
+            | Self::AddBus(..)
+            | Self::RemoveBus(..)
+            | Self::SetBusOutput(..)
+            | Self::AddClip(..)
+            | Self::RemoveClip(..)
+            | Self::SetClipPlacement(..)
+            | Self::SetClipPlayback(..)
+            | Self::SeekFrames(..)
+            | Self::AutomateParam { .. }
+            | Self::AutomateDeviceParam { .. } => 0,
+            #[cfg(test)]
+            Self::RegisterAudioBridge(..) => 0,
+        }
+    }
+}
+
 enum PluginCore {
     Knead(KneadEngine),
     Native(Box<dyn NativePlugin>),
 }
 
-/// Map a `SetParam` name/value pair onto the matching `KneadEngine` setter.
+/// Map an addressed device parameter onto the matching `KneadEngine` setter.
 ///
-/// Returns `false` for an unrecognized name so the caller can diagnose it
-/// instead of reporting success while doing nothing.
-fn apply_knead_param(engine: &mut KneadEngine, name: &str, value: f32) -> bool {
-    match name {
-        "shift_semitones" => {
-            engine.set_shift_semitones(value);
-            true
-        }
-        "retune_speed_ms" => {
-            engine.set_retune_speed_ms(value);
-            true
-        }
-        "formant_preserve" => {
-            engine.set_formant_preserve(value != 0.0);
-            true
-        }
-        _ => false,
+/// The mapping is total: the parameter arrives as a [`DeviceParam`] address,
+/// and the name-to-address resolution happened control-side
+/// ([`DeviceParam::from_name`]), where an unmapped name is refused rather
+/// than counted on the audio thread after the fact.
+fn apply_knead_param(engine: &mut KneadEngine, param: DeviceParam, value: f32) {
+    match param {
+        DeviceParam::ShiftSemitones => engine.set_shift_semitones(value),
+        DeviceParam::RetuneSpeedMs => engine.set_retune_speed_ms(value),
+        DeviceParam::FormantPreserve => engine.set_formant_preserve(value != 0.0),
     }
 }
 
@@ -368,6 +476,26 @@ struct ActiveEffect {
 }
 
 pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
+
+/// The fixed capacity of the scheduler's effect table, and with it the number
+/// of devices a project may hold natively at once. The table is built once
+/// with this capacity and never grown: a push past it is refused and counted —
+/// growing the vector inside the audio deadline is the allocation ADR 0020
+/// forbids, and `ActiveEffect` is large enough (its plugin core, MIDI buffer,
+/// and parameter queue all live inline) that both the reservation and the
+/// memmove `remove_effect` performs scale with it, so the ceiling cannot
+/// simply be raised to cover every chain slot the timeline admits.
+///
+/// The audio thread's refusal is the last line, not the reported one: it is a
+/// counter, and a device refused there is a device the user never sees in the
+/// chain. Control-side callers must hold the project below this ceiling
+/// themselves, where a refusal can be returned — which is why the constant is
+/// public.
+pub const EFFECT_TABLE_CAPACITY: usize = 128;
+
+/// The fixed capacity of the bridge table, on the same contract as
+/// [`EFFECT_TABLE_CAPACITY`].
+pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize = 128;
 
 /// Everything the audio thread gives up for reclamation off the callback.
 ///
@@ -603,8 +731,8 @@ impl AudioScheduler {
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
-            effects: Vec::with_capacity(128),
-            audio_bridges: Vec::with_capacity(128),
+            effects: Vec::with_capacity(EFFECT_TABLE_CAPACITY),
+            audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
             command_rx: Some(command_rx),
@@ -656,6 +784,16 @@ impl AudioScheduler {
     /// The routed graph, for callers proving what a command did to it.
     pub fn timeline(&self) -> &TimelineGraph {
         &self.timeline
+    }
+
+    /// How many slots the shared effect table actually holds.
+    ///
+    /// The control side's ledger claims to be a count of exactly this
+    /// ([`crate::EngineHandle::registered_effect_count`]), and a test that
+    /// never compares the two watches the model agree with itself.
+    #[cfg(test)]
+    pub(crate) fn effect_table_len(&self) -> usize {
+        self.effects.len()
     }
 
     /// Absolute frame of the next block's first sample.
@@ -756,10 +894,12 @@ impl AudioScheduler {
         {
             let retired = match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
-                    self.add_builtin_effect(id, &plugin_type, EffectPlacement::MasterChain)
+                    self.add_builtin_effect(id, plugin_type, EffectPlacement::MasterChain);
+                    None
                 }
                 GraphCommand::AddDetachedEffect(id, plugin_type) => {
-                    self.add_builtin_effect(id, &plugin_type, EffectPlacement::Detached)
+                    self.add_builtin_effect(id, plugin_type, EffectPlacement::Detached);
+                    None
                 }
                 #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
@@ -771,14 +911,10 @@ impl AudioScheduler {
                         self.remove_audio_bridge(id),
                     )
                 }
-                GraphCommand::SetParam(id, name, value) => {
+                GraphCommand::SetParam(id, param, value) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         match &mut effect.instance {
-                            PluginCore::Knead(engine) => {
-                                if !apply_knead_param(engine, &name, value) {
-                                    self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
-                                }
-                            }
+                            PluginCore::Knead(engine) => apply_knead_param(engine, param, value),
                             PluginCore::Native(_) => {
                                 // `SetParam` only has a mapped target for the
                                 // built-in Knead effect today; a native
@@ -802,6 +938,12 @@ impl AudioScheduler {
                             id,
                             PluginCore::Native(plugin),
                         )))
+                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
+                        self.timeline.record_capacity_refusal();
+                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
+                            id,
+                            PluginCore::Native(plugin),
+                        )))
                     } else {
                         self.effects
                             .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
@@ -811,6 +953,18 @@ impl AudioScheduler {
                 GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
+                        RetiredGraphObjects::effect_with_bridge(
+                            Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
+                            Some(bridge),
+                        )
+                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY
+                        || self.audio_bridges.len() == AUDIO_BRIDGE_TABLE_CAPACITY
+                    {
+                        // Both tables must have room, or neither takes the
+                        // registration: the plugin without its bridge is a
+                        // dry-fallback instance, the bridge without its plugin
+                        // returns blocks nothing processes.
+                        self.timeline.record_capacity_refusal();
                         RetiredGraphObjects::effect_with_bridge(
                             Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
                             Some(bridge),
@@ -1087,8 +1241,13 @@ impl AudioScheduler {
                 }
                 #[cfg(test)]
                 GraphCommand::RegisterAudioBridge(bridge) => {
-                    self.audio_bridges.push(bridge);
-                    None
+                    if self.audio_bridges.len() == AUDIO_BRIDGE_TABLE_CAPACITY {
+                        self.timeline.record_capacity_refusal();
+                        Some(RetiredGraphObjects::removed(None, Some(bridge), None))
+                    } else {
+                        self.audio_bridges.push(bridge);
+                        None
+                    }
                 }
                 GraphCommand::BeginBatch { .. } => {
                     // A loose fence is consumed by `update_graph` before it
@@ -1126,31 +1285,38 @@ impl AudioScheduler {
         self.effects.iter().any(|effect| effect.id == id)
     }
 
-    /// Register a built-in effect at the given placement, retiring the fresh
-    /// instance instead when the id already names a live effect.
+    /// Register a built-in effect at the given placement, counting a refusal
+    /// instead when the id already names a live effect or the effect table is
+    /// full.
+    ///
+    /// Both refusals are decided *before* the instance exists, and that order
+    /// is the contract. Unlike `AddPlugin`, whose instance is built control-
+    /// side and merely carried across the ring, a built-in is constructed
+    /// here, on the audio thread: `KneadEngine::new` allocates and zeroes its
+    /// analysis and overlap buffers. Constructing one only to hand it
+    /// straight back over the retirement channel would put exactly the heap
+    /// traffic ADR 0020 forbids inside the audio deadline, on the path whose
+    /// whole purpose is to refuse. A refused built-in therefore costs
+    /// nothing and retires nothing — there is no object to hand off.
     fn add_builtin_effect(
         &mut self,
         id: usize,
-        plugin_type: &str,
+        plugin_type: BuiltinEffectType,
         placement: EffectPlacement,
-    ) -> Option<RetiredGraphObjects> {
-        let instance = match plugin_type {
-            "knead" => PluginCore::Knead(KneadEngine::new(self.sample_rate)),
-            _ => {
-                self.midi_rt_diagnostics
-                    .record_unsupported_effect_addition(1);
-                return None;
-            }
-        };
+    ) {
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return;
         }
+        if self.effects.len() == EFFECT_TABLE_CAPACITY {
+            self.timeline.record_capacity_refusal();
+            return;
+        }
+        let instance = match plugin_type {
+            BuiltinEffectType::Knead => PluginCore::Knead(KneadEngine::new(self.sample_rate)),
+        };
         self.effects
             .push(ActiveEffect::with_placement(id, instance, placement));
-        None
     }
 
     /// Record where an effect now runs, after a chain has accepted it.
@@ -1396,16 +1562,15 @@ impl AudioScheduler {
         let last_frame = block_start + (frames - 1) as u64;
         for effect in &mut self.effects {
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
-                let applied = match &mut effect.instance {
+                match &mut effect.instance {
                     PluginCore::Knead(engine) => {
-                        apply_knead_param(engine, event.param.name(), event.value)
+                        apply_knead_param(engine, event.param, event.value);
                     }
                     // Addressed device parameters have a mapped target only on
                     // the built-in effect, exactly as `SetParam` does.
-                    PluginCore::Native(_) => false,
-                };
-                if !applied {
-                    self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                    PluginCore::Native(_) => {
+                        self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                    }
                 }
             }
         }
@@ -2228,7 +2393,7 @@ mod tests {
     fn add_plugin_with_a_colliding_id_is_rejected_and_does_not_duplicate_the_effect() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, "knead".to_string()))
+            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
@@ -2258,7 +2423,7 @@ mod tests {
     fn add_plugin_with_bridge_with_a_colliding_id_retires_both_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, "knead".to_string()))
+            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
             .unwrap();
         scheduler.update_graph();
 
@@ -2287,19 +2452,15 @@ mod tests {
     }
 
     #[test]
-    fn set_param_maps_known_names_onto_the_knead_engine_and_diagnoses_unknown_ones() {
+    fn set_param_maps_addresses_onto_the_knead_engine_and_counts_unrouted_native_targets() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, "knead".to_string()))
+            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
             .unwrap();
         scheduler.update_graph();
 
         command_tx
-            .push(GraphCommand::SetParam(
-                7,
-                "shift_semitones".to_string(),
-                3.0,
-            ))
+            .push(GraphCommand::SetParam(7, DeviceParam::ShiftSemitones, 3.0))
             .unwrap();
         scheduler.update_graph();
 
@@ -2308,12 +2469,18 @@ mod tests {
             PluginCore::Native(_) => panic!("expected the knead effect"),
         }
 
+        // A name with no address is refused control-side now, so the one
+        // unmapped `SetParam` left on the audio thread is the one aimed at a
+        // native plugin, whose parameters this command never routed.
         command_tx
-            .push(GraphCommand::SetParam(
-                7,
-                "not_a_real_param".to_string(),
-                1.0,
+            .push(GraphCommand::AddPlugin(
+                8,
+                Box::new(FakeNativePlugin { value: 0.25 }),
             ))
+            .unwrap();
+        scheduler.update_graph();
+        command_tx
+            .push(GraphCommand::SetParam(8, DeviceParam::ShiftSemitones, 1.0))
             .unwrap();
         scheduler.update_graph();
 
@@ -2326,22 +2493,245 @@ mod tests {
         );
     }
 
+    /// `AddEffect`, `AddDetachedEffect` and `SetParam` carry no owning payload
+    /// onto the audio thread: consuming one of them there would free it inside
+    /// the deadline (ADR 0020). Reading each payload *out of a shared
+    /// reference to the command* is what pins that — moving out of a `&`
+    /// compiles only while the payload is `Copy`, so reverting either add's
+    /// type or `SetParam`'s parameter to a `String` fails this test at compile
+    /// time rather than leaving a `Copy` bound on some other type still
+    /// satisfied.
+    ///
+    /// This is a property of these three commands, not of the whole
+    /// vocabulary. `SetMidiFxParam` still carries a `String` its arm consumes
+    /// by value, and `AddMidiFx` still boxes an arpeggiator and pushes it into
+    /// a `Vec::new()` on the callback. Both are dormant — no `EngineHandle`
+    /// method sends either and no native caller exists, so only in-crate tests
+    /// reach them — and they are tracked in #2548. Widening this test to the
+    /// vocabulary is that issue's work, not this test's claim.
     #[test]
-    fn add_effect_with_an_unsupported_plugin_type_is_diagnosed_not_silently_dropped() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+    fn the_effect_type_and_parameter_payloads_are_copy_addresses() {
+        fn copied_effect_type(command: &GraphCommand) -> Option<BuiltinEffectType> {
+            match command {
+                GraphCommand::AddEffect(_, plugin_type)
+                | GraphCommand::AddDetachedEffect(_, plugin_type) => Some(*plugin_type),
+                _ => None,
+            }
+        }
+        fn copied_param(command: &GraphCommand) -> Option<DeviceParam> {
+            match command {
+                GraphCommand::SetParam(_, param, _) => Some(*param),
+                _ => None,
+            }
+        }
+
+        assert_eq!(
+            copied_effect_type(&GraphCommand::AddEffect(1, BuiltinEffectType::Knead)),
+            Some(BuiltinEffectType::Knead)
+        );
+        assert_eq!(
+            copied_effect_type(&GraphCommand::AddDetachedEffect(
+                1,
+                BuiltinEffectType::Knead
+            )),
+            Some(BuiltinEffectType::Knead)
+        );
+        assert_eq!(
+            copied_param(&GraphCommand::SetParam(1, DeviceParam::ShiftSemitones, 0.0)),
+            Some(DeviceParam::ShiftSemitones)
+        );
+    }
+
+    /// `from_name` is the inverse of `name`, so the named boundary and the
+    /// addressed command cannot drift into meaning different things.
+    #[test]
+    fn builtin_effect_type_from_name_is_the_inverse_of_name() {
+        assert_eq!(
+            BuiltinEffectType::from_name(BuiltinEffectType::Knead.name()),
+            Some(BuiltinEffectType::Knead)
+        );
+        assert_eq!(BuiltinEffectType::from_name("not-a-real-effect"), None);
+    }
+
+    /// A built-in add past the table's capacity is refused before its engine
+    /// is built, so the refusal allocates nothing and has nothing to retire; a
+    /// native plugin arrives already built from the control side, so its
+    /// refusal still hands the instance off.
+    #[test]
+    fn an_effect_past_the_tables_capacity_is_refused_rather_than_grown() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        for id in 0..EFFECT_TABLE_CAPACITY {
+            command_tx
+                .push(GraphCommand::AddEffect(id, BuiltinEffectType::Knead))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+
+        // Growing the vector would have called the allocator inside the audio
+        // deadline. A counted refusal is the alternative, not an option.
         command_tx
-            .push(GraphCommand::AddEffect(7, "not-a-real-effect".to_string()))
+            .push(GraphCommand::AddEffect(
+                EFFECT_TABLE_CAPACITY,
+                BuiltinEffectType::Knead,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+        assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+        // Nothing crosses the retirement channel, because nothing was built:
+        // a retirement here is the receipt for a `KneadEngine` the callback
+        // allocated and zeroed only to throw away (ADR 0020).
+        assert!(
+            retired_rx.pop().is_err(),
+            "a refused built-in must not construct an engine to hand back"
+        );
+
+        // The same full table refuses a native plugin on its own arm.
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                EFFECT_TABLE_CAPACITY + 1,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 2);
+        assert!(retired_rx
+            .pop()
+            .expect("the refused plugin must be handed off")
+            .effect
+            .is_some());
+    }
+
+    /// The id-collision refusal is decided on the same side of the
+    /// construction as the capacity refusal: a built-in whose id is already
+    /// taken never reaches `KneadEngine::new`, so it neither allocates on the
+    /// callback nor produces a retirement.
+    #[test]
+    fn a_colliding_builtin_add_is_refused_before_its_engine_is_built() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.effects.len(), 1);
+
+        command_tx
+            .push(GraphCommand::AddDetachedEffect(7, BuiltinEffectType::Knead))
             .unwrap();
         scheduler.update_graph();
 
-        assert!(scheduler.effects.is_empty());
+        assert_eq!(scheduler.effects.len(), 1);
+        assert_eq!(
+            scheduler.effects[0].placement,
+            EffectPlacement::MasterChain,
+            "the living effect must not be displaced by the refused one"
+        );
         assert_eq!(
             scheduler
                 .midi_rt_diagnostics
                 .snapshot()
-                .unsupported_effect_additions,
+                .effect_id_collisions,
             1
         );
+        assert!(
+            retired_rx.pop().is_err(),
+            "a refused built-in must not construct an engine to hand back"
+        );
+    }
+
+    /// A full effect table refuses `AddPluginWithBridge` on its own, with the
+    /// bridge table empty — the ordinary state, since `AddEffect`/`AddPlugin`
+    /// fill `effects` without touching `audio_bridges`. Without the effect
+    /// disjunct of that guard the push reallocates the effect table on the
+    /// callback, moving every live `ActiveEffect` with it.
+    #[test]
+    fn a_plugin_with_bridge_is_refused_when_only_the_effect_table_is_full() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        for id in 0..EFFECT_TABLE_CAPACITY {
+            command_tx
+                .push(GraphCommand::AddEffect(id, BuiltinEffectType::Knead))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+        assert!(scheduler.audio_bridges.is_empty());
+
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(EFFECT_TABLE_CAPACITY);
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                EFFECT_TABLE_CAPACITY,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+        assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
+        assert!(scheduler.audio_bridges.is_empty());
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+        let retired = retired_rx
+            .pop()
+            .expect("the refused plugin and its bridge must be handed off");
+        assert!(retired.effect.is_some());
+        assert!(retired.audio_bridge.is_some());
+    }
+
+    #[test]
+    fn a_bridge_past_the_tables_capacity_refuses_the_whole_registration() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        for id in 0..AUDIO_BRIDGE_TABLE_CAPACITY {
+            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(id);
+            command_tx
+                .push(GraphCommand::RegisterAudioBridge(bridge))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
+
+        // A full bridge table refuses the plugin with its bridge: installing
+        // the plugin alone would leave a dry-fallback instance nothing drives,
+        // and growing the vector would allocate inside the audio deadline.
+        let (bridge, _handle) =
+            crate::audio_bridge::create_audio_bridge(AUDIO_BRIDGE_TABLE_CAPACITY);
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                AUDIO_BRIDGE_TABLE_CAPACITY,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(scheduler.effects.is_empty());
+        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
+        assert_eq!(
+            scheduler.audio_bridges.capacity(),
+            AUDIO_BRIDGE_TABLE_CAPACITY
+        );
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+        let retired = retired_rx
+            .pop()
+            .expect("the refused plugin and bridge must be handed off");
+        assert!(retired.effect.is_some());
+        assert!(retired.audio_bridge.is_some());
+
+        // A standalone bridge past the same ceiling is refused on its own arm.
+        let (bridge, _handle) =
+            crate::audio_bridge::create_audio_bridge(AUDIO_BRIDGE_TABLE_CAPACITY + 1);
+        command_tx
+            .push(GraphCommand::RegisterAudioBridge(bridge))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 2);
+        assert!(retired_rx
+            .pop()
+            .expect("the refused bridge must be handed off")
+            .audio_bridge
+            .is_some());
     }
 
     #[test]
@@ -3256,7 +3646,7 @@ mod timeline_tests {
     fn a_stamped_device_parameter_lands_on_the_block_that_reaches_it() {
         let mut harness = Harness::new(16);
         harness.playing();
-        harness.send(GraphCommand::AddEffect(7, "knead".to_string()));
+        harness.send(GraphCommand::AddEffect(7, BuiltinEffectType::Knead));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 7,
             param: DeviceParam::ShiftSemitones,
@@ -3408,7 +3798,7 @@ mod timeline_tests {
         // master chain, the knead engine would run over the whole mix here
         // (its latency alone replaces the 0.5 constant); detached, it runs
         // nowhere.
-        harness.send(GraphCommand::AddDetachedEffect(7, "knead".to_string()));
+        harness.send(GraphCommand::AddDetachedEffect(7, BuiltinEffectType::Knead));
         assert_eq!(
             harness.scheduler.effects[0].placement,
             EffectPlacement::Detached
