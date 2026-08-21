@@ -1,0 +1,109 @@
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_0a3429e31e555d::t_11afbd91561fc2 1-38,41-42,44-67,69-72,74-104
+  s_0a3429e31e555d::t_99a801573d596e 39-40,43
+  s_0a3429e31e555d::t_43d18d740ad91d 68,73
+crates/daw-collab/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+crates/daw-plugin-host/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+public/legal/SOURDAW-NOTICE.txt
+  s_0a3429e31e555d::t_99a801573d596e 1-4
+crates/proof-chamber/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+LICENSE
+  s_0a3429e31e555d::t_fc4e1822e9c1ef 1-201
+src/modules/AiRuntime/models/ToolDefinitions.ts
+  s_0a3429e31e555d::t_5d587752f093f7 1-2
+scripts/__tests__/checkLevainProvenance.spec.ts
+  s_0a3429e31e555d::t_9ad7018ffbf837 50
+scripts/levainSource.ts
+  s_0a3429e31e555d::t_f77c351e8e1c69 8
+crates/daw-core/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+crates/daw-io/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+crates/sourdaw-native/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 5-7
+src/modules/AiGeneration/models/MidiPatternType.ts
+  s_0a3429e31e555d::t_5d587752f093f7 1-2
+scripts/checkProjectLicense.ts
+  s_0a3429e31e555d::t_11afbd91561fc2 1-11,13-35,38-46,51-114
+  s_0a3429e31e555d::t_977480f4b5c441 12
+  s_0a3429e31e555d::t_99a801573d596e 47-50
+  s_0a3429e31e555d::t_961bce88dd35a0 36-37
+crates/daw-wasm-decoder/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+scripts/checkLevainProvenance.ts
+  s_0a3429e31e555d::t_9ad7018ffbf837 190-191
+package.json
+  s_0a3429e31e555d::t_0b0b6c825c719c 5
+  s_0a3429e31e555d::t_11afbd91561fc2 26
+server/package.json
+  s_0a3429e31e555d::t_0b0b6c825c719c 4
+crates/daw-dsp/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 16-20
+crates/daw-engine/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+src/modules/AiRuntime/models/Tools/Types.ts
+  s_0a3429e31e555d::t_5d587752f093f7 1-2
+NOTICE
+  s_0a3429e31e555d::t_fc4e1822e9c1ef 1-4
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_04bcaf8e99c09c 78,859,1003,1005-1006,1008,1013,1018
+  s_0a3429e31e555d::t_bed04f4df910cb 58,77,79-102,104-105,108,548,580,586,637,1004,1007,1012,1017,1022
+  s_0a3429e31e555d::t_9ad7018ffbf837 45-46,57,73,76,533
+  s_0a3429e31e555d::t_a6a529045b1881 103,106-107,109-115,636,638-639,642,644,668,731,734,836,868,872,876,884,896,1009-1011,1014-1016,1019-1021
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_9ad7018ffbf837 188,224,242,732
+  s_0a3429e31e555d::t_11afbd91561fc2 12,694
+crates/scoring/Cargo.toml
+  s_0a3429e31e555d::t_0b0b6c825c719c 6-8
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_9ad7018ffbf837 83
+src/infra/store/storage/LocalStorageKeys.ts
+  s_0a3429e31e555d::t_5d587752f093f7 1-2
+public/samples/levain/provenance.tsv
+  s_0a3429e31e555d::t_7718111ffedab4 1362-1379
+public/wasm/daw-dsp/package.json
+  s_0a3429e31e555d::t_76c27777df3324 4-6,9-13
+public/wasm/daw-wasm-decoder/package.json
+  s_0a3429e31e555d::t_f62d323bbe2e6a 4-6,9-13
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_c0dd9db56200cd 19,26,31-33,35,40,45-47,49,54,59
+public/wasm/proof-chamber/package.json
+  s_0a3429e31e555d::t_caae3067e19d00 4-6,9-13
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_0a3429e31e555d::t_4d6045f9bec463 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_0a3429e31e555d::t_cfe0fa6aeb27e7 1
+public/wasm/scoring/package.json
+  s_0a3429e31e555d::t_493c5a5d520cf9 4-6,9-13
+public/wasm/scoring/scoring.d.ts
+  s_0a3429e31e555d::t_b6dca5b26c706d 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_0a3429e31e555d::t_e84027a363ae48 1
+server/package-lock.json
+  s_0a3429e31e555d::t_47b751764b79cd 8
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_0a3429e31e555d::t_9d7987f86e643e 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_0a3429e31e555d::t_f7d274bf831c2b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9b1187c7903a0497e0fa7e2fc9259fb7ad7f2bdb",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
