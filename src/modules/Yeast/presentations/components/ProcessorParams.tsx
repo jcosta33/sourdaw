@@ -4,8 +4,10 @@
  */
 import { type ReactElement } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { PROCESSOR_PARAM_DEFAULTS, type ProcessorType } from '../../models/ProcessorCatalog';
 
@@ -95,7 +97,7 @@ const Sel = ({
     onSetParam: OnSetParam;
 }): ReactElement => (
     <Stack align="center" gap={0.5}>
-        <select
+        <DawCompactSelect
             className="h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
             value={value}
             onChange={(event) => onSetParam(id, name, parseInt(event.target.value))}
@@ -105,7 +107,7 @@ const Sel = ({
                     {opt}
                 </option>
             ))}
-        </select>
+        </DawCompactSelect>
         <span className="text-[6px] text-muted-foreground">{label}</span>
     </Stack>
 );
@@ -281,13 +283,15 @@ export const ProcessorParams = ({
         case 'chordMemory':
             return (
                 <Row align="stretch" wrap gap={2} className="px-1 py-1">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-border/30 cursor-pointer hover:text-foreground text-muted-foreground"
                         onClick={() => handleCommand('learn')}
                     >
                         Learn
-                    </button>
+                    </Button>
                     <Sel
                         id={pid}
                         name="transpose_mode"
@@ -296,13 +300,15 @@ export const ProcessorParams = ({
                         value={params?.transpose_mode ?? 1}
                         onSetParam={onSetParam}
                     />
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-[var(--color-state-danger)]/30 cursor-pointer text-muted-foreground hover:text-[var(--color-state-danger)]"
                         onClick={() => handleCommand('clear')}
                     >
                         Clear All
-                    </button>
+                    </Button>
                 </Row>
             );
 
@@ -683,7 +689,7 @@ export const ProcessorParams = ({
             return (
                 <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Stack as="label" align="center" gap={0.5} className="text-[6px] text-muted-foreground">
-                        <select
+                        <DawCompactSelect
                             aria-label="Groove template"
                             className="h-4 rounded border border-border/30 bg-surface-inset px-0.5 text-[6px] text-foreground"
                             value={selectedGrooveTemplateId}
@@ -699,7 +705,7 @@ export const ProcessorParams = ({
                                     {template.name}
                                 </option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
                         Template
                     </Stack>
                     <K

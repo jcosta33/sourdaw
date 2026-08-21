@@ -70,7 +70,9 @@ export const LayerStack = ({
         {/* Layer buttons */}
         <Stack gap={0.5}>
             {Array.from({ length: numLayers }, (_, i) => (
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     key={i}
                     type="button"
                     className={`flex items-center gap-2 px-2 py-1 rounded text-left transition-all ${
@@ -93,7 +95,7 @@ export const LayerStack = ({
                             style={{ backgroundColor: LAYER_COLORS[i], opacity: 0.5 }}
                         />
                     ) : null}
-                </button>
+                </Button>
             ))}
         </Stack>
 

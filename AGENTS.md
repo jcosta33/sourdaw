@@ -242,7 +242,7 @@ tracker state. Identity for a script-covered write is the App that script mints,
 | Need                        | Command                                                           |
 | --------------------------- | ----------------------------------------------------------------- |
 | Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
-| Push; open or update the PR | `pnpm lane:publish [issue] [--relates]`                           |
+| Push; open or update the PR | `pnpm lane:publish [issue] [--relates] [--test "<instructions>"]` |
 | Write the review bundle     | `pnpm review:prepare <pr>`                                        |
 | Post `review.json`          | `pnpm review:publish <pr>`                                        |
 | Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
@@ -287,10 +287,14 @@ A conforming `agent/` lane also gets a written pull request: `lane:publish` titl
 newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
 `origin/main` in never retitles it, keeps the required headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes. Screenshots is offered rather than required: it is written, and the template keeps it, but a
-body without it still merges, because a section whose canonical content is `None.` gates nothing.
-Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates` to write
-`Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
+bytes. A new pull request requires explicit `--test` instructions. For product changes, How to test
+states user- or reviewer-observable steps and the expected result; automated author or CI checks are
+not a substitute. Developer-facing or internal changes may name their actual validation interface.
+Later publishes preserve a valid existing How-to-test section when `--test` is omitted and replace
+it when `--test` is supplied. Screenshots is offered rather than required: it is written, and the
+template keeps it, but a body without it still merges, because a section whose canonical content is
+`None.` gates nothing. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates`
+to write `Related #<issue>` without closing the campaign. Later publishes preserve that relationship.
 Related tickets reads `None.` only for a lane whose branch carries no issue. It refuses a
 conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
 to title the pull request. It does not enable auto-merge or post a review.

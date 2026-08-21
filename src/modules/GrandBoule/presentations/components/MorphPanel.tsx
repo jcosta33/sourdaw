@@ -10,7 +10,8 @@ import { type ReactElement } from 'react';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import {
     type GrandBouleMorphState,
@@ -46,7 +47,9 @@ const ModelSelector = ({
             {BUILTIN_PIANO_MODELS.map((model: GrandBoulePianoModel) => {
                 const active = model.id === selectedId;
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={model.id}
                         type="button"
                         onClick={() => onSelect(model.id)}
@@ -57,7 +60,7 @@ const ModelSelector = ({
                         }`}
                     >
                         {model.name}
-                    </button>
+                    </Button>
                 );
             })}
         </Stack>
@@ -181,10 +184,10 @@ export const MorphPanel = ({
                 </Row>
 
                 {/* Model selectors */}
-                <div className="grid grid-cols-2 gap-2">
+                <Grid cols={2} gap={2}>
                     <ModelSelector label="Model A" selectedId={morph.modelA} onSelect={onModelAChange} />
                     <ModelSelector label="Model B" selectedId={morph.modelB} onSelect={onModelBChange} />
-                </div>
+                </Grid>
 
                 {/* Blend indicator */}
                 <BlendIndicator

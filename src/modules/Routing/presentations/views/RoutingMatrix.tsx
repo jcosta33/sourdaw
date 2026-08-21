@@ -25,6 +25,7 @@
 import { type ReactElement } from 'react';
 
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
+import { Button } from '#/components/ui/button';
 import { removeSend, setSend, setTrackOutput } from '#/modules/Arrangement/useCases';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { cn } from '#/utils/Styles/cn';
@@ -203,7 +204,9 @@ export const RoutingMatrix = (): ReactElement => {
 
                                     return (
                                         <td key={dest.id} className="p-0.5 text-center border-l border-border/10">
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 disabled={cell.disabled}
                                                 className={cn(
@@ -233,7 +236,7 @@ export const RoutingMatrix = (): ReactElement => {
                                                         ●
                                                     </span>
                                                 ) : null}
-                                            </button>
+                                            </Button>
                                         </td>
                                     );
                                 })}

@@ -106,11 +106,14 @@ describe('createNebulaDriftDemo', () => {
     });
 
     it('commits project truth before yielding for device readiness', () => {
-        const projectWriteOffset = demoSource.lastIndexOf('projectStore.set({');
+        const metadataCreationOffset = demoSource.lastIndexOf('createFreshProjectMetadata({');
+        const projectWriteOffset = demoSource.lastIndexOf('projectStore.set(projectMetadata);');
         const readinessOffset = demoSource.indexOf('await waitForDevices();');
 
+        expect(metadataCreationOffset).toBeGreaterThan(0);
         expect(projectWriteOffset).toBeGreaterThan(0);
         expect(readinessOffset).toBeGreaterThan(0);
+        expect(metadataCreationOffset).toBeLessThan(projectWriteOffset);
         expect(projectWriteOffset).toBeLessThan(readinessOffset);
     });
 });

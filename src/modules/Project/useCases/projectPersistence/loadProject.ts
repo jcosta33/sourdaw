@@ -21,6 +21,7 @@ import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault
 import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
+import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
 
 export async function loadProject(): Promise<boolean> {
     // Boot restore is subordinate: if the user picked a project on the
@@ -90,6 +91,11 @@ export async function loadProject(): Promise<boolean> {
 
         clearUndoHistory();
     });
+
+    await migrateActiveProjectIdentity();
+    if (!transaction.isCurrent()) {
+        return false;
+    }
 
     // Outside the batch on purpose. `batchStoreUpdates` defers subscriber
     // notification to the end of the batch, so the hydration writes above reach

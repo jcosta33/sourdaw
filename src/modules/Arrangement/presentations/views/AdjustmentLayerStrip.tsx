@@ -9,8 +9,10 @@ import {
 
 import { Layers, Plus, Power, Settings2, Trash2, X } from 'lucide-react';
 
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -409,14 +411,16 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                     <Layers className="size-2.5" />
                     Adjustment Layers
                 </Row>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 hover:bg-white/10"
                     onClick={openAddMenu}
                     aria-label="Add adjustment layer"
                 >
                     <Plus className="size-3" />
-                </button>
+                </Button>
             </Row>
 
             {layers.map((layer, idx) => {
@@ -633,7 +637,9 @@ const AdjustmentLayerRow = ({
                 className="absolute left-0 top-0 z-10 border-r border-border/40 px-1 py-0.5"
                 style={{ height: ROW_HEIGHT, backgroundColor: 'var(--color-surface-base)' }}
             >
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
                     title={layer.enabled ? 'Disable' : 'Enable'}
@@ -643,7 +649,7 @@ const AdjustmentLayerRow = ({
                     }}
                 >
                     <Power className="size-2.5" style={{ color: layer.color }} />
-                </button>
+                </Button>
                 <span
                     className="max-w-[80px] truncate text-[9px] font-medium"
                     style={{ color: layer.color }}
@@ -651,7 +657,9 @@ const AdjustmentLayerRow = ({
                 >
                     {layer.name}
                 </span>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
                     title="Affected tracks"
@@ -661,8 +669,10 @@ const AdjustmentLayerRow = ({
                     }}
                 >
                     <Settings2 className="size-2.5" />
-                </button>
-                <button
+                </Button>
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
                     title="Remove layer"
@@ -672,7 +682,7 @@ const AdjustmentLayerRow = ({
                     }}
                 >
                     <X className="size-2.5" />
-                </button>
+                </Button>
             </Row>
             {regions.map((region) => {
                 const liveRegion =
@@ -779,14 +789,16 @@ const AdjustmentLayerParamEditor = ({
                             {layer.effectType}
                         </div>
                     </div>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex size-5 items-center justify-center rounded-sm hover:bg-white/10"
                         onClick={onClose}
                         aria-label="Close inspector"
                     >
                         <X className="size-3" />
-                    </button>
+                    </Button>
                 </Row>
 
                 <div className="mb-3">
@@ -961,14 +973,16 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                         </div>
                         <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Affected Tracks</div>
                     </div>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex size-5 items-center justify-center rounded-sm hover:bg-white/10"
                         onClick={onClose}
                         aria-label="Close tracks picker"
                     >
                         <X className="size-3" />
-                    </button>
+                    </Button>
                 </Row>
 
                 <p className="mb-2 text-[10px] text-muted-foreground">
@@ -990,7 +1004,7 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                                     className="cursor-pointer rounded-sm px-2 py-1 text-[11px] hover:bg-white/5"
                                     key={track.id}
                                 >
-                                    <input
+                                    <DawCompactCheckbox
                                         type="checkbox"
                                         checked={active}
                                         onChange={() => toggle(track.id)}
@@ -1004,20 +1018,24 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                 </Stack>
 
                 <Row justify="between">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         onClick={clearAll}
                         className="text-[10px] text-muted-foreground hover:text-white/80"
                     >
                         Clear (= all below)
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         onClick={onClose}
                         className="rounded-md bg-white/10 px-2.5 py-1 text-[10px] text-white/80 hover:bg-white/15"
                     >
                         Done
-                    </button>
+                    </Button>
                 </Row>
             </div>
         </Row>

@@ -36,14 +36,12 @@ vi.mock('#/components/daw/DawMicroBadge', () => ({
 vi.mock('#/components/ui/button', () => ({
     Button: ({
         children,
-        onClick,
         variant,
-    }: {
-        children: React.ReactNode;
-        onClick?: (e: React.MouseEvent) => void;
-        variant?: string;
-    }) => (
-        <button data-testid="button" data-variant={variant} onClick={onClick}>
+        size,
+        asChild: _asChild,
+        ...props
+    }: React.ComponentProps<'button'> & { variant?: string; size?: string; asChild?: boolean }) => (
+        <button type="button" data-testid="button" data-variant={variant} data-size={size} {...props}>
             {children}
         </button>
     ),

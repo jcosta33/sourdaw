@@ -1,5 +1,6 @@
 import { type ButtonHTMLAttributes, type ReactElement } from 'react';
 
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type MixerInsetButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -13,7 +14,9 @@ export const MixerInsetButton = ({
     type = 'button',
     ...props
 }: MixerInsetButtonProps): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type={type}
         className={cn(
             'w-full rounded border px-1 py-0.5 text-center text-[10px] transition-colors',
@@ -25,5 +28,5 @@ export const MixerInsetButton = ({
         {...props}
     >
         {children}
-    </button>
+    </Button>
 );

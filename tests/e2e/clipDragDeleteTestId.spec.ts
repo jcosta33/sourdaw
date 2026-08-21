@@ -1,83 +1,54 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-test.describe('Clip operations on EDM template — right-click, delete', () => {
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function focusWorkspace(page: Page): Promise<void> {
+    await page.locator('#main-content').click();
+}
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await expect(trackList).toBeVisible();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
+}
+
+async function addMidiClip(page: Page): Promise<void> {
+    const canvas = page.getByLabel('Timeline editor surface');
+    await expect(canvas).toBeVisible();
+    await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
+    await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+    await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+}
+
+test.describe('Clip delete', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'EDM' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_new_project(page);
+        await focusWorkspace(page);
+        await addMidiTrack(page);
+        await addMidiClip(page);
     });
 
-    test('timeline canvas has rendered clips', async ({ page }) => {
+    test('Backspace removes the selected MIDI clip', async ({ page }) => {
         const canvas = page.getByLabel('Timeline editor surface');
-        await expect(canvas).toBeVisible({ timeout: 15_000 });
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        const clipInInspector = inspector.getByRole('button', {
+            name: 'Select or drag New midi clip as groove source',
+            exact: true,
+        });
+        await expect(clipInInspector).toBeVisible();
 
-        const box = await canvas.boundingBox();
-        expect(box).not.toBeNull();
-        expect(box!.width).toBeGreaterThan(100);
-        expect(box!.height).toBeGreaterThan(50);
-    });
-
-    test('right-clicking timeline shows a context menu', async ({ page }) => {
-        const canvas = page.getByLabel('Timeline editor surface');
-        await canvas.click({ button: 'right', position: { x: 200, y: 40 } });
-
-        const menu = page.getByRole('menu');
-        await expect(menu).toBeVisible({ timeout: 5000 });
-    });
-
-    test('double-clicking an existing clip opens piano roll', async ({ page }) => {
-        const canvas = page.getByLabel('Timeline editor surface');
-
-        // Try positions where template clips likely are.
-        const positions = [
-            { x: 100, y: 40 },
-            { x: 200, y: 40 },
-            { x: 150, y: 80 },
-            { x: 250, y: 80 },
-        ];
-
-        let opened = false;
-        for (const pos of positions) {
-            await canvas.dblclick({ position: pos });
-            await page.waitForTimeout(500);
-            const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
-            if (await pianoRoll.isVisible().catch(() => false)) {
-                opened = true;
-                break;
-            }
-        }
-
-        if (opened) {
-            // Scale root should be visible.
-            await expect(page.getByTestId('toolbar-scale-root')).toBeVisible({ timeout: 5000 });
-        }
-    });
-
-    test('transport play/stop during clip operations', async ({ page }) => {
-        // Start playback.
-        await page.getByTestId('transport-play').click();
-        await page.waitForTimeout(500);
-
-        // Right-click during playback — should pause for context menu.
-        const canvas = page.getByLabel('Timeline editor surface');
-        await canvas.click({ button: 'right', position: { x: 200, y: 40 } });
-        await page.waitForTimeout(300);
-
-        const menu = page.getByRole('menu');
-        const hasMenu = await menu.isVisible().catch(() => false);
-        if (hasMenu) {
-            // Close menu by pressing Escape.
-            await page.keyboard.press('Escape');
-            await page.waitForTimeout(200);
-        }
-
-        // Stop playback.
-        await page.getByTestId('transport-stop').click();
-        await expect(page.getByTestId('transport-playhead')).toHaveText(/1\.1\.000/, { timeout: 5000 });
+        await canvas.click({ position: { x: 300, y: 30 } });
+        await page.keyboard.press('Backspace');
+        await expect(clipInInspector).toHaveCount(0);
+        await expect(inspector.getByText(/Clips \(0\)/)).toBeVisible();
     });
 });

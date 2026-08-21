@@ -10,7 +10,7 @@ type VoiceButtonProps = {
     isAvailable: boolean;
     isListening: boolean;
     isTranscribing: boolean;
-    onToggle: () => void;
+    onToggle: (event: Event) => void;
 };
 
 export const VoiceButton = ({
@@ -25,8 +25,8 @@ export const VoiceButton = ({
 
     const active = isListening || isTranscribing;
 
-    const handleClick = () => {
-        onToggle();
+    const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        onToggle(event.nativeEvent);
     };
 
     return (
@@ -39,6 +39,8 @@ export const VoiceButton = ({
                     aria-pressed={active}
                     onClick={handleClick}
                     data-testid="voice-command-button"
+                    data-voice-command-control="true"
+                    data-voice-command-intent={active ? 'stop' : 'start'}
                     className={cn(
                         'transition-all',
                         active &&

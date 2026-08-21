@@ -1,6 +1,7 @@
-import { desktopListen } from '#/utils/desktopBridge';
+import { desktopListenVoiceDictationTerminal } from '#/utils/desktopBridge';
 
 export type DictationResult = {
+    session_id: string;
     text: string;
     duration_ms: number;
 };
@@ -12,14 +13,16 @@ const MAX_DICTATION_DURATION_MS = 3_600_000;
  * Subscribe to the dictation-result event emitted by Rust after transcription.
  * Returns an unlisten function to clean up the listener.
  */
-export async function onDictationResult(handler: (result: DictationResult) => void): Promise<() => void> {
-    const unlisten = await desktopListen('dictation-result', (payload: unknown) => {
+export function onDictationResult(sessionId: string, handler: (result: DictationResult) => void): () => void {
+    return desktopListenVoiceDictationTerminal(sessionId, (event, payload: unknown) => {
+        if (event !== 'dictation-result') {
+            return;
+        }
         const result = readDictationResult(payload);
         if (result) {
             handler(result);
         }
     });
-    return unlisten;
 }
 
 function readDictationResult(event: unknown): DictationResult | null {
@@ -27,10 +30,19 @@ function readDictationResult(event: unknown): DictationResult | null {
         return null;
     }
     const { payload } = event;
-    if (typeof payload !== 'object' || payload === null || !('text' in payload) || !('duration_ms' in payload)) {
+    if (
+        typeof payload !== 'object' ||
+        payload === null ||
+        !('session_id' in payload) ||
+        !('text' in payload) ||
+        !('duration_ms' in payload)
+    ) {
         return null;
     }
-    const { text, duration_ms: durationMs } = payload;
+    const { session_id: sessionId, text, duration_ms: durationMs } = payload;
+    if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128) {
+        return null;
+    }
     if (typeof text !== 'string' || text.length > MAX_DICTATION_TEXT_LENGTH) {
         return null;
     }
@@ -42,5 +54,5 @@ function readDictationResult(event: unknown): DictationResult | null {
     ) {
         return null;
     }
-    return { text, duration_ms: durationMs };
+    return { session_id: sessionId, text, duration_ms: durationMs };
 }

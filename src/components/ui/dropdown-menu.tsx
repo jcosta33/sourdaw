@@ -3,6 +3,7 @@ import * as React from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronRight, Circle } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -122,11 +123,11 @@ function DropdownMenuCheckboxItem({ className, children, checked, ref, ...props 
             checked={checked}
             {...props}
         >
-            <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center text-accent-cyan">
+            <Row as="span" justify="center" className="absolute left-2 h-3.5 w-3.5 text-accent-cyan">
                 <DropdownMenuPrimitive.ItemIndicator>
                     <Check className="h-4 w-4" />
                 </DropdownMenuPrimitive.ItemIndicator>
-            </span>
+            </Row>
             {children}
         </DropdownMenuPrimitive.CheckboxItem>
     );
@@ -148,11 +149,11 @@ function DropdownMenuRadioItem({ className, children, ref, ...props }: DropdownM
             )}
             {...props}
         >
-            <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center text-accent-cyan">
+            <Row as="span" justify="center" className="absolute left-2 h-3.5 w-3.5 text-accent-cyan">
                 <DropdownMenuPrimitive.ItemIndicator>
                     <Circle className="h-2 w-2 fill-current" />
                 </DropdownMenuPrimitive.ItemIndicator>
-            </span>
+            </Row>
             {children}
         </DropdownMenuPrimitive.RadioItem>
     );

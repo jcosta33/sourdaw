@@ -54,7 +54,9 @@ const CompRegionOverlay = ({
             title={`Comp: ${take.name} (${region.startBeat.toFixed(2)}–${region.endBeat.toFixed(2)})`}
         >
             <span className="truncate">{take.name}</span>
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 className="shrink-0 rounded hover:bg-white/10"
                 onClick={(event) => {
@@ -64,7 +66,7 @@ const CompRegionOverlay = ({
                 aria-label={`Remove comp region ${take.name}`}
             >
                 <Trash2 className="size-2.5" aria-hidden="true" />
-            </button>
+            </Button>
         </Row>
     );
 };
@@ -167,7 +169,9 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
         >
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(
                             'size-4 shrink-0 rounded-full border transition-colors',
@@ -183,7 +187,7 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
                         }}
                     >
                         {isActive ? <Check className="size-2.5" aria-hidden="true" /> : null}
-                    </button>
+                    </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right">{isActive ? 'Active take' : 'Promote to main'}</TooltipContent>
             </Tooltip>

@@ -101,7 +101,9 @@ const SAB = new SharedArrayBuffer(HEADER + RING_FRAMES * 2 * Float32Array.BYTES_
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: new WebAssembly.Memory({ initial: 1 }) })),
-    GrandBouleInstance: GrandBouleInstanceMock,
+}));
+vi.mock('../../worklets/grandBouleWasmInstance', () => ({
+    createGrandBouleWasmInstance: () => new GrandBouleInstanceMock(),
 }));
 
 const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));

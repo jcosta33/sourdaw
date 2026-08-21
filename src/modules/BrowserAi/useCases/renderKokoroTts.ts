@@ -31,11 +31,22 @@ import { writeRenderCache } from '../repositories/writeRenderCache';
 import { resampleTo44100, applyFades } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
-import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
+import {
+    enqueueRender,
+    isCurrentRenderRequest,
+    markRenderComplete,
+    updateRenderStatus,
+} from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441; // 10 ms at 44.1 kHz
 const KOKORO_MODEL_ID = KOKORO_MODEL_ARTIFACT.id;
 const KOKORO_NATIVE_SAMPLE_RATE = 24000;
+
+function assertCurrentRenderRequest(phraseId: string, requestId: string): void {
+    if (!isCurrentRenderRequest(phraseId, requestId)) {
+        throw new Error('Kokoro render was cancelled or superseded');
+    }
+}
 
 /** In-memory cache: voiceId → full float32 array (N × 256 floats, reshaped as flat) */
 const voiceEmbeddingCache = new Map<string, Float32Array>();
@@ -128,40 +139,32 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
             const durationKey =
                 targetDurationSec !== undefined && targetDurationSec > 0 ? `:${String(targetDurationSec)}` : '';
             const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}${durationKey}`).buffer;
-            const cacheKey = await computeRenderCacheKey({
-                modelId: KOKORO_MODEL_ID,
-                inputData,
-                qualityParams: 'kokoro-q8',
-            });
-
-            // Check render cache
-            const cached = await readRenderCache({ cacheKey });
-            if (cached) {
-                logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
-                const provenance: RenderProvenance = {
-                    modelId: KOKORO_MODEL_ID,
-                    voiceId: speakerId,
-                    renderQuality: 'standard',
-                    renderedAt: Date.now(),
-                    tier: 'browser-preview',
-                };
-                markRenderComplete(phraseId, cacheKey);
-                return { audio: cached, sampleRate: 44100, provenance };
-            }
-
             enqueueRender({ phraseId, requestId, pipeline: 'kokoro', status: 'preparing', queuedAt: Date.now() });
-            startActiveRender({
-                requestId,
-                phraseId,
-                pipeline: 'kokoro',
-                status: 'rendering-browser',
-                stage: 'Loading Kokoro TTS',
-                progress: 0,
-                startedAt: Date.now(),
-            });
 
             try {
-                updateRenderStatus(phraseId, 'rendering-browser');
+                const cacheKey = await computeRenderCacheKey({
+                    modelId: KOKORO_MODEL_ID,
+                    inputData,
+                    qualityParams: 'kokoro-q8',
+                });
+                assertCurrentRenderRequest(phraseId, requestId);
+
+                const cached = await readRenderCache({ cacheKey });
+                assertCurrentRenderRequest(phraseId, requestId);
+                if (cached) {
+                    logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
+                    const provenance: RenderProvenance = {
+                        modelId: KOKORO_MODEL_ID,
+                        voiceId: speakerId,
+                        renderQuality: 'standard',
+                        renderedAt: Date.now(),
+                        tier: 'browser-preview',
+                    };
+                    markRenderComplete(phraseId, requestId, cacheKey);
+                    return { audio: cached, sampleRate: 44100, provenance };
+                }
+
+                updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
                 // 1. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
@@ -171,25 +174,45 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     sha256: KOKORO_MODEL_ARTIFACT.sha256,
                     sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
                 });
+                if (!isCurrentRenderRequest(phraseId, requestId)) {
+                    modelDataPort?.close();
+                }
+                assertCurrentRenderRequest(phraseId, requestId);
                 if (!modelDataPort) {
                     throw new Error('Kokoro model is absent or failed verification; download it in AI Settings');
                 }
                 await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelDataPort });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 // 2. Tokenize text on the main thread
                 const { inputIds, tokenCount } = textToKokoroInputIds(text);
 
                 // 3. Fetch voice embedding (CDN, cached in memory)
                 const style = await fetchVoiceStyle(voice, tokenCount);
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 // 4. Run Kokoro ONNX inference in the worker
                 //    inputIds and style buffers are transferred (zero-copy) — do not use after this call.
-                const result = await inferenceWorkerBridge.runKokoroTts({
+                startActiveRender({
                     requestId,
-                    inputIds,
-                    style,
-                    speed,
+                    phraseId,
+                    pipeline: 'kokoro',
+                    status: 'rendering-browser',
+                    stage: 'Synthesizing speech',
+                    progress: 0,
+                    startedAt: Date.now(),
                 });
+                const result = await inferenceWorkerBridge
+                    .runKokoroTts({
+                        requestId,
+                        inputIds,
+                        style,
+                        speed,
+                    })
+                    .finally(() => {
+                        clearActiveRender(requestId);
+                    });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 if (result.audio.length === 0) {
                     throw new Error(
@@ -202,6 +225,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     audio: result.audio,
                     fromSampleRate: KOKORO_NATIVE_SAMPLE_RATE,
                 });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 // 6. Time-stretch to target duration if requested
                 let finalAudio = resampled;
@@ -214,13 +238,15 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                             audio: resampled,
                             fromSampleRate: Math.round(44100 * stretchRatio),
                         });
+                        assertCurrentRenderRequest(phraseId, requestId);
                     }
                 }
 
                 applyFades(finalAudio, FADE_SAMPLES);
 
                 await writeRenderCache({ cacheKey, audio: finalAudio });
-                markRenderComplete(phraseId, cacheKey);
+                assertCurrentRenderRequest(phraseId, requestId);
+                markRenderComplete(phraseId, requestId, cacheKey);
 
                 const provenance: RenderProvenance = {
                     modelId: KOKORO_MODEL_ID,
@@ -233,7 +259,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                 logger.info(`[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / 44100)}s)`);
                 return { audio: finalAudio, sampleRate: 44100, provenance };
             } catch (error) {
-                updateRenderStatus(phraseId, 'error');
+                updateRenderStatus(phraseId, requestId, 'error');
                 throw error;
             } finally {
                 clearActiveRender(requestId);

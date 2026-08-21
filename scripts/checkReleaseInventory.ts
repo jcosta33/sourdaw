@@ -7,6 +7,7 @@ import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
+import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
@@ -85,6 +86,29 @@ export const OWNER_VISUAL_ASSET_PATHS = [
     'build/icons/**',
 ] as const;
 
+export const DDSP_TFJS_RUNTIME_PATHS = [
+    'package.json',
+    'pnpm-lock.yaml',
+    'public/legal/Apache-2.0.txt',
+    'public/legal/Magenta.js-NOTICE.txt',
+    'public/legal/TensorFlow.js-NOTICE.txt',
+    'public/legal/seedrandom-MIT.txt',
+    'public/legal/THIRD-PARTY-NOTICES.md',
+    'src/modules/BrowserAi/models/InferenceRequest.ts',
+    'src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts',
+    'src/modules/BrowserAi/services/computeDdspSessionKey.ts',
+    'src/modules/BrowserAi/workers/tfjsInferenceWorker.ts',
+    'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
+] as const;
+
+const DDSP_TFJS_LEGAL_PATHS = [
+    'public/legal/Apache-2.0.txt',
+    'public/legal/Magenta.js-NOTICE.txt',
+    'public/legal/TensorFlow.js-NOTICE.txt',
+    'public/legal/seedrandom-MIT.txt',
+    'public/legal/THIRD-PARTY-NOTICES.md',
+] as const;
+
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
     'rave-models': [
         'src/modules/BrowserAi/handlers/rave/**',
@@ -137,6 +161,10 @@ export type RepositorySnapshot = {
     markPaths: Record<string, string[]>;
 };
 
+export type ReleaseInventoryCheckReceipt = {
+    validatedSurfaceIds: string[];
+};
+
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
 const markExtensions = new Set([...scannedExtensions, '.css', '.html', '.md', '.toml', '.txt', '.yaml', '.yml']);
 const ignoredUrlHosts = new Set([
@@ -181,10 +209,196 @@ function directorySha256(root: string, directory: string): string {
     return hash.digest('hex');
 }
 
+function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
+    return execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .sort();
+}
+
+function trackedFilesSha256(root: string, files: readonly string[]): string {
+    const hash = createHash('sha256');
+    for (const file of files) {
+        if (!existsSync(resolve(root, file))) {
+            throw new Error(`Grand Boule preserved source is missing: ${file}`);
+        }
+        hash.update(file);
+        hash.update('\0');
+        hash.update(readFileSync(resolve(root, file)));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
+function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
+    const files = trackedFiles(root, pathspecs);
+    if (files.length === 0) {
+        throw new Error(`Grand Boule preserved source boundary has no tracked files: ${pathspecs.join(', ')}`);
+    }
+    return trackedFilesSha256(root, files);
+}
+
 export const AUDIO_WORKLET_SOURCES = [
     'public/audio/worklets/native-plugin-bridge-processor.js',
     'public/audio/worklets/sidechain-compressor-processor.js',
 ] as const;
+
+const PUBLIC_WASM_ROOT = 'public/wasm';
+const WASM_MANIFEST_PATH = `${PUBLIC_WASM_ROOT}/manifest.json`;
+const AUDIO_ENGINE_WASM_MIRROR_ROOT = 'src/modules/AudioEngine/wasm';
+const AUDIO_ENGINE_WASM_MIRROR_TEST_SOURCES = new Set([
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspCrustGates.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspCrustOversampling.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspGrinderAutomationLayout.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspKneadPitchControls.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspToasterAutomation.spec.ts`,
+]);
+
+export type DistributedWasmArtifactCensus = {
+    textArtifacts: string[];
+    wasmArtifacts: string[];
+};
+
+function namesGrandBoule(value: string): boolean {
+    return value
+        .replaceAll(/[^A-Za-z0-9]/g, '')
+        .toLowerCase()
+        .includes('grandboule');
+}
+
+function filesRecursively(root: string, directory: string): string[] {
+    const absoluteDirectory = resolve(root, directory);
+    const files: string[] = [];
+    const visit = (path: string): void => {
+        for (const entry of readdirSync(path, { withFileTypes: true })) {
+            const child = resolve(path, entry.name);
+            if (entry.isDirectory()) {
+                visit(child);
+            } else if (entry.isFile()) {
+                files.push(relative(root, child).replaceAll('\\', '/'));
+            } else {
+                throw new Error(`distributed WASM artifact census cannot inspect ${relative(root, child)}`);
+            }
+        }
+    };
+    visit(absoluteDirectory);
+    return files.sort();
+}
+
+function assertExactArtifactCensus(label: string, actual: string[], expected: string[]): void {
+    const actualSet = new Set(actual);
+    const expectedSet = new Set(expected);
+    const unexpected = actual.filter((path) => !expectedSet.has(path));
+    const missing = expected.filter((path) => !actualSet.has(path));
+    if (unexpected.length > 0) {
+        throw new Error(`${label} has unexpected artifact ${unexpected[0]}`);
+    }
+    if (missing.length > 0) {
+        throw new Error(`${label} is missing manifest artifact ${missing[0]}`);
+    }
+}
+
+function readWasmManifest(root: string): WasmManifest {
+    return JSON.parse(readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8')) as WasmManifest;
+}
+
+function isMirrorSourceOnly(path: string): boolean {
+    return path === `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/.gitignore` || AUDIO_ENGINE_WASM_MIRROR_TEST_SOURCES.has(path);
+}
+
+function assertManifestDistributionContract(manifest: WasmManifest): void {
+    const expectedPackages = wasmArtifacts.packages.map(({ id }) => id).sort();
+    const actualPackages = Object.keys(manifest.packages).sort();
+    const unexpectedPackage = actualPackages.find((id) => !expectedPackages.includes(id));
+    if (unexpectedPackage !== undefined) {
+        throw new Error(`WASM manifest has unexpected package ${unexpectedPackage}`);
+    }
+    const missingPackage = expectedPackages.find((id) => !actualPackages.includes(id));
+    if (missingPackage !== undefined) {
+        throw new Error(`WASM manifest is missing package ${missingPackage}`);
+    }
+
+    for (const spec of wasmArtifacts.packages) {
+        const entry = manifest.packages[spec.id];
+        if (entry === undefined) {
+            throw new Error(`WASM manifest is missing package ${spec.id}`);
+        }
+        if (entry.crate !== spec.crateDir) {
+            throw new Error(`WASM manifest package ${spec.id} has unexpected crate path ${entry.crate}`);
+        }
+
+        const expectedArtifacts = [...spec.artifacts].sort();
+        const actualArtifacts = Object.keys(entry.artifacts).sort();
+        const unexpectedArtifact = actualArtifacts.find((path) => !expectedArtifacts.includes(path));
+        if (unexpectedArtifact !== undefined) {
+            throw new Error(`WASM manifest package ${spec.id} has unexpected artifact ${unexpectedArtifact}`);
+        }
+        const missingArtifact = expectedArtifacts.find((path) => !actualArtifacts.includes(path));
+        if (missingArtifact !== undefined) {
+            throw new Error(`WASM manifest package ${spec.id} is missing artifact ${missingArtifact}`);
+        }
+    }
+}
+
+export function distributedWasmArtifactCensus(root: string): DistributedWasmArtifactCensus {
+    const manifest = readWasmManifest(root);
+    assertManifestDistributionContract(manifest);
+
+    const artifacts = Object.values(manifest.packages)
+        .flatMap((entry) => Object.keys(entry.artifacts))
+        .sort();
+    const expectedPublic = artifacts.filter((path) => path.startsWith(`${PUBLIC_WASM_ROOT}/`));
+    const expectedCompleteMirror = artifacts.filter((path) => path.startsWith(`${AUDIO_ENGINE_WASM_MIRROR_ROOT}/`));
+
+    assertExactArtifactCensus(
+        'distributed public WASM tree',
+        filesRecursively(root, PUBLIC_WASM_ROOT),
+        [...expectedPublic, WASM_MANIFEST_PATH].sort()
+    );
+    assertExactArtifactCensus(
+        'distributed AudioEngine WASM mirror',
+        filesRecursively(root, AUDIO_ENGINE_WASM_MIRROR_ROOT).filter((path) => !isMirrorSourceOnly(path)),
+        expectedCompleteMirror
+    );
+
+    return {
+        textArtifacts: artifacts.filter((path) => !path.endsWith('.wasm')),
+        wasmArtifacts: artifacts.filter((path) => path.endsWith('.wasm')),
+    };
+}
+
+export function assertGrandBouleRustWasmBoundary(root: string): void {
+    const source = readFileSync(resolve(root, 'crates/daw-dsp/src/lib.rs'), 'utf8');
+    const gatedModule =
+        /#\[cfg\s*\(\s*not\s*\(\s*target_arch\s*=\s*"wasm32"\s*\)\s*\)\s*\]\s*pub\s+mod\s+grand_boule\s*;/u;
+    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
+    if (declarations.length !== 1 || !gatedModule.test(source)) {
+        throw new Error('Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
+    }
+}
+
+export function assertGrandBouleWithheldFromWasm(root: string): void {
+    const census = distributedWasmArtifactCensus(root);
+    for (const path of census.textArtifacts) {
+        if (namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
+            throw new Error(`Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`);
+        }
+    }
+
+    for (const path of census.wasmArtifacts) {
+        const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
+        const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
+        if (forbiddenExport !== undefined) {
+            throw new Error(
+                `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${path}:${forbiddenExport.name}`
+            );
+        }
+    }
+}
 
 export function audioWorkletReleaseInventoryContract(root: string): SurfaceContract {
     return {
@@ -208,6 +422,106 @@ export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceC
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
         ],
         licenses: ['MIT'],
+    };
+}
+
+type GrandBoulePreservationBoundary = {
+    path: string;
+    gitPathspec: string;
+    digestLabel: string;
+};
+
+export const GRAND_BOULE_PRESERVATION_REGISTRY = {
+    kind: 'patent-directed-component',
+    retention: 'defer-behind-admission',
+    owner: 'OS-05',
+    releaseModes: ['source', 'web', 'desktop'],
+    productSurfaces: ['Preserved Grand Boule source and project schema'],
+    boundaries: [
+        {
+            path: 'crates/daw-dsp/src/grand_boule/**',
+            gitPathspec: 'crates/daw-dsp/src/grand_boule',
+            digestLabel: 'grand-boule-native-rust',
+        },
+        {
+            path: 'src/modules/GrandBoule/**',
+            gitPathspec: 'src/modules/GrandBoule',
+            digestLabel: 'grand-boule-product-module',
+        },
+        {
+            path: 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+            gitPathspec: 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+            digestLabel: 'grand-boule-product-descriptor',
+        },
+        {
+            path: 'src/infra/release/deviceReleaseAdmission.ts',
+            gitPathspec: 'src/infra/release/deviceReleaseAdmission.ts',
+            digestLabel: 'grand-boule-release-admission',
+        },
+        {
+            path: 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+            gitPathspec: 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+            digestLabel: 'grand-boule-node-host',
+        },
+        {
+            path: 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+            gitPathspec: 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+            digestLabel: 'grand-boule-ring-protocol',
+        },
+        {
+            path: 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+            gitPathspec: 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+            digestLabel: 'grand-boule-worker-host',
+        },
+        {
+            path: 'src/modules/AudioEngine/worklets/grandBoule*.ts',
+            gitPathspec: ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
+            digestLabel: 'grand-boule-worklet-hosts',
+        },
+    ] satisfies readonly GrandBoulePreservationBoundary[],
+} as const;
+
+export function grandBouleReleaseInventoryContract(
+    root: string
+): Pick<
+    ReleaseSurface,
+    | 'kind'
+    | 'retention'
+    | 'owner'
+    | 'releaseModes'
+    | 'paths'
+    | 'sources'
+    | 'revisions'
+    | 'digests'
+    | 'licenses'
+    | 'productSurfaces'
+> {
+    return {
+        kind: GRAND_BOULE_PRESERVATION_REGISTRY.kind,
+        retention: GRAND_BOULE_PRESERVATION_REGISTRY.retention,
+        owner: GRAND_BOULE_PRESERVATION_REGISTRY.owner,
+        releaseModes: [...GRAND_BOULE_PRESERVATION_REGISTRY.releaseModes],
+        paths: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(({ path }) => path),
+        sources: [
+            'crates/daw-dsp/src/grand_boule/',
+            'src/modules/GrandBoule/',
+            'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+            'src/infra/release/deviceReleaseAdmission.ts',
+            'retained Grand Boule AudioEngine host, worker, and worklet source',
+            'active patent sources recorded in the readiness audit',
+        ],
+        revisions: [
+            'current tracked Rust source',
+            'current tracked Grand Boule product source',
+            'current tracked Grand Boule descriptor and release-admission boundary',
+            'current tracked AudioEngine host boundary',
+        ],
+        digests: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(
+            ({ gitPathspec, digestLabel }) =>
+                `tracked-set-sha256:${trackedSetSha256(root, [gitPathspec])}:${digestLabel}`
+        ),
+        licenses: ['Apache-2.0', 'unverified:HAL-parameter-source-reuse-terms'],
+        productSurfaces: [...GRAND_BOULE_PRESERVATION_REGISTRY.productSurfaces],
     };
 }
 
@@ -247,6 +561,47 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
     };
 }
 
+/** Exact distributed code and notice closure for the release-withheld DDSP worker runtime. */
+export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceContract {
+    return {
+        kind: 'runtime-library',
+        paths: [...DDSP_TFJS_RUNTIME_PATHS],
+        sources: [
+            'git:github.com/tensorflow/tfjs@e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
+            'git:github.com/dcodeIO/long.js@941c5c62471168b5d18153755c2a7b38d2560e58',
+            'git:github.com/davidbau/seedrandom@4460ad325a0a15273a211e509f03ae0beb99511a',
+            'git:github.com/magenta/magenta-js@0692eb2b79681f062c6b6dd53a0361967f298caa:music/src/ddsp/model.ts',
+            'package.json',
+            'pnpm-lock.yaml',
+        ],
+        revisions: [
+            '@tensorflow/tfjs-core 4.22.0',
+            '@tensorflow/tfjs-converter 4.22.0',
+            '@tensorflow/tfjs-backend-webgpu 4.22.0',
+            '@tensorflow/tfjs-backend-cpu 4.22.0 shared helpers only',
+            'long 4.0.0',
+            'seedrandom 3.0.5',
+            'Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa Roll operation',
+            'runtime tfjs-4.22.0-webgpu-raw-v1',
+        ],
+        digests: [
+            'npm-integrity:sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==:@tensorflow/tfjs-core@4.22.0',
+            'npm-integrity:sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==:@tensorflow/tfjs-converter@4.22.0',
+            'npm-integrity:sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==:@tensorflow/tfjs-backend-webgpu@4.22.0',
+            'npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0',
+            'npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0',
+            'npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5',
+            ...DDSP_TFJS_LEGAL_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+        ],
+        licenses: [
+            'Apache-2.0:TensorFlow.js',
+            'Apache-2.0:long',
+            'Apache-2.0:Magenta.js-Roll-adaptation',
+            'MIT:seedrandom-and-Alea',
+        ],
+    };
+}
+
 export function wasmReleaseInventoryContract(root: string, manifest: WasmManifest): SurfaceContract {
     const packages = Object.entries(manifest.packages).sort(([left], [right]) => left.localeCompare(right));
     return {
@@ -261,12 +616,12 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
             ...packages.map(([id, entry]) => `${id} ${entry.crateSourceHash}`),
         ],
         digests: [`sha256:${fileSha256(resolve(root, 'public/wasm/manifest.json'))}:public/wasm/manifest.json`],
-        licenses: ['Apache-2.0', 'pending:OS-10-Cargo-dependency-notices'],
+        licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
 }
 
 function assertSurfaceContract(
-    surface: ReleaseSurface | undefined,
+    surface: Partial<ReleaseSurface> | undefined,
     expected: Partial<SurfaceContract>,
     label: string
 ): void {
@@ -277,7 +632,14 @@ function assertSurfaceContract(
     }
 }
 
+export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
+    assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
+}
+
 function isScannedSource(path: string): boolean {
+    if (path === DEPENDENCY_LICENSE_REPORT_PATH) {
+        return false;
+    }
     if (!['crates/', 'electron/', 'public/', 'scripts/', 'server/', 'src/'].some((root) => path.startsWith(root))) {
         return false;
     }
@@ -291,6 +653,9 @@ function isScannedSource(path: string): boolean {
 }
 
 function isMarkSource(path: string): boolean {
+    if (path === DEPENDENCY_LICENSE_REPORT_PATH) {
+        return false;
+    }
     if (
         !['README.md', 'index.html'].includes(path) &&
         !['docs/', 'public/', 'src/'].some((root) => path.startsWith(root))
@@ -437,11 +802,15 @@ function externalReferences(contents: string): Array<Omit<ExternalReference, 'fi
 }
 
 function pathMatches(rule: string, path: string): boolean {
-    if (!rule.endsWith('/**')) {
+    if (rule.endsWith('/**')) {
+        const directory = rule.slice(0, -3);
+        return path === directory || path.startsWith(`${directory}/`);
+    }
+    if (!rule.includes('*')) {
         return rule === path;
     }
-    const directory = rule.slice(0, -3);
-    return path === directory || path.startsWith(`${directory}/`);
+    const expression = rule.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '[^/]*');
+    return new RegExp(`^${expression}$`, 'u').test(path);
 }
 
 function surfaceCoversPath(surface: ReleaseSurface, path: string): boolean {
@@ -722,7 +1091,10 @@ export function loadRepositorySnapshot(
     };
 }
 
-export function checkReleaseInventory(root: string, projectLicensePreflight = checkProjectLicense): void {
+export function checkReleaseInventory(
+    root: string,
+    projectLicensePreflight = checkProjectLicense
+): ReleaseInventoryCheckReceipt {
     projectLicensePreflight(root);
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
@@ -731,27 +1103,54 @@ export function checkReleaseInventory(root: string, projectLicensePreflight = ch
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
+    const validatedSurfaceIds: string[] = [];
+    const validateSurface = (surfaceId: string, validate: () => void): void => {
+        validate();
+        validatedSurfaceIds.push(surfaceId);
+    };
     execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
         cwd: root,
         stdio: 'inherit',
     });
+    assertGrandBouleRustWasmBoundary(root);
+    assertGrandBouleWithheldFromWasm(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
-    assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
+    validateSurface('project-wasm', () =>
+        assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
+    );
+    const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
+    validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));
     const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
-    assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
+    validateSurface('audio-worklet-sources', () =>
+        assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet')
+    );
     const adaptedMitSurface = inventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
-    assertSurfaceContract(
-        adaptedMitSurface,
-        adaptedMitSourceReleaseInventoryContract(root),
-        'mi-plaits-dsp-rs adaptation'
+    validateSurface('mi-plaits-dsp-rs-adaptation', () =>
+        assertSurfaceContract(
+            adaptedMitSurface,
+            adaptedMitSourceReleaseInventoryContract(root),
+            'mi-plaits-dsp-rs adaptation'
+        )
     );
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
-    assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
+    validateSurface('third-party-marks', () =>
+        assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark')
+    );
     const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
-    assertSurfaceContract(
-        ownerVisualAssetSurface,
-        ownerVisualAssetReleaseInventoryContract(root),
-        'owner visual asset'
+    validateSurface('owner-visual-assets', () =>
+        assertSurfaceContract(
+            ownerVisualAssetSurface,
+            ownerVisualAssetReleaseInventoryContract(root),
+            'owner visual asset'
+        )
+    );
+    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    validateSurface('ddsp-tfjs-runtime', () =>
+        assertSurfaceContract(
+            ddspTfjsRuntimeSurface,
+            ddspTfjsRuntimeReleaseInventoryContract(root),
+            'DDSP TF.js runtime'
+        )
     );
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
@@ -760,6 +1159,7 @@ export function checkReleaseInventory(root: string, projectLicensePreflight = ch
             throw new Error(`Electron release inventory ${field} does not match provenance`);
         }
     }
+    validatedSurfaceIds.push('desktop-shell');
     checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
     const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
@@ -774,9 +1174,11 @@ export function checkReleaseInventory(root: string, projectLicensePreflight = ch
             throw new Error(`Levain release inventory ${field} does not match provenance`);
         }
     }
+    validatedSurfaceIds.push('levain-sample-bank');
     process.stdout.write(
         `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
+    return { validatedSurfaceIds };
 }
 
 const entry = process.argv[1];

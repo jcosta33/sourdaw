@@ -6,6 +6,7 @@
 import { type ReactElement } from 'react';
 
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 export type FermenterSection = 'osc' | 'filter' | 'env' | 'mod' | 'fx';
 
@@ -25,7 +26,9 @@ type SectionNavProps = {
 export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement => (
     <Row align="stretch" gap={0.5} className="px-1">
         {SECTIONS.map(({ id, label, color }) => (
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 key={id}
                 type="button"
                 className={`px-2 py-0.5 rounded text-[9px] font-medium transition-all ${
@@ -35,7 +38,7 @@ export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement 
                 onClick={() => onChange(id)}
             >
                 {label}
-            </button>
+            </Button>
         ))}
     </Row>
 );

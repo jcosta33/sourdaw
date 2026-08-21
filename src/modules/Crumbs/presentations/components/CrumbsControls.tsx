@@ -6,7 +6,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import type { CrumbsPersistedParamId } from '../../models/CrumbsParameterMap';
 import type { EnvelopeParams, FilterType, CrumbsMode, VoiceStackParams } from '../../models/CrumbsTypes';
@@ -123,7 +123,7 @@ export const CrumbsControls = ({
             {/* Envelope */}
             <div>
                 <div className="mb-2 text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">Envelope</div>
-                <div className="grid grid-cols-5 gap-x-2 gap-y-3">
+                <Grid cols={5} gapX={2} gapY={3}>
                     <Knob
                         value={envelope.attack}
                         onChange={(v, isTransient) => onParamChange('attack', v, isTransient)}
@@ -178,7 +178,7 @@ export const CrumbsControls = ({
                         defaultValue={0.1}
                         readout={`${envelope.release.toFixed(2)}s`}
                     />
-                </div>
+                </Grid>
             </div>
 
             {/* Filter + Master */}
@@ -186,7 +186,7 @@ export const CrumbsControls = ({
                 <div className="mb-2 text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
                     Filter & Output
                 </div>
-                <div className="grid grid-cols-5 gap-x-2 gap-y-3">
+                <Grid cols={5} gapX={2} gapY={3}>
                     <Knob
                         value={filterCutoff}
                         onChange={(v, isTransient) => onParamChange('filterCutoff', v, isTransient)}
@@ -239,7 +239,7 @@ export const CrumbsControls = ({
                         defaultValue={0}
                         readout={panReadout}
                     />
-                </div>
+                </Grid>
             </div>
 
             {/* Voice Stacking */}
@@ -248,7 +248,7 @@ export const CrumbsControls = ({
                     <div className="mb-2 text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
                         Voice Stack
                     </div>
-                    <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                    <Grid cols={3} gapX={2} gapY={3}>
                         <Knob
                             value={voiceStack.stackCount}
                             onChange={(v, isTransient) => onStackChange({ stackCount: Math.round(v) }, isTransient)}
@@ -279,7 +279,7 @@ export const CrumbsControls = ({
                             defaultValue={0}
                             readout={`${Math.round(voiceStack.stackSpread * 100)}%`}
                         />
-                    </div>
+                    </Grid>
                 </div>
             ) : null}
         </Stack>

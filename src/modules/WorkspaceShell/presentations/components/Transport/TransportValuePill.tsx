@@ -1,5 +1,6 @@
 import { type ButtonHTMLAttributes, type ReactElement } from 'react';
 
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type TransportValuePillProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -12,7 +13,9 @@ export const TransportValuePill = ({
     children,
     ...props
 }: TransportValuePillProps): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type="button"
         className={cn(
             'flex h-5 w-4 items-center justify-center rounded-sm text-[10px] font-bold tabular-nums transition-colors hover:bg-white/[0.06]',
@@ -22,5 +25,5 @@ export const TransportValuePill = ({
         {...props}
     >
         {children}
-    </button>
+    </Button>
 );

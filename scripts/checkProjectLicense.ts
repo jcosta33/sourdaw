@@ -6,13 +6,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildDependencyLicenseReport, DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+
 export const PROJECT_LICENSE_ID = 'Apache-2.0';
 export const PROJECT_OWNER = 'Jose Costa';
 export const PROJECT_NOTICE = `Sourdaw\nCopyright 2026 ${PROJECT_OWNER}\n\nThis product includes third-party software. See public/legal/THIRD-PARTY-NOTICES.md.\n`;
 export const DISTRIBUTION_PROJECT_NOTICE = `Sourdaw\nCopyright 2026 ${PROJECT_OWNER}\n\nThis product includes third-party software. See THIRD-PARTY-NOTICES.md.\n`;
 export const SPDX_OWNERSHIP_HEADER = `/* SPDX-FileCopyrightText: 2026 ${PROJECT_OWNER} */\n/* SPDX-License-Identifier: ${PROJECT_LICENSE_ID} */\n`;
 
-const APACHE_LICENSE_SHA256 = 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4';
+const PROJECT_APACHE_LICENSE_SHA256 = 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4';
+const DISTRIBUTED_APACHE_LICENSE_SHA256 = '84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1';
 const MI_PLAITS_DSP_RS_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
 const SERVER_THIRD_PARTY_NOTICES_SHA256 = 'bb11963c27505bc6245fb22d61f04980318f87b4cdcbd19934e36ff9118660f1';
 const OWNERSHIP_FILES = [
@@ -26,6 +29,8 @@ const RETIRED_PROJECT_LICENSE_MARKERS = [
     'pending:OS-10-project-license',
     'owner-created:pending-OS-10-project-license',
     'project grant and dependency notices pending OS-10',
+    'individual dependency terms pending OS-10 notice assembly',
+    'pending:OS-10-Cargo-dependency-notices',
 ] as const;
 
 type CargoMetadata = {
@@ -42,10 +47,13 @@ function readJson<TResult>(path: string): TResult {
 
 export function validateProjectLicense(root: string, cargo: CargoMetadata): string[] {
     const errors: string[] = [];
-    for (const path of ['LICENSE', 'public/legal/APACHE-2.0.txt', 'server/LICENSE']) {
-        if (sha256(resolve(root, path)) !== APACHE_LICENSE_SHA256) {
+    for (const path of ['LICENSE', 'server/LICENSE']) {
+        if (sha256(resolve(root, path)) !== PROJECT_APACHE_LICENSE_SHA256) {
             errors.push(`${path}: Apache-2.0 text drifted`);
         }
+    }
+    if (sha256(resolve(root, 'public/legal/Apache-2.0.txt')) !== DISTRIBUTED_APACHE_LICENSE_SHA256) {
+        errors.push('public/legal/Apache-2.0.txt: Apache-2.0 text drifted');
     }
     if (readFileSync(resolve(root, 'NOTICE'), 'utf8') !== PROJECT_NOTICE) {
         errors.push('NOTICE: project attribution drifted');
@@ -93,6 +101,7 @@ export function validateProjectLicense(root: string, cargo: CargoMetadata): stri
     for (const path of [
         'release/open-source-inventory.json',
         'public/samples/levain/provenance.tsv',
+        'public/legal/THIRD-PARTY-NOTICES.md',
         'scripts/checkLevainProvenance.ts',
         'scripts/checkReleaseInventory.ts',
     ]) {
@@ -106,14 +115,28 @@ export function validateProjectLicense(root: string, cargo: CargoMetadata): stri
     return errors;
 }
 
-export function checkProjectLicense(root: string): void {
+export function validateDependencyLicenseReport(root: string, expected: string): string[] {
+    try {
+        if (readFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8') !== expected) {
+            return [`${DEPENDENCY_LICENSE_REPORT_PATH}: dependency license report drifted`];
+        }
+    } catch {
+        return [`${DEPENDENCY_LICENSE_REPORT_PATH}: dependency license report missing`];
+    }
+    return [];
+}
+
+export function checkProjectLicense(root: string, reportBuilder = buildDependencyLicenseReport): void {
     const cargo = JSON.parse(
         execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
             cwd: root,
             encoding: 'utf8',
         })
     ) as CargoMetadata;
-    const errors = validateProjectLicense(root, cargo);
+    const errors = [
+        ...validateProjectLicense(root, cargo),
+        ...validateDependencyLicenseReport(root, reportBuilder(root)),
+    ];
     if (errors.length > 0) {
         throw new Error(errors.join('\n'));
     }

@@ -13,7 +13,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -760,7 +760,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 </GatedChip>
                             </Row>
                             {params.shimmer ? (
-                                <div className="grid grid-cols-2 gap-2">
+                                <Grid cols={2} gap={2}>
                                     <KnobCell
                                         label="Amount"
                                         gate={gateFor('shimmerAmount', 'Amount')}
@@ -785,7 +785,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                         size="sm"
                                         readout={params.shimmerPitch < 0.5 ? 'Fifth' : 'Octave'}
                                     />
-                                </div>
+                                </Grid>
                             ) : null}
                             {params.saturation ? (
                                 <Row align="stretch" wrap gap={1.5}>
@@ -819,7 +819,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
                     <div className="grid gap-3 xl:grid-cols-5 md:grid-cols-3">
                         <SectionCard title="Core" detail="Size">
-                            <div className="grid grid-cols-2 gap-2">
+                            <Grid cols={2} gap={2}>
                                 <KnobCell
                                     label="Size"
                                     gate={gateFor('size', 'Size')}
@@ -869,11 +869,11 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     size="md"
                                     readout={formatValue(params.predelay, 'ms')}
                                 />
-                            </div>
+                            </Grid>
                         </SectionCard>
 
                         <SectionCard title="Tone" detail="Cuts">
-                            <div className="grid grid-cols-2 gap-2">
+                            <Grid cols={2} gap={2}>
                                 <KnobCell
                                     label="Hi Cut"
                                     gate={gateFor('highCut', 'Hi Cut')}
@@ -923,11 +923,11 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     size="md"
                                     readout={formatValue(params.diffusion, '%')}
                                 />
-                            </div>
+                            </Grid>
                         </SectionCard>
 
                         <SectionCard title="Motion" detail="Swirl">
-                            <div className="grid grid-cols-2 gap-2">
+                            <Grid cols={2} gap={2}>
                                 <KnobCell
                                     label="Rate"
                                     gate={gateFor('modRate', 'Rate')}
@@ -976,11 +976,11 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     size="md"
                                     readout={formatValue(params.earlyLateBalance, '%')}
                                 />
-                            </div>
+                            </Grid>
                         </SectionCard>
 
                         <SectionCard title="Character" detail="Push">
-                            <div className="grid grid-cols-2 gap-2">
+                            <Grid cols={2} gap={2}>
                                 <KnobCell
                                     label="Gravity"
                                     gate={gateFor('gravity', 'Gravity')}
@@ -1018,7 +1018,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     size="md"
                                     readout={formatValue(params.density, '%')}
                                 />
-                            </div>
+                            </Grid>
                             <Row align="stretch" wrap gap={1.5}>
                                 {VINTAGE_MODES.map((mode) => (
                                     <ChamberChip
@@ -1033,7 +1033,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         </SectionCard>
 
                         <SectionCard title="Engine" detail="Algo">
-                            <div className="grid grid-cols-2 gap-2">
+                            <Grid cols={2} gap={2}>
                                 <DawPluginInsetCard
                                     className="proof-chamber-window"
                                     title="Algorithm"
@@ -1063,7 +1063,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                         <ChamberLed>{params.shimmer ? 'Shimmer on' : 'Shimmer off'}</ChamberLed>
                                     </Row>
                                 </DawPluginInsetCard>
-                            </div>
+                            </Grid>
                         </SectionCard>
                     </div>
                 </section>

@@ -5,6 +5,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import {
@@ -211,7 +212,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Color" />
                 <Row align="stretch" gap={1}>
                     {CLIP_COLOR_PRESETS.map((context) => (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             key={context || 'default'}
                             className="size-4 rounded-full border border-border/50 hover:ring-1 hover:ring-foreground/30"

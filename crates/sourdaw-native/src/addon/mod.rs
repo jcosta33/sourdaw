@@ -301,16 +301,17 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn ensure_whisper_ready(&self) -> Result<Value> {
+    pub async fn load_cached_whisper_model(&self) -> Result<Value> {
         json(reason(
-            commands::speech::ensure_whisper_ready(&self.singletons.dictation).await,
+            commands::speech::load_cached_whisper_model(&self.singletons.dictation).await,
         )?)
     }
 
     #[napi]
-    pub async fn start_dictation(&self) -> Result<()> {
+    pub async fn start_dictation(&self, session_id: String) -> Result<String> {
         reason(
             commands::speech::start_dictation(
+                session_id,
                 Arc::clone(&self.singletons.events),
                 &self.singletons.dictation,
             )
@@ -319,8 +320,26 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub fn stop_dictation(&self) -> Result<()> {
-        reason(commands::speech::stop_dictation(&self.singletons.dictation))
+    pub fn stop_dictation(&self, session_id: String) -> Result<()> {
+        reason(commands::speech::stop_dictation(
+            session_id,
+            &self.singletons.dictation,
+        ))
+    }
+
+    #[napi]
+    pub async fn cancel_dictation(&self, session_id: String) -> Result<()> {
+        // Cancellation waits for the recording worker to drop every sensitive
+        // buffer. Keep that wait off Node's event loop so Electron remains
+        // responsive while the terminal cleanup completes.
+        let singletons = Arc::clone(&self.singletons);
+        reason(
+            tokio::task::spawn_blocking(move || {
+                commands::speech::cancel_dictation(session_id, &singletons.dictation)
+            })
+            .await
+            .map_err(|error| format!("Dictation cancellation worker failed: {error}"))?,
+        )
     }
 
     #[napi]

@@ -35,11 +35,35 @@ that exact compiler commit produced the binary.
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
 [RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
 
+## JavaScript and Rust dependencies
+
+[DEPENDENCY-LICENSES.txt](./DEPENDENCY-LICENSES.txt) binds the exact production pnpm graph and
+normal-dependency Cargo graph to each package's declared license expression and every root license
+or notice file included in its package archive. Entries marked `metadata-only` identify archives
+that declare a license but do not include a root legal file; no replacement text or attribution is
+invented for them.
+
+The report identifies exact registry packages and versions, including the MPL-2.0 Rust packages
+whose corresponding source is available from those same crates.io package versions. Dedicated
+runtime notices below remain authoritative for their narrower component closures.
+
 ## Adapted DSP source
 
 `crates/daw-dsp/src/toaster/engines/kick_808.rs` adapts mi-plaits-dsp-rs at commit
 `6d3f7a5b84b25ec45d66c9f6be7109474690d795` under the MIT license. Copyright (c) 2022 Oliver
 Rockstedt. The exact upstream terms are in [MI-PLAITS-DSP-RS-MIT.txt](./MI-PLAITS-DSP-RS-MIT.txt).
+
+## DDSP WebGPU runtime
+
+The release-withheld DDSP worker uses TensorFlow.js 4.22.0 with its WebGPU backend. Its runtime
+closure contains TensorFlow.js Core, Converter, WebGPU, CPU shared helpers, long, and seedrandom.
+The CPU backend is not registered and is not a fallback. The worker also adapts Magenta.js's
+Apache-2.0 GraphModel Roll operation.
+
+See [TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt),
+[Magenta.js-NOTICE.txt](./Magenta.js-NOTICE.txt), [Apache-2.0.txt](./Apache-2.0.txt), and
+[seedrandom-MIT.txt](./seedrandom-MIT.txt). These runtime notices do not grant or characterize the
+separately downloaded DDSP checkpoint artifacts; the product admission gate remains closed.
 
 ## Trademarks
 

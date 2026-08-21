@@ -9,7 +9,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { clearActiveRender, inferenceProgressStore } from '../stores/inferenceProgressStore';
-import { cancelQueuedRender, updateRenderStatus, renderQueueStore } from '../stores/renderQueueStore';
+import { cancelQueuedRender } from '../stores/renderQueueStore';
 
 type CancelRenderInput = {
     phraseId: string;
@@ -21,15 +21,15 @@ export const cancelRender = inject({ logger })(
         function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
             logger.info(`[BrowserAi] Cancelling render: phrase=${phraseId}`);
 
-            // Resolve the pipeline for this render. Prefer the active-render store
-            // (the source of truth for what is *currently* on a worker); fall back
-            // to the queue entry. A stale lookup or a missing entry must NOT default
-            // to terminating the ONNX worker — that would kill unrelated DiffSinger/
-            // Kokoro renders. When the pipeline is unknown, cancel nothing on the
-            // worker side and only unwind the queue/status bookkeeping below.
+            // Only an active render is known to have entered a worker pipeline. A
+            // queue-only request may still be preparing, so cancelling it must not
+            // send a request-level cancellation to a shared worker/session.
             const activeRender = inferenceProgressStore.value?.activeRenders[requestId];
-            const queueEntry = renderQueueStore.value?.entries.find((event) => event.phraseId === phraseId);
-            const pipeline = activeRender?.pipeline ?? queueEntry?.pipeline;
+            if (activeRender && activeRender.phraseId !== phraseId) {
+                return;
+            }
+            const ownsActiveRender = activeRender?.phraseId === phraseId;
+            const pipeline = ownsActiveRender ? activeRender.pipeline : undefined;
 
             // Cancel only THIS request on its worker — sibling renders are untouched.
             if (pipeline === 'ddsp') {
@@ -40,8 +40,7 @@ export const cancelRender = inject({ logger })(
             }
             // Unknown pipeline → no worker teardown (avoid collateral cancellation).
 
-            cancelQueuedRender(phraseId);
+            cancelQueuedRender(phraseId, requestId, ownsActiveRender);
             clearActiveRender(requestId);
-            updateRenderStatus(phraseId, 'not-rendered');
         }
 );

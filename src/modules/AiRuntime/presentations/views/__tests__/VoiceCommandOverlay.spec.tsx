@@ -14,7 +14,6 @@ vi.mock('../../hooks/useVoiceRecording', () => ({
         voiceMode: 'browser',
         stopListening: vi.fn(),
     })),
-    isSpeechRecognitionAvailable: vi.fn(() => true),
 }));
 
 const { useVoiceRecording } = await import('../../hooks/useVoiceRecording');
@@ -28,7 +27,7 @@ describe('VoiceCommandOverlay', () => {
             errorText: null,
             finalText: '',
             interimText: '',
-            voiceMode: 'browser',
+            voiceMode: 'whisper',
             stopListening: vi.fn(),
         });
     });
@@ -45,7 +44,7 @@ describe('VoiceCommandOverlay', () => {
             errorText: null,
             finalText: '',
             interimText: '',
-            voiceMode: 'browser',
+            voiceMode: 'whisper',
             stopListening: vi.fn(),
         });
 
@@ -75,7 +74,7 @@ describe('VoiceCommandOverlay', () => {
             errorText: 'Microphone access denied',
             finalText: '',
             interimText: '',
-            voiceMode: 'browser',
+            voiceMode: 'whisper',
             stopListening: vi.fn(),
         });
 
@@ -90,7 +89,7 @@ describe('VoiceCommandOverlay', () => {
             errorText: null,
             finalText: '',
             interimText: '',
-            voiceMode: 'browser',
+            voiceMode: 'whisper',
             stopListening: vi.fn(),
         });
 

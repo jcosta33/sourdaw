@@ -2,11 +2,13 @@ import { type ChangeEvent, type ReactElement, useState } from 'react';
 
 import { Plus, Trash2, X } from 'lucide-react';
 
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
@@ -177,15 +179,15 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
     };
 
     return (
-        <div className="flex flex-col gap-2 border-b border-border-hairline bg-surface-inset p-3">
-            <div className="flex items-center justify-between">
+        <Stack gap={2} className="border-b border-border-hairline bg-surface-inset p-3">
+            <Row justify="between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-foreground">
                     New Modulator
                 </span>
                 <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close new modulator form">
                     <X className="size-3.5" />
                 </Button>
-            </div>
+            </Row>
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
                 <label className="text-[10px] text-muted-foreground">Name</label>
                 <DawCompactInput
@@ -269,7 +271,7 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     </>
                 ) : null}
             </div>
-            <div className="flex items-center justify-end gap-2 pt-1">
+            <Row justify="end" gap={2} className="pt-1">
                 <Button variant="ghost" size="xs" onClick={onClose}>
                     Cancel
                 </Button>
@@ -277,8 +279,8 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     <Plus className="size-3" />
                     <span className="ml-1">Add</span>
                 </Button>
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
 
@@ -335,7 +337,7 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
     };
 
     return (
-        <div className="flex flex-wrap items-center gap-2 rounded-sm bg-surface-inset px-2 py-1.5">
+        <Row wrap gap={2} className="rounded-sm bg-surface-inset px-2 py-1.5">
             <DawCompactSelect value={trackId} onChange={handleTrackChange} aria-label="Target track">
                 {tracks.length === 0 ? <option value="">No tracks</option> : null}
                 {tracks.map((track) => (
@@ -376,7 +378,7 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
             <Button variant="ghost" size="xs" onClick={onClose}>
                 Cancel
             </Button>
-        </div>
+        </Row>
     );
 };
 
@@ -414,7 +416,7 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
             <td className="px-3 py-1.5 text-[11px] text-foreground">{sourceLabel}</td>
             <td className="px-3 py-1.5 text-[11px] text-foreground">{destinationLabel}</td>
             <td className="px-3 py-1.5">
-                <div className="flex items-center gap-2">
+                <Row gap={2}>
                     <input
                         type="range"
                         min={-1}
@@ -428,7 +430,7 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
                     <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
                         {mapping.amount.toFixed(2)}
                     </span>
-                </div>
+                </Row>
             </td>
             <td className="px-3 py-1.5 text-right">
                 <Button
@@ -459,8 +461,8 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
     const [pickerOpen, setPickerOpen] = useState(false);
 
     return (
-        <div className="flex flex-col gap-1.5 rounded-sm border border-border-hairline bg-surface-base/50 p-2">
-            <div className="flex items-center gap-2">
+        <Stack gap={1.5} className="rounded-sm border border-border-hairline bg-surface-base/50 p-2">
+            <Row gap={2}>
                 <DawCompactInput
                     value={modulator.name}
                     onChange={(event) => updateModulator(modulator.id, { name: event.target.value })}
@@ -470,14 +472,14 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                 <span className="rounded-sm bg-surface-inset px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                     {KIND_LABELS[modulator.kind]}
                 </span>
-                <label className="ml-2 flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <input
+                <Row as="label" gap={1} className="ml-2 text-[10px] text-muted-foreground">
+                    <DawCompactCheckbox
                         type="checkbox"
                         checked={modulator.enabled}
                         onChange={(event) => updateModulator(modulator.id, { enabled: event.target.checked })}
                     />
                     Enabled
-                </label>
+                </Row>
                 <div className="flex-1" />
                 <Button variant="ghost" size="xs" onClick={() => setPickerOpen((open) => !open)}>
                     <Plus className="size-3" />
@@ -491,11 +493,11 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                 >
                     <Trash2 className="size-3.5" />
                 </Button>
-            </div>
+            </Row>
             {pickerOpen ? (
                 <AddMappingPicker modulatorId={modulator.id} tracks={tracks} onClose={() => setPickerOpen(false)} />
             ) : null}
-        </div>
+        </Stack>
     );
 };
 
@@ -542,7 +544,7 @@ export const ModulationMatrix = (): ReactElement => {
             {newFormOpen ? <NewModulatorForm tracks={tracks} onClose={() => setNewFormOpen(false)} /> : null}
 
             <div className="flex-1 overflow-auto">
-                <div className="flex flex-col gap-2 p-2">
+                <Stack gap={2} className="p-2">
                     {modulators.length === 0 ? (
                         <DawEmptyState
                             title="No modulators"
@@ -554,7 +556,7 @@ export const ModulationMatrix = (): ReactElement => {
                             <ModulatorCard key={modulator.id} modulator={modulator} tracks={tracks} />
                         ))
                     )}
-                </div>
+                </Stack>
 
                 {flatRows.length === 0 ? null : (
                     <table className="w-full border-collapse">

@@ -3,16 +3,21 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
 
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../models/ProductionBrief';
+import { createProjectId, isCanonicalProjectId } from '../models/ProjectData';
 
 const DOC_PREFIX_ROOT = 'root';
 const TUNING_FREQUENCY_COUNT = 128;
 
 export type ProjectStoreState = {
+    /** Present on every sanitized state; optional here so legacy-shaped project activators migrate on set. */
+    projectId?: string;
     name: string;
     createdAt: number;
     updatedAt: number;
     dirty: boolean;
     loading: boolean;
+    /** Ephemeral publication barrier while a newly minted identity is becoming durable. */
+    identityMigrationPending?: boolean;
     keyRoot: number; // 0-11 (C=0)
     scaleName: string;
     /** Current project-wide tuning table (128 frequencies).
@@ -28,23 +33,28 @@ export type ProjectStoreState = {
     initialized: boolean;
 };
 
+const DEFAULT_PROJECT_CREATED_AT = Date.now();
+
 export const defaultProjectStoreState: ProjectStoreState = {
+    projectId: createProjectId(),
     name: 'Untitled Project',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: DEFAULT_PROJECT_CREATED_AT,
+    updatedAt: DEFAULT_PROJECT_CREATED_AT,
     dirty: false,
     loading: true,
+    identityMigrationPending: false,
     keyRoot: 0,
     scaleName: 'chromatic',
     tuning: {
         name: 'Equal Temperament',
         frequencies: Array.from({ length: TUNING_FREQUENCY_COUNT }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
     },
-    productionBrief: createDefaultProductionBrief(),
+    productionBrief: createDefaultProductionBrief(DEFAULT_PROJECT_CREATED_AT),
     initialized: false,
 };
 
 const DURABLE_PROJECT_META_KEYS = [
+    'projectId',
     'name',
     'createdAt',
     'updatedAt',
@@ -53,7 +63,7 @@ const DURABLE_PROJECT_META_KEYS = [
     'tuning',
     'productionBrief',
 ] as const;
-const TRANSIENT_PROJECT_META_KEYS = ['dirty', 'loading', 'initialized'] as const;
+const TRANSIENT_PROJECT_META_KEYS = ['dirty', 'loading', 'identityMigrationPending', 'initialized'] as const;
 const PROJECT_STORE_STATE_KEYS = [...DURABLE_PROJECT_META_KEYS, ...TRANSIENT_PROJECT_META_KEYS] as const;
 const TUNING_KEYS = ['name', 'frequencies'] as const;
 
@@ -78,11 +88,17 @@ type HasProjectStoreStateValuesInput = {
     state: ProjectStoreState;
 };
 
-type ProjectTransientState = Pick<ProjectStoreState, 'dirty' | 'loading' | 'initialized'>;
+type ProjectTransientState = {
+    dirty: boolean;
+    loading: boolean;
+    identityMigrationPending: boolean;
+    initialized: boolean;
+};
 
 const defaultProjectTransientState: ProjectTransientState = {
     dirty: defaultProjectStoreState.dirty,
     loading: defaultProjectStoreState.loading,
+    identityMigrationPending: defaultProjectStoreState.identityMigrationPending ?? false,
     initialized: defaultProjectStoreState.initialized,
 };
 
@@ -224,18 +240,33 @@ function apply_production_brief(source: object, next_state: ProjectStoreState): 
     }
 }
 
+function apply_project_id(source: object, next_state: ProjectStoreState): void {
+    const property = get_own_value({ value: source, key: 'projectId' });
+    if (property.found && typeof property.value === 'string') {
+        next_state.projectId = property.value;
+        return;
+    }
+    next_state.projectId = undefined;
+}
+
 function get_valid_transient_state(value: unknown): ProjectTransientState | null {
     if (!is_plain_object(value)) {
         return null;
     }
 
-    if (!is_boolean(value.dirty) || !is_boolean(value.loading) || !is_boolean(value.initialized)) {
+    if (
+        !is_boolean(value.dirty) ||
+        !is_boolean(value.loading) ||
+        !is_boolean(value.identityMigrationPending) ||
+        !is_boolean(value.initialized)
+    ) {
         return null;
     }
 
     return {
         dirty: value.dirty,
         loading: value.loading,
+        identityMigrationPending: value.identityMigrationPending,
         initialized: value.initialized,
     };
 }
@@ -252,6 +283,7 @@ function normalize_project_store_state(
 
     next_state.dirty = transient_state.dirty;
     next_state.loading = transient_state.loading;
+    next_state.identityMigrationPending = transient_state.identityMigrationPending;
     next_state.initialized = transient_state.initialized;
 
     apply_name(value, next_state);
@@ -261,6 +293,7 @@ function normalize_project_store_state(
     apply_scale_name(value, next_state);
     apply_tuning(value, next_state);
     apply_production_brief(value, next_state);
+    apply_project_id(value, next_state);
 
     return next_state;
 }
@@ -312,19 +345,23 @@ function sanitize_project_store_state(value: unknown): ProjectStoreState {
 
 export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
-        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning, productionBrief }) => ({
-            name,
-            createdAt,
-            updatedAt,
-            keyRoot,
-            scaleName,
-            tuning,
-            productionBrief,
-        }),
+        toCrdt: (state) => {
+            const { projectId, name, createdAt, updatedAt, keyRoot, scaleName, tuning, productionBrief } = state;
+            const durableState = {
+                name,
+                createdAt,
+                updatedAt,
+                keyRoot,
+                scaleName,
+                tuning,
+                productionBrief,
+            };
+            return isCanonicalProjectId(projectId) ? { projectId, ...durableState } : durableState;
+        },
         fromCrdt: normalize_project_meta_from_crdt,
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
-        hydrateMissing: () => defaultProjectStoreState,
+        hydrateMissing: () => ({ ...create_default_project_store_state(), projectId: undefined }),
     }),
     initialData: defaultProjectStoreState,
     sanitize: sanitize_project_store_state,

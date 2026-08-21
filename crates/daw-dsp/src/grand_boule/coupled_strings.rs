@@ -16,7 +16,7 @@
 //! with two [`ModalString`] banks each.
 
 use super::parameters::{unison_count, unison_detune_cents};
-use super::string::ModalString;
+use super::string::{ModalString, StringModalParameters};
 
 /// Maximum number of unison strings per key (trichord).
 pub const MAX_UNISONS: usize = 3;
@@ -136,29 +136,25 @@ impl CoupledStringAssembly {
         for unison_index in 0..count {
             let cents = unison_detune_cents(key, unison_index as u32);
             let detuned = fundamental_hz * (2.0_f32).powf(cents / 1200.0);
-            let unison = &mut self.unisons[unison_index];
-            unison.detune_cents = cents;
-            unison.vertical.configure(
+            let parameters = StringModalParameters::new(
                 detuned,
                 key,
                 hammer_strike_ratio,
                 sample_rate,
                 base_bandwidth_hz,
-                fast_damp,
             );
+            let unison = &mut self.unisons[unison_index];
+            unison.detune_cents = cents;
+            unison
+                .vertical
+                .configure_from_string_parameters(parameters, fast_damp);
             // Horizontal (aftersound) polarization: C0 uses fast bandwidth
             // for efficient energy pickup from bridge coupling, but C1/C2
             // use slow bandwidth for the long-ringing aftersound tail
             // (Weinreich 1977, §3.4).
-            unison.horizontal.configure_aftersound(
-                detuned,
-                key,
-                hammer_strike_ratio,
-                sample_rate,
-                base_bandwidth_hz,
-                fast_damp,
-                slow_damp,
-            );
+            unison
+                .horizontal
+                .configure_aftersound_from_string_parameters(parameters, fast_damp, slow_damp);
         }
     }
 
@@ -220,6 +216,22 @@ impl CoupledStringAssembly {
             return 0.0;
         }
         self.unisons[0].vertical.tick_simplified(hammer_force)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn modal_coefficient_signature(&self) -> u64 {
+        let signature =
+            self.unisons[..self.active_unisons]
+                .iter()
+                .fold(0_u64, |signature, unison| {
+                    signature
+                        .wrapping_mul(31)
+                        .wrapping_add(unison.vertical.coefficient_signature())
+                        .wrapping_add(unison.horizontal.coefficient_signature())
+                });
+        signature
+            .wrapping_mul(31)
+            .wrapping_add(self.active_unisons as u64)
     }
 }
 

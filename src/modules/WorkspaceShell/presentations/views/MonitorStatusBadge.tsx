@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { type ControlRoomState, controlRoomStore } from '#/modules/ControlRoom/stores';
 
@@ -55,13 +56,15 @@ export const MonitorStatusBadge = (): ReactElement | null => {
     const ariaLabel = `Monitoring: ${label} active`;
 
     return (
-        <span
-            className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-[var(--color-state-warning)]"
+        <Row
+            as="span"
+            gap={1}
+            className="h-5 rounded px-1.5 text-[10px] text-[var(--color-state-warning)]"
             aria-label={ariaLabel}
             title={ariaLabel}
         >
             <span className="inline-block size-1.5 rounded-full bg-[var(--color-state-warning)]" aria-hidden="true" />
             <span className="tabular-nums">{label}</span>
-        </span>
+        </Row>
     );
 };

@@ -52,4 +52,10 @@ type SourdawDesktopBridge = {
         readonly samplesBase: () => Promise<string>;
         readonly join: (...segments: readonly string[]) => Promise<string>;
     };
+    voiceDictation: {
+        readonly start: (sessionId: string) => Promise<string>;
+        readonly stop: (sessionId: string) => Promise<void>;
+        readonly cancel: (sessionId: string) => Promise<void>;
+        readonly listenTerminal: (sessionId: string, callback: (event: string, payload: unknown) => void) => () => void;
+    };
 };

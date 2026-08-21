@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
@@ -76,13 +76,13 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
             {otherParams.length > 0 ? (
                 <Stack gap={2} className="border-t border-border/40 pt-4">
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <Grid cols={2} gap={4}>
                         {otherParams.map((param) => (
                             <SurfaceCard key={param.id} className="p-2">
                                 <DeviceParameterControl param={param} device={device} trackId={trackId} />
                             </SurfaceCard>
                         ))}
-                    </div>
+                    </Grid>
                 </Stack>
             ) : null}
         </Stack>

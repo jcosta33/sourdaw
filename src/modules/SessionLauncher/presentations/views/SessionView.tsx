@@ -72,7 +72,9 @@ export const SessionView = (): ReactElement => {
                             Scene
                         </DawGridHeaderCell>
                         {Array.from({ length: SCENE_COUNT }, (_, index) => (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 key={index}
                                 className="h-10 cursor-pointer border-b border-border-hairline shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-surface-raised"
@@ -82,7 +84,7 @@ export const SessionView = (): ReactElement => {
                                 <Row justify="center" className="h-full">
                                     <Play className="size-3 text-muted-foreground transition-colors hover:text-foreground" />
                                 </Row>
-                            </button>
+                            </Button>
                         ))}
                     </DawSideRail>
                     {tracks.map((track: Track) => {
@@ -150,7 +152,9 @@ export const SessionView = (): ReactElement => {
                                     };
 
                                     return (
-                                        <button
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             key={clipId ?? `empty-${sceneIndex}`}
                                             className={cn(
@@ -162,7 +166,7 @@ export const SessionView = (): ReactElement => {
                                             aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
                                         >
                                             {renderIife_9()}
-                                        </button>
+                                        </Button>
                                     );
                                 })}
                             </Stack>

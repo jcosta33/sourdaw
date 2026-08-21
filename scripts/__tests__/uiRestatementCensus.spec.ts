@@ -196,6 +196,135 @@ export const Notes = () => <span>{hint}</span>;
         expect(scanUiRestatements(root)[0]?.disposition).toBe('renderer');
     });
 
+    it('marks DawCompact control definitions as semantic wrappers', () => {
+        const root = tree({
+            'src/components/daw/DawCompactCheckbox.tsx': `export const DawCompactCheckbox = () => <input type="checkbox" />;
+`,
+            'src/components/daw/DawCompactInput.tsx': `export const DawCompactInput = () => <input />;
+`,
+            'src/components/daw/DawCompactSelect.tsx': `export const DawCompactSelect = () => <select />;
+`,
+            'src/components/daw/DawCompactTextarea.tsx': `export const DawCompactTextarea = () => <textarea />;
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/components/daw/DawCompactCheckbox.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Input', disposition: 'semantic-wrapper' })
+        );
+        expect(byFile['src/components/daw/DawCompactInput.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Input', disposition: 'semantic-wrapper' })
+        );
+        expect(byFile['src/components/daw/DawCompactSelect.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Select', disposition: 'semantic-wrapper' })
+        );
+        expect(byFile['src/components/daw/DawCompactTextarea.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Textarea', disposition: 'semantic-wrapper' })
+        );
+    });
+
+    it('marks native controls in daw chrome definitions as semantic wrappers', () => {
+        const root = tree({
+            'src/components/daw/DawPluginChip.tsx': `export const DawPluginChip = () => <button type="button">Chip</button>;
+`,
+        });
+        expect(scanUiRestatements(root)[0]).toEqual(
+            expect.objectContaining({ mapping: 'Button', disposition: 'semantic-wrapper' })
+        );
+    });
+
+    it('marks transparent chrome-embedded selects as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ModeSelect.tsx': `export const ModeSelect = () => (
+  <select className="bg-transparent text-foreground outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/FormSelect.tsx': `export const FormSelect = () => (
+  <select className="h-8 w-full rounded border bg-surface-inset" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ModeSelect.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/FormSelect.tsx']?.disposition).toBe('eligible');
+    });
+
+    it('marks transparent chrome-embedded textareas as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ChromeNotes.tsx': `export const ChromeNotes = () => (
+  <textarea className="bg-transparent text-foreground outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/FormNotes.tsx': `export const FormNotes = () => (
+  <textarea className="h-8 w-full rounded border bg-surface-inset" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ChromeNotes.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/FormNotes.tsx']?.disposition).toBe('eligible');
+    });
+
+    it('marks transparent chrome-embedded inputs as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ChromeSearch.tsx': `export const ChromeSearch = () => (
+  <input className="min-w-0 flex-1 bg-transparent text-[11px] outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/CompactField.tsx': `export const CompactField = () => (
+  <input className="h-6 w-full bg-transparent text-xs" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ChromeSearch.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/CompactField.tsx']?.disposition).toBe('eligible');
+    });
+
+    it('marks file and range inputs as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Import.tsx': `export const Import = () => <input type="file" className="hidden" />;
+`,
+            'src/modules/Demo/presentations/views/Amount.tsx': `export const Amount = () => <input type="range" min={0} max={1} />;
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/Import.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/Amount.tsx']?.disposition).toBe('one-off');
+    });
+
+    it('marks implicit grids without numeric columns as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/StackGrid.tsx': `export const StackGrid = () => <div className="grid gap-2" />;
+`,
+        });
+        expect(scanUiRestatements(root)[0]).toEqual(
+            expect.objectContaining({ mapping: 'Grid', disposition: 'one-off' })
+        );
+    });
+
+    it('marks daw hardware drawing shells as one-off', () => {
+        const root = tree({
+            'src/components/daw/Fader.tsx': `export const Fader = () => <div className="flex flex-col justify-between" />;
+`,
+            'src/components/daw/RotaryKnob.tsx': `export const RotaryKnob = () => <div className="flex items-center justify-center" />;
+`,
+            'src/components/daw/MechanicalSwitch.tsx': `export const MechanicalSwitch = () => (
+  <div className="flex flex-col items-center gap-[2px]" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/components/daw/Fader.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Stack', disposition: 'one-off' })
+        );
+        expect(byFile['src/components/daw/RotaryKnob.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Row', disposition: 'one-off' })
+        );
+        expect(byFile['src/components/daw/MechanicalSwitch.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Stack', disposition: 'one-off' })
+        );
+    });
+
     it('marks className constructions with template slots as responsive-or-dynamic', () => {
         const root = tree({
             'src/modules/Demo/presentations/views/Dynamic.tsx': `export const Dynamic = ({ extra }: { extra: string }) => (
@@ -289,5 +418,28 @@ describe('checkUiRestatementCensus', () => {
         });
         const errors = checkUiRestatementCensus(root);
         expect(errors.some((error) => error.includes('stale ledger row'))).toBe(true);
+    });
+
+    it('fails a canonical ledger that still records eligible restatements', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Actions.tsx': `export const Actions = () => <button type="button">Go</button>;
+`,
+        });
+        const rows = scanUiRestatements(root);
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, 'scripts/ui-restatement-census.json'), canonicalizeCensus(rows));
+        const errors = checkUiRestatementCensus(root);
+        expect(errors.some((error) => error.includes('eligible restatement'))).toBe(true);
+    });
+
+    it('accepts a canonical ledger with no eligible restatements', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Actions.tsx': `export const Actions = () => <Button type="button">Go</Button>;
+`,
+        });
+        const rows = scanUiRestatements(root);
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, 'scripts/ui-restatement-census.json'), canonicalizeCensus(rows));
+        expect(checkUiRestatementCensus(root)).toEqual([]);
     });
 });

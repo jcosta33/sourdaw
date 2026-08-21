@@ -1,16 +1,19 @@
 /**
- * GrandBouleNode — one control surface for the Grand Boule piano, over two
- * transports.
+ * Retained GrandBouleNode host source, over two transport designs.
  *
- * **Live** (`createWorkerRingTransport`):
+ * This design is not release-reachable while admission withholds Grand Boule
+ * and the distributed daw-dsp WASM has no constructor. Focused tests inject an
+ * inert structural instance to preserve its host and transport behavior.
+ *
+ * **Worker ring** (`createWorkerRingTransport`):
  *   Main thread  →  Web Worker (WASM engine)  →  SAB ring buffer  →  AudioWorklet (consumer)
  *
- * The WASM physical-modeling engine runs on a dedicated Web Worker that renders
+ * The retained design places the physical-modeling engine on a Web Worker that renders
  * ahead into a SharedArrayBuffer. The AudioWorklet `process()` just copies from
  * the ring — microseconds of work, and an overload starves this device's own
  * ring instead of missing the graph's deadline and glitching every track.
  *
- * **Offline** (`createInlineWorkletTransport`):
+ * **Inline offline** (`createInlineWorkletTransport`):
  *   Main thread  →  AudioWorklet (WASM engine)
  *
  * An `OfflineAudioContext` has no system-level audio callback and therefore no

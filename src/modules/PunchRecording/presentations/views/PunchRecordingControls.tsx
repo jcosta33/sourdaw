@@ -4,6 +4,8 @@ import { Radio, Scissors } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
+import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -62,7 +64,7 @@ const NumberField = ({
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <label className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                <Row as="label" gap={1} className="text-[9px] uppercase tracking-wider text-muted-foreground">
                     <span>{label}</span>
                     <Input
                         type="number"
@@ -80,7 +82,7 @@ const NumberField = ({
                         aria-label={ariaLabel}
                         data-testid={testId}
                     />
-                </label>
+                </Row>
             </TooltipTrigger>
             <TooltipContent>{tooltip}</TooltipContent>
         </Tooltip>
@@ -157,7 +159,9 @@ export const PunchRecordingControls = (): ReactElement => {
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(
                             'inline-flex h-6 items-center gap-1 rounded-sm border border-border-soft px-1.5 text-[10px] uppercase tracking-wider text-text-secondary transition-colors',
@@ -171,7 +175,7 @@ export const PunchRecordingControls = (): ReactElement => {
                     >
                         <Scissors className="size-3" aria-hidden="true" />
                         <span>Mark</span>
-                    </button>
+                    </Button>
                 </TooltipTrigger>
                 <TooltipContent>
                     {activeCapture

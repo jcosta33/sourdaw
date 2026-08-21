@@ -12,7 +12,7 @@ vi.mock('#/modules/AiRuntime/repositories/voiceNativeAdapter/startDictation', ()
 
 describe('startDictation (useCase)', () => {
     it('forwards to the voiceNativeAdapter', async () => {
-        await startDictation();
-        expect(mocks.startVoiceDictation).toHaveBeenCalledTimes(1);
+        await startDictation('session-1');
+        expect(mocks.startVoiceDictation).toHaveBeenCalledWith('session-1');
     });
 });

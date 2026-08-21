@@ -39,7 +39,7 @@ rusb = { version = "0.9", features = ["vendored"] }
 tokio = { version = "1", features = ["macros", "time", "net", "rt", "rt-multi-thread", "sync", "fs", "io-util"] }
 reqwest = { version = "0.13", features = ["json", "stream"] }
 futures-util = "0.3"
-whisper-rs = { version = "0.16", features = ["metal"] }
+whisper-rs = "0.16"
 cpal = "0.18"
 rubato = "5"
 audioadapter-buffers = "5"
@@ -54,6 +54,9 @@ daw-engine = { path = "../daw-engine" }
 daw-plugin-host = { path = "../daw-plugin-host" }
 daw-dsp = { path = "../daw-dsp" }
 daw-io = { path = "../daw-io" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
 
 [target.'cfg(unix)'.dependencies]
 # Already in the dependency tree transitively; declared here for the

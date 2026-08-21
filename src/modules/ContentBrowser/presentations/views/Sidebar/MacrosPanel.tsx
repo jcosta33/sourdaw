@@ -14,6 +14,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { macroStore } from '#/modules/Command/stores';
 import { startMacroRecording, stopMacroRecording, executeAppAction } from '#/modules/Command/useCases';
@@ -72,7 +73,9 @@ export const MacrosPanel = (): ReactElement => {
                 title="Macros"
                 titleClassName="text-[11px] font-semibold normal-case tracking-normal text-foreground"
                 actions={
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(
                             'flex h-5 items-center gap-1 rounded px-1.5 text-[9px] transition-colors',
@@ -94,7 +97,7 @@ export const MacrosPanel = (): ReactElement => {
                                 <span>Record</span>
                             </>
                         )}
-                    </button>
+                    </Button>
                 }
             />
             {/* Recording name input (shown while recording) */}
@@ -162,7 +165,9 @@ export const MacrosPanel = (): ReactElement => {
                                         gap={0.5}
                                         className="opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
-                                        <button
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-[var(--color-state-success)] hover:bg-[var(--color-state-success)]/10 transition-colors"
                                             onClick={() => {
@@ -175,8 +180,10 @@ export const MacrosPanel = (): ReactElement => {
                                             title="Play macro"
                                         >
                                             <Play className="size-2.5" />
-                                        </button>
-                                        <button
+                                        </Button>
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-foreground/70 hover:bg-white/5 transition-colors"
                                             onClick={() => {
@@ -187,8 +194,10 @@ export const MacrosPanel = (): ReactElement => {
                                             title="Rename"
                                         >
                                             <Pencil className="size-2.5" />
-                                        </button>
-                                        <button
+                                        </Button>
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
                                             onClick={() => {
@@ -201,7 +210,7 @@ export const MacrosPanel = (): ReactElement => {
                                             title="Delete"
                                         >
                                             <Trash2 className="size-2.5" />
-                                        </button>
+                                        </Button>
                                     </Row>
                                 ) : null}
                             </Row>

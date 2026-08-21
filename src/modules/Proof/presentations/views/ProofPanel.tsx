@@ -10,7 +10,8 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
@@ -678,7 +679,9 @@ const Level1Play = ({
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Target</span>
                 <Stack gap={1}>
                     {TARGET_OPTIONS.map((opt) => (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             key={opt.value}
                             type="button"
                             className={`px-3 py-1 rounded text-[9px] font-medium transition-colors cursor-pointer ${
@@ -691,7 +694,7 @@ const Level1Play = ({
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)
-                        </button>
+                        </Button>
                     ))}
                 </Stack>
             </Stack>
@@ -802,7 +805,9 @@ const Level2Shape = ({
                     return (
                         <Row gap={1} key={moduleIdx}>
                             <div className="w-4 h-px bg-border/30" />
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 aria-label={`${label} module`}
                                 aria-pressed={!bypassed}
@@ -815,7 +820,7 @@ const Level2Shape = ({
                                 onClick={() => onPatchChange({ key: bypassKeys[moduleIdx]!, value: !bypassed })}
                             >
                                 {label}
-                            </button>
+                            </Button>
                             <div className="w-4 h-px bg-border/30" />
                             <ProofTapMeter deviceId={deviceId} tapIndex={tapIdx} />
                         </Row>
@@ -1216,7 +1221,9 @@ const Level4Route = ({
                                         {moduleLabel}
                                     </span>
                                     <Row align="stretch" gap={0.5}>
-                                        <button
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
                                             onClick={() => moveModule(slot, -1)}
@@ -1224,8 +1231,10 @@ const Level4Route = ({
                                             aria-label={`Move ${moduleLabel} earlier in the chain`}
                                         >
                                             ←
-                                        </button>
-                                        <button
+                                        </Button>
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
                                             onClick={() => moveModule(slot, 1)}
@@ -1233,7 +1242,7 @@ const Level4Route = ({
                                             aria-label={`Move ${moduleLabel} later in the chain`}
                                         >
                                             →
-                                        </button>
+                                        </Button>
                                     </Row>
                                 </Stack>
                                 {slot < 4 ? <div className="w-4 h-px bg-border/30" /> : null}
@@ -1355,13 +1364,15 @@ const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string })
                 <Level5NormalizationAlert deviceId={deviceId} patch={patch} />
 
                 {/* Reset integrated button */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="text-[8px] text-muted-foreground hover:text-foreground border border-border/30 px-2 py-1 rounded cursor-pointer"
                     onClick={() => resetIntegratedMeters(deviceId)}
                 >
                     Reset Integrated LUFS + True Peak
-                </button>
+                </Button>
             </Stack>
             {/* Right: Input vs Output comparison */}
             <Level5GainComparison deviceId={deviceId} />
@@ -1394,14 +1405,14 @@ const Level5MeterGrid = ({ deviceId }: { deviceId: string }): ReactElement => {
     const correlation = useProofMeter(deviceId, (state) => state.correlation);
 
     return (
-        <div className="grid grid-cols-3 gap-3">
+        <Grid cols={3} gap={3}>
             <MeterCard label="Momentary LUFS" value={formatLufs(outputLufs)} unit="LUFS" />
             <MeterCard label="Short-term LUFS" value={formatLufs(outputStLufs)} unit="LUFS" />
             <MeterCard label="Integrated LUFS" value={formatLufs(integratedLufs)} unit="LUFS" />
             <MeterCard label="True Peak" value={formatDb(truePeakDb)} unit="dBTP" alert={truePeakDb > -1} />
             <MeterCard label="LRA" value={lra.toFixed(1)} unit="LU" />
             <MeterCard label="Correlation" value={correlation.toFixed(2)} unit="" alert={correlation < 0.3} />
-        </div>
+        </Grid>
     );
 };
 

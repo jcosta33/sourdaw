@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { DawKeycap } from '#/components/daw/DawKeycap';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
@@ -187,7 +188,9 @@ export const RecentProjectsMenu = (): ReactElement => {
                     aria-label="Project menu"
                 >
                     {/* ── Create ── */}
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -196,9 +199,11 @@ export const RecentProjectsMenu = (): ReactElement => {
                     >
                         <Plus className="size-3 text-muted-foreground" aria-hidden="true" />
                         New Project
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -206,9 +211,11 @@ export const RecentProjectsMenu = (): ReactElement => {
                     >
                         <LayoutTemplate className="size-3 text-muted-foreground" aria-hidden="true" />
                         New from Template…
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -216,45 +223,51 @@ export const RecentProjectsMenu = (): ReactElement => {
                     >
                         <Sparkles className="size-3 text-[var(--color-accent-mint)]" aria-hidden="true" />
                         Load Demo Project…
-                    </button>
+                    </Button>
 
                     <div className="mx-2 my-1 h-px bg-border" role="separator" />
 
                     {/* ── Save & Export ── */}
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleSave}
                     >
-                        <span className="flex items-center gap-2">
+                        <Row as="span" gap={2}>
                             <Save className="size-3 text-muted-foreground" aria-hidden="true" />
                             Save
-                        </span>
+                        </Row>
                         <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
                             ⌘S
                         </DawKeycap>
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleExportAudio}
                     >
-                        <span className="flex items-center gap-2">
+                        <Row as="span" gap={2}>
                             <Music className="size-3 text-muted-foreground" aria-hidden="true" />
                             Export Audio…
-                        </span>
+                        </Row>
                         <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
                             ⌘⇧E
                         </DawKeycap>
-                    </button>
+                    </Button>
 
                     <div className="mx-2 my-1 h-px bg-border" role="separator" />
 
                     {/* ── Project File I/O ── */}
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -262,9 +275,11 @@ export const RecentProjectsMenu = (): ReactElement => {
                     >
                         <FileDown className="size-3 text-muted-foreground" aria-hidden="true" />
                         Export Project File…
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -272,7 +287,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                     >
                         <FileUp className="size-3 text-muted-foreground" aria-hidden="true" />
                         Import Project File…
-                    </button>
+                    </Button>
 
                     {/* ── Recent Projects ── */}
                     {entries.length > 0 ? <div className="mx-2 my-1 h-px bg-border" role="separator" /> : null}
@@ -284,9 +299,10 @@ export const RecentProjectsMenu = (): ReactElement => {
                     ) : null}
 
                     {entries.map((entry) => (
-                        <div
+                        <Row
+                            gap={2}
+                            className="group px-3 py-1.5 hover:bg-accent/50 transition-colors cursor-pointer"
                             key={entry.key}
-                            className="group flex items-center gap-2 px-3 py-1.5 hover:bg-accent/50 transition-colors cursor-pointer"
                             role="menuitem"
                             tabIndex={0}
                             onClick={() => handleLoad(entry)}
@@ -304,7 +320,9 @@ export const RecentProjectsMenu = (): ReactElement => {
                                     {formatRelativeTime(entry.updatedAt)}
                                 </div>
                             </div>
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 transition-all"
                                 aria-label={`Remove ${entry.name} from recent projects`}
@@ -314,8 +332,8 @@ export const RecentProjectsMenu = (): ReactElement => {
                                     className="size-3 text-muted-foreground hover:text-destructive"
                                     aria-hidden="true"
                                 />
-                            </button>
-                        </div>
+                            </Button>
+                        </Row>
                     ))}
                 </div>
             ) : null}

@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
     readLegacyChordTrackMigration: vi.fn(),
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
+    migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock('../../../stores/projectStore', () => ({
@@ -69,6 +70,9 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mocks.resetModuleStores }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mocks.stopActiveAutoSave }));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mocks.setAutoSaveHandle }));
+vi.mock('../migrateActiveProjectIdentity', () => ({
+    migrateActiveProjectIdentity: mocks.migrateActiveProjectIdentity,
+}));
 
 describe('loadProject', () => {
     beforeEach(() => {
@@ -81,6 +85,7 @@ describe('loadProject', () => {
         mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
         mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
         mocks.readLegacyChordTrackMigration.mockReturnValue(null);
+        mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
     });
 
@@ -96,6 +101,10 @@ describe('loadProject', () => {
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+        expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1);
+        expect(mocks.projectCrdtToStores.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.migrateActiveProjectIdentity.mock.invocationCallOrder[0]!
+        );
     });
 
     it('lands on the launch screen without creating a document when persistence is empty', async () => {

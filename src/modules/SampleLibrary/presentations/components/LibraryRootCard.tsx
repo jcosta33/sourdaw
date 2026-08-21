@@ -5,6 +5,8 @@ import { type ReactElement } from 'react';
 
 import { HardDrive, RefreshCw, X, ShieldAlert } from 'lucide-react';
 
+import { Button } from '#/components/ui/button';
+
 import { type LibraryRoot } from '../../models/LibraryTypes';
 
 type LibraryRootCardProps = {
@@ -62,7 +64,9 @@ export const LibraryRootCard = ({
             </div>
 
             {root.status === 'permission_required' && onRequestPermission ? (
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     aria-label={`Restore access to ${root.name}`}
                     className="size-4 rounded flex items-center justify-center text-amber-500 hover:bg-amber-500/10"
@@ -73,10 +77,12 @@ export const LibraryRootCard = ({
                     title="Restore access"
                 >
                     <ShieldAlert className="size-3" />
-                </button>
+                </Button>
             ) : null}
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 aria-label={`Rescan ${root.name}`}
                 className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-foreground hover:bg-white/10"
@@ -87,9 +93,11 @@ export const LibraryRootCard = ({
                 title="Rescan"
             >
                 <RefreshCw className={`size-3 ${root.status === 'scanning' ? 'animate-spin' : ''}`} />
-            </button>
+            </Button>
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 aria-label={`Disconnect ${root.name}`}
                 className="size-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-red-400 hover:bg-red-500/10"
@@ -100,7 +108,7 @@ export const LibraryRootCard = ({
                 title="Disconnect"
             >
                 <X className="size-3" />
-            </button>
+            </Button>
         </div>
     );
 };

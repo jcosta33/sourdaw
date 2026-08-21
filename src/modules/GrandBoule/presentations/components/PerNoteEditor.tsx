@@ -14,7 +14,8 @@ import { type ReactElement, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import {
     type GrandBoulePerNoteValues,
@@ -74,18 +75,20 @@ export const PerNoteEditor = ({
                         </option>
                     ))}
                 </DawCompactSelect>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     disabled={!hasOverrides}
                     onClick={() => onReset(selectedKey)}
                     className="rounded px-2 py-0.5 text-[8px] uppercase tracking-[0.16em] text-neutral-300/70 transition-colors hover:bg-neutral-400/10 hover:text-neutral-200 disabled:pointer-events-none disabled:opacity-30"
                 >
                     Reset
-                </button>
+                </Button>
             </Row>
 
             {/* Parameter knobs — 4×2 grid */}
-            <div className="mt-2 grid grid-cols-4 gap-x-2 gap-y-3">
+            <Grid cols={4} gapX={2} gapY={3} className="mt-2">
                 {PER_NOTE_PARAM_DESCRIPTORS.map((descriptor) => {
                     const value = currentValues[descriptor.key];
                     const isDefault = value === defaults[descriptor.key];
@@ -117,7 +120,7 @@ export const PerNoteEditor = ({
                         </Stack>
                     );
                 })}
-            </div>
+            </Grid>
         </div>
     );
 };

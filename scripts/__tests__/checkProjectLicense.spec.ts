@@ -10,8 +10,14 @@ import {
     PROJECT_NOTICE,
     PROJECT_OWNER,
     SPDX_OWNERSHIP_HEADER,
+    validateDependencyLicenseReport,
     validateProjectLicense,
 } from '../checkProjectLicense';
+import {
+    DEPENDENCY_LICENSE_REPORT_PATH,
+    renderDependencyLicenseReport,
+    type DependencyLicenseRecord,
+} from '../dependencyLicenseReport';
 
 const ownershipFiles = [
     'src/infra/store/storage/LocalStorageKeys.ts',
@@ -34,10 +40,11 @@ describe('project license', () => {
     beforeEach(() => {
         root = mkdtempSync(join(tmpdir(), 'sourdaw-project-license-'));
         const license = readFileSync(join(process.cwd(), 'LICENSE'), 'utf8');
+        const distributedLicense = readFileSync(join(process.cwd(), 'public/legal/Apache-2.0.txt'), 'utf8');
         const serverThirdPartyNotices = readFileSync(join(process.cwd(), 'server/THIRD-PARTY-NOTICES.md'), 'utf8');
         const adaptedSourceLicense = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
         write(root, 'LICENSE', license);
-        write(root, 'public/legal/APACHE-2.0.txt', license);
+        write(root, 'public/legal/Apache-2.0.txt', distributedLicense);
         write(root, 'server/LICENSE', license);
         write(root, 'NOTICE', PROJECT_NOTICE);
         write(root, 'public/legal/SOURDAW-NOTICE.txt', DISTRIBUTION_PROJECT_NOTICE);
@@ -75,7 +82,7 @@ describe('project license', () => {
     });
 
     it('rejects shipped license and notice drift', () => {
-        write(root, 'public/legal/APACHE-2.0.txt', 'wrong');
+        write(root, 'public/legal/Apache-2.0.txt', 'wrong');
         write(root, 'server/LICENSE', 'wrong');
         write(root, 'NOTICE', 'wrong');
         write(root, 'public/legal/SOURDAW-NOTICE.txt', 'wrong');
@@ -84,7 +91,7 @@ describe('project license', () => {
         write(root, 'public/legal/MI-PLAITS-DSP-RS-MIT.txt', 'wrong');
         expect(validateProjectLicense(root, cargo)).toEqual(
             expect.arrayContaining([
-                'public/legal/APACHE-2.0.txt: Apache-2.0 text drifted',
+                'public/legal/Apache-2.0.txt: Apache-2.0 text drifted',
                 'server/LICENSE: Apache-2.0 text drifted',
                 'NOTICE: project attribution drifted',
                 'public/legal/SOURDAW-NOTICE.txt: project attribution drifted',
@@ -130,5 +137,31 @@ describe('project license', () => {
                 'release/open-source-inventory.json: stale project-license marker pending:OS-10-project-grant',
             ])
         );
+    });
+
+    it('renders dependency identities, metadata-only declarations, and deduplicated exact legal files', () => {
+        const legalFile = { label: 'LICENSE', sha256: 'a'.repeat(64), contents: 'exact terms\n' };
+        const records: DependencyLicenseRecord[] = [
+            { ecosystem: 'npm', name: 'zeta', version: '1.0.0', license: 'MIT', legalFiles: [] },
+            { ecosystem: 'cargo', name: 'alpha', version: '2.0.0', license: 'Apache-2.0', legalFiles: [legalFile] },
+            { ecosystem: 'npm', name: 'beta', version: '3.0.0', license: 'MIT', legalFiles: [legalFile] },
+        ];
+
+        const report = renderDependencyLicenseReport(records);
+        expect(report).toContain('cargo:alpha@2.0.0 | Apache-2.0 | sha256:');
+        expect(report).toContain('npm:zeta@1.0.0 | MIT | metadata-only');
+        expect(report.match(/exact terms/gu)).toHaveLength(1);
+    });
+
+    it('rejects dependency report drift and absence', () => {
+        write(root, DEPENDENCY_LICENSE_REPORT_PATH, 'current');
+        expect(validateDependencyLicenseReport(root, 'current')).toEqual([]);
+        expect(validateDependencyLicenseReport(root, 'expected')).toEqual([
+            `${DEPENDENCY_LICENSE_REPORT_PATH}: dependency license report drifted`,
+        ]);
+        rmSync(join(root, DEPENDENCY_LICENSE_REPORT_PATH));
+        expect(validateDependencyLicenseReport(root, 'expected')).toEqual([
+            `${DEPENDENCY_LICENSE_REPORT_PATH}: dependency license report missing`,
+        ]);
     });
 });

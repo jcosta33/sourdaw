@@ -1,5 +1,7 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
+import { Stack } from '#/components/layout';
+
 import { SourdawLogo } from './SourdawLogo';
 
 const LOADING_QUIPS = [
@@ -39,8 +41,10 @@ export const ProjectLoadingOverlay = (): ReactElement => {
     }, []);
 
     return (
-        <div
-            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+        <Stack
+            align="center"
+            justify="center"
+            className="fixed inset-0 z-[9999]"
             style={{
                 background:
                     'radial-gradient(ellipse at 50% 40%, rgba(217,119,6,0.06) 0%, rgba(0,0,0,0) 60%), hsl(220,14%,8%)',
@@ -96,6 +100,6 @@ export const ProjectLoadingOverlay = (): ReactElement => {
                     100% { transform: translateX(400%); }
                 }
             `}</style>
-        </div>
+        </Stack>
     );
 };

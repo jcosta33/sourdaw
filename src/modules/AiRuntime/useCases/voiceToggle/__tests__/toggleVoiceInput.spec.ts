@@ -14,16 +14,9 @@ describe('toggleVoiceInput', () => {
         vi.clearAllMocks();
     });
 
-    it('emits voice.toggle with undefined active payload by default', () => {
-        toggleVoiceInput();
-        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: undefined });
-    });
+    it('rejects an untrusted programmatic event instead of emitting a microphone start', () => {
+        toggleVoiceInput(new Event('click'));
 
-    it('emits voice.toggle with provided active state', () => {
-        toggleVoiceInput(true);
-        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: true });
-
-        toggleVoiceInput(false);
-        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: false });
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 });

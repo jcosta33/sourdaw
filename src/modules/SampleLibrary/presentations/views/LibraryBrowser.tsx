@@ -14,6 +14,8 @@ import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react'
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
@@ -271,19 +273,23 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     };
 
     return (
-        <div className="flex flex-col h-full">
+        <Stack className="h-full">
             {/* ── Header ── */}
-            <div className="flex items-center gap-1 px-2 pb-1 shrink-0">
-                <button
+            <Row gap={1} shrink={false} className="px-2 pb-1">
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-foreground/70 hover:text-foreground hover:bg-white/[0.06] transition-colors"
                     onClick={handleConnectFolder}
                 >
                     <FolderPlus className="size-3" />
                     Connect Folder
-                </button>
+                </Button>
                 <div className="flex-1" />
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     aria-label="Search library"
                     aria-pressed={showSearch}
@@ -294,9 +300,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     title="Search library"
                 >
                     <Search className="size-3" />
-                </button>
+                </Button>
 
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     aria-label="Timbral spatial map"
                     aria-pressed={showMap}
@@ -309,9 +317,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     title="Timbral Spatial Map (G3)"
                 >
                     <span className="text-[8px] font-bold">MAP</span>
-                </button>
+                </Button>
 
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     aria-label="Show favorites only"
                     aria-pressed={favoritesOnly}
@@ -324,12 +334,12 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     title="Show favorites only"
                 >
                     <Star className="size-3" />
-                </button>
-            </div>
+                </Button>
+            </Row>
 
             {/* ── Search bar ── */}
             {showSearch ? (
-                <div className="flex items-center gap-1 px-2 pb-1 shrink-0">
+                <Row gap={1} shrink={false} className="px-2 pb-1">
                     <Search className="size-3 text-muted-foreground/40 shrink-0" />
                     <DawCompactInput
                         type="text"
@@ -341,15 +351,17 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                         autoFocus
                     />
                     {searchQuery ? (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="size-3 text-muted-foreground/40 hover:text-foreground"
                             onClick={() => setSearchQuery('')}
                         >
                             <X className="size-3" />
-                        </button>
+                        </Button>
                     ) : null}
-                </div>
+                </Row>
             ) : null}
 
             {/* ── Scan progress ── */}
@@ -383,20 +395,22 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     description="Connect a folder from your computer to browse and search your samples."
                     summary="Local folders only. No upload, no account, and your files stay on your machine."
                     action={
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="rounded-md bg-white/[0.08] px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-white/[0.12]"
                             onClick={handleConnectFolder}
                         >
                             Connect Sample Folder
-                        </button>
+                        </Button>
                     }
                 />
             ) : null}
 
             {/* ── Connected roots ── */}
             {roots.length > 0 ? (
-                <div className="px-1 pb-1 space-y-0.5 shrink-0">
+                <Stack gap={0.5} shrink={false} className="px-1 pb-1">
                     {roots.map((root) => (
                         <LibraryRootCard
                             key={root.id}
@@ -412,20 +426,22 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             }
                         />
                     ))}
-                </div>
+                </Stack>
             ) : null}
 
             {/* ── File explorer ── */}
             {activeRoot ? (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <Stack grow className="overflow-hidden">
                     {/* G3: Spatial Map View */}
                     {showMap ? (
                         <div className="p-2 shrink-0 border-b border-border/10">
-                            <div className="flex items-center justify-between mb-1">
+                            <Row justify="between" className="mb-1">
                                 <span className="text-[9px] font-medium text-muted-foreground">
                                     Timbral Proximity Map
                                 </span>
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     disabled
                                     className="text-[8px] text-muted-foreground/40 cursor-not-allowed"
@@ -433,8 +449,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     aria-label={`Re-project UMAP unavailable: ${UMAP_UNAVAILABLE_LABEL}`}
                                 >
                                     Re-project UMAP
-                                </button>
-                            </div>
+                                </Button>
+                            </Row>
                             <SpatialMapRenderer
                                 width={240}
                                 height={180}
@@ -450,20 +466,24 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
                     {/* Breadcrumb — shown when navigated into a subfolder */}
                     {currentFolder ? (
-                        <div className="flex items-center gap-1 px-2 py-1 shrink-0 border-b border-border/10 flex-wrap">
-                            <button
+                        <Row wrap gap={1} shrink={false} className="px-2 py-1 border-b border-border/10">
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="text-[9px] text-muted-foreground/50 hover:text-foreground transition-colors"
                                 onClick={() => setCurrentFolder(null)}
                             >
                                 {activeRoot.name}
-                            </button>
+                            </Button>
                             {currentFolder.split('/').map((part, i, arr) => {
                                 const partPath = arr.slice(0, i + 1).join('/');
                                 return (
-                                    <span key={partPath} className="flex items-center gap-1">
+                                    <Row as="span" gap={1} key={partPath}>
                                         <span className="text-[9px] text-muted-foreground/30">/</span>
-                                        <button
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className={`text-[9px] transition-colors ${
                                                 i === arr.length - 1
@@ -473,11 +493,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                             onClick={() => setCurrentFolder(partPath)}
                                         >
                                             {part}
-                                        </button>
-                                    </span>
+                                        </Button>
+                                    </Row>
                                 );
                             })}
-                        </div>
+                        </Row>
                     ) : null}
 
                     {/* Status line */}
@@ -495,7 +515,9 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             const name = basename_from_path(subPath);
                             const count = countFilesIn(subPath);
                             return (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     key={subPath}
                                     type="button"
                                     aria-label={`Open folder ${name}, ${count} file${count !== 1 ? 's' : ''}`}
@@ -506,7 +528,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     <span className="flex-1 min-w-0 text-[10px] text-foreground truncate">{name}</span>
                                     <span className="text-[8px] text-muted-foreground/40 tabular-nums">{count}</span>
                                     <ChevronRight className="size-3 shrink-0 text-muted-foreground/20 group-hover:text-muted-foreground/60 transition-colors" />
-                                </button>
+                                </Button>
                             );
                         })}
 
@@ -557,8 +579,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             </div>
                         ) : null}
                     </div>
-                </div>
+                </Stack>
             ) : null}
-        </div>
+        </Stack>
     );
 };

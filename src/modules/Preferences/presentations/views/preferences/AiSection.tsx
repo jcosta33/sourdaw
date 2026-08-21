@@ -2,8 +2,9 @@ import { type ReactElement, useState } from 'react';
 
 import { Sparkles } from 'lucide-react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
-import { Row } from '#/components/layout';
+import { Grid, Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Separator } from '#/components/ui/separator';
@@ -163,7 +164,7 @@ export const AiSection = (): ReactElement => {
         <>
             <SectionTitle icon={<Sparkles className="size-4" />} title="AI" />
             <FieldGroup label="AI execution backend">
-                <select
+                <DawCompactSelect
                     value={selectedBackend}
                     onChange={(event) => {
                         const selection = event.target.value;
@@ -177,7 +178,7 @@ export const AiSection = (): ReactElement => {
                     <option value="auto">Automatic</option>
                     {MODEL_RELEASE_ADMISSION.webLlm ? <option value="webllm">Browser WebLLM</option> : null}
                     {hostedProvidersAvailable ? <option value="cloud">Hosted provider</option> : null}
-                </select>
+                </DawCompactSelect>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
                     {MODEL_RELEASE_ADMISSION.webLlm
                         ? 'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
@@ -207,8 +208,8 @@ export const AiSection = (): ReactElement => {
                         Set the provider credential in the matching SOURDAW_*_API_KEY environment variable before
                         launch. The renderer receives only an opaque session ID.
                     </p>
-                    <div className="grid grid-cols-2 gap-1.5 mb-1.5">
-                        <select
+                    <Grid cols={2} gap={1.5} className="mb-1.5">
+                        <DawCompactSelect
                             value={provider}
                             onChange={(event) => {
                                 const nextProvider = event.target.value;
@@ -226,7 +227,7 @@ export const AiSection = (): ReactElement => {
                             <option value="anthropic">Anthropic</option>
                             <option value="openai">OpenAI</option>
                             <option value="openai-compatible">OpenAI-compatible</option>
-                        </select>
+                        </DawCompactSelect>
                         {provider === 'openai-compatible' ? (
                             <div>
                                 <Input
@@ -244,7 +245,7 @@ export const AiSection = (): ReactElement => {
                                 </p>
                             </div>
                         ) : (
-                            <select
+                            <DawCompactSelect
                                 value={customFirstPartyModel ? CUSTOM_MODEL_VALUE : model}
                                 onChange={(event) => {
                                     setModel(event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value);
@@ -259,9 +260,9 @@ export const AiSection = (): ReactElement => {
                                     </option>
                                 ))}
                                 <option value={CUSTOM_MODEL_VALUE}>Custom model ID…</option>
-                            </select>
+                            </DawCompactSelect>
                         )}
-                    </div>
+                    </Grid>
                     {customFirstPartyModel ? (
                         <Input
                             value={model}
@@ -366,14 +367,14 @@ export const AiSection = (): ReactElement => {
                     Audio analysis features (pitch detection, spectral analysis, polyphonic audio-to-MIDI) run entirely
                     in the browser. No API key required.
                 </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1.5 text-[10px]">
+                <Grid cols={2} gapX={4} gapY={0.5} className="mt-1.5 text-[10px]">
                     <span className="text-muted-foreground">Polyphonic MIDI</span>
                     <span className="text-right text-foreground">@spotify/basic-pitch</span>
                     <span className="text-muted-foreground">Pitch Detection</span>
                     <span className="text-right text-foreground">pitchy (McLeod)</span>
                     <span className="text-muted-foreground">Feature Extraction</span>
                     <span className="text-right text-foreground">meyda</span>
-                </div>
+                </Grid>
             </FieldGroup>
         </>
     );
