@@ -105,12 +105,22 @@ export type CanonicalIssueReference = {
     relationship: IssueRelationship;
 };
 
+export type DeliveryReceiptPayload = {
+    pullRequest: number;
+    head: string;
+    bodySha256: string;
+    closingIssue?: number;
+};
+
 const CLOSING_REFERENCE_PATTERN =
     /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))\b/gi;
 const CLOSING_RELATIONSHIP_PATTERN =
     /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
 const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
 const CANONICAL_CLOSING_RELATIONSHIP_PATTERN = /^Closes (?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/;
+const DELIVERY_RECEIPT_PREFIX = '<!-- sourdaw-delivery-receipt:v1';
+const DELIVERY_RECEIPT_PATTERN =
+    /^<!-- sourdaw-delivery-receipt:v1\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)\n-->$/;
 
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
@@ -203,6 +213,53 @@ export function canonicalIssueReferenceFromBody(body: string, repository: string
     }
     assertIssueClosingReferences(body, issue, reference.relationship, repository);
     return { issue, relationship: reference.relationship };
+}
+
+export function composeDeliveryReceipt(payload: DeliveryReceiptPayload): string {
+    assertSafeIssueNumber(payload.pullRequest, 'delivery receipt pull request');
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(payload.head)) {
+        fail('delivery receipt head is invalid');
+    }
+    if (!/^[0-9a-f]{64}$/.test(payload.bodySha256)) {
+        fail('delivery receipt body digest is invalid');
+    }
+    if (payload.closingIssue !== undefined) {
+        assertSafeIssueNumber(payload.closingIssue, 'delivery receipt closing issue');
+    }
+    return [
+        DELIVERY_RECEIPT_PREFIX,
+        `pull-request: ${payload.pullRequest}`,
+        `head: ${payload.head}`,
+        `body-sha256: ${payload.bodySha256}`,
+        `closing-issue: ${payload.closingIssue === undefined ? 'none' : String(payload.closingIssue)}`,
+        '-->',
+    ].join('\n');
+}
+
+export function parseDeliveryReceipt(body: string): DeliveryReceiptPayload | undefined {
+    if (!body.startsWith('<!-- sourdaw-delivery-receipt:')) {
+        return undefined;
+    }
+    const match = DELIVERY_RECEIPT_PATTERN.exec(body);
+    if (match === null) {
+        fail('invalid delivery receipt');
+    }
+    const pullRequest = Number(match[1]);
+    const head = match[2] ?? '';
+    const bodySha256 = match[3] ?? '';
+    const rawClosingIssue = match[4];
+    const closingIssue = rawClosingIssue === 'none' ? undefined : Number(rawClosingIssue);
+    const payload = { pullRequest, head, bodySha256, closingIssue };
+    if (composeDeliveryReceipt(payload) !== body) {
+        fail('non-canonical delivery receipt');
+    }
+    return payload;
+}
+
+function assertSafeIssueNumber(value: number, label: string): void {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+        fail(`${label} must be a safe positive integer`);
+    }
 }
 
 export function issueRelationshipFromBody(

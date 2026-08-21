@@ -1,14 +1,12 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { closeSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import {
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateTrackerAuthor,
-    originMainBlob,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
@@ -116,6 +114,52 @@ export function readBodyEdits(path: string): BodyEdit[] {
 
 export type Gh = (args: string[]) => string;
 
+type TrackerMutationLease = <Value>(operation: () => Value) => Value;
+
+/**
+ * GitHub's issue PATCH endpoint has no conditional compare-and-swap. Sanctioned tracker writers
+ * therefore cooperate through this repository-owned lease, held from the final read/digest check
+ * through the verified PATCH. Writes outside the sanctioned commands cannot participate in that
+ * serialization boundary and are still handled fail-closed by exact receipt/final-state checks.
+ */
+export function withRepositoryTrackerMutationLease<Value>(primaryRoot: string, operation: () => Value): Value {
+    const leasePath = join(primaryRoot, '.git', 'sourdaw-tracker-mutation.lease');
+    const owner = JSON.stringify({ pid: process.pid, token: randomUUID() });
+    let descriptor: number;
+    try {
+        descriptor = openSync(leasePath, 'wx', 0o600);
+    } catch (error) {
+        if (errorCode(error) === 'EEXIST') {
+            fail('tracker mutation lease is busy; remove a confirmed stale lease manually');
+        }
+        throw error;
+    }
+    let initialized = false;
+    try {
+        writeFileSync(descriptor, owner, 'utf8');
+        initialized = true;
+    } finally {
+        closeSync(descriptor);
+        if (!initialized) {
+            rmSync(leasePath, { force: true });
+        }
+    }
+    try {
+        return operation();
+    } finally {
+        if (readFileSync(leasePath, 'utf8') !== owner) {
+            fail('tracker mutation lease ownership changed');
+        }
+        unlinkSync(leasePath);
+    }
+}
+
+function errorCode(error: unknown): string | undefined {
+    return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+        ? error.code
+        : undefined;
+}
+
 function issuePath(number: number): string {
     return `repos/${REQUIRED_REPOSITORY}/issues/${number}`;
 }
@@ -192,12 +236,16 @@ function updateTrackerIssue(
 ): TrackerIssue {
     const changesBody = input.body !== undefined;
     const changesState = input.state !== undefined;
-    if (changesBody === changesState || (changesBody && input.stateReason !== undefined)) {
+    if (
+        changesBody === changesState ||
+        (changesBody && input.stateReason !== undefined) ||
+        (changesState && input.stateReason !== 'COMPLETED' && input.stateReason !== 'NOT_PLANNED')
+    ) {
         fail('tracker issue update must change exactly one field');
     }
     const fields =
         input.body === undefined
-            ? ['-f', 'state=closed', ...(input.stateReason === undefined ? [] : ['-f', 'state_reason=completed'])]
+            ? ['-f', 'state=closed', '-f', `state_reason=${input.stateReason.toLowerCase()}`]
             : ['-f', `body=${input.body}`];
     const response = parseJson(gh(['api', '--method', 'PATCH', issuePath(number), ...fields]), 'update tracker issue');
     return toMutationIssue(number, response, gh);
@@ -238,9 +286,11 @@ function addComment(number: number, body: string, gh: Gh): TrackerIssueComment {
 
 export function githubTrackerIssuePort(
     gh: Gh,
+    withMutationLease: TrackerMutationLease,
     log: (message: string) => void = (message) => console.log(message)
 ): ReconcileTrackerIssuePort {
     return {
+        withMutationLease,
         inspect: (number) => inspectTrackerIssue(number, gh),
         update: (number, input) => updateTrackerIssue(number, input, gh),
         comment: (number, body) => addComment(number, body, gh),
@@ -254,7 +304,11 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reco
         cwd
     );
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
-    return githubTrackerIssuePort(gh);
+    return githubTrackerIssuePort(
+        gh,
+        (operation) => withRepositoryTrackerMutationLease(primaryRoot, operation),
+        (message) => console.log(message)
+    );
 }
 
 function parseIssueState(value: unknown): TrackerIssue['state'] | undefined {
@@ -300,8 +354,8 @@ function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
-async function main(): Promise<number> {
-    const parsed = parseReconcileTrackerIssueArgs(process.argv.slice(2));
+export async function runReconcileTrackerIssueCli(args: string[]): Promise<number> {
+    const parsed = parseReconcileTrackerIssueArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -311,16 +365,6 @@ async function main(): Promise<number> {
     }
 
     const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/reconcileTrackerIssue.ts',
-        fileURLToPath(import.meta.url),
-        originMainBlob('scripts/reconcileTrackerIssue.ts', cwd)
-    );
-    assertTrustedExecutingBlob(
-        'scripts/trackerIssueReconciliation.ts',
-        resolve(dirname(fileURLToPath(import.meta.url)), 'trackerIssueReconciliation.ts'),
-        originMainBlob('scripts/trackerIssueReconciliation.ts', cwd)
-    );
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateTrackerAuthor({ primaryRoot });
     try {
@@ -358,14 +402,4 @@ async function main(): Promise<number> {
     } finally {
         auth.session.dispose();
     }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }

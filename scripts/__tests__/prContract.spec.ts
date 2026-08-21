@@ -7,10 +7,12 @@ import {
     assertPullRequestBody,
     assertReviewCommentBody,
     canonicalIssueReferenceFromBody,
+    composeDeliveryReceipt,
     composePublishBody,
     fail,
     issueRelationshipFromBody,
     laneBranchName,
+    parseDeliveryReceipt,
     supersessionCommentBody,
     supersessionReplacement,
 } from '../prContract.ts';
@@ -128,6 +130,25 @@ describe('pull-request contract', () => {
         const prefix = '### 📌 Related tickets & additional notes\n';
         expect(() => canonicalIssueReferenceFromBody(`Fixes #99\n${prefix}Closes #2164`, 'jcosta33/sourdaw')).toThrow(
             /unexpected issue-closing references/
+        );
+    });
+
+    it('round-trips one exact immutable delivery receipt and rejects malformed variants', () => {
+        const payload = {
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+        };
+        const receipt = composeDeliveryReceipt(payload);
+
+        expect(parseDeliveryReceipt(receipt)).toEqual(payload);
+        expect(parseDeliveryReceipt('ordinary PR comment')).toBeUndefined();
+        expect(() =>
+            parseDeliveryReceipt(receipt.replace('closing-issue: 2406', 'closing-issue: 90071992547409930'))
+        ).toThrow(/safe positive integer/);
+        expect(() => parseDeliveryReceipt(receipt.replace('body-sha256:', 'body-digest:'))).toThrow(
+            /invalid delivery receipt/
         );
     });
 

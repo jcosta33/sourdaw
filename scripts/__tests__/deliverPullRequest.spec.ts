@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,6 +66,7 @@ function mergeSettings(settings: MergeSettings): string {
 function stackedDeliveryPort(finalSettings: MergeSettings) {
     const captures: Array<{ command: string; args: string[] }> = [];
     let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
+    let deliveryReceipt: DeliveryReceiptComment | undefined;
     const port = shellPort('jcosta33/sourdaw', {
         capture: (command, args) => {
             captures.push({ command, args });
@@ -117,6 +119,43 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
             }
             if (joined.includes('.delete_branch_on_merge')) {
                 return 'false';
+            }
+            if (joined.includes('issues/42/comments?per_page=100')) {
+                return JSON.stringify([
+                    [
+                        ...(deliveryReceipt === undefined
+                            ? []
+                            : [
+                                  {
+                                      node_id: deliveryReceipt.id,
+                                      body: deliveryReceipt.body,
+                                      user: {
+                                          login: deliveryReceipt.authorLogin,
+                                          type: deliveryReceipt.authorType,
+                                      },
+                                      created_at: deliveryReceipt.createdAt,
+                                      updated_at: deliveryReceipt.updatedAt,
+                                  },
+                              ]),
+                    ],
+                ]);
+            }
+            if (joined.includes('POST repos/jcosta33/sourdaw/issues/42/comments')) {
+                deliveryReceipt = {
+                    id: 'IC_delivery_42',
+                    body: args.find((argument) => argument.startsWith('body='))?.slice('body='.length) ?? '',
+                    authorLogin: 'jcosta33-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                };
+                return JSON.stringify({
+                    node_id: deliveryReceipt.id,
+                    body: deliveryReceipt.body,
+                    user: { login: deliveryReceipt.authorLogin, type: deliveryReceipt.authorType },
+                    created_at: deliveryReceipt.createdAt,
+                    updated_at: deliveryReceipt.updatedAt,
+                });
             }
             if (joined === 'api repos/jcosta33/sourdaw') {
                 return mergeSettings(finalSettings);
@@ -174,7 +213,34 @@ type FakeInput = {
     dirty?: boolean;
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
+    receipts?: DeliveryReceiptComment[];
 };
+
+type DeliveryReceiptComment = {
+    id: string;
+    body: string;
+    authorLogin: string | null;
+    authorType: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+function deliveryReceiptBody(
+    pullRequestNumber: number,
+    head: string,
+    pullRequestBody: string,
+    closingIssue: number | undefined
+): string {
+    const digest = createHash('sha256').update(pullRequestBody).digest('hex');
+    return [
+        '<!-- sourdaw-delivery-receipt:v1',
+        `pull-request: ${pullRequestNumber}`,
+        `head: ${head}`,
+        `body-sha256: ${digest}`,
+        `closing-issue: ${closingIssue === undefined ? 'none' : String(closingIssue)}`,
+        '-->',
+    ].join('\n');
+}
 
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
@@ -195,7 +261,11 @@ function fakePort(input: FakeInput = {}) {
     }
     let lastDependents = dependentSets.at(-1) ?? [];
     let failedRetarget = false;
-    const port: DeliveryPort = {
+    const receipts = [...(input.receipts ?? [])];
+    const port: DeliveryPort & {
+        deliveryReceipts: (number: number) => DeliveryReceiptComment[];
+        addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
+    } = {
         fetch: () => calls.push('fetch'),
         pullRequest: (number) => {
             if (number === 42) {
@@ -238,6 +308,23 @@ function fakePort(input: FakeInput = {}) {
             }
             pullRequests.set(number, { ...current, baseRefName: base });
         },
+        deliveryReceipts: (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts);
+        },
+        addDeliveryReceipt: (number, receiptBody) => {
+            calls.push(`add-receipt:${number}`);
+            const receipt = {
+                id: `IC_delivery_${number}`,
+                body: receiptBody,
+                authorLogin: 'jcosta33-author[bot]',
+                authorType: 'Bot',
+                createdAt: '2026-08-21T00:00:00Z',
+                updatedAt: '2026-08-21T00:00:00Z',
+            };
+            receipts.push(receipt);
+            return structuredClone(receipt);
+        },
         log: (message) => calls.push(message),
     };
     const tracker: TrackerCompletionPort = {
@@ -245,7 +332,7 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`complete:${issueNumber}`);
         },
     };
-    return { port, calls, tracker };
+    return { port, calls, tracker, receipts };
 }
 
 function deliverPullRequest(
@@ -307,9 +394,20 @@ describe('pull-request delivery', () => {
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
-    it('converges issue completion on an already-merged retry after dependent repair', () => {
+    it('converges issue completion on an already-merged retry from its author-bot receipt', () => {
+        const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
-            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('Closes #2372') })],
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                {
+                    id: 'IC_delivery_42',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorLogin: 'jcosta33-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
         });
 
         deliverPullRequest(42, port, tracker);
@@ -319,14 +417,14 @@ describe('pull-request delivery', () => {
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
     });
 
-    it('reports an explicit partial state when issue completion fails after merge', () => {
+    it('writes the immutable delivery receipt before merge and uses it after mutable-body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -343,12 +441,72 @@ describe('pull-request delivery', () => {
             /PR #42.*merged.*issue #2372.*tracker unavailable/i
         );
         expect(calls).toContain('merge:42:head');
+        expect(calls.indexOf('add-receipt:42')).toBeLessThan(calls.indexOf('merge:42:head'));
         expect(calls).not.toContainEqual(expect.stringMatching(/delivered|success/i));
 
         deliverPullRequest(42, port, tracker);
 
         expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed on a foreign or mismatched pre-merge delivery receipt', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = deliveryReceiptBody(42, 'head', closes, 2373);
+        for (const existing of [
+            {
+                id: 'IC_foreign',
+                body: deliveryReceiptBody(42, 'head', closes, 2372),
+                authorLogin: 'jcosta33',
+                authorType: 'User',
+                createdAt: '2026-08-21T00:00:00Z',
+                updatedAt: '2026-08-21T00:00:00Z',
+            },
+            {
+                id: 'IC_wrong_target',
+                body: receipt,
+                authorLogin: 'jcosta33-author[bot]',
+                authorType: 'Bot',
+                createdAt: '2026-08-21T00:00:00Z',
+                updatedAt: '2026-08-21T00:00:00Z',
+            },
+            {
+                id: 'IC_edited',
+                body: deliveryReceiptBody(42, 'head', closes, 2372),
+                authorLogin: 'jcosta33-author[bot]',
+                authorType: 'Bot',
+                createdAt: '2026-08-21T00:00:00Z',
+                updatedAt: '2026-08-21T00:01:00Z',
+            },
+        ]) {
+            const { port, calls, tracker } = fakePort({
+                primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+                receipts: [existing],
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(/invalid delivery receipt/);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    });
+
+    it('rejects duplicate delivery receipts instead of choosing authority', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = {
+            id: 'IC_delivery_42',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorLogin: 'jcosta33-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [receipt, { ...receipt, id: 'IC_delivery_42_duplicate' }],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/duplicate delivery receipts/);
+        expect(calls).not.toContain('merge:42:head');
     });
 
     it('merges the expected head and retargets stable dependents', () => {

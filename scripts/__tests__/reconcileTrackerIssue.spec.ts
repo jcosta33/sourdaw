@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -7,6 +10,7 @@ import {
     githubTrackerIssuePort,
     inspectTrackerIssue,
     parseReconcileTrackerIssueArgs,
+    withRepositoryTrackerMutationLease,
 } from '../reconcileTrackerIssue.ts';
 import {
     applyExactBodyEdits,
@@ -36,7 +40,21 @@ function issue(number: number, overrides: Partial<TrackerIssue> = {}): TrackerIs
 function fakePort(initial: TrackerIssue[]) {
     const issues = new Map(initial.map((value) => [value.number, value]));
     const calls: string[] = [];
-    const port: ReconcileTrackerIssuePort = {
+    let leaseHeld = false;
+    const port: ReconcileTrackerIssuePort & {
+        withMutationLease: <Value>(operation: () => Value) => Value;
+    } = {
+        withMutationLease: (operation) => {
+            if (leaseHeld) {
+                throw new Error('tracker mutation lease is busy');
+            }
+            leaseHeld = true;
+            try {
+                return operation();
+            } finally {
+                leaseHeld = false;
+            }
+        },
         inspect: (number) => {
             calls.push(`inspect:${number}`);
             const value = issues.get(number);
@@ -55,10 +73,7 @@ function fakePort(initial: TrackerIssue[]) {
                 ...value,
                 body: input.body ?? value.body,
                 state: input.state ?? value.state,
-                stateReason:
-                    input.body !== undefined
-                        ? value.stateReason
-                        : (input.stateReason ?? (input.state === 'CLOSED' ? 'COMPLETED' : value.stateReason)),
+                stateReason: input.body !== undefined ? value.stateReason : input.stateReason,
             };
             issues.set(value.number, updated);
             return structuredClone(updated);
@@ -148,26 +163,32 @@ describe('tracker issue reconciliation', () => {
         expect(() => inspectTrackerIssue(835, gh)).toThrow(/cannot inspect issue/i);
     });
 
-    it('writes the completed state reason through the issue-only REST adapter', () => {
+    it.each([
+        ['COMPLETED' as const, 'completed'],
+        ['NOT_PLANNED' as const, 'not_planned'],
+    ])('writes the %s state reason through the issue-only REST adapter', (stateReason, restReason) => {
         const calls: string[][] = [];
-        const port = githubTrackerIssuePort((args) => {
-            calls.push(args);
-            if (args.includes('--paginate')) {
-                return JSON.stringify([[]]);
-            }
-            return JSON.stringify({
-                node_id: 'I_2372',
-                number: 2372,
-                repository_url: 'https://api.github.com/repos/jcosta33/sourdaw',
-                state: 'closed',
-                state_reason: 'completed',
-                body,
-            });
-        });
+        const port = githubTrackerIssuePort(
+            (args) => {
+                calls.push(args);
+                if (args.includes('--paginate')) {
+                    return JSON.stringify([[]]);
+                }
+                return JSON.stringify({
+                    node_id: 'I_2372',
+                    number: 2372,
+                    repository_url: 'https://api.github.com/repos/jcosta33/sourdaw',
+                    state: 'closed',
+                    state_reason: restReason,
+                    body,
+                });
+            },
+            (operation) => operation()
+        );
 
-        expect(port.update(2372, { state: 'CLOSED', stateReason: 'COMPLETED' })).toMatchObject({
+        expect(port.update(2372, { state: 'CLOSED', stateReason })).toMatchObject({
             state: 'CLOSED',
-            stateReason: 'COMPLETED',
+            stateReason,
             body,
         });
         expect(calls[0]).toEqual([
@@ -178,8 +199,55 @@ describe('tracker issue reconciliation', () => {
             '-f',
             'state=closed',
             '-f',
-            'state_reason=completed',
+            `state_reason=${restReason}`,
         ]);
+    });
+
+    it('parses the required REST state/reason matrix and rejects invalid combinations', () => {
+        const inspect = (state: string, stateReason: string | null) =>
+            inspectTrackerIssue(2372, (args) => {
+                if (args.includes('--paginate')) {
+                    return JSON.stringify([[]]);
+                }
+                return JSON.stringify({
+                    node_id: 'I_2372',
+                    number: 2372,
+                    repository_url: 'https://api.github.com/repos/jcosta33/sourdaw',
+                    state,
+                    state_reason: stateReason,
+                    body,
+                });
+            });
+
+        expect(inspect('open', null).stateReason).toBeNull();
+        expect(inspect('closed', 'not_planned').stateReason).toBe('NOT_PLANNED');
+        expect(inspect('closed', 'duplicate').stateReason).toBe('DUPLICATE');
+        expect(() => inspect('open', 'completed')).toThrow(/cannot inspect issue/i);
+        expect(() => inspect('closed', 'reopened')).toThrow(/cannot inspect issue/i);
+    });
+
+    it('refuses adapter-parsed non-completed closure without sending a PATCH', () => {
+        const calls: string[][] = [];
+        const port = githubTrackerIssuePort(
+            (args) => {
+                calls.push(args);
+                if (args.includes('--paginate')) {
+                    return JSON.stringify([[]]);
+                }
+                return JSON.stringify({
+                    node_id: 'I_2372',
+                    number: 2372,
+                    repository_url: 'https://api.github.com/repos/jcosta33/sourdaw',
+                    state: 'closed',
+                    state_reason: 'not_planned',
+                    body,
+                });
+            },
+            (operation) => operation()
+        );
+
+        expect(() => completeTrackerIssue(2372, AUTHOR_BOT_LOGIN, port)).toThrow(/without a completed state reason/);
+        expect(calls.some((args) => args.includes('PATCH'))).toBe(false);
     });
 
     it('replaces an open issue body only when the expected digest matches', () => {
@@ -213,6 +281,41 @@ describe('tracker issue reconciliation', () => {
             )
         ).toThrow(/body digest changed/i);
         expect(calls).toEqual(['inspect:2372']);
+    });
+
+    it('holds the cooperative mutation lease across the final digest check and verified body PATCH', () => {
+        const { port, inspect } = fakePort([issue(2372)]);
+        const update = port.update;
+        let competingEditEntered = false;
+        port.update = (number, input) => {
+            try {
+                port.withMutationLease(() => {
+                    competingEditEntered = true;
+                    update(number, { body: `${body}\nCompeting sanctioned edit.` });
+                });
+            } catch (error) {
+                expect(error).toMatchObject({ message: 'tracker mutation lease is busy' });
+            }
+            return update(number, input);
+        };
+
+        reconcileTrackerIssue({ issueNumber: 2372, expectedBodySha256: bodySha256, nextBody }, AUTHOR_BOT_LOGIN, port);
+
+        expect(competingEditEntered).toBe(false);
+        expect(inspect(2372)?.body).toBe(nextBody);
+    });
+
+    it('excludes a second sanctioned writer from the repository-owned lease', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-tracker-lease-'));
+        mkdirSync(join(root, '.git'));
+        try {
+            withRepositoryTrackerMutationLease(root, () => {
+                expect(() => withRepositoryTrackerMutationLease(root, () => undefined)).toThrow(/lease is busy/);
+            });
+            expect(withRepositoryTrackerMutationLease(root, () => 'released')).toBe('released');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('completes an issue while preserving its exact identity and body', () => {
@@ -300,6 +403,7 @@ describe('tracker issue reconciliation', () => {
             )
         ).toBe('tracker-issue-superseded:835:2372');
         expect(inspect(835)?.state).toBe('CLOSED');
+        expect(inspect(835)?.stateReason).toBe('NOT_PLANNED');
         expect(inspect(835)?.comments).toEqual([
             {
                 id: 'IC_835',
@@ -393,7 +497,10 @@ describe('tracker issue reconciliation', () => {
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: 'Bot',
         };
-        const { port, calls } = fakePort([issue(835, { state: 'CLOSED', comments: [marker] }), issue(2372)]);
+        const { port, calls } = fakePort([
+            issue(835, { state: 'CLOSED', stateReason: 'NOT_PLANNED', comments: [marker] }),
+            issue(2372),
+        ]);
 
         expect(
             reconcileTrackerIssue(
@@ -405,6 +512,28 @@ describe('tracker issue reconciliation', () => {
         expect(calls).toEqual(['inspect:835', 'inspect:2372', 'log:tracker-issue-superseded:835:2372']);
     });
 
+    it('rejects a supersession receipt closed for any reason other than not planned', () => {
+        const marker = {
+            id: 'IC_835',
+            body: 'Superseded by #2372.',
+            authorLogin: AUTHOR_BOT_LOGIN,
+            authorType: 'Bot',
+        };
+        const { port, calls } = fakePort([
+            issue(835, { state: 'CLOSED', stateReason: 'COMPLETED', comments: [marker] }),
+            issue(2372),
+        ]);
+
+        expect(() =>
+            reconcileTrackerIssue(
+                { issueNumber: 835, expectedBodySha256: bodySha256, replacementNumber: 2372 },
+                AUTHOR_BOT_LOGIN,
+                port
+            )
+        ).toThrow(/changed during supersession/);
+        expect(calls).not.toContain('log:tracker-issue-superseded:835:2372');
+    });
+
     it('rejects duplicate canonical markers instead of guessing ownership', () => {
         const marker = {
             id: 'IC_835',
@@ -413,7 +542,10 @@ describe('tracker issue reconciliation', () => {
             authorType: 'Bot',
         };
         const duplicate = { ...marker, id: 'IC_835_duplicate' };
-        const { port } = fakePort([issue(835, { state: 'CLOSED', comments: [marker, duplicate] }), issue(2372)]);
+        const { port } = fakePort([
+            issue(835, { state: 'CLOSED', stateReason: 'NOT_PLANNED', comments: [marker, duplicate] }),
+            issue(2372),
+        ]);
 
         expect(() =>
             reconcileTrackerIssue(

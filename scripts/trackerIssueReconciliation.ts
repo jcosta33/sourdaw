@@ -20,13 +20,12 @@ export type TrackerIssue = {
     comments: TrackerIssueComment[];
 };
 
-type TrackerIssueUpdate = {
-    body?: string;
-    state?: 'CLOSED';
-    stateReason?: 'COMPLETED';
-};
+type TrackerIssueUpdate =
+    | { body: string; state?: never; stateReason?: never }
+    | { body?: never; state: 'CLOSED'; stateReason: 'COMPLETED' | 'NOT_PLANNED' };
 
 export type ReconcileTrackerIssuePort = {
+    withMutationLease: <Value>(operation: () => Value) => Value;
     inspect: (number: number) => TrackerIssue;
     update: (number: number, input: TrackerIssueUpdate) => TrackerIssue;
     comment: (number: number, body: string) => TrackerIssueComment;
@@ -69,18 +68,18 @@ export function reconcileTrackerIssue(
     authorLogin: string,
     port: ReconcileTrackerIssuePort
 ): string {
-    if (authorLogin !== AUTHOR_BOT_LOGIN) {
-        fail(`authenticated author login ${authorLogin} is not ${AUTHOR_BOT_LOGIN}`);
-    }
-    const before = port.inspect(input.issueNumber);
-    assertBoundIssue(before, input.issueNumber);
-    assertBodyDigest(before.body, input.expectedBodySha256, input.issueNumber);
+    assertAuthorLogin(authorLogin);
+    return port.withMutationLease(() => {
+        const before = port.inspect(input.issueNumber);
+        assertBoundIssue(before, input.issueNumber);
+        assertBodyDigest(before.body, input.expectedBodySha256, input.issueNumber);
 
-    if ('nextBody' in input) {
-        return replaceIssueBody(before, input.nextBody, port);
-    }
+        if ('nextBody' in input) {
+            return replaceIssueBody(before, input.nextBody, port);
+        }
 
-    return supersedeIssue(before, input.replacementNumber, port);
+        return supersedeIssue(before, input.replacementNumber, port);
+    });
 }
 
 export function completeTrackerIssue(
@@ -89,25 +88,27 @@ export function completeTrackerIssue(
     port: ReconcileTrackerIssuePort
 ): string {
     assertAuthorLogin(authorLogin);
-    const before = port.inspect(issueNumber);
-    assertBoundIssue(before, issueNumber);
+    return port.withMutationLease(() => {
+        const before = port.inspect(issueNumber);
+        assertBoundIssue(before, issueNumber);
 
-    if (before.state === 'CLOSED' && !isCompletedIssue(before)) {
-        fail(`issue #${issueNumber} is already closed without a completed state reason`);
-    }
-    if (isCompletedIssue(before)) {
+        if (before.state === 'CLOSED' && !isCompletedIssue(before)) {
+            fail(`issue #${issueNumber} is already closed without a completed state reason`);
+        }
+        if (isCompletedIssue(before)) {
+            assertCompletedIssue(port.inspect(issueNumber), before);
+            return log(`tracker-issue-completed:${issueNumber}`, port);
+        }
+
+        const receipt = recoverCompletedMutation(
+            before,
+            () => port.update(issueNumber, { state: 'CLOSED', stateReason: 'COMPLETED' }),
+            port
+        );
+        assertCompletedIssue(receipt, before);
         assertCompletedIssue(port.inspect(issueNumber), before);
         return log(`tracker-issue-completed:${issueNumber}`, port);
-    }
-
-    const receipt = recoverCompletedMutation(
-        before,
-        () => port.update(issueNumber, { state: 'CLOSED', stateReason: 'COMPLETED' }),
-        port
-    );
-    assertCompletedIssue(receipt, before);
-    assertCompletedIssue(port.inspect(issueNumber), before);
-    return log(`tracker-issue-completed:${issueNumber}`, port);
+    });
 }
 
 function replaceIssueBody(before: TrackerIssue, nextBody: string, port: ReconcileTrackerIssuePort): string {
@@ -119,6 +120,7 @@ function replaceIssueBody(before: TrackerIssue, nextBody: string, port: Reconcil
         before,
         nextBody,
         'OPEN',
+        before.stateReason,
         () => port.update(before.number, { body: nextBody }),
         port
     );
@@ -182,6 +184,7 @@ function supersedeIssue(before: TrackerIssue, replacementNumber: number, port: R
 
     const markerBody = `Superseded by #${replacement.number}.`;
     if (before.state === 'CLOSED') {
+        assertSupersededIssue(before, before);
         assertOneMarker(before, markerBody);
         return log(`tracker-issue-superseded:${before.number}:${replacement.number}`, port);
     }
@@ -195,13 +198,14 @@ function supersedeIssue(before: TrackerIssue, replacementNumber: number, port: R
         before,
         before.body,
         'CLOSED',
-        () => port.update(before.number, { state: 'CLOSED' }),
+        'NOT_PLANNED',
+        () => port.update(before.number, { state: 'CLOSED', stateReason: 'NOT_PLANNED' }),
         port
     );
-    assertFinalIssue(closeReceipt, before, before.body, 'CLOSED');
+    assertSupersededIssue(closeReceipt, before);
 
     const finalIssue = port.inspect(before.number);
-    assertFinalIssue(finalIssue, before, before.body, 'CLOSED');
+    assertSupersededIssue(finalIssue, before);
     assertOneMarker(finalIssue, markerBody, marker.id);
     return log(`tracker-issue-superseded:${before.number}:${replacement.number}`, port);
 }
@@ -210,6 +214,7 @@ function recoverIssueMutation(
     before: TrackerIssue,
     expectedBody: string,
     expectedState: TrackerIssue['state'],
+    expectedStateReason: TrackerIssue['stateReason'],
     mutate: () => TrackerIssue,
     port: ReconcileTrackerIssuePort
 ): TrackerIssue {
@@ -217,7 +222,7 @@ function recoverIssueMutation(
         return mutate();
     } catch (error) {
         const recovered = port.inspect(before.number);
-        if (!sameIssue(recovered, before, expectedBody, expectedState)) {
+        if (!sameIssue(recovered, before, expectedBody, expectedState, expectedStateReason)) {
             throw error;
         }
         return recovered;
@@ -265,13 +270,15 @@ function sameIssue(
     value: TrackerIssue,
     before: TrackerIssue,
     expectedBody: string,
-    expectedState: TrackerIssue['state']
+    expectedState: TrackerIssue['state'],
+    expectedStateReason: TrackerIssue['stateReason'] = before.stateReason
 ): boolean {
     return (
         value.id === before.id &&
         value.number === before.number &&
         value.repository === before.repository &&
         value.state === expectedState &&
+        value.stateReason === expectedStateReason &&
         value.body === expectedBody
     );
 }
@@ -284,6 +291,12 @@ function assertFinalIssue(
 ): void {
     if (!sameIssue(value, before, expectedBody, expectedState)) {
         fail(`issue #${before.number} changed during reconciliation`);
+    }
+}
+
+function assertSupersededIssue(value: TrackerIssue, before: TrackerIssue): void {
+    if (!sameIssue(value, before, before.body, 'CLOSED', 'NOT_PLANNED')) {
+        fail(`issue #${before.number} changed during supersession`);
     }
 }
 
