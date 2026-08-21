@@ -1,0 +1,111 @@
+src/modules/BrowserAi/stores/__tests__/renderQueueStore.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 62,75,121,133,142
+  s_27578aec2aab3b::t_461d30c1af43b3 112
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_461d30c1af43b3 295
+  s_27578aec2aab3b::t_72607f5b46f93c 241,312,327,351,362,368,377,386,414,435,455,479,494,562,576,597,619,630,649,687,704
+  s_27578aec2aab3b::t_6778cd881778c7 252,276,546
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 248,276
+src/modules/BrowserAi/services/__tests__/audioResampler.spec.ts
+  s_27578aec2aab3b::t_461d30c1af43b3 103
+  s_27578aec2aab3b::t_72607f5b46f93c 95
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 59,119,153,206
+  s_27578aec2aab3b::t_6778cd881778c7 66
+scripts/describePullRequest.ts
+  s_27578aec2aab3b::t_aba7a7c9f97550 1-28,30-31,35-169,188-196,198-286,288-344
+  s_27578aec2aab3b::t_fa08024d2f5209 32,34,170-172,174-177,179-187,197
+  s_27578aec2aab3b::t_5b9f5c0089bf64 33,173,178
+  s_27578aec2aab3b::t_f944d69f40ed08 29,287
+scripts/__tests__/runElectronE2E.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 37,180
+  s_27578aec2aab3b::t_e4e180189d0259 12,30-32,82,87-89,92-103
+  s_27578aec2aab3b::t_461d30c1af43b3 57,109,140
+electron/__tests__/webviewSecurity.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 126
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_27578aec2aab3b::t_461d30c1af43b3 98
+  s_27578aec2aab3b::t_72607f5b46f93c 78,88,137,156
+  s_27578aec2aab3b::t_6778cd881778c7 118
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 154
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_27578aec2aab3b::t_9e5aa91e4238b3 17,27
+  s_27578aec2aab3b::t_fa08024d2f5209 62
+public/legal/TensorFlow.js-NOTICE.txt
+  s_27578aec2aab3b::t_7350d2a81a33f0 1,3-4,6-15,17-19,21-41
+scripts/__tests__/describePullRequest.spec.ts
+  s_27578aec2aab3b::t_9e5aa91e4238b3 1-8,10-26,35-42,44-64,66-88,90-111,113-115,125,131,139-142
+  s_27578aec2aab3b::t_d4acd8c5447011 43
+  s_27578aec2aab3b::t_f944d69f40ed08 9,27-30,32-34,89,112,132
+  s_27578aec2aab3b::t_fa08024d2f5209 31,65,116-124,126,133,137-138
+  s_27578aec2aab3b::t_5b9f5c0089bf64 127-130,134-136
+scripts/__tests__/electronE2EIsolation.spec.ts
+  s_27578aec2aab3b::t_6778cd881778c7 66
+  s_27578aec2aab3b::t_72607f5b46f93c 13,34
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_72607f5b46f93c 420,458,484,510,531,592,617,648,813,966
+  s_27578aec2aab3b::t_461d30c1af43b3 566,720,739,869,885
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 129,162,172,184,192,222,278,320
+  s_27578aec2aab3b::t_461d30c1af43b3 101,247
+package.json
+  s_27578aec2aab3b::t_aba7a7c9f97550 15,44,65-66
+scripts/checkDdspTfjsWorkerBundle.ts
+  s_27578aec2aab3b::t_aba7a7c9f97550 1-126
+public/legal/TensorFlow.js-Layers-LICENSE.txt
+  s_27578aec2aab3b::t_fddc0e54c63d81 1-249
+tests/e2e/ddspProductionCspElectron.spec.ts
+  s_27578aec2aab3b::t_e4e180189d0259 39-46
+src/modules/BrowserAi/repositories/__tests__/ddspModelStorage.spec.ts
+  s_27578aec2aab3b::t_461d30c1af43b3 216,341
+  s_27578aec2aab3b::t_72607f5b46f93c 304,327
+  s_27578aec2aab3b::t_6778cd881778c7 263
+public/legal/THIRD-PARTY-NOTICES.md
+  s_27578aec2aab3b::t_7350d2a81a33f0 40-47
+scripts/__tests__/checkDdspTfjsWorkerBundle.spec.ts
+  s_27578aec2aab3b::t_9e5aa91e4238b3 1-50
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 117
+src/modules/BrowserAi/useCases/__tests__/removeDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 98
+  s_27578aec2aab3b::t_461d30c1af43b3 38,73
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_44e6b4e02c4ad8 9,71-72,82-83,94,96,167,170-171,180,202-209,211-212,222,229,315-321,841
+  s_27578aec2aab3b::t_f944d69f40ed08 322
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 380,406,449,606,698,712
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_6bfe48bd198d79 1
+  s_27578aec2aab3b::t_72607f5b46f93c 69,106
+  s_27578aec2aab3b::t_e4e180189d0259 15,17,83-85,131,139-140,150-151,163-164,168-183
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_7818e6cda4b810 337-338,349,351,418,421-422,432-440,457-460,468-475,477-478,488-489,496
+  s_27578aec2aab3b::t_6f84a2a9fdcb94 965,1335-1349
+src/modules/BrowserAi/repositories/__tests__/withDdspInstrumentLock.spec.ts
+  s_27578aec2aab3b::t_461d30c1af43b3 84
+public/legal/seedrandom-MIT.txt
+  s_27578aec2aab3b::t_23b3c761e08541 1-57
+src/modules/BrowserAi/useCases/__tests__/cancelRender.spec.ts
+  s_27578aec2aab3b::t_72607f5b46f93c 144
+  s_27578aec2aab3b::t_461d30c1af43b3 169
+scripts/runElectronE2E.ts
+  s_27578aec2aab3b::t_7350d2a81a33f0 47,51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9cf55e0db8c40d2298cd0fb450cbe8b88ea17707",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
