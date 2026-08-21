@@ -2833,4 +2833,106 @@ mod tests {
              {POOL} ended with {active} voices active"
         );
     }
+
+    #[test]
+    fn all_notes_off_clears_release_tracker_and_pedal_deferred() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.set_param("legato_enabled", 0.0);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let full_vel = VelRange { lo: 0, hi: 127 };
+        engine.add_zone(wide_zone(0, sample_id, full_vel, false));
+        engine.add_zone(wide_zone(1, sample_id, full_vel, true));
+        engine.build_zone_map(1, 1).expect("zone map should build");
+
+        // ── 1. Release tracker is cleared on all_notes_off ────────────────
+        engine.note_on(60, 100);
+        render(&mut engine, 400);
+        assert!(
+            engine.active_voice_count() > 0,
+            "voice should be sounding before all_notes_off"
+        );
+
+        // Transport stop.
+        engine.all_notes_off();
+
+        // Render remaining release decay so voice pool returns to idle.
+        render(&mut engine, 200);
+        assert_eq!(
+            engine.active_voice_count(),
+            0,
+            "all sounding voices should have decayed to silence"
+        );
+
+        // A trailing note_off arriving after all_notes_off for the pre-reset note
+        // must NOT fire a release trigger. If release_tracker.clear_all() was omitted,
+        // note_start_times[60] would still be non-zero and trigger a release voice.
+        engine.note_off(60);
+        assert_eq!(
+            engine.active_voice_count(),
+            0,
+            "all_notes_off must clear release_tracker so subsequent note_off cannot \
+             fire release triggers from pre-reset note timestamps"
+        );
+
+        // ── 2. Pedal deferred queue is cleared on all_notes_off ───────────
+        // Hold sustain pedal down, trigger and release notes so they are deferred.
+        engine.handle_cc(64, 127);
+        engine.note_on(60, 100);
+        engine.note_off(60); // deferred
+        engine.note_on(62, 100);
+        engine.note_off(62); // deferred
+        render(&mut engine, 1);
+
+        // Transport stop while pedal is held.
+        engine.all_notes_off();
+        render(&mut engine, 200);
+        assert_eq!(engine.active_voice_count(), 0);
+
+        // Start a fresh note 60 while pedal is still down.
+        engine.note_on(60, 100);
+        render(&mut engine, 1);
+
+        let is_releasing = |engine: &LevainEngine, note: u8| {
+            engine
+                .voice_pool
+                .voices
+                .iter()
+                .any(|v| v.active && v.note == note && v.amp_env.is_releasing())
+        };
+        assert!(
+            !is_releasing(&engine, 60),
+            "newly triggered note 60 must be active and not releasing"
+        );
+
+        // Now release the sustain pedal.
+        engine.handle_cc(64, 0);
+
+        // If pedal_deferred.clear() was omitted from all_notes_off, the stale
+        // deferred release for note 60 would now execute and prematurely release note 60.
+        assert!(
+            !is_releasing(&engine, 60),
+            "lifting pedal after all_notes_off must not fire stale deferred note-offs \
+             and release newly held notes"
+        );
+
+        // If pedal_deferred.clear() was omitted, note 62 would also be queued into
+        // pending_staggered_releases.
+        assert_eq!(
+            engine.pending_staggered_count,
+            0,
+            "all_notes_off must clear pedal_deferred so no staggered releases are queued on pedal lift"
+        );
+
+        // Render past any stagger window and verify note 60 is still held, not released.
+        render(&mut engine, 30);
+        assert!(
+            !is_releasing(&engine, 60),
+            "new note 60 must remain held and sounding across blocks"
+        );
+    }
 }

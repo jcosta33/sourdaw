@@ -7,6 +7,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerCard } from '#/components/daw/DawPickerCard';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -110,7 +111,7 @@ const CompactSelect = <TValue extends string>({
     onChange: (v: TValue | undefined) => void;
     allLabel?: string;
 }): ReactElement => (
-    <div className="flex flex-col gap-0.5">
+    <Stack gap={0.5}>
         <DawEyebrowLabel>{label}</DawEyebrowLabel>
         <DawCompactSelect
             value={value ?? ''}
@@ -125,7 +126,7 @@ const CompactSelect = <TValue extends string>({
                 </option>
             ))}
         </DawCompactSelect>
-    </div>
+    </Stack>
 );
 
 // ── Slider control ──
@@ -143,11 +144,11 @@ const ParamSlider = ({
     min?: number;
     max?: number;
 }): ReactElement => (
-    <div className="flex flex-col gap-0.5">
-        <div className="flex items-center justify-between">
+    <Stack gap={0.5}>
+        <Row justify="between">
             <DawEyebrowLabel>{label}</DawEyebrowLabel>
             <span className="text-[9px] text-muted-foreground/50 tabular-nums">{value}</span>
-        </div>
+        </Row>
         <Slider
             value={[value]}
             min={min}
@@ -162,7 +163,7 @@ const ParamSlider = ({
                 }
             }}
         />
-    </div>
+    </Stack>
 );
 
 // ── Pattern Card ──
@@ -219,7 +220,7 @@ const TemplateCard = ({
                 </Button>
             }
             meta={
-                <div className="flex items-center gap-1 flex-wrap">
+                <Row wrap gap={1}>
                     <DawMicroBadge
                         rounded="full"
                         className={cn(categoryBgColors[template.category], categoryColors[template.category])}
@@ -227,7 +228,7 @@ const TemplateCard = ({
                         {template.category}
                     </DawMicroBadge>
                     <span className="text-[9px] text-muted-foreground/50">{template.lengthBeats}b</span>
-                </div>
+                </Row>
             }
             description={template.description}
         />
@@ -317,9 +318,9 @@ export const PatternBrowser = (): ReactElement => {
     const genreOptions = ALL_GENRES;
 
     return (
-        <div className="space-y-2">
+        <Stack gap={2}>
             {/* Search + controls toggle */}
-            <div className="flex gap-1">
+            <Row align="stretch" gap={1}>
                 <div className="relative flex-1">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
                     <DawCompactInput
@@ -342,10 +343,10 @@ export const PatternBrowser = (): ReactElement => {
                 >
                     <SlidersHorizontal className="size-3.5" />
                 </Button>
-            </div>
+            </Row>
             {/* Generation controls */}
             {showControls ? (
-                <div className="bg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2">
+                <Stack gap={2} className="bg-surface-base/60 border border-border/40 rounded-lg p-2">
                     <div className="grid grid-cols-3 gap-2">
                         <CompactSelect
                             label="Key"
@@ -372,10 +373,10 @@ export const PatternBrowser = (): ReactElement => {
                         <ParamSlider label="Density" value={density} onChange={setDensity} />
                         <ParamSlider label="Complexity" value={complexity} onChange={setComplexity} />
                     </div>
-                </div>
+                </Stack>
             ) : null}
             {/* Category filter */}
-            <div className="flex gap-1 flex-wrap">
+            <Row align="stretch" wrap gap={1}>
                 <button
                     type="button"
                     className={cn(
@@ -406,13 +407,13 @@ export const PatternBrowser = (): ReactElement => {
                 <span className="text-[9px] text-muted-foreground/40 self-center ml-auto">
                     {filteredTemplates.length}/{PATTERN_TEMPLATES.length}
                 </span>
-            </div>
+            </Row>
             {/* Template grid */}
             {filteredTemplates.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground opacity-60">
+                <Stack align="center" justify="center" className="py-8 text-muted-foreground opacity-60">
                     <Music className="size-6 mb-2 opacity-50" />
                     <span className="text-[11px]">No patterns match your filters</span>
-                </div>
+                </Stack>
             ) : (
                 <div className="grid grid-cols-2 gap-2">
                     {filteredTemplates.map((template) => (
@@ -425,6 +426,6 @@ export const PatternBrowser = (): ReactElement => {
                     ))}
                 </div>
             )}
-        </div>
+        </Stack>
     );
 };

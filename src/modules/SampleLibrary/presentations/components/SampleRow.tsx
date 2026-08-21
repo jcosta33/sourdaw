@@ -5,6 +5,7 @@ import { type ReactElement } from 'react';
 
 import { File, Star, SearchCode, AlertTriangle, Plus } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 import { type SampleRecord, isBrowserDecodeRisky } from '../../models/LibraryTypes';
@@ -73,12 +74,13 @@ export const SampleRow = ({
     tabIndex = -1,
     onKeyDown,
 }: SampleRowProps): ReactElement => (
-    <div
+    <Row
+        gap={1}
+        className="rounded px-1.5 py-0.5 hover:bg-white/[0.06] focus:bg-white/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan/60 cursor-grab active:cursor-grabbing group"
         role="option"
         aria-selected={tabIndex === 0}
         aria-label={`Sample ${sample.displayName}${sample.favorite ? ', favorite' : ''}`}
         tabIndex={tabIndex}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/[0.06] focus:bg-white/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan/60 cursor-grab active:cursor-grabbing group"
         draggable
         onDragStart={onDragStart}
         onClick={onClick}
@@ -210,5 +212,5 @@ export const SampleRow = ({
         >
             <SearchCode className="size-3" />
         </button>
-    </div>
+    </Row>
 );
