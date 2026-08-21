@@ -1,0 +1,21 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_b2536e296bbca2 869,4019,5936,8633-8641,8951,9230,9806,10256,11264,12821,15809,18959,21263,22001,22307,24386,24584,25259
+src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx
+  s_2175fca1f07426::t_94b57a8ea17756 7,66,84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4d6e7b49950b418ba6aef28f8262a3b81a2c6b8b",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
