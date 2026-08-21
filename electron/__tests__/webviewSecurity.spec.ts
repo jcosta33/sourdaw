@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { net, protocol } from 'electron';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { MODEL_RELEASE_ADMISSION } from '../../src/infra/release/modelReleaseAdmission.js';
 import { APP_ORIGIN, handleAppProtocol, ISOLATION_HEADERS, PRODUCTION_CSP, type ContentRoots } from '../protocol.js';
 import { withTrustedSender, type SenderFrameCarrier } from '../router.js';
 import {
@@ -41,6 +42,7 @@ vi.mock('electron', () => ({
 }));
 
 const DEV_SERVER = 'http://localhost:5173';
+const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
 const origins = [APP_ORIGIN, DEV_SERVER];
 
 const parseCsp = (policy: string): Map<string, string[]> => {
@@ -101,7 +103,7 @@ describe('the production Content-Security-Policy', () => {
             'https://*.huggingface.co',
             'https://*.hf.co',
             'https://raw.githubusercontent.com',
-            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/',
+            MAGENTA_DDSP_CSP_SOURCE,
         ]);
         for (const broadSource of [
             'https://storage.googleapis.com',
@@ -121,6 +123,10 @@ describe('the production Content-Security-Policy', () => {
         // in front of a musician. This scan fails the same mistake at test
         // time instead.
         expect(readProductionTypescript('src')).not.toMatch(/new\s+Worker\s*\(\s*URL\.createObjectURL/gu);
+    });
+
+    it('keeps the exact Magenta DDSP egress source aligned with release admission', () => {
+        expect(directives.get('connect-src')?.includes(MAGENTA_DDSP_CSP_SOURCE)).toBe(MODEL_RELEASE_ADMISSION.ddsp);
     });
 
     it('closes the directives an injected document would reach for', () => {

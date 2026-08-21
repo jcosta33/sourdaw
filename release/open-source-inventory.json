@@ -428,7 +428,7 @@
                 "12 exact artifacts"
             ],
             "digests": [
-                "sha256:902f1a41373c9e6884eb4f39eb369d3e897116b2204bbe2fab869c06b843a9d1:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
+                "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md",
@@ -455,7 +455,7 @@
             "obligations": [
                 "Keep the checkpoint license explicitly unverified; runtime licenses and notices do not cover the weights.",
                 "Keep all checkpoint bytes out of Sourdaw distributions and fetch only the admitted identities directly from Magenta until issue #2595 is resolved.",
-                "Set MODEL_RELEASE_ADMISSION.ddsp to false if exact identity, verification, or delivery-boundary evidence stops holding."
+                "Rollback requires all of: set MODEL_RELEASE_ADMISSION.ddsp to false; remove the exact Magenta DDSP source from electron/protocol.ts connect-src; and remove its release inventory egress assignment from release/open-source-inventory.json."
             ]
         },
         {

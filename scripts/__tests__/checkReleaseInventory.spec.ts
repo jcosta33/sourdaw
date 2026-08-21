@@ -338,6 +338,8 @@ describe('release inventory', () => {
             expect.arrayContaining([
                 expect.stringContaining('checkpoint license explicitly unverified'),
                 expect.stringContaining('MODEL_RELEASE_ADMISSION.ddsp to false'),
+                expect.stringContaining('exact Magenta DDSP source from electron/protocol.ts connect-src'),
+                expect.stringContaining('remove its release inventory egress assignment'),
             ])
         );
     });

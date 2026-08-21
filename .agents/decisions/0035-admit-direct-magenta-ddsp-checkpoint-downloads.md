@@ -45,8 +45,10 @@ runtime. Neither source grants a license for the checkpoint weights.
   their named code and libraries only; they do not cover or grant rights to the checkpoint weights.
 - Sourdaw does not bundle or redistribute the checkpoint bytes. Self-hosting or mirroring remains
   deferred to issue #2595.
-- If any part of this admission contract stops holding, reversal is setting
-  `MODEL_RELEASE_ADMISSION.ddsp` to `false`.
+- If any part of this admission contract stops holding, reversal requires all of: set
+  `MODEL_RELEASE_ADMISSION.ddsp` to `false`; remove
+  `https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/` from `electron/protocol.ts`
+  `connect-src`; and remove its egress assignment from `release/open-source-inventory.json`.
 
 ## Consequences
 

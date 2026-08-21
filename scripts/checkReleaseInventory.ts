@@ -661,7 +661,7 @@ export function ddspModelsReleaseInventoryContract(root: string): Partial<Releas
         obligations: [
             'Keep the checkpoint license explicitly unverified; runtime licenses and notices do not cover the weights.',
             'Keep all checkpoint bytes out of Sourdaw distributions and fetch only the admitted identities directly from Magenta until issue #2595 is resolved.',
-            'Set MODEL_RELEASE_ADMISSION.ddsp to false if exact identity, verification, or delivery-boundary evidence stops holding.',
+            'Rollback requires all of: set MODEL_RELEASE_ADMISSION.ddsp to false; remove the exact Magenta DDSP source from electron/protocol.ts connect-src; and remove its release inventory egress assignment from release/open-source-inventory.json.',
         ],
     };
 }
