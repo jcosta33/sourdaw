@@ -1,0 +1,21 @@
+crates/sourdaw-native/src/commands/speech.rs
+  s_a40848e8f8cca9::t_d76966182c40ea 650-663,695,886-892,1007-1011
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_1f995a4f7ff69c 33-37,70,690
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "880f027ecd6e1ac2a6ee65e11640390411f1aa77",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
