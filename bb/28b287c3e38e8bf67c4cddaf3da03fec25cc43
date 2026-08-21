@@ -1,0 +1,42 @@
+src/modules/Project/useCases/createFreshProjectMetadata.ts
+  s_a40848e8f8cca9::t_bc7ec6481b8d9e 23
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_bc7ec6481b8d9e 19,45,66,257-262,269,286
+  s_a40848e8f8cca9::t_b7a65b676b37dc 101
+  s_a40848e8f8cca9::t_2b8c9b01c411a6 20,91-96
+src/modules/Project/useCases/projectPersistence/migrateActiveProjectIdentity.ts
+  s_a40848e8f8cca9::t_7b8c38937f6985 42
+  s_a40848e8f8cca9::t_bc7ec6481b8d9e 7-40,44-55,64-66,69-76
+  s_a40848e8f8cca9::t_da5eff6b2ab632 41,43
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_cba556b0753d4c 115,131,149,171,181,223,269,286
+  s_a40848e8f8cca9::t_7c7597b40368ad 196
+src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts
+  s_a40848e8f8cca9::t_ee33ae254d1a12 297-303
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_a40848e8f8cca9::t_bc7ec6481b8d9e 139
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_a40848e8f8cca9::t_ee33ae254d1a12 144-165
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.spec.ts
+  s_a40848e8f8cca9::t_ee33ae254d1a12 34,81-156
+  s_a40848e8f8cca9::t_9a545954e24c67 51-52
+  s_a40848e8f8cca9::t_d002c8a71ca10e 157
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_a40848e8f8cca9::t_bc7ec6481b8d9e 320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "bb28b287c3e38e8bf67c4cddaf3da03fec25cc43",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
