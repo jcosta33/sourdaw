@@ -1,0 +1,21 @@
+tests/e2e/fermenterFilterKnobsTestId.spec.ts
+  s_24b1bdbc3c31ad::t_6ca3b1905ab26f 3,5,10,16-19,21-25
+  s_24b1bdbc3c31ad::t_831b489c54d61e 11
+  s_24b1bdbc3c31ad::t_0a3c1274caa4d5 14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e46155308774ad940d9a21578128b0e8b5915144",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
