@@ -3789,15 +3789,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-23d08b61c0b82f7e",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 332,
-    "fingerprint": "section\tflex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-23f23eeccde7981c",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
     "line": 148,
@@ -4275,6 +4266,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-287137323c961927",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 180,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-28b2841d2d31a9fe",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
     "line": 155,
@@ -4601,7 +4601,7 @@
   {
     "id": "ui-2bb1d6357ee3ccd9",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 357,
+    "line": 361,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4950,6 +4950,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-2f3594d49c71e192",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 191,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-2f612f0d5c4bc713",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 269,
@@ -5137,6 +5146,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-3173e35ed5c379fb",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 336,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3178a0a7eeae8526",
@@ -5510,7 +5528,7 @@
   {
     "id": "ui-360a31a24f98297f",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 190,
+    "line": 194,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -5537,7 +5555,7 @@
   {
     "id": "ui-3646b872cbef1b41",
     "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 188,
+    "line": 189,
     "fingerprint": "div\tgrid grid-cols-5 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -6183,6 +6201,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3c9d1371953bffcd",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 269,
+    "fingerprint": "Button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3ca469058b76bfd6",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 153,
@@ -6320,7 +6347,7 @@
   {
     "id": "ui-3e119133da1af14e",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 316,
+    "line": 320,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -6338,7 +6365,7 @@
   {
     "id": "ui-3e5c5180e4c6bf38",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 196,
+    "line": 200,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -6423,15 +6450,6 @@
     "fingerprint": "div\tflex h-full relative",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-3f3092be858ec929",
-    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 106,
-    "fingerprint": "div\tflex flex-col gap-4",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -6581,7 +6599,7 @@
   {
     "id": "ui-40ab129de66e86dc",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 290,
+    "line": 294,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6851,7 +6869,7 @@
   {
     "id": "ui-42b7531bf086970b",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 52,
+    "line": 53,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
@@ -6865,15 +6883,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-42f5829b9ad36982",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 253,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-42fdd12d72902601",
@@ -7470,15 +7479,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-483a064943d4b267",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 187,
-    "fingerprint": "div\tflex flex-wrap gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4843a98cfdd2b275",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1108,
@@ -7769,7 +7769,7 @@
   {
     "id": "ui-4bdc0dd8eab85263",
     "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 125,
+    "line": 126,
     "fingerprint": "div\tgrid grid-cols-5 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -8381,7 +8381,7 @@
   {
     "id": "ui-526a85171772cbe0",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 320,
+    "line": 324,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -8444,7 +8444,7 @@
   {
     "id": "ui-5314900b4b17695b",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 241,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9020,7 +9020,7 @@
   {
     "id": "ui-58cc36eb162724ad",
     "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 110,
+    "line": 111,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -9615,6 +9615,15 @@
     "id": "ui-5e0c5ebc371dc5b0",
     "file": "src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx",
     "line": 26,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5e1a67acee0f6b9a",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 319,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -11349,6 +11358,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-70f9d2ee3191d31d",
+    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
+    "line": 109,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-710cf4d6de975504",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
     "line": 64,
@@ -11729,7 +11747,7 @@
   {
     "id": "ui-74b0e349c6e57f6c",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 202,
+    "line": 206,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -13142,7 +13160,7 @@
   {
     "id": "ui-81647ea337fed4c4",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 222,
+    "line": 226,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -13207,15 +13225,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx",
     "line": 783,
     "fingerprint": "div\tflex items-center gap-2 px-3 border-l border-border",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-8251068068df075c",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 261,
-    "fingerprint": "div\tflex gap-2",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -13781,7 +13790,7 @@
   {
     "id": "ui-8752983ddccde295",
     "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 250,
+    "line": 251,
     "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -14922,6 +14931,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-92e1ae799b8e5f40",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 189,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-930ee1ac9b159e04",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 586,
@@ -15190,15 +15208,6 @@
     "kind": "generic-control",
     "mapping": "Separator",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-96641ce54dc172b9",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 381,
-    "fingerprint": "aside\tflex min-h-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-966d5fae777bc038",
@@ -15910,15 +15919,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-9de0e0ab38943ccb",
-    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 108,
-    "fingerprint": "div\tflex items-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9dfe390889350c1b",
@@ -16641,6 +16641,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-a56ea821ace6340b",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 257,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a587a6f62f5043b0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
     "line": 322,
@@ -16841,7 +16850,7 @@
   {
     "id": "ui-a80367a44e5fe732",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 254,
+    "line": 256,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16935,6 +16944,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a9022cd44bac6a37",
+    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
+    "line": 67,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -18297,15 +18315,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b5bf4b0904fc2b0c",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 252,
-    "fingerprint": "div\tflex flex-col gap-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b5c70df7b9438757",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 101,
@@ -18504,15 +18513,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b89a97a4c32b66d8",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 315,
-    "fingerprint": "div\tflex items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b89ba5308e680757",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
     "line": 39,
@@ -18596,7 +18596,7 @@
   {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 250,
+    "line": 265,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -18965,7 +18965,7 @@
   {
     "id": "ui-bd4908078a3f1e83",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 183,
+    "line": 187,
     "fingerprint": "div\tgrid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -19422,18 +19422,18 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-c1d160c8ed5a6227",
-    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 66,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c1db66a417a9534b",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx",
     "line": 28,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-c1ed608dfdedca2d",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 385,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21044,7 +21044,7 @@
   {
     "id": "ui-d38c4b7faa7edf33",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 369,
+    "line": 373,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21098,7 +21098,7 @@
   {
     "id": "ui-d404ac480833f30a",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 212,
+    "line": 216,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -21138,15 +21138,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-d4a3e9b5bda19162",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 185,
-    "fingerprint": "aside\tflex min-h-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -21309,6 +21300,15 @@
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-d69e0bd5bf43fcf5",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 265,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -21879,15 +21879,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-dcb598a07498c541",
-    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 179,
-    "fingerprint": "div\tpointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[26px] border-2 border-dashed border-[var(--color-accent-lavender)] bg-[var(--color-accent-lavender)]/5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-dccb0a6bac841834",
     "file": "src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx",
     "line": 89,
@@ -22065,6 +22056,15 @@
     "fingerprint": "Separator\t",
     "kind": "generic-control",
     "mapping": "Separator",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-de8930e523820d11",
+    "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
+    "line": 256,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -22979,7 +22979,7 @@
   {
     "id": "ui-e9a3bd769153256b",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
-    "line": 262,
+    "line": 266,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23055,6 +23055,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ea400ec934898431",
+    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
+    "line": 107,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
