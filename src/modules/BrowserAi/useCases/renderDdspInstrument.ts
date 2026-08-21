@@ -79,20 +79,24 @@ function cacheInput(f0Hz: Float32Array, loudnessDb: Float32Array): ArrayBuffer {
 }
 
 export const renderDdspInstrument = inject({
+    applyFades,
     checkDdspInstrumentReady,
     computeRenderCacheKey,
     inferenceWorkerBridge,
     logger,
     readRenderCache,
+    resampleTo44100,
     withDdspInstrumentLock,
     writeRenderCache,
 })(
     ({
+        applyFades,
         checkDdspInstrumentReady,
         computeRenderCacheKey,
         inferenceWorkerBridge,
         logger,
         readRenderCache,
+        resampleTo44100,
         withDdspInstrumentLock,
         writeRenderCache,
     }) =>
@@ -105,11 +109,12 @@ export const renderDdspInstrument = inject({
         }: RenderDdspInstrumentInput): RenderDdspInstrumentOutput {
             const targetSamples = targetSampleCount(durationSec, OUTPUT_SAMPLE_RATE);
             const instrument = resolveDdspInstrument(instrumentId);
+            const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);
             const requestId = crypto.randomUUID();
             enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
 
             try {
-                return await withDdspInstrumentLock(instrument.id, 'shared', async () => {
+                const renderWithLock = async (): RenderDdspInstrumentOutput => {
                     assertRequestOwner(phraseId, requestId, signal);
                     const generation = {
                         id: instrument.id,
@@ -133,6 +138,7 @@ export const renderDdspInstrument = inject({
                     updateRenderStatus(phraseId, requestId, 'rendering-browser');
                     const session = await inferenceWorkerBridge.loadDdspSession(
                         {
+                            requestId,
                             instrumentId: instrument.id,
                             artifactVersion: instrument.artifactVersion,
                             artifacts: instrument.artifacts,
@@ -210,7 +216,6 @@ export const renderDdspInstrument = inject({
                         audioChunks.push(result.audio);
                     }
 
-                    const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);
                     const joined = joinDdspChunkAudio(
                         audioChunks,
                         Math.round(CROSSFADE_SECONDS * instrument.nativeSampleRate)
@@ -241,7 +246,8 @@ export const renderDdspInstrument = inject({
                             tier: 'browser-preview',
                         },
                     };
-                });
+                };
+                return await withDdspInstrumentLock(instrument.id, 'shared', renderWithLock, signal);
             } catch (error) {
                 if (signal?.aborted || isAbortError(error)) {
                     cancelQueuedRender(phraseId, requestId, true);

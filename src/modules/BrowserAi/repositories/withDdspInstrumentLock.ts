@@ -8,11 +8,13 @@ export const withDdspInstrumentLock = inject({ locks: globalThis.navigator?.lock
         async function withDdspInstrumentLock<TResult>(
             instrumentId: string,
             mode: DdspInstrumentLockMode,
-            operation: () => Promise<TResult>
+            operation: () => Promise<TResult>,
+            signal?: AbortSignal
         ): Promise<TResult> {
             if (locks === undefined) {
                 throw new Error('DDSP storage requires the Web Locks API');
             }
-            return locks.request(`sourdaw:ddsp:${instrumentId}`, { mode }, operation);
+            const options: LockOptions = signal === undefined ? { mode } : { mode, signal };
+            return locks.request(`sourdaw:ddsp:${instrumentId}`, options, operation);
         }
 );

@@ -285,6 +285,7 @@ type LoadDdspSessionInput = {
     artifactVersion: string;
     artifacts: readonly DdspArtifact[];
     instrumentId: string;
+    requestId?: string;
 };
 
 const DDSP_ARTIFACT_PATHS = ['model.json', 'group1-shard1of1.bin', 'settings.json'] as const;
@@ -421,7 +422,7 @@ export const inferenceWorkerBridge = {
         try {
             const worker = await getTfjsWorker();
             throwIfAborted(signal);
-            const requestId = crypto.randomUUID();
+            const requestId = input.requestId ?? crypto.randomUUID();
             const request: WorkerRequest = {
                 type: 'create-ddsp-session',
                 requestId,

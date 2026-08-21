@@ -760,6 +760,20 @@ describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
 });
 
 describe('inferenceWorkerBridge — TF.js cancellation', () => {
+    it('uses the render request identity so cancellation can reject a pending DDSP session load', async () => {
+        const load = inferenceWorkerBridge
+            .loadDdspSession({ ...violinLoad, requestId: 'render-session-load' })
+            .catch((error: unknown) => error);
+        const worker = await waitForTfjsWorker();
+
+        expect(lastRequestId(worker)).toBe('render-session-load');
+        inferenceWorkerBridge.cancelTfjsRequest('render-session-load');
+
+        await expect(load).resolves.toMatchObject({ name: 'AbortError' });
+        expect(lastRequest(worker)).toEqual({ type: 'cancel-request', requestId: 'render-session-load' });
+        expect(worker.terminate).not.toHaveBeenCalled();
+    });
+
     it('keeps an initialized TF.js worker alive for an unknown request id', async () => {
         const load = inferenceWorkerBridge.loadDdspSession(violinLoad);
         const worker = await waitForTfjsWorker();

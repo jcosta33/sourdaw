@@ -1,35 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const loadDdspSession = vi.hoisted(() => vi.fn());
-const runDdspInference = vi.hoisted(() => vi.fn());
-const cancelTfjsRequest = vi.hoisted(() => vi.fn());
-const checkDdspInstrumentReady = vi.hoisted(() => vi.fn());
-const computeRenderCacheKey = vi.hoisted(() => vi.fn());
-const readRenderCache = vi.hoisted(() => vi.fn());
-const writeRenderCache = vi.hoisted(() => vi.fn());
-const withDdspInstrumentLock = vi.hoisted(() => vi.fn());
-const resampleTo44100 = vi.hoisted(() => vi.fn());
-const applyFades = vi.hoisted(() => vi.fn());
-
-vi.mock('../../repositories/inferenceWorkerBridge', () => ({
-    inferenceWorkerBridge: { cancelTfjsRequest, loadDdspSession, runDdspInference },
-}));
-vi.mock('../../repositories/checkDdspInstrumentReady', () => ({ checkDdspInstrumentReady }));
-vi.mock('../../repositories/computeRenderCacheKey', () => ({ computeRenderCacheKey }));
-vi.mock('../../repositories/readRenderCache', () => ({ readRenderCache }));
-vi.mock('../../repositories/writeRenderCache', () => ({ writeRenderCache }));
-vi.mock('../../repositories/withDdspInstrumentLock', () => ({ withDdspInstrumentLock }));
-vi.mock('../../services/audioResampler', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../../services/audioResampler')>()),
-    applyFades,
-    resampleTo44100,
-}));
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { resolveDdspInstrument } from '../../models/DdspInstrumentCatalog';
+import { inferenceWorkerBridge } from '../../repositories/inferenceWorkerBridge';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 import { renderDdspInstrument } from '../renderDdspInstrument';
+
+const loadDdspSession = vi.fn();
+const runDdspInference = vi.fn();
+const cancelTfjsRequest = vi.fn();
+const checkDdspInstrumentReady = vi.fn();
+const computeRenderCacheKey = vi.fn();
+const readRenderCache = vi.fn();
+const writeRenderCache = vi.fn();
+const withDdspInstrumentLock = vi.fn();
+const resampleTo44100 = vi.fn();
+const applyFades = vi.fn();
+const logger = { info: vi.fn(), warn: vi.fn() };
 
 const SETTINGS = {
     averageMaxLoudness: -48.6,
@@ -85,16 +75,35 @@ describe('renderDdspInstrument', () => {
         writeRenderCache.mockReset().mockResolvedValue(undefined);
         withDdspInstrumentLock
             .mockReset()
-            .mockImplementation(async (_id: string, _mode: string, operation: () => Promise<unknown>) => {
-                lockHeld = true;
-                try {
-                    return await operation();
-                } finally {
-                    lockHeld = false;
+            .mockImplementation(
+                async (_id: string, _mode: string, operation: () => Promise<unknown>, signal?: AbortSignal) => {
+                    if (signal?.aborted) {
+                        throw signal.reason;
+                    }
+                    lockHeld = true;
+                    try {
+                        return await operation();
+                    } finally {
+                        lockHeld = false;
+                    }
                 }
-            });
+            );
         resampleTo44100.mockReset().mockImplementation(({ audio }: { audio: Float32Array }) => Promise.resolve(audio));
         applyFades.mockReset();
+        logger.info.mockReset();
+        logger.warn.mockReset();
+        vi.spyOn(inferenceWorkerBridge, 'cancelTfjsRequest').mockImplementation(cancelTfjsRequest);
+        injectDependencies(renderDdspInstrument, {
+            applyFades,
+            checkDdspInstrumentReady,
+            computeRenderCacheKey,
+            inferenceWorkerBridge: { loadDdspSession, runDdspInference },
+            logger,
+            readRenderCache,
+            resampleTo44100,
+            withDdspInstrumentLock,
+            writeRenderCache,
+        });
     });
 
     afterEach(() => {
@@ -109,6 +118,14 @@ describe('renderDdspInstrument', () => {
             expect(loadDdspSession).not.toHaveBeenCalled();
         }
     );
+
+    it('rejects a duration that cannot produce one native sample before any side effect', async () => {
+        await expect(render({ durationSec: 1 / 44_100 })).rejects.toThrow(/duration/i);
+
+        expect(withDdspInstrumentLock).not.toHaveBeenCalled();
+        expect(loadDdspSession).not.toHaveBeenCalled();
+        expect(runDdspInference).not.toHaveBeenCalled();
+    });
 
     it('returns the exact non-frame-aligned sample count and distinguishes durations inside one feature frame', async () => {
         const first = await render({ durationSec: 0.101 });
@@ -130,7 +147,7 @@ describe('renderDdspInstrument', () => {
     it('holds the shared verified-generation lock from readiness through inference', async () => {
         await render();
 
-        expect(withDdspInstrumentLock).toHaveBeenCalledWith('ddsp-violin', 'shared', expect.any(Function));
+        expect(withDdspInstrumentLock).toHaveBeenCalledWith('ddsp-violin', 'shared', expect.any(Function), undefined);
         expect(checkDdspInstrumentReady).toHaveBeenCalledWith({
             id: 'ddsp-violin',
             version: resolveDdspInstrument('ddsp-violin').artifactVersion,
@@ -184,11 +201,35 @@ describe('renderDdspInstrument', () => {
         expect(inferenceProgressStore.value?.activeRenders).toEqual({});
     });
 
+    it('uses the render request identity to cancel a deferred DDSP session load', async () => {
+        let rejectLoad = (_error: unknown): void => undefined;
+        loadDdspSession.mockImplementation(
+            () =>
+                new Promise((_resolve, reject) => {
+                    rejectLoad = reject;
+                })
+        );
+        cancelTfjsRequest.mockImplementationOnce(() => rejectLoad(new DOMException('Render cancelled', 'AbortError')));
+
+        const pending = render();
+        await vi.waitFor(() => expect(loadDdspSession).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        const observedRequestId = loadDdspSession.mock.calls[0]?.[0].requestId;
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(observedRequestId).toBe(requestId);
+        expect(cancelTfjsRequest).toHaveBeenCalledWith(requestId);
+        expect(runDdspInference).not.toHaveBeenCalled();
+    });
+
     it('honors AbortSignal ownership and passes the same signal through session load and inference', async () => {
         const controller = new AbortController();
 
         await render({ signal: controller.signal });
 
+        expect(withDdspInstrumentLock.mock.calls[0]?.[3]).toBe(controller.signal);
         expect(loadDdspSession.mock.calls[0]?.[1]).toBe(controller.signal);
         expect(runDdspInference.mock.calls[0]?.[1]).toBe(controller.signal);
 
