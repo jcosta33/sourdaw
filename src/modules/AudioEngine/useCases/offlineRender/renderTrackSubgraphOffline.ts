@@ -139,8 +139,20 @@ export async function renderTrackSubgraphOffline({
         sampleRate,
     });
     const { midi, defaultTempo, changes, durationSeconds, ...projections } = renderContext;
-    const { projectMidiEvents, projectPpqEndpoints, selectMidiEventProbability, projectChordPitch } = projections;
-    if (!projectMidiEvents || !projectPpqEndpoints || !selectMidiEventProbability || !projectChordPitch) {
+    const {
+        projectMidiEvents,
+        projectPpqEndpoints,
+        selectMidiEventProbability,
+        projectChordPitch,
+        resolveTempoAtBeat,
+    } = projections;
+    if (
+        !projectMidiEvents ||
+        !projectPpqEndpoints ||
+        !selectMidiEventProbability ||
+        !projectChordPitch ||
+        !resolveTempoAtBeat
+    ) {
         throw new Error('Offline musical projection is not configured');
     }
 
@@ -292,6 +304,7 @@ export async function renderTrackSubgraphOffline({
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    resolveTempoAtBeat,
                     processYeastMidi: projections.processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,
