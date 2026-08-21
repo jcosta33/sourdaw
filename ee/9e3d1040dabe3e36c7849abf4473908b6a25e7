@@ -1,0 +1,57 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_2175fca1f07426::t_139e01f33dd70a 1602-1661
+crates/daw-dsp/src/levain/engine.rs
+  s_2175fca1f07426::t_64a42081350fc1 2836-2937
+crates/daw-dsp/tests/crumbs_voice_steal.rs
+  s_2175fca1f07426::t_624816ae34f74d 121-122,464-465,658-659,698-699
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2175fca1f07426::t_10872c88e8f200 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2175fca1f07426::t_bd70263c049c9b 1
+public/wasm/manifest.json
+  s_2175fca1f07426::t_851f13618e81ad 12,17-18,21
+src/modules/AiGeneration/presentations/views/PatternBrowser.tsx
+  s_2175fca1f07426::t_f48789a0d85c8f 10,114,129,147-148,151,166,223,231,321,323,346,349,376,379,410,413,416,429
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  s_2175fca1f07426::t_a6e789f2a1d29c 248-274
+src/modules/Arrangement/stores/__tests__/trackStore.spec.ts
+  s_2175fca1f07426::t_f8f2a7f52d46b0 7,323-347
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2175fca1f07426::t_9c8dbbc7cecd0f 1
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  s_2175fca1f07426::t_4eeef7becde064 10,181-182,189,273,281-282,339,380,418,432,463-464,474,481,495,499,546,558
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_2175fca1f07426::t_3e3bfaeeca0d16 7,39,43,68-69,72,83,86,102
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  s_2175fca1f07426::t_f7b3cd23f8c0e0 19-20,44,50,56-58,80,83,87,92,109,112,114
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_2175fca1f07426::t_c54e8a14f23da3 8,1402,1446
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_2175fca1f07426::t_1092b448837f2c 14,136-138,159
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_2175fca1f07426::t_ca03480b3b4f5a 8,149,175
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_2175fca1f07426::t_53d5566ad415f2 7,66,83,89,101,107,119,158,161,181,186,216,242-245,252-253
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_2175fca1f07426::t_b65b32eb9a5374 8,77-79,215
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_2175fca1f07426::t_5f97e33ca0116b 17,275,277,329,333,353,400,416,421,425,438,454,465,478,481,561,563
+tests/e2e/inspectorTestId.spec.ts
+  s_2175fca1f07426::t_7e3e6467084b91 1,5-13,15-17,20,22,25-26,29-41,44-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ee9e3d1040dabe3e36c7849abf4473908b6a25e7",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
