@@ -1,0 +1,30 @@
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_329f7a1568d943 108,640
+electron/__tests__/webviewSecurity.spec.ts
+  s_27578aec2aab3b::t_d560daa05930d4 92-95,104
+  s_27578aec2aab3b::t_6d30f180a58363 106-115
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_b739d970bc5f86 322,340,347
+electron/protocol.ts
+  s_27578aec2aab3b::t_934036529fa0ad 69-71,74-78,82
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_329f7a1568d943 401,1297-1300
+  s_27578aec2aab3b::t_3baaafd70029c4 430
+  s_27578aec2aab3b::t_c3072324dd5531 1301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f646f67f57a19cc9abce4d67766615cb03cf2b50",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
