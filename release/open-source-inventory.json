@@ -774,17 +774,37 @@
             "retention": "keep-with-obligations",
             "owner": "OS-09",
             "releaseModes": ["source"],
-            "paths": [".agents/specs/**", "docs/**", "README.md"],
+            "paths": ["CONTRIBUTING.md", "docs/**", "README.md", "SECURITY.md"],
             "sources": ["git:github.com/jcosta33/sourdaw"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": [
-                "git:4b6012ef4560c78df09405515a0ad9365a41a553:.agents/specs",
-                "git:4b6012ef4560c78df09405515a0ad9365a41a553:docs"
-            ],
+            "revisions": ["current release text"],
+            "digests": ["not-applicable:living-project-documentation"],
             "licenses": ["pending:OS-10-project-grant"],
-            "productSurfaces": ["current specifications", "architecture documentation", "public README"],
-            "evidence": ["Current documents require a final shipping-truth audit after component decisions settle."],
-            "obligations": ["State shipping truth and keep useful future intent only behind explicit admission gates."]
+            "productSurfaces": [
+                "architecture documentation",
+                "engineering guidance",
+                "manual",
+                "public project guidance"
+            ],
+            "evidence": [
+                "Current documentation names the Electron shell and exact admitted or withheld model surfaces.",
+                "Rejected model artifacts do not appear in current documentation."
+            ],
+            "obligations": ["State shipping truth and mark every unavailable capability explicitly."]
+        },
+        {
+            "id": "planning-archive",
+            "kind": "project-history",
+            "retention": "keep-with-obligations",
+            "owner": "OS-09",
+            "releaseModes": ["source"],
+            "paths": [".agents/specs/**"],
+            "sources": ["git:github.com/jcosta33/sourdaw"],
+            "revisions": ["historical document state"],
+            "digests": ["not-applicable:historical-planning-records"],
+            "licenses": ["pending:OS-10-project-grant"],
+            "productSurfaces": ["legacy feature plans", "implementation records"],
+            "evidence": ["The archive index denies current-shipping authority and routes live planning to GitHub."],
+            "obligations": ["Preserve useful intent without presenting archived plans as current behavior."]
         }
     ],
     "snapshots": [

@@ -1,3 +1,5 @@
+import { clampFaderGain } from '#/utils/audioLevelLaw';
+
 import { type ProjectClip, type ProjectData, type ProjectMidiNote, type ProjectTrack } from './projectDataContract';
 
 export type SerializeProjectXmlInput = {
@@ -80,8 +82,16 @@ function renderDevicesXml(devices: ProjectTrack['devices'], indent: string): str
     return lines.join('\n');
 }
 
+/**
+ * `<Volume>` carries the track's linear amplitude, and the fader's range is
+ * `[0, FADER_MAX_GAIN]` — so the export clamp is the fader law, not unity.
+ * Pinning it at 1 flattened every track carrying make-up gain down to unity on
+ * the way out, silently and with no warning, so a round trip through
+ * interchange lost up to 6 dB per track. Nothing in the interchange schema
+ * requires a volume of at most 1; `mapToProjectData` reads the same range back.
+ */
 function renderChannelXml(track: ProjectTrack, indent: string): string {
-    const volume = Math.max(0, Math.min(1, track.gain));
+    const volume = clampFaderGain(track.gain);
     const pan = Math.max(-1, Math.min(1, track.pan));
     const normalizedPan = (pan + 1) / 2;
     const parts: string[] = [];

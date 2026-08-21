@@ -5,6 +5,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 const MODE_NAMES = ['One-Shot', 'Loop', 'Ping-Pong'] as const;
 
@@ -16,13 +17,13 @@ type CrumbsSectionProps = {
 };
 
 export const CrumbsSection = ({ mode, start, end, onParam }: CrumbsSectionProps): ReactElement => (
-    <div className="space-y-2">
+    <Stack gap={2}>
         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Sampler</div>
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Sample playback with loop modes. Pitch-tracks to MIDI notes.
         </div>
         {/* Mode selector */}
-        <div className="flex gap-0.5 px-1">
+        <Row align="stretch" gap={0.5} className="px-1">
             {MODE_NAMES.map((name, i) => (
                 <DawPluginChip
                     key={name}
@@ -34,10 +35,10 @@ export const CrumbsSection = ({ mode, start, end, onParam }: CrumbsSectionProps)
                     {name}
                 </DawPluginChip>
             ))}
-        </div>
+        </Row>
         {/* Start / End */}
-        <div className="flex items-end gap-3 px-1">
-            <div className="flex flex-col items-center gap-0.5">
+        <Row align="end" gap={3} className="px-1">
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={start}
                     onChange={(v) => onParam('samplerStart', v)}
@@ -50,8 +51,8 @@ export const CrumbsSection = ({ mode, start, end, onParam }: CrumbsSectionProps)
                 />
                 <span className="text-[8px] text-muted-foreground">Start</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(start * 100)}%</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={end}
                     onChange={(v) => onParam('samplerEnd', v)}
@@ -64,7 +65,7 @@ export const CrumbsSection = ({ mode, start, end, onParam }: CrumbsSectionProps)
                 />
                 <span className="text-[8px] text-muted-foreground">End</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(end * 100)}%</span>
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Row>
+    </Stack>
 );

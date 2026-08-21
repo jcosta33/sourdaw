@@ -5,6 +5,7 @@ import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
@@ -113,11 +114,11 @@ function getSectionMeta(section: FermenterSection): {
 }
 
 const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="fermenter-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
+    <Stack gap={1} className="fermenter-window min-w-[92px] px-3 py-2">
         <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
         <span className="font-mono text-[13px] text-foreground">{value}</span>
         <span className="text-[9px] text-muted-foreground/55">{detail}</span>
-    </div>
+    </Stack>
 );
 
 const SectionHeader = ({
@@ -131,20 +132,20 @@ const SectionHeader = ({
     description: string;
     detail?: string;
 }): ReactElement => (
-    <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
+    <Row align="start" justify="between" gap={3}>
+        <Stack gap={1}>
             <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
                 {eyebrow}
             </div>
             <div className="text-[13px] font-semibold text-foreground">{title}</div>
             <span className="sr-only">{description}</span>
-        </div>
+        </Stack>
         {detail ? (
             <DawPluginLed tone="sage" className="shrink-0">
                 {detail}
             </DawPluginLed>
         ) : null}
-    </div>
+    </Row>
 );
 
 function loadPresetPatch(
@@ -288,7 +289,7 @@ function renderSectionContent(
 ): ReactElement {
     if (section === 'osc') {
         return (
-            <div className="flex flex-wrap items-start gap-4">
+            <Row align="start" wrap gap={4}>
                 <OscillatorSection
                     rotaryKnob={MidiLearnRotaryKnob}
                     engine={patch.oscEngine}
@@ -319,7 +320,7 @@ function renderSectionContent(
                         onParam={onParam}
                     />
                 </div>
-            </div>
+            </Row>
         );
     }
 
@@ -347,7 +348,7 @@ function renderSectionContent(
 
     if (section === 'env') {
         return (
-            <div className="flex flex-wrap items-start gap-4">
+            <Row align="start" wrap gap={4}>
                 <EnvelopeSection
                     rotaryKnob={MidiLearnRotaryKnob}
                     ampA={patch.ampAttack}
@@ -374,28 +375,28 @@ function renderSectionContent(
                         onFilterAmountChange={(value) => onParam('lfoFilterAmount', value)}
                     />
                 </div>
-            </div>
+            </Row>
         );
     }
 
     if (section === 'mod') {
         return (
-            <div className="flex flex-wrap items-start gap-6">
+            <Row align="start" wrap gap={6}>
                 <ModulationSection
                     msegToFilter={patch.msegToFilter}
                     seqRate={patch.seqRate}
                     seqToPitch={patch.seqToPitch}
                     onParam={onParam}
                 />
-                <div className="space-y-2 border-l border-border/20 pl-4">
+                <Stack gap={2} className="border-l border-border/20 pl-4">
                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Glide</div>
-                    <div className="fermenter-window flex items-center gap-3 px-3 py-2">
-                        <div className="space-y-1">
+                    <Row gap={3} className="fermenter-window px-3 py-2">
+                        <Stack gap={1}>
                             <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">Time</div>
                             <div className="font-mono text-[12px] text-foreground">
                                 {patch.portamentoTime === 0 ? 'Off' : `${(patch.portamentoTime * 1000).toFixed(0)} ms`}
                             </div>
-                        </div>
+                        </Stack>
                         <Slider
                             value={[patch.portamentoTime]}
                             min={0}
@@ -410,9 +411,9 @@ function renderSectionContent(
                                 }
                             }}
                         />
-                    </div>
-                </div>
-            </div>
+                    </Row>
+                </Stack>
+            </Row>
         );
     }
 
@@ -536,8 +537,13 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     return (
-        <div className="fermenter-faceplate flex h-full min-h-0 gap-2.5 overflow-hidden p-2.5">
-            <aside className="fermenter-window flex h-full w-[228px] shrink-0 flex-col gap-2.5 overflow-hidden p-2.5">
+        <Row align="stretch" gap={2.5} className="fermenter-faceplate h-full min-h-0 overflow-hidden p-2.5">
+            <Stack
+                as="aside"
+                gap={2.5}
+                shrink={false}
+                className="fermenter-window h-full w-[228px] overflow-hidden p-2.5"
+            >
                 <SectionHeader
                     eyebrow="Scenes"
                     title="Preset bench"
@@ -545,7 +551,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     detail={`${userPatches.length} user`}
                 />
 
-                <div className="flex flex-wrap gap-1.5">
+                <Row align="stretch" wrap gap={1.5}>
                     {LEVELS.map((level) => (
                         <DawPluginChip
                             key={level.id}
@@ -557,16 +563,16 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             {level.label}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
 
-                <div className="fermenter-window flex items-center justify-between gap-2 px-3 py-2">
+                <Row justify="between" gap={2} className="fermenter-window px-3 py-2">
                     <div className="min-w-0">
                         <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                             Current scene
                         </div>
                         <div className="truncate text-[11px] text-foreground">{patch.name}</div>
                     </div>
-                    <div className="flex gap-1">
+                    <Row align="stretch" gap={1}>
                         {showSave ? (
                             <>
                                 <input
@@ -610,8 +616,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 </Button>
                             </>
                         )}
-                    </div>
-                </div>
+                    </Row>
+                </Row>
 
                 <div className="fermenter-window min-h-0 flex-1 overflow-hidden">
                     <PresetBrowser
@@ -621,26 +627,26 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         onLoadPreset={loadPreset}
                     />
                 </div>
-            </aside>
+            </Stack>
 
-            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-                <header className="fermenter-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
-                    <div className="space-y-1">
+            <Stack grow gap={2.5} className="min-w-0">
+                <Row as="header" wrap gap={2.5} shrink={false} className="fermenter-window px-3 py-2">
+                    <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
                             {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Voice'}
                         </div>
                         <div className="text-[13px] font-semibold text-foreground">Fermenter</div>
-                    </div>
+                    </Stack>
 
-                    <div className="ml-auto flex items-center gap-2">
+                    <Row gap={2} className="ml-auto">
                         <DawPluginLed tone="sage">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Row gap={1} className="text-[10px] text-muted-foreground">
                             <Cpu className="size-3" />
                             <span>{activeVoices} voices</span>
-                        </div>
+                        </Row>
                         <OutputMeter deviceId={deviceId} height={20} />
-                    </div>
-                </header>
+                    </Row>
+                </Row>
 
                 <div className="grid shrink-0 grid-cols-4 gap-2.5">
                     <MetricTile
@@ -666,7 +672,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                 </div>
 
                 <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden">
-                    <section className="fermenter-window flex min-h-0 flex-col gap-2.5 overflow-hidden p-2.5">
+                    <Stack as="section" gap={2.5} className="fermenter-window overflow-hidden p-2.5">
                         <SectionHeader
                             eyebrow={sectionMeta.eyebrow}
                             title={sectionMeta.title}
@@ -674,13 +680,13 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             detail={sectionMeta.detail}
                         />
 
-                        <div className="fermenter-window flex shrink-0 flex-col gap-2 p-3">
+                        <Stack gap={2} shrink={false} className="fermenter-window p-3">
                             <SectionNav active={section} onChange={setSection} />
                             <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-3">
-                                <div className="fermenter-window flex h-[136px] items-center justify-center p-2">
+                                <Row justify="center" className="fermenter-window h-[136px] p-2">
                                     <Oscilloscope deviceId={deviceId} width={360} height={96} />
-                                </div>
-                                <div className="fermenter-window flex flex-col justify-between p-3">
+                                </Row>
+                                <Stack justify="between" className="fermenter-window p-3">
                                     <div>
                                         <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                                             Quick read
@@ -689,13 +695,13 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                             {ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground">
+                                    <Row justify="between" gap={2} className="text-[9px] text-muted-foreground">
                                         <span>Master {formatPercent(Math.min(1, patch.masterGain / 2))}</span>
                                         <span>Layer {patch.activeLayer + 1}</span>
-                                    </div>
-                                </div>
+                                    </Row>
+                                </Stack>
                             </div>
-                        </div>
+                        </Stack>
 
                         <div className="min-h-0 flex-1 overflow-y-auto px-1">
                             <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
@@ -710,17 +716,17 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 </div>
                             ) : null}
                         </div>
-                    </section>
+                    </Stack>
 
-                    <aside className="fermenter-window flex min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
-                        <div className="fermenter-window flex flex-col gap-3 p-3">
+                    <Stack as="aside" gap={2.5} className="fermenter-window overflow-y-auto p-2.5">
+                        <Stack gap={3} className="fermenter-window p-3">
                             <SectionHeader
                                 eyebrow="Performance"
                                 title="Macro rig"
                                 description="Big moves live here so the right rail earns its space."
                                 detail="8 macros"
                             />
-                            <div className="flex items-center justify-center">
+                            <Row justify="center">
                                 <XYPad
                                     xValue={patch.macros[0]}
                                     yValue={patch.macros[1]}
@@ -730,10 +736,10 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                     onYChange={(value) => setMacro(1, value)}
                                     size={152}
                                 />
-                            </div>
+                            </Row>
                             <MacroStrip compact values={patch.macros} onChange={setMacro} />
                             <MacroMatrixEditor mappings={patch.macroMappings} onChange={setMacroMappings} />
-                        </div>
+                        </Stack>
 
                         {uiLevel >= 3 ? (
                             <div className="fermenter-window p-3">
@@ -756,17 +762,17 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 <div className="fermenter-window p-3">
                                     <TransformPad deviceId={deviceId} />
                                 </div>
-                                <div className="fermenter-window flex flex-col gap-2 p-3">
+                                <Stack gap={2} className="fermenter-window p-3">
                                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                                         Spectrum
                                     </div>
                                     <SpectrumAnalyzer deviceId={deviceId} width={210} height={62} />
-                                </div>
+                                </Stack>
                             </>
                         ) : null}
-                    </aside>
+                    </Stack>
                 </div>
-            </div>
-        </div>
+            </Stack>
+        </Row>
     );
 };

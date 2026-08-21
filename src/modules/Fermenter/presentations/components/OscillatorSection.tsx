@@ -8,6 +8,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
+import { Row, Stack } from '#/components/layout';
 
 import { ENGINE_NAMES, WAVEFORM_NAMES, NOISE_COLOR_NAMES } from '../../models/FermenterPatch';
 
@@ -56,13 +57,13 @@ export const OscillatorSection = ({
     const showPW = engine === 1 && waveform === 2;
 
     return (
-        <div className="space-y-2 w-full max-w-[300px]">
+        <Stack gap={2} className="w-full max-w-[300px]">
             {/* Header: title + engine selector */}
             <DawPluginSectionHeader
                 title="Oscillator"
                 titleClassName="text-muted-foreground"
                 actions={
-                    <div className="flex gap-0.5">
+                    <Row align="stretch" gap={0.5}>
                         {ENGINE_NAMES.map((name, i) => (
                             <DawPluginChip
                                 key={name}
@@ -74,7 +75,7 @@ export const OscillatorSection = ({
                                 {name}
                             </DawPluginChip>
                         ))}
-                    </div>
+                    </Row>
                 }
             />
 
@@ -91,7 +92,7 @@ export const OscillatorSection = ({
             </div>
 
             {/* Waveform selector */}
-            <div className="flex gap-0.5">
+            <Row align="stretch" gap={0.5}>
                 {WAVEFORM_NAMES.map((name, i) => (
                     <DawPluginChip
                         key={name}
@@ -105,10 +106,10 @@ export const OscillatorSection = ({
                         {name}
                     </DawPluginChip>
                 ))}
-            </div>
+            </Row>
 
             {/* Knob row: Level + Coarse + Fine + (PW) */}
-            <div className="flex items-end gap-2">
+            <Row align="end" gap={2}>
                 <Knob
                     paramId="oscLevel"
                     value={level}
@@ -159,10 +160,10 @@ export const OscillatorSection = ({
                         tone="sage"
                     />
                 ) : null}
-            </div>
+            </Row>
 
             {/* Noise sub-row */}
-            <div className="flex items-end gap-2 pt-1 border-t border-border/15">
+            <Row align="end" gap={2} className="pt-1 border-t border-border/15">
                 <Knob
                     paramId="noiseLevel"
                     value={noiseLevel}
@@ -175,7 +176,7 @@ export const OscillatorSection = ({
                     label="Noise"
                     tone="sage"
                 />
-                <div className="flex gap-0.5 pb-2">
+                <Row align="stretch" gap={0.5} className="pb-2">
                     {NOISE_COLOR_NAMES.map((name, i) => (
                         <DawPluginChip
                             key={name}
@@ -188,8 +189,8 @@ export const OscillatorSection = ({
                             {name}
                         </DawPluginChip>
                     ))}
-                </div>
-            </div>
-        </div>
+                </Row>
+            </Row>
+        </Stack>
     );
 };

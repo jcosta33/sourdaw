@@ -465,6 +465,24 @@ export function sanitize_automation_store_state(value: unknown): AutomationStore
     return { lanes: lanes.filter(is_valid_automation_lane).map(normalize_automation_lane) };
 }
 
+/**
+ * The inbound sanitizer rewrites nothing a well-formed document already holds.
+ *
+ * A gain lane made before the fader gained its `+6 dB` of headroom still stores
+ * `maxValue: 1`, and that stored scalar is deliberately left alone. Raising it
+ * here — the shape a "migration" naturally takes — is read as document
+ * corruption rather than as an upgrade: `createStore` registers `sanitize` as
+ * the slot's inbound sanitizer, `findAutomergeStorageRawProjectionLosses` runs
+ * it over the raw document and demands `Object.is` equality on every scalar, so
+ * `1` becoming `FADER_MAX_GAIN` is by definition a projection loss.
+ * `inspectCurrentAgentProjectRepairState` then returns non-null and
+ * `projectCrdtToStores` bails before hydrating a single slot, so every project
+ * carrying a legacy gain lane stalls at repair-required instead of opening.
+ *
+ * The drawable ceiling is therefore derived at **read** time instead, by
+ * `getAutomationLaneCeiling`, which the two consumers that need it —
+ * `paintDrawPoint` and the lane's Y scale — both route through.
+ */
 export const automationStore = createStore<AutomationStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'automation', {
         // Audit CC-2 — projection default for a document without this slot, so

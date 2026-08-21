@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type AutomationLane } from '../../models/Automation';
 import { insertAutomationShape } from '../automationShapes';
 
@@ -82,6 +84,30 @@ describe('automationShapes', () => {
             { beat: 2, value: 0, curve: 'step', tension: 0 },
             { beat: 4, value: 10, curve: 'step', tension: 0 },
         ]);
+    });
+
+    it('spans a legacy gain lane over the ceiling the fader has, not the unity it stores', () => {
+        // Same lane, same request, two creation dates: a gain lane written
+        // before the fader gained its `+6 dB` of headroom still records
+        // `maxValue: 1`, and reading that scalar made a full-depth shape a
+        // different depth on an old project than on a new one.
+        storeCell.state = { lanes: [{ ...makeLane('lane-legacy'), maxValue: 1 }] };
+        insertAutomationShape('lane-legacy', 'square', 0, 4);
+
+        expect(storeCell.state.lanes[0]?.points).toEqual([
+            { beat: 0, value: FADER_MAX_GAIN, curve: 'step', tension: 0 },
+            { beat: 2, value: 0, curve: 'step', tension: 0 },
+            { beat: 4, value: FADER_MAX_GAIN, curve: 'step', tension: 0 },
+        ]);
+    });
+
+    it('leaves a clip gain lane at the unity it declares', () => {
+        // A clip's own gain is not a fader; the strip's headroom says nothing
+        // about it, so the derivation must not reach in here.
+        storeCell.state = { lanes: [{ ...makeLane('lane-clip'), maxValue: 1, clipId: 'clip-1' }] };
+        insertAutomationShape('lane-clip', 'square', 0, 4);
+
+        expect(storeCell.state.lanes[0]?.points.map((point) => point.value)).toEqual([1, 0, 1]);
     });
 
     it('inserts a sawtooth-down shape (high → low)', () => {

@@ -6,6 +6,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { LED } from '#/components/daw/LED';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
@@ -158,7 +159,10 @@ const LoopStationSlotCell = ({
 }: LoopStationSlotCellProps): ReactElement => {
     if (!slot) {
         return (
-            <div className="flex h-14 items-center justify-center border-b border-r border-border-hairline bg-black/10 transition-colors hover:bg-white/[0.04]">
+            <Row
+                justify="center"
+                className="h-14 border-b border-r border-border-hairline bg-black/10 transition-colors hover:bg-white/[0.04]"
+            >
                 <Button
                     variant="ghost"
                     size="icon-xs"
@@ -168,7 +172,7 @@ const LoopStationSlotCell = ({
                 >
                     <Plus className="size-2.5" />
                 </Button>
-            </div>
+            </Row>
         );
     }
 
@@ -183,7 +187,7 @@ const LoopStationSlotCell = ({
                 getSlotBackgroundClass(slot.state)
             )}
         >
-            <div className="flex items-center gap-1">
+            <Row gap={1}>
                 <LED on={hasContent} variant={variant} size="sm" />
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-text-secondary">
                     {stateLabel}
@@ -191,8 +195,8 @@ const LoopStationSlotCell = ({
                 <span className="ml-auto font-mono text-[9px] text-muted-foreground tabular-nums">
                     {slot.layers.length}L
                 </span>
-            </div>
-            <div className="flex items-center gap-0.5">
+            </Row>
+            <Row gap={0.5}>
                 <Button
                     variant="ghost"
                     size="icon-xs"
@@ -259,7 +263,7 @@ const LoopStationSlotCell = ({
                     numerator={numerator}
                     discretePlayheadPosition={discretePlayheadPosition}
                 />
-            </div>
+            </Row>
         </div>
     );
 };
@@ -326,7 +330,7 @@ export const LoopStationPanel = (): ReactElement => {
                 title="Loop Station"
                 titleClassName="text-[11px] font-semibold text-foreground uppercase tracking-wider"
                 actions={
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <span
                             className={cn(
                                 'font-mono text-[10px] tabular-nums',
@@ -357,7 +361,7 @@ export const LoopStationPanel = (): ReactElement => {
                             {loopState.armed ? <Unlock className="size-3" /> : <Lock className="size-3" />}
                             <span className="ml-1">Arm</span>
                         </Button>
-                        <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Row as="label" gap={1} className="text-[10px] text-muted-foreground">
                             <span>Length</span>
                             <Input
                                 type="number"
@@ -374,44 +378,48 @@ export const LoopStationPanel = (): ReactElement => {
                                 className="h-6 w-14 px-1 text-[10px]"
                                 aria-label="Fixed loop length in beats (0 = auto)"
                             />
-                        </label>
+                        </Row>
                         <Button variant="ghost" size="xs" aria-label="Stop all loops" onClick={stopAllSlots}>
                             <Square className="size-3" />
                             <span className="ml-1">Stop all</span>
                         </Button>
-                    </div>
+                    </Row>
                 }
             />
 
             {tracks.length === 0 ? (
-                <div className="flex flex-1 items-center justify-center p-6">
+                <Row justify="center" grow className="p-6">
                     <DawEmptyState
                         title="No tracks to loop"
                         description="Add a track to start recording loop station slots."
                         className="max-w-sm"
                     />
-                </div>
+                </Row>
             ) : (
                 <div className="flex-1 overflow-auto">
-                    <div className="flex min-w-max" role="grid" aria-label="Loop slots">
-                        <div className="flex w-16 shrink-0 flex-col border-r border-border-hairline bg-black/20">
-                            <div className="flex h-6 items-center justify-center border-b border-border-hairline text-[9px] uppercase tracking-wider text-muted-foreground">
+                    <Row align="stretch" className="min-w-max" role="grid" aria-label="Loop slots">
+                        <Stack shrink={false} className="w-16 border-r border-border-hairline bg-black/20">
+                            <Row
+                                justify="center"
+                                className="h-6 border-b border-border-hairline text-[9px] uppercase tracking-wider text-muted-foreground"
+                            >
                                 Slot
-                            </div>
+                            </Row>
                             {Array.from({ length: rowCount }, (_, row) => (
-                                <div
+                                <Row
+                                    justify="center"
+                                    className="h-14 border-b border-border-hairline text-[10px] font-mono text-muted-foreground"
                                     key={row}
-                                    className="flex h-14 items-center justify-center border-b border-border-hairline text-[10px] font-mono text-muted-foreground"
                                 >
                                     {row + 1}
-                                </div>
+                                </Row>
                             ))}
-                        </div>
+                        </Stack>
 
                         {tracks.map((track) => (
-                            <div key={track.id} className="flex w-44 shrink-0 flex-col">
-                                <div
-                                    className="flex h-6 items-center border-b border-r border-border-hairline px-2 text-[10px] font-medium text-foreground"
+                            <Stack shrink={false} className="w-44" key={track.id}>
+                                <Row
+                                    className="h-6 border-b border-r border-border-hairline px-2 text-[10px] font-medium text-foreground"
                                     style={{
                                         borderLeft:
                                             track.color !== null && track.color !== undefined
@@ -421,7 +429,7 @@ export const LoopStationPanel = (): ReactElement => {
                                     title={track.name}
                                 >
                                     <span className="truncate">{track.name}</span>
-                                </div>
+                                </Row>
                                 {Array.from({ length: rowCount }, (_, row) => (
                                     <LoopStationSlotCell
                                         key={row}
@@ -432,9 +440,9 @@ export const LoopStationPanel = (): ReactElement => {
                                         discretePlayheadPosition={discretePlayheadPosition}
                                     />
                                 ))}
-                            </div>
+                            </Stack>
                         ))}
-                    </div>
+                    </Row>
                 </div>
             )}
         </DawPanelSurface>
