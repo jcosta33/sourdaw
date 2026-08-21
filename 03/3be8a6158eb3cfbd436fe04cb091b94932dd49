@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_a3b587483af506 384,386-388,396,401-403
+  s_27578aec2aab3b::t_c4aad3bfa03300 404-405
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_560f9a38ed2a29 114,214-218,231-233,237-239,242-244
+  s_27578aec2aab3b::t_e0ad3f4b3faa80 227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "033be8a6158eb3cfbd436fe04cb091b94932dd49",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
