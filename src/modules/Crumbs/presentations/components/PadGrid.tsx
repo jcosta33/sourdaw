@@ -8,6 +8,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Grid } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import type { PadConfig } from '../../models/CrumbsTypes';
 
@@ -129,7 +130,9 @@ export const PadGrid = ({
                 }
 
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={pad.id}
                         type="button"
                         draggable={onReorderPad !== undefined}
@@ -199,7 +202,7 @@ export const PadGrid = ({
                         )}
 
                         <span className="relative text-[9px] font-medium text-foreground/70">{pad.name}</span>
-                    </button>
+                    </Button>
                 );
             })}
         </Grid>

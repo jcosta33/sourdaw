@@ -17,6 +17,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
@@ -319,7 +320,9 @@ const ProcessorRackChain = ({
                     >
                         {proc.name}
                     </span>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         aria-label={`Move ${proc.name} up`}
                         disabled={index === 0}
@@ -330,8 +333,10 @@ const ProcessorRackChain = ({
                         }}
                     >
                         ↑
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         aria-label={`Move ${proc.name} down`}
                         disabled={index === processors.length - 1}
@@ -342,7 +347,7 @@ const ProcessorRackChain = ({
                         }}
                     >
                         ↓
-                    </button>
+                    </Button>
                     <DawPluginToggle
                         pressed={!proc.bypassed}
                         tone="peach"
@@ -355,7 +360,9 @@ const ProcessorRackChain = ({
                     >
                         {proc.bypassed ? 'Off' : 'On'}
                     </DawPluginToggle>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
                         onClick={(event) => {
@@ -364,7 +371,7 @@ const ProcessorRackChain = ({
                         }}
                     >
                         ✕
-                    </button>
+                    </Button>
                 </Row>
 
                 {expandedId === proc.id ? (

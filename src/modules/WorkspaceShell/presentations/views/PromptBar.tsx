@@ -65,7 +65,9 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
         <DawMicroBadge tone="primary" className="shrink-0 gap-1 text-[10px]">
             <Icon className="size-2.5" aria-hidden="true" />
             <span className="truncate max-w-20">{tag.label}</span>
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 onClick={(event) => {
                     event.preventDefault();
@@ -76,7 +78,7 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
                 aria-label={`Remove ${tag.label} from context`}
             >
                 <X className="size-2.5" />
-            </button>
+            </Button>
         </DawMicroBadge>
     );
 };
@@ -92,7 +94,9 @@ const FuzzyResultItem = ({
 }): ReactElement => {
     const Icon = CATEGORY_ICONS[result.preset.category] ?? Zap;
     return (
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors ${
                 isSelected
@@ -115,7 +119,7 @@ const FuzzyResultItem = ({
                 />
             ) : null}
             <DawMicroBadge>{result.preset.category}</DawMicroBadge>
-        </button>
+        </Button>
     );
 };
 

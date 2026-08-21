@@ -184,7 +184,9 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                     <MetaText className="block">Color</MetaText>
                     <Row align="stretch" wrap gap={1}>
                         {TRACK_COLOR_PRESETS.map((context) => (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 key={context}
                                 className="size-4 rounded border border-border transition-transform hover:scale-125"

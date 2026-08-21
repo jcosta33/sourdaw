@@ -7,6 +7,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 import { Slider } from '#/components/ui/slider';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { MidiLearnRotaryKnob } from '#/modules/ControlSurface/presentations/views';
@@ -575,7 +576,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     <Row align="stretch" gap={1}>
                         {showSave ? (
                             <>
-                                <input
+                                <Input
                                     type="text"
                                     value={saveName}
                                     onChange={(event) => setSaveName(event.target.value)}

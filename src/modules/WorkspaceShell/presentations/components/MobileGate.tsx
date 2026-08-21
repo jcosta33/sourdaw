@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useState, useEffect } from 'react';
 
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { SourdawLogo } from './SourdawLogo';
 
@@ -135,14 +136,16 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
                 </Stack>
 
                 {/* Discord CTA */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-[var(--color-accent-orange)]/25 bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)] transition-all duration-200 cursor-pointer hover:bg-[var(--color-accent-orange)]/20 hover:border-[var(--color-accent-orange)]/40"
                     onClick={() => window.open('https://discord.gg/bJHmmfY4', '_blank')}
                 >
                     <DiscordIcon className="size-4" />
                     <span className="text-xs font-semibold">Join the Bakery on Discord</span>
-                </button>
+                </Button>
             </Stack>
         </Stack>
     );

@@ -3,6 +3,7 @@ import { type ReactElement, type MouseEvent } from 'react';
 import { Star, Piano, Waves } from 'lucide-react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
@@ -64,7 +65,9 @@ export const PresetItem = ({
                         {preset.category}
                     </span>
                 ) : null}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className={cn(
                         'size-4 flex items-center justify-center shrink-0 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-all',
@@ -84,7 +87,7 @@ export const PresetItem = ({
                                 : 'text-muted-foreground hover:text-foreground'
                         )}
                     />
-                </button>
+                </Button>
             </Row>
             <Row gap={1.5} className="pl-[26px] opacity-60 group-hover:opacity-100 transition-opacity">
                 {preset.trackKind === 'midi' ? (

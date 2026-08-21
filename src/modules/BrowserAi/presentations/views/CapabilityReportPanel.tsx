@@ -134,14 +134,16 @@ export function CapabilityReportPanel(): ReactElement {
         <DawUtilitySection
             title="Browser AI Capabilities"
             actions={
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={handleRefresh}
                     className="text-[10px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                     aria-label="Re-detect capabilities"
                 >
                     Refresh
-                </button>
+                </Button>
             }
             role="status"
             aria-label="Browser AI capabilities"

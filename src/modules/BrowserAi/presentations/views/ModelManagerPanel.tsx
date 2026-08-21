@@ -5,6 +5,7 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
@@ -90,14 +91,16 @@ function ModelAction({
                 <DawMicroBadge tone="success" aria-label={`${name} downloaded and ready`}>
                     ✓ Ready
                 </DawMicroBadge>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={handleRemove}
                     className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
                     aria-label={`Remove ${name} from storage`}
                 >
                     Remove
-                </button>
+                </Button>
             </Row>
         );
     }
@@ -108,27 +111,31 @@ function ModelAction({
                 <DawMicroBadge tone="danger" aria-label={`${name} download failed`}>
                     Failed
                 </DawMicroBadge>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={handleDownload}
                     className="text-[9px] text-muted-foreground hover:text-foreground transition-colors"
                     aria-label={`Retry downloading ${name}`}
                 >
                     Retry
-                </button>
+                </Button>
             </Row>
         );
     }
 
     return (
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             onClick={handleDownload}
             className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
             aria-label={`Download ${name} (${formatBytes(sizeBytes)})`}
         >
             Download
-        </button>
+        </Button>
     );
 }
 

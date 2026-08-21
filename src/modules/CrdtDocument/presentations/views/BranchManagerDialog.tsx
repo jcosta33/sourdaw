@@ -195,14 +195,16 @@ const BranchRow = ({ branch, isActive, onSwitch, onMerge, onDelete }: BranchRowP
         className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${isActive ? 'bg-muted/30' : 'hover:bg-muted/10'}`}
     >
         <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             onClick={onSwitch}
             className="flex-1 text-left min-w-0"
             aria-label={`Switch to branch ${branch.name}`}
             aria-current={isActive ? 'true' : undefined}
         >
             <span className="truncate text-foreground">{branch.name}</span>
-        </button>
+        </Button>
         {isActive ? (
             <Check className="size-3 text-[var(--color-state-success)] shrink-0" />
         ) : (

@@ -9,6 +9,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -1019,7 +1020,9 @@ function BrowserRail({
                 <Stack grow gap={1.5} className="overflow-y-auto pr-1">
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 key={preset.id}
                                 type="button"
                                 className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left ${
@@ -1041,7 +1044,7 @@ function BrowserRail({
                                         : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
                                           'House preset')}
                                 </span>
-                            </button>
+                            </Button>
                         ))
                     ) : (
                         <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
@@ -1056,7 +1059,9 @@ function BrowserRail({
                 </div>
                 <div className="grid gap-2">
                     {AMP_MODELS.map((amp) => (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             key={amp.id}
                             type="button"
                             className={`rounded-[18px] border px-3 py-2.5 text-left transition-colors ${
@@ -1072,7 +1077,7 @@ function BrowserRail({
                                 {amp.family} · {amp.tubes}
                             </div>
                             <div className="mt-2 text-xs text-white/46">{amp.voicing}</div>
-                        </button>
+                        </Button>
                     ))}
                 </div>
             </Stack>
@@ -1087,7 +1092,9 @@ function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                 const Icon = tab.icon;
                 const active = patch.uiSection === tab.id;
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={tab.id}
                         type="button"
                         className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
@@ -1095,7 +1102,7 @@ function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                     >
                         <Icon className="size-3.5" />
                         <span>{tab.label}</span>
-                    </button>
+                    </Button>
                 );
             })}
         </Row>
@@ -1631,7 +1638,9 @@ function ControlDeck({
                     </div>
                     <Grid cols={3} gap={2}>
                         {ENGINE_MODES.map((mode) => (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 key={mode.id}
                                 type="button"
                                 className={`rounded-[16px] border px-3 py-3 text-left ${
@@ -1649,7 +1658,7 @@ function ControlDeck({
                             >
                                 <div className="text-sm font-medium text-white/88">{mode.label}</div>
                                 <div className="text-xs text-white/44">{mode.description}</div>
-                            </button>
+                            </Button>
                         ))}
                     </Grid>
                 </Stack>
@@ -1682,7 +1691,9 @@ function ControlDeck({
                             { id: 'amp-capture', label: 'Amp capture' },
                             { id: 'rig-capture', label: 'Rig capture' },
                         ].map((placement) => (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 key={placement.id}
                                 type="button"
                                 className={`rounded-[14px] border px-3 py-2 text-left text-sm ${
@@ -1698,7 +1709,7 @@ function ControlDeck({
                                 }
                             >
                                 {placement.label}
-                            </button>
+                            </Button>
                         ))}
                     </div>
                     <div className="text-xs text-white/44">
@@ -1713,7 +1724,9 @@ function ControlDeck({
                         {GRINDER_NEURAL_LIBRARY.map((model) => {
                             const selected = patch.neuralModelId === model.id;
                             return (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     key={model.id}
                                     type="button"
                                     className={`rounded-[18px] border px-4 py-3 text-left ${
@@ -1741,7 +1754,7 @@ function ControlDeck({
                                         </span>
                                     </Row>
                                     <div className="mt-1 text-xs text-white/44">{model.description}</div>
-                                </button>
+                                </Button>
                             );
                         })}
                     </div>
@@ -1751,14 +1764,16 @@ function ControlDeck({
                         <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                             Imported captures
                         </div>
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="rounded-[14px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-3 py-1 text-[11px] font-medium text-[var(--color-accent-cyan)]"
                             onClick={() => void importNeuralModels()}
                             disabled={is_importing_models}
                         >
                             {is_importing_models ? 'Importing…' : 'Import NAM'}
-                        </button>
+                        </Button>
                     </Row>
                     {neural_library_state.error ? (
                         <div className="rounded-[14px] border border-red-400/30 bg-red-400/8 px-3 py-2 text-xs text-red-200">

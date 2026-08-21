@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { Plus } from 'lucide-react';
 
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 import { type AutomationMode } from '../../../models/TrackViewTypes';
@@ -43,7 +44,9 @@ export const AutomationModeControl = ({
     return (
         <div className={cn('relative flex items-center gap-1.5', className)}>
             <DawEyebrowLabel>Mode</DawEyebrowLabel>
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 data-testid="automation-mode-button"
                 className={cn(
@@ -62,7 +65,7 @@ export const AutomationModeControl = ({
                 aria-label={`Automation mode: ${automationMode}`}
             >
                 {modeConfig.label}
-            </button>
+            </Button>
 
             {open ? (
                 <>
@@ -82,7 +85,9 @@ export const AutomationModeControl = ({
                         {AUTOMATION_MODE_OPTIONS.map((option) => {
                             const config = AUTOMATION_MODE_CONFIG[option.value];
                             return (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     key={option.value}
                                     className={cn(
@@ -103,7 +108,7 @@ export const AutomationModeControl = ({
                                     >
                                         {option.label}
                                     </span>
-                                </button>
+                                </Button>
                             );
                         })}
                     </div>
@@ -134,7 +139,9 @@ export const AutomationAddLaneControl = ({
 
     return (
         <div className={cn('relative', className)}>
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 className="flex w-full items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => setOpen((current) => !current)}
@@ -144,7 +151,7 @@ export const AutomationAddLaneControl = ({
                 {showAvailableCount && params.length > 0 ? (
                     <span className="ml-auto text-[8px] text-muted-foreground/40">{params.length} available</span>
                 ) : null}
-            </button>
+            </Button>
 
             {open ? (
                 <>
@@ -153,7 +160,9 @@ export const AutomationAddLaneControl = ({
                         <DawEyebrowLabel className="block px-2 py-1 text-[8px]">Add parameter</DawEyebrowLabel>
                         <div className="max-h-[200px] overflow-y-auto">
                             {params.map((param) => (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     key={param.id}
                                     className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[10px] text-foreground transition-colors hover:bg-accent/50"
@@ -164,7 +173,7 @@ export const AutomationAddLaneControl = ({
                                 >
                                     <Plus className="size-2.5 text-muted-foreground/50" />
                                     {param.name}
-                                </button>
+                                </Button>
                             ))}
                             {params.length === 0 ? (
                                 <div className="px-2.5 py-2 text-[10px] italic text-muted-foreground/50">

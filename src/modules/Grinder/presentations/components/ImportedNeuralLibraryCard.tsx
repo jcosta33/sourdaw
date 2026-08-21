@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type GrinderImportedNeuralModel } from '../../models/GrinderPatch';
 
@@ -30,7 +31,9 @@ export function ImportedNeuralLibraryCard({
             }`}
         >
             <Row align="start" justify="between" gap={3}>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     aria-pressed={selected}
                     className="min-w-0 flex-1 text-left"
@@ -44,24 +47,28 @@ export function ImportedNeuralLibraryCard({
                     </Row>
                     <div className="mt-1 text-xs text-white/44">{entry.family}</div>
                     <div className="mt-2 text-[11px] text-white/34">{entry.description}</div>
-                </button>
+                </Button>
                 <Row align="stretch" gap={2} shrink={false}>
                     {has_library_source ? (
                         <>
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="rounded-[12px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-cyan)]"
                                 onClick={() => on_export(entry)}
                             >
                                 Export NAM
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="rounded-[12px] border border-white/12 bg-black/24 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/58"
                                 onClick={() => on_remove(entry)}
                             >
                                 Remove capture
-                            </button>
+                            </Button>
                         </>
                     ) : (
                         <span className="rounded-[12px] border border-white/10 bg-black/18 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/40">

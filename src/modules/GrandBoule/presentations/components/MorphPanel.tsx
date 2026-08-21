@@ -11,6 +11,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import {
     type GrandBouleMorphState,
@@ -46,7 +47,9 @@ const ModelSelector = ({
             {BUILTIN_PIANO_MODELS.map((model: GrandBoulePianoModel) => {
                 const active = model.id === selectedId;
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={model.id}
                         type="button"
                         onClick={() => onSelect(model.id)}
@@ -57,7 +60,7 @@ const ModelSelector = ({
                         }`}
                     >
                         {model.name}
-                    </button>
+                    </Button>
                 );
             })}
         </Stack>

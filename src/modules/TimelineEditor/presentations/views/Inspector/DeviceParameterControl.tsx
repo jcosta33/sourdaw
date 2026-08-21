@@ -3,6 +3,7 @@ import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row, Stack } from '#/components/layout';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -364,7 +365,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             paramId={param.id}
                         />
                         {param.automatable ? (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className={cn(
                                     'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
@@ -404,7 +407,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             paramId={param.id}
                         />
                         {param.automatable ? (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className={cn(
                                     'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',

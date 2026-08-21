@@ -1,5 +1,6 @@
 import { type ComponentProps, type ReactElement } from 'react';
 
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type CaptureKeyButtonProps = ComponentProps<'button'> & {
@@ -12,7 +13,9 @@ export const CaptureKeyButton = ({
     children,
     ...props
 }: CaptureKeyButtonProps): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type="button"
         className={cn(
             'rounded border bg-surface-overlay font-mono text-foreground transition-colors',
@@ -22,5 +25,5 @@ export const CaptureKeyButton = ({
         {...props}
     >
         {children}
-    </button>
+    </Button>
 );

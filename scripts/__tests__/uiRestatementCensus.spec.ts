@@ -222,6 +222,48 @@ export const Notes = () => <span>{hint}</span>;
         );
     });
 
+    it('marks native controls in daw chrome definitions as semantic wrappers', () => {
+        const root = tree({
+            'src/components/daw/DawPluginChip.tsx': `export const DawPluginChip = () => <button type="button">Chip</button>;
+`,
+        });
+        expect(scanUiRestatements(root)[0]).toEqual(
+            expect.objectContaining({ mapping: 'Button', disposition: 'semantic-wrapper' })
+        );
+    });
+
+    it('marks transparent chrome-embedded selects as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ModeSelect.tsx': `export const ModeSelect = () => (
+  <select className="bg-transparent text-foreground outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/FormSelect.tsx': `export const FormSelect = () => (
+  <select className="h-8 w-full rounded border bg-surface-inset" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ModeSelect.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/FormSelect.tsx']?.disposition).toBe('eligible');
+    });
+
+    it('marks transparent chrome-embedded textareas as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ChromeNotes.tsx': `export const ChromeNotes = () => (
+  <textarea className="bg-transparent text-foreground outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/FormNotes.tsx': `export const FormNotes = () => (
+  <textarea className="h-8 w-full rounded border bg-surface-inset" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ChromeNotes.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/FormNotes.tsx']?.disposition).toBe('eligible');
+    });
+
     it('marks transparent chrome-embedded inputs as one-off', () => {
         const root = tree({
             'src/modules/Demo/presentations/views/ChromeSearch.tsx': `export const ChromeSearch = () => (
@@ -376,5 +418,28 @@ describe('checkUiRestatementCensus', () => {
         });
         const errors = checkUiRestatementCensus(root);
         expect(errors.some((error) => error.includes('stale ledger row'))).toBe(true);
+    });
+
+    it('fails a canonical ledger that still records eligible restatements', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Actions.tsx': `export const Actions = () => <button type="button">Go</button>;
+`,
+        });
+        const rows = scanUiRestatements(root);
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, 'scripts/ui-restatement-census.json'), canonicalizeCensus(rows));
+        const errors = checkUiRestatementCensus(root);
+        expect(errors.some((error) => error.includes('eligible restatement'))).toBe(true);
+    });
+
+    it('accepts a canonical ledger with no eligible restatements', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Actions.tsx': `export const Actions = () => <Button type="button">Go</Button>;
+`,
+        });
+        const rows = scanUiRestatements(root);
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, 'scripts/ui-restatement-census.json'), canonicalizeCensus(rows));
+        expect(checkUiRestatementCensus(root)).toEqual([]);
     });
 });

@@ -137,7 +137,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             >
                                 <DawMenuSectionLabel>Effects</DawMenuSectionLabel>
                                 {effectPlugins.map((plugin) => (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         key={plugin.id}
                                         className={cn(menuBtnClass, 'text-foreground')}
@@ -158,12 +160,14 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         }}
                                     >
                                         {plugin.name}
-                                    </button>
+                                    </Button>
                                 ))}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>Utility</DawMenuSectionLabel>
                                 {utilityPlugins.map((plugin) => (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         key={plugin.id}
                                         className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
@@ -177,14 +181,16 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         }}
                                     >
                                         {plugin.name}
-                                    </button>
+                                    </Button>
                                 ))}
                                 {analyzerPlugins.length > 0 ? (
                                     <>
                                         <DawMenuSeparator />
                                         <DawMenuSectionLabel>Analyzer</DawMenuSectionLabel>
                                         {analyzerPlugins.map((plugin) => (
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 key={plugin.id}
                                                 className={cn(menuBtnClass, 'text-foreground')}
@@ -198,7 +204,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 }}
                                             >
                                                 {plugin.name}
-                                            </button>
+                                            </Button>
                                         ))}
                                     </>
                                 ) : null}
@@ -207,7 +213,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 {platformCapabilities.hasNativePlugins && supportedExternalPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
                                         {supportedExternalPlugins.map((plugin) => (
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 key={plugin.id}
                                                 className={cn(menuBtnClass, 'justify-between text-foreground')}
@@ -224,7 +232,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 <span className="ml-1 shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase text-muted-foreground bg-muted">
                                                     {plugin.format}
                                                 </span>
-                                            </button>
+                                            </Button>
                                         ))}
                                     </div>
                                 ) : (

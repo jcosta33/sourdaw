@@ -184,7 +184,9 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         const isCollapsed = collapsedFormats.has(format);
                         return (
                             <div key={format}>
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     className="flex w-full items-center gap-1 px-1 py-0.5"
                                     onClick={() => {
@@ -205,7 +207,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                                         {format}
                                     </DawMicroBadge>
                                     <span className="ml-auto text-[9px] text-muted-foreground">{plugins.length}</span>
-                                </button>
+                                </Button>
                                 {!isCollapsed &&
                                     plugins.map((plugin) => (
                                         <PluginRow

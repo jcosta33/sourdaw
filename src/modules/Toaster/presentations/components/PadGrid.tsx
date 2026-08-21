@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type PadState } from '../../models/ToasterKit';
 
@@ -68,7 +69,9 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                 const baseGlow = isSelected ? `${pad.color}55` : `${pad.color}22`;
 
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={pad.id}
                         type="button"
                         data-testid={`toaster-pad-${index}`}
@@ -153,7 +156,7 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                                 </span>
                             </Row>
                         ) : null}
-                    </button>
+                    </Button>
                 );
             })}
         </Grid>

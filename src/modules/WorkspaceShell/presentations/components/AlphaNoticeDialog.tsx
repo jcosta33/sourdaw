@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent } from '#/components/ui/dialog';
 
 import { SourdawLogo } from './SourdawLogo';
@@ -80,16 +81,20 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
 
                     {/* Actions */}
                     <Row align="stretch" gap={3} className="w-full mt-2">
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="group flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-[var(--color-accent-orange)]/25 bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)] transition-all duration-200 cursor-pointer hover:bg-[var(--color-accent-orange)]/20 hover:border-[var(--color-accent-orange)]/40 hover:shadow-[0_0_16px_rgba(217,119,6,0.2)]"
                             onClick={() => window.open('https://discord.gg/bJHmmfY4', '_blank')}
                         >
                             <DiscordIcon className="size-4" />
                             <span className="text-xs font-semibold">Join the Bakery</span>
-                        </button>
+                        </Button>
 
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="flex-1 flex items-center justify-center p-3 rounded-xl border border-white/[0.07] bg-white/[0.05] text-white/70 transition-all duration-200 cursor-pointer hover:bg-white/[0.1] hover:text-white"
                             onClick={() => {
@@ -97,7 +102,7 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                             }}
                         >
                             <span className="text-xs font-semibold">Let me cook</span>
-                        </button>
+                        </Button>
                     </Row>
                 </Stack>
             </DialogContent>

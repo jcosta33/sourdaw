@@ -185,13 +185,15 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
                 dimmed={group.reverted}
                 startSlot={
                     <Row gap={1.5}>
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             onClick={() => setExpanded(!expanded)}
                             className="text-muted-foreground hover:text-foreground"
                         >
                             {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                        </button>
+                        </Button>
                         <Bot className="size-3 text-[var(--color-accent-lavender)]" />
                     </Row>
                 }

@@ -16,6 +16,7 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 
@@ -229,7 +230,9 @@ const LevelTile = ({
     subtitle: string;
     onClick: () => void;
 }): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type="button"
         className={cn(
             'flex h-full flex-1 flex-col items-center justify-center rounded-[14px] border px-3 py-4 transition-all',
@@ -244,7 +247,7 @@ const LevelTile = ({
         <span className="mt-1 whitespace-pre-line text-center text-[8px] leading-snug text-muted-foreground/45">
             {subtitle}
         </span>
-    </button>
+    </Button>
 );
 
 const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (

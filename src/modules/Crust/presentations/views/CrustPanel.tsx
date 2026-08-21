@@ -11,6 +11,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
@@ -145,7 +146,9 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </Row>
 
                 <div className="relative shrink-0">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="crust-window flex min-w-[164px] items-center gap-2 px-3 py-2 text-[11px]"
                         onClick={() => setPresetMenuOpen((open) => !open)}
@@ -159,7 +162,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <div className="truncate text-foreground">{patch.name}</div>
                         </div>
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/65" />
-                    </button>
+                    </Button>
                     {presetMenuOpen ? (
                         <Stack
                             className="crust-window daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[280px] min-w-[220px] overflow-y-auto p-1"
@@ -189,7 +192,9 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </div>
 
                 <div className="relative shrink-0">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="crust-window flex min-w-[196px] items-center gap-2 px-3 py-2 text-[11px]"
                         onClick={() => setStreamingMenuOpen((open) => !open)}
@@ -208,7 +213,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             </div>
                         </div>
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/65" />
-                    </button>
+                    </Button>
                     {streamingMenuOpen ? (
                         <Stack
                             className="crust-window daw-floating-surface absolute right-0 top-full z-50 mt-1 max-h-[300px] min-w-[268px] overflow-y-auto p-1"

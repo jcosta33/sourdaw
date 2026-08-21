@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import {
@@ -475,11 +476,12 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                         </div>
 
                         <Row justify="center" wrap gap={2}>
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 id="launch-import-dawproject"
-                                onClick={handleImportDawProject}
-                                // `aria-disabled`, not `disabled`: a focused element
+                                onClick={handleImportDawProject} // `aria-disabled`, not `disabled`: a focused element
                                 // that becomes `disabled` blurs to <body>, so a
                                 // keyboard user who activates this loses focus the
                                 // instant the handler runs and has to Tab from the
@@ -492,8 +494,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 <Upload className="size-3" aria-hidden="true" />
                                 {importingDawProject ? 'Importing .dawproject…' : 'Import .dawproject'}
                                 <span className="text-white/25">from Ableton, Bitwig, Studio One…</span>
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 id="launch-export-dawproject"
                                 onClick={handleExportDawProject}
@@ -501,7 +505,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             >
                                 <Download className="size-3" aria-hidden="true" />
                                 Export .dawproject
-                            </button>
+                            </Button>
                         </Row>
 
                         <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
@@ -517,7 +521,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                     >
                         {/* Header */}
                         <Row gap={3}>
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 aria-label="Back to home"
                                 className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
@@ -525,7 +531,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             >
                                 <ArrowLeft className="size-3.5" aria-hidden="true" />
                                 Back
-                            </button>
+                            </Button>
                             <div className="h-3 w-px bg-white/10" />
                             <p className="text-xs text-white/50 font-medium">Start a new project</p>
                         </Row>
@@ -536,7 +542,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
                                 const isActive = activeCategory === cat;
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={cat}
                                         type="button"
                                         onClick={() => setActiveCategory(cat)}
@@ -548,7 +556,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                     >
                                         <CategoryPillIcon category={cat} />
                                         {CATEGORY_LABELS[cat]}
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Row>
@@ -561,7 +569,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                     <FileText className="size-4" aria-hidden="true" />
                                 );
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={template.id}
                                         type="button"
                                         onClick={() => handleTemplateSelect(template)}
@@ -586,7 +596,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                                 <TemplatePreviewThumb templateId={template.id} />
                                             </div>
                                         </div>
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Grid>
@@ -657,7 +667,9 @@ type ActionCardProps = {
 };
 
 const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type="button"
         id={id}
         className="group flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.07] bg-white/[0.03] transition-all duration-200 cursor-pointer text-center"
@@ -684,7 +696,7 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
             <span className="text-xs font-semibold text-white/75 block leading-tight">{label}</span>
             <span className="text-[9px] text-white/28 mt-0.5 block">{sub}</span>
         </div>
-    </button>
+    </Button>
 );
 
 // ─── Recent project card ─────────────────────────────────────────────────
@@ -695,7 +707,9 @@ type RecentProjectCardProps = {
 };
 
 const RecentProjectCard = ({ entry, onOpen }: RecentProjectCardProps): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type="button"
         aria-label={`Open recent project ${entry.name}`}
         className="shrink-0 flex flex-col items-start gap-1 min-w-[120px] max-w-[160px] p-2.5 rounded-lg border border-white/[0.07] bg-white/[0.03] text-left transition-all duration-200 cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.15]"
@@ -706,5 +720,5 @@ const RecentProjectCard = ({ entry, onOpen }: RecentProjectCardProps): ReactElem
             <span className="text-[11px] font-semibold text-white/80 truncate">{entry.name}</span>
         </Row>
         <span className="text-[9px] text-white/35">{formatRelativeTime(entry.updatedAt)}</span>
-    </button>
+    </Button>
 );

@@ -10,6 +10,7 @@ import {
 import { Piano, Upload, Headphones } from 'lucide-react';
 
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import {
     AdjustmentLayerStrip,
@@ -471,7 +472,9 @@ const EmptyArrangeOverlay = (): ReactElement => {
 
                 {/* Track type buttons */}
                 <Grid cols={2} gap={2} className="w-full">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-cyan)]/10 hover:border-[var(--color-accent-cyan)]/30 transition-all cursor-pointer"
                         onClick={() => addTrack({ name: 'Audio 1', kind: 'audio' })}
@@ -486,9 +489,11 @@ const EmptyArrangeOverlay = (): ReactElement => {
                             <span className="text-[11px] font-medium text-foreground/80 block">Audio</span>
                             <span className="text-[9px] text-muted-foreground/40">Record or import</span>
                         </div>
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-lavender)]/10 hover:border-[var(--color-accent-lavender)]/30 transition-all cursor-pointer"
                         onClick={() => addTrack({ name: 'MIDI 1', kind: 'midi' })}
@@ -503,7 +508,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                             <span className="text-[11px] font-medium text-foreground/80 block">MIDI</span>
                             <span className="text-[9px] text-muted-foreground/40">Keys &amp; synths</span>
                         </div>
-                    </button>
+                    </Button>
                 </Grid>
 
                 {/* Drop hint */}

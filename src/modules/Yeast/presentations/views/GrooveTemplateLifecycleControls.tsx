@@ -1,6 +1,8 @@
 import { type ChangeEvent, type FormEvent, type ReactElement, useId, useState } from 'react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 
 import { deleteYeastGrooveTemplate } from '../../useCases/deleteYeastGrooveTemplate';
 import { renameYeastGrooveTemplate } from '../../useCases/renameYeastGrooveTemplate';
@@ -145,19 +147,19 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
                 <label className="sr-only" htmlFor={nameInputId}>
                     Groove template name
                 </label>
-                <input
+                <Input
                     id={nameInputId}
                     name="groove-template-name"
                     value={renameState.draftName}
                     onChange={handleDraftChange}
                 />
-                <button type="submit" disabled={renameState.pending}>
+                <Button variant="bare" size="bare" type="submit" disabled={renameState.pending}>
                     {renameState.pending ? 'Renaming…' : 'Rename'}
-                </button>
+                </Button>
             </Row>
-            <button type="button" disabled={renameState.pending} onClick={handleDelete}>
+            <Button variant="bare" size="bare" type="button" disabled={renameState.pending} onClick={handleDelete}>
                 Delete template
-            </button>
+            </Button>
             {error ? <p role="alert">{error}</p> : null}
         </Stack>
     );

@@ -17,6 +17,7 @@
 import { type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
 
@@ -99,13 +100,15 @@ export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: Modulat
                                     {assignment.amount > 0 ? '+' : ''}
                                     {(assignment.amount * 100).toFixed(0)}%
                                 </span>
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     className="text-[6px] text-muted-foreground/30 hover:text-red-400 ml-auto"
                                     onClick={() => onAssignmentRemove(idx)}
                                 >
                                     ×
-                                </button>
+                                </Button>
                             </Row>
                         );
                     })}

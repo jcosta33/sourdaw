@@ -7,6 +7,7 @@ import { type ReactElement } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
@@ -43,7 +44,9 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     voice.errorText ? 'border-[var(--color-state-warning)]/40' : 'border-[var(--color-state-danger)]/30'
                 )}
             >
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={voice.stopListening}
                     className={cn(
@@ -59,7 +62,7 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     ) : (
                         <MicOff className="size-4 text-muted-foreground" />
                     )}
-                </button>
+                </Button>
                 <div className="max-w-sm min-w-32">{statusText}</div>
                 {!voice.errorText ? (
                     <DawInlineHint className="whitespace-nowrap bg-transparent px-0 py-0 text-muted-foreground/60">

@@ -13,6 +13,7 @@ import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -69,7 +70,9 @@ const Collapsible = ({
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm hover:bg-surface-raised/50">
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex w-full items-center gap-1"
                     onClick={() => setOpen(!open)}
@@ -81,7 +84,7 @@ const Collapsible = ({
                     <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                         {title}
                     </span>
-                </button>
+                </Button>
             </DawHeaderBand>
             {open ? children : null}
         </div>

@@ -81,7 +81,9 @@ export const RailTabBar = <TId extends string>({
                 })}
             </div>
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 className={cn(
                     'absolute inset-y-0 left-0 z-10 flex w-6 items-center justify-center bg-gradient-to-r from-surface-base/90 to-transparent transition-opacity',
@@ -104,9 +106,11 @@ export const RailTabBar = <TId extends string>({
                 >
                     <path d="m15 18-6-6 6-6" />
                 </svg>
-            </button>
+            </Button>
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 className={cn(
                     'absolute inset-y-0 right-0 z-10 flex w-6 items-center justify-center bg-gradient-to-l from-surface-base/90 to-transparent transition-opacity',
@@ -129,7 +133,7 @@ export const RailTabBar = <TId extends string>({
                 >
                     <path d="m9 18 6-6-6-6" />
                 </svg>
-            </button>
+            </Button>
         </div>
     );
 };
