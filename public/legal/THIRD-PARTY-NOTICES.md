@@ -1,5 +1,21 @@
 # Third-Party Notices
 
+## Desktop runtime
+
+Desktop builds bundle [Electron 43.4.1](https://github.com/electron/electron/tree/340bae15aaef12b7e96f1c857be986aa9f65c21c)
+under the MIT license. That release embeds
+[Chromium 150.0.7871.224](https://chromium.googlesource.com/chromium/src/+/36bfd07adec25f5027aaecf2023b35821f30ee4e)
+and [Node v24.18.1](https://github.com/nodejs/node/tree/9623d9ad85d37d2f0610ec4a82b48182cf2c6061).
+Its media runtime includes
+[FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/ad41607c61898cf7150e0fb20fe4bbabd44922a3)
+under LGPL-2.1-or-later.
+
+Every desktop package includes Electron's exact `LICENSE` as `electron-LICENSE.txt` and its complete
+Chromium, Node, FFmpeg, and bundled-component notice file as `electron-LICENSES.chromium.html`. See
+[ELECTRON-SOURCES.json](./ELECTRON-SOURCES.json) for package, source, release, and file hashes.
+
+## LGPL runtimes
+
 Sourdaw uses two LGPL packages without source modifications. FaustWasm runtime files are copied
 byte-for-byte from its package. Vite bundles lamejs into Sourdaw's application code.
 
