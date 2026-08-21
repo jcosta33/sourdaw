@@ -902,6 +902,16 @@
         },
         {
             "surface": "ddsp-models",
+            "file": "electron/main.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "electron/main.ts",
+            "value": "https://storage.googleapis.com/magentadata/not-ddsp/probe.json"
+        },
+        {
+            "surface": "ddsp-models",
             "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
         },
