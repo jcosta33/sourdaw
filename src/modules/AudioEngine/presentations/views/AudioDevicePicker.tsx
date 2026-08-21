@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
@@ -49,12 +50,12 @@ export const AudioDevicePicker = (): ReactElement => {
     };
 
     return (
-        <div className="space-y-3">
-            <div className="space-y-1.5">
+        <Stack gap={3}>
+            <Stack gap={1.5}>
                 <DawEyebrowLabel size="sm" className="block">
                     Output
                 </DawEyebrowLabel>
-                <div className="flex items-center gap-2">
+                <Row gap={2}>
                     <DawCompactSelect
                         value={state?.selectedOutputId ?? ''}
                         onChange={(event) => handleOutputChange(event.target.value)}
@@ -80,9 +81,9 @@ export const AudioDevicePicker = (): ReactElement => {
                     >
                         <RefreshCw className="size-3.5" />
                     </Button>
-                </div>
-            </div>
-            <div className="space-y-1.5">
+                </Row>
+            </Stack>
+            <Stack gap={1.5}>
                 <DawEyebrowLabel size="sm" className="block">
                     Input
                 </DawEyebrowLabel>
@@ -102,12 +103,12 @@ export const AudioDevicePicker = (): ReactElement => {
                         </option>
                     ))}
                 </DawCompactSelect>
-            </div>
+            </Stack>
             {loading ? (
                 <DawInlineHint className="animate-pulse justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
                     Detecting devices...
                 </DawInlineHint>
             ) : null}
-        </div>
+        </Stack>
     );
 };

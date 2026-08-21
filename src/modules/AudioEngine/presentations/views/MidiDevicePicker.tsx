@@ -7,6 +7,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { webMidiStore } from '#/modules/MIDI/stores';
@@ -53,12 +54,12 @@ export const MidiDevicePicker = (): ReactElement => {
     };
 
     return (
-        <div className="space-y-2">
-            <div className="space-y-1.5">
+        <Stack gap={2}>
+            <Stack gap={1.5}>
                 <DawEyebrowLabel size="sm" className="block">
                     MIDI Input
                 </DawEyebrowLabel>
-                <div className="flex items-center gap-2">
+                <Row gap={2}>
                     <DawCompactSelect
                         value={state.selectedInputId ?? ''}
                         onChange={(event) => handleChange(event.target.value)}
@@ -91,8 +92,8 @@ export const MidiDevicePicker = (): ReactElement => {
                     >
                         <RefreshCw className="size-3.5" />
                     </Button>
-                </div>
-            </div>
+                </Row>
+            </Stack>
             {!initialised && state.inputs.length === 0 ? (
                 <DawInlineHint className="justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
                     Detecting MIDI devices...
@@ -103,6 +104,6 @@ export const MidiDevicePicker = (): ReactElement => {
                     Connected: {state.inputs.find((index) => index.id === state.selectedInputId)?.name ?? 'Unknown'}
                 </DawMicroBadge>
             ) : null}
-        </div>
+        </Stack>
     );
 };
