@@ -373,8 +373,16 @@ impl MomentaryLufs {
 
     /// K-weighted energy over the window — the `z` of BS.1770-4's block
     /// loudness formula, and the quantity the gated measures average.
+    ///
+    /// BS.1770-4 §2 defines block loudness as `L = −0.691 + 10·log10(Σ G_i·z_i)`
+    /// — the channel energies are **summed**, with weight `G_i = 1` for L and R,
+    /// never averaged. The −0.691 offset is calibrated against that summed form
+    /// (it cancels the K filter's +0.691 dB gain at 1 kHz, so a full-scale
+    /// 1 kHz stereo sine reads exactly 0 LUFS); dividing by the channel count
+    /// would read every stereo signal 10·log10(2) ≈ 3.01 LU low. Only the window
+    /// length is divided out.
     pub fn energy(&self) -> f64 {
-        (self.sum_sq_l + self.sum_sq_r) / (2.0 * self.window_size as f64)
+        (self.sum_sq_l + self.sum_sq_r) / self.window_size as f64
     }
 
     pub fn get_lufs(&self) -> f32 {
@@ -443,9 +451,11 @@ impl ShortTermLufs {
         self.write_pos = (self.write_pos + 1) % self.window_size;
     }
 
-    /// K-weighted energy over the window — see [`MomentaryLufs::energy`].
+    /// K-weighted energy over the window, summed across channels per
+    /// BS.1770-4 §2 — see [`MomentaryLufs::energy`] for why the channel count
+    /// must not be divided out.
     pub fn energy(&self) -> f64 {
-        (self.sum_sq_l + self.sum_sq_r) / (2.0 * self.window_size as f64)
+        (self.sum_sq_l + self.sum_sq_r) / self.window_size as f64
     }
 
     pub fn get_lufs(&self) -> f32 {
@@ -2020,6 +2030,116 @@ mod integrated_warmup_tests {
         assert!(
             meter.get_lufs() > -100.0,
             "the first complete 400 ms block must be recorded at t = 400 ms, not later"
+        );
+    }
+}
+
+#[cfg(test)]
+mod bs1770_channel_summation_tests {
+    //! BS.1770-4 §2 computes block loudness as `−0.691 + 10·log10(Σ G_i·z_i)`:
+    //! the K-weighted channel energies are **summed** (`G_i = 1` for L and R),
+    //! not averaged. The offset is calibrated against that summed form — it
+    //! cancels the K filter's +0.691 dB gain at 1 kHz, so the standard's own
+    //! calibration identity holds: a full-scale 1 kHz sine on both channels
+    //! reads exactly 0 LUFS.
+    //!
+    //! An earlier `energy()` divided by the channel count as well as the window
+    //! length, which reads every stereo signal 10·log10(2) ≈ 3.01 LU low — a
+    //! −23 dBFS reference tone reported −26.0 LUFS, and a master aimed at a
+    //! −14 LUFS platform target landed at −11. These tests pin the summed form
+    //! through absolute calibration identities, not relative comparisons,
+    //! because a uniform 3 LU miscalibration is invisible to any test that
+    //! compares one meter reading against another.
+
+    use super::{MomentaryLufs, ShortTermLufs};
+
+    const SR: f64 = 48_000.0;
+
+    /// EBU Tech 3341's tolerance on a loudness reading.
+    const TOLERANCE_LU: f32 = 0.1;
+
+    /// Peak amplitude of a 1 kHz sine at `dbfs` dBFS — full-scale is peak 1.0,
+    /// so a per-channel mean square of 0.5 at 0 dBFS. The calibration identity
+    /// below is stated in this convention.
+    fn peak_amplitude(dbfs: f64) -> f64 {
+        10.0_f64.powf(dbfs / 20.0)
+    }
+
+    fn tone_sample(n: usize, amplitude: f64) -> f32 {
+        (amplitude * (2.0 * core::f64::consts::PI * 1_000.0 * n as f64 / SR).sin()) as f32
+    }
+
+    /// Momentary loudness of a steady tone placed by `place` on both call
+    /// sites, read after two seconds so the 400 ms window holds nothing but
+    /// the tone.
+    fn momentary_of(amplitude: f64, place: impl Fn(f32) -> (f32, f32)) -> f32 {
+        let mut meter = MomentaryLufs::new(SR);
+        for n in 0..(SR as usize * 2) {
+            let (l, r) = place(tone_sample(n, amplitude));
+            meter.process_sample(l, r);
+        }
+        meter.get_lufs()
+    }
+
+    #[test]
+    fn a_full_scale_stereo_tone_reads_zero_lufs() {
+        // The standard's calibration identity: −0.691 + 10·log10(2 · 0.5 ·
+        // 10^0.0691) = 0.000. It only holds with the channels summed — the
+        // averaged form reads −3.01 LUFS and every displayed number inherits
+        // that bias.
+        let expected = 0.0_f32;
+        for (label, measured) in [
+            ("momentary", momentary_of(peak_amplitude(0.0), |s| (s, s))),
+            ("short-term", {
+                let mut meter = ShortTermLufs::new(SR);
+                for n in 0..(SR as usize * 4) {
+                    let s = tone_sample(n, peak_amplitude(0.0));
+                    meter.process_sample(s, s);
+                }
+                meter.get_lufs()
+            }),
+        ] {
+            assert!(
+                (measured - expected).abs() <= TOLERANCE_LU,
+                "a full-scale 1 kHz stereo tone reads {measured:.4} LUFS on the {label} \
+                 meter against the {expected:.1} LUFS BS.1770-4's −0.691 offset is \
+                 calibrated to produce — if the channel energies are being averaged \
+                 rather than summed this reads about −3.01"
+            );
+        }
+    }
+
+    #[test]
+    fn a_minus_23_dbfs_stereo_tone_reads_minus_23_lufs() {
+        // The EBU R128 reference level and the issue's headline number: a
+        // −23 dBFS stereo tone read −26.0 LUFS under channel averaging.
+        let measured = momentary_of(peak_amplitude(-23.0), |s| (s, s));
+        assert!(
+            (measured - (-23.0)).abs() <= TOLERANCE_LU,
+            "a −23 dBFS 1 kHz stereo tone reads {measured:.4} LUFS; EBU R128's reference \
+             level must read −23.0 ±0.1, and the channel-averaged form this guards \
+             against reads −26.0"
+        );
+    }
+
+    #[test]
+    fn a_mono_signal_doubled_to_both_channels_is_three_decibels_louder() {
+        // Doubling a mono signal onto both channels doubles the summed energy,
+        // i.e. raises loudness by 10·log10(2) ≈ 3.01 LU — the quantity
+        // BS.1770-4's per-channel weights exist to express. The averaged form
+        // reports the two as equal, which is precisely the defect: it cannot
+        // tell a mono file from the same material played on both channels of
+        // a stereo bus.
+        let mono = momentary_of(peak_amplitude(-20.0), |s| (s, 0.0));
+        let doubled = momentary_of(peak_amplitude(-20.0), |s| (s, s));
+        let expected_gap = 10.0 * 2.0_f64.log10();
+        assert!(
+            (f64::from(doubled - mono) - expected_gap).abs() <= f64::from(TOLERANCE_LU),
+            "the same mono signal reads {mono:.4} LUFS on one channel and {doubled:.4} \
+             LUFS on both — a gap of {:.4} LU against the 10·log10(2) = {expected_gap:.4} \
+             LU BS.1770-4's summation requires. Equal readings mean the channel \
+             energies are being averaged",
+            f64::from(doubled - mono)
         );
     }
 }
