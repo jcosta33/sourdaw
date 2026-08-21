@@ -103,13 +103,15 @@
  *     either. Pinning it needs a keeper strip on the live leg first.
  *   - **The master chain and adjustment layers.** The most a fixture routes is
  *     three strips and a send into one master gain.
- *   - **Note timing, loop iterations, comping and render tails.** One audio
- *     clip with its two user fades is fixtured; nothing MIDI is.
+ *   - **Note timing, comping and render tails.** One audio clip with its two
+ *     user fades is fixtured, and one looped clip covers a non-final
+ *     iteration's unfaded seam; nothing MIDI is.
  *     `offlineNoteScheduleTiming.spec.ts` covers the note path.
- *   - **Stretch beyond one constant rate.** A half-speed clip is fixtured, so
- *     the seam's destination-vs-source duration law is measured; a rate that
- *     *changes* across a render is not, and neither is a stretched clip whose
- *     material runs out under it.
+ *   - **Stretch beyond one constant rate.** A half-speed clip is fixtured,
+ *     once whole and once looped, so the seam's destination-vs-source duration
+ *     law is measured in both the masked and the unmasked direction; a rate
+ *     that *changes* across a render is not, and neither is a stretched clip
+ *     whose material runs out under it.
  *
  * ── Fixture constraints ───────────────────────────────────────────────────
  *
@@ -1970,9 +1972,10 @@ const CLIP_FIXTURE: ClipFixture = {
  * ramps the gain to zero at the region end — so an over-long half-speed
  * source is fully masked on its final iteration and the slowed fixture's span
  * assertions pass even against the pre-fix scheduler. It stays fixtured for
- * the unmasked failure modes (rate misread, source-time duration misread) and
- * so a future looped-clip fixture, where non-final iterations get no fade
- * out, inherits it (see #2217).
+ * the unmasked failure modes (rate misread, source-time duration misread);
+ * the masked, over-long direction is what the looped fixture below exists
+ * for — its first iteration gets no fade out, so nothing silences its
+ * overrun.
  */
 const SLOWED_CLIP_FIXTURE: ClipFixture = {
     ...CLIP_FIXTURE,
@@ -1990,6 +1993,106 @@ const SPED_UP_CLIP_FIXTURE: ClipFixture = {
 const STRETCHED_CLIP_FIXTURES = [SLOWED_CLIP_FIXTURE, SPED_UP_CLIP_FIXTURE];
 
 /**
+ * One looped clip: the same material, re-entered at the same source offset,
+ * once per loop slot. The loop law is the projection's own (`projectOfflineAudioClipPlaybacks`
+ * and `scheduleAudioClips` agree on it): every iteration re-reads the span the
+ * clip's source offset names, the first iteration alone carries the user fade
+ * in, and the last alone carries the fade out — a middle iteration carries
+ * neither, because it continues an unbroken sound.
+ *
+ * `fadeInReachesFullAt`/`fadeOutBeginsAt` absent means exactly what their
+ * absence means in `AudioGraphClipFade`: no user edge there, anti-click floor
+ * only. That is what makes this fixture the unmasked twin of the slowed one
+ * above — an iteration with no fade out cannot silence its own overrun.
+ */
+type LoopedClipFixture = {
+    strip: TrackFixture;
+    /** What is played. Both legs read the same buffer, sample for sample. */
+    material: HarnessAudioBuffer;
+    /** Source frames consumed per destination frame; `1` is unstretched. */
+    playbackRate: number;
+    /** The clip's own level, as a linear amplitude. */
+    clipGain: number;
+    /** One entry per loop iteration, in timeline order. */
+    iterations: Array<{
+        startSec: number;
+        bufferOffsetSec: number;
+        playDurationSec: number;
+        fadeInReachesFullAt?: number;
+        fadeOutBeginsAt?: number;
+    }>;
+};
+
+/** One half-second render, one clip of two 200 ms loop slots at half speed. */
+const LOOP_SLOT_SEC = 0.2;
+const LOOP_FIRST_ITERATION_START_SEC = CLIP_START_SEC;
+
+/**
+ * The slowed fixture's looped form: the same half-speed playback, looped so
+ * the region holds two iterations. The source offset sits at 0.25 s — half a
+ * second of material, entered a quarter of the way in — so the fixture reads
+ * deep into the file rather than at its head, and a runtime that drops the
+ * offset cannot pass by replaying sample 0.
+ */
+const LOOPED_SLOWED_CLIP_FIXTURE: LoopedClipFixture = {
+    strip: { ...CLIP_FIXTURE.strip, name: 'Looped half-speed clip' },
+    material: CLIP_MATERIAL,
+    playbackRate: 0.5,
+    clipGain: 0.7,
+    iterations: [
+        {
+            startSec: LOOP_FIRST_ITERATION_START_SEC,
+            bufferOffsetSec: 0.25,
+            playDurationSec: LOOP_SLOT_SEC,
+            fadeInReachesFullAt: CLIP_FIXTURE.fadeInReachesFullAt,
+        },
+        {
+            startSec: LOOP_FIRST_ITERATION_START_SEC + LOOP_SLOT_SEC,
+            bufferOffsetSec: 0.25,
+            playDurationSec: LOOP_SLOT_SEC,
+            fadeOutBeginsAt: CLIP_FIXTURE.fadeOutBeginsAt,
+        },
+    ],
+};
+
+/**
+ * Either clip fixture, normalised to the scheduled sources both legs play:
+ * one per playback for a whole clip, one per loop iteration for a looped one.
+ * The fade fields are absent rather than zeroed when the playback continues
+ * an unbroken sound — the distinction `AudioGraphClipFade` is built around.
+ */
+type ClipSourceRequest = {
+    startSec: number;
+    bufferOffsetSec: number;
+    playDurationSec: number;
+    playbackRate: number;
+    clipGain: number;
+    fadeInReachesFullAt?: number;
+    fadeOutBeginsAt?: number;
+};
+
+function clipSourceRequests(fixture: ClipFixture | LoopedClipFixture): ClipSourceRequest[] {
+    if ('iterations' in fixture) {
+        return fixture.iterations.map((iteration) => ({
+            ...iteration,
+            playbackRate: fixture.playbackRate,
+            clipGain: fixture.clipGain,
+        }));
+    }
+    return [
+        {
+            startSec: fixture.startSec,
+            bufferOffsetSec: fixture.bufferOffsetSec,
+            playDurationSec: fixture.playDurationSec,
+            playbackRate: fixture.playbackRate,
+            clipGain: fixture.clipGain,
+            fadeInReachesFullAt: fixture.fadeInReachesFullAt,
+            fadeOutBeginsAt: fixture.fadeOutBeginsAt,
+        },
+    ];
+}
+
+/**
  * The reference leg: `scheduleOfflineClipSource` called directly, which is what
  * `scheduleTrackClips` — the export's only clip caller — does.
  *
@@ -1998,7 +2101,7 @@ const STRETCHED_CLIP_FIXTURES = [SLOWED_CLIP_FIXTURE, SPED_UP_CLIP_FIXTURE];
  * arrive on, that an absent time still means the anti-click floor, and that the
  * clip's own gain is not folded in twice.
  */
-async function renderClipOffline(fixture: ClipFixture): Promise<LegRender> {
+async function renderClipOffline(fixture: ClipFixture | LoopedClipFixture): Promise<LegRender> {
     const context = newContext({ automation: 'scheduled' });
     const master = newMaster(context);
 
@@ -2009,25 +2112,29 @@ async function renderClipOffline(fixture: ClipFixture): Promise<LegRender> {
     );
     connectNodes(strip.outputNode, master);
 
-    scheduleOfflineClipSource({
-        context: context as unknown as BaseAudioContext,
-        destinationNode: strip.inputNode,
-        buffer: fixture.material as unknown as AudioBuffer,
-        startSec: fixture.startSec,
-        bufferOffsetSec: fixture.bufferOffsetSec,
-        playDuration: fixture.playDurationSec,
-        playbackRate: fixture.playbackRate,
-        clipGainValue: fixture.clipGain,
-        fadeIn: { userEndSec: fixture.fadeInReachesFullAt },
-        fadeOut: { userStartSec: fixture.fadeOutBeginsAt },
-        microFadeSeconds: MICRO_FADE_SECONDS,
-    });
+    for (const request of clipSourceRequests(fixture)) {
+        scheduleOfflineClipSource({
+            context: context as unknown as BaseAudioContext,
+            destinationNode: strip.inputNode,
+            buffer: fixture.material as unknown as AudioBuffer,
+            startSec: request.startSec,
+            bufferOffsetSec: request.bufferOffsetSec,
+            playDuration: request.playDurationSec,
+            playbackRate: request.playbackRate,
+            clipGainValue: request.clipGain,
+            ...(request.fadeInReachesFullAt === undefined
+                ? {}
+                : { fadeIn: { userEndSec: request.fadeInReachesFullAt } }),
+            ...(request.fadeOutBeginsAt === undefined ? {} : { fadeOut: { userStartSec: request.fadeOutBeginsAt } }),
+            microFadeSeconds: MICRO_FADE_SECONDS,
+        });
+    }
 
     const buffer = await context.startRendering();
     return { buffer, builtDeviceIds: strip.deviceEntries.map((entry) => entry.deviceId) };
 }
 
-async function renderClipThroughContract(fixture: ClipFixture): Promise<LegRender> {
+async function renderClipThroughContract(fixture: ClipFixture | LoopedClipFixture): Promise<LegRender> {
     const context = newContext({ automation: 'scheduled' });
     const master = newMaster(context);
 
@@ -2056,23 +2163,27 @@ async function renderClipThroughContract(fixture: ClipFixture): Promise<LegRende
                 contributesAudio: true,
             },
             { kind: 'set-track-output', trackId: FIXTURE_TRACK_ID, target: { kind: 'master' } },
-            {
-                kind: 'schedule-clip',
+            ...clipSourceRequests(fixture).map((request) => ({
+                kind: 'schedule-clip' as const,
                 playback: {
                     trackId: FIXTURE_TRACK_ID,
                     source: { sourceId: 'fixture-take', buffer: fixture.material as unknown as AudioBuffer },
-                    startTime: fixture.startSec,
-                    sourceOffsetSeconds: fixture.bufferOffsetSec,
-                    durationSeconds: fixture.playDurationSec,
-                    playbackRate: fixture.playbackRate,
-                    gain: fixture.clipGain,
+                    startTime: request.startSec,
+                    sourceOffsetSeconds: request.bufferOffsetSec,
+                    durationSeconds: request.playDurationSec,
+                    playbackRate: request.playbackRate,
+                    gain: request.clipGain,
                     fade: {
-                        fadeIn: { reachesFullAt: fixture.fadeInReachesFullAt },
-                        fadeOut: { beginsAt: fixture.fadeOutBeginsAt },
+                        ...(request.fadeInReachesFullAt === undefined
+                            ? {}
+                            : { fadeIn: { reachesFullAt: request.fadeInReachesFullAt } }),
+                        ...(request.fadeOutBeginsAt === undefined
+                            ? {}
+                            : { fadeOut: { beginsAt: request.fadeOutBeginsAt } }),
                         microFadeSeconds: MICRO_FADE_SECONDS,
                     },
                 },
-            },
+            })),
         ],
     });
 
@@ -2089,9 +2200,13 @@ async function renderClipThroughContract(fixture: ClipFixture): Promise<LegRende
 }
 
 type ClipMisread = (fixture: ClipFixture) => ClipFixture;
+type LoopedClipMisread = (fixture: LoopedClipFixture) => LoopedClipFixture;
 
-async function nullTestClip(input: { fixture: ClipFixture; misread?: ClipMisread }): Promise<NullTestResult> {
-    const asked = (input.misread ?? ((fixture: ClipFixture) => fixture))(input.fixture);
+async function nullTestClip<T extends ClipFixture | LoopedClipFixture>(input: {
+    fixture: T;
+    misread?: (fixture: T) => T;
+}): Promise<NullTestResult> {
+    const asked = input.misread !== undefined ? input.misread(input.fixture) : input.fixture;
     const reference = await renderClipOffline(input.fixture);
     const contract = await renderClipThroughContract(asked);
     const expected = input.fixture.strip.devices.filter((entry) => !entry.bypassed).map((entry) => entry.id);
@@ -2125,6 +2240,47 @@ const CLIP_DIVERGENCES: Array<{ name: string; misread: ClipMisread; band: Residu
         name: 'begins a user fade out a tenth of a millisecond early',
         misread: (fixture) => ({ ...fixture, fadeOutBeginsAt: fixture.fadeOutBeginsAt - 0.0001 }),
         band: 'inaudible',
+    },
+];
+
+/**
+ * The divergences only a loop can ask. Both red at full level here for the
+ * same reason the slowed fixture could not offer them: a non-final iteration
+ * has no fade out, so nothing ramps its overrun to zero while the region is
+ * still listening.
+ */
+const LOOPED_CLIP_DIVERGENCES: Array<{ name: string; misread: LoopedClipMisread; band: ResidualBand }> = [
+    {
+        // The over-long half of the destination-vs-source duration law: a
+        // backend that hands `start()` the destination span as its source
+        // duration sounds every iteration for `span / rate` of the timeline —
+        // twice the slot at half speed. On the whole clip that overrun plays
+        // after the fade out has already ramped it to silence; on the first
+        // iteration of a loop it lands on top of the second at full gain.
+        // Stated here as the duration a correct backend would have to be
+        // given to produce that same over-long call.
+        name: 'hands the source-duration conversion the destination span',
+        misread: (fixture) => ({
+            ...fixture,
+            iterations: fixture.iterations.map((iteration) => ({
+                ...iteration,
+                playDurationSec: iteration.playDurationSec / fixture.playbackRate,
+            })),
+        }),
+        band: 'audible',
+    },
+    {
+        // The clip's source offset class (#2217): a runtime that enters the
+        // material at its head instead of the offset the clip names plays a
+        // quarter second of the wrong material, on every iteration. The unit
+        // specs pin the projection's arithmetic; this keeps the class
+        // observable against a rendered frame.
+        name: 'enters each iteration at the head of the material',
+        misread: (fixture) => ({
+            ...fixture,
+            iterations: fixture.iterations.map((iteration) => ({ ...iteration, bufferOffsetSec: 0 })),
+        }),
+        band: 'audible',
     },
 ];
 
@@ -2241,6 +2397,80 @@ describe('live/offline null test — a stretched clip', () => {
         });
 
         expectNull(await nullTestClip({ fixture: SLOWED_CLIP_FIXTURE }));
+    });
+});
+
+describe('live/offline null test — a looped clip', () => {
+    it('nulls a looped half-speed clip through the contract-backed backend', async () => {
+        expectNull(await nullTestClip({ fixture: LOOPED_SLOWED_CLIP_FIXTURE }));
+    });
+
+    /**
+     * The loop's own duration pin, measured where the whole-clip span test
+     * above is blind. Both iterations replay the *same* span of material at
+     * the same rate through the same chain, so the second iteration's steady
+     * interior is a frame-for-frame replay of the first's — same offset into
+     * the slot, same fades already settled. An iteration that overstays its
+     * slot destroys that identity: the first iteration's overrun lands on top
+     * of the second at full gain, and the difference between corresponding
+     * frames jumps from round-off to about the settled level. The final
+     * fade-out cannot mask this, because the frames under measurement belong
+     * to the *second* iteration, which sounds at full level.
+     *
+     * The window sits 90–115 ms into each 200 ms slot: past the 60 ms fade in
+     * and the anti-click micro fades at the seam, and clear of the 80 ms fade
+     * out that begins 120 ms into the final slot — its ramp belongs to the
+     * last iteration alone and is not part of the replay. The only remaining
+     * difference at these frames is the strip filter's state, fed the same
+     * steady input for ≥30 ms on both passes against a memory of about a
+     * millisecond.
+     */
+    it('replays each iteration in its own destination span, not over it', async () => {
+        const rendered = await renderClipThroughContract(LOOPED_SLOWED_CLIP_FIXTURE);
+        const channel = rendered.buffer.getChannelData(0);
+        const slotFrames = LOOP_SLOT_SEC * SAMPLE_RATE;
+        const windowStartIntoSlot = 0.09;
+        const windowEndIntoSlot = 0.115;
+
+        function peakBetween(fromSec: number, toSec: number): number {
+            let peak = 0;
+            for (let frame = Math.round(fromSec * SAMPLE_RATE); frame < Math.round(toSec * SAMPLE_RATE); frame++) {
+                peak = Math.max(peak, Math.abs(channel[frame] ?? 0));
+            }
+            return peak;
+        }
+
+        const firstWindowStart = LOOP_FIRST_ITERATION_START_SEC + windowStartIntoSlot;
+        const settled = peakBetween(firstWindowStart, LOOP_FIRST_ITERATION_START_SEC + windowEndIntoSlot);
+        const secondWindowStart = LOOP_FIRST_ITERATION_START_SEC + LOOP_SLOT_SEC + windowStartIntoSlot;
+
+        expect(settled).toBeGreaterThan(0);
+
+        let replayDrift = 0;
+        for (
+            let frame = Math.round(secondWindowStart * SAMPLE_RATE);
+            frame < Math.round((secondWindowStart + (windowEndIntoSlot - windowStartIntoSlot)) * SAMPLE_RATE);
+            frame++
+        ) {
+            replayDrift = Math.max(replayDrift, Math.abs((channel[frame] ?? 0) - (channel[frame - slotFrames] ?? 0)));
+        }
+        // Round-off and filter-state residue sit far below a hundredth of
+        // level; an overrun of the first iteration into the second arrives at
+        // about the settled level itself.
+        expect(replayDrift).toBeLessThan(settled * 0.01);
+
+        const clipEndSec = LOOP_FIRST_ITERATION_START_SEC + 2 * LOOP_SLOT_SEC;
+        expect(peakBetween(clipEndSec + 0.01, RENDER_FRAMES / SAMPLE_RATE)).toBeLessThan(settled * 0.001);
+    });
+
+    it.each(LOOPED_CLIP_DIVERGENCES)('reds when the contract-backed backend $name', async (divergence) => {
+        expectPerturbedRed({
+            result: await nullTestClip({ fixture: LOOPED_SLOWED_CLIP_FIXTURE, misread: divergence.misread }),
+            band: divergence.band,
+            leg: 'looped clip leg',
+        });
+
+        expectNull(await nullTestClip({ fixture: LOOPED_SLOWED_CLIP_FIXTURE }));
     });
 });
 
