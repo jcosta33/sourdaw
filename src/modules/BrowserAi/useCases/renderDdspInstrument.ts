@@ -7,6 +7,7 @@ import { checkDdspInstrumentReady } from '../repositories/checkDdspInstrumentRea
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readRenderCache } from '../repositories/readRenderCache';
+import { renderRequestCancellation } from '../repositories/renderRequestCancellation';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { writeRenderCache } from '../repositories/writeRenderCache';
 import { applyFades, resampleTo44100 } from '../services/audioResampler';
@@ -85,6 +86,7 @@ export const renderDdspInstrument = inject({
     inferenceWorkerBridge,
     logger,
     readRenderCache,
+    renderRequestCancellation,
     resampleTo44100,
     withDdspInstrumentLock,
     writeRenderCache,
@@ -96,6 +98,7 @@ export const renderDdspInstrument = inject({
         inferenceWorkerBridge,
         logger,
         readRenderCache,
+        renderRequestCancellation,
         resampleTo44100,
         withDdspInstrumentLock,
         writeRenderCache,
@@ -111,11 +114,13 @@ export const renderDdspInstrument = inject({
             const instrument = resolveDdspInstrument(instrumentId);
             const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);
             const requestId = crypto.randomUUID();
-            enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
+            const cancellation = renderRequestCancellation.own(requestId, signal);
+            const requestSignal = cancellation.signal;
 
             try {
+                enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
                 const renderWithLock = async (): RenderDdspInstrumentOutput => {
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
                     const generation = {
                         id: instrument.id,
                         version: instrument.artifactVersion,
@@ -124,7 +129,7 @@ export const renderDdspInstrument = inject({
                     if (!(await checkDdspInstrumentReady(generation))) {
                         throw new Error(`DDSP instrument generation is not ready: ${instrument.id}`);
                     }
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
 
                     startActiveRender({
                         requestId,
@@ -143,9 +148,9 @@ export const renderDdspInstrument = inject({
                             artifactVersion: instrument.artifactVersion,
                             artifacts: instrument.artifacts,
                         },
-                        signal
+                        requestSignal
                     );
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
                     if (session.backend !== 'webgpu') {
                         throw new Error(`DDSP requires WebGPU; received ${session.backend}`);
                     }
@@ -163,9 +168,9 @@ export const renderDdspInstrument = inject({
                             `${DDSP_RENDER_REVISION}:frames=${String(raw.nFrames)}` +
                             `:samples44100=${String(targetSamples)}`,
                     });
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
                     const cached = await readRenderCache({ cacheKey });
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
                     if (cached?.length === targetSamples && cached.every(Number.isFinite)) {
                         markRenderComplete(phraseId, requestId, cacheKey);
                         return {
@@ -194,7 +199,7 @@ export const renderDdspInstrument = inject({
                     );
                     const audioChunks: Float32Array[] = [];
                     for (const chunk of chunks) {
-                        assertRequestOwner(phraseId, requestId, signal);
+                        assertRequestOwner(phraseId, requestId, requestSignal);
                         const result = await inferenceWorkerBridge.runDdspInference(
                             {
                                 type: 'run-ddsp-inference',
@@ -203,9 +208,9 @@ export const renderDdspInstrument = inject({
                                 f0Hz: chunk.f0Hz,
                                 loudnessDb: chunk.loudnessDb,
                             },
-                            signal
+                            requestSignal
                         );
-                        assertRequestOwner(phraseId, requestId, signal);
+                        assertRequestOwner(phraseId, requestId, requestSignal);
                         if (
                             result.backend !== session.backend ||
                             result.nativeSampleRate !== instrument.nativeSampleRate ||
@@ -229,11 +234,11 @@ export const renderDdspInstrument = inject({
                         audio: nativeAudio,
                         fromSampleRate: instrument.nativeSampleRate,
                     });
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
                     const audio = finalizeDdspAudio({ audio: resampled, postGain: 1, targetSamples });
                     applyFades(audio, FADE_SAMPLES);
                     await writeRenderCache({ cacheKey, audio });
-                    assertRequestOwner(phraseId, requestId, signal);
+                    assertRequestOwner(phraseId, requestId, requestSignal);
                     markRenderComplete(phraseId, requestId, cacheKey);
                     return {
                         audio,
@@ -247,9 +252,9 @@ export const renderDdspInstrument = inject({
                         },
                     };
                 };
-                return await withDdspInstrumentLock(instrument.id, 'shared', renderWithLock, signal);
+                return await withDdspInstrumentLock(instrument.id, 'shared', renderWithLock, requestSignal);
             } catch (error) {
-                if (signal?.aborted || isAbortError(error)) {
+                if (requestSignal.aborted || isAbortError(error)) {
                     cancelQueuedRender(phraseId, requestId, true);
                 } else {
                     updateRenderStatus(phraseId, requestId, 'error');
@@ -257,6 +262,7 @@ export const renderDdspInstrument = inject({
                 throw error;
             } finally {
                 clearActiveRender(requestId);
+                cancellation.dispose();
             }
         }
 );

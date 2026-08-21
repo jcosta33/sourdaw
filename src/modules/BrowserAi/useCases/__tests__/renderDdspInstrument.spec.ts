@@ -4,6 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { resolveDdspInstrument } from '../../models/DdspInstrumentCatalog';
 import { inferenceWorkerBridge } from '../../repositories/inferenceWorkerBridge';
+import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
@@ -48,11 +49,14 @@ describe('renderDdspInstrument', () => {
         lockHeld = false;
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
         inferenceProgressStore.set({ activeRenders: {} });
-        loadDdspSession.mockReset().mockResolvedValue({
-            sessionKey: 'verified-session',
-            backend: 'webgpu',
-            modelFrameLength: SETTINGS.modelMaxFrameLength,
-            settings: SETTINGS,
+        loadDdspSession.mockReset().mockImplementation(() => {
+            expect(lockHeld).toBe(true);
+            return Promise.resolve({
+                sessionKey: 'verified-session',
+                backend: 'webgpu',
+                modelFrameLength: SETTINGS.modelMaxFrameLength,
+                settings: SETTINGS,
+            });
         });
         runDdspInference.mockReset().mockImplementation(({ requestId }: { requestId: string }) => {
             expect(lockHeld).toBe(true);
@@ -65,7 +69,10 @@ describe('renderDdspInstrument', () => {
             });
         });
         cancelTfjsRequest.mockReset();
-        checkDdspInstrumentReady.mockReset().mockResolvedValue(true);
+        checkDdspInstrumentReady.mockReset().mockImplementation(() => {
+            expect(lockHeld).toBe(true);
+            return Promise.resolve(true);
+        });
         computeRenderCacheKey
             .mockReset()
             .mockImplementation(({ qualityParams }: { qualityParams: string }) =>
@@ -100,6 +107,7 @@ describe('renderDdspInstrument', () => {
             inferenceWorkerBridge: { loadDdspSession, runDdspInference },
             logger,
             readRenderCache,
+            renderRequestCancellation,
             resampleTo44100,
             withDdspInstrumentLock,
             writeRenderCache,
@@ -147,7 +155,12 @@ describe('renderDdspInstrument', () => {
     it('holds the shared verified-generation lock from readiness through inference', async () => {
         await render();
 
-        expect(withDdspInstrumentLock).toHaveBeenCalledWith('ddsp-violin', 'shared', expect.any(Function), undefined);
+        expect(withDdspInstrumentLock).toHaveBeenCalledWith(
+            'ddsp-violin',
+            'shared',
+            expect.any(Function),
+            expect.any(AbortSignal)
+        );
         expect(checkDdspInstrumentReady).toHaveBeenCalledWith({
             id: 'ddsp-violin',
             version: resolveDdspInstrument('ddsp-violin').artifactVersion,
@@ -201,15 +214,21 @@ describe('renderDdspInstrument', () => {
         expect(inferenceProgressStore.value?.activeRenders).toEqual({});
     });
 
-    it('uses the render request identity to cancel a deferred DDSP session load', async () => {
+    it('aborts a deferred DDSP session load through request-owned cancellation', async () => {
         let rejectLoad = (_error: unknown): void => undefined;
+        let loadSignal: AbortSignal | undefined;
         loadDdspSession.mockImplementation(
-            () =>
+            (_input, signal?: AbortSignal) =>
                 new Promise((_resolve, reject) => {
                     rejectLoad = reject;
+                    loadSignal = signal;
+                    signal?.addEventListener(
+                        'abort',
+                        () => reject(new DOMException('Render cancelled', 'AbortError')),
+                        { once: true }
+                    );
                 })
         );
-        cancelTfjsRequest.mockImplementationOnce(() => rejectLoad(new DOMException('Render cancelled', 'AbortError')));
 
         const pending = render();
         await vi.waitFor(() => expect(loadDdspSession).toHaveBeenCalledOnce());
@@ -217,11 +236,51 @@ describe('renderDdspInstrument', () => {
         expect(requestId).toBeDefined();
         const observedRequestId = loadDdspSession.mock.calls[0]?.[0].requestId;
         cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        const cancelledBeforeWorkerReply = loadSignal?.aborted === true;
+        if (!cancelledBeforeWorkerReply) {
+            rejectLoad(new DOMException('Red proof cleanup', 'AbortError'));
+        }
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(cancelledBeforeWorkerReply).toBe(true);
         expect(observedRequestId).toBe(requestId);
         expect(cancelTfjsRequest).toHaveBeenCalledWith(requestId);
         expect(runDdspInference).not.toHaveBeenCalled();
+        expect(renderRequestCancellation.cancel(requestId!)).toBe(false);
+    });
+
+    it('aborts while queued for the shared lock and leaves a sibling render usable', async () => {
+        let queuedSignal: AbortSignal | undefined;
+        let rejectQueued = (_error: unknown): void => undefined;
+        withDdspInstrumentLock.mockImplementationOnce(
+            (_id: string, _mode: string, _operation: () => Promise<unknown>, signal?: AbortSignal) =>
+                new Promise((_resolve, reject) => {
+                    queuedSignal = signal;
+                    rejectQueued = reject;
+                    signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+                })
+        );
+
+        const cancelled = render();
+        await vi.waitFor(() => expect(withDdspInstrumentLock).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        const cancelledWhileQueued = queuedSignal?.aborted === true;
+        if (!cancelledWhileQueued) {
+            rejectQueued(new DOMException('Red proof cleanup', 'AbortError'));
+        }
+
+        await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+        expect(cancelledWhileQueued).toBe(true);
+        expect(checkDdspInstrumentReady).not.toHaveBeenCalled();
+        expect(loadDdspSession).not.toHaveBeenCalled();
+        expect(runDdspInference).not.toHaveBeenCalled();
+        expect(renderRequestCancellation.cancel(requestId!)).toBe(false);
+
+        const sibling = await render({ phraseId: 'phrase-2' });
+        expect(sibling.backend).toBe('webgpu');
+        expect(runDdspInference).toHaveBeenCalledOnce();
     });
 
     it('honors AbortSignal ownership and passes the same signal through session load and inference', async () => {
@@ -229,11 +288,14 @@ describe('renderDdspInstrument', () => {
 
         await render({ signal: controller.signal });
 
-        expect(withDdspInstrumentLock.mock.calls[0]?.[3]).toBe(controller.signal);
-        expect(loadDdspSession.mock.calls[0]?.[1]).toBe(controller.signal);
-        expect(runDdspInference.mock.calls[0]?.[1]).toBe(controller.signal);
+        const requestSignal = withDdspInstrumentLock.mock.calls[0]?.[3];
+        expect(requestSignal).toBeInstanceOf(AbortSignal);
+        expect(requestSignal).not.toBe(controller.signal);
+        expect(loadDdspSession.mock.calls[0]?.[1]).toBe(requestSignal);
+        expect(runDdspInference.mock.calls[0]?.[1]).toBe(requestSignal);
 
         controller.abort();
+        expect(requestSignal?.aborted).toBe(false);
         await expect(render({ phraseId: 'aborted', signal: controller.signal })).rejects.toMatchObject({
             name: 'AbortError',
         });

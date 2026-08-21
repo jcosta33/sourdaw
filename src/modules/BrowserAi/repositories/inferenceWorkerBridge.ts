@@ -125,6 +125,46 @@ async function waitForAbortableTfjsRequest<TResult>(
     }
 }
 
+async function waitForAbortableModelRead(
+    read: Promise<MessagePort | null>,
+    signal: AbortSignal | undefined
+): Promise<MessagePort | null> {
+    if (signal === undefined) {
+        return read;
+    }
+    if (signal.aborted) {
+        void read.then(
+            (port) => port?.close(),
+            () => undefined
+        );
+        throw createAbortError();
+    }
+    return new Promise((resolve, reject) => {
+        let aborted = false;
+        const cancel = (): void => {
+            aborted = true;
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', cancel, { once: true });
+        void read.then(
+            (port) => {
+                signal.removeEventListener('abort', cancel);
+                if (aborted) {
+                    port?.close();
+                    return;
+                }
+                resolve(port);
+            },
+            (error: unknown) => {
+                signal.removeEventListener('abort', cancel);
+                if (!aborted) {
+                    reject(error);
+                }
+            }
+        );
+    });
+}
+
 function stopWorker(state: WorkerState, stoppedWorker: Worker): void {
     stoppedWorker.onmessage = null;
     stoppedWorker.onerror = null;
@@ -310,12 +350,15 @@ async function readDdspArtifacts(
     try {
         for (const artifact of artifacts) {
             throwIfAborted(signal);
-            const modelDataPort = await modelStorageWorkerBridge.readModel({
-                family: 'ddsp',
-                modelId: `${instrumentId}/${artifactVersion}/${artifact.path}`,
-                expectedSizeBytes: artifact.sizeBytes,
-                expectedSha256: artifact.sha256,
-            });
+            const modelDataPort = await waitForAbortableModelRead(
+                modelStorageWorkerBridge.readModel({
+                    family: 'ddsp',
+                    modelId: `${instrumentId}/${artifactVersion}/${artifact.path}`,
+                    expectedSizeBytes: artifact.sizeBytes,
+                    expectedSha256: artifact.sha256,
+                }),
+                signal
+            );
             if (modelDataPort === null) {
                 throw new Error(`Verified DDSP artifact is missing: ${artifact.path}`);
             }

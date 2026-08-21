@@ -760,6 +760,53 @@ describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
 });
 
 describe('inferenceWorkerBridge — TF.js cancellation', () => {
+    it('aborts a deferred artifact read before session creation and leaves sibling work running', async () => {
+        const controller = new AbortController();
+        const lateChannel = new MessageChannel();
+        storageChannels.push(lateChannel);
+        const close = vi.spyOn(lateChannel.port1, 'close');
+        let resolveRead = (_port: MessagePort | null): void => undefined;
+        vi.mocked(modelStorageWorkerBridge.readModel).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveRead = resolve;
+                })
+        );
+        let loadSettled = false;
+        const load = inferenceWorkerBridge
+            .loadDdspSession({ ...violinLoad, requestId: 'deferred-artifact' }, controller.signal)
+            .catch((error: unknown) => error)
+            .then((result) => {
+                loadSettled = true;
+                return result;
+            });
+        await vi.waitFor(() => expect(modelStorageWorkerBridge.readModel).toHaveBeenCalledOnce());
+        const sibling = inferenceWorkerBridge.runDdspInference(ddspRequest('sibling'));
+        await flush();
+        const worker = tfjsWorker();
+
+        controller.abort();
+        await flush();
+        const settledBeforeArtifactRead = loadSettled;
+        resolveRead(lateChannel.port1);
+
+        await expect(load).resolves.toMatchObject({ name: 'AbortError' });
+        await flush();
+        expect(close).toHaveBeenCalledOnce();
+        expect(worker.postMessage.mock.calls.some(([request]) => request.type === 'create-ddsp-session')).toBe(false);
+
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'sibling',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
+        await expect(sibling).resolves.toMatchObject({ requestId: 'sibling', backend: 'webgpu' });
+        expect(worker.terminate).not.toHaveBeenCalled();
+        expect(settledBeforeArtifactRead).toBe(true);
+    });
+
     it('uses the render request identity so cancellation can reject a pending DDSP session load', async () => {
         const load = inferenceWorkerBridge
             .loadDdspSession({ ...violinLoad, requestId: 'render-session-load' })
