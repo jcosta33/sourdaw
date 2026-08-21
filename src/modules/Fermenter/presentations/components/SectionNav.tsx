@@ -5,6 +5,8 @@
  */
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
+
 export type FermenterSection = 'osc' | 'filter' | 'env' | 'mod' | 'fx';
 
 const SECTIONS: Array<{ id: FermenterSection; label: string; color: string }> = [
@@ -21,7 +23,7 @@ type SectionNavProps = {
 };
 
 export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement => (
-    <div className="flex gap-0.5 px-1">
+    <Row align="stretch" gap={0.5} className="px-1">
         {SECTIONS.map(({ id, label, color }) => (
             <button
                 key={id}
@@ -35,5 +37,5 @@ export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement 
                 {label}
             </button>
         ))}
-    </div>
+    </Row>
 );

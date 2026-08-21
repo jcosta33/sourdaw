@@ -12,6 +12,7 @@ import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { DawSideRail } from '#/components/daw/DawSideRail';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
@@ -55,17 +56,17 @@ export const SessionView = (): ReactElement => {
     const renderIife_7 = () => {
         if (tracks.length === 0) {
             return (
-                <div className="flex min-h-full items-center justify-center p-6">
+                <Row justify="center" className="min-h-full p-6">
                     <DawEmptyState
                         title="No session tracks yet"
                         description="Add a track to start launching clips and scenes from the grid."
                         className="max-w-sm"
                     />
-                </div>
+                </Row>
             );
         } else {
             return (
-                <div className="flex min-w-max">
+                <Row align="stretch" className="min-w-max">
                     <DawSideRail className="w-10">
                         <DawGridHeaderCell className="h-6 text-[10px] uppercase tracking-wider text-muted-foreground">
                             Scene
@@ -78,9 +79,9 @@ export const SessionView = (): ReactElement => {
                                 onClick={() => handleLaunchScene(index)}
                                 aria-label={`Launch scene ${index + 1}`}
                             >
-                                <div className="flex h-full items-center justify-center">
+                                <Row justify="center" className="h-full">
                                     <Play className="size-3 text-muted-foreground transition-colors hover:text-foreground" />
-                                </div>
+                                </Row>
                             </button>
                         ))}
                     </DawSideRail>
@@ -91,7 +92,7 @@ export const SessionView = (): ReactElement => {
                         );
 
                         return (
-                            <div key={track.id} className="flex w-24 shrink-0 flex-col border-r border-border-hairline">
+                            <Stack shrink={false} className="w-24 border-r border-border-hairline" key={track.id}>
                                 <DawGridHeaderCell
                                     className="h-6 truncate px-1"
                                     accentColor={track.color ?? undefined}
@@ -124,7 +125,7 @@ export const SessionView = (): ReactElement => {
                                             };
 
                                             return (
-                                                <div className="flex items-center gap-1">
+                                                <Row gap={1}>
                                                     {isActive ? (
                                                         <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
                                                     ) : null}
@@ -141,7 +142,7 @@ export const SessionView = (): ReactElement => {
                                                     >
                                                         Clip
                                                     </span>
-                                                </div>
+                                                </Row>
                                             );
                                         } else {
                                             return <Plus className="size-2.5 text-muted-foreground/30" />;
@@ -164,10 +165,10 @@ export const SessionView = (): ReactElement => {
                                         </button>
                                     );
                                 })}
-                            </div>
+                            </Stack>
                         );
                     })}
-                </div>
+                </Row>
             );
         }
     };

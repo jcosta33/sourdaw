@@ -13,6 +13,7 @@ import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } fro
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel } from '#/components/daw/DawMenuParts';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import {
     DropdownMenu,
@@ -203,8 +204,9 @@ export const TrackListView = ({
     };
 
     return (
-        <div
-            className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well"
+        <Stack
+            shrink={false}
+            className="h-full border-r border-border/30 bg-surface-well"
             style={style}
             data-onboarding="track-list"
         >
@@ -212,8 +214,9 @@ export const TrackListView = ({
                 className="group relative shrink-0 items-end px-2 pb-1 pt-2"
                 style={{ height: extraHeaderHeight }}
                 actions={
-                    <div
-                        className="relative z-20 ml-auto flex items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100"
+                    <Row
+                        gap={0.5}
+                        className="relative z-20 ml-auto opacity-80 transition-opacity group-hover:opacity-100"
                         onClick={(event) => event.stopPropagation()}
                     >
                         <Tooltip>
@@ -270,7 +273,7 @@ export const TrackListView = ({
                             <TooltipContent>Add Folder</TooltipContent>
                         </Tooltip>
                         <AddTrackMenu trackCount={tracks.length} />
-                    </div>
+                    </Row>
                 }
             >
                 <MiniMasterSpectrum />
@@ -331,7 +334,7 @@ export const TrackListView = ({
                     ) : null}
                 </div>
             </div>
-        </div>
+        </Stack>
     );
 };
 

@@ -4,6 +4,7 @@ import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { logger } from '#/infra/logger/appLogger';
@@ -107,8 +108,9 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
     };
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
+        <Row
+            justify="center"
+            className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
             role="dialog"
             aria-modal="true"
             aria-label="Branches"
@@ -131,14 +133,14 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                     }
                 />
 
-                <div className="space-y-4 px-4 py-4">
+                <Stack gap={4} className="px-4 py-4">
                     {operationError === null ? null : (
                         <p key={failureSeq} role="alert" className="text-[11px] text-[var(--color-state-danger)]">
                             {operationError}
                         </p>
                     )}
 
-                    <div className="flex max-h-60 flex-col gap-1 overflow-y-auto">
+                    <Stack gap={1} className="max-h-60 overflow-y-auto">
                         {state.branches.map((branch) => (
                             <BranchRow
                                 key={branch.branchId}
@@ -149,9 +151,9 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                                 onDelete={() => handleDelete(branch.branchId)}
                             />
                         ))}
-                    </div>
+                    </Stack>
 
-                    <div className="flex gap-1.5">
+                    <Row align="stretch" gap={1.5}>
                         <Input
                             value={newBranchName}
                             onChange={(event) => setNewBranchName(event.target.value)}
@@ -173,10 +175,10 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                             <Plus className="size-3" />
                             Fork
                         </Button>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             </DawUtilityPanel>
-        </div>
+        </Row>
     );
 };
 

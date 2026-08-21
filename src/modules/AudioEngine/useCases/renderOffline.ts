@@ -1,6 +1,7 @@
 import { deriveEffectiveAudibility, deriveVcaMultiplier, getVcaGroupsState } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createExportError } from '../errors/ExportError';
 import { type AudioGraphApplyResult, type AudioGraphCommand } from '../models/AudioGraphBackend';
@@ -110,19 +111,28 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             projectMidiEvents,
             selectMidiEventProbability,
             projectPpqEndpoints,
+            resolveTempoAtBeat,
             processYeastMidi,
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
         } = renderContext;
-        if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints || !projectChordPitch) {
+        if (
+            !projectMidiEvents ||
+            !selectMidiEventProbability ||
+            !projectPpqEndpoints ||
+            !projectChordPitch ||
+            !resolveTempoAtBeat
+        ) {
             throw new Error('Offline musical projection is not configured');
         }
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
         const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
         // Use the project's master gain level (stored as 0-100) rather than a hardcoded value.
-        const masterGainValue = Math.max(0, Math.min(1, (transport?.masterGain ?? 80) / 100));
+        // The ceiling is the fader's own headroom (`FADER_MAX_GAIN`), not unity —
+        // matching what `createWebAudioEngine.setMasterGain` clamps live playback to.
+        const masterGainValue = Math.max(0, Math.min(FADER_MAX_GAIN, (transport?.masterGain ?? 80) / 100));
 
         // Exclude muted, disabled, and structural (folder) tracks from the render.
         // We MUST include folder tracks if they contain a Toaster device, because
@@ -240,6 +250,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 defaultTempo,
                 changes,
                 projectPpqEndpoints,
+                resolveTempoAtBeat,
                 renderableTracks: allRenderableTracks,
                 scheduledTracks,
                 scheduledTrackIds,
@@ -409,6 +420,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    resolveTempoAtBeat,
                     processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,

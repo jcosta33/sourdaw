@@ -5,6 +5,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { PROCESSOR_PARAM_DEFAULTS, type ProcessorType } from '../../models/ProcessorCatalog';
 
@@ -51,7 +52,7 @@ const K = ({
     defaultValue: number;
     onSetParam: OnSetParam;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-0">
+    <Stack align="center">
         <RotaryKnob
             value={value}
             // Every move commits through the store (like YeastPanel's own
@@ -75,7 +76,7 @@ const K = ({
                 {unit}
             </span>
         ) : null}
-    </div>
+    </Stack>
 );
 
 const Sel = ({
@@ -93,7 +94,7 @@ const Sel = ({
     value: number;
     onSetParam: OnSetParam;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-0.5">
+    <Stack align="center" gap={0.5}>
         <select
             className="h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
             value={value}
@@ -106,7 +107,7 @@ const Sel = ({
             ))}
         </select>
         <span className="text-[6px] text-muted-foreground">{label}</span>
-    </div>
+    </Stack>
 );
 
 export const ProcessorParams = ({
@@ -130,7 +131,7 @@ export const ProcessorParams = ({
     switch (processorType) {
         case 'arpeggiator':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Sel
                         id={pid}
                         name="mode"
@@ -219,12 +220,12 @@ export const ProcessorParams = ({
                         value={params?.restart_mode ?? 1}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'chord':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Sel
                         id={pid}
                         name="chord_type"
@@ -274,12 +275,12 @@ export const ProcessorParams = ({
                         value={params?.strum_direction ?? 0}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'chordMemory':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <button
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-border/30 cursor-pointer hover:text-foreground text-muted-foreground"
@@ -302,12 +303,12 @@ export const ProcessorParams = ({
                     >
                         Clear All
                     </button>
-                </div>
+                </Row>
             );
 
         case 'scale':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Sel
                         id={pid}
                         name="root"
@@ -359,12 +360,12 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.scale.transpose!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'harmonizer':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Sel
                         id={pid}
                         name="root"
@@ -421,12 +422,12 @@ export const ProcessorParams = ({
                         value={params?.voice1_enabled ?? 0}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'repeater':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="repeat_count"
@@ -483,12 +484,12 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.repeater.pitch_step!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'velocity':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Sel
                         id={pid}
                         name="mode"
@@ -527,12 +528,12 @@ export const ProcessorParams = ({
                         value={params?.curve ?? 0}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'humanizer':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <Sel
                         id={pid}
                         name="preset"
@@ -576,12 +577,12 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.humanizer.timing_mean_ms!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'filter':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="note_min"
@@ -634,12 +635,12 @@ export const ProcessorParams = ({
                         value={params?.invert ?? 0}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'transposer':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="semitones"
@@ -675,13 +676,13 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.transposer.random_range!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'groove':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
-                    <label className="flex flex-col items-center gap-0.5 text-[6px] text-muted-foreground">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
+                    <Stack as="label" align="center" gap={0.5} className="text-[6px] text-muted-foreground">
                         <select
                             aria-label="Groove template"
                             className="h-4 rounded border border-border/30 bg-surface-inset px-0.5 text-[6px] text-foreground"
@@ -700,7 +701,7 @@ export const ProcessorParams = ({
                             ))}
                         </select>
                         Template
-                    </label>
+                    </Stack>
                     <K
                         id={pid}
                         name="amount"
@@ -712,12 +713,12 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.groove.amount!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'ccGenerator':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="cc_number"
@@ -778,12 +779,12 @@ export const ProcessorParams = ({
                         value={params?.retrigger ?? 0}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'euclidean':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="hits"
@@ -861,12 +862,12 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.euclidean.velocity!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         case 'markov':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="rate_denom"
@@ -901,12 +902,12 @@ export const ProcessorParams = ({
                         onSetParam={onSetParam}
                     />
                     <span className="text-[6px] text-muted-foreground/50 self-center">Hold notes to set states</span>
-                </div>
+                </Row>
             );
 
         case 'mutation':
             return (
-                <div className="flex flex-wrap gap-2 px-1 py-1">
+                <Row align="stretch" wrap gap={2} className="px-1 py-1">
                     <K
                         id={pid}
                         name="depth"
@@ -929,7 +930,7 @@ export const ProcessorParams = ({
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.mutation.rate!}
                         onSetParam={onSetParam}
                     />
-                </div>
+                </Row>
             );
 
         default:

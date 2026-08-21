@@ -139,8 +139,20 @@ export async function renderTrackSubgraphOffline({
         sampleRate,
     });
     const { midi, defaultTempo, changes, durationSeconds, ...projections } = renderContext;
-    const { projectMidiEvents, projectPpqEndpoints, selectMidiEventProbability, projectChordPitch } = projections;
-    if (!projectMidiEvents || !projectPpqEndpoints || !selectMidiEventProbability || !projectChordPitch) {
+    const {
+        projectMidiEvents,
+        projectPpqEndpoints,
+        selectMidiEventProbability,
+        projectChordPitch,
+        resolveTempoAtBeat,
+    } = projections;
+    if (
+        !projectMidiEvents ||
+        !projectPpqEndpoints ||
+        !selectMidiEventProbability ||
+        !projectChordPitch ||
+        !resolveTempoAtBeat
+    ) {
         throw new Error('Offline musical projection is not configured');
     }
 
@@ -271,7 +283,7 @@ export async function renderTrackSubgraphOffline({
         // scheduler only reads note tables, so an empty one is the honest input.
         const midiState = midi ?? EMPTY_MIDI_STATE;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
-        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
             if (!strip) {
@@ -292,6 +304,7 @@ export async function renderTrackSubgraphOffline({
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    resolveTempoAtBeat,
                     processYeastMidi: projections.processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,

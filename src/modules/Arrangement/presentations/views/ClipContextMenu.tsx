@@ -4,6 +4,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
@@ -362,7 +363,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     <DawMenuSeparator className="border-border/50" />
 
                     <DawMenuMutedRow>Color</DawMenuMutedRow>
-                    <div className="flex gap-1 px-3 py-1">
+                    <Row align="stretch" gap={1} className="px-3 py-1">
                         {CLIP_COLOR_OPTIONS.map((color) => (
                             <DawSwatchButton
                                 key={color || 'default'}
@@ -372,7 +373,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                                 aria-label={color || 'Default color'}
                             />
                         ))}
-                    </div>
+                    </Row>
 
                     <DawMenuSeparator className="border-border/50" />
 

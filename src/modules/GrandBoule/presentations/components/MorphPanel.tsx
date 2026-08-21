@@ -10,6 +10,7 @@ import { type ReactElement } from 'react';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import {
     type GrandBouleMorphState,
@@ -39,9 +40,9 @@ const ModelSelector = ({
     selectedId: string;
     onSelect: (id: string) => void;
 }): ReactElement => (
-    <div className="flex flex-col gap-1">
+    <Stack gap={1}>
         <div className="text-[8px] uppercase tracking-[0.2em] text-neutral-400/50">{label}</div>
-        <div className="flex flex-col gap-0.5">
+        <Stack gap={0.5}>
             {BUILTIN_PIANO_MODELS.map((model: GrandBoulePianoModel) => {
                 const active = model.id === selectedId;
                 return (
@@ -59,8 +60,8 @@ const ModelSelector = ({
                     </button>
                 );
             })}
-        </div>
-    </div>
+        </Stack>
+    </Stack>
 );
 
 const MorphKnob = ({
@@ -82,7 +83,7 @@ const MorphKnob = ({
     onChange: (value: number) => void;
     readout: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <Stack align="center" gap={1}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -97,7 +98,7 @@ const MorphKnob = ({
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
-    </div>
+    </Stack>
 );
 
 /**
@@ -114,11 +115,11 @@ const BlendIndicator = ({
     modelAName: string;
     modelBName: string;
 }): ReactElement => (
-    <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between text-[8px] text-muted-foreground/50">
+    <Stack gap={1}>
+        <Row justify="between" className="text-[8px] text-muted-foreground/50">
             <span className="truncate max-w-[5rem]">{modelAName}</span>
             <span className="truncate max-w-[5rem] text-right">{modelBName}</span>
-        </div>
+        </Row>
         <div className="relative h-2 w-full overflow-hidden rounded-full">
             <div
                 className="absolute inset-0 rounded-full"
@@ -131,7 +132,7 @@ const BlendIndicator = ({
                 style={{ left: `${morphPosition * 100}%` }}
             />
         </div>
-    </div>
+    </Stack>
 );
 
 // ---------------------------------------------------------------------------
@@ -166,9 +167,9 @@ export const MorphPanel = ({
             detail="Blend between piano models (§3.1)."
             titleClassName="text-neutral-400/80"
         >
-            <div className="flex flex-col gap-3">
+            <Stack gap={3}>
                 {/* Enable toggle */}
-                <div className="flex items-center justify-between gap-2">
+                <Row justify="between" gap={2}>
                     <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/60">
                         Enable morph
                     </span>
@@ -177,7 +178,7 @@ export const MorphPanel = ({
                         tone="neutral"
                         onClick={() => onEnabledChange(!morph.enabled)}
                     />
-                </div>
+                </Row>
 
                 {/* Model selectors */}
                 <div className="grid grid-cols-2 gap-2">
@@ -219,7 +220,7 @@ export const MorphPanel = ({
                         readout={formatBalance(morph.layerBalance)}
                     />
                 </div>
-            </div>
+            </Stack>
         </DawPluginSectionCard>
     );
 };

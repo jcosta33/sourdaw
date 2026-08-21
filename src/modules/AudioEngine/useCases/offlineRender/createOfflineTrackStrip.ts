@@ -69,10 +69,11 @@ export async function createOfflineTrackStrip(
     preFaderTap.gain.value = 1;
 
     const faderNode = offlineCtx.createGain();
-    // FX-7: the live fader clamps to [0, 1] (`TrackNode.setGain`). This path
-    // clamped only the floor, so a stored gain above unity — which importers and
-    // older projects can carry — rendered louder on export than it ever played
-    // back. The two runtimes must apply the same level law.
+    // FX-7: the live fader clamps to `[0, FADER_MAX_GAIN]` — the `+6 dB` of
+    // headroom `TrackNode.setGain` allows, not unity. This path clamped only the
+    // floor, so a stored gain above that ceiling — which importers and older
+    // projects can carry — rendered louder on export than it ever played back.
+    // The two runtimes must apply the same level law.
     //
     // The VCA group master multiplies in first, then the pair is clamped
     // together — the order live composes in.

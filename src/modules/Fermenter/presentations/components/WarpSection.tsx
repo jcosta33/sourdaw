@@ -5,6 +5,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { WARP_MODE_NAMES, AUDIO_MOD_TARGET_NAMES } from '../../models/FermenterPatch';
 
@@ -37,8 +38,8 @@ export const WarpSection = ({
     const renderIife_1 = () => {
         if (audioModTarget > 0) {
             return (
-                <div className="flex items-end gap-2 px-1">
-                    <div className="flex flex-col items-center gap-0.5">
+                <Row align="end" gap={2} className="px-1">
+                    <Stack align="center" gap={0.5}>
                         <RotaryKnob
                             value={audioModRate}
                             onChange={(v) => onParam('audioModRate', v)}
@@ -51,8 +52,8 @@ export const WarpSection = ({
                         />
                         <span className="text-[7px] text-muted-foreground">Rate</span>
                         <span className="text-[6px] text-muted-foreground/50 font-mono">{audioModRateStr}</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-0.5">
+                    </Stack>
+                    <Stack align="center" gap={0.5}>
                         <RotaryKnob
                             value={audioModDepth}
                             onChange={(v) => onParam('audioModDepth', v)}
@@ -64,8 +65,8 @@ export const WarpSection = ({
                             tone="sage"
                         />
                         <span className="text-[7px] text-muted-foreground">Depth</span>
-                    </div>
-                </div>
+                    </Stack>
+                </Row>
             );
         } else {
             return null;
@@ -73,15 +74,15 @@ export const WarpSection = ({
     };
 
     return (
-        <div className="space-y-2">
+        <Stack gap={2}>
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
                 Warp / Mod
             </div>
 
             {/* Warp mode selector */}
-            <div className="space-y-0.5">
+            <Stack gap={0.5}>
                 <div className="text-[8px] text-muted-foreground/70 px-1">Time-Domain Warp</div>
-                <div className="flex flex-wrap gap-0.5 px-1">
+                <Row align="stretch" wrap gap={0.5} className="px-1">
                     {WARP_MODE_NAMES.map((name, i) => (
                         <DawPluginChip
                             key={name}
@@ -93,10 +94,10 @@ export const WarpSection = ({
                             {name}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
                 {warpMode > 0 ? (
-                    <div className="flex items-end gap-2 px-1">
-                        <div className="flex flex-col items-center gap-0.5">
+                    <Row align="end" gap={2} className="px-1">
+                        <Stack align="center" gap={0.5}>
                             <RotaryKnob
                                 value={warpAmount}
                                 onChange={(v) => onParam('warpAmount', v)}
@@ -108,15 +109,15 @@ export const WarpSection = ({
                                 tone="sage"
                             />
                             <span className="text-[7px] text-muted-foreground">Amount</span>
-                        </div>
-                    </div>
+                        </Stack>
+                    </Row>
                 ) : null}
-            </div>
+            </Stack>
 
             {/* Audio-rate modulation */}
-            <div className="space-y-0.5">
+            <Stack gap={0.5}>
                 <div className="text-[8px] text-muted-foreground/70 px-1">Audio-Rate Mod</div>
-                <div className="flex gap-0.5 px-1">
+                <Row align="stretch" gap={0.5} className="px-1">
                     {AUDIO_MOD_TARGET_NAMES.map((name, i) => (
                         <DawPluginChip
                             key={name}
@@ -128,9 +129,9 @@ export const WarpSection = ({
                             {name}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
                 {renderIife_1()}
-            </div>
-        </div>
+            </Stack>
+        </Stack>
     );
 };

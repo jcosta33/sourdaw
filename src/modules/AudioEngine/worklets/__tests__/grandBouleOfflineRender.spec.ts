@@ -9,27 +9,62 @@ import {
 import { renderTrackSubgraphOffline } from '../../useCases/offlineRender/renderTrackSubgraphOffline';
 
 /**
- * Does a Grand Boule track render audible audio through the real offline path?
+ * What the released offline render does with a device it is not allowed to build.
  *
- * INVENTORY-device-clock-parity G-1 measured 97–99 % silence out of a real
- * export, and G-6 turns that into data loss: freeze bakes the silent buffer and
- * flatten commits it over the MIDI clips. This is the reproduction, and it is
- * deliberately built out of production parts — the real
- * `renderTrackSubgraphOffline`, the real `buildDeviceChain`, the real device
- * registry, the real `createGrandBouleNode` and the real worklet processor. Only
- * two things are stand-ins:
+ * ## Why this spec no longer asks for audio
  *
- *  - The WASM engine. `GrandBouleInstance` is replaced by a sine bank so the
- *    buffer says whether the *transport* delivered what the engine produced.
- *    A physical-model piano would prove the same thing less legibly.
- *  - Web Audio itself; see `offlineWorkletRenderHarness`.
+ * It used to render a Grand Boule track and assert energy under the notes — the
+ * G-1 guard, where the offline transport starved the worklet ring and exported
+ * 97–99 % silence. [ADR 0032](../../../../../.agents/decisions/0032-withhold-grand-boule-from-release.md)
+ * then withheld `grand-boule` from release over patent and parameter-provenance
+ * risk, and `findReleasedNativeDspDeviceFactory` stopped resolving it. The
+ * device cannot be built on this path by design, so asking it for audio here
+ * asserts a contract the product deliberately revoked.
  *
- * Against the pre-split transport this failed with silence in both note regions
- * and a single island of content at the 1 s segment boundary — the shape the
- * inventory measured, for the reason it gives: the engine Worker's producer loop
- * is paced by the main thread's macrotask queue and back-pressured at
- * `TARGET_AHEAD` = 768 frames, while the render consumes 344 quanta per second
- * without ever yielding to it.
+ * The transport guard did not go with it. `grandBouleOfflineNoteTiming`,
+ * `grandBouleOfflineRenderBudget`, `grandBouleConsumerClock` and
+ * `grandBouleDispatchParity` all reach `NATIVE_DSP_DEVICE_FACTORIES` or the
+ * processor registry directly, which is the implementation ADR 0032 preserves,
+ * and they still measure it. What is left over — and what only this path can
+ * see — is what the *released* render does with a device on a track it may not
+ * build, which is reachable in the product because ADR 0032 keeps existing
+ * project data intact: a `.sdaw` file saved before the withholding still has a
+ * Grand Boule track in it.
+ *
+ * ## What must not happen
+ *
+ * The withheld device is reported and renders silent, matching live playback,
+ * which keeps the project and says the device stays silent. It must not come
+ * back as the builtin fallback synth `scheduleTrackClips` reaches for when a
+ * track has no instrument — a render must contain what playback contains, and a
+ * sawtooth standing in for a piano is wrong in a way that sounds deliberate.
+ *
+ * That substitution is what the energy assertion below observes, and it can
+ * only observe it because the harness oscillator *sounds*. A silent one does
+ * not prevent the fallback, it hides it: the substituted synth renders as zeros
+ * and the assertion passes either way. With an audible oscillator, a fallback
+ * synth voicing these two notes puts roughly half-scale RMS under both of them,
+ * so removing the withheld device's stand-in from the chain reds this file.
+ *
+ * The assertion pairs the warning with the energy on purpose. Silence alone
+ * cannot tell "the device was withheld" from "the device built and played
+ * quietly", and reading the two together is what makes the next occurrence name
+ * itself rather than look like a level problem. The warning it reads is the
+ * admission-specific one, not the generic device-load degrade: that one is
+ * emitted for any environment fault too, so it could not tell a withheld device
+ * from a broken one.
+ *
+ * ## Why the engine is still stubbed here
+ *
+ * Everything the device needs to render is in place: the wasm engine stands in
+ * as a sine bank, the offline processor is registered, and `fetch` serves a
+ * module. That machinery looks redundant for a device that never builds, and it
+ * is the opposite — it is what makes this spec mean anything. Without it the
+ * device fails to construct for want of a processor whatever release admission
+ * says, the render is silent either way, and the spec passes for a reason that
+ * has nothing to do with its name. With it, admission is the only thing
+ * standing between this track and audible output, so re-admitting `grand-boule`
+ * turns the notes on and reds this file.
  */
 
 const SAMPLE_RATE = 44_100;
@@ -39,11 +74,6 @@ const SECONDS_PER_BEAT = 60 / TEMPO;
 /** `\0asm` + version 1 — the shortest byte string `WebAssembly.compile` accepts. */
 const EMPTY_WASM_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
 
-// ---------------------------------------------------------------------------
-// The engine stand-in. Hoisted because `vi.mock`'s factory runs before the
-// module body.
-// ---------------------------------------------------------------------------
-
 const wasmStub = vi.hoisted(() => {
     /** One page (64 KiB) — two 4096-frame channels need 32 KiB. */
     const memory = new WebAssembly.Memory({ initial: 1 });
@@ -51,17 +81,7 @@ const wasmStub = vi.hoisted(() => {
     const LEFT_PTR = 0;
     const RIGHT_PTR = MAX_BLOCK * Float32Array.BYTES_PER_ELEMENT;
 
-    function midiFrequency(note: number): number {
-        return 440 * 2 ** ((note - 69) / 12);
-    }
-
-    /**
-     * A sine bank with the same call surface as `GrandBouleInstance`.
-     *
-     * Phase is carried across blocks per note, so a note voiced in the wrong
-     * block shows up as displaced content rather than as a click — the way the
-     * real engine's ring-out would.
-     */
+    /** A steady tone per held note, so a device that did build is unmistakable. */
     class GrandBouleInstanceStub {
         readonly phases = new Map<number, number>();
 
@@ -100,7 +120,7 @@ const wasmStub = vi.hoisted(() => {
             left.fill(0);
             right.fill(0);
             for (const [midiNote, phase] of this.phases) {
-                const step = (2 * Math.PI * midiFrequency(midiNote)) / this.instanceSampleRate;
+                const step = (2 * Math.PI * (440 * 2 ** ((midiNote - 69) / 12))) / this.instanceSampleRate;
                 for (let index = 0; index < frames; index++) {
                     const sample = Math.sin(phase + step * index) * 0.3;
                     left[index] = (left[index] ?? 0) + sample;
@@ -189,7 +209,7 @@ function grandBouleTrack(): Track {
     };
 }
 
-describe('Grand Boule renders audible audio offline', () => {
+describe('a withheld device renders silent in the offline render, and is reported', () => {
     beforeAll(async () => {
         harness.installWorkletGlobals({ sampleRate: SAMPLE_RATE });
         await import('../grandBouleOfflineProcessor');
@@ -202,8 +222,6 @@ describe('Grand Boule renders audible audio offline', () => {
             'fetch',
             vi.fn().mockResolvedValue({
                 ok: true,
-                // Structurally valid but empty: the node factory compiles these
-                // before the mocked wasm-bindgen glue sees the shared module.
                 arrayBuffer: () => Promise.resolve(EMPTY_WASM_MODULE.slice(0)),
             })
         );
@@ -215,6 +233,7 @@ describe('Grand Boule renders audible audio offline', () => {
         const { configureOfflineYeastMidiProcessing } =
             await import('../../useCases/configureOfflineYeastMidiProcessing');
         configureOfflinePpqEndpointProjection({
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             project: ({ startPpq, endPpq, defaultTempo, sampleRate: rate }) => {
                 const startSamples = Math.round((startPpq / defaultTempo) * 60 * rate);
                 const endSamples = Math.round((endPpq / defaultTempo) * 60 * rate);
@@ -255,19 +274,26 @@ describe('Grand Boule renders audible audio offline', () => {
         });
     });
 
-    it('puts signal under the notes instead of silence', async () => {
+    it('names the device on the warning channel instead of substituting for it', async () => {
+        const warnings: string[] = [];
+        const tallies: { scheduledNotes: number; withheldDeviceTypes: string[] }[] = [];
+
         const buffer = await renderTrackSubgraphOffline({
             targetTrackId: 'gb-track',
             renderTracks: [grandBouleTrack()],
             startBeat: 0,
             endBeat: 4,
+            onWarning: (message) => warnings.push(message),
+            onScheduled: (reported) => {
+                tallies.push(reported);
+            },
         });
 
         expect(buffer).not.toBeNull();
 
-        // Both notes are held for a full beat. Measure strictly inside each, away
-        // from the 1 s and 2 s segment boundaries where a starved ring still
-        // delivered its islands — the content between them is the point.
+        // Measure strictly inside each held note. Anything here is a stand-in
+        // the render invented for an instrument it never built — the harness
+        // oscillator sounds, so a fallback synth voicing these notes shows up.
         const firstNote = harnessRmsBetween({
             buffer: buffer!,
             startSeconds: 1 * SECONDS_PER_BEAT + 0.05,
@@ -279,20 +305,35 @@ describe('Grand Boule renders audible audio offline', () => {
             endSeconds: 3 * SECONDS_PER_BEAT - 0.05,
         });
 
-        // A single 0.3-amplitude sine is 0.212 RMS; the strip carries unity gain
-        // and centre pan, so anything at or below a tenth of that is the silence
-        // this test exists to catch.
+        // Read as one object so a green run cannot mean "silent for some other
+        // reason": the warning has to be there too, it has to name this device,
+        // and it has to name withholding rather than a load failure.
+        // Re-admitting `grand-boule` reds this on `deviceReported` *and* on the
+        // energy, which is the difference between "the gate moved" and "the
+        // render went quiet".
         expect({
+            deviceReported: warnings.some(
+                (message) => message.includes('grand-boule') && message.includes('withheld from this build')
+            ),
+            warningCount: warnings.length,
             firstNoteAudible: firstNote > 0.02,
             secondNoteAudible: secondNote > 0.02,
-        }).toEqual({ firstNoteAudible: true, secondNoteAudible: true });
+            // Without this the file could pass while observing nothing about
+            // note routing: a fixture that stopped producing notes at all — a
+            // broken projection, an empty clip, a store the `beforeEach` failed
+            // to seed — renders silence AND emits the withholding warning, and
+            // every other field above would still read as expected.
+            scheduledNotes: tallies[0]?.scheduledNotes,
+            // The render's own record of what it replaced, which is what
+            // `detectSilentBake` refuses on.
+            withheldReportedOnTally: tallies[0]?.withheldDeviceTypes,
+        }).toEqual({
+            deviceReported: true,
+            warningCount: 1,
+            firstNoteAudible: false,
+            secondNoteAudible: false,
+            scheduledNotes: 2,
+            withheldReportedOnTally: ['grand-boule'],
+        });
     });
-
-    // A companion assertion — "the gap before the first note stays silent" — was
-    // written here and then removed, because mutation-checking showed nothing
-    // reds for it. Every way of collapsing the note queue drains the note-offs
-    // along with the note-ons, so a broken transport produces *silence* in the
-    // gap too, not early sound. Note placement is measured where it can actually
-    // fail, in `worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts`, which
-    // asserts the render block each note is voiced in.
 });

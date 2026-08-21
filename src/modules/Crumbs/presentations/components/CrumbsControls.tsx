@@ -6,6 +6,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import type { CrumbsPersistedParamId } from '../../models/CrumbsParameterMap';
 import type { EnvelopeParams, FilterType, CrumbsMode, VoiceStackParams } from '../../models/CrumbsTypes';
@@ -63,7 +64,7 @@ const Knob = ({
     onChange: (value: number, isTransient?: boolean) => void;
     readout: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <Stack align="center" gap={1}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -79,7 +80,7 @@ const Knob = ({
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
-    </div>
+    </Stack>
 );
 
 export const CrumbsControls = ({
@@ -103,9 +104,9 @@ export const CrumbsControls = ({
     }
 
     return (
-        <div className="flex flex-col gap-4">
+        <Stack gap={4}>
             {/* Mode switcher */}
-            <div className="flex items-center gap-1.5">
+            <Row gap={1.5}>
                 {MODES.map((m) => (
                     <DawPluginChip
                         key={m}
@@ -117,7 +118,7 @@ export const CrumbsControls = ({
                         {m.charAt(0).toUpperCase() + m.slice(1)}
                     </DawPluginChip>
                 ))}
-            </div>
+            </Row>
 
             {/* Envelope */}
             <div>
@@ -281,6 +282,6 @@ export const CrumbsControls = ({
                     </div>
                 </div>
             ) : null}
-        </div>
+        </Stack>
     );
 };

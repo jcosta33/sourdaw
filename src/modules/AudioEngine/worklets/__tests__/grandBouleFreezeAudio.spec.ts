@@ -2,40 +2,79 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { freezeTrack } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 
-import {
-    createOfflineWorkletRenderHarness,
-    harnessRmsBetween,
-} from '../../../../helpers/__tests__/offlineWorkletRenderHarness';
+import { createOfflineWorkletRenderHarness } from '../../../../helpers/__tests__/offlineWorkletRenderHarness';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 
 /**
- * G-6's guard: freezing a Grand Boule track must not bake silence.
+ * G-6's guard, in the form it takes now: a freeze whose instrument did not
+ * build must refuse the bake, not commit silence over the track.
  *
- * Freeze renders through `OfflineAudioContext`, so while the offline transport
- * was the SAB ring a freeze produced a 97–99 % silent buffer — and `flattenTrack`
- * then replaces the track's `clips` with it and sets `devices: []`. Two ordinary
- * clicks destroyed a piano track, recoverable only from CRDT undo history.
+ * The original defect: freeze renders through `OfflineAudioContext`, the
+ * offline transport starved the worklet ring, and the resulting 97–99 % silent
+ * buffer was baked — `flattenTrack` then replaces the track's `clips` with it
+ * and sets `devices: []`. Two ordinary clicks destroyed a piano track,
+ * recoverable only from CRDT undo history.
+ *
+ * ## Why this spec no longer asks for audio
+ *
+ * It used to assert energy in the frozen buffer, using Grand Boule as the
+ * instrument. [ADR 0032](../../../../../.agents/decisions/0032-withhold-grand-boule-from-release.md)
+ * withheld `grand-boule` from release, so the released device chain will not
+ * build it and this track can only render silence. That is not a reason to drop
+ * the guard — it is the exact input the guard exists for, and it is reachable
+ * in the product, because ADR 0032 keeps existing project data intact: a
+ * `.sdaw` saved before the withholding still carries a Grand Boule track, and
+ * the same path is what any device that fails to build at runtime takes.
+ *
+ * So the question this file asks is the one that actually protects the user's
+ * work: when the render comes back silent because the instrument is missing,
+ * does freeze stop, or does it bake?
+ *
+ * The refusal is only reachable because the withheld device stays in the chain
+ * as a silent stand-in (`createWithheldDeviceStrategy`). Drop it instead and
+ * `scheduleTrackClips` finds no instrument, substitutes the builtin fallback
+ * synth, and the bake *succeeds* — committing a sawtooth lead over the piano
+ * track and, through `flattenTrack`, deleting the Grand Boule device reference
+ * ADR 0032 exists to preserve. The harness oscillator sounds, so that outcome
+ * reds this file rather than passing as silence.
  *
  * ## Why this spec lives here and not beside `freezeTrack`
  *
- * It has to register the Grand Boule offline `AudioWorkletProcessor`, which means
- * importing an AudioEngine worklet module. A spec under
- * `Arrangement/useCases/freezeBounce/__tests__/` may not do that — `deps:validate`
- * (tests cruise, `cross-module-index-only`) allows a foreign module only through
- * a contract barrel, and a processor is not one. So the spec sits on the side
- * that owns the render and reaches `freezeTrack` through Arrangement's public
- * `useCases` barrel, which is exactly the direction the boundary permits.
+ * It mocks `getAudioContext`, an AudioEngine internal, and drives the real
+ * AudioEngine offline render. A spec under
+ * `Arrangement/useCases/freezeBounce/__tests__/` reaching that deep into a
+ * foreign module is what `deps:validate` (tests cruise,
+ * `cross-module-index-only`) and the barrel-mock guard both refuse. So the spec
+ * sits on the side that owns the render and reaches `freezeTrack` through
+ * Arrangement's public `useCases` barrel, which is the direction the boundary
+ * permits. `silentBakeGuard.spec.ts` owns the silent-bake policy itself with
+ * `renderOffline` mocked, and knows nothing about release admission — so
+ * nothing there can tell you what the real device chain does with a withheld
+ * device. This spec is the only one that closes that gap.
  *
  * Nothing under `freezeBounce/` is touched or mocked: this drives the real
  * `freezeTrack` -> real `renderTrackOffline` -> real `renderTrackSubgraphOffline`
- * -> real device chain -> real offline processor, and reads the buffer back out
- * of the cache `freezeTrack` wrote it to.
+ * -> real device chain, and reads the refusal off the track and the
+ * notification channel.
+ *
+ * ## Why the engine is still stubbed here
+ *
+ * Everything the device needs to render is in place: the wasm engine stands in
+ * as a sine bank, the offline processor is registered, and `fetch` serves a
+ * module. That machinery looks redundant for a device that never builds, and it
+ * is the opposite — it is what makes this spec mean anything. Without it the
+ * device fails to construct for want of a processor whatever release admission
+ * says, the render is silent either way, and the refusal this file asserts
+ * would fire for a reason that has nothing to do with its name. With it,
+ * admission is the only thing standing between this track and a frozen buffer
+ * full of piano, so re-admitting `grand-boule` makes the freeze succeed and
+ * reds this file.
  */
 
 const SAMPLE_RATE = 44_100;
 const TEMPO = 120;
-const SECONDS_PER_BEAT = 60 / TEMPO;
 
 /** `\0asm` + version 1 — the shortest byte string `WebAssembly.compile` accepts. */
 const EMPTY_WASM_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
@@ -46,7 +85,7 @@ const wasmStub = vi.hoisted(() => {
     const LEFT_PTR = 0;
     const RIGHT_PTR = MAX_BLOCK * Float32Array.BYTES_PER_ELEMENT;
 
-    /** A steady tone per held note, so the frozen buffer's energy is legible. */
+    /** A steady tone per held note, so a device that did build is unmistakable. */
     class GrandBouleInstanceStub {
         readonly phases = new Map<number, number>();
 
@@ -118,6 +157,17 @@ vi.mock('../../useCases/engineAccess/getAudioContext', () => ({
     getAudioContext: () => ({ sampleRate: SAMPLE_RATE }),
 }));
 
+/**
+ * Stubbed so the refusal can be *observed*, and because the real one resolves
+ * an event bus through DI that no spec bootstraps. Left unstubbed it throws
+ * `eventBus.emit is not a function` from inside `freezeTrack`, which the outer
+ * catch turns into a generic `status: 'error'` — the correct refusal and a
+ * crash then look identical from the outside, and the crash is the one that
+ * tells the user nothing.
+ */
+const notification = vi.hoisted(() => ({ notifyUser: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notification.notifyUser }));
+
 const harness = createOfflineWorkletRenderHarness();
 
 function grandBouleTrack(): Track {
@@ -172,7 +222,7 @@ function grandBouleTrack(): Track {
     };
 }
 
-describe('freezing a Grand Boule track bakes audio, not silence', () => {
+describe('freezing a track whose instrument did not build refuses the bake', () => {
     beforeAll(async () => {
         harness.installWorkletGlobals({ sampleRate: SAMPLE_RATE });
         await import('../grandBouleOfflineProcessor');
@@ -188,7 +238,9 @@ describe('freezing a Grand Boule track bakes audio, not silence', () => {
                 arrayBuffer: () => Promise.resolve(EMPTY_WASM_MODULE.slice(0)),
             })
         );
+        notification.notifyUser.mockClear();
         audioBufferCache.clear();
+        automationStore.set(null);
 
         const { configureOfflineMidiEventProjection } =
             await import('../../useCases/configureOfflineMidiEventProjection');
@@ -197,6 +249,7 @@ describe('freezing a Grand Boule track bakes audio, not silence', () => {
         const { configureOfflineYeastMidiProcessing } =
             await import('../../useCases/configureOfflineYeastMidiProcessing');
         configureOfflinePpqEndpointProjection({
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             project: ({ startPpq, endPpq, defaultTempo, sampleRate: rate }) => {
                 const startSamples = Math.round((startPpq / defaultTempo) * 60 * rate);
                 const endSamples = Math.round((endPpq / defaultTempo) * 60 * rate);
@@ -232,7 +285,7 @@ describe('freezing a Grand Boule track bakes audio, not silence', () => {
         trackStore.set({ tracks: [grandBouleTrack()], selectedTrackId: null, ghostClips: [] });
     });
 
-    it('caches a buffer carrying the note, and records the freeze against it', async () => {
+    it('reports a non-write, caches nothing, and tells the user why', async () => {
         const froze = await freezeTrack('gb-freeze-track');
 
         const frozen = trackStore.value?.tracks.find((track) => track.id === 'gb-freeze-track');
@@ -243,24 +296,112 @@ describe('freezing a Grand Boule track bakes audio, not silence', () => {
             buffer = audioBufferCache.get(bufferId);
         }
 
-        // The note runs beats 1..3, i.e. 0.5 s to 1.5 s. Measure inside it. A
-        // freeze that baked silence — the G-6 defect — leaves this at 0 while
-        // every other assertion here still passes, which is precisely how the
-        // defect survived: the freeze reported success.
-        let noteEnergy = 0;
-        if (buffer !== undefined) {
-            noteEnergy = harnessRmsBetween({
-                buffer,
-                startSeconds: 1 * SECONDS_PER_BEAT + 0.05,
-                endSeconds: 3 * SECONDS_PER_BEAT - 0.05,
-            });
-        }
+        const messages = notification.notifyUser.mock.calls.map(([message, level]) => ({
+            message: String(message),
+            level: String(level),
+        }));
 
+        // `froze` must be false, and that is the load-bearing half rather than a
+        // detail: `handleFreezeTrack` maps a `true` through
+        // `toHandlerExecutionResult` to `{status: 'written'}`, which would file a
+        // refusal as an undoable edit against a track nothing was written to.
+        //
+        // The two notifications are read together because they cover the two
+        // ways this can go silently wrong. Without the first, the device
+        // vanished from the render with nothing said. Without the second, freeze
+        // stopped and the user was left looking at an unfrozen track wondering
+        // why. The first reads the admission-specific message rather than the
+        // generic device-load degrade, which fires for any environment fault
+        // and so cannot say which of the two happened.
         expect({
             froze,
             status: freezeState?.status,
             cachedBuffer: buffer !== undefined,
-            noteAudible: noteEnergy > 0.02,
-        }).toEqual({ froze: true, status: 'frozen', cachedBuffer: true, noteAudible: true });
+            trackFrozen: frozen?.frozen === true,
+            deviceWithholdingReported: messages.some(
+                ({ message, level }) =>
+                    message.includes('grand-boule') &&
+                    message.includes('withheld from this build') &&
+                    level === 'warning'
+            ),
+            bakeRefused: messages.some(
+                ({ message, level }) =>
+                    message.includes('grand-boule') &&
+                    message.includes('withheld from this build') &&
+                    message.includes('Freeze stopped') &&
+                    level === 'error'
+            ),
+        }).toEqual({
+            froze: false,
+            status: 'error',
+            cachedBuffer: false,
+            trackFrozen: false,
+            deviceWithholdingReported: true,
+            bakeRefused: true,
+        });
+    });
+
+    it('refuses the same bake on a track carrying an automation lane', async () => {
+        // The ordinary case, and the one the test above cannot reach. An
+        // instrument track almost always carries a ride, and `freezeTrack`
+        // passes `bakesAutomation: true` unconditionally, so
+        // `classifyRenderSilence` abstains with `automation-not-modelled` for
+        // any track owning one enabled lane with one point. Behind that
+        // abstention the withheld device froze "successfully" over silence, and
+        // `flattenTrack` then set `devices: []` — deleting the Grand Boule
+        // reference ADR 0032 exists to preserve, from a project the user only
+        // clicked Freeze and Flatten on.
+        //
+        // A withheld verdict is a fact about the build, not a guess about the
+        // audio, so it is refused ahead of every abstention.
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'gb-volume-ride',
+                    trackId: 'gb-freeze-track',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ id: 'p1', beat: 0, value: 0.8, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        const froze = await freezeTrack('gb-freeze-track');
+
+        const frozen = trackStore.value?.tracks.find((track) => track.id === 'gb-freeze-track');
+        const messages = notification.notifyUser.mock.calls.map(([message, level]) => ({
+            message: String(message),
+            level: String(level),
+        }));
+
+        expect({
+            froze,
+            status: frozen?.freezeState.status,
+            trackFrozen: frozen?.frozen === true,
+            // The refusal must name the withholding, not digital silence. The
+            // silence message ends "Play the track back to confirm it sounds,
+            // then try again" — advice with no exit for a device that is gone
+            // from the build, because playback of it is silent too.
+            withheldRefusal: messages.some(
+                ({ message, level }) =>
+                    message.includes('grand-boule') &&
+                    message.includes('withheld from this build') &&
+                    message.includes('Freeze stopped') &&
+                    level === 'error'
+            ),
+            toldToPlayItBack: messages.some(({ message }) => message.includes('Play the track back')),
+        }).toEqual({
+            froze: false,
+            status: 'error',
+            trackFrozen: false,
+            withheldRefusal: true,
+            toldToPlayItBack: false,
+        });
     });
 });
