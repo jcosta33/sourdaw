@@ -4,6 +4,7 @@ import { Radio, Scissors } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
+import { Row } from '#/components/layout';
 import { Input } from '#/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -62,7 +63,7 @@ const NumberField = ({
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <label className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                <Row as="label" gap={1} className="text-[9px] uppercase tracking-wider text-muted-foreground">
                     <span>{label}</span>
                     <Input
                         type="number"
@@ -80,7 +81,7 @@ const NumberField = ({
                         aria-label={ariaLabel}
                         data-testid={testId}
                     />
-                </label>
+                </Row>
             </TooltipTrigger>
             <TooltipContent>{tooltip}</TooltipContent>
         </Tooltip>
