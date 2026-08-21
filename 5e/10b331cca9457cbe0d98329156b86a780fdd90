@@ -1,0 +1,45 @@
+src/modules/BrowserAi/repositories/ddspModelStorage.ts
+  s_27578aec2aab3b::t_4de39813a474fc 11-12,16,63,103
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_27578aec2aab3b::t_f8163d530a5767 12,141,146
+src/modules/BrowserAi/useCases/downloadDdspInstrument.ts
+  s_27578aec2aab3b::t_999f0552458b79 3,13-16,33,53-54
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_34bd2890ba07d9 27-30,51-52,122-124,154-159
+  s_27578aec2aab3b::t_8cb66c2753d703 79
+  s_27578aec2aab3b::t_9349f88b5463b7 74
+  s_27578aec2aab3b::t_f900c5e3612a01 53-56
+src/modules/BrowserAi/models/DdspInstrumentCatalog.ts
+  s_27578aec2aab3b::t_2456bf780f56f7 13
+  s_27578aec2aab3b::t_8d7d01824ed227 48-51,54,59
+  s_27578aec2aab3b::t_4ca53ec21ebc6f 45-47,52-53,55-58,60
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_3cd22ec0267e0c 5,20,30,34-35,77
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_0558bf98255ac3 222
+  s_27578aec2aab3b::t_85bd97d3a05495 223
+src/modules/BrowserAi/useCases/__tests__/removeDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_9349f88b5463b7 46,63
+  s_27578aec2aab3b::t_97b544b709b592 64-65
+src/modules/BrowserAi/useCases/removeDdspInstrument.ts
+  s_27578aec2aab3b::t_f74fad388fa76c 3,10-11
+src/modules/BrowserAi/repositories/__tests__/ddspModelStorage.spec.ts
+  s_27578aec2aab3b::t_52e82bccbb9e7f 49,68,71,121,149
+  s_27578aec2aab3b::t_f900c5e3612a01 75-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5e10b331cca9457cbe0d98329156b86a780fdd90",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
