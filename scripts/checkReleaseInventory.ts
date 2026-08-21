@@ -76,6 +76,29 @@ export const OWNER_VISUAL_ASSET_PATHS = [
     'build/icons/**',
 ] as const;
 
+export const DDSP_TFJS_RUNTIME_PATHS = [
+    'package.json',
+    'pnpm-lock.yaml',
+    'public/legal/Apache-2.0.txt',
+    'public/legal/Magenta.js-NOTICE.txt',
+    'public/legal/TensorFlow.js-NOTICE.txt',
+    'public/legal/seedrandom-MIT.txt',
+    'public/legal/THIRD-PARTY-NOTICES.md',
+    'src/modules/BrowserAi/models/InferenceRequest.ts',
+    'src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts',
+    'src/modules/BrowserAi/services/computeDdspSessionKey.ts',
+    'src/modules/BrowserAi/workers/tfjsInferenceWorker.ts',
+    'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
+] as const;
+
+const DDSP_TFJS_LEGAL_PATHS = [
+    'public/legal/Apache-2.0.txt',
+    'public/legal/Magenta.js-NOTICE.txt',
+    'public/legal/TensorFlow.js-NOTICE.txt',
+    'public/legal/seedrandom-MIT.txt',
+    'public/legal/THIRD-PARTY-NOTICES.md',
+] as const;
+
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
     'rave-models': [
         'src/modules/BrowserAi/handlers/rave/**',
@@ -247,6 +270,47 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
             `tree-sha256:${directorySha256(root, 'build/icons')}:build/icons`,
         ],
         licenses: ['owner-created:pending-OS-10-project-license'],
+    };
+}
+
+/** Exact distributed code and notice closure for the release-withheld DDSP worker runtime. */
+export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceContract {
+    return {
+        kind: 'runtime-library',
+        paths: [...DDSP_TFJS_RUNTIME_PATHS],
+        sources: [
+            'git:github.com/tensorflow/tfjs@e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
+            'git:github.com/dcodeIO/long.js@941c5c62471168b5d18153755c2a7b38d2560e58',
+            'git:github.com/davidbau/seedrandom@4460ad325a0a15273a211e509f03ae0beb99511a',
+            'git:github.com/magenta/magenta-js@0692eb2b79681f062c6b6dd53a0361967f298caa:music/src/ddsp/model.ts',
+            'package.json',
+            'pnpm-lock.yaml',
+        ],
+        revisions: [
+            '@tensorflow/tfjs-core 4.22.0',
+            '@tensorflow/tfjs-converter 4.22.0',
+            '@tensorflow/tfjs-backend-webgpu 4.22.0',
+            '@tensorflow/tfjs-backend-cpu 4.22.0 shared helpers only',
+            'long 4.0.0',
+            'seedrandom 3.0.5',
+            'Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa Roll operation',
+            'runtime tfjs-4.22.0-webgpu-raw-v1',
+        ],
+        digests: [
+            'npm-integrity:sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==:@tensorflow/tfjs-core@4.22.0',
+            'npm-integrity:sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==:@tensorflow/tfjs-converter@4.22.0',
+            'npm-integrity:sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==:@tensorflow/tfjs-backend-webgpu@4.22.0',
+            'npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0',
+            'npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0',
+            'npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5',
+            ...DDSP_TFJS_LEGAL_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+        ],
+        licenses: [
+            'Apache-2.0:TensorFlow.js',
+            'Apache-2.0:long',
+            'Apache-2.0:Magenta.js-Roll-adaptation',
+            'MIT:seedrandom-and-Alea',
+        ],
     };
 }
 
@@ -748,6 +812,8 @@ export function checkReleaseInventory(root: string): void {
         ownerVisualAssetReleaseInventoryContract(root),
         'owner visual asset'
     );
+    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    assertSurfaceContract(ddspTfjsRuntimeSurface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
