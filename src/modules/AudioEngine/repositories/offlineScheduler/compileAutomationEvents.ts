@@ -46,6 +46,26 @@ export type CompileAutomationEventsOptions = {
     // Restrict emission to a clip's active span, in project seconds (AU-12). The
     // event time origin stays the export region start; only visibility is cropped.
     activeWindowSeconds?: ActiveWindowSeconds;
+    /**
+     * The point-holding lane's own declared range, applied to every
+     * interpolated value BEFORE `valueScale`/`valueOffset` and before
+     * `valueTransform`.
+     *
+     * That position is the whole of what this option is for, and it is the live
+     * path's: `getAutomationValueAtBeat` runs `clampToLaneRange(interpolated,
+     * lane, …)` and *then* multiplies by the resolved link scale, because
+     * `minValue`/`maxValue` describe the source lane's own points rather than
+     * the scaled result — a `linkScale: -1` lane may legitimately land outside
+     * them. Folding this into `valueTransform` would bound the scaled value and
+     * flatten exactly that case.
+     *
+     * Non-linear interpolation is why it is needed at all offline: 'smooth'
+     * (Catmull-Rom) overshoots between control points by construction, and this
+     * compiler samples such a segment at 10 ms through the same curve kernel the
+     * monitor evaluates per tick. Without the bound the bounce prints the
+     * overshoot the monitor clamped away. Omit for a lane with no declared range.
+     */
+    valueBound?: (value: number) => number;
     // Affine post-transform on the interpolated values: value → value*valueScale
     // + valueOffset. This is how the live path applies a linked lane's linkScale
     // (and any device binding scale/offset) — it scales the *resolved scalar*
@@ -57,8 +77,11 @@ export type CompileAutomationEventsOptions = {
     /**
      * Non-affine post-transform applied AFTER `valueScale`/`valueOffset` and
      * before the slew — for laws the affine pair cannot express, notably the
-     * fader's dB→linear conversion and its unity ceiling. Keep it pure;
-     * it runs once per compiled event.
+     * fader's dB→linear conversion and its `FADER_MAX_GAIN` ceiling. That
+     * ceiling is the fader's `+6 dB` of headroom, not unity: it is the bound on
+     * what the strip may reach, and it is a different question from the lane
+     * bound `valueBound` applies, which is what the lane's own points declare.
+     * Keep it pure; it runs once per compiled event.
      */
     valueTransform?: (value: number) => number;
 };
@@ -344,12 +367,15 @@ export function compileAutomationEvents(
             });
         }
     }
+    const valueBound = options?.valueBound;
     const valueScale = options?.valueScale ?? 1;
     const valueOffset = options?.valueOffset ?? 0;
     const valueTransform = options?.valueTransform;
-    if (valueScale !== 1 || valueOffset !== 0 || valueTransform) {
+    if (valueBound || valueScale !== 1 || valueOffset !== 0 || valueTransform) {
         for (const event of events) {
-            const scaled = event.value * valueScale + valueOffset;
+            // Lane range first, then the affine, then the law — the live order.
+            const bounded = valueBound ? valueBound(event.value) : event.value;
+            const scaled = bounded * valueScale + valueOffset;
             event.value = valueTransform ? valueTransform(scaled) : scaled;
         }
     }

@@ -48,13 +48,23 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
         const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         const previousGain = prev?.gain ?? alpha.payload.expectedGain;
         const written = writtenGain(alpha);
+        // The inverse's own request goes through the writer for the same reason
+        // the forward one does. `previousGain` is read raw off the store, and the
+        // store can legitimately hold a value the writer would refuse by the time
+        // undo runs: a track parked at 1.6 that later becomes a child of a
+        // Toaster-carrying parent has its restore clamped to the pad ceiling, so
+        // an inverse promising 1.6 restores something else and the paired redo's
+        // `expectedGain` — which is this same number — then mismatches and
+        // conflicts. Predicting from the writer on both legs closes that rather
+        // than reasoning about how narrow the window is.
+        const restored = clampTrackGain(alpha.payload.trackId, previousGain);
         return {
             label: 'Set track gain',
             inverseAction: {
                 type: 'setTrackGain',
                 payload: {
                     trackId: alpha.payload.trackId,
-                    gain: previousGain,
+                    gain: restored,
                     expectedGain: written,
                 },
             },
@@ -63,7 +73,7 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
                 payload: {
                     trackId: alpha.payload.trackId,
                     gain: written,
-                    expectedGain: previousGain,
+                    expectedGain: restored,
                 },
             },
         };

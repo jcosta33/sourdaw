@@ -96,7 +96,60 @@ export type ScheduleTrackAutomationInput = {
      * repository must not reach into Arrangement's VCA read model itself.
      */
     vcaMultiplier?: number;
+    /**
+     * Automation's `getAutomationLaneCeiling`: the ceiling a lane really has,
+     * which is not always the scalar it stores. A track gain lane written
+     * before the fader gained its `+6 dB` of headroom still records
+     * `maxValue: 1`.
+     *
+     * Handed in for the same reason `deviceParameterLaw` and `vcaMultiplier`
+     * are — this repository may not reach into another module's business
+     * contracts, and the failure being closed is precisely that the offline
+     * path had no answer of its own, so it printed a level the monitor never
+     * played. Required, with no default: a default here would be a second
+     * source of truth that agrees with the monitor only until the law moves.
+     */
+    resolveLaneCeiling: (lane: Pick<AutomationLane, 'parameterId' | 'minValue' | 'maxValue' | 'clipId'>) => number;
 };
+
+/**
+ * The offline half of the live path's `clampToLaneRange`, resolved once per
+ * lane instead of once per tick.
+ *
+ * Live bounds an interpolated value by the source lane's declared range, raised
+ * only as far as a stored point on the segment in play actually reaches, and
+ * never past the derived ceiling. Offline can afford the lane-wide `Math.max`
+ * live cannot, and the two agree wherever it matters: a legacy gain lane whose
+ * points all sit at or below `1` bounds at `1` on both sides, and one carrying
+ * a point at `1.5` bounds at `1.5` on both sides.
+ *
+ * Returns `undefined` when the lane declares no usable range, matching live's
+ * non-finite guard — several specs build lanes with only the fields their
+ * assertions touch, and a `NaN` bound would silence the render.
+ */
+function resolveLaneValueBound(
+    sourceLane: AutomationLane,
+    derivedCeiling: number
+): ((value: number) => number) | undefined {
+    const floor = sourceLane.minValue;
+    const declared = sourceLane.maxValue;
+    if (!Number.isFinite(floor) || !Number.isFinite(declared)) {
+        return undefined;
+    }
+    let ceiling = declared;
+    if (derivedCeiling > declared) {
+        let highestStored = Number.NEGATIVE_INFINITY;
+        for (const point of sourceLane.points) {
+            if (point.value > highestStored) {
+                highestStored = point.value;
+            }
+        }
+        if (highestStored > declared) {
+            ceiling = Math.min(derivedCeiling, highestStored);
+        }
+    }
+    return (value) => Math.min(ceiling, Math.max(floor, value));
+}
 
 export function scheduleTrackAutomation({
     lanes,
@@ -116,6 +169,7 @@ export function scheduleTrackAutomation({
     compensationDelaySec = 0,
     clipBoundsById,
     vcaMultiplier = 1,
+    resolveLaneCeiling,
 }: ScheduleTrackAutomationInput): void {
     const projectBeat = projectBeatToSeconds ?? ((beat) => beatToSeconds(beat, defaultTempo, changes));
     const laneById = new Map<string, AutomationLane>();
@@ -182,6 +236,16 @@ export function scheduleTrackAutomation({
             // back. `valueTransform` runs after linkScale, matching the live
             // order (scale the dB scalar, then convert, then clamp).
             const isDecibelLane = lane.minValue < 0;
+            // The lane's own declared range, applied where live applies it —
+            // to the interpolated scalar, before the link scale and before the
+            // fader law. `clampFaderGain` alone is not this bound and never
+            // was: it stops the strip at `FADER_MAX_GAIN`, which used to be `1`
+            // and so happened to coincide with a legacy gain lane's declared
+            // `1`. Once the fader widened, the two parted, and every smooth
+            // gain ride cresting near unity printed the spline's overshoot the
+            // monitor had clamped away — a bounce louder than the mix, on a
+            // project nobody edited.
+            const valueBound = resolveLaneValueBound(sourceLane, resolveLaneCeiling(sourceLane));
             scheduleAutomationOnParam(
                 trackGainNode.gain,
                 points,
@@ -193,6 +257,7 @@ export function scheduleTrackAutomation({
                 compensationDelaySec,
                 {
                     ...laneOptions,
+                    ...(valueBound ? { valueBound } : {}),
                     // The VCA group master composes in exactly where live puts
                     // it: after the dB→linear conversion and before the fader
                     // clamp (`dbToGain(value) * vcaMultiplier` handed to

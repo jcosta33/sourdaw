@@ -46,6 +46,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
@@ -291,6 +292,9 @@ export async function renderOfflineWithNativeEngine(
                 compensationDelaySec: compensationDelay,
                 clipBoundsById,
                 vcaMultiplier,
+                // The native fold shares this scheduler with the Web Audio
+                // path, so it takes the same lane law rather than a second copy.
+                resolveLaneCeiling: getAutomationLaneCeiling,
             });
 
             const conversions: {

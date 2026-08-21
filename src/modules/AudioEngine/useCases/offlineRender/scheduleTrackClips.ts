@@ -1,5 +1,6 @@
 import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
@@ -320,6 +321,9 @@ export async function scheduleTrackClips({
             compensationDelaySec: compensationDelay,
             clipBoundsById,
             vcaMultiplier,
+            // Automation's own law, read here rather than re-derived in the
+            // scheduler — the same reason `deviceParameterLaw` is injected.
+            resolveLaneCeiling: getAutomationLaneCeiling,
         });
     }
 
