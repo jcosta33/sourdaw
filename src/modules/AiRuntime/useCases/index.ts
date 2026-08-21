@@ -52,10 +52,13 @@ export { compilePlannedActionCommandBatch } from './compilePlannedActionCommandB
 
 export { onPromptInjection } from './onPromptInjection';
 export { injectPromptCommand } from './promptInjection';
+export { injectVoicePromptDraft } from './injectVoicePromptDraft';
+export { onVoicePromptDraft } from './onVoicePromptDraft';
 
 export { runAiActionWithToast } from './runAiActionWithToast';
 
 export { isVoiceInputAvailable } from './voiceInput/isVoiceInputAvailable';
+export { initializeVoiceInputAvailability } from './voiceInput/initializeVoiceInputAvailability';
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
 export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';
 export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority';

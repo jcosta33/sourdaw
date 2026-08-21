@@ -16,8 +16,6 @@ export type PlatformCapabilities = {
     readonly hasPluginScanning: boolean;
     /** MIDI input — Web MIDI API (Chrome) or native */
     readonly hasMidiInput: boolean;
-    /** Voice command ASR — desktop-local only; model verification is separate. */
-    readonly hasVoiceCommands: boolean;
     /** Native OS file save dialogs — desktop only */
     readonly hasNativeFileDialogs: boolean;
     /** Multi-track simultaneous recording — desktop only */
@@ -47,7 +45,6 @@ export function getPlatformCapabilities(): PlatformCapabilities {
         hasNativePlugins: isDesktop,
         hasPluginScanning: isDesktop,
         hasMidiInput: webMidiSupported || isDesktop,
-        hasVoiceCommands: isDesktop,
         hasNativeFileDialogs: isDesktop,
         hasMultiTrackRecording: isDesktop,
         isDesktopApp: isDesktop,
@@ -62,6 +59,5 @@ export const DISABLED_REASONS = {
     nativePlugins: 'CLAP plugins require the desktop app',
     pluginScanning: 'Plugin scanning requires the desktop app',
     midiInput: 'MIDI input is not supported in this browser. Use Chrome or the desktop app',
-    voiceCommands: 'Voice commands require the desktop app',
     multiTrackRecording: 'Multi-track recording requires the desktop app',
 } as const;

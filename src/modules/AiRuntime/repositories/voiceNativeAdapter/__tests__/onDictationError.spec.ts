@@ -12,7 +12,7 @@ describe('onDictationError (voiceNativeAdapter)', () => {
     it('listens for dictation-error and extracts the message', async () => {
         const mockUnlisten = vi.fn();
         vi.mocked(desktopListen).mockImplementation((_event, handler) => {
-            handler({ payload: { message: 'Recording failed: no microphone found' } });
+            handler({ payload: { session_id: 'session-1', message: 'Recording failed: no microphone found' } });
             return Promise.resolve(mockUnlisten);
         });
 
@@ -20,7 +20,10 @@ describe('onDictationError (voiceNativeAdapter)', () => {
         const unlisten = await onDictationError(callback);
 
         expect(desktopListen).toHaveBeenCalledWith('dictation-error', expect.any(Function));
-        expect(callback).toHaveBeenCalledWith({ message: 'Recording failed: no microphone found' });
+        expect(callback).toHaveBeenCalledWith({
+            session_id: 'session-1',
+            message: 'Recording failed: no microphone found',
+        });
         expect(unlisten).toBe(mockUnlisten);
     });
 

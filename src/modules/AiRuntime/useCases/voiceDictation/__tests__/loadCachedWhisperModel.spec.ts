@@ -1,16 +1,33 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { loadCachedWhisperModel as loadCachedNativeWhisperModel } from '../../../repositories/voiceNativeAdapter/loadCachedWhisperModel';
 import { loadCachedWhisperModel } from '../loadCachedWhisperModel';
 
-vi.mock('../../../repositories/voiceNativeAdapter/loadCachedWhisperModel', () => ({
-    loadCachedWhisperModel: vi.fn().mockResolvedValue(undefined),
+const mocks = vi.hoisted(() => ({
+    loadCachedWhisperModel: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    admission: { whisper: true },
 }));
 
+vi.mock('../../../repositories/voiceNativeAdapter/loadCachedWhisperModel', () => ({
+    loadCachedWhisperModel: mocks.loadCachedWhisperModel,
+}));
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: mocks.admission }));
+
 describe('loadCachedWhisperModel', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.admission.whisper = true;
+    });
+
     it('delegates only to the cache-only native adapter', async () => {
         await loadCachedWhisperModel();
 
-        expect(loadCachedNativeWhisperModel).toHaveBeenCalledOnce();
+        expect(mocks.loadCachedWhisperModel).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a cached artifact withheld by release admission', async () => {
+        mocks.admission.whisper = false;
+
+        await expect(loadCachedWhisperModel()).rejects.toThrow('withheld');
+        expect(mocks.loadCachedWhisperModel).not.toHaveBeenCalled();
     });
 });

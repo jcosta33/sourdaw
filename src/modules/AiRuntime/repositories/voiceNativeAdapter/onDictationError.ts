@@ -1,6 +1,7 @@
 import { desktopListen } from '#/utils/desktopBridge';
 
 export type DictationError = {
+    session_id: string;
     message: string;
 };
 
@@ -26,12 +27,15 @@ function readDictationError(event: unknown): DictationError | null {
         return null;
     }
     const { payload } = event;
-    if (typeof payload !== 'object' || payload === null || !('message' in payload)) {
+    if (typeof payload !== 'object' || payload === null || !('session_id' in payload) || !('message' in payload)) {
         return null;
     }
-    const { message } = payload;
+    const { session_id: sessionId, message } = payload;
+    if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128) {
+        return null;
+    }
     if (typeof message !== 'string' || message.length === 0 || message.length > MAX_DICTATION_ERROR_MESSAGE_LENGTH) {
         return null;
     }
-    return { message };
+    return { session_id: sessionId, message };
 }

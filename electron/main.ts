@@ -27,6 +27,7 @@ import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
+import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
 
 // Logging must never crash the shell. When stdout or stderr is a closed pipe
@@ -358,6 +359,8 @@ const startNativeSurface = (): void => {
         // renderer-visible surface is identical either way.
         commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_COMMAND),
     });
+
+    registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
     registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });

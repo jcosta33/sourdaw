@@ -1,6 +1,7 @@
 import { desktopListen } from '#/utils/desktopBridge';
 
 export type DictationResult = {
+    session_id: string;
     text: string;
     duration_ms: number;
 };
@@ -27,10 +28,19 @@ function readDictationResult(event: unknown): DictationResult | null {
         return null;
     }
     const { payload } = event;
-    if (typeof payload !== 'object' || payload === null || !('text' in payload) || !('duration_ms' in payload)) {
+    if (
+        typeof payload !== 'object' ||
+        payload === null ||
+        !('session_id' in payload) ||
+        !('text' in payload) ||
+        !('duration_ms' in payload)
+    ) {
         return null;
     }
-    const { text, duration_ms: durationMs } = payload;
+    const { session_id: sessionId, text, duration_ms: durationMs } = payload;
+    if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128) {
+        return null;
+    }
     if (typeof text !== 'string' || text.length > MAX_DICTATION_TEXT_LENGTH) {
         return null;
     }
@@ -42,5 +52,5 @@ function readDictationResult(event: unknown): DictationResult | null {
     ) {
         return null;
     }
-    return { text, duration_ms: durationMs };
+    return { session_id: sessionId, text, duration_ms: durationMs };
 }

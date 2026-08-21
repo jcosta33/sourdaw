@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { desktopInvoke } from '#/utils/desktopBridge';
+import { desktopStopVoiceDictation } from '#/utils/desktopBridge';
 
 import { stopDictation } from '../stopDictation';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    desktopInvoke: vi.fn().mockResolvedValue(undefined),
+    desktopStopVoiceDictation: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('stopDictation (voiceNativeAdapter)', () => {
-    it('invokes stop_dictation command', async () => {
-        await stopDictation();
-        expect(desktopInvoke).toHaveBeenCalledWith('stop_dictation');
+    it('stops only the acknowledged dictation session', async () => {
+        await stopDictation('session-1');
+        expect(desktopStopVoiceDictation).toHaveBeenCalledWith('session-1');
     });
 });

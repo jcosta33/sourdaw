@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import { logger } from '#/infra/logger/appLogger';
 
 import { voiceInputAvailabilityStore } from '../../stores/voiceInputAvailabilityStore';
-import { injectPromptCommand } from '../../useCases/promptInjection';
+import { injectVoicePromptDraft } from '../../useCases/injectVoicePromptDraft';
 import { setVoiceListeningStatus } from '../../useCases/setVoiceListeningStatus';
 import { setVoiceStatus } from '../../useCases/setVoiceStatus';
 import { setVoiceTranscribingStatus } from '../../useCases/setVoiceTranscribingStatus';
-import { loadCachedWhisperModel } from '../../useCases/voiceDictation/loadCachedWhisperModel';
+import { cancelDictation } from '../../useCases/voiceDictation/cancelDictation';
 import { onDictationError } from '../../useCases/voiceDictation/onDictationError';
 import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
 import { startDictation } from '../../useCases/voiceDictation/startDictation';
@@ -42,6 +42,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const mountedRef = useRef(true);
     const startInFlightRef = useRef(false);
     const terminalRef = useRef(false);
+    const sessionIdRef = useRef<string | null>(null);
 
     const syncStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
         const status = setVoiceStatus(value);
@@ -71,6 +72,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         }
         startInFlightRef.current = true;
         const generation = ++generationRef.current;
+        const sessionId = globalThis.crypto.randomUUID();
+        sessionIdRef.current = sessionId;
         const current = (): boolean => mountedRef.current && generation === generationRef.current;
         const settleTerminal = (): boolean => {
             if (!current() || terminalRef.current) {
@@ -83,14 +86,15 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             cleanup();
             terminalRef.current = false;
             const resultUnlisten = await onDictationResult((result) => {
-                if (!settleTerminal()) {
+                if (result.sessionId !== sessionId || !settleTerminal()) {
                     return;
                 }
                 const text = result.text.trim();
                 if (text) {
                     setFinalText(text);
-                    injectPromptCommand(text);
+                    injectVoicePromptDraft(text);
                 }
+                sessionIdRef.current = null;
                 syncStatus({ isListening: false, transcribing: false });
                 cleanup();
             });
@@ -100,10 +104,11 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             }
             resultUnlistenRef.current = resultUnlisten;
             const errorUnlisten = await onDictationError((error) => {
-                if (!settleTerminal()) {
+                if (error.sessionId !== sessionId || !settleTerminal()) {
                     return;
                 }
                 logger.warn(`Native dictation failed: ${error.message}`);
+                sessionIdRef.current = null;
                 syncStatus({ isListening: false, transcribing: false });
                 showError(error.message);
                 cleanup();
@@ -113,8 +118,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 return;
             }
             errorUnlistenRef.current = errorUnlisten;
-            await startDictation();
-            if (!current()) {
+            const acknowledgedSessionId = await startDictation(sessionId);
+            if (!current() || terminalRef.current || acknowledgedSessionId !== sessionId) {
                 return;
             }
             setVoiceMode('whisper');
@@ -126,15 +131,19 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 if (!settleTerminal()) {
                     return;
                 }
-                void stopDictation().catch((error: unknown) =>
-                    logger.warn(`stop_dictation timed out: ${String(error)}`)
+                void cancelDictation(sessionId).catch((error: unknown) =>
+                    logger.warn(`cancel_dictation timed out: ${String(error)}`)
                 );
+                sessionIdRef.current = null;
                 syncStatus({ isListening: false, transcribing: false });
                 showError('Voice dictation timed out. Please try again.');
                 cleanup();
             }, DICTATION_TIMEOUT_MS);
         } catch (error: unknown) {
             terminalRef.current = true;
+            if (sessionIdRef.current === sessionId) {
+                sessionIdRef.current = null;
+            }
             cleanup();
             syncStatus({ isListening: false, transcribing: false });
             showError(error instanceof Error ? error.message : String(error));
@@ -144,13 +153,14 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     };
 
     const stopListening = (): void => {
-        if (!listeningRef.current) {
+        const sessionId = sessionIdRef.current;
+        if (!listeningRef.current || sessionId === null) {
             return;
         }
         setVoiceTranscribingStatus(true);
         setTranscribing(true);
         setInterimText('Transcribing...');
-        void stopDictation().catch((error: unknown) => logger.warn(`stop_dictation failed: ${String(error)}`));
+        void stopDictation(sessionId).catch((error: unknown) => logger.warn(`stop_dictation failed: ${String(error)}`));
     };
 
     useEffect(() => {
@@ -158,32 +168,15 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     }, [isListening]);
 
     useEffect(() => {
-        let active = true;
-        void loadCachedWhisperModel()
-            .then(() => {
-                if (active) {
-                    voiceInputAvailabilityStore.set({ hasVerifiedLocalModel: true });
-                }
-            })
-            .catch(() => {
-                if (active) {
-                    voiceInputAvailabilityStore.set({ hasVerifiedLocalModel: false });
-                }
-            });
-        return () => {
-            active = false;
-        };
-    }, []);
-
-    useEffect(() => {
         return onVoiceToggle(({ gesture }) => {
+            if (!voiceCommandGesture.consume(gesture)) {
+                return;
+            }
             if (listeningRef.current) {
                 stopListening();
                 return;
             }
-            if (voiceCommandGesture.consume(gesture)) {
-                void startLocalDictation();
-            }
+            void startLocalDictation();
         });
     }, []);
 
@@ -191,6 +184,13 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         return () => {
             mountedRef.current = false;
             ++generationRef.current;
+            const sessionId = sessionIdRef.current;
+            sessionIdRef.current = null;
+            if (sessionId !== null) {
+                void cancelDictation(sessionId).catch((error: unknown) =>
+                    logger.warn(`cancel_dictation on unmount failed: ${String(error)}`)
+                );
+            }
             cleanup();
         };
     }, []);

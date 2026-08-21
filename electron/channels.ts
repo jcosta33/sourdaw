@@ -26,6 +26,12 @@ export const DIALOG_MESSAGE_CHANNEL = 'sourdaw:dialog:message';
 export const PATHS_SAMPLES_BASE_CHANNEL = 'sourdaw:paths:samples-base';
 export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
 
+/** Preload-only capability channels for local microphone dictation. */
+export const VOICE_DICTATION_ARM_CHANNEL = 'sourdaw:voice-dictation:arm';
+export const VOICE_DICTATION_START_CHANNEL = 'sourdaw:voice-dictation:start';
+export const VOICE_DICTATION_STOP_CHANNEL = 'sourdaw:voice-dictation:stop';
+export const VOICE_DICTATION_CANCEL_CHANNEL = 'sourdaw:voice-dictation:cancel';
+
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
     readonly name: string;
@@ -126,5 +132,11 @@ export type SourdawBridge = {
         readonly samplesBase: () => Promise<string>;
         /** OS-correct filesystem path join, for paths handed back to native commands. */
         readonly join: (...segments: readonly string[]) => Promise<string>;
+    };
+    /** Deliberately outside generic `invoke`: start requires a preload-held activation. */
+    voiceDictation: {
+        readonly start: (sessionId: string) => Promise<string>;
+        readonly stop: (sessionId: string) => Promise<void>;
+        readonly cancel: (sessionId: string) => Promise<void>;
     };
 };

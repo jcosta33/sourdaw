@@ -39,6 +39,7 @@ export const VoiceButton = ({
                     aria-pressed={active}
                     onClick={handleClick}
                     data-testid="voice-command-button"
+                    data-voice-command-control="true"
                     className={cn(
                         'transition-all',
                         active &&

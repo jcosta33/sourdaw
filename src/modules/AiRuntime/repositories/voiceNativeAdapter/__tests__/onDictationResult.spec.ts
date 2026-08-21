@@ -13,7 +13,7 @@ describe('onDictationResult (voiceNativeAdapter)', () => {
         const mockUnlisten = vi.fn();
         vi.mocked(desktopListen).mockImplementation((_event, handler) => {
             // Immediately simulate the rust event firing
-            handler({ payload: { text: 'hello world', duration_ms: 1500 } });
+            handler({ payload: { session_id: 'session-1', text: 'hello world', duration_ms: 1500 } });
             return Promise.resolve(mockUnlisten);
         });
 
@@ -21,7 +21,7 @@ describe('onDictationResult (voiceNativeAdapter)', () => {
         const unlisten = await onDictationResult(callback);
 
         expect(desktopListen).toHaveBeenCalledWith('dictation-result', expect.any(Function));
-        expect(callback).toHaveBeenCalledWith({ text: 'hello world', duration_ms: 1500 });
+        expect(callback).toHaveBeenCalledWith({ session_id: 'session-1', text: 'hello world', duration_ms: 1500 });
         expect(unlisten).toBe(mockUnlisten);
     });
 

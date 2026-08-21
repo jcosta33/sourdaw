@@ -24,6 +24,10 @@ import {
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
     STREAM_CHANNEL,
+    VOICE_DICTATION_ARM_CHANNEL,
+    VOICE_DICTATION_CANCEL_CHANNEL,
+    VOICE_DICTATION_START_CHANNEL,
+    VOICE_DICTATION_STOP_CHANNEL,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -85,10 +89,75 @@ const asBytes = (command: string, payload: unknown): Uint8Array => {
  */
 const bootEpoch = (): string => globalThis.crypto.randomUUID();
 
+const VOICE_ACTIVATION_MAX_AGE_MS = 1_000;
+
+type VoiceClickEvent = { readonly isTrusted: boolean; readonly target: unknown };
+type VoiceControlDocument = {
+    addEventListener: (
+        type: 'click',
+        listener: (event: VoiceClickEvent) => void,
+        options: { readonly capture: boolean }
+    ) => void;
+};
+type VoiceControlTarget = { closest: (selector: string) => unknown };
+const isVoiceControlTarget = (value: unknown): value is VoiceControlTarget =>
+    typeof value === 'object' && value !== null && 'closest' in value && typeof value.closest === 'function';
+const isVoiceControlDocument = (value: unknown): value is VoiceControlDocument =>
+    typeof value === 'object' &&
+    value !== null &&
+    'addEventListener' in value &&
+    typeof value.addEventListener === 'function';
+
+/**
+ * A private preload capability minted only by a current trusted click on the
+ * actual voice control. Renderer code receives no token and cannot mint one
+ * through a lookalike event or retained trusted event.
+ */
+const createVoiceActivation = (ipc: RendererIpc): (() => Promise<string | null>) => {
+    let activation:
+        { readonly token: string; readonly createdAt: number; readonly armed: Promise<boolean> } | undefined;
+    const documentCandidate: unknown = Reflect.get(globalThis, 'document');
+    if (isVoiceControlDocument(documentCandidate)) {
+        const voiceDocument = documentCandidate;
+        voiceDocument.addEventListener(
+            'click',
+            (event) => {
+                const target = event.target;
+                if (
+                    !event.isTrusted ||
+                    !isVoiceControlTarget(target) ||
+                    target.closest('[data-voice-command-control="true"]') === null
+                ) {
+                    return;
+                }
+                const token = globalThis.crypto.randomUUID();
+                activation = {
+                    token,
+                    createdAt: Date.now(),
+                    armed: ipc.invoke(VOICE_DICTATION_ARM_CHANNEL, token).then(
+                        () => true,
+                        () => false
+                    ),
+                };
+            },
+            { capture: true }
+        );
+    }
+    return async () => {
+        const current = activation;
+        activation = undefined;
+        if (current === undefined || Date.now() - current.createdAt > VOICE_ACTIVATION_MAX_AGE_MS) {
+            return null;
+        }
+        return (await current.armed) ? current.token : null;
+    };
+};
+
 export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch()): SourdawBridge => {
     const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
     const streamListeners = new Map<string, (payload: unknown) => void>();
     let nextStreamId = 0;
+    const consumeVoiceActivation = createVoiceActivation(ipc);
 
     ipc.on(EVENT_CHANNEL, (_event, ...args) => {
         const [name, payload] = args;
@@ -209,6 +278,26 @@ export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch(
                     throw new TypeError('The joined path is not a string');
                 }
                 return result;
+            },
+        },
+
+        voiceDictation: {
+            start: async (sessionId) => {
+                const activation = await consumeVoiceActivation();
+                if (activation === null) {
+                    throw new Error('Voice dictation requires a current voice-control activation');
+                }
+                const result = await ipc.invoke(VOICE_DICTATION_START_CHANNEL, sessionId, activation);
+                if (typeof result !== 'string' || result !== sessionId) {
+                    throw new TypeError('Voice dictation returned an invalid session acknowledgement');
+                }
+                return result;
+            },
+            stop: async (sessionId) => {
+                await ipc.invoke(VOICE_DICTATION_STOP_CHANNEL, sessionId);
+            },
+            cancel: async (sessionId) => {
+                await ipc.invoke(VOICE_DICTATION_CANCEL_CHANNEL, sessionId);
             },
         },
     };

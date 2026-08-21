@@ -61,6 +61,7 @@ describe('the published surface', () => {
             'listen',
             'paths',
             'stream',
+            'voiceDictation',
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);

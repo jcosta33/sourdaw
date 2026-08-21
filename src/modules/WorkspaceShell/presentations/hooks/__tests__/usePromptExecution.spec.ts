@@ -14,7 +14,7 @@ import {
     searchPresets,
     getAvailablePresets,
     resolvePresetActions,
-    onPromptInjection,
+    onVoicePromptDraft,
     notifyAiChange,
     isLlmAvailable,
     initEngine,
@@ -29,6 +29,7 @@ const executionUseCaseMocks = vi.hoisted(() => ({
     executePlannedActions: vi.fn(),
     executePromptActionGroup: vi.fn(),
     notifyAiChange: vi.fn(),
+    voicePromptDraftListeners: new Set<(text: string) => void>(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -57,7 +58,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     searchPresets: vi.fn(() => []),
     getAvailablePresets: vi.fn(() => []),
     resolvePresetActions: vi.fn(() => []),
-    onPromptInjection: vi.fn(() => () => {}),
+    onVoicePromptDraft: vi.fn((listener: (text: string) => void) => {
+        executionUseCaseMocks.voicePromptDraftListeners.add(listener);
+        return () => executionUseCaseMocks.voicePromptDraftListeners.delete(listener);
+    }),
     notifyAiChange: executionUseCaseMocks.notifyAiChange,
     isLlmAvailable: vi.fn(() => false),
     initEngine: vi.fn().mockResolvedValue(undefined),
@@ -111,6 +115,7 @@ vi.mocked(useStore).mockImplementation((store: unknown, fallback: unknown) => {
 describe('usePromptExecution', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        executionUseCaseMocks.voicePromptDraftListeners.clear();
         trackState = { tracks: [], selectedTrackId: null };
         clipState = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
         // clearAllMocks resets call history but not implementations, so tests
@@ -671,10 +676,28 @@ describe('usePromptExecution', () => {
         expect(result.current.willUseLlm).toBe(false);
     });
 
-    it('subscribes to voice injection and rejects injected text while a confirmation is pending', () => {
+    it('keeps voice text in the draft and never submits, plans, or executes it', async () => {
+        const requestSubmit = vi.fn();
+        const { result } = renderHook(() => usePromptExecution());
+        Object.assign(result.current.formRef, { current: { requestSubmit } });
+
+        await act(async () => {
+            for (const listener of executionUseCaseMocks.voicePromptDraftListeners) {
+                listener('delete every track');
+            }
+        });
+
+        expect(vi.mocked(onVoicePromptDraft)).toHaveBeenCalledOnce();
+        expect(result.current.value).toBe('delete every track');
+        expect(requestSubmit).not.toHaveBeenCalled();
+        expect(vi.mocked(planPromptActions)).not.toHaveBeenCalled();
+        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+    });
+
+    it('rejects voice draft text while a confirmation is pending', () => {
         const unsubscribe = vi.fn();
         let injector: ((text: string) => void) | null = null;
-        vi.mocked(onPromptInjection).mockImplementation((handler) => {
+        vi.mocked(onVoicePromptDraft).mockImplementation((handler) => {
             injector = handler;
             return unsubscribe;
         });

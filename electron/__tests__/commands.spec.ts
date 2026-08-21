@@ -369,8 +369,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['set_plugin_bypass', ['instance_id', 'bypassed']],
     ['set_plugin_parameter', ['instance_id', 'param_id', 'value']],
     ['set_plugin_state_bytes', ['instance_id', 'plugin_state']],
-    ['start_dictation', []],
-    ['stop_dictation', []],
     ['stop_recording', ['instance_id']],
     ['unload_plugin', ['instance_id']],
     ['write_file_bytes', ['path', 'data']],

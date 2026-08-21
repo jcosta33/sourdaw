@@ -308,9 +308,10 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn start_dictation(&self) -> Result<()> {
+    pub async fn start_dictation(&self, session_id: String) -> Result<String> {
         reason(
             commands::speech::start_dictation(
+                session_id,
                 Arc::clone(&self.singletons.events),
                 &self.singletons.dictation,
             )
@@ -319,8 +320,19 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub fn stop_dictation(&self) -> Result<()> {
-        reason(commands::speech::stop_dictation(&self.singletons.dictation))
+    pub fn stop_dictation(&self, session_id: String) -> Result<()> {
+        reason(commands::speech::stop_dictation(
+            session_id,
+            &self.singletons.dictation,
+        ))
+    }
+
+    #[napi]
+    pub fn cancel_dictation(&self, session_id: String) -> Result<()> {
+        reason(commands::speech::cancel_dictation(
+            session_id,
+            &self.singletons.dictation,
+        ))
     }
 
     #[napi]
