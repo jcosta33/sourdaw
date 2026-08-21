@@ -219,8 +219,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         try {
             const result = await renderDdspInstrument({
                 phraseId: `${clip.id}-ddsp`,
-                instrumentId:
-                    instrument.id as import('#/modules/BrowserAi/models/DdspInstrumentCatalog').DdspInstrumentId,
+                instrumentId: instrument.id as Parameters<typeof renderDdspInstrument>[0]['instrumentId'],
                 durationSec: (clip.endBeat - clip.startBeat) * secondsPerBeat,
                 notes: notes.map((note) => ({
                     pitch: note.pitch,
