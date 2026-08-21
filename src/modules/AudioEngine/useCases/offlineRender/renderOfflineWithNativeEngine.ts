@@ -46,6 +46,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
@@ -78,7 +79,13 @@ export type NativeOfflineRenderInput = Readonly<{
     sampleRate: number;
     frameCount: number;
     durationSeconds: number;
-    /** The project master level, already clamped to 0…1 by the caller. */
+    /**
+     * The project master level, already bounded by the caller to the fader
+     * law's own range — `0` up to `FADER_MAX_GAIN`, not `0…1`. The master fader
+     * reaches the same `+6 dB` of headroom every other fader does, so a render
+     * that re-clamped this at unity would print quieter than the mix it was
+     * asked to bounce.
+     */
     masterGainValue: number;
     defaultTempo: number;
     changes: TempoMapStoreState['changes'];
@@ -301,6 +308,9 @@ export async function renderOfflineWithNativeEngine(
                 compensationDelaySec: compensationDelay,
                 clipBoundsById,
                 vcaMultiplier,
+                // The native fold shares this scheduler with the Web Audio
+                // path, so it takes the same lane law rather than a second copy.
+                resolveLaneCeiling: getAutomationLaneCeiling,
             });
 
             const conversions: {

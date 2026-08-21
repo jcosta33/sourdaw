@@ -28,6 +28,39 @@ use wasm_bindgen::prelude::*;
 const NUM_MODULES: usize = 5;
 const NUM_TAPS: usize = 6;
 
+/// Bring a wire parameter value into `[min, max]`, answering `fallback` when it
+/// is not finite.
+///
+/// The fallback branch is the whole point. `f32::clamp` returns NaN for a NaN
+/// input — it only panics on a NaN *bound* — so clamping alone hands the
+/// arithmetic downstream a NaN, and every Proof parameter is stored rather than
+/// recomputed per block. One NaN therefore poisons the device for its whole
+/// life, with no recovery short of another message, and each setter poisons it
+/// differently: a NaN release coefficient drives `current_gain` to NaN and
+/// silences the output while the gain-reduction meter still reads zero, a NaN
+/// ceiling makes `future_peak > ceiling` false forever so the limiter quietly
+/// stops limiting, and a NaN trim silences the chain through `powf`.
+///
+/// `±inf` needs no special case: it is ordered, so `clamp` maps it to the
+/// nearer bound, which is the answer the caller wants.
+///
+/// The chain trims and the EQ output trim (all through `gain_from_db`), plus
+/// the three limiter setters, route through here today. The EQ band setters
+/// (`freq`, `gain`, `q`) and the rest of the ranged Proof setters — imager,
+/// multiband, dynamic EQ, match EQ — still clamp with bare `f32::clamp` and
+/// rely on the worklet wire boundary to refuse non-finite values before they
+/// reach the engine; that boundary, not this guard, is their NaN handling.
+/// Routing through here does not happen by proximity — check the setter you
+/// are touching rather than assuming a neighbor's coverage extends to it.
+#[inline]
+pub(crate) fn clamped_param(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
+    if value.is_nan() {
+        fallback
+    } else {
+        value.clamp(min, max)
+    }
+}
+
 /// WASM-exported Proof mastering suite instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct ProofInstance {

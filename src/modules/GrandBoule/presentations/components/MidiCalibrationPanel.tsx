@@ -21,6 +21,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type GrandBouleMidiCalibration, MIDI_CALIBRATION_RANGES } from '../../models/GrandBouleMidiCalibration';
 
@@ -113,7 +114,7 @@ const Knob = ({
      *  behaviour a player would otherwise only discover by ear. */
     hint?: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1" title={hint}>
+    <Stack align="center" gap={1} title={hint}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -128,7 +129,7 @@ const Knob = ({
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
-    </div>
+    </Stack>
 );
 
 // ---------------------------------------------------------------------------
@@ -307,9 +308,9 @@ export const MidiCalibrationPanel = ({
                     {hasRecentInput ? (
                         <VelocityHistogram samples={samplesView} />
                     ) : (
-                        <div className="flex h-full items-center justify-center">
+                        <Row justify="center" className="h-full">
                             <span className="text-[9px] italic text-muted-foreground/50">Play notes to calibrate</span>
-                        </div>
+                        </Row>
                     )}
                 </div>
 
@@ -394,7 +395,7 @@ export const MidiCalibrationPanel = ({
                 </div>
 
                 {/* Reset defaults */}
-                <div className="flex items-center gap-2 pt-1">
+                <Row gap={2} className="pt-1">
                     <DawPluginChip
                         tone="neutral"
                         size="sm"
@@ -407,7 +408,7 @@ export const MidiCalibrationPanel = ({
                         <RotateCcw className="size-3" />
                         Reset Defaults
                     </DawPluginChip>
-                </div>
+                </Row>
             </DawPluginSectionCard>
         </div>
     );

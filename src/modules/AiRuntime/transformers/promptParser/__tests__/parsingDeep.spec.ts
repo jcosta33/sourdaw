@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { buildPresetContext, findTrack, isComplexPrompt, tryParameterizedPath } from '../parsing';
 
@@ -141,9 +143,9 @@ describe('tryParameterizedPath', () => {
         expect(result).toEqual([]);
     });
 
-    it('clamps gain to 0-1 range', () => {
+    it('clamps gain to the fader ceiling, not unity', () => {
         const result = tryParameterizedPath('set gain to 200%', ctx);
-        expect(result[0]).toMatchObject({ type: 'setTrackGain', payload: { gain: 1 } });
+        expect(result[0]).toMatchObject({ type: 'setTrackGain', payload: { gain: FADER_MAX_GAIN } });
     });
 
     it('clamps pan to -50 to 50', () => {

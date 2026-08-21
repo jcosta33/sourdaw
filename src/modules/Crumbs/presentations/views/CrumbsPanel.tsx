@@ -11,6 +11,7 @@ import { Circle, Cpu, Volume2 } from 'lucide-react';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { Row, Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -176,15 +177,18 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
             }}
         >
             {isDragOver ? (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[26px] border-2 border-dashed border-[var(--color-accent-lavender)] bg-[var(--color-accent-lavender)]/5">
+                <Row
+                    justify="center"
+                    className="pointer-events-none absolute inset-0 z-10 rounded-[26px] border-2 border-dashed border-[var(--color-accent-lavender)] bg-[var(--color-accent-lavender)]/5"
+                >
                     <span className="text-sm font-medium text-[var(--color-accent-lavender)]">Drop sample here</span>
-                </div>
+                </Row>
             ) : null}
             <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
                 {/* Left rail — Pad grid + selected pad info */}
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Sample" detail={activeSample?.fileName ?? 'No sample loaded'}>
-                        <div className="flex flex-wrap gap-2">
+                        <Row align="stretch" wrap gap={2}>
                             {activeSample ? (
                                 <>
                                     <DawPluginMetricTile
@@ -231,7 +235,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     Drop a sample to begin
                                 </div>
                             )}
-                        </div>
+                        </Row>
                     </SectionCard>
 
                     {mode === 'drum' ? (
@@ -249,16 +253,16 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
                     {mode === 'record' ? (
                         <SectionCard title="Recorder" detail="SP-404 style threshold capture">
-                            <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-2">
+                            <Stack gap={2}>
+                                <Row gap={2}>
                                     <Circle
                                         className={`size-3 ${isRecording ? 'fill-red-500 text-red-500' : 'fill-none text-foreground/40'}`}
                                     />
                                     <span className="text-[10px] text-foreground/70">
                                         {isRecording ? 'Recording...' : 'Idle'}
                                     </span>
-                                </div>
-                                <div className="flex gap-2">
+                                </Row>
+                                <Row align="stretch" gap={2}>
                                     <button
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
@@ -306,13 +310,13 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     >
                                         Stop
                                     </button>
-                                </div>
-                            </div>
+                                </Row>
+                            </Stack>
                         </SectionCard>
                     ) : null}
 
                     <SectionCard title="Status">
-                        <div className="flex items-center gap-3">
+                        <Row gap={3}>
                             <DawPluginLed tone="lavender" className="flex items-center gap-1">
                                 <Cpu className="size-3" />
                                 {activeVoices} voices
@@ -324,12 +328,12 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <Volume2 className="size-3" />
                                 {statusLabel}
                             </DawPluginLed>
-                        </div>
+                        </Row>
                     </SectionCard>
-                </aside>
+                </Stack>
 
                 {/* Center — Waveform + slice overlay */}
-                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
                     <SectionCard title="Waveform">
                         <div className="relative">
                             <WaveformDisplay
@@ -375,10 +379,10 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </button>
                         </SectionCard>
                     ) : null}
-                </section>
+                </Stack>
 
                 {/* Right rail — Controls */}
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Controls" detail="Mode, envelope, filter, and output parameters">
                         <CrumbsControls
                             mode={mode}
@@ -397,7 +401,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             onStackChange={(updates, isTransient) => updateVoiceStack(deviceId, updates, isTransient)}
                         />
                     </SectionCard>
-                </aside>
+                </Stack>
             </div>
         </div>
     );

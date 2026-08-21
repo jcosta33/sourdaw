@@ -7,6 +7,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
@@ -153,7 +154,15 @@ export function getProjectContext(): ProjectContext {
             name: lane.parameterName,
             enabled: lane.enabled,
             minValue: lane.minValue,
-            maxValue: lane.maxValue,
+            // The ceiling the lane really has, not the scalar it stores: a gain
+            // lane written before the fader gained its `+6 dB` of headroom still
+            // records `1`. This is the single place the projection carries it,
+            // so every reader of the context — the bridge's `addAutomationPoint`
+            // bound check, its scale-is-a-no-op test, and the prompt scopes —
+            // judges an old project by the same ceiling as a new one without
+            // re-deriving it. Deriving it here rather than at each reader is
+            // what keeps them from drifting apart.
+            maxValue: getAutomationLaneCeiling(lane),
             points: lane.points.map((point) => ({
                 beat: point.beat,
                 value: point.value,

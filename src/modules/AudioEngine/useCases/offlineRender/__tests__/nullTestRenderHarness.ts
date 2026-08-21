@@ -17,10 +17,12 @@
  * right instrument for the question it was built for ("did the transport
  * deliver any energy at all?"). It cannot answer this one, by its own
  * declaration: its `AudioParam`s are `vi.fn()` no-ops, its delay lines do not
- * delay, its oscillators are silent and it has no filter, waveshaper or
- * analyser. A null test run on it would report a clean null for a fixture whose
- * filter cutoff differed by an octave, because neither side would filter. An
- * instrument that cannot see the parameter under test is worse than none.
+ * delay, its oscillators emit one fixed-frequency sine whatever waveform and
+ * pitch they were given, and it has no filter, waveshaper or analyser. A null
+ * test run on it would report a clean null for a fixture whose filter cutoff
+ * differed by an octave, because neither side would filter — and for one whose
+ * waveform differed, because both would come back a sine. An instrument that
+ * cannot see the parameter under test is worse than none.
  *
  * ── What it models, and what that buys ────────────────────────────────────
  *

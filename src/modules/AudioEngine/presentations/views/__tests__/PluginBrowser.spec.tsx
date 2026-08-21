@@ -9,6 +9,7 @@ vi.mock('#/infra/store/useStore', () => ({
         scannedPlugins: [],
         isScanning: false,
         errors: [],
+        notices: [],
     })),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => ({
         scannedPlugins: [],
         isScanning: false,
         errors: [],
+        notices: [],
         scanPaths: [],
         lastScanTime: null,
     },
@@ -65,6 +67,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: [],
             isScanning: false,
             errors: [],
+            notices: [],
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasNativePlugins: true });
     });
@@ -97,7 +100,12 @@ describe('PluginBrowser', () => {
     });
 
     it('should show scanning state', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: [], isScanning: true, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: [],
+            isScanning: true,
+            errors: [],
+            notices: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getByText('Scanning for plugins...')).toBeInTheDocument();
     });
@@ -107,6 +115,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getByText('External Plugins').parentElement).toHaveTextContent('External Plugins2');
@@ -117,6 +126,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getAllByText('clap').length).toBeGreaterThanOrEqual(1);
@@ -129,6 +139,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getByText('CLAP Synth')).toBeInTheDocument();
@@ -142,6 +153,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const searchInput = screen.getByLabelText('Filter external plugins');
@@ -162,6 +174,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
 
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
@@ -176,6 +189,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const formatBadges = screen.getAllByText(/clap/i);
@@ -187,6 +201,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
         const plugin = screen.getByText('CLAP Filter');
@@ -204,6 +219,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const plugin = screen.getByText('CLAP Synth');
@@ -219,6 +235,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const plugin = screen.getByText('CLAP Filter');
@@ -236,6 +253,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         // Format header buttons are the <button> elements containing the format text.
@@ -256,6 +274,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         // Match by vendor (SynthCo) — exercises the vendor branch of the ||.
         render(<PluginBrowser selectedTrackId={null} searchQuery="SynthCo" />);
@@ -268,6 +287,7 @@ describe('PluginBrowser', () => {
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
+            notices: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="zzznomatch" />);
         expect(screen.getByText(/No plugins match/)).toBeInTheDocument();

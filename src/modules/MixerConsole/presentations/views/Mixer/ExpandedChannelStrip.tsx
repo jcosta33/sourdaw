@@ -10,7 +10,8 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { getVcaGroups } from '#/modules/Arrangement/useCases';
+import { getTrackFaderCeiling, getVcaGroups } from '#/modules/Arrangement/useCases';
+import { formatGainDb } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -305,7 +306,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             value={actions.displayGain}
                             onChange={actions.setGain}
                             min={0}
-                            max={1.5}
+                            // The writer's own ceiling, not the fader law's:
+                            // a Toaster-pad-mirrored track is held at unity, and
+                            // a control that could ask past it would record an
+                            // undo entry whose `expectedGain` never matches the
+                            // stored value, making the move unrecoverable.
+                            max={getTrackFaderCeiling(track.id)}
                             step={0.01}
                             fineStep={0.001}
                             defaultValue={0.8}
@@ -314,7 +320,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         />
                     </div>
                 }
-                value={<>{actions.displayGain === 0 ? '-∞' : `${((actions.displayGain - 0.8) * 40).toFixed(1)}`} dB</>}
+                value={<>{formatGainDb(actions.displayGain)} dB</>}
             />
             {/* Pan */}
             <Stack align="center" className="mt-2 mb-2 w-full px-1">
