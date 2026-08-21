@@ -375,6 +375,18 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
             expectedSizeBytes: violin.artifacts[0]?.sizeBytes,
             expectedSha256: violin.artifacts[0]?.sha256,
         });
+        expect(modelStorageWorkerBridge.readModel).toHaveBeenNthCalledWith(2, {
+            family: 'ddsp',
+            modelId: `${violin.id}/${violin.artifactVersion}/group1-shard1of1.bin`,
+            expectedSizeBytes: violin.artifacts[1]?.sizeBytes,
+            expectedSha256: violin.artifacts[1]?.sha256,
+        });
+        expect(modelStorageWorkerBridge.readModel).toHaveBeenNthCalledWith(3, {
+            family: 'ddsp',
+            modelId: `${violin.id}/${violin.artifactVersion}/settings.json`,
+            expectedSizeBytes: violin.artifacts[2]?.sizeBytes,
+            expectedSha256: violin.artifacts[2]?.sha256,
+        });
         const [request, transfer] = lastCall(tfjs);
         expect(request).toMatchObject({
             type: 'create-ddsp-session',
@@ -430,6 +442,27 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
         });
 
         await expect(ddspLoad).rejects.toThrow('Unexpected DDSP session response');
+    });
+
+    it('transfers the exact DDSP feature buffers with the inference request', async () => {
+        const request = ddspRequest('transfer-features');
+
+        const inference = inferenceWorkerBridge.runDdspInference(request);
+        await flush();
+        const worker = tfjsWorker();
+        const [posted, transfer] = lastCall(worker);
+
+        expect(posted).toEqual(request);
+        expect(transfer).toEqual([request.f0Hz.buffer, request.loudnessDb.buffer]);
+
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: request.requestId,
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
+        await expect(inference).resolves.toMatchObject({ requestId: request.requestId, backend: 'webgpu' });
     });
 });
 
