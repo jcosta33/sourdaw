@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
@@ -20,6 +21,10 @@ vi.mock('../../../services/computeTrackHash', () => ({
 
 vi.mock('../renderOffline', () => ({
     renderTrackOffline: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
 }));
 
 // Only the two I/O helpers are replaced. `getDeviceChainTailSeconds` runs for
@@ -281,7 +286,8 @@ describe('freezeTrack', () => {
 
         expect(errorTrack.freezeState.status).toBe('error');
         expect(errorTrack.freezeState.errorMessage).toBe('Render crashed');
-        expect(didWrite).toBe(true);
+        expect(notifyUser).toHaveBeenCalledWith('Render crashed', 'error');
+        expect(didWrite).toBe(false);
     });
 
     it('uses defaults 0 and 1 if track has no clips', async () => {
@@ -474,7 +480,7 @@ describe('freezeTrack', () => {
 
         vi.mocked(renderTrackOffline).mockRejectedValue('a string failure');
 
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
 
         const errorCall = vi.mocked(updateTrack).mock.calls[1];
         if (!errorCall) {
@@ -487,6 +493,8 @@ describe('freezeTrack', () => {
         const errorTrack = errorCall[1](storedTrack);
         expect(errorTrack.freezeState.status).toBe('error');
         expect(errorTrack.freezeState.errorMessage).toBe('a string failure');
+        expect(notifyUser).toHaveBeenCalledWith('a string failure', 'error');
+        expect(didWrite).toBe(false);
     });
 
     it('aborts a previously in-flight freeze for the same track before starting a new one', async () => {
