@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
-import { type DdspInstrument } from '../models/BrowserModel';
+import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInstrumentCatalog';
 import { type RenderProvenance } from '../models/RenderProgress';
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
@@ -17,7 +17,7 @@ const FADE_SAMPLES = 441;
 
 type RenderDdspInstrumentInput = {
     phraseId: string;
-    instrument: Omit<DdspInstrument, 'status' | 'downloadProgress'>;
+    instrumentId: DdspInstrumentId;
     notes: MidiNote[];
     durationSec: number;
 };
@@ -27,11 +27,12 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
     ({ logger, readRenderCache, writeRenderCache }) =>
         async function renderDdspInstrument({
             phraseId,
-            instrument,
+            instrumentId,
             notes,
             durationSec,
         }: RenderDdspInstrumentInput): RenderDdspInstrumentOutput {
-            if (!MODEL_RELEASE_ADMISSION.ddsp || !instrument.artifacts || !instrument.artifactVersion) {
+            const instrument = resolveDdspInstrument(instrumentId);
+            if (!MODEL_RELEASE_ADMISSION.ddsp) {
                 throw new Error('DDSP model artifacts are not admitted in this release');
             }
             const requestId = crypto.randomUUID();
@@ -73,7 +74,7 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
                 await inferenceWorkerBridge.loadDdspSession({
                     modelId: instrument.id,
                     artifacts: instrument.artifacts.map((artifact) => ({
-                        modelId: `${instrument.id}/${artifact.path}`,
+                        modelId: `${instrument.id}/${instrument.artifactVersion}/${artifact.path}`,
                         path: artifact.path,
                         sizeBytes: artifact.sizeBytes,
                         sha256: artifact.sha256,

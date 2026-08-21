@@ -8,12 +8,12 @@ import { sha256ArrayBuffer } from './sha256ArrayBuffer';
 
 type DdspStorageInput = { id: string; version: string; artifacts: DdspArtifact[] };
 
-function artifactModelId(instrumentId: string, path: DdspArtifact['path']): string {
-    return `${instrumentId}/${path}`;
+function artifactModelId(instrumentId: string, version: string, path: DdspArtifact['path']): string {
+    return `${instrumentId}/${version}/${path}`;
 }
 
 function readyModelId(instrumentId: string, version: string): string {
-    return `${instrumentId}/.ready-${version}.json`;
+    return `${instrumentId}/${version}/.ready.json`;
 }
 
 function readyBytes(input: DdspStorageInput): ArrayBuffer {
@@ -60,7 +60,7 @@ const checkDdspInstrumentReady = inject({ logger, modelStorageWorkerBridge, sha2
                         input.artifacts.map((artifact) =>
                             modelStorageWorkerBridge.verifyModel({
                                 family: 'ddsp',
-                                modelId: artifactModelId(input.id, artifact.path),
+                                modelId: artifactModelId(input.id, input.version, artifact.path),
                                 expectedSizeBytes: artifact.sizeBytes,
                                 expectedSha256: artifact.sha256,
                             })
@@ -100,7 +100,7 @@ const deleteDdspInstrumentArtifacts = inject({ modelStorageWorkerBridge })(
         async function deleteDdspInstrumentArtifacts(input: DdspStorageInput): Promise<void> {
             await Promise.all(
                 [
-                    ...input.artifacts.map((artifact) => artifactModelId(input.id, artifact.path)),
+                    ...input.artifacts.map((artifact) => artifactModelId(input.id, input.version, artifact.path)),
                     readyModelId(input.id, input.version),
                 ].map(async (modelId) => modelStorageWorkerBridge.deleteModel({ family: 'ddsp', modelId }))
             );

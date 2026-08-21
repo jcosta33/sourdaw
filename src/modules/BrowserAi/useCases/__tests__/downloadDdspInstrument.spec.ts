@@ -24,12 +24,10 @@ const instrument = DDSP_INSTRUMENT_CATALOG[0]! as Omit<DdspInstrument, 'status' 
     artifactVersion: string;
     artifacts: NonNullable<DdspInstrument['artifacts']>;
 };
-const admittedInstruments = DDSP_INSTRUMENT_CATALOG as Array<
-    Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
-        artifactVersion: string;
-        artifacts: NonNullable<DdspInstrument['artifacts']>;
-    }
->;
+const admittedInstruments = DDSP_INSTRUMENT_CATALOG as readonly (Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
+    artifactVersion: string;
+    artifacts: NonNullable<DdspInstrument['artifacts']>;
+})[];
 
 function registry(instruments = admittedInstruments): ModelRegistryState {
     return {
@@ -50,6 +48,12 @@ describe('downloadDdspInstrument', () => {
         modelRegistryStore.set(registry());
     });
 
+    it('rejects a forged structural manifest at the catalog-ID boundary', () => {
+        expect(() =>
+            downloadDdspInstrument({ id: instrument.id, artifacts: [] } as unknown as typeof instrument.id)
+        ).toThrow('DDSP instrument is not admitted');
+    });
+
     it.each(admittedInstruments)(
         'delegates every exact %s checkpoint artifact in manifest order and changes only its status',
         async (candidate) => {
@@ -67,12 +71,12 @@ describe('downloadDdspInstrument', () => {
                 getStorageStatus,
             });
 
-            await downloadDdspInstrument(candidate);
+            await downloadDdspInstrument(candidate.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId);
 
             expect(downloadModelRepo.mock.calls.map(([input]) => input.spec)).toEqual(
                 candidate.artifacts.map((artifact) => ({
                     family: 'ddsp',
-                    modelId: `${candidate.id}/${artifact.path}`,
+                    modelId: `${candidate.id}/${candidate.artifactVersion}/${artifact.path}`,
                     url: artifact.url,
                     sizeBytes: artifact.sizeBytes,
                     sha256: artifact.sha256,
@@ -115,7 +119,9 @@ describe('downloadDdspInstrument', () => {
             getStorageStatus: vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus),
         });
 
-        await expect(downloadDdspInstrument(instrument)).rejects.toThrow('cancelled');
+        await expect(
+            downloadDdspInstrument(instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId)
+        ).rejects.toThrow('cancelled');
 
         expect(cleanupDdspInstrumentArtifacts).toHaveBeenCalledWith({
             id: instrument.id,
@@ -145,8 +151,12 @@ describe('downloadDdspInstrument', () => {
             getStorageStatus: vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus),
         });
 
-        const first = downloadDdspInstrument(instrument);
-        const second = downloadDdspInstrument(instrument);
+        const first = downloadDdspInstrument(
+            instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId
+        );
+        const second = downloadDdspInstrument(
+            instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId
+        );
         expect(second).toBe(first);
         expect(downloadModelRepo).toHaveBeenCalledTimes(1);
 

@@ -43,7 +43,7 @@ describe('removeDdspInstrument', () => {
             getStorageStatus,
         });
 
-        await removeDdspInstrument(instrument);
+        await removeDdspInstrument(instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId);
 
         expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({
             status: 'not-downloaded',
@@ -60,7 +60,9 @@ describe('removeDdspInstrument', () => {
             getStorageStatus,
         });
 
-        await expect(removeDdspInstrument(instrument)).rejects.toThrow('OPFS denied');
+        await expect(
+            removeDdspInstrument(instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId)
+        ).rejects.toThrow('OPFS denied');
 
         expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({ status: 'ready', downloadProgress: 1 });
         expect(modelRegistryStore.value?.storageUsedBytes).toBe(1_024);

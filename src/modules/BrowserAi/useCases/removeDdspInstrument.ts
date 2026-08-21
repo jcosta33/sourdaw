@@ -1,18 +1,14 @@
 import { inject } from '#/infra/di/inject';
 
-import { type DdspInstrument } from '../models/BrowserModel';
+import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInstrumentCatalog';
 import { ddspModelStorage } from '../repositories/ddspModelStorage';
 import { getStorageStatus } from '../repositories/getStorageStatus';
 import { setStorageUsed, updateModelStatus } from '../stores/modelRegistryStore';
 
-type AdmittedDdspInstrument = Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
-    artifactVersion: string;
-    artifacts: NonNullable<DdspInstrument['artifacts']>;
-};
-
 export const removeDdspInstrument = inject({ ddspModelStorage, getStorageStatus })(
     ({ ddspModelStorage, getStorageStatus }) =>
-        async function removeDdspInstrument(instrument: AdmittedDdspInstrument): Promise<void> {
+        async function removeDdspInstrument(instrumentId: DdspInstrumentId): Promise<void> {
+            const instrument = resolveDdspInstrument(instrumentId);
             await ddspModelStorage.deleteDdspInstrumentArtifacts({
                 id: instrument.id,
                 version: instrument.artifactVersion,

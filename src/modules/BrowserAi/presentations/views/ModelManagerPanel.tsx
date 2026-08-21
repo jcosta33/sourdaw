@@ -9,7 +9,7 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 
 import { type DdspInstrument } from '../../models/BrowserModel';
-import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
+import { DDSP_INSTRUMENT_CATALOG, type DdspInstrumentId } from '../../models/DdspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadDdspInstrument } from '../../useCases/downloadDdspInstrument';
 import { downloadModel } from '../../useCases/downloadModel';
@@ -138,14 +138,12 @@ type AdmittedDdspInstrument = DdspInstrument & {
 
 function DdspInstrumentAction({ instrument }: { instrument: AdmittedDdspInstrument }): ReactElement {
     const handleDownload = (): void => {
-        const download = downloadDdspInstrument as (candidate: AdmittedDdspInstrument) => Promise<void>;
-        void download(instrument).catch((error: unknown) => {
+        void downloadDdspInstrument(instrument.id as DdspInstrumentId).catch((error: unknown) => {
             logger.error(new Error('[BrowserAi] Failed to download DDSP instrument', { cause: error }));
         });
     };
     const handleRemove = (): void => {
-        const remove = removeDdspInstrument as (candidate: AdmittedDdspInstrument) => Promise<void>;
-        void remove(instrument).catch((error: unknown) => {
+        void removeDdspInstrument(instrument.id as DdspInstrumentId).catch((error: unknown) => {
             logger.error(new Error('[BrowserAi] Failed to remove DDSP instrument', { cause: error }));
         });
     };

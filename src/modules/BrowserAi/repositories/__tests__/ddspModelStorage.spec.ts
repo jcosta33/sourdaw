@@ -46,7 +46,7 @@ describe('ddspModelStorage readiness', () => {
         await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
         expect(bridge.readModel).toHaveBeenCalledWith({
             family: 'ddsp',
-            modelId: `${instrument.id}/.ready-${instrument.artifactVersion}.json`,
+            modelId: `${instrument.id}/${instrument.artifactVersion}/.ready.json`,
             expectedSizeBytes: expect.any(Number),
             expectedSha256: 'marker-sha',
         });
@@ -65,11 +65,28 @@ describe('ddspModelStorage readiness', () => {
 
         await expect(ddspModelStorage.checkDdspInstrumentReady(requested)).resolves.toBe(false);
         expect(bridge.readModel).toHaveBeenCalledWith(
-            expect.objectContaining({ modelId: `${instrument.id}/.ready-next-checkpoint-version.json` })
+            expect.objectContaining({ modelId: `${instrument.id}/next-checkpoint-version/.ready.json` })
         );
         expect(bridge.readModel).not.toHaveBeenCalledWith(
-            expect.objectContaining({ modelId: `${instrument.id}/.ready-${instrument.artifactVersion}.json` })
+            expect.objectContaining({ modelId: `${instrument.id}/${instrument.artifactVersion}/.ready.json` })
         );
+    });
+
+    it('uses disjoint artifact and marker keys for distinct admitted versions', async () => {
+        const bridge = storageBridge();
+        bridge.readModel.mockResolvedValue(null);
+        const next = { ...storage, version: 'next-checkpoint-version' };
+        injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
+            logger: { warn: vi.fn() },
+            modelStorageWorkerBridge: bridge,
+            sha256ArrayBuffer: vi.fn().mockResolvedValue('marker-sha'),
+        });
+        await ddspModelStorage.checkDdspInstrumentReady(storage);
+        await ddspModelStorage.checkDdspInstrumentReady(next);
+        expect(bridge.readModel.mock.calls.map(([input]) => input.modelId)).toEqual([
+            `${instrument.id}/${storage.version}/.ready.json`,
+            `${instrument.id}/${next.version}/.ready.json`,
+        ]);
     });
 
     it('is not ready when a ready marker exists but an admitted artifact is missing', async () => {
@@ -101,7 +118,7 @@ describe('ddspModelStorage readiness', () => {
             await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
             expect(bridge.verifyModel).toHaveBeenCalledWith({
                 family: 'ddsp',
-                modelId: `${instrument.id}/${storage.artifacts[0]!.path}`,
+                modelId: `${instrument.id}/${storage.version}/${storage.artifacts[0]!.path}`,
                 expectedSizeBytes: storage.artifacts[0]!.sizeBytes,
                 expectedSha256: storage.artifacts[0]!.sha256,
             });
@@ -129,7 +146,7 @@ describe('ddspModelStorage readiness', () => {
         expect(bridge.verifyModel.mock.calls.map(([input]) => input)).toEqual(
             storage.artifacts.map((artifact) => ({
                 family: 'ddsp',
-                modelId: `${instrument.id}/${artifact.path}`,
+                modelId: `${instrument.id}/${storage.version}/${artifact.path}`,
                 expectedSizeBytes: artifact.sizeBytes,
                 expectedSha256: artifact.sha256,
             }))

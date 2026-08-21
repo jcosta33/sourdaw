@@ -10,7 +10,7 @@
  */
 
 import { type DdspInstrument } from './BrowserModel';
-import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from './DdspArtifactManifest';
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION, type DdspArtifact } from './DdspArtifactManifest';
 
 /**
  * Factory DDSP instrument catalog.
@@ -42,4 +42,19 @@ export const DDSP_INSTRUMENT_CATALOG = [
     entry('ddsp-flute', 'Flute', 'flute'),
     entry('ddsp-trumpet', 'Trumpet', 'trumpet'),
     entry('ddsp-tenor-saxophone', 'Tenor Saxophone', 'tenor_saxophone'),
-];
+] as const;
+
+export type DdspInstrumentId = (typeof DDSP_INSTRUMENT_CATALOG)[number]['id'];
+export type AdmittedDdspInstrument = Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
+    artifactVersion: string;
+    artifacts: DdspArtifact[];
+};
+
+/** Resolve only release-admitted checkpoint metadata; callers never provide it. */
+export function resolveDdspInstrument(id: DdspInstrumentId): AdmittedDdspInstrument {
+    const instrument = DDSP_INSTRUMENT_CATALOG.find((candidate) => candidate.id === id);
+    if (instrument === undefined) {
+        throw new Error(`DDSP instrument is not admitted: ${id}`);
+    }
+    return instrument as AdmittedDdspInstrument;
+}
