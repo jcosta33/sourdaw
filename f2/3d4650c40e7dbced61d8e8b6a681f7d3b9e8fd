@@ -1,0 +1,19 @@
+tests/e2e/inspectorTestId.spec.ts
+  s_24b1bdbc3c31ad::t_56ae721575e57e 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f23d4650c40e7dbced61d8e8b6a681f7d3b9e8fd",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
