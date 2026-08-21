@@ -18,6 +18,7 @@ import {
     Clock,
 } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import {
@@ -177,7 +178,7 @@ const formatRelativeTime = (timestamp: number): string => {
 };
 
 const LogoBlock = (): ReactElement => (
-    <div className="flex flex-col items-center gap-3">
+    <Stack align="center" gap={3}>
         <div className="relative">
             <div className="absolute inset-0 rounded-full bg-[var(--color-accent-orange)]/20 blur-2xl scale-[2]" />
             <SourdawLogo className="relative h-24 drop-shadow-[0_6px_24px_rgba(217,119,6,0.45)]" />
@@ -188,7 +189,7 @@ const LogoBlock = (): ReactElement => (
             </h1>
             <p className="mt-1 text-sm text-white/30 italic">{randomTagline}</p>
         </div>
-    </div>
+    </Stack>
 );
 
 // Icon for a category pill. Mirrors the original ternary chain: any category
@@ -396,7 +397,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         >
             <AmbientGlows />
 
-            <div className="flex h-full items-center justify-center p-6">
+            <Row justify="center" className="h-full p-6">
                 {/* ── HOME ── */}
                 {view === 'home' ? (
                     <div
@@ -410,15 +411,17 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                         <LogoBlock />
 
                         {recentProjects.length > 0 ? (
-                            <div className="flex flex-col gap-2 w-full">
-                                <div className="flex items-center gap-1.5 px-0.5">
+                            <Stack gap={2} className="w-full">
+                                <Row gap={1.5} className="px-0.5">
                                     <Clock className="size-3 text-white/35" aria-hidden="true" />
                                     <span className="text-[10px] font-semibold text-white/45 uppercase tracking-wider">
                                         Recent Projects
                                     </span>
-                                </div>
-                                <div
-                                    className="flex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1"
+                                </Row>
+                                <Row
+                                    align="stretch"
+                                    gap={2}
+                                    className="overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1"
                                     role="list"
                                     aria-label="Recent projects"
                                 >
@@ -429,8 +432,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                             onOpen={handleRecentProjectSelect}
                                         />
                                     ))}
-                                </div>
-                            </div>
+                                </Row>
+                            </Stack>
                         ) : null}
 
                         <div className="grid grid-cols-3 gap-3 w-full">
@@ -471,7 +474,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Row justify="center" wrap gap={2}>
                             <button
                                 type="button"
                                 id="launch-import-dawproject"
@@ -499,7 +502,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 <Download className="size-3" aria-hidden="true" />
                                 Export .dawproject
                             </button>
-                        </div>
+                        </Row>
 
                         <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
                     </div>
@@ -507,12 +510,13 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
 
                 {/* ── GRID (Templates / Demos) ── */}
                 {view === 'grid' ? (
-                    <div
+                    <Stack
+                        gap={4}
+                        className="animate-in fade-in slide-in-from-bottom-3 duration-400 max-w-[620px] w-full"
                         key="grid"
-                        className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full"
                     >
                         {/* Header */}
-                        <div className="flex items-center gap-3">
+                        <Row gap={3}>
                             <button
                                 type="button"
                                 aria-label="Back to home"
@@ -524,10 +528,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             </button>
                             <div className="h-3 w-px bg-white/10" />
                             <p className="text-xs text-white/50 font-medium">Start a new project</p>
-                        </div>
+                        </Row>
 
                         {/* Category pills */}
-                        <div className="flex gap-1.5 flex-wrap">
+                        <Row align="stretch" wrap gap={1.5}>
                             {CATEGORY_ORDER.map((cat) => {
                                 const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
                                 const isActive = activeCategory === cat;
@@ -547,7 +551,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                     </button>
                                 );
                             })}
-                        </div>
+                        </Row>
 
                         {/* Template grid */}
                         <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
@@ -590,15 +594,12 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                         <p className="text-[9px] text-white/15 text-center">
                             Or drop audio / MIDI files on the home screen to import instantly
                         </p>
-                    </div>
+                    </Stack>
                 ) : null}
 
                 {/* ── LOADING ── */}
                 {view === 'loading' ? (
-                    <div
-                        key="loading"
-                        className="animate-in fade-in zoom-in-95 duration-400 flex flex-col items-center gap-6"
-                    >
+                    <Stack align="center" gap={6} className="animate-in fade-in zoom-in-95 duration-400" key="loading">
                         <div className="relative">
                             <div
                                 className="absolute inset-0 rounded-full blur-2xl scale-[2.5] opacity-25"
@@ -606,7 +607,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             />
                             <SourdawLogo className="relative h-28 drop-shadow-[0_6px_32px_rgba(217,119,6,0.5)]" />
                         </div>
-                        <div className="text-center space-y-2">
+                        <Stack gap={2} className="text-center">
                             <p className="text-sm font-semibold text-white/80">
                                 {loadingName ? (
                                     <>
@@ -625,7 +626,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             >
                                 {LOADING_QUIPS[quipIndex]}
                             </p>
-                        </div>
+                        </Stack>
                         <div className="w-48 h-px rounded-full overflow-hidden bg-white/5">
                             <div
                                 className="h-full w-1/3 rounded-full"
@@ -637,9 +638,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             />
                         </div>
                         <style>{`@keyframes ls-shimmer { 0%{transform:translateX(-200%)} 100%{transform:translateX(400%)} }`}</style>
-                    </div>
+                    </Stack>
                 ) : null}
-            </div>
+            </Row>
         </div>
     );
 };
@@ -672,12 +673,13 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
             (e.currentTarget as HTMLElement).style.borderColor = '';
         }}
     >
-        <div
-            className="size-10 rounded-xl flex items-center justify-center transition-all duration-200"
+        <Row
+            justify="center"
+            className="size-10 rounded-xl transition-all duration-200"
             style={{ background: `color-mix(in srgb, var(${colorVar}) 15%, transparent)`, color: `var(${colorVar})` }}
         >
             {icon}
-        </div>
+        </Row>
         <div>
             <span className="text-xs font-semibold text-white/75 block leading-tight">{label}</span>
             <span className="text-[9px] text-white/28 mt-0.5 block">{sub}</span>
@@ -699,10 +701,10 @@ const RecentProjectCard = ({ entry, onOpen }: RecentProjectCardProps): ReactElem
         className="shrink-0 flex flex-col items-start gap-1 min-w-[120px] max-w-[160px] p-2.5 rounded-lg border border-white/[0.07] bg-white/[0.03] text-left transition-all duration-200 cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.15]"
         onClick={() => onOpen(entry)}
     >
-        <div className="flex items-center gap-1.5 w-full min-w-0">
+        <Row gap={1.5} className="w-full">
             <FolderOpen className="size-3 shrink-0 text-[var(--color-accent-orange)]/70" aria-hidden="true" />
             <span className="text-[11px] font-semibold text-white/80 truncate">{entry.name}</span>
-        </div>
+        </Row>
         <span className="text-[9px] text-white/35">{formatRelativeTime(entry.updatedAt)}</span>
     </button>
 );

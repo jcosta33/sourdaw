@@ -5,6 +5,7 @@ import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers } fr
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -221,7 +222,7 @@ export const TransportControls = ({
             {metronomeEnabled ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div className="flex items-center px-2 py-1">
+                        <Row className="px-2 py-1">
                             <Slider
                                 min={0}
                                 max={1}
@@ -231,7 +232,7 @@ export const TransportControls = ({
                                 className="w-16 h-3"
                                 aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
                             />
-                        </div>
+                        </Row>
                     </TooltipTrigger>
                     <TooltipContent>Metronome volume: {Math.round(metronomeVolume * 100)}%</TooltipContent>
                 </Tooltip>

@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 type ShortcutGroup = {
@@ -186,8 +187,9 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
     }
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
+        <Row
+            justify="center"
+            className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
             onClick={() => setOpenAndReport(false)}
         >
             <DawUtilityPanel
@@ -221,20 +223,20 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
                             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                                 {group.title}
                             </h3>
-                            <div className="space-y-1.5">
+                            <Stack gap={1.5}>
                                 {group.shortcuts.map((state) => (
-                                    <div key={state.keys} className="flex items-center justify-between gap-2">
+                                    <Row justify="between" gap={2} key={state.keys}>
                                         <span className="text-xs text-foreground">{state.description}</span>
-                                        <div className="flex gap-0.5">
+                                        <Row align="stretch" gap={0.5}>
                                             {state.keys.split(' ').map((kIndex, index) => (
                                                 <DawKeycap key={`${state.keys}-${index}`} compact>
                                                     {kIndex}
                                                 </DawKeycap>
                                             ))}
-                                        </div>
-                                    </div>
+                                        </Row>
+                                    </Row>
                                 ))}
-                            </div>
+                            </Stack>
                         </div>
                     ))}
                 </div>
@@ -247,6 +249,6 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
                     to toggle this sheet
                 </p>
             </DawUtilityPanel>
-        </div>
+        </Row>
     );
 };

@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState 
 
 import { X } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { ConfirmDialog } from '#/infra/dialogService/ConfirmDialog';
@@ -126,20 +127,21 @@ const BranchManagerDialogLazy = lazy(() =>
 // networks; this gives an animated, dialog-positioned skeleton so the user sees
 // that something is loading rather than nothing.
 const LazyPanelFallback = (): ReactElement => (
-    <div
-        className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+    <Row
+        justify="center"
+        className="fixed inset-0 z-40 bg-black/40"
         role="status"
         aria-live="polite"
         aria-busy="true"
         data-testid="lazy-panel-fallback"
     >
-        <div className="flex flex-col gap-3 rounded-md bg-surface-raised p-4 shadow-lg">
+        <Stack gap={3} className="rounded-md bg-surface-raised p-4 shadow-lg">
             <div className="h-4 w-40 animate-pulse rounded bg-surface-base" />
             <div className="h-32 w-72 animate-pulse rounded bg-surface-base" />
             <div className="h-4 w-24 animate-pulse rounded bg-surface-base" />
-        </div>
+        </Stack>
         <span className="sr-only">Loading…</span>
-    </div>
+    </Row>
 );
 
 type AppShellProps = {
@@ -558,8 +560,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     return (
         <>
-            <div
-                className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app"
+            <Stack
+                className="h-screen w-screen overflow-hidden bg-surface-app"
                 data-testid="app-shell"
                 inert={projectLoadFailure !== null || cheatSheetOpen}
             >
@@ -577,7 +579,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <TransportBar />
 
                 {/* ─── Main horizontal layout ─── */}
-                <div className="flex flex-1 overflow-hidden">
+                <Row align="stretch" grow className="overflow-hidden">
                     {/* Left dynamically placed panels */}
                     {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'left', sidebarNode, onSidebarResize)}
                     {renderSidePanel(
@@ -591,7 +593,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
                     {/* Center: vertical split — arrangement over mixer */}
-                    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                    <Stack grow className="min-w-0 overflow-hidden">
                         {/* Main arrangement area */}
                         <main id="main-content" className="contain-strict flex-1 overflow-hidden min-h-0">
                             {children}
@@ -799,13 +801,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     side="top"
                                     onResize={(d) => setMixerHeight((h) => Math.max(120, h + d))}
                                 />
-                                <div
-                                    className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
+                                <Stack
+                                    shrink={false}
+                                    className="contain-strict bg-surface-base overflow-hidden"
                                     style={{ height: mixerHeight }}
                                 >
                                     {/* Bottom panel tab bar */}
-                                    <div
-                                        className="flex items-center gap-0.5 px-2 py-0.5 shrink-0"
+                                    <Row
+                                        gap={0.5}
+                                        shrink={false}
+                                        className="px-2 py-0.5"
                                         style={{
                                             background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
                                             boxShadow:
@@ -813,11 +818,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             borderBottom: '1px solid rgba(0,0,0,0.4)',
                                         }}
                                     >
-                                        <div
-                                            role="tablist"
-                                            aria-label="Bottom dock"
-                                            className="flex items-center gap-0.5"
-                                        >
+                                        <Row gap={0.5} role="tablist" aria-label="Bottom dock">
                                             {renderBottomTab('mixer', 'Mixer', 'text-primary')}
                                             {renderBottomTab('editor', 'Editor', 'text-[var(--color-accent-cyan)]')}
                                             {renderBottomTab(
@@ -855,7 +856,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                                       { 'data-testid': 'elastic-tab-button' }
                                                   )
                                                 : null}
-                                        </div>
+                                        </Row>
 
                                         <div className="flex-1" />
 
@@ -867,7 +868,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         >
                                             <X className="size-3.5" />
                                         </Button>
-                                    </div>
+                                    </Row>
                                     {/* Panel content */}
                                     <div
                                         role="tabpanel"
@@ -878,7 +879,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     >
                                         <ErrorBoundary variant="inline">{renderBottomTabContent()}</ErrorBoundary>
                                     </div>
-                                </div>
+                                </Stack>
                             </>
                         ) : null}
 
@@ -897,7 +898,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 </div>
                             </>
                         ) : null}
-                    </div>
+                    </Stack>
 
                     {/* Right dynamically placed panels */}
                     {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'right', sidebarNode, onSidebarResize)}
@@ -910,7 +911,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     )}
                     {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'right', chatNode, onChatResize)}
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'right', aiNode('right'), onAiResize)}
-                </div>
+                </Row>
 
                 <StatusBar />
                 <UndoHistoryPanel />
@@ -953,7 +954,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
 
                 <OnboardingTour />
-            </div>
+            </Stack>
 
             {/* Siblings of the shell root, not children, because the root goes
                 `inert` below. These are the app's only channels for telling the

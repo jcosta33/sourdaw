@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { Row } from '#/components/layout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '#/modules/Project/useCases';
 
@@ -23,7 +24,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
 
     if (editing) {
         return (
-            <div className="flex items-center gap-1.5 shrink-0">
+            <Row gap={1.5} shrink={false}>
                 <DawCompactInput
                     className="daw-readout-well w-32 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
@@ -39,7 +40,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     }}
                     autoFocus
                 />
-            </div>
+            </Row>
         );
     }
 
@@ -57,7 +58,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     onDoubleClick={() => saveProject()}
                 >
                     {/* Project name in a subtle recessed badge */}
-                    <div className="daw-readout-well flex items-center gap-1 rounded-sm px-2 py-0.5">
+                    <Row gap={1} className="daw-readout-well rounded-sm px-2 py-0.5">
                         <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground truncate max-w-32 transition-colors">
                             {name}
                         </span>
@@ -72,7 +73,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                                 title="Unsaved changes"
                             />
                         ) : null}
-                    </div>
+                    </Row>
                 </button>
             </TooltipTrigger>
             <TooltipContent>Click to rename, double-click to save</TooltipContent>
