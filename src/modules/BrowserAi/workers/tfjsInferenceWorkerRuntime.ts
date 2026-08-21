@@ -30,7 +30,6 @@ export type TfjsWorkerRuntime = {
 };
 
 type CreateTfjsInferenceRequestHandlerInput = {
-    idleMs: number;
     initializeTfjs: () => Promise<TfjsWorkerRuntime>;
     postResponse: (response: WorkerResponse, transfer?: Transferable[]) => void;
 };
@@ -301,7 +300,6 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
     const closedPorts = new WeakSet<MessagePort>();
     const disposedModels = new WeakSet<TfjsWorkerModel>();
     const disposedTensors = new WeakSet<TfjsWorkerTensor>();
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let tfPromise: Promise<TfjsWorkerRuntime> | undefined;
     let disposed = false;
     let disposePromise: Promise<void> | undefined;
@@ -338,31 +336,11 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         tensor.dispose();
     }
 
-    function cancelIdleCleanup(): void {
-        if (idleTimer !== undefined) {
-            clearTimeout(idleTimer);
-            idleTimer = undefined;
-        }
-    }
-
     function disposeCachedSessions(): void {
         for (const session of sessions.values()) {
             disposeModel(session.model);
         }
         sessions.clear();
-    }
-
-    function scheduleIdleCleanup(): void {
-        cancelIdleCleanup();
-        if (disposed || activeRequests.size > 0) {
-            return;
-        }
-        idleTimer = setTimeout(() => {
-            idleTimer = undefined;
-            if (!disposed && activeRequests.size === 0) {
-                disposeCachedSessions();
-            }
-        }, input.idleMs);
     }
 
     async function getTfjs(): Promise<TfjsWorkerRuntime> {
@@ -620,7 +598,6 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         if (existingRelease) {
             return existingRelease;
         }
-        cancelIdleCleanup();
         const load = sessionLoads.get(sessionKey);
         load?.controller.abort();
         const matchingRequests = [...activeRequests.values()].filter((request) => request.sessionKey === sessionKey);
@@ -656,7 +633,6 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             return disposePromise;
         }
         disposed = true;
-        cancelIdleCleanup();
         const requests = [...activeRequests.values()];
         for (const request of requests) {
             request.controller.abort();
@@ -694,7 +670,6 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 requestId: request.requestId,
                 sessionKey: request.sessionKey,
             });
-            scheduleIdleCleanup();
             return;
         }
         if (request.type === 'get-status') {
@@ -724,7 +699,6 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             return;
         }
         const sessionKey = request.sessionKey;
-        cancelIdleCleanup();
         const controller = new AbortController();
         let settle = (): void => undefined;
         const settled = new Promise<void>((resolve) => {
@@ -762,7 +736,6 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 activeRequests.delete(request.requestId);
             }
             activeRequest.settle();
-            scheduleIdleCleanup();
         }
     }
 

@@ -10,7 +10,6 @@ import {
 
 import type { NamedTensorMap, Tensor } from '@tensorflow/tfjs-core';
 
-const SESSION_IDLE_MS = 55_000;
 let rollRegistered = false;
 
 /** Initialize only the hardware WebGPU backend; no CPU, WebGL, or software success path exists. */
@@ -107,7 +106,6 @@ function postResponse(response: WorkerResponse, transfer?: Transferable[]): void
 }
 
 const runtime = createTfjsInferenceRequestHandler({
-    idleMs: SESSION_IDLE_MS,
     initializeTfjs,
     postResponse,
 });

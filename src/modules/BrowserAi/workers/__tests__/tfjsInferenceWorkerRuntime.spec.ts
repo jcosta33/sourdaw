@@ -43,16 +43,28 @@ const MODEL_JSON = new TextEncoder().encode(
     })
 ).buffer;
 const WEIGHTS = Uint8Array.from([1, 2, 3, 4]).buffer;
-const SETTINGS = new TextEncoder().encode(
-    JSON.stringify({
-        averageMaxLoudness: -48.6,
-        loudnessThreshold: -100,
-        meanLoudness: -68.5,
-        meanPitch: 62,
-        postGain: 2,
-        modelMaxFrameLength: MODEL_FRAME_LENGTH,
-    })
-).buffer;
+type SettingsFixture = {
+    averageMaxLoudness: number;
+    loudnessThreshold: number;
+    meanLoudness: number;
+    meanPitch: number;
+    postGain: number;
+    modelMaxFrameLength: number;
+};
+const SETTINGS_VALUES: SettingsFixture = {
+    averageMaxLoudness: -48.6,
+    loudnessThreshold: -100,
+    meanLoudness: -68.5,
+    meanPitch: 62,
+    postGain: 2,
+    modelMaxFrameLength: MODEL_FRAME_LENGTH,
+};
+
+function settingsBytes(overrides: Partial<SettingsFixture> = {}): ArrayBuffer {
+    return new TextEncoder().encode(JSON.stringify({ ...SETTINGS_VALUES, ...overrides })).buffer;
+}
+
+const SETTINGS = settingsBytes();
 
 function deferred<TValue>(): Deferred<TValue> {
     let resolveDeferred: (value: TValue) => void = () => undefined;
@@ -147,7 +159,7 @@ function fakeTensor(
 
 const runtimes: Array<ReturnType<typeof createTfjsInferenceRequestHandler>> = [];
 
-function createHarness(input: { backend?: string; output?: FakeTensor; idleMs?: number } = {}): Harness {
+function createHarness(input: { backend?: string; output?: FakeTensor } = {}): Harness {
     const backend = { value: input.backend ?? 'webgpu' };
     const output = input.output ?? fakeTensor(Float32Array.from([0.1, -0.2, 0.3, -0.4]));
     const model = { dispose: vi.fn(), predict: vi.fn(() => output) };
@@ -158,7 +170,6 @@ function createHarness(input: { backend?: string; output?: FakeTensor; idleMs?: 
     const tensor1d = vi.fn((values: Float32Array) => fakeTensor(Float32Array.from(values), { shape: [values.length] }));
     const responses: WorkerResponse[] = [];
     const runtime = createTfjsInferenceRequestHandler({
-        idleMs: input.idleMs ?? 10_000,
         initializeTfjs: vi.fn(async () => ({
             getBackend: () => backend.value,
             loadGraphModel,
@@ -296,6 +307,41 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
+    it('rejects an artifact transfer whose byte length differs from verified metadata', async () => {
+        const harness = createHarness();
+        const transferred = artifacts();
+        transferred[0] = { ...transferred[0]!, sizeBytes: transferred[0]!.sizeBytes + 1 };
+
+        await harness.runtime.handleRequest(sessionRequest('size-drift', transferred));
+
+        expect(harness.loadGraphModel).not.toHaveBeenCalled();
+        expect(harness.responses.at(-1)).toEqual({
+            type: 'error',
+            requestId: 'size-drift',
+            error: 'DDSP artifact transfer size drifted: model.json',
+        });
+        for (const artifact of transferred) {
+            expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
+        }
+    });
+
+    it.each([
+        ['non-positive postGain', { postGain: 0 }],
+        ['non-positive modelMaxFrameLength', { modelMaxFrameLength: 0 }],
+        ['non-integer modelMaxFrameLength', { modelMaxFrameLength: 1.5 }],
+    ] as const)('rejects settings with %s and closes every port', async (_label, overrides) => {
+        const harness = createHarness();
+        const transferred = artifacts({}, MODEL_JSON, settingsBytes(overrides));
+
+        await harness.runtime.handleRequest(sessionRequest('invalid-settings', transferred));
+
+        expect(harness.loadGraphModel).not.toHaveBeenCalled();
+        expect(harness.responses.at(-1)).toMatchObject({ type: 'error', requestId: 'invalid-settings' });
+        for (const artifact of transferred) {
+            expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
+        }
+    });
+
     it('reuses an exact cached session and closes duplicate transferred ports unused', async () => {
         const harness = createHarness();
         await harness.runtime.handleRequest(sessionRequest('first'));
@@ -309,6 +355,21 @@ describe('tfjsInferenceWorkerRuntime', () => {
             expect(artifact.modelDataPort.start).not.toHaveBeenCalled();
             expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
         }
+    });
+
+    it('keeps a loaded session usable across the former 55-second runtime eviction window', async () => {
+        vi.useFakeTimers();
+        const harness = createHarness();
+        await harness.runtime.handleRequest(sessionRequest('load'));
+
+        await vi.advanceTimersByTimeAsync(56_000);
+        await harness.runtime.handleRequest(inferenceRequest('after-former-eviction'));
+
+        expect(harness.model.dispose).not.toHaveBeenCalled();
+        expect(harness.responses.at(-1)).toMatchObject({
+            type: 'ddsp-result',
+            requestId: 'after-former-eviction',
+        });
     });
 
     it('runs raw fixed-shape features and disposes every input and output tensor once', async () => {

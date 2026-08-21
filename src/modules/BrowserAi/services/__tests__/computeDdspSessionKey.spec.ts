@@ -30,6 +30,24 @@ describe('computeDdspSessionKey', () => {
         expect(first).toMatch(/^ddsp-violin:magenta-js-ddsp-2020-01-05:[0-9a-f]{64}$/u);
     });
 
+    it('changes the returned session key when one manifest identity field changes', async () => {
+        const changedArtifacts = manifest();
+        changedArtifacts[0] = { ...changedArtifacts[0]!, sha256: 'f'.repeat(64) };
+
+        const baseline = await computeDdspSessionKey({
+            instrumentId: violin.id,
+            artifactVersion: violin.artifactVersion,
+            artifacts: manifest(),
+        });
+        const changed = await computeDdspSessionKey({
+            instrumentId: violin.id,
+            artifactVersion: violin.artifactVersion,
+            artifacts: changedArtifacts,
+        });
+
+        expect(changed).not.toBe(baseline);
+    });
+
     it.each([
         ['runtime revision', async () => computeDdspManifestFingerprint(violin, 'runtime-v2')],
         [
