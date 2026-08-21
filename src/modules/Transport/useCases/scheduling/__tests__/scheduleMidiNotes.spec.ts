@@ -465,6 +465,57 @@ describe('scheduleMidiNotes', () => {
             expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(64);
         });
 
+        // A rack can hold more than one note-capable device, and the dispatch
+        // tries exactly one of them: the first of its category, with no
+        // fall-through to a second. These two pin the lookup to that same
+        // choice. Read them as a pair — the only difference between them is
+        // rack order, and the answers are opposite, which is what proves the
+        // lookup is reading the order rather than the set.
+        it('keeps the fallback when an admitted instrument sits ahead of a withheld one', async () => {
+            // `fermenter` is admitted and is what the dispatch selects; it has
+            // no node here, the way a missing worklet asset or a reload leaves
+            // it. Its long-standing fallback must survive. A whole-rack scan
+            // instead reports the `grand-boule` behind it — a device the notes
+            // would never have reached — and drops them.
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'd-1', type: 'fermenter' },
+                    { id: 'd-2', type: 'grand-boule' },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 64, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(64);
+        });
+
+        it('silences the same rack when the withheld instrument sits first', async () => {
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'd-2', type: 'grand-boule' },
+                    { id: 'd-1', type: 'fermenter' },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 64, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
         // The one topology where the voicing device is not on the track being
         // scheduled. A toaster child's notes are dispatched to the *parent's*
         // toaster device, so a lookup over `track.devices` alone answers
