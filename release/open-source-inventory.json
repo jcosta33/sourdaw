@@ -657,7 +657,7 @@
         },
         {
             "id": "owner-visual-assets",
-            "kind": "asset",
+            "kind": "owner-created-asset",
             "retention": "keep-with-obligations",
             "owner": "OS-08",
             "releaseModes": ["source", "web", "desktop"],
@@ -670,13 +670,25 @@
                 "sourdaw.png",
                 "build/icons/**"
             ],
-            "sources": ["unknown pending OS-08 owner attestation"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:public/logo-parts"],
-            "licenses": ["pending:OS-08-owner-attestation"],
+            "sources": ["owner attestation: Jose Costa, 2026-08-21", "public/icon.png"],
+            "revisions": [
+                "git:130452d6d989b0f02ca81c36c2cf25178d6da362:public/icon.png",
+                "git:ddee040560bbdf5f954b8970d8e2fe736cd6d9b8:public/logo-parts",
+                "derived renditions"
+            ],
+            "digests": [
+                "sha256:a11dfb76d0788c63eacb88aef860bc972f246d222b4be6c9063dad22bf1bb879:public/favicon.ico",
+                "sha256:0f54e11b49e54017b02886ee6b7ba85404d61363dbd24e29a9f371fc682e2b45:public/icon-192.png",
+                "sha256:19dc2eb9b4f56d719c635fee49cb050122203e681d0172e2a7c9897874b05c47:public/icon-transparent.png",
+                "sha256:6a0a1b002bddf302d0247d3531c1c77159548c14c3a2b5359fca6abfecb1826b:public/icon.png",
+                "sha256:6a0a1b002bddf302d0247d3531c1c77159548c14c3a2b5359fca6abfecb1826b:sourdaw.png",
+                "tree-sha256:7dac68d653c32736b1507d07574e5a288049351ba7d58d8d82fe6602f995cadf:public/logo-parts",
+                "tree-sha256:3e010276cd1d29a68235a79227300c6e8d7ec61484ef9166eaed92bf490b7f14:build/icons"
+            ],
+            "licenses": ["owner-created:pending-OS-10-project-license"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
-            "evidence": ["Repository history proves custody but no external provenance record."],
-            "obligations": ["Record owner attestation or replace any asset whose origin cannot be established."]
+            "evidence": ["Owner attested authorship on 2026-08-21; repository history binds every rendition."],
+            "obligations": ["Apply the project license in OS-10 and preserve attribution."]
         },
         {
             "id": "third-party-marks",
