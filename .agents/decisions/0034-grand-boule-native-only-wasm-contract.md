@@ -7,7 +7,9 @@ date: 2026-08-21
 owner: The Sourdaw team
 sources:
     - .agents/decisions/0032-withhold-grand-boule-from-release.md
+    - crates/daw-dsp/src/lib.rs
     - crates/daw-dsp/src/grand_boule/mod.rs
+    - crates/daw-dsp/benches/wasm/deviceRecipes.js
     - src/modules/AudioEngine/worklets/grandBouleWasmInstance.ts
     - scripts/checkReleaseInventory.ts
 ---
@@ -28,9 +30,9 @@ deleting those sources.
 
 ## Decision
 
-Grand Boule remains a complete native `daw-dsp` implementation. `GrandBouleInstance` and its
-`wasm_bindgen` implementation compile only when the target architecture is not `wasm32`; the rest of
-the Rust module remains available to the crate on both targets.
+Grand Boule remains a complete native `daw-dsp` implementation. The `grand_boule` module declaration
+in `lib.rs` compiles only when the target architecture is not `wasm32`. Native source, instance,
+tests, and benches remain intact; no Grand Boule Rust implementation enters the WASM crate graph.
 
 Generated public and AudioEngine `daw-dsp` JavaScript, declarations, and WebAssembly exports contain
 no Grand Boule constructor or Grand Boule instance exports.
@@ -41,12 +43,18 @@ replace that seam with in-memory instances. `deviceReleaseAdmission.ts` remains 
 offline reachability gate.
 
 The release inventory check inspects every generated text surface and the WebAssembly export table.
-Any Grand Boule export fails release validation.
+Its manifest-derived recursive census rejects missing or unexpected package and mirror artifacts,
+then scans every declared text artifact and every declared WebAssembly export table. Any Grand Boule
+surface fails release validation.
+
+The browser-WASM cost benchmark imports and constructs only exported WASM instances. Grand Boule
+DSP remains in the native benchmark; the browser benchmark retains only the host ring-consumer row
+and makes no Grand Boule DSP timing claim.
 
 ## Consequences
 
-- Grand Boule Rust source, native tests, native benches, TypeScript hosts, workers, worklets, and
-  project data remain in the repository.
+- Grand Boule Rust source, native tests, native benches, TypeScript hosts, workers, worklets, product
+  schema, and project data remain in the repository.
 - Distributed `daw-dsp` artifacts cannot construct Grand Boule independently of product admission.
 - Host tests exercise the retained transport and control behavior without treating generated WASM
   as an admitted constructor source.

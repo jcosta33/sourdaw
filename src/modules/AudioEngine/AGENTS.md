@@ -13,9 +13,9 @@ Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch
   `src/modules/AudioEngine/wasm/`, prepending AudioWorklet-scope polyfills and replacing
   `new URL(..., import.meta.url)` with a static path so Vite does not bundle the `.wasm`. Re-run
   the `wasm:*` script after changing a crate; never hand-edit files under `AudioEngine/wasm/`.
-- Grand Boule remains complete native Rust and TypeScript host source, but `daw-dsp` omits its
-  constructor and instance exports on `wasm32`. The host stack imports a local structural interface
-  and an inert production construction seam; focused tests inject in-memory instances at that seam.
+- Grand Boule remains complete native Rust and TypeScript host source, but the complete Rust module
+  is absent from the `wasm32` crate graph. The host stack imports a local structural interface and an
+  inert production construction seam; focused tests inject in-memory instances at that seam.
 - The main thread revalidates, fetches and asynchronously compiles each WASM URL once. A
   short-lived module lease is released on abort or host-construction failure; successful host
   construction commits one URL per bundle to the `AudioContext`, because wasm-bindgen glue is a

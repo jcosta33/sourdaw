@@ -172,16 +172,22 @@ function directorySha256(root: string, directory: string): string {
     return hash.digest('hex');
 }
 
-function trackedDirectorySha256(root: string, directory: string): string {
-    const files = execFileSync('git', ['ls-files', '-z', '--', directory], {
+function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
+    return execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
         cwd: root,
         encoding: 'utf8',
     })
         .split('\0')
         .filter(Boolean)
         .sort();
+}
+
+function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
     for (const file of files) {
+        if (!existsSync(resolve(root, file))) {
+            throw new Error(`Grand Boule preserved source is missing: ${file}`);
+        }
         hash.update(file);
         hash.update('\0');
         hash.update(readFileSync(resolve(root, file)));
@@ -190,20 +196,30 @@ function trackedDirectorySha256(root: string, directory: string): string {
     return hash.digest('hex');
 }
 
+function trackedDirectorySha256(root: string, directory: string): string {
+    return trackedFilesSha256(root, trackedFiles(root, [directory]));
+}
+
+function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
+    const files = trackedFiles(root, pathspecs);
+    if (files.length === 0) {
+        throw new Error(`Grand Boule preserved source boundary has no tracked files: ${pathspecs.join(', ')}`);
+    }
+    return trackedFilesSha256(root, files);
+}
+
 export const AUDIO_WORKLET_SOURCES = [
     'public/audio/worklets/native-plugin-bridge-processor.js',
     'public/audio/worklets/sidechain-compressor-processor.js',
 ] as const;
 
-export const GRAND_BOULE_WASM_TEXT_SURFACES = [
-    'public/wasm/daw-dsp/daw_dsp.js',
-    'public/wasm/daw-dsp/daw_dsp.d.ts',
-    'public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts',
-    'src/modules/AudioEngine/wasm/daw_dsp.js',
-    'src/modules/AudioEngine/wasm/daw_dsp.d.ts',
-] as const;
+const DAW_DSP_PUBLIC_WASM_ROOT = 'public/wasm/daw-dsp';
+const AUDIO_ENGINE_WASM_MIRROR_ROOT = 'src/modules/AudioEngine/wasm';
 
-export const GRAND_BOULE_WASM_BINARY = 'public/wasm/daw-dsp/daw_dsp_bg.wasm';
+export type DistributedDawDspArtifactCensus = {
+    textArtifacts: string[];
+    wasmArtifacts: string[];
+};
 
 function namesGrandBoule(value: string): boolean {
     return value
@@ -212,19 +228,105 @@ function namesGrandBoule(value: string): boolean {
         .includes('grandboule');
 }
 
+function filesRecursively(root: string, directory: string): string[] {
+    const absoluteDirectory = resolve(root, directory);
+    const files: string[] = [];
+    const visit = (path: string): void => {
+        for (const entry of readdirSync(path, { withFileTypes: true })) {
+            const child = resolve(path, entry.name);
+            if (entry.isDirectory()) {
+                visit(child);
+            } else if (entry.isFile()) {
+                files.push(relative(root, child).replaceAll('\\', '/'));
+            } else {
+                throw new Error(`distributed WASM artifact census cannot inspect ${relative(root, child)}`);
+            }
+        }
+    };
+    visit(absoluteDirectory);
+    return files.sort();
+}
+
+function assertExactArtifactCensus(label: string, actual: string[], expected: string[]): void {
+    const actualSet = new Set(actual);
+    const expectedSet = new Set(expected);
+    const unexpected = actual.filter((path) => !expectedSet.has(path));
+    const missing = expected.filter((path) => !actualSet.has(path));
+    if (unexpected.length > 0) {
+        throw new Error(`${label} has unexpected artifact ${unexpected[0]}`);
+    }
+    if (missing.length > 0) {
+        throw new Error(`${label} is missing manifest artifact ${missing[0]}`);
+    }
+}
+
+function readWasmManifest(root: string): WasmManifest {
+    return JSON.parse(readFileSync(resolve(root, 'public/wasm/manifest.json'), 'utf8')) as WasmManifest;
+}
+
+function isMirrorSourceOnly(path: string): boolean {
+    return path === `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/.gitignore` || path.includes('/__tests__/');
+}
+
+export function distributedDawDspArtifactCensus(root: string): DistributedDawDspArtifactCensus {
+    const manifest = readWasmManifest(root);
+    const dawDsp = manifest.packages['daw-dsp'];
+    if (dawDsp === undefined) {
+        throw new Error('WASM manifest has no daw-dsp package');
+    }
+
+    const dawDspArtifacts = Object.keys(dawDsp.artifacts).sort();
+    const expectedPublic = dawDspArtifacts.filter((path) => path.startsWith(`${DAW_DSP_PUBLIC_WASM_ROOT}/`));
+    const expectedDawDspMirror = dawDspArtifacts.filter((path) => path.startsWith(`${AUDIO_ENGINE_WASM_MIRROR_ROOT}/`));
+    const expectedCompleteMirror = Object.values(manifest.packages)
+        .flatMap((entry) => Object.keys(entry.artifacts))
+        .filter((path) => path.startsWith(`${AUDIO_ENGINE_WASM_MIRROR_ROOT}/`))
+        .sort();
+
+    assertExactArtifactCensus(
+        'distributed daw-dsp WASM package',
+        filesRecursively(root, DAW_DSP_PUBLIC_WASM_ROOT),
+        expectedPublic
+    );
+    assertExactArtifactCensus(
+        'distributed AudioEngine WASM mirror',
+        filesRecursively(root, AUDIO_ENGINE_WASM_MIRROR_ROOT).filter((path) => !isMirrorSourceOnly(path)),
+        expectedCompleteMirror
+    );
+
+    const artifacts = sortedUnique([...expectedPublic, ...expectedDawDspMirror]);
+    return {
+        textArtifacts: artifacts.filter((path) => !path.endsWith('.wasm')),
+        wasmArtifacts: artifacts.filter((path) => path.endsWith('.wasm')),
+    };
+}
+
+export function assertGrandBouleRustWasmBoundary(root: string): void {
+    const source = readFileSync(resolve(root, 'crates/daw-dsp/src/lib.rs'), 'utf8');
+    const gatedModule =
+        /#\[cfg\s*\(\s*not\s*\(\s*target_arch\s*=\s*"wasm32"\s*\)\s*\)\s*\]\s*pub\s+mod\s+grand_boule\s*;/u;
+    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
+    if (declarations.length !== 1 || !gatedModule.test(source)) {
+        throw new Error('Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
+    }
+}
+
 export function assertGrandBouleWithheldFromWasm(root: string): void {
-    for (const path of GRAND_BOULE_WASM_TEXT_SURFACES) {
+    const census = distributedDawDspArtifactCensus(root);
+    for (const path of census.textArtifacts) {
         if (namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
             throw new Error(`Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`);
         }
     }
 
-    const module = new WebAssembly.Module(readFileSync(resolve(root, GRAND_BOULE_WASM_BINARY)));
-    const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
-    if (forbiddenExport !== undefined) {
-        throw new Error(
-            `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${forbiddenExport.name}`
-        );
+    for (const path of census.wasmArtifacts) {
+        const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
+        const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
+        if (forbiddenExport !== undefined) {
+            throw new Error(
+                `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${path}:${forbiddenExport.name}`
+            );
+        }
     }
 }
 
@@ -239,11 +341,61 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
     };
 }
 
-export function grandBouleReleaseInventoryContract(root: string): Pick<SurfaceContract, 'revisions' | 'digests'> {
-    const directory = 'crates/daw-dsp/src/grand_boule';
+const GRAND_BOULE_RUST_DIRECTORY = 'crates/daw-dsp/src/grand_boule';
+const GRAND_BOULE_PRODUCT_DIRECTORY = 'src/modules/GrandBoule';
+const GRAND_BOULE_HOST_PATHS = [
+    'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+    'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+    'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+    ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
+] as const;
+
+export function grandBouleReleaseInventoryContract(
+    root: string
+): Pick<
+    ReleaseSurface,
+    | 'kind'
+    | 'retention'
+    | 'owner'
+    | 'releaseModes'
+    | 'paths'
+    | 'sources'
+    | 'revisions'
+    | 'digests'
+    | 'licenses'
+    | 'productSurfaces'
+> {
     return {
-        revisions: ['current tracked source'],
-        digests: [`tree-sha256:${trackedDirectorySha256(root, directory)}:${directory}`],
+        kind: 'patent-directed-component',
+        retention: 'defer-behind-admission',
+        owner: 'OS-05',
+        releaseModes: ['source', 'web', 'desktop'],
+        paths: [
+            `${GRAND_BOULE_RUST_DIRECTORY}/**`,
+            `${GRAND_BOULE_PRODUCT_DIRECTORY}/**`,
+            'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+            'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+            'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+            'src/modules/AudioEngine/worklets/**',
+        ],
+        sources: [
+            `${GRAND_BOULE_RUST_DIRECTORY}/`,
+            `${GRAND_BOULE_PRODUCT_DIRECTORY}/`,
+            'retained Grand Boule AudioEngine host, worker, and worklet source',
+            'active patent sources recorded in the readiness audit',
+        ],
+        revisions: [
+            'current tracked Rust source',
+            'current tracked Grand Boule product source',
+            'current tracked AudioEngine host boundary',
+        ],
+        digests: [
+            `tree-sha256:${trackedDirectorySha256(root, GRAND_BOULE_RUST_DIRECTORY)}:${GRAND_BOULE_RUST_DIRECTORY}`,
+            `tree-sha256:${trackedDirectorySha256(root, GRAND_BOULE_PRODUCT_DIRECTORY)}:${GRAND_BOULE_PRODUCT_DIRECTORY}`,
+            `tracked-set-sha256:${trackedSetSha256(root, GRAND_BOULE_HOST_PATHS)}:grand-boule-audio-engine-hosts`,
+        ],
+        licenses: ['pending:OS-10-project-grant', 'unverified:HAL-parameter-source-reuse-terms'],
+        productSurfaces: ['Preserved Grand Boule source and project schema'],
     };
 }
 
@@ -313,10 +465,7 @@ function assertSurfaceContract(
     }
 }
 
-export function assertGrandBouleReleaseInventory(
-    root: string,
-    surface: Pick<ReleaseSurface, 'revisions' | 'digests'> | undefined
-): void {
+export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
 
@@ -767,6 +916,7 @@ export function checkReleaseInventory(root: string): void {
         cwd: root,
         stdio: 'inherit',
     });
+    assertGrandBouleRustWasmBoundary(root);
     assertGrandBouleWithheldFromWasm(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');

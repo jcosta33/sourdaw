@@ -52,8 +52,8 @@
  * the device's cost, obtainable on a busy machine, while the median and the
  * percentiles from the same run are *upper bounds* contaminated by scheduling
  * rather than properties of the DSP. This repository has learned this once
- * already: the previous Grand Boule benchmark's minimum was contention-immune
- * and reproduced the claim almost exactly, while its median was 2.567x inflated.
+ * already: expensive rows retain a stable low percentile while scheduling
+ * contention inflates their medians.
  *
  * There is exactly one mechanism by which a sample can read *shorter* than the
  * truth, and it is counted rather than assumed away: the clock is a counter
@@ -178,9 +178,9 @@ const MAX_CALIBRATION_SPREAD_PCT = 150;
  * than the truth — the one direction that corrupts a floor. Everything else
  * contention does adds time.
  *
- * Measured on this machine at load 20-45, the zero-tick fraction runs from ~0%
- * on Grand Boule to 12.6% on Gluten, and it tracks render length exactly: the
- * shorter the render, the likelier it falls entirely inside a stall. So on a
+ * Measured on this machine at load 20-45, the zero-tick fraction tracks render
+ * length: the shorter the render, the likelier it falls entirely inside a
+ * stall. So on a
  * contended machine **the floor is measurable for expensive devices and not for
  * cheap ones**, and pretending otherwise would publish a floor that is really a
  * record of how starved the clock was.
@@ -200,8 +200,8 @@ const MAX_ZERO_TICK_FRACTION_FOR_MEDIAN = 0.4;
  * Tolerance on "compute must fit inside the elapsed wall clock".
  *
  * A device that dominates its own context legitimately approaches a ratio of
- * 1.0 — Grand Boule at ~2.5 ms per quantum leaves almost no wall clock outside
- * its own render calls. The clock is known to hold the median to roughly +/-10%,
+ * 1.0 because almost no wall clock remains outside its own render calls. The
+ * clock is known to hold the median to roughly +/-10%,
  * so the gate allows that much overshoot before calling the rate inflated; what
  * it is there to catch is a rate wrong by a factor, not by a percent.
  */
@@ -360,8 +360,6 @@ const REFERENCE_PROJECT_AUDIO_THREAD = [
     ['gluten', 3],
     ['proof_chamber_plate', 1],
 ];
-const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]];
-
 async function main() {
     const options = parseArgs(process.argv.slice(2));
     const loadBefore = os.loadavg()[0];
@@ -677,7 +675,7 @@ async function main() {
     // not have them, and inventing a total from the rows that happen to be
     // present is exactly the kind of number this instrument exists to refuse:
     // it would read as a project figure while silently omitting devices.
-    const referenceMemberIds = [...REFERENCE_PROJECT_AUDIO_THREAD, ...REFERENCE_PROJECT_WORKER].map(([id]) => id);
+    const referenceMemberIds = REFERENCE_PROJECT_AUDIO_THREAD.map(([id]) => id);
     const referenceMissing = [...new Set(referenceMemberIds.filter((id) => byId[id] === undefined))];
     let referenceProjectJson = null;
     if (referenceMissing.length > 0) {
@@ -705,9 +703,6 @@ async function main() {
         const audioMean = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
             row.dutyCycle ? row.dutyCycle.amortisedMeanMs : row.stats.median
         );
-        const workerFloor = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.floor);
-        const workerMedian = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.median);
-
         // The defensible worst quantum: everyone at their median, plus the single
         // largest duty-cycle spike landing in that quantum. Summing every row's p95
         // assumes every device spikes in the same quantum, which nothing makes true
@@ -724,10 +719,6 @@ async function main() {
         console.log('');
         console.log('  audio thread:');
         for (const [id, count] of REFERENCE_PROJECT_AUDIO_THREAD) {
-            console.log(`    ${count} x ${id}`);
-        }
-        console.log('  worker (not the audio thread):');
-        for (const [id, count] of REFERENCE_PROJECT_WORKER) {
             console.log(`    ${count} x ${id}`);
         }
         console.log('');
@@ -752,22 +743,16 @@ async function main() {
                     '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
         console.log(verdict);
         console.log('');
-        console.log(`  WORKER line item, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`);
-        console.log("                                quantum of audio, on its own thread with its own ring to keep ahead.");
-        console.log('');
         console.log('  Neither bound is a deadline claim. They bound compute. AC-3 owns the deadline question.');
         console.log('');
         referenceProjectJson = {
             audioThread: REFERENCE_PROJECT_AUDIO_THREAD,
-            worker: REFERENCE_PROJECT_WORKER,
             audioFloorMs: audioFloor,
             audioFloorPartialFrom: floorRowsMissing,
             audioUpperBoundMs: audioMean,
             audioWorstQuantumUpperMs: audioWorstUpper,
             audioMedianMs: audioMedian,
             meanLoad: meanOf(rows.map((row) => row.load.mean)),
-            workerFloorMs: workerFloor,
-            workerMedianMs: workerMedian,
         };
     }
 

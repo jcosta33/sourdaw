@@ -23,21 +23,15 @@ pub mod string;
 pub mod sympathetic;
 pub mod voice;
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::primitives::sanitize_block;
-#[cfg(not(target_arch = "wasm32"))]
 use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
-#[cfg(not(target_arch = "wasm32"))]
 use parameters::Temperament;
-#[cfg(not(target_arch = "wasm32"))]
 use wasm_bindgen::prelude::*;
 
 /// Pre-allocated maximum block size exposed to the AudioWorklet side.
-#[cfg(not(target_arch = "wasm32"))]
 const MAX_BLOCK_SIZE: usize = 4096;
 
 /// Native Grand Boule host instance retained while the WASM export is withheld.
-#[cfg(not(target_arch = "wasm32"))]
 #[wasm_bindgen]
 pub struct GrandBouleInstance {
     engine: GrandBouleEngine,
@@ -46,7 +40,6 @@ pub struct GrandBouleInstance {
     nan_flush_count: u64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[wasm_bindgen]
 impl GrandBouleInstance {
     #[wasm_bindgen(constructor)]
@@ -185,7 +178,7 @@ impl GrandBouleInstance {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod lifecycle_tests {
     use super::GrandBouleInstance;
     use crate::primitives::ProcessLifecycle;

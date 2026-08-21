@@ -76,12 +76,6 @@
         1
       ]
     ],
-    "worker": [
-      [
-        "grand_boule",
-        1
-      ]
-    ],
     "audioFloorMs": 0.49717105874485223,
     "audioFloorPartialFrom": [
       "knead",
@@ -91,9 +85,7 @@
     "audioUpperBoundMs": 0.8579742247078368,
     "audioWorstQuantumUpperMs": 1.9050396072255134,
     "audioMedianMs": 0.7925355385154544,
-    "meanLoad": 4.81306009664164,
-    "workerFloorMs": 2.0296141904016367,
-    "workerMedianMs": 2.671845291163649
+    "meanLoad": 4.81306009664164
   },
   "rows": [
     {
@@ -639,72 +631,6 @@
         "mean": 3.732421875,
         "min": 3.732421875,
         "max": 3.732421875
-      },
-      "sampleCount": 20000
-    },
-    {
-      "id": "grand_boule",
-      "label": "Grand Boule (64 voices, re-struck 1/s) — WORKER, not audio thread",
-      "note": "grandBouleEngineCore.ts:143 constructs 64; live path is Worker + SAB ring (GrandBouleNode.ts:480-518), so this cost is not charged to the audio thread",
-      "costSite": "worker",
-      "warmVerify": {
-        "ok": true,
-        "detail": "64 notes, no active-voice export: output RMS 2.381e-1 is 9.5x one identically-driven voice (2.504e-2), band 3.6-17.6x around sqrt(64) = 8.0x"
-      },
-      "lateVerify": {
-        "ok": true,
-        "detail": "64 notes, no active-voice export: output RMS 9.198e-2 is 4.2x one identically-driven voice (2.200e-2), band 3.6-17.6x around sqrt(64) = 8.0x"
-      },
-      "stats": {
-        "n": 20000,
-        "mean": 2.6854699349619255,
-        "floor": 2.0296141904016367,
-        "median": 2.671845291163649,
-        "p95": 2.985938123225466,
-        "p99": 3.326115810762605,
-        "p999": 4.449436428789015,
-        "max": 5.516586308372678,
-        "min": 1.065792485271671,
-        "firstFiveHundredMean": 2.6300066429592053,
-        "lastFiveHundredMean": 2.7115422626371783
-      },
-      "harnessFloor": {
-        "n": 2000,
-        "mean": 0.000009698135760674456,
-        "floor": 0,
-        "median": 0,
-        "p95": 0.000024614557768209205,
-        "p99": 0.00004102426294701534,
-        "p999": 0.000057433968125821484,
-        "max": 0.00010666308366223989,
-        "min": 0,
-        "firstFiveHundredMean": 0.000011601661561415968,
-        "lastFiveHundredMean": 0.000009107386374237427
-      },
-      "dutyCycle": null,
-      "dutyCycleSource": null,
-      "calibration": {
-        "segments": 56,
-        "medianTicksPerMs": 121879.094,
-        "minTicksPerMs": 110453.21378621379,
-        "maxTicksPerMs": 182374.13,
-        "spreadPct": 59.0100515628925
-      },
-      "timedTotalMs": 53709.39869923851,
-      "warmupTotalMs": 13024.776480534061,
-      "mainThreadWallMs": 66362.2649999857,
-      "wallRatio": 1.005604241804992,
-      "driftPct": 3.100205845344628,
-      "stationary": true,
-      "medianTrustworthy": false,
-      "zeroTickSamples": 0,
-      "zeroFraction": 0,
-      "floorMeasurable": true,
-      "load": {
-        "samples": 55,
-        "mean": 4.986221590909091,
-        "min": 4.3388671875,
-        "max": 5.29541015625
       },
       "sampleCount": 20000
     },

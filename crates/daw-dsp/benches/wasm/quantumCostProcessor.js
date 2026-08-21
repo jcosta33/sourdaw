@@ -24,7 +24,7 @@
  * to this file; the bench header states it.
  */
 
-import { initSync as initDsp, BacteriaInstance, CrumbsInstance, CrustInstance, FermenterInstance, GlutenInstance, GrandBouleInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
+import { initSync as initDsp, BacteriaInstance, CrumbsInstance, CrustInstance, FermenterInstance, GlutenInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
 import { initSync as initChamber, ProofChamberInstance } from '/src/modules/AudioEngine/wasm/proof_chamber.js';
 import { initSync as initScoring, ScoringInstance } from '/src/modules/AudioEngine/wasm/scoring.js';
 
@@ -108,7 +108,6 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
                 CrustInstance,
                 FermenterInstance,
                 GlutenInstance,
-                GrandBouleInstance,
                 GrinderInstance,
                 KneadInstance,
                 LevainInstance,

@@ -1,9 +1,9 @@
-//! Every device with a wasm render export must have a row in the cost bench.
+//! Native device coverage and the shipped browser-WASM Grand Boule exclusion.
 //!
 //! # Why this test exists
 //!
-//! `benches/quantum.rs` opens by claiming it covers "every `#[wasm_bindgen]`
-//! render export in this crate" and then lists them by hand. The list went
+//! `benches/quantum.rs` opens by claiming it covers every native device wrapper
+//! and then lists them by hand. The list went
 //! stale: `crates/daw-dsp/src/crust/` shipped a `CrustInstance` with a
 //! `process` export, and the header went on asserting that Crust "[has] no Rust
 //! engine at all" while the table quietly measured one device fewer than it
@@ -20,8 +20,10 @@
 //! A directory under `src/` whose `mod.rs` declares a `#[wasm_bindgen]`
 //! `pub struct <Name>Instance` **and** a `pub fn process(`. That is the shape
 //! every worklet drives, and it is the shape the bench's budget claim is about.
-//! A module with an engine but no wasm export is not on the audio thread and is
-//! not this bench's business.
+//! Grand Boule remains in this native population even though `lib.rs` gates its
+//! complete module out of wasm32. The separate browser-WASM assertion below
+//! prevents its removed constructor from returning to browser benchmark
+//! imports, recipes, runner totals, or the `DEVICE_IDS` census.
 //!
 //! # What counts as covered
 //!
@@ -154,7 +156,7 @@ fn the_crate_scan_finds_a_plausible_population() {
 }
 
 #[test]
-fn every_wasm_device_is_constructed_by_the_cost_bench() {
+fn every_native_device_is_constructed_by_the_native_cost_bench() {
     let root = crate_root();
     let devices = devices_in_crate(&root.join("src"));
     let bench = std::fs::read_to_string(root.join("benches/quantum.rs"))
@@ -180,10 +182,57 @@ fn every_wasm_device_is_constructed_by_the_cost_bench() {
 
     assert!(
         missing.is_empty(),
-        "these devices have a #[wasm_bindgen] render export and no row in \
+        "these native devices have an instance render wrapper and no row in \
          benches/quantum.rs, so the cost table measures fewer devices than its header \
          claims. Add a row, or add a reason-bearing entry to EXEMPT: {missing:?}"
     );
+}
+
+#[test]
+fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
+    let root = crate_root();
+    let processor = std::fs::read_to_string(root.join("benches/wasm/quantumCostProcessor.js"))
+        .expect("browser WASM processor source must be readable");
+    let recipes = std::fs::read_to_string(root.join("benches/wasm/deviceRecipes.js"))
+        .expect("browser WASM recipes must be readable");
+    let runner = std::fs::read_to_string(root.join("benches/wasm/run.mjs"))
+        .expect("browser WASM runner must be readable");
+    let current_record = std::fs::read_to_string(root.join("benches/quantum-cost-table.json"))
+        .expect("current browser WASM cost record must be readable");
+
+    assert!(
+        !processor.contains("GrandBouleInstance"),
+        "the browser WASM processor must not statically import the withheld GrandBouleInstance export"
+    );
+    for forbidden in [
+        "'grand_boule',",
+        "wanted('grand_boule')",
+        "new dsp.GrandBouleInstance",
+    ] {
+        assert!(
+            !recipes.contains(forbidden),
+            "the browser WASM recipe/census must not contain withheld Grand Boule marker `{forbidden}`"
+        );
+    }
+    for forbidden in ["REFERENCE_PROJECT_WORKER", "['grand_boule', 1]"] {
+        assert!(
+            !runner.contains(forbidden),
+            "the browser WASM runner must not contain withheld Grand Boule marker `{forbidden}`"
+        );
+    }
+    assert!(
+        !current_record.contains("\"id\": \"grand_boule\""),
+        "the current browser WASM cost record must not retain a Grand Boule DSP row"
+    );
+}
+
+#[test]
+fn grand_boule_remains_in_the_native_cost_bench() {
+    let bench = std::fs::read_to_string(crate_root().join("benches/quantum.rs"))
+        .expect("native cost bench must be readable");
+    assert!(bench.contains("GrandBouleInstance::new"));
+    assert!(bench.contains("bench_grand_boule_process_block"));
+    assert!(bench.contains("bench_grand_boule_instance"));
 }
 
 /// The deliberately broken fixtures ADR 0015 rule 2 (iv) requires.

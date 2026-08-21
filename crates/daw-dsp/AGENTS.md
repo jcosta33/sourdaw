@@ -1,8 +1,9 @@
 # daw-dsp crate — Agent Guidelines
 
 Pure mathematical DSP: the bread-named device engines, one module each. Release-admitted modules
-expose a `#[wasm_bindgen]` `*Instance` struct; Grand Boule retains its complete native instance but
-does not expose it on `wasm32`. No I/O, no desktop IPC, no repositories. Dependencies stay minimal.
+expose a `#[wasm_bindgen]` `*Instance` struct. `lib.rs` gates the complete Grand Boule module out of
+`wasm32` while retaining its native source, instance, tests, and benches. No I/O, no desktop IPC, no
+repositories. Dependencies stay minimal.
 
 Dual compilation target: native (linked via `daw-engine`) and WASM. Code must compile cleanly for
 both - gate platform-specific bits behind target `cfg` attributes as existing modules do.
