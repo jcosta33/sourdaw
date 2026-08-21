@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
@@ -1432,6 +1434,43 @@ describe('parsePromptToActions', () => {
         ]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
+    });
+
+    // #2350 gap 1: `llmActionBridge`'s own `setTrackGain`/`setMasterGain` range
+    // checks sit upstream of `validateActionPayload` in this pipeline
+    // (bridgeGroundedLlmToolCalls -> bridged.actions -> validateActions ->
+    // PAYLOAD_VALIDATORS). Raising the validator's ceiling to `FADER_MAX_GAIN`
+    // means nothing if the bridge itself still rejects above unity first. 1.5
+    // sits strictly between the old `1` cap and `FADER_MAX_GAIN` (≈1.9953), so
+    // it is a decisive probe: it only survives once both gates share the same
+    // ceiling.
+    it('lets a tool-call-sourced setTrackGain above unity reach the validator', async () => {
+        expect(1.5).toBeLessThan(FADER_MAX_GAIN);
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const providerContext = createMixerContext();
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 1.5 } }])
+        );
+
+        const result = await parsePromptToActions('raise Guitar gain to 150%', providerContext);
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 1.5, expectedGain: 0.8 } },
+        ]);
+    });
+
+    it('lets a tool-call-sourced setMasterGain above unity reach the validator', async () => {
+        expect(1.5).toBeLessThan(FADER_MAX_GAIN);
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setMasterGain', arguments: { gain: 1.5 } }])
+        );
+
+        const result = await parsePromptToActions('set master gain to 1.5', baseContext);
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { gain: 1.5 } }]);
     });
 
     it('does not partially accept a provider batch containing a rejected call', async () => {

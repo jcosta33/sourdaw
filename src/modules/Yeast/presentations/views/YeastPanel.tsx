@@ -16,7 +16,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack, Grid } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
@@ -252,8 +252,8 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
                 onSetGrooveTemplate={setYeastGrooveTemplate}
             />
             {processor.type === 'groove' ? (
-                <div className="flex flex-col gap-1 px-1">
-                    <label className="flex items-center justify-between gap-1 text-[7px] text-muted-foreground">
+                <Stack gap={1} className="px-1">
+                    <Row as="label" justify="between" gap={1} className="text-[7px] text-muted-foreground">
                         Extraction subdivision
                         <DawCompactSelect
                             aria-label="Groove extraction subdivision"
@@ -266,9 +266,9 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
                                 </option>
                             ))}
                         </DawCompactSelect>
-                    </label>
+                    </Row>
                     <GrooveDropTarget subdivision={extractionSubdivision} />
-                </div>
+                </Stack>
             ) : null}
             {processor.type === 'groove' && canEditSelectedGroove ? (
                 <GrooveTemplateLifecycleControls

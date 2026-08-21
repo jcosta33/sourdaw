@@ -5,14 +5,19 @@ import { updateTransportState } from '../repositories/transport/updateTransportS
 import { MAX_MASTER_GAIN } from '../stores/transportStore';
 
 /**
- * `masterGain` is a 0–100 percentage-like value where 80 is unity gain (see
- * `defaultTransportState.masterGain` and `MasterChannelStrip`'s dB readout).
+ * `masterGain` is a 0–100 scale where 100 is true unity gain (linear 1.0,
+ * 0 dBFS) — every consumer of the field divides by 100 before it reaches an
+ * audio node: `createWebAudioEngine`'s `setMasterGain` (`storeValue / 100`)
+ * and `renderOffline`'s master gain node both do. `defaultTransportState`
+ * seeds `80`, which is a little under unity (≈ −1.9 dB), matching the track
+ * fader's own `0.8` default.
+ *
  * `MAX_MASTER_GAIN` (shared with `transportStore`'s hydration validator) is
- * the ceiling because every consumer of the field already treats 100 as one:
- * both `createWebAudioEngine`'s `setMasterGain` (`storeValue / 100`, clamped
- * to `[0, 1]`) and `renderOffline`'s master gain node divide by 100 and clamp
- * to `[0, 1]`. A value above 100 changes nothing audible and only pollutes
- * stored/undo state. `NaN` and negative inputs clamp to 0, the field's floor.
+ * the ceiling, and it is not 100: it is `100 * FADER_MAX_GAIN`, the same
+ * `+6 dB` headroom the track fader allows, expressed on this field's 0–100
+ * scale — a value above it changes nothing audible (both the store and the
+ * engine clamp there independently) and only pollutes stored/undo state.
+ * `NaN` and negative inputs clamp to 0, the field's floor.
  */
 const MIN_MASTER_GAIN = 0;
 

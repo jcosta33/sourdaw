@@ -1,3 +1,5 @@
+import { clampFaderGain } from '#/utils/audioLevelLaw';
+
 import { type DawProjectParseResult, type DawProjectParsedClip, type DawProjectParsedTrack } from './dawProjectTypes';
 import {
     type ProjectAutomation,
@@ -156,7 +158,10 @@ function mapTrack({ parsed, bufferIdsByPath, masterTrackId }: MapTrackInput): {
         muted: parsed.mute,
         soloed: parsed.solo,
         armed: false,
-        gain: Math.max(0, Math.min(1, parsed.volume)),
+        // The import twin of `serializeProjectXml`'s export clamp: the fader
+        // law, not unity, or a round trip flattens make-up gain on the way in
+        // even once the export carries it out.
+        gain: clampFaderGain(parsed.volume),
         pan: Math.max(-1, Math.min(1, parsed.pan)),
         color: parsed.color,
         clips,

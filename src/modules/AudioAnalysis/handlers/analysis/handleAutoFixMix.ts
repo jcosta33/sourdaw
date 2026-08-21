@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { createAppActionCommittedError, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { clampFaderGain } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
@@ -71,7 +72,13 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                     const overshootDb = tl.peakDb - CLIP_THRESHOLD_DB;
                     const reductionFactor = 10 ** (-(overshootDb + SAFETY_MARGIN_DB) / 20);
                     const currentGain = tracks.find((time) => time.id === tl.trackId)?.gain ?? DEFAULT_TRACK_GAIN;
-                    const newGain = Math.max(0, Math.min(1, currentGain * reductionFactor));
+                    // Bounded by the fader law, not by unity. This is a
+                    // *reduction*, so the ceiling can never be the binding
+                    // constraint — but a literal `1` here is: a fader parked in
+                    // the `+6 dB` headroom would be dragged down to unity
+                    // instead of down by the computed amount, attenuating more
+                    // than the correction asked for.
+                    const newGain = clampFaderGain(currentGain * reductionFactor);
                     await executeAppAction(
                         {
                             type: 'setTrackGain',
@@ -108,7 +115,10 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                 const currentMasterPercent = getTransportState()?.masterGain;
                 const currentMasterGain =
                     currentMasterPercent !== undefined ? currentMasterPercent / 100 : DEFAULT_MASTER_GAIN;
-                const newMasterGain = Math.max(0, Math.min(1, currentMasterGain * reductionFactor));
+                // Same law as the track correction above: the master fader now
+                // reaches `FADER_MAX_GAIN` too, so clamping the reduced value
+                // at unity would over-attenuate a master sitting in headroom.
+                const newMasterGain = clampFaderGain(currentMasterGain * reductionFactor);
                 await executeAppAction(
                     {
                         type: 'setMasterGain',

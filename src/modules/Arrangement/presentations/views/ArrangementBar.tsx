@@ -4,6 +4,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -325,10 +326,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                 const isEditing = editing?.sectionId === section.id;
 
                 return (
-                    <div
+                    <Row
                         key={section.id}
                         className={cn(
-                            'absolute top-0.5 bottom-0.5 rounded-sm flex items-center overflow-hidden',
+                            'absolute top-0.5 bottom-0.5 rounded-sm overflow-hidden',
                             'border border-white/10'
                         )}
                         style={{
@@ -380,13 +381,13 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             className="absolute right-0 top-0 bottom-0 w-[3px] hover:bg-white/20 transition-colors"
                             style={{ cursor: 'col-resize' }}
                         />
-                    </div>
+                    </Row>
                 );
             })}
             {sections.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
+                <Row justify="center" className="h-full">
                     <DawInlineHint>Right-click to add arrangement sections</DawInlineHint>
-                </div>
+                </Row>
             ) : null}
             {contextMenu.kind !== 'none' ? (
                 <div
@@ -404,7 +405,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         <>
                             <DawMenuButton onClick={handleStartRename}>Rename</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
-                            <div className="flex gap-1 px-2 pb-1">
+                            <Row align="stretch" gap={1} className="px-2 pb-1">
                                 {SECTION_COLORS.map((context) => (
                                     <DawSwatchButton
                                         key={context}
@@ -416,7 +417,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                         aria-label={`Set color ${context}`}
                                     />
                                 ))}
-                            </div>
+                            </Row>
                             <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
                             <DawMenuButton
                                 disabled={sections.indexOf(contextMenu.section) === 0}

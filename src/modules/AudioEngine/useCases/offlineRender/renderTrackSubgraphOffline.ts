@@ -283,7 +283,7 @@ export async function renderTrackSubgraphOffline({
         // scheduler only reads note tables, so an empty one is the honest input.
         const midiState = midi ?? EMPTY_MIDI_STATE;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
-        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
             if (!strip) {

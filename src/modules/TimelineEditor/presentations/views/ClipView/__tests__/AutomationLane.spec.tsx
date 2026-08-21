@@ -68,6 +68,11 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: null },
     defaultTrackState: { tracks: [] },
+    // A barrel factory replaces the whole module, so every member anything in
+    // this spec's graph imports has to be present here — Automation's range
+    // handlers reach both of these, and neither is exercised by these cases.
+    markerStore: { value: null, subscribe: vi.fn() },
+    resolveEligibleDeviceWriteTarget: vi.fn(() => null),
 }));
 
 describe('AutomationLane', () => {

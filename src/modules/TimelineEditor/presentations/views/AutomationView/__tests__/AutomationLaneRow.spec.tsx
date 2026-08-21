@@ -14,6 +14,7 @@ import {
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
 import { onDrawMouseDown, onRubberBandStart, applyCurveSelect } from '../../../helpers/automationDrag';
@@ -280,6 +281,37 @@ describe('AutomationLaneRow', () => {
         expect(container.querySelectorAll('[data-auto-point]')).toHaveLength(2);
         expect(screen.getByText('exponential')).toBeInTheDocument();
         expect(screen.queryByText('linear')).not.toBeInTheDocument();
+    });
+
+    /**
+     * The Y axis of a *legacy* gain lane — one authored before the fader gained
+     * its `+6 dB` of headroom, so it stores `maxValue: 1` and keeps it, since
+     * rewriting that durable scalar reads as document corruption. The unzoomed
+     * axis top is derived instead, and it has to be: drawn on the stored
+     * ceiling, unity would sit pinned at the very top of the lane with no room
+     * above it, and every point `paintDrawPoint` now writes into the headroom
+     * would render off the axis.
+     *
+     * `LANE_HEIGHT` is mocked to 120 here, and `valueToY` is
+     * `120 - normalized * 112 - 4`. On the stored ceiling unity normalizes to
+     * `1` and lands at `y = 4`; on the derived one it normalizes to
+     * `1 / FADER_MAX_GAIN` and lands near the middle of the lane.
+     */
+    it('scales a legacy gain lane on the derived ceiling, leaving room above unity', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            parameterId: 'gain',
+            maxValue: 1,
+            points: [{ beat: 0, value: 1, curve: 'linear', tension: 0 }],
+        };
+        const { container } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+
+        const node = container.querySelector('[data-auto-point] circle');
+        const expectedY = 120 - (1 / FADER_MAX_GAIN) * 112 - 4;
+
+        expect(Number(node?.getAttribute('cy'))).toBeCloseTo(expectedY, 5);
+        // The stored-ceiling scale would pin unity to the top of the lane.
+        expect(expectedY).toBeGreaterThan(4);
     });
 
     it('should surface the interpolated current value at the playhead for before/between/after cases', () => {

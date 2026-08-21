@@ -27,6 +27,7 @@
  * transient AI lifecycle events. The line is "would a malformed payload
  * cause data loss, persistent corruption, or an exploit".
  */
+import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
@@ -324,8 +325,15 @@ const validators = {
         (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
     setPlayback: (param): param is PayloadOf<'setPlayback'> =>
         isObj(param) && hasExactKeys(param, ['playing']) && typeof param.playing === 'boolean',
+    // `setMasterGain`'s `gain` is the same linear-amplitude fraction as
+    // `setTrackGain`'s, not the transport store's 0–100 `masterGain` percent
+    // field — `handleSetMasterGain` multiplies it by 100 before writing that
+    // field, and its own `isNoop` check divides back down to compare against
+    // this same fraction. The ceiling here is therefore `FADER_MAX_GAIN`
+    // (≈1.9953), the fraction that maps to the percent field's own
+    // `MAX_MASTER_GAIN` ceiling, not `MAX_MASTER_GAIN` itself.
     setMasterGain: (param): param is PayloadOf<'setMasterGain'> =>
-        isObj(param) && hasExactKeys(param, ['gain']) && isInRange(param.gain, 0, 1),
+        isObj(param) && hasExactKeys(param, ['gain']) && isInRange(param.gain, 0, FADER_MAX_GAIN),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
         isObj(param) && hasExactKeys(param, ['volume']) && isInRange(param.volume, 0, 1),
     setLoopEnabled: (param): param is PayloadOf<'setLoopEnabled'> =>
@@ -586,7 +594,7 @@ const validators = {
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'gain']) &&
         isNonEmptyString(param.trackId) &&
-        isInRange(param.gain, 0, 1),
+        isInRange(param.gain, 0, FADER_MAX_GAIN),
     setTrackPan: (param): param is PayloadOf<'setTrackPan'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'pan']) &&
@@ -946,11 +954,15 @@ const validators = {
         isNonEmptyString(param.vcaGroupId),
     removeFromVca: (param): param is PayloadOf<'removeFromVca'> =>
         isObj(param) && hasExactKeys(param, ['trackId']) && isNonEmptyString(param.trackId),
+    // `VCA_MAX_GAIN` (not `FADER_MAX_GAIN`): a VCA group's gain is a
+    // pre-fold multiplier, not a fader position — see the constant's own
+    // doc comment for why the render fold makes those two ceilings
+    // different things.
     setVcaGain: (param): param is PayloadOf<'setVcaGain'> =>
         isObj(param) &&
         hasExactKeys(param, ['vcaGroupId', 'gain']) &&
         isNonEmptyString(param.vcaGroupId) &&
-        isInRange(param.gain, 0, 2),
+        isInRange(param.gain, 0, VCA_MAX_GAIN),
 
     // Groove
     extractGroove: 'unchecked',
