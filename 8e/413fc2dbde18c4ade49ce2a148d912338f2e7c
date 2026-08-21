@@ -1,0 +1,21 @@
+tests/e2e/projectMenuTestId.spec.ts
+  s_24b1bdbc3c31ad::t_28cd3b3e1eac44 1,5-17,37-41,46-48
+  s_24b1bdbc3c31ad::t_fad8464d8e6935 3,18,20,25-27,29-34,43-44,49-50,53-55,57-59
+  s_24b1bdbc3c31ad::t_d0fa5237a5407a 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "8e413fc2dbde18c4ade49ce2a148d912338f2e7c",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
