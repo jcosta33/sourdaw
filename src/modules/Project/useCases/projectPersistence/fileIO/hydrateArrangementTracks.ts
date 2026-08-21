@@ -14,6 +14,7 @@ function hydrateClip(clip: SerializedProjectClip): ProjectClip {
         endBeat: clip.endBeat,
         type: clip.type,
         audioBufferId: clip.bufferId ?? clip.audioBufferId,
+        fileId: clip.fileId,
         assetHash: clip.assetHash,
         audioOffsetBeats: clip.sampleStartBeat ?? clip.audioOffsetBeats,
         midiOffsetBeats: clip.midiOffsetBeats,
