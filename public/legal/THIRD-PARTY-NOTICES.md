@@ -34,3 +34,7 @@ that exact compiler commit produced the binary.
 
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
 [RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
+
+## Trademarks
+
+See [TRADEMARKS.md](./TRADEMARKS.md).
