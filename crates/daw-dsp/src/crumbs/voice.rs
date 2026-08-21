@@ -2,8 +2,8 @@
 ///
 /// Each voice handles:
 ///   - Fractional-position playback with 8-point Hann-windowed sinc
-///     interpolation, widening to a 49–161-tap bandlimited kernel when pitched
-///     up (`bandlimited_stereo_sample`)
+///     interpolation, widening to a Kaiser-windowed bandlimited kernel when
+///     pitched up (`bandlimited_stereo_sample`)
 ///   - Per-voice AHDSR amplitude envelope
 ///   - Per-voice TPT SVF filter
 ///   - Loop handling (Forward, PingPong, Reverse) with linear seam crossfade
@@ -23,7 +23,20 @@ use super::types::{
 const MIN_PLAYBACK_SPEED: f64 = 1.0 / 16.0;
 const MAX_PLAYBACK_SPEED: f64 = 16.0;
 const UNITY_RESAMPLING_WORK_UNITS: usize = 8;
+/// Narrowest odd tap count, and the kernel every voice inside an octave up
+/// runs. Also the unit `bandlimited_work_units` charges growth against.
 const MIN_BANDLIMITED_TAPS: usize = 49;
+/// Widest kernel radius, in source frames, the audio thread may run. Past this
+/// the per-sample loop would break the work budget, which is also why the
+/// supported pitch range caps at `MAX_PLAYBACK_SPEED`.
+const MAX_BANDLIMITED_RADIUS: usize = 80;
+/// Tap count of that widest kernel, and so the length of the per-voice window
+/// table. Derived rather than written down: the render path indexes the table
+/// by tap, so a table shorter than the kernel is an out-of-bounds read on the
+/// audio thread. `bandlimited_tap_count` clamps to the same radius, and
+/// `bandlimited_stereo_sample` takes the table as a fixed-size array, so the
+/// two agree by construction rather than by two literals matching.
+const MAX_BANDLIMITED_TAPS: usize = MAX_BANDLIMITED_RADIUS * 2 + 1;
 
 // ── Crumbs Voice ──────────────────────────────────────────────────────
 
@@ -48,8 +61,15 @@ pub struct CrumbsVoice {
     anti_alias_step_sin: f32,
     anti_alias_step_cos: f32,
     anti_alias_taps: usize,
-    anti_alias_window_step_sin: f32,
-    anti_alias_window_step_cos: f32,
+    /// Kaiser window weights for the anti-alias kernel, one per tap. A fixed
+    /// array rather than the recursive phase rotation it replaced: the window
+    /// depends only on the tap index, so a rotation recomputed it per sample
+    /// for no reason, and a table admits any window shape however expensive to
+    /// evaluate. Refilled by `set_playback_speed`; `anti_alias_window_key` is
+    /// the fill's key, so retriggering at an unchanged pitch skips the
+    /// transcendental refill.
+    anti_alias_window: [f32; MAX_BANDLIMITED_TAPS],
+    anti_alias_window_key: (u16, u16),
 
     // Playback configuration
     playback_mode: PlaybackMode,
@@ -105,9 +125,9 @@ impl CrumbsVoice {
             anti_alias_cutoff: 1.0,
             anti_alias_step_sin: 0.0,
             anti_alias_step_cos: -1.0,
-            anti_alias_taps: BANDLIMITED_SINC_TAPS,
-            anti_alias_window_step_sin: 0.0,
-            anti_alias_window_step_cos: 1.0,
+            anti_alias_taps: MIN_BANDLIMITED_TAPS,
+            anti_alias_window: [0.0; MAX_BANDLIMITED_TAPS],
+            anti_alias_window_key: (0, 0),
             playback_mode: PlaybackMode::Sustain,
             loop_mode: LoopMode::Off,
             region_start: 0,
@@ -344,8 +364,7 @@ impl CrumbsVoice {
                 self.anti_alias_step_sin,
                 self.anti_alias_step_cos,
                 self.anti_alias_taps,
-                self.anti_alias_window_step_sin,
-                self.anti_alias_window_step_cos,
+                &self.anti_alias_window,
                 self.region_start,
                 self.loop_start,
                 self.loop_end,
@@ -585,15 +604,13 @@ impl CrumbsVoice {
         self.anti_alias_cutoff = (1.0 / self.speed).min(1.0) as f32;
         let step = core::f32::consts::PI * self.anti_alias_cutoff;
         (self.anti_alias_step_sin, self.anti_alias_step_cos) = step.sin_cos();
-        // A Hamming-window transition needs roughly five source samples per
-        // playback-ratio step to retain the 42 dB stop-band contract. Cap the
-        // supported pitch range at 16x so the audio-thread work stays bounded.
         self.anti_alias_taps = bandlimited_tap_count(self.speed);
-        let window_step = 2.0 * core::f32::consts::PI / (self.anti_alias_taps - 1) as f32;
-        (
-            self.anti_alias_window_step_sin,
-            self.anti_alias_window_step_cos,
-        ) = window_step.sin_cos();
+        let beta = kaiser_beta(self.anti_alias_taps, self.anti_alias_cutoff);
+        let key = (self.anti_alias_taps as u16, (beta * 10.0) as u16);
+        if key != self.anti_alias_window_key {
+            fill_kaiser_window(&mut self.anti_alias_window, self.anti_alias_taps, beta);
+            self.anti_alias_window_key = key;
+        }
     }
 
     // ── Steal Priority ─────────────────────────────────────────────────
@@ -732,16 +749,110 @@ fn bounded_playback_speed(semitone_diff: f32) -> Option<f64> {
     )
 }
 
+/// Kernel radius in source frames for a playback speed, as an odd tap count.
+///
+/// The floor carries the baseline kernel through an octave up, so ordinary
+/// transposition costs no extra work units; beyond that the radius grows with
+/// the ratio, and caps at `MAX_BANDLIMITED_RADIUS`.
+///
+/// Growth is what buys passband flatness at the wide ratios: the accuracy
+/// `crumbs_render_signal`'s `+24 st` reads are measured against needs more
+/// kernel than the floor supplies, and that test is the one that reddens if
+/// this rule shrinks. What growth does *not* reliably buy is stop-band
+/// attenuation. The tap count sets the transition budget `kaiser_beta` reads,
+/// and that budget picks a window from a step function, so a longer kernel can
+/// land in a wider, less-attenuating tier than a shorter one at the same
+/// ratio — and measured foldback across the ratio range is not monotonic in
+/// kernel length even inside one tier. Treat this rule and `kaiser_beta` as
+/// one surface: change either, and measure delivered foldback at several
+/// ratios rather than reasoning from tap count. The 42 dB contract clears with
+/// room to spare on both sides of that step and will not show the difference.
+///
+/// The tap count also feeds `bandlimited_work_units`, so growth is paid for a
+/// second time in polyphony.
 fn bandlimited_tap_count(speed: f64) -> usize {
-    let radius = ((5.0 * speed).ceil() as usize).clamp(24, 80);
+    let grown = 24.0 + 4.0 * (speed - 2.0);
+    let radius = grown.ceil().clamp(24.0, MAX_BANDLIMITED_RADIUS as f64) as usize;
     radius * 2 + 1
 }
 
+/// Kaiser beta for the anti-alias window, from the transition budget the
+/// kernel leaves: `(tap_count / 2) · cutoff`, in source samples.
+///
+/// A wider budget carries a sharper window. Beta 9 needs the widest, and earns
+/// it with a passband flat enough that a read landing on whole source frames
+/// returns them essentially unchanged — the accuracy the chromatic-octave
+/// tests measure against. Beta 7 is the widest window that still holds both
+/// that passband and the 42 dB stop-band. Beta 5 gives up the passband and
+/// keeps the stop-band.
+///
+/// Two things about the shape, because both mislead. It is a step function, so
+/// a small change in tap count or cutoff either does nothing or moves a whole
+/// tier. And the budget itself steps, because `bandlimited_tap_count` ceils
+/// its radius: inside one radius step the budget *falls* as speed rises, then
+/// jumps back at the next step — so the tier is not monotonic in speed and a
+/// boundary is a band rather than a point. Read the boundaries off the two
+/// thresholds below rather than restating them here, and pin any ratio whose
+/// tier is load-bearing with a measurement that fails when the tier moves.
+fn kaiser_beta(tap_count: usize, cutoff: f32) -> f32 {
+    let budget = (tap_count as f64 / 2.0) * f64::from(cutoff);
+    if budget >= 10.0 {
+        9.0
+    } else if budget >= 6.0 {
+        7.0
+    } else {
+        5.0
+    }
+}
+
+/// Fill `window[..tap_count]` with a Kaiser window of the given beta.
+///
+/// Runs at note-on, not per sample, so the Bessel series costs nothing in the
+/// render loop. Writes a fixed-length array in place — no allocation.
+fn fill_kaiser_window(window: &mut [f32; MAX_BANDLIMITED_TAPS], tap_count: usize, beta: f32) {
+    let beta = f64::from(beta);
+    let radius = (tap_count - 1) as f64 / 2.0;
+    let denominator = bessel_i0(beta);
+    for (tap, weight) in window.iter_mut().enumerate().take(tap_count) {
+        let offset = (tap as f64 - radius) / radius;
+        let inside = (1.0 - offset * offset).max(0.0).sqrt();
+        *weight = (bessel_i0(beta * inside) / denominator) as f32;
+    }
+}
+
+/// Modified Bessel function of the first kind, order zero, by power series.
+/// Converges within the loop for the beta range above; the early exit keeps
+/// the cost bounded at note-on.
+fn bessel_i0(x: f64) -> f64 {
+    let half = x / 2.0;
+    let mut sum = 1.0;
+    let mut term = 1.0;
+    for k in 1..40 {
+        term *= (half / f64::from(k)) * (half / f64::from(k));
+        sum += term;
+        if term < 1.0e-18 * sum {
+            break;
+        }
+    }
+    sum
+}
+
 fn bandlimited_work_units(tap_count: usize) -> usize {
-    // Longer sinc kernels also raise the surrounding per-voice loop cost.
-    // Weight growth above the 49-tap baseline so the engine budget preserves
-    // 128 ordinary pitch-up voices without admitting a deadline-breaking
-    // number of 161-tap voices.
+    // Longer sinc kernels also raise the surrounding per-voice loop cost, so
+    // growth above the baseline kernel is weighted rather than charged tap for
+    // tap — enough that a pool of widest-kernel voices cannot reach a
+    // deadline-breaking count.
+    //
+    // What `MAX_RESAMPLING_WORK_UNITS` then admits follows from this weight,
+    // and it is not a flat `MAX_VOICES` at every pitch-up. That budget is the
+    // baseline kernel times the pool size, and `bandlimited_tap_count`'s
+    // radius floor holds the baseline through an octave up — so the whole pool
+    // fits only while every voice stays inside that octave. Above it the
+    // weight rises and the pool that fits shrinks with it, and the loss reaches
+    // the player as note-ons that never sound rather than as anything visible.
+    // Raising the ceiling to restore the full pool at wider ratios is a
+    // real-time tradeoff against worst-case render cost, not a constant to
+    // nudge — and widening the tap rule spends that pool without saying so.
     tap_count.saturating_add(tap_count.saturating_sub(MIN_BANDLIMITED_TAPS) / 2)
 }
 
@@ -827,8 +938,29 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     sum
 }
 
-/// Minimum odd tap count; higher pitch ratios scale this to at most 161 taps.
-const BANDLIMITED_SINC_TAPS: usize = 49;
+/// Where a kernel tap reads when its index falls outside the playable region.
+///
+/// Taps that land in-range wrap for looping voices exactly as the playhead
+/// does. A tap past the region's edge reads the odd mirror of an in-region
+/// frame about that edge — `2 * x[edge] - x[mirror]` — because a half kernel
+/// against dropped taps is not a smaller low-pass: renormalizing its one-sided
+/// weight turns the sinc ring's alternating lobes into a forward bias, and a
+/// read at the region's first frame lands a fifth of a sample past it. The odd
+/// mirror is the extension that preserves the local slope, keeps the ring's
+/// cancellation intact, and makes a read centred on the edge exact. When even
+/// the mirror falls outside — a region shorter than the kernel — the tap
+/// degenerates to the edge frame itself, which holds the DC gain at unity for
+/// any region length.
+enum MappedTap {
+    /// An in-region frame.
+    Frame(usize),
+    /// Below the region: mirror `2 * region_start - index` about `region_start`.
+    MirrorBelow { mirror: i64, edge: usize },
+    /// Above a no-loop region: mirror about its last frame.
+    MirrorAbove { mirror: i64, edge: usize },
+    /// A degenerate region; the tap contributes nothing.
+    Nothing,
+}
 
 fn bandlimited_stereo_sample(
     sample: &SampleData,
@@ -838,8 +970,7 @@ fn bandlimited_stereo_sample(
     sinc_step_sin: f32,
     sinc_step_cos: f32,
     tap_count: usize,
-    window_step_sin: f32,
-    window_step_cos: f32,
+    window: &[f32; MAX_BANDLIMITED_TAPS],
     region_start: u32,
     loop_start: u32,
     loop_end: u32,
@@ -861,8 +992,6 @@ fn bandlimited_stereo_sample(
     } else {
         sample.frame_count()
     };
-    let mut window_sin = 0.0;
-    let mut window_cos = 1.0;
 
     for tap in 0..tap_count {
         let lowpass = if distance.abs() < f32::EPSILON {
@@ -870,10 +999,11 @@ fn bandlimited_stereo_sample(
         } else {
             sinc_sin / (core::f32::consts::PI * distance)
         };
-        let window = 0.54 - 0.46 * window_cos;
-        let weight = lowpass * window;
+        let weight = lowpass * window[tap];
         let raw_index = frame as i64 + tap as i64 - tap_count as i64 / 2;
-        if let Some(index) = map_bandlimited_frame(
+        let mut tap_left = 0.0;
+        let mut tap_right = 0.0;
+        let contributes = match map_bandlimited_frame(
             raw_index,
             region_start,
             loop_start,
@@ -881,9 +1011,39 @@ fn bandlimited_stereo_sample(
             loop_mode,
             has_looped,
         ) {
-            output_left += sample.read_left(index) * weight;
+            MappedTap::Frame(index) => {
+                tap_left = sample.read_left(index);
+                tap_right = if stereo {
+                    sample.read_right(index)
+                } else {
+                    tap_left
+                };
+                true
+            }
+            MappedTap::MirrorBelow { mirror, edge } | MappedTap::MirrorAbove { mirror, edge } => {
+                let in_region = (region_start as i64..region_end as i64).contains(&mirror);
+                tap_left = if in_region {
+                    2.0 * sample.read_left(edge) - sample.read_left(mirror as usize)
+                } else {
+                    sample.read_left(edge)
+                };
+                tap_right = if stereo {
+                    if in_region {
+                        2.0 * sample.read_right(edge) - sample.read_right(mirror as usize)
+                    } else {
+                        sample.read_right(edge)
+                    }
+                } else {
+                    tap_left
+                };
+                true
+            }
+            MappedTap::Nothing => false,
+        };
+        if contributes {
+            output_left += tap_left * weight;
             if stereo {
-                output_right += sample.read_right(index) * weight;
+                output_right += tap_right * weight;
             }
             weight_sum += weight;
         }
@@ -891,9 +1051,6 @@ fn bandlimited_stereo_sample(
         let next_sinc_sin = sinc_sin * sinc_step_cos - sinc_cos * sinc_step_sin;
         sinc_cos = sinc_cos * sinc_step_cos + sinc_sin * sinc_step_sin;
         sinc_sin = next_sinc_sin;
-        let next_window_sin = window_sin * window_step_cos + window_cos * window_step_sin;
-        window_cos = window_cos * window_step_cos - window_sin * window_step_sin;
-        window_sin = next_window_sin;
         distance -= 1.0;
     }
 
@@ -918,40 +1075,55 @@ fn map_bandlimited_frame(
     region_end: usize,
     loop_mode: LoopMode,
     has_looped: bool,
-) -> Option<usize> {
+) -> MappedTap {
     if region_end <= region_start {
-        return None;
+        return MappedTap::Nothing;
     }
+    let low_edge = region_start as i64;
+    let high_edge = region_end as i64 - 1;
 
     if loop_mode == LoopMode::Off {
-        return ((region_start as i64)..(region_end as i64))
-            .contains(&index)
-            .then_some(index as usize);
+        if (low_edge..=high_edge).contains(&index) {
+            return MappedTap::Frame(index as usize);
+        }
+        if index < low_edge {
+            return MappedTap::MirrorBelow {
+                mirror: 2 * low_edge - index,
+                edge: region_start,
+            };
+        }
+        return MappedTap::MirrorAbove {
+            mirror: 2 * high_edge - index,
+            edge: high_edge as usize,
+        };
     }
 
     if loop_start >= region_end {
-        return None;
+        return MappedTap::Nothing;
     }
 
-    if !has_looped && index < region_start as i64 {
-        return None;
+    if !has_looped && index < low_edge {
+        return MappedTap::MirrorBelow {
+            mirror: 2 * low_edge - index,
+            edge: region_start,
+        };
     }
     if !has_looped && index < region_end as i64 {
-        return Some(index as usize);
+        return MappedTap::Frame(index as usize);
     }
 
     let start = loop_start as i64;
     let length = region_end as i64 - start;
     let relative = (index - start).rem_euclid(length);
     if loop_mode != LoopMode::PingPong {
-        return Some((start + relative) as usize);
+        return MappedTap::Frame((start + relative) as usize);
     }
 
     let reflected = (index - start).rem_euclid(length * 2);
     if reflected < length {
-        Some((start + reflected) as usize)
+        MappedTap::Frame((start + reflected) as usize)
     } else {
-        Some((start + length * 2 - reflected - 1) as usize)
+        MappedTap::Frame((start + length * 2 - reflected - 1) as usize)
     }
 }
 
@@ -1091,51 +1263,63 @@ mod tests {
         }
     }
 
+    /// One voice rendered at `ratio`x, reached by `note` plus `tune_cents`.
+    fn render_at_ratio(source_frequency: f32, ratio: usize, note: u8, tune_cents: f32) -> Vec<f32> {
+        let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
+        let source = (0..source_frames)
+            .map(|frame| {
+                let phase =
+                    2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
+                phase.sin()
+            })
+            .collect();
+        let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams {
+            note,
+            root_note: 60,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+        voice.set_tune(tune_cents);
+
+        let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
+        for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
+            let mut left = 0.0;
+            let mut right = 0.0;
+            voice.render_sample(&sample, &mut left, &mut right);
+            if frame >= SETTLE_SAMPLES {
+                output.push(left);
+            }
+        }
+        output
+    }
+
+    /// Foldback-to-passband ratio in dB at `ratio`x, and the passband reference
+    /// it is stated against so a caller can reject an inaudible measurement.
+    ///
+    /// Both tones are chosen in the source so that playback puts one squarely
+    /// in the passband and folds the other back to 16 kHz. The returned number
+    /// is therefore the stop-band attenuation the kernel actually delivers at
+    /// this ratio, not a proxy for it.
+    fn foldback_margin_db(ratio: usize, note: u8, tune_cents: f32) -> (f32, f32) {
+        let passband = bin_magnitude(
+            &render_at_ratio(8_000.0 / ratio as f32, ratio, note, tune_cents),
+            8_000.0,
+            SAMPLE_RATE,
+        );
+        let foldback = bin_magnitude(
+            &render_at_ratio(32_000.0 / ratio as f32, ratio, note, tune_cents),
+            16_000.0,
+            SAMPLE_RATE,
+        );
+        (20.0 * (foldback / passband.max(1.0e-12)).log10(), passband)
+    }
+
     #[test]
     fn high_ratio_playback_suppresses_foldback_by_at_least_42_db() {
-        let render = |source_frequency: f32, ratio: usize, note: u8, tune_cents: f32| {
-            let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
-            let source = (0..source_frames)
-                .map(|frame| {
-                    let phase =
-                        2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
-                    phase.sin()
-                })
-                .collect();
-            let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
-            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
-            voice.trigger(&VoiceTriggerParams {
-                note,
-                root_note: 60,
-                playback_mode: PlaybackMode::OneShot,
-                ..VoiceTriggerParams::default()
-            });
-            voice.set_tune(tune_cents);
-
-            let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
-            for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
-                let mut left = 0.0;
-                let mut right = 0.0;
-                voice.render_sample(&sample, &mut left, &mut right);
-                if frame >= SETTLE_SAMPLES {
-                    output.push(left);
-                }
-            }
-            output
-        };
-
         for (ratio, note, tune_cents) in [(4, 84, 0.0), (8, 96, 0.0), (16, 84, 2_400.0)] {
-            let passband = bin_magnitude(
-                &render(8_000.0 / ratio as f32, ratio, note, tune_cents),
-                8_000.0,
-                SAMPLE_RATE,
-            );
-            let foldback = bin_magnitude(
-                &render(32_000.0 / ratio as f32, ratio, note, tune_cents),
-                16_000.0,
-                SAMPLE_RATE,
-            );
-            let alias_to_signal_db = 20.0 * (foldback / passband.max(1.0e-12)).log10();
+            let (alias_to_signal_db, passband) = foldback_margin_db(ratio, note, tune_cents);
 
             assert!(passband > 0.1, "{ratio}x passband reference was inaudible");
             assert!(
@@ -1151,8 +1335,8 @@ mod tests {
         let sample = SampleData::from_mono(vec![1.0], SAMPLE_RATE as u32);
         let step = core::f32::consts::PI * 0.5;
         let (step_sin, step_cos) = step.sin_cos();
-        let window_step = 2.0 * core::f32::consts::PI / (BANDLIMITED_SINC_TAPS - 1) as f32;
-        let (window_step_sin, window_step_cos) = window_step.sin_cos();
+        let mut window = [0.0_f32; MAX_BANDLIMITED_TAPS];
+        fill_kaiser_window(&mut window, MIN_BANDLIMITED_TAPS, 9.0);
 
         let (left, right) = bandlimited_stereo_sample(
             &sample,
@@ -1161,9 +1345,8 @@ mod tests {
             0.5,
             step_sin,
             step_cos,
-            BANDLIMITED_SINC_TAPS,
-            window_step_sin,
-            window_step_cos,
+            MIN_BANDLIMITED_TAPS,
+            &window,
             0,
             0,
             1,

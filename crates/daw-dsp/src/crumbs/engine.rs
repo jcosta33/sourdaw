@@ -672,6 +672,18 @@ impl CrumbsEngine {
     /// saturated pool stole by age instead of taking the group that was about
     /// to be cut anyway.
     ///
+    /// A *live* voice in that group stays on offer, and the tier takes it ahead
+    /// of any unrelated note. `note_on` reserves before it chokes, and
+    /// `choke_voices_in_group` then fades every active voice in the group — the
+    /// one this scan just looked at included — so that voice is spent either
+    /// way. Stealing it is not a second loss: `move_voice_to_steal_tail` starts
+    /// the same `FADE_STOLEN_SECS` de-click one call earlier and hands the slot
+    /// to the incoming note on the same sample. Refusing it does not spare it,
+    /// because the scan then falls through to `Oldest` and cuts an unrelated
+    /// sustaining note the choke was never going to touch — two voices gone
+    /// where one was free, which is not what a drum sampler does with a hi-hat
+    /// pair.
+    ///
     /// `claimed` are the slots the current `note_on` has already handed to this
     /// note's stack. They are live but not yet fading, and they play exactly
     /// `target_note`, so without excluding them a stacked note-on steals itself.

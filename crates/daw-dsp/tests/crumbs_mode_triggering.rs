@@ -516,6 +516,26 @@ fn choke_pair_engine(closed_level: f32, open_level: f32) -> CrumbsEngine {
     engine
 }
 
+/// Pads 0 and 1 in choke group 1, plus pad 2 outside every group with a sample
+/// of its own.
+///
+/// Nothing chokes pad 2, so it stands in for the sustaining material a kit is
+/// played over — a cymbal tail under a hi-hat pair. Its presence is what makes
+/// the steal *choice* observable: without it a scan that passes over the group
+/// has nowhere else to land, and dropping the note and cutting an unrelated
+/// voice look the same from outside.
+fn choke_pair_with_free_pad_engine() -> CrumbsEngine {
+    let mut engine = choke_pair_engine(1.0, 0.4);
+    let free = load(&mut engine, flat_pcm(16 * BLOCK, 0.7));
+    engine.drum_mode_mut().set_pad_sample(2, free);
+    engine
+        .drum_mode_mut()
+        .get_pad_mut(2)
+        .expect("pad exists")
+        .attack = 0.0;
+    engine
+}
+
 /// A voice already fading must not be stolen again.
 ///
 /// `choke_voices_in_group` deliberately leaves the allocator slot alone and
@@ -526,35 +546,135 @@ fn choke_pair_engine(closed_level: f32, open_level: f32) -> CrumbsEngine {
 /// its second-highest priority — and took it, so the two passes undid each
 /// other and the choke became the click it was written to avoid.
 ///
-/// Reachable in ordinary dense playing: `MAX_STACK_VOICES` is 8 against a
-/// 128-voice pool, so sixteen overlapping stacked hits saturate it.
+/// Putting the scan in front of fading voices *and nothing else* takes a stack,
+/// not a single note. `note_on` reserves before it chokes, so the newest voice
+/// in a group is always still live, and it is the legitimate victim — see
+/// `a_saturated_pool_takes_the_choke_group_rather_than_an_unrelated_voice`. A
+/// two-voice stack exhausts it: the first half reserves that one live
+/// group-mate, and the second half is left with fades.
 #[test]
 fn a_choked_voice_is_not_stolen_again_while_its_fade_is_running() {
     let mut engine = choke_pair_engine(1.0, 0.4);
 
     // Fill the pool. Every pad in the fixture shares choke group 1, so each of
-    // these is also a choke candidate for the note that follows.
+    // these chokes the ones before it and the pool ends up saturated with
+    // note-36 voices of which every one but the last is fading.
     for _ in 0..MAX_VOICES {
         note_on(&mut engine, 36, 127);
     }
 
-    // This note chokes group 1 and then, finding no free slot, goes stealing.
+    // Render so those fades are *running* rather than merely flagged: they
+    // advance only in `process_block`. One block is 128 frames against the
+    // 144-frame fade, so none has reached silence and no slot has gone back to
+    // the allocator — which the saturation check below is what proves.
+    render(&mut engine, BLOCK);
+    assert_eq!(
+        engine.playable_voice_count(),
+        MAX_VOICES,
+        "a fade ran out inside the first block, so the pool was no longer \
+         saturated and the note below would have taken a free slot without \
+         ever consulting the steal scan"
+    );
+
+    // Two voices per note. The first takes the single live group-mate; the
+    // second finds only voices on their way out.
+    engine.handle_command(CrumbsCommand::SetParam {
+        param: daw_dsp::crumbs::types::CrumbsParam::StackCount,
+        value: 2.0,
+    });
     note_on(&mut engine, 37, 127);
 
-    // Every voice in the pool is now fading, so there is nothing left to steal
-    // that is not already on its way out. The note is dropped rather than
-    // clicked, and no voice carries note 37.
+    // Nothing already fading was taken, so no voice carries note 37 — and the
+    // reservation being all-or-nothing, the live group-mate the first half of
+    // the stack had reserved is handed back untouched rather than silenced for
+    // a note that never landed.
     //
     // Asserting the note *identity* rather than a level: summing 128 voices
     // cannot isolate one being overwritten, and an earlier version of this test
     // measured exactly that and passed with the fix reverted.
-    render(&mut engine, BLOCK);
-
     assert!(
         !engine.any_active_voice_has_note(37),
         "note 37 took a slot inside the de-click fade, so the steal pass \
          overwrote a voice the choke pass had just started fading — the click \
          the choke path leaves its allocator slot alone to avoid"
+    );
+    assert_eq!(
+        engine.active_voices_with_note(36),
+        MAX_VOICES,
+        "a note-36 voice went missing although the stack never landed, so an \
+         incomplete reservation consumed a steal target it then abandoned"
+    );
+}
+
+/// A saturated pool gives up the incoming note's own choke group, not an
+/// unrelated voice that happens to be quiet.
+///
+/// The group-mate is spent whichever way the scan goes: `note_on` reserves,
+/// then `choke_voices_in_group` fades every live voice in the group, this one
+/// included. Stealing it only starts that same `FADE_STOLEN_SECS` de-click one
+/// call earlier — `move_voice_to_steal_tail` fades it in a tail slot while the
+/// incoming note takes the slot on the same sample — so nothing extra is lost.
+/// Passing over it, on the other hand, sends the scan down to `Oldest`, where
+/// the cost falls on a sustaining note the choke was never going to touch: an
+/// open hi-hat that eats a cymbal tail and then chokes the closed hat three
+/// milliseconds later anyway. Two voices where one was free, which is not what
+/// a drum sampler does with a choke pair.
+#[test]
+fn a_saturated_pool_takes_the_choke_group_rather_than_an_unrelated_voice() {
+    const UNRELATED: usize = 8;
+
+    let mut engine = choke_pair_with_free_pad_engine();
+
+    // Sustaining voices outside the group first, then the group fills the rest
+    // of the pool. Note 38 is in no choke group, so nothing here ever fades it.
+    for _ in 0..UNRELATED {
+        note_on(&mut engine, 38, 127);
+    }
+    for _ in 0..(MAX_VOICES - UNRELATED) {
+        note_on(&mut engine, 36, 127);
+    }
+    render(&mut engine, BLOCK);
+
+    assert_eq!(
+        engine.playable_voice_count(),
+        MAX_VOICES,
+        "the pool was not saturated, so the note below would have found a free \
+         slot and never gone stealing"
+    );
+    assert_eq!(
+        engine.active_voices_with_note(38),
+        UNRELATED,
+        "the unrelated voices were already gone before the note under test, so \
+         their survival afterwards would prove nothing"
+    );
+
+    // The open hat, against one live closed hat and a pool of fades.
+    note_on(&mut engine, 37, 127);
+
+    assert_eq!(
+        engine.active_voices_with_note(37),
+        1,
+        "the open hat never sounded: a live voice in its own choke group was \
+         available and the scan took nothing"
+    );
+    assert_eq!(
+        engine.active_voices_with_note(38),
+        UNRELATED,
+        "the open hat cut an unrelated sustaining voice, which the choke pass \
+         does not touch — and it faded the closed hat a moment later anyway, \
+         so this costs two voices where one was free"
+    );
+    // Every note-36 voice in this fixture is `active` whether it is live or
+    // mid-fade, so this count cannot name *which* one went: it says a note-36
+    // voice left the pool, and read with the note-38 assertion above, that the
+    // slot the open hat took was a group-mate's rather than an outsider's.
+    // Which group-mate — the live one rather than a fade — is what
+    // `a_choked_voice_is_not_stolen_again_while_its_fade_is_running` covers.
+    assert_eq!(
+        engine.active_voices_with_note(36),
+        MAX_VOICES - UNRELATED - 1,
+        "no note-36 voice left the pool, so the open hat's slot came from \
+         somewhere other than its own choke group"
     );
 }
 
