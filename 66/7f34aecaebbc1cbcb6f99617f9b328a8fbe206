@@ -1,0 +1,22 @@
+src/modules/BrowserAi/repositories/__tests__/checkDdspInstrumentReady.spec.ts
+  s_27578aec2aab3b::t_6dabf68b11fd07 21-24
+  s_27578aec2aab3b::t_41c2305d960a46 20,25-53
+src/modules/BrowserAi/repositories/__tests__/publishDdspInstrumentGeneration.spec.ts
+  s_27578aec2aab3b::t_41c2305d960a46 10-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "667f34aecaebbc1cbcb6f99617f9b328a8fbe206",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
