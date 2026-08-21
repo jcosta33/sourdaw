@@ -89,10 +89,10 @@ describe('the production Content-Security-Policy', () => {
         // a user-run OpenAI-compatible LLM server (a hosted https provider
         // streams through the native gateway over IPC, which no CSP directive
         // governs), Hugging Face plus its CDN redirect hosts for Kokoro/WebLLM
-        // model artifacts, and raw.githubusercontent.com for the MLC wasm
-        // runtime, whose artifacts are sha256-pinned. A host with no consumer
-        // stays out, and a bare `https:` is an open exfiltration channel that
-        // must never return.
+        // model artifacts, raw.githubusercontent.com for the MLC wasm runtime,
+        // and only the exact Magenta DDSP checkpoint path whose artifacts are
+        // sha256-pinned. A host with no consumer stays out, and a bare `https:`
+        // is an open exfiltration channel that must never return.
         expect(directives.get('connect-src')).toEqual([
             "'self'",
             'http://localhost:*',
@@ -101,7 +101,18 @@ describe('the production Content-Security-Policy', () => {
             'https://*.huggingface.co',
             'https://*.hf.co',
             'https://raw.githubusercontent.com',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/',
         ]);
+        for (const broadSource of [
+            'https://storage.googleapis.com',
+            'https://storage.googleapis.com/',
+            'https://storage.googleapis.com/*',
+            'https://*.googleapis.com',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/*',
+        ]) {
+            expect(directives.get('connect-src')).not.toContain(broadSource);
+        }
         expect(directives.get('connect-src')).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('http:');

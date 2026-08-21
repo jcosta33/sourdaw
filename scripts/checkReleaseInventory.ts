@@ -105,6 +105,7 @@ export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct
 
 export const DDSP_MODEL_PATHS = [
     DDSP_ADMISSION_DECISION_PATH,
+    'electron/protocol.ts',
     'public/legal/THIRD-PARTY-NOTICES.md',
     'scripts/checkReleaseInventory.ts',
     'src/infra/release/modelReleaseAdmission.ts',
@@ -636,6 +637,7 @@ export function ddspModelsReleaseInventoryContract(root: string): Partial<Releas
         ],
         digests: [
             `sha256:${fileSha256(resolve(root, DDSP_ADMISSION_DECISION_PATH))}:${DDSP_ADMISSION_DECISION_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'electron/protocol.ts'))}:electron/protocol.ts`,
             `sha256:${fileSha256(resolve(root, 'src/modules/BrowserAi/models/DdspArtifactManifest.ts'))}:src/modules/BrowserAi/models/DdspArtifactManifest.ts`,
             `sha256:${fileSha256(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'))}:public/legal/THIRD-PARTY-NOTICES.md`,
             ...artifacts.map(({ sha256, sizeBytes, url }) => `sha256:${sha256}:bytes:${sizeBytes}:${url}`),

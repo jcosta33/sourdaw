@@ -319,6 +319,7 @@ describe('release inventory', () => {
         expect(contract.paths).toEqual(DDSP_MODEL_PATHS);
         expect(contract.paths).toEqual(
             expect.arrayContaining([
+                'electron/protocol.ts',
                 'src/modules/BrowserAi/useCases/downloadModel.ts',
                 'src/modules/BrowserAi/useCases/removeModel.ts',
                 'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
@@ -336,12 +337,14 @@ describe('release inventory', () => {
 
     it.each([
         DDSP_ADMISSION_DECISION_PATH,
+        'electron/protocol.ts',
         'public/legal/THIRD-PARTY-NOTICES.md',
         'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
     ])('rejects admitted DDSP provenance drift in %s', (changedPath) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-model-admission-'));
         const hashedPaths = [
             DDSP_ADMISSION_DECISION_PATH,
+            'electron/protocol.ts',
             'public/legal/THIRD-PARTY-NOTICES.md',
             'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
         ];

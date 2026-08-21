@@ -398,6 +398,7 @@
             "releaseModes": ["web", "desktop"],
             "paths": [
                 ".agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
+                "electron/protocol.ts",
                 "public/legal/THIRD-PARTY-NOTICES.md",
                 "scripts/checkReleaseInventory.ts",
                 "src/infra/release/modelReleaseAdmission.ts",
@@ -426,6 +427,7 @@
             ],
             "digests": [
                 "sha256:34b2aa205d9abe0ed49e5afc9f63ba277c3f8729d2ce15cfd8d0939989b9f335:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
+                "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json",
@@ -1291,6 +1293,11 @@
             "surface": "ddsp-models",
             "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "electron/protocol.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/"
         },
         {
             "surface": "ddsp-models",
