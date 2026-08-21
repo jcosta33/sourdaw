@@ -12,13 +12,17 @@ type HydrateYeastStateInput =
 
 /**
  * Restore rack state from the flat project file. Rack state is per device
- * instance (issue #2422), so hydration writes EVERY Yeast device's rack: each
- * write is authored while its device is pinned, the pin switch flushes the
- * previous device's write under that device's id, and a device the file
- * carries no rack for hydrates to an empty rack. The legacy flat form
- * attaches its one rack to the first Yeast device in project order — the
- * same owner the CRDT slot's v1→v2 parking picks. Ends unpinned: project
- * load has no panel open, so the active rack resolves from selection.
+ * instance (issue #2422), so hydration writes a rack for every device the
+ * project knows: each write is authored while its device is pinned, and the
+ * pin switch flushes the previous device's write under that device's id.
+ * That is EVERY rack the file carries — including devices that live only in
+ * stored arrangements, which the write side unions in (`buildProjectData`)
+ * and which no other load path re-hydrates (`switchArrangement` does not touch
+ * rack state) — plus an empty rack for a live device the file carries no rack
+ * for. The legacy flat form attaches its one rack to the first Yeast device
+ * in project order — the same owner the CRDT slot's v1→v2 parking picks.
+ * Ends unpinned: project load has no panel open, so the active rack resolves
+ * from selection.
  */
 export function hydrateYeastState(state: HydrateYeastStateInput): void {
     const uiLevel = yeastStore.value?.uiLevel ?? 1;
@@ -34,7 +38,17 @@ export function hydrateYeastState(state: HydrateYeastStateInput): void {
         }
     }
 
-    for (const deviceId of yeastDeviceIdsInProjectOrder()) {
+    // Live devices first (project order), then any file-carried device the
+    // live enumeration does not know — a device that exists only in a stored
+    // arrangement. Without the second set, that device's rack is never
+    // written and the next save persists the loss.
+    const deviceIds = [...yeastDeviceIdsInProjectOrder()];
+    for (const deviceId of processorsById.keys()) {
+        if (!deviceIds.includes(deviceId)) {
+            deviceIds.push(deviceId);
+        }
+    }
+    for (const deviceId of deviceIds) {
         setActiveYeastDevice(deviceId);
         yeastStore.set({
             processors: structuredClone(processorsById.get(deviceId) ?? []),

@@ -27,6 +27,7 @@ const { hydrateYeastState } = await import('../hydrateYeastState');
 describe('hydrateYeastState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.deviceIds = ['device-a', 'device-b'];
     });
 
     it('writes every device rack from the device-keyed file shape and ends unpinned', () => {
@@ -61,6 +62,34 @@ describe('hydrateYeastState', () => {
         });
         expect(mocks.set).toHaveBeenNthCalledWith(2, { processors: [], uiLevel: 3 });
         expect(mocks.reconcile).toHaveBeenCalledOnce();
+    });
+
+    it('writes racks for devices that exist only in stored arrangements', () => {
+        // The write side unions every stored arrangement's Yeast devices into
+        // the file, and the live track enumeration at load knows only the
+        // ACTIVE arrangement's devices: a device that lives in arrangement B
+        // while A is active is absent from the enumeration, and nothing else
+        // re-hydrates it (switchArrangement performs no yeast hydration), so
+        // a live-only enumeration silently drops its rack and the next save
+        // persists the loss. Mutation: reverting the write loop to the
+        // live-only enumeration reds this test.
+        mocks.deviceIds = ['device-live'];
+        const storedRack = {
+            processors: [{ id: 'stored-groove', type: 'groove' as const, name: 'Stored', bypassed: false }],
+        };
+
+        hydrateYeastState({
+            racks: {
+                'device-live': { processors: [] },
+                'device-stored': storedRack,
+            },
+        });
+
+        expect(mocks.setActive.mock.calls).toEqual([['device-live'], ['device-stored'], [null]]);
+        expect(mocks.set).toHaveBeenCalledWith({
+            processors: [{ id: 'stored-groove', type: 'groove', name: 'Stored', bypassed: false }],
+            uiLevel: 3,
+        });
     });
 
     it('clears every device rack when the project carries no yeast section', () => {
