@@ -15,10 +15,14 @@ const mocks = vi.hoisted(() => ({
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
     buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+    migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
+}));
+vi.mock('../../migrateActiveProjectIdentity', () => ({
+    migrateActiveProjectIdentity: mocks.migrateActiveProjectIdentity,
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -65,6 +69,7 @@ describe('saveProject', () => {
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
+        mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         projectLoadFailureStore.set(null);
     });
 
@@ -111,6 +116,23 @@ describe('saveProject', () => {
         expect(key).not.toContain('My Song');
     });
 
+    it('finishes identity migration before building a versioned snapshot', async () => {
+        let finishMigration: (() => void) | undefined;
+        mocks.migrateActiveProjectIdentity.mockReturnValue(
+            new Promise<boolean>((resolve) => {
+                finishMigration = () => resolve(true);
+            })
+        );
+
+        const saving = saveProject();
+        expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledOnce();
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+
+        finishMigration?.();
+        await expect(saving).resolves.toBe(true);
+        expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+    });
+
     it('does not record a recent-project entry when CRDT persistence rejects', async () => {
         mocks.persistCrdtProject.mockRejectedValue(new Error('disk full'));
 
@@ -152,9 +174,7 @@ describe('saveProject', () => {
         mocks.captureProjectRevision.mockReturnValue('same-revision');
         await saveProject();
 
-        expect(mocks.projectStoreSet).toHaveBeenCalledWith(
-            expect.objectContaining({ dirty: false }),
-        );
+        expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
     it('keeps the dirty flag asserted when an edit lands during the snapshot write', async () => {
@@ -166,9 +186,7 @@ describe('saveProject', () => {
 
         await saveProject();
 
-        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(
-            expect.objectContaining({ dirty: false }),
-        );
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
     it('notifies and resolves false when persistence fails', async () => {
