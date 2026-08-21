@@ -1,0 +1,45 @@
+tests/e2e/ddspProductionCspElectron.spec.ts
+  s_27578aec2aab3b::t_c84e0964e025e7 39-40,76-77,85,88-92
+  s_27578aec2aab3b::t_db59cee7e54595 93
+public/legal/THIRD-PARTY-NOTICES.md
+  s_27578aec2aab3b::t_b488d0a3a2d871 47-59
+scripts/__tests__/runElectronE2E.spec.ts
+  s_27578aec2aab3b::t_30474bd51816f7 29-31,81-103
+  s_27578aec2aab3b::t_2f4331f8163487 104-106
+  s_27578aec2aab3b::t_a7bfa32393720a 107-108
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_dd656cdbf2e7c9 399,401-404,592,648,651,655,668,809-811,813,816,826,828-830,966,968,978,980-982
+public/legal/Magenta.js-NOTICE.txt
+  s_27578aec2aab3b::t_b488d0a3a2d871 1-37
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_30474bd51816f7 28-29,80-91,126,132-133,137-144,152-153
+  s_27578aec2aab3b::t_11f7b2193e9802 157,159
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_30474bd51816f7 42-51,126,179
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_6c77c387228f7c 337
+  s_27578aec2aab3b::t_75e3c7cafc08bd 407-411,421,441-443,448,452,460,466
+  s_27578aec2aab3b::t_21a8db13891437 1276-1300
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_dd656cdbf2e7c9 109-111,195-196
+scripts/runElectronE2E.ts
+  s_27578aec2aab3b::t_717de9c54bfd0a 46-51,101,104,106-107,175,185,207
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_afe0c93e81ca0d 70-71,79-80,153-157,167,190,194,201,207,294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5dd54e15b6e250a1a4592e47817ba7640f4d646c",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
