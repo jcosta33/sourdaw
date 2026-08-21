@@ -1,0 +1,19 @@
+tests/e2e/fermenterLfoRoutingTestId.spec.ts
+  s_24b1bdbc3c31ad::t_4c81b8477cee4b 3,5,10-11,14-21,23-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "870023bab24f137a48eb42a5fd62de550ab0364e",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
