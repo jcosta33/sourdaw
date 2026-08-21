@@ -830,7 +830,7 @@
   {
     "id": "ui-079f8848abb0cb30",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 50,
+    "line": 51,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -1431,6 +1431,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-0d6dffbe693d893c",
+    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
+    "line": 156,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0d763e7308f0b0cb",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
     "line": 224,
@@ -1888,6 +1897,15 @@
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-116606bd306cc1d0",
+    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
+    "line": 111,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-116dfec9b1818424",
@@ -2736,6 +2754,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-19bd6d38c1c19a6f",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 81,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-19c327813d5da9b8",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1246,
@@ -2756,7 +2783,7 @@
   {
     "id": "ui-19ebf97aa79ae41f",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 192,
+    "line": 194,
     "fingerprint": "div\tflex items-center gap-2 rounded px-2 py-1.5 text-xs",
     "kind": "layout",
     "mapping": "Row",
@@ -2828,7 +2855,7 @@
   {
     "id": "ui-1aec37513a8e2e8c",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 27,
+    "line": 28,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -3980,7 +4007,7 @@
   {
     "id": "ui-26ffe82cc7809fb0",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 81,
+    "line": 82,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4214,7 +4241,7 @@
   {
     "id": "ui-28b2841d2d31a9fe",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 155,
+    "line": 157,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -4322,7 +4349,7 @@
   {
     "id": "ui-29a2ed63aa525d85",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 128,
+    "line": 130,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4371,15 +4398,6 @@
     "fingerprint": "div\tflex flex-1 overflow-hidden",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-2a0fa33fedb0e632",
-    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 134,
-    "fingerprint": "div\tspace-y-4 px-4 py-4",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -4767,6 +4785,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2d39b393790401c5",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 38,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -6129,15 +6156,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3c06e5ebd2e01eae",
-    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 141,
-    "fingerprint": "div\tflex max-h-60 flex-col gap-1 overflow-y-auto",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3c4ae70b29a4f6b6",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/SoloModeSelector.tsx",
     "line": 34,
@@ -7391,7 +7409,7 @@
   {
     "id": "ui-47d74e8303a870a6",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 38,
+    "line": 39,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7983,15 +8001,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-4eecbdff670d1a73",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 58,
-    "fingerprint": "div\tspace-y-2 text-sm text-foreground/88",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4ef1451150061bf7",
     "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
     "line": 116,
@@ -8471,7 +8480,7 @@
   {
     "id": "ui-53eb12764768b48f",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 166,
+    "line": 168,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8512,15 +8521,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-5426a25006cb4294",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 49,
-    "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-542e38c5a989f489",
@@ -9450,15 +9450,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-5db7ff8e895e3572",
-    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 154,
-    "fingerprint": "div\tflex gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5dbed2d0c56fa78d",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 66,
@@ -10235,7 +10226,7 @@
   {
     "id": "ui-6568e0797e70e851",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 122,
+    "line": 124,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -10370,7 +10361,7 @@
   {
     "id": "ui-6675b5806973b912",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 218,
+    "line": 220,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11205,6 +11196,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-7030327d839a1e68",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 50,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-70537b4b6315ffda",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 601,
@@ -11306,7 +11306,7 @@
   {
     "id": "ui-7159be7a27925928",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 26,
+    "line": 27,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -13898,7 +13898,7 @@
   {
     "id": "ui-890ccbfc1b02d0b3",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 208,
+    "line": 210,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15140,7 +15140,7 @@
   {
     "id": "ui-96b2506cdbf2c8e5",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 51,
+    "line": 52,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -15226,15 +15226,6 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-97cffc12cb24ba3e",
-    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 110,
-    "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-97e44cf5f4f82392",
@@ -16146,15 +16137,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-a16e528ab6538e97",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 57,
-    "fingerprint": "div\tspace-y-4 px-4 py-4",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a18116a9e5998fa8",
     "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
     "line": 472,
@@ -16369,6 +16351,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-a36e1dacbe8678fa",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 34,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a3727a33a46e4a27",
@@ -17467,15 +17458,6 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-af49e6379f400281",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 25,
-    "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-af704e4573868969",
@@ -19001,7 +18983,7 @@
   {
     "id": "ui-bed91bc4bec1d7c8",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 121,
+    "line": 123,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -19338,15 +19320,6 @@
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c27bd84786951ef3",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 37,
-    "fingerprint": "div\tflex justify-end",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -20094,6 +20067,15 @@
     "fingerprint": "Separator\t",
     "kind": "generic-control",
     "mapping": "Separator",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-cb39e55d9d86cacd",
+    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
+    "line": 136,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -22797,6 +22779,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e738db91738a288d",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 26,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e73900ac0f4abd6b",
     "file": "src/modules/Collaboration/presentations/views/QrInvite.tsx",
     "line": 72,
@@ -22808,7 +22799,7 @@
   {
     "id": "ui-e7b3288de7b11d47",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
-    "line": 196,
+    "line": 198,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23463,15 +23454,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-ee0e4a0b08b2d202",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 80,
-    "fingerprint": "div\tflex justify-end",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ee1902396c4da427",
     "file": "src/components/ui/card.tsx",
     "line": 18,
@@ -24100,15 +24082,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f365398d1a24e989",
-    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
-    "line": 33,
-    "fingerprint": "div\tspace-y-4 px-4 py-4",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f396421720f69396",
@@ -24858,6 +24831,15 @@
     "disposition": "responsive-or-dynamic"
   },
   {
+    "id": "ui-fb83fc12450f0e0e",
+    "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
+    "line": 143,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fb8fb0c8ed993f69",
     "file": "src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx",
     "line": 232,
@@ -24927,6 +24909,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-fc80ab5036bff05f",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 59,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -25224,6 +25215,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ff127b85ed3517bb",
+    "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
+    "line": 58,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
