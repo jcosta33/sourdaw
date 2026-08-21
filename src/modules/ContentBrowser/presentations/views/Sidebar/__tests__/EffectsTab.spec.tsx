@@ -30,6 +30,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: commandMocks.executeAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
+    isAppActionCommittedError: (error: unknown) => error instanceof Error && error.name === 'AppActionCommittedError',
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
@@ -179,6 +180,46 @@ describe('EffectsTab', () => {
             await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77'));
         }
     );
+
+    it('opens Yeast only after addDevice commits the catalog id', async () => {
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                currentRoute={{ id: 'effects-midifx', title: 'MIDI FX' }}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
+
+        expect(arrangementMocks.compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'yeast');
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-1', deviceType: 'yeast', deviceId: 'device-77', expectedDeviceIds: [] },
+        });
+        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith(null));
+    });
+
+    it('opens Yeast when addDevice commits but post-commit processing fails', async () => {
+        const committed = new Error('Action committed but post-commit processing failed: addDevice');
+        committed.name = 'AppActionCommittedError';
+        commandMocks.executeAppAction.mockRejectedValue(committed);
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                currentRoute={{ id: 'effects-midifx', title: 'MIDI FX' }}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
+
+        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith(null));
+    });
 
     it('leaves the panel closed when the compiler rejects the add', () => {
         arrangementMocks.compileAddDeviceAction.mockReturnValue(null);
