@@ -1,0 +1,86 @@
+public/legal/seedrandom-MIT.txt
+  s_27578aec2aab3b::t_b2efe3d09a3a92 1-52
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_5c3b9faafe310d 274-292,297-300,302-317,319-327,336-339
+  s_27578aec2aab3b::t_d1f9cb452c0b34 18,20,23-24,41,46,88-106,110-132,141,175-178,191-204,206-210,214-216,219-221
+  s_27578aec2aab3b::t_5488ffeecf836d 407
+  s_27578aec2aab3b::t_7a9db810b68962 578
+  s_27578aec2aab3b::t_b2c66a1546fd18 504-506,510-512
+  s_27578aec2aab3b::t_dd53f55bd7f2db 19,293-296,516,520,522
+  s_27578aec2aab3b::t_d6b85358913b98 107-109,217-218,222-223,301,318,340-347,379,402-406,408-450,472-476,478-491,503,513-515,517-519,521,523-528,586-593,596,608-610,616
+src/modules/BrowserAi/services/computeDdspSessionKey.ts
+  s_27578aec2aab3b::t_8afcb6d45bbbf7 1-9,12-26,28,30
+  s_27578aec2aab3b::t_c76cdd6f906231 10-11,27,29
+src/modules/BrowserAi/models/InferenceRequest.ts
+  s_27578aec2aab3b::t_c76cdd6f906231 80,135-137,139-141
+  s_27578aec2aab3b::t_add360acdffd50 81-84,156
+  s_27578aec2aab3b::t_8afcb6d45bbbf7 22-29,32-41,74-75,77-79,89-91,138,142,154,157
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_c86163661ac06a 155-221,898,910
+  s_27578aec2aab3b::t_55d93d778196c3 401,1225
+  s_27578aec2aab3b::t_d771dd313845d1 154
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_45fd3f30bd673e 420
+  s_27578aec2aab3b::t_5baba90fafb13f 1-2,4-5,7-64,66-111,117-119,121-180,205-262,280-384,397-399,454-479,523-533,535,537-539,541-547,562,577,581-617,621-626
+  s_27578aec2aab3b::t_6aa8a2838cfd60 112-116,120,480-522
+  s_27578aec2aab3b::t_fc432c4b1d69b1 400-419,421-453,549-561,564-576,578-580
+  s_27578aec2aab3b::t_bae5a42c1aa64e 534,536,540,548,563
+  s_27578aec2aab3b::t_e3514658eec857 196
+  s_27578aec2aab3b::t_622a268547821e 3,6,65,181-195,197-204,263-279,385-396,618-620
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_27578aec2aab3b::t_c0f6e609611e00 1,3-4,6-10,13-17,19-28,31-55,57-84,86-120
+  s_27578aec2aab3b::t_5b3250d5fad05e 5,18
+  s_27578aec2aab3b::t_e3514658eec857 11,85
+public/legal/TensorFlow.js-NOTICE.txt
+  s_27578aec2aab3b::t_b2efe3d09a3a92 1,3,5-7,9,11-14,16-18,20-21,23-24,26-27,29-31,33-35
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_23d3806adca9a0 79-101,276-316,815
+  s_27578aec2aab3b::t_34167499ea1d6e 816
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_27578aec2aab3b::t_5a35aeb60db73c 270,273-274,278
+  s_27578aec2aab3b::t_5b3250d5fad05e 1,85-109,249-256,303,331-338,416-417,431,568,615
+  s_27578aec2aab3b::t_e3514658eec857 172-177,200,263-265,267,269,275
+  s_27578aec2aab3b::t_dd53f55bd7f2db 692-698
+  s_27578aec2aab3b::t_bf43c2d16b7614 262,266,268,271-272,276,574-575,578-586,608-613,722-724,737,739-746,748,754-756
+  s_27578aec2aab3b::t_8afcb6d45bbbf7 2-84,110-171,178-199,201-248,257-261,277,279-302,304-330,339-415,418-430,432-567,569-573,576-577,587-607,614,616-691,699-721,725-736,738,747,749-753,757-770
+public/legal/THIRD-PARTY-NOTICES.md
+  s_27578aec2aab3b::t_b2efe3d09a3a92 38-49
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_23d3806adca9a0 11-12,66-95
+public/legal/Magenta.js-NOTICE.txt
+  s_27578aec2aab3b::t_b2efe3d09a3a92 1-22
+public/legal/Apache-2.0.txt
+  s_27578aec2aab3b::t_c3422c73b73f81 1-201
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_5488ffeecf836d 44,46,51
+  s_27578aec2aab3b::t_bae5a42c1aa64e 620,624,626
+  s_27578aec2aab3b::t_8a2763d63992b1 11,17,36,38-43,49,52-56,81-84,148-149
+  s_27578aec2aab3b::t_590e4c410ea415 14
+  s_27578aec2aab3b::t_79df9693f2b2ab 364-365,371-387,389-390,392-406,410,412-422,424-432
+  s_27578aec2aab3b::t_5358a4a91fcc55 106-112,366,423,605,721
+  s_27578aec2aab3b::t_3a66a52782c2c3 407-409,411,442-448,452-454,466-472,478-484,493-499,517
+  s_27578aec2aab3b::t_31537046934e9e 602,604,606-611,615-619,621-623,625,627-629,632-634
+  s_27578aec2aab3b::t_84a8054bba4b4e 720,722-727,736,745-746,748-780
+src/modules/BrowserAi/services/__tests__/computeDdspSessionKey.spec.ts
+  s_27578aec2aab3b::t_5baba90fafb13f 1-88
+package.json
+  s_27578aec2aab3b::t_c25294f952e205 86-88
+pnpm-lock.yaml
+  s_27578aec2aab3b::t_f2b45ad2a74c96 35-43,2349-2354,2361-2365,2371-2375,2380-2383,2500-2502,2898-2900,7542-7547,7558-7562,7567-7570,7584-7595,7742-7743,8064-8065
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e44001f8d91308b7d64370e9498840e3260551b9",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
