@@ -225,6 +225,62 @@ describe('renderKokoroTts', () => {
         expect(runKokoroTts).not.toHaveBeenCalled();
     });
 
+    it('does not continue after cancellation while the ONNX session is loading', async () => {
+        const pendingSession = deferred<void>();
+        loadOnnxSession.mockReturnValue(pendingSession.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(loadOnnxSession).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingSession.resolve();
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(fetch).not.toHaveBeenCalled();
+        expect(runKokoroTts).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not continue after cancellation while the first resample is in flight', async () => {
+        const pendingResample = deferred<Float32Array>();
+        resampleTo44100.mockReturnValue(pendingResample.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(resampleTo44100).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingResample.resolve(new Float32Array(44100));
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not continue after cancellation while the stretch resample is in flight', async () => {
+        const pendingStretch = deferred<Float32Array>();
+        resampleTo44100.mockResolvedValueOnce(new Float32Array(44100)).mockReturnValueOnce(pendingStretch.promise);
+
+        const render = callRender({ targetDurationSec: 2 });
+        await vi.waitFor(() => expect(resampleTo44100).toHaveBeenCalledTimes(2));
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingStretch.resolve(new Float32Array(88200));
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
     it('does not publish audio after cancellation while inference is in flight', async () => {
         const pendingInference = deferred<{
             type: 'tts-result';
