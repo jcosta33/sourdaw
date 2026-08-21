@@ -1554,16 +1554,9 @@ fn map_command(
                     "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            let param = match parameter_id.as_str() {
-                "shift_semitones" => DeviceParam::ShiftSemitones,
-                "retune_speed_ms" => DeviceParam::RetuneSpeedMs,
-                "formant_preserve" => DeviceParam::FormantPreserve,
-                other => {
-                    return Err(format!(
-                        "write-device-parameter: parameter '{other}' has no native address"
-                    ))
-                }
-            };
+            let param = DeviceParam::from_name(parameter_id.as_str()).ok_or_else(|| {
+                format!("write-device-parameter: parameter '{parameter_id}' has no native address")
+            })?;
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
             budgets
@@ -3917,9 +3910,6 @@ mod tests {
             )
         );
 
-        // `needs-reconcile` is the one variant carrying `compensation` and the
-        // one nothing produces at runtime today, so only this pin proves its
-        // spellings against the contract (`AudioGraphApplyResult`).
         let needs_reconcile = serde_json::to_string(&GraphApplyResultPayload::needs_reconcile(
             "the engine refused command 2 of 3".to_string(),
             Some(json!({ "documentRevision": 9 })),
@@ -3939,6 +3929,90 @@ mod tests {
                 r#""compensation":"not-attempted","correlation":{"documentRevision":9},"#,
                 r#""runtimeRevision":7,"reports":[{"kind":"track","id":"t1","deviceIds":[]}]}"#
             )
+        );
+    }
+
+    #[test]
+    fn write_device_parameter_resolves_every_known_device_param_and_refuses_unknown() {
+        let mut registry = GraphRegistry::default();
+        let track_id = "t1".to_string();
+        let device_id = "d1".to_string();
+        registry.strips.insert(
+            track_id.clone(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec![device_id.clone()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            device_id.clone(),
+            DeviceEntry {
+                native_effect_id: 1,
+                strip_id: track_id.clone(),
+            },
+        );
+
+        let samples = HashMap::new();
+
+        // 1. Every known name from DeviceParam must resolve
+        for param_name in ["shift_semitones", "retune_speed_ms", "formant_preserve"] {
+            let batch = GraphBatchPayload {
+                schema_version: 1,
+                correlation: None,
+                commands: vec![GraphCommandPayload::WriteDeviceParameter {
+                    target: DeviceParameterTargetPayload::DeviceParameter {
+                        track_id: track_id.clone(),
+                        device_id: device_id.clone(),
+                        parameter_id: param_name.to_string(),
+                    },
+                    write: StepWritePayload::Step {
+                        value: 1.0,
+                        time: 0.0,
+                    },
+                }],
+            };
+            let mut reg_clone = registry.clone();
+            let res = map_batch(&batch, &mut reg_clone, &samples, 48000.0);
+            assert!(
+                res.is_ok(),
+                "WriteDeviceParameter must accept known param '{param_name}': {:?}",
+                res.err()
+            );
+            let mapped = res.unwrap();
+            assert_eq!(mapped.ops.len(), 1);
+        }
+
+        // 2. Unknown param must be refused
+        let unknown_batch = GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            commands: vec![GraphCommandPayload::WriteDeviceParameter {
+                target: DeviceParameterTargetPayload::DeviceParameter {
+                    track_id: track_id.clone(),
+                    device_id: device_id.clone(),
+                    parameter_id: "unknown_param".to_string(),
+                },
+                write: StepWritePayload::Step {
+                    value: 1.0,
+                    time: 0.0,
+                },
+            }],
+        };
+        let mut reg_clone = registry.clone();
+        let res = map_batch(&unknown_batch, &mut reg_clone, &samples, 48000.0);
+        assert!(
+            res.is_err(),
+            "WriteDeviceParameter must refuse unknown parameter"
+        );
+        assert!(
+            res.unwrap_err().contains("has no native address"),
+            "refusal must mention missing native address"
         );
     }
 }
