@@ -1,0 +1,43 @@
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_27578aec2aab3b::t_5a98bcf4d548d5 3-4,70-72,128,132-138
+  s_27578aec2aab3b::t_364ec08f3953d0 65,67,396-406,409,411-412
+  s_27578aec2aab3b::t_114f36ba6a5cda 407-408,410
+  s_27578aec2aab3b::t_c5e3be39e93276 413-414
+src/modules/BrowserAi/useCases/supersedeBrowserRender.ts
+  s_27578aec2aab3b::t_5a98bcf4d548d5 1-26,33-41
+  s_27578aec2aab3b::t_7092d136c0f9ad 27-32
+src/modules/BrowserAi/useCases/renderKokoroTts.ts
+  s_27578aec2aab3b::t_5a98bcf4d548d5 41-42,121-122
+  s_27578aec2aab3b::t_968577a0364623 123-128,150
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_5a98bcf4d548d5 30-31,93,106,120-122,128
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_7b256eb9dd2f43 508-509
+  s_27578aec2aab3b::t_5a98bcf4d548d5 12,116
+  s_27578aec2aab3b::t_364ec08f3953d0 16,74,106,111,393-458
+  s_9ee398a1cb51fd::t_e9048b82c63a7e 459
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d9df1732f99e0253320738e701be7cd4848bd9bc",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9ee398a1cb51fd": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4c0ce72c-856a-45b5-8ed6-9b7600f08d9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
