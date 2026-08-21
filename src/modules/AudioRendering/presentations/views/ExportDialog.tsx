@@ -995,7 +995,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         }
                                     }}
                                     aria-label="Tail seconds"
-                                    className="w-20 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1 text-xs text-stone-200 disabled:opacity-40"
+                                    className="h-auto w-20 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1 text-xs text-stone-200 disabled:opacity-40"
                                 />
                                 <span className="text-[10px] text-stone-500">seconds</span>
                             </Row>
