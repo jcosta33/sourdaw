@@ -1,0 +1,19 @@
+tests/e2e/toasterTextureCharacterTestId.spec.ts
+  s_24b1bdbc3c31ad::t_789303ab2aaf90 3,5,10,13-17,19-20,22,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e9cee2917305d4e740213296b732d556fad72489",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
