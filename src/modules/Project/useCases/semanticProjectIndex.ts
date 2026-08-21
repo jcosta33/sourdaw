@@ -318,13 +318,13 @@ function buildHistoryEntities(): SemanticIndexEntity[] {
 
 function buildBriefEntities(): SemanticIndexEntity[] {
     const project = projectStore.value;
-    if (!project) {
+    if (!project?.projectId) {
         return [];
     }
     const brief = project.productionBrief;
     return [
         {
-            ...emptyEntity({ id: String(project.createdAt), kind: 'project-metadata' }),
+            ...emptyEntity({ id: project.projectId, kind: 'project-metadata' }),
             name: project.name,
             createdAt: project.createdAt,
             keyRoot: project.keyRoot,
@@ -511,6 +511,7 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
     const brief = refreshPartition(
         'brief',
         [
+            projectState?.projectId,
             projectState?.name,
             projectState?.createdAt,
             projectState?.keyRoot,

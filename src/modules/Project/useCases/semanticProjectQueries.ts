@@ -269,7 +269,7 @@ function createProjectSummary(snapshot: SemanticProjectIndexSnapshot, warnings: 
         pushWarning(warnings, warning);
     }
     return {
-        id: String(project?.createdAt ?? 0),
+        id: getSemanticProjectId(),
         kind: 'project-summary',
         name: project?.name ?? 'Untitled Project',
         revision: snapshot.revision,
@@ -305,6 +305,14 @@ function createProjectSummary(snapshot: SemanticProjectIndexSnapshot, warnings: 
         ),
         warnings: [...warnings],
     };
+}
+
+function getSemanticProjectId(): string {
+    const projectId = projectStore.value?.projectId;
+    if (!projectId) {
+        throw new Error('Semantic query requires a canonical project identity');
+    }
+    return projectId;
 }
 
 function createSectionItems(
@@ -392,7 +400,7 @@ function rememberSnapshot(snapshot: SemanticProjectIndexSnapshot): void {
 }
 
 function resetRetentionForProject(snapshot: SemanticProjectIndexSnapshot): void {
-    const projectId = String(projectStore.value?.createdAt ?? 0);
+    const projectId = getSemanticProjectId();
     if (retainedProjectId === projectId && retainedDocumentIdentityEpoch === snapshot.revision.documentIdentityEpoch) {
         return;
     }
@@ -620,7 +628,7 @@ export function querySemanticProject(input: SemanticProjectQueryInput): Semantic
     return {
         schema: SEMANTIC_PROJECT_QUERY_SCHEMA,
         schemaVersion: SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION,
-        projectId: String(projectStore.value?.createdAt ?? 0),
+        projectId: getSemanticProjectId(),
         projectSchemaVersion: CURRENT_PROJECT_VERSION,
         revision: boundRevision(snapshot.revision, warnings),
         revisionToken: snapshot.revisionToken,
