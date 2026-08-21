@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { coordinateDelivery } from '../deliverPullRequest.ts';
+import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
     executeTrustedSnapshot,
     runTrustedGithubWriteCommand,
@@ -196,7 +197,7 @@ describe('package scripts and gitignore', () => {
         expect(existsSync(snapshotDirectory)).toBe(false);
     });
 
-    it('wires PR operations and tracker operations to distinct least-privilege sessions', async () => {
+    it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
             minted: { token, login: 'jcosta33-author[bot]', permissions },
@@ -207,7 +208,7 @@ describe('package scripts and gitignore', () => {
             },
         });
         const author = authentication('ghs_author', { contents: 'write', pull_requests: 'write' });
-        const tracker = authentication('ghs_tracker', { pull_requests: 'write' });
+        const tracker = authentication('ghs_tracker', { issues: 'write' });
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
@@ -220,14 +221,9 @@ describe('package scripts and gitignore', () => {
             addDeliveryReceipt: () => expect.fail('delivery domain should be injected in this coordinator test'),
             log: () => undefined,
         };
-        const trackerPort: ReconcileTrackerIssuePort = {
-            withMutationLease: (operation) => operation(),
-            inspect: () => expect.fail('completion should be injected in this coordinator test'),
-            update: () => expect.fail('completion should be injected in this coordinator test'),
-            comment: () => expect.fail('completion should be injected in this coordinator test'),
-            log: () => undefined,
-        };
         const seen: string[] = [];
+        const adapterRequests: Array<{ args: string[]; token: string }> = [];
+        let trackerPort: ReconcileTrackerIssuePort | undefined;
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => '/repo',
             authenticateAuthor: async () => author,
@@ -242,10 +238,28 @@ describe('package scripts and gitignore', () => {
             },
             trackerPort: (session) => {
                 seen.push(`tracker:${session.env.GH_TOKEN ?? ''}`);
+                trackerPort = githubTrackerIssuePort(
+                    (args) => {
+                        adapterRequests.push({ args, token: session.env.GH_TOKEN ?? '' });
+                        if (args.includes('--paginate')) {
+                            return JSON.stringify([[]]);
+                        }
+                        return JSON.stringify({
+                            node_id: 'I_2406',
+                            number: 2406,
+                            repository_url: 'https://api.github.com/repos/jcosta33/sourdaw',
+                            state: 'closed',
+                            state_reason: 'completed',
+                            body: 'unchanged tracker body',
+                        });
+                    },
+                    (operation) => operation()
+                );
                 return trackerPort;
             },
-            completeIssue: (_issue, login, port) => {
+            completeIssue: (issue, login, port) => {
                 expect(port).toBe(trackerPort);
+                port.update(issue, { state: 'CLOSED', stateReason: 'COMPLETED' });
                 seen.push(`complete:${login}`);
             },
             deliver: (_number, port, completion) => {
@@ -257,12 +271,31 @@ describe('package scripts and gitignore', () => {
         await coordinateDelivery(2495, dependencies);
 
         expect(author.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
-        expect(tracker.minted.permissions).toEqual({ pull_requests: 'write' });
+        expect(tracker.minted.permissions).toEqual({ issues: 'write' });
         expect(seen).toEqual([
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
             'complete:jcosta33-author[bot]',
+        ]);
+        expect(adapterRequests).toEqual([
+            {
+                args: [
+                    'api',
+                    '--method',
+                    'PATCH',
+                    'repos/jcosta33/sourdaw/issues/2406',
+                    '-f',
+                    'state=closed',
+                    '-f',
+                    'state_reason=completed',
+                ],
+                token: 'ghs_tracker',
+            },
+            {
+                args: ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/issues/2406/comments?per_page=100'],
+                token: 'ghs_tracker',
+            },
         ]);
         expect(disposed).toEqual(['ghs_tracker', 'ghs_author']);
     });
