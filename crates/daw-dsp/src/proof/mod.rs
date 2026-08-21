@@ -28,6 +28,33 @@ use wasm_bindgen::prelude::*;
 const NUM_MODULES: usize = 5;
 const NUM_TAPS: usize = 6;
 
+/// Bring a wire parameter value into `[min, max]`, answering `fallback` when it
+/// is not finite.
+///
+/// The fallback branch is the whole point. `f32::clamp` returns NaN for a NaN
+/// input — it only panics on a NaN *bound* — so clamping alone hands the
+/// arithmetic downstream a NaN, and every Proof parameter is stored rather than
+/// recomputed per block. One NaN therefore poisons the device for its whole
+/// life, with no recovery short of another message, and each setter poisons it
+/// differently: a NaN release coefficient drives `current_gain` to NaN and
+/// silences the output while the gain-reduction meter still reads zero, a NaN
+/// ceiling makes `future_peak > ceiling` false forever so the limiter quietly
+/// stops limiting, and a NaN trim silences the chain through `powf`.
+///
+/// `±inf` needs no special case: it is ordered, so `clamp` maps it to the
+/// nearer bound, which is the answer the caller wants.
+///
+/// Every Proof setter that owns a range routes through here, so the NaN
+/// handling cannot be right in one of them and forgotten in the next.
+#[inline]
+pub(crate) fn clamped_param(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
+    if value.is_nan() {
+        fallback
+    } else {
+        value.clamp(min, max)
+    }
+}
+
 /// WASM-exported Proof mastering suite instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct ProofInstance {

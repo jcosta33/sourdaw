@@ -3,6 +3,7 @@
 //! Default order: EQ → Multiband Dynamics → Stereo Imager → Exciter → Limiter
 //! Each stage has an inline MeterTap after it for signal visualization.
 
+use super::clamped_param;
 use super::dither::Ditherer;
 use super::dynamic_eq::DynamicEq;
 use super::eq::MasteringEq;
@@ -36,20 +37,23 @@ const NUM_TAPS: usize = NUM_MODULES + 1;
 pub(super) const MIN_CHAIN_GAIN_DB: f32 = -24.0;
 pub(super) const MAX_CHAIN_GAIN_DB: f32 = 24.0;
 
+/// Unity trim, in dB — the fallback for a value that is not finite.
+pub(super) const DEFAULT_CHAIN_GAIN_DB: f32 = 0.0;
+
 /// Linear gain for a dB trim, clamped to the declared range.
 ///
 /// Unclamped, `10^(value / 20)` answers `inf` for any value past ~+38 dB, and
 /// the poisoned gain then multiplies every later sample: one malformed control
 /// message took the chain out permanently, since nothing recomputes the factor
-/// until the next message arrives. NaN is answered with unity rather than
-/// clamped, because `f32::clamp` returns NaN for a NaN input and `powf` would
-/// carry it into the same permanent poisoning.
+/// until the next message arrives. [`clamped_param`] carries the NaN handling
+/// this shares with the limiter's setters.
 pub(super) fn gain_from_db(value: f32) -> f32 {
-    let db = if value.is_nan() {
-        0.0
-    } else {
-        value.clamp(MIN_CHAIN_GAIN_DB, MAX_CHAIN_GAIN_DB)
-    };
+    let db = clamped_param(
+        value,
+        MIN_CHAIN_GAIN_DB,
+        MAX_CHAIN_GAIN_DB,
+        DEFAULT_CHAIN_GAIN_DB,
+    );
     10.0_f32.powf(db / 20.0)
 }
 

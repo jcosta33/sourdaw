@@ -41,15 +41,22 @@ function isRecord(value: unknown): value is UnknownRecord {
 /**
  * True when `value` carries exactly `keys` as own enumerable properties.
  *
- * Deliberately array-free. `Object.keys(value).every(...)` materialized a key
- * array for every inbound record, on the AudioWorklet thread, and enumerated
- * the whole record before judging it — so a malformed message carrying
- * thousands of properties bought proportional enumeration and allocation
- * there, and every accepted control allocated several key arrays per change.
- * `for…in` allocates nothing, and the first unexpected key exits, so any
- * record costs at most `keys.length + 1` iterations however large it is. An
- * inherited enumerable key is rejected rather than skipped, which keeps that
- * bound true against a hostile prototype as well.
+ * `Object.keys(value).every(...)` allocated a fresh key array for every
+ * inbound record, on the AudioWorklet thread — several per accepted control,
+ * since each message is judged by four or five of these calls. `for…in` does
+ * not: the engine keeps the enumeration order on the object's shape and reuses
+ * it, and control traffic is the same handful of shapes over and over, so the
+ * steady-state cost drops to zero arrays per message.
+ *
+ * What this does *not* buy is a constant bound against a hostile record. The
+ * early exit stops the key *comparisons*, but a first-seen shape still has to
+ * be enumerated once before the loop body runs, so a record carrying thousands
+ * of properties still costs proportional work the first time that shape is
+ * seen. Bounding that would mean refusing an oversized record before
+ * enumerating it, which the structured-clone boundary gives no way to do.
+ *
+ * An inherited enumerable key is rejected rather than skipped, so a hostile
+ * prototype cannot smuggle a key past the own-property check.
  */
 function only(value: UnknownRecord, keys: readonly string[]): boolean {
     let matched = 0;
@@ -115,11 +122,22 @@ const AUDIO_FREQ: ParameterRange = [20, 20_000];
 const GAIN_DB: ParameterRange = [-24, 24];
 
 /**
- * Declared inclusive range of every parameter in the live wire namespace,
- * mirroring the clamps the Rust engine applies in `crates/daw-dsp/src/proof/`.
- * Both sides hold the range: the wire boundary rejects an out-of-range value
- * so it never reaches wasm, and the engine clamps so it never trusts a caller
- * that skipped this check.
+ * Declared inclusive range of every parameter in the live wire namespace.
+ *
+ * The source of truth is `PROOF_PATCH_RANGES` in
+ * `src/modules/Proof/models/ProofPatch.ts` — the same table the sliders, the
+ * store, the project validator and the descriptor read. Worklet isolation
+ * forbids importing it here, so this is a transcription, and
+ * `proofProcessor.spec.ts` asserts the two agree bound for
+ * bound; widening one without the other is what that spec exists to catch.
+ * The Rust clamps agree with it wherever both declare a range, but they are
+ * not the reference: `dither.rs` admits `[8, 32]` bits against the `[16, 24]`
+ * the product offers, and the product bound is the one this holds.
+ *
+ * Both sides of the wire hold the range for different jobs. Here it clamps, so
+ * a value outside the range still reaches the engine as the nearest legal one
+ * and store and engine cannot disagree. In Rust it clamps again, so the engine
+ * never trusts a caller that skipped this.
  */
 function buildParameterRanges(): ReadonlyMap<string, ParameterRange> {
     const ranges = new Map<string, ParameterRange>([
@@ -184,43 +202,54 @@ function representableF32(value: unknown): value is number {
 }
 
 /**
- * True when `value` is a representable f32 that also honours `parameterId`'s
- * declared range. The range is checked against the *narrowed* value, because
- * that is the number the engine sees.
+ * True when `value` can be forwarded to the engine for `parameterId`.
  *
- * A parameter with no declared range is rejected, so a namespace entry added
- * without a range fails closed rather than reaching wasm unchecked;
- * `proofProcessor.spec.ts` pins that every live parameter declares one.
+ * Rejection is reserved for what cannot survive the boundary at all — a
+ * non-number, or a number that narrows to `Infinity` or `NaN` in f32. That is
+ * the class that poisons a stored parameter or throws, and it is not a value
+ * the engine could have clamped for us, since it has no ordering to clamp
+ * against.
+ *
+ * An out-of-range *finite* value is not rejected. Dropping it would leave the
+ * engine on its previous value while the store and the panel moved to the new
+ * one, which is exactly the divergence this control path exists to prevent; it
+ * is clamped by [`clampToRange`] instead.
+ *
+ * A parameter with no declared range fails closed, so a namespace entry added
+ * without one cannot reach wasm unchecked;
+ * `proofProcessor.spec.ts` pins that every live parameter
+ * declares one.
  */
-function inParameterRange(parameterId: string, value: unknown): value is number {
-    if (!representableF32(value)) {
-        return false;
-    }
-    const range = PARAMETER_RANGES.get(parameterId);
-    if (range === undefined) {
-        return false;
-    }
-    const narrowed = Math.fround(value);
-    return narrowed >= range[0] && narrowed <= range[1];
+function isForwardableValue(parameterId: string, value: unknown): value is number {
+    return representableF32(value) && PARAMETER_RANGES.get(parameterId) !== undefined;
 }
 
 /**
- * The same check for the legacy `{ type: 'param' }` message, which addresses
- * engine parameters by raw name rather than by the live namespace. A name the
- * namespace does not declare is inert in the engine (`_ => {}` in every Rust
- * `set_param`), so it only has to survive the f32 narrowing; a declared one
- * carries its range here too.
+ * The declared value nearest `value` for `parameterId`.
+ *
+ * An in-range value is returned untouched rather than round-tripped through
+ * `Math.fround`, so an ordinary control carries the number its sender wrote.
+ * Only a value outside the range moves, and it lands exactly on the bound the
+ * engine would have clamped it to — the store keeps its value, the engine
+ * takes the legal one, and nothing silently ignores the message.
+ *
+ * A name with no declared range passes through: the legacy message addresses
+ * engine parameters the live namespace does not model, and an unknown name is
+ * inert in the engine (`_ => {}` in every Rust `set_param`).
  */
-function acceptableLegacyParam(name: string, value: unknown): value is number {
-    if (!representableF32(value)) {
-        return false;
-    }
-    const range = PARAMETER_RANGES.get(name);
+function clampToRange(parameterId: string, value: number): number {
+    const range = PARAMETER_RANGES.get(parameterId);
     if (range === undefined) {
-        return true;
+        return value;
     }
     const narrowed = Math.fround(value);
-    return narrowed >= range[0] && narrowed <= range[1];
+    if (narrowed < range[0]) {
+        return range[0];
+    }
+    if (narrowed > range[1]) {
+        return range[1];
+    }
+    return value;
 }
 
 class ProofProcessor extends AudioWorkletProcessor {
@@ -404,7 +433,7 @@ class ProofProcessor extends AudioWorkletProcessor {
                 !isRecord(msg.target) ||
                 !only(msg.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
                 !isProofRuntimeParameterId(msg.target.parameterId) ||
-                !inParameterRange(msg.target.parameterId, msg.value) ||
+                !isForwardableValue(msg.target.parameterId, msg.value) ||
                 !isRecord(msg.correlation) ||
                 !only(msg.correlation, ['workletGeneration', 'controlSequence']) ||
                 !positive(msg.correlation.workletGeneration) ||
@@ -429,7 +458,7 @@ class ProofProcessor extends AudioWorkletProcessor {
             }
             this._lastFallbackControlSequence = msg.correlation.controlSequence;
             const oldLatency = inst.get_latency_samples();
-            inst.set_param(msg.target.parameterId, msg.value);
+            inst.set_param(msg.target.parameterId, clampToRange(msg.target.parameterId, msg.value));
             const newLatency = inst.get_latency_samples();
             if (newLatency !== oldLatency) {
                 this.port.postMessage({ type: 'latency-changed', latency: newLatency });
@@ -445,10 +474,13 @@ class ProofProcessor extends AudioWorkletProcessor {
                 break;
             case 'param': {
                 // The legacy message reaches the same wasm setter the live
-                // namespace does, so it takes the same f32 and range check.
+                // namespace does, so it takes the same f32 check and the same
+                // clamp. It addresses names the namespace does not model, so
+                // an undeclared one is forwarded rather than refused.
                 const name = msg.name;
-                if (boundedId(name) && acceptableLegacyParam(name, msg.value)) {
-                    inst.set_param(name, msg.value);
+                const value = msg.value;
+                if (boundedId(name) && representableF32(value)) {
+                    inst.set_param(name, clampToRange(name, value));
                 }
                 break;
             }
