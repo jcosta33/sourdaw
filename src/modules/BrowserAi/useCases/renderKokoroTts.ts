@@ -38,6 +38,8 @@ import {
     updateRenderStatus,
 } from '../stores/renderQueueStore';
 
+import { supersedeBrowserRender } from './supersedeBrowserRender';
+
 const FADE_SAMPLES = 441; // 10 ms at 44.1 kHz
 const KOKORO_MODEL_ID = KOKORO_MODEL_ARTIFACT.id;
 const KOKORO_NATIVE_SAMPLE_RATE = 24000;
@@ -116,8 +118,14 @@ type RenderKokoroTtsOutput = Promise<{
     provenance: RenderProvenance;
 }>;
 
-export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedModel, writeRenderCache })(
-    ({ logger, readRenderCache, readVerifiedModel, writeRenderCache }) =>
+export const renderKokoroTts = inject({
+    logger,
+    readRenderCache,
+    readVerifiedModel,
+    supersedeBrowserRender,
+    writeRenderCache,
+})(
+    ({ logger, readRenderCache, readVerifiedModel, supersedeBrowserRender, writeRenderCache }) =>
         async function renderKokoroTts({
             phraseId,
             text,
@@ -139,6 +147,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
             const durationKey =
                 targetDurationSec !== undefined && targetDurationSec > 0 ? `:${String(targetDurationSec)}` : '';
             const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}${durationKey}`).buffer;
+            supersedeBrowserRender({ phraseId, nextRequestId: requestId });
             enqueueRender({ phraseId, requestId, pipeline: 'kokoro', status: 'preparing', queuedAt: Date.now() });
 
             try {
