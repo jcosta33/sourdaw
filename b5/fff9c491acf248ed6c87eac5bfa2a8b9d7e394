@@ -1,0 +1,19 @@
+tests/e2e/fermenterEnvDecayReleaseTestId.spec.ts
+  s_24b1bdbc3c31ad::t_ed2976e2bbc978 3,5,10-11,14-19,21-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "b5fff9c491acf248ed6c87eac5bfa2a8b9d7e394",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
