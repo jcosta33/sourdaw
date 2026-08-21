@@ -585,29 +585,49 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": ["public/wasm/**"],
             "sources": ["crates/daw-dsp/", "crates/daw-wasm-decoder/", "crates/proof-chamber/", "crates/scoring/"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": ["public/wasm/manifest.json"],
-            "licenses": ["pending:OS-10-project-grant", "dependency terms from Cargo.lock"],
+            "revisions": [
+                "rust nightly-2026-04-14",
+                "wasm-pack 0.14.0",
+                "wasm-bindgen 0.2.127",
+                "wasm-opt bundled-by-wasm-pack@0.14.0",
+                "daw-dsp sha256:96097d7fa2755b5784f611be9aad75a09d5b7e276f570b140469ad70968ca250",
+                "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
+                "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
+                "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
+            ],
+            "digests": [
+                "sha256:7de28ba843fa2780b77f635e8d133f26bf3add02ddadf5db6e1d69ab37a8d6fd:public/wasm/manifest.json"
+            ],
+            "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
-            "evidence": ["WASM packages map to workspace Rust sources and carry generated manifests."],
+            "evidence": ["The WASM gate binds every artifact to its crate closure and pinned toolchain."],
             "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
         },
         {
-            "id": "generated-audio-worklets",
-            "kind": "generated-binary",
+            "id": "audio-worklet-sources",
+            "kind": "project-source",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": ["public/audio/worklets/**"],
-            "sources": ["tracked project worklet sources and generators"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": ["pending:OS-07-source-to-output-map"],
+            "paths": [
+                "public/audio/worklets/native-plugin-bridge-processor.js",
+                "public/audio/worklets/sidechain-compressor-processor.js"
+            ],
+            "sources": [
+                "public/audio/worklets/native-plugin-bridge-processor.js",
+                "public/audio/worklets/sidechain-compressor-processor.js"
+            ],
+            "revisions": ["not-applicable:direct-project-source"],
+            "digests": [
+                "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
+                "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
+            ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
-            "evidence": ["Tracked worklet processors are shipped from the public release tree."],
-            "obligations": [
-                "Map every generated processor to its source and carry the project and dependency notices into distributions."
-            ]
+            "evidence": [
+                "Both shipped processors are direct project source; no generator or second source tree exists."
+            ],
+            "obligations": ["Carry the project grant into every distribution."]
         },
         {
             "id": "online-sample-sources",
