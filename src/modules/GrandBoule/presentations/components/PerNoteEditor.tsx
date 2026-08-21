@@ -14,6 +14,7 @@ import { type ReactElement, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import {
     type GrandBoulePerNoteValues,
@@ -59,7 +60,7 @@ export const PerNoteEditor = ({
     return (
         <div className={className}>
             {/* Note selector */}
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <DawCompactSelect
                     size="micro"
                     tone="inset"
@@ -81,7 +82,7 @@ export const PerNoteEditor = ({
                 >
                     Reset
                 </button>
-            </div>
+            </Row>
 
             {/* Parameter knobs — 4×2 grid */}
             <div className="mt-2 grid grid-cols-4 gap-x-2 gap-y-3">
@@ -90,7 +91,7 @@ export const PerNoteEditor = ({
                     const isDefault = value === defaults[descriptor.key];
 
                     return (
-                        <div key={descriptor.key} className="flex flex-col items-center gap-1">
+                        <Stack align="center" gap={1} key={descriptor.key}>
                             <RotaryKnob
                                 value={value}
                                 onChange={(next) => onParamChange(selectedKey, descriptor.key, next)}
@@ -113,7 +114,7 @@ export const PerNoteEditor = ({
                                     {descriptor.unit}
                                 </div>
                             </div>
-                        </div>
+                        </Stack>
                     );
                 })}
             </div>
