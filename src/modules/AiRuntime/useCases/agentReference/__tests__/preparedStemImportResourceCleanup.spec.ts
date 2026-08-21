@@ -90,25 +90,58 @@ describe('prepared stem import resource cleanup', () => {
         expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
     });
 
-    it('protects commit-prepared stems from cancellation cleanup until ownership transfers', async () => {
-        agentRunLifecycle.create({
-            runId: 'stem-protected',
-            request: 'Import stems.',
-            mode: 'plan',
-            createdRevision: 'r1',
-        });
-        preparedStemImportResources.register({ runId: 'stem-protected', stems });
-        preparedStemImportResources.protect({ runId: 'stem-protected', stems });
+    it.each(['discard', 'transfer'] as const)(
+        'retains protected stems after cancellation until explicit %s recovery settles ownership once',
+        async (recovery) => {
+            const runId = `stem-protected-${recovery}`;
+            agentRunLifecycle.create({
+                runId,
+                request: 'Import stems.',
+                mode: 'plan',
+                createdRevision: 'r1',
+            });
+            preparedStemImportResources.register({ runId, stems });
+            preparedStemImportResources.protect({ runId, stems });
 
-        await agentRunCancellation.cancel({ runId: 'stem-protected', reason: 'Abort during post-commit effects.' });
+            await expect(
+                agentRunCancellation.cancel({ runId, reason: 'Abort during post-commit effects.' })
+            ).resolves.toMatchObject({
+                status: 'cancelled',
+                cleanupPendingAssetIds: ['decoded-buffer-1'],
+                releasedAssetIds: [],
+            });
 
-        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
-        expect(agentRunLifecycle.get('stem-protected')?.temporaryAssets).toEqual([
-            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'released' }),
-        ]);
+            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
+                expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
+            ]);
+            await expect(deleteAgentRunArtifacts(runId)).resolves.toEqual({
+                status: 'partial',
+                deletedAssetIds: [],
+                failedAssetIds: ['decoded-buffer-1'],
+            });
+            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
 
-        preparedStemImportResources.release({ runId: 'stem-protected', stems });
-        expect(agentRunLifecycle.get('stem-protected')?.temporaryAssets).toEqual([]);
-    });
+            if (recovery === 'discard') {
+                await preparedStemImportResources.discard({ runId, stems });
+                expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+                expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
+            } else {
+                preparedStemImportResources.release({ runId, stems });
+                expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+                expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+            }
+
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+            await expect(deleteAgentRunArtifacts(runId)).resolves.toEqual({
+                status: 'completed',
+                deletedAssetIds: [],
+                failedAssetIds: [],
+            });
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(recovery === 'discard' ? 1 : 0);
+            expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(recovery === 'discard' ? 1 : 0);
+        }
+    );
 });

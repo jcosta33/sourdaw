@@ -34,7 +34,7 @@ function registerPreparedStemImportResources(input: {
             cleanupOwner: CLEANUP_OWNER,
             cleanup: () => {
                 if (registrations.get(registrationKey)?.protected) {
-                    return;
+                    throw new Error('Prepared stem cleanup is deferred until command commit truth is reconciled.');
                 }
                 discardPreparedStemImportResources([stem]);
             },
