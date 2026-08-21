@@ -35,6 +35,18 @@ that exact compiler commit produced the binary.
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
 [RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
 
+## DDSP WebGPU runtime
+
+The release-withheld DDSP worker uses TensorFlow.js 4.22.0 with its WebGPU backend. Its runtime
+closure contains TensorFlow.js Core, Converter, WebGPU, CPU shared helpers, long, and seedrandom.
+The CPU backend is not registered and is not a fallback. The worker also adapts Magenta.js's
+Apache-2.0 GraphModel Roll operation.
+
+See [TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt),
+[Magenta.js-NOTICE.txt](./Magenta.js-NOTICE.txt), [Apache-2.0.txt](./Apache-2.0.txt), and
+[seedrandom-MIT.txt](./seedrandom-MIT.txt). These runtime notices do not grant or characterize the
+separately downloaded DDSP checkpoint artifacts; the product admission gate remains closed.
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).
