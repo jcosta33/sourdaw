@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_LOGIN,
+    TRACKER_AUTHOR_MINT_PERMISSIONS,
     isAuthorBotLogin,
     AUTHOR_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
@@ -16,6 +17,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    authenticateTrackerAuthor,
     createGhSession,
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
@@ -368,6 +370,64 @@ describe('installation mint', () => {
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
         expect(requests[0]?.body).not.toContain('administration');
         expect(requests[0]?.body).not.toContain('workflows');
+    });
+
+    it('requests only issues write for tracker maintenance', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write' },
+        });
+        await mintInstallationToken({
+            appId: '4650613',
+            installationId: '1',
+            privateKey: pem,
+            permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
+            expectedLogin: AUTHOR_BOT_LOGIN,
+            request,
+        });
+        expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
+        expect(requests[0]?.body).not.toContain('contents');
+        expect(requests[0]?.body).not.toContain('pull_requests');
+    });
+
+    it('creates an isolated issues-only tracker author session', async () => {
+        const parent: NodeJS.ProcessEnv = { PATH: '/usr/bin', GH_TOKEN: 'inherited' };
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write' },
+            token: 'ghs_tracker',
+        });
+        const auth = await authenticateTrackerAuthor({
+            primaryRoot: '/repo',
+            readFile: files(),
+            request,
+            env: parent,
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
+            expect(auth.session.env.GH_TOKEN).toBe('ghs_tracker');
+            expect(parent.GH_TOKEN).toBeUndefined();
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it('refuses extra write grants on a tracker maintenance token', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write', contents: 'write' },
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '4650613',
+                installationId: '1',
+                privateKey: pem,
+                permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
+                expectedLogin: AUTHOR_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/contents: write/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
     it('refuses a minted login that is not the expected bot', async () => {
