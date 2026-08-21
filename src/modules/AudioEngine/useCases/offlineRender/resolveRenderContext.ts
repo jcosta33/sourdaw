@@ -18,6 +18,7 @@ import {
 import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
+    type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import {
     offlineYeastMidiProcessorState,
@@ -41,6 +42,8 @@ export type OfflineRenderContext = {
     selectMidiEventProbability: OfflineMidiProbabilitySelector | null;
     projectChordPitch: OfflineChordPitchProjector | null;
     projectPpqEndpoints: OfflinePpqEndpointProjector | null;
+    /** Flat tempo at a beat — what a buffer-content offset converts through. */
+    resolveTempoAtBeat: OfflineTempoAtBeatResolver | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId?: OfflineMidiArticulationResolver | null;
@@ -98,6 +101,7 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         selectMidiEventProbability: offlineMidiEventProjectorState.selectProbability,
         projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
         projectPpqEndpoints,
+        resolveTempoAtBeat: offlinePpqEndpointProjectorState.resolveTempoAtBeat,
         processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
         evaluateAutomationValue: offlineMidiEventProjectorState.evaluateAutomationValue,
         resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,

@@ -139,6 +139,7 @@ import {
     projectPpqEndpoints,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+    resolveTempoAtBeat,
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
     stopPlayback,
@@ -226,7 +227,7 @@ configureOfflineDeviceParameterLaw({
     clampValue: clampDeviceParameterValue,
     quantiseValue: quantiseDeviceParameterValue,
 });
-configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
+configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
 setOfflineRenderDependencies({
     projectPpqEndpoints,

@@ -333,6 +333,7 @@ describe('frozen print / replay mixer parity', () => {
         const { configureOfflinePpqEndpointProjection } = await import('../../configureOfflinePpqEndpointProjection');
         const { configureOfflineYeastMidiProcessing } = await import('../../configureOfflineYeastMidiProcessing');
         configureOfflinePpqEndpointProjection({
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             project: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
                 const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
                 const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);

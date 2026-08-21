@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
-import { projectPpqEndpoints as projectTempoPpqEndpoints } from '#/modules/Transport/useCases';
+import { projectPpqEndpoints as projectTempoPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
 import { MICRO_FADE_SECONDS } from '../constants';
 import { scheduleTrackClips } from '../scheduleTrackClips';
@@ -268,6 +268,10 @@ async function run({
         projections: {
             projectMidiEvents,
             projectPpqEndpoints: projector,
+            // Transport's own function, not a replica: a clip's source-content
+            // offset must convert through the very rate the live scheduler
+            // resolves, so the two cannot drift apart.
+            resolveTempoAtBeat,
             processYeastMidi: null,
             selectMidiEventProbability: () => true,
             projectChordPitch: ({ pitch }) => pitch,
@@ -845,5 +849,147 @@ describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
 
         // One comp segment (1..3) plus two gaps (0..1, 3..4) → 3 sources.
         expect(sources).toHaveLength(3);
+    });
+
+    it('honours audioOffsetBeats on split or slipped audio clips', async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const buf = makeBuffer(10);
+        mocks.audioBufferCache.get.mockReturnValue(buf);
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 0,
+                    endBeat: 4, // 2.0s at 120bpm
+                    audioOffsetBeats: 2, // 1.0s offset into buffer
+                }),
+            ],
+        });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(1);
+        // start(when = 0, offset = 1.0, duration = 2.0)
+        expect(sources[0]?.start).toHaveBeenCalledWith(0, 1, 2);
+    });
+
+    it('enters a time-stretched clip at the unscaled source offset, as the transport does', async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 0,
+                    endBeat: 4, // 2.0s at 120bpm
+                    audioOffsetBeats: 2, // 1.0s into the file, whatever the rate
+                    stretchMode: 'repitch',
+                    stretchRatio: 2,
+                }),
+            ],
+        });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(1);
+        // `scheduleAudioClips` calls `start(when, clipAudioOffsetSeconds,
+        // playDuration * stretchRatio)`: the ratio scales the *span*, never the
+        // entry point, and both waveform renderers draw the same entry point.
+        // Scaling the offset too would read from 2.0s — a full second of
+        // material the musician never heard.
+        expect(sources[0]?.start).toHaveBeenCalledWith(0, 1, 4);
+    });
+
+    it('seeks on the flat tempo at the clip start, not the integrated map across the offset span', async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+
+        // 120 BPM to beat 1, then 240. The offset span (beats 0..2) straddles
+        // the change, so integrating it and taking the flat rate disagree.
+        const changes = [
+            { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' as const },
+            { id: 'tempo-b', beat: 1, tempo: 240, curve: 'instant' as const },
+        ];
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 0,
+                    endBeat: 2, // 0.5s + 0.25s = 0.75s on the timeline
+                    audioOffsetBeats: 2,
+                }),
+            ],
+        });
+
+        await run({ track, ctx, changes, projector: projectTempoPpqEndpoints });
+
+        expect(sources).toHaveLength(1);
+        // The material was recorded at one rate: 2 beats at the clip's own
+        // 120 BPM is 1.0s into the file, which is where the monitor seeks.
+        // Integrating the map would seek 0.75s in and land every transient
+        // 250 ms early — but only in the exported file.
+        expect(sources[0]?.start).toHaveBeenCalledWith(0, 1, 0.75);
+    });
+
+    it("seeks at the clip start beat's own tempo, not the project default", async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+
+        // The case the test above cannot see: this clip sits *after* a tempo
+        // change, so the flat tempo governing it (240) and the project default
+        // (120) disagree. Every clip starting at beat 0 reads the same number
+        // either way, which would let the whole resolver — the projector slot,
+        // the barrel export and the bootstrap registration behind it — be
+        // deleted with the suite still green.
+        const changes = [
+            { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' as const },
+            { id: 'tempo-b', beat: 4, tempo: 240, curve: 'instant' as const },
+        ];
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 4, // 2.0s in: four beats at 120
+                    endBeat: 6, // two beats at 240 is 0.5s of timeline
+                    audioOffsetBeats: 2,
+                }),
+            ],
+        });
+
+        await run({ track, ctx, changes, projector: projectTempoPpqEndpoints });
+
+        expect(sources).toHaveLength(1);
+        // 2 beats at the clip's own 240 BPM is 0.5s into the file. Resolving at
+        // the project default instead would seek 1.0s in — half a second of the
+        // wrong material, in the bounced file and nowhere else.
+        expect(sources[0]?.start).toHaveBeenCalledWith(2, 0.5, 0.5);
+    });
+
+    it('opens silence for a negative audioOffsetBeats and enters the source at 0', async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 0,
+                    endBeat: 4, // 2.0s at 120bpm
+                    // Reachable: slipping content right and dragging the left
+                    // edge leftward both write this unfloored.
+                    audioOffsetBeats: -1, // 0.5s before the head of the file
+                }),
+            ],
+        });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(1);
+        // The convention Live and Cubase follow: nothing sounds until the
+        // source reaches sample 0, and the clip's tail stays where it is.
+        // Clamping the offset to 0 instead would sound 0.5s of material the
+        // clip's head does not name. `scheduleAudioClips` applies the same
+        // pre-roll, and its own spec pins it, so this is parity rather than a
+        // rule the export invented for itself.
+        expect(sources[0]?.start).toHaveBeenCalledWith(0.5, 0, 1.5);
     });
 });
