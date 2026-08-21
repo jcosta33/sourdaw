@@ -106,5 +106,5 @@ self.onmessage = (event: MessageEvent<WorkerRequest>): void => {
 };
 
 self.onmessageerror = (): void => {
-    runtime.dispose();
+    void runtime.dispose();
 };

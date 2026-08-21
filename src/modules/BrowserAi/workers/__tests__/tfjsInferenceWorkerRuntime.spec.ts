@@ -129,20 +129,24 @@ function artifacts(
     ];
 }
 
-function createSessionRequest(requestId: string, requestArtifacts = artifacts()): WorkerRequest {
+function createSessionRequest(
+    requestId: string,
+    requestArtifacts = artifacts(),
+    modelId = 'ddsp-violin:v1'
+): WorkerRequest {
     return {
         type: 'create-session-from-model-storage',
         requestId,
-        modelId: 'ddsp-violin:v1',
+        modelId,
         artifacts: requestArtifacts,
     };
 }
 
-function inferenceRequest(requestId: string, frameCount: number): WorkerRequest {
+function inferenceRequest(requestId: string, frameCount: number, modelId = 'ddsp-violin:v1'): WorkerRequest {
     return {
         type: 'run-ddsp-inference',
         requestId,
-        modelId: 'ddsp-violin:v1',
+        modelId,
         pitchHz: Float32Array.from({ length: frameCount }, (_, index) => 100 + index),
         loudnessDb: Float32Array.from({ length: frameCount }, (_, index) => -60 + index / 100),
         frameRate: 250,
@@ -230,9 +234,9 @@ async function predictConditionedFeatures(
 
 const runtimes: Runtime[] = [];
 
-afterEach(() => {
+afterEach(async () => {
     for (const runtime of runtimes.splice(0)) {
-        runtime.dispose();
+        await runtime.dispose();
     }
     vi.useRealTimers();
 });
@@ -428,7 +432,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
 
         expect(harness.model.dispose).toHaveBeenCalledOnce();
         expect(harness.responses).toEqual([]);
-        harness.runtime.dispose();
+        await harness.runtime.dispose();
         expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
@@ -448,7 +452,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
             error: expect.stringContaining('wasm'),
         });
         expect(harness.model.dispose).toHaveBeenCalledOnce();
-        harness.runtime.dispose();
+        await harness.runtime.dispose();
         expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
@@ -474,6 +478,127 @@ describe('tfjsInferenceWorkerRuntime', () => {
         await idle.runtime.handleRequest(createSessionRequest('idle-load'));
         await vi.advanceTimersByTimeAsync(1_000);
         expect(idle.model.dispose).toHaveBeenCalledOnce();
+    });
+
+    it('should drain every cancelled same-model inference before releasing and acknowledging the session', async () => {
+        const firstData = deferred<Float32Array>();
+        const secondData = deferred<Float32Array>();
+        const firstOutput = fakeTensor(new Float32Array(80_000), firstData.promise);
+        const secondOutput = fakeTensor(new Float32Array(80_000), secondData.promise);
+        const harness = createHarness({
+            predict: vi.fn().mockReturnValueOnce(firstOutput).mockReturnValueOnce(secondOutput),
+        });
+        await harness.runtime.handleRequest(createSessionRequest('load'));
+
+        const first = harness.runtime.handleRequest(inferenceRequest('infer-a', 125));
+        const second = harness.runtime.handleRequest(inferenceRequest('infer-b', 125));
+        await vi.waitFor(() => expect(harness.model.predict).toHaveBeenCalledTimes(2));
+        await harness.runtime.handleRequest({ type: 'cancel-request', requestId: 'infer-a' });
+        await harness.runtime.handleRequest({ type: 'cancel-request', requestId: 'infer-b' });
+        const release = harness.runtime.handleRequest({
+            type: 'release-session',
+            requestId: 'release-after-cancel',
+            modelId: 'ddsp-violin:v1',
+        });
+        await Promise.resolve();
+
+        expect(harness.model.dispose).not.toHaveBeenCalled();
+        expect(firstOutput.dispose).not.toHaveBeenCalled();
+        expect(secondOutput.dispose).not.toHaveBeenCalled();
+        expect(harness.responses).not.toContainEqual(expect.objectContaining({ type: 'session-released' }));
+
+        firstData.resolve(new Float32Array(80_000));
+        await first;
+        await Promise.resolve();
+        expect(firstOutput.dispose).toHaveBeenCalledOnce();
+        expect(harness.model.dispose).not.toHaveBeenCalled();
+        expect(harness.responses).not.toContainEqual(expect.objectContaining({ type: 'session-released' }));
+
+        secondData.resolve(new Float32Array(80_000));
+        await Promise.all([second, release]);
+
+        expect(secondOutput.dispose).toHaveBeenCalledOnce();
+        for (const tensor of harness.tensor1d.mock.results.map((entry) => entry.value as FakeTensor)) {
+            expect(tensor.dispose).toHaveBeenCalledOnce();
+        }
+        expect(harness.model.dispose).toHaveBeenCalledOnce();
+        expect(harness.responses.at(-1)).toEqual({
+            type: 'session-released',
+            requestId: 'release-after-cancel',
+            modelId: 'ddsp-violin:v1',
+        });
+    });
+
+    it('should release one model after its drain without cancelling other-model work', async () => {
+        const violinData = deferred<Float32Array>();
+        const trumpetData = deferred<Float32Array>();
+        const violinModel: FakeModel = {
+            predict: vi.fn(() => fakeTensor(new Float32Array(80_000), violinData.promise)),
+            dispose: vi.fn(),
+        };
+        const trumpetModel: FakeModel = {
+            predict: vi.fn(() => fakeTensor(new Float32Array(80_000), trumpetData.promise)),
+            dispose: vi.fn(),
+        };
+        const harness = createHarness({
+            loadGraphModel: vi
+                .fn<TfjsWorkerRuntime['loadGraphModel']>()
+                .mockImplementationOnce(async (handler) => {
+                    await handler.load();
+                    return violinModel;
+                })
+                .mockImplementationOnce(async (handler) => {
+                    await handler.load();
+                    return trumpetModel;
+                }),
+        });
+        await harness.runtime.handleRequest(createSessionRequest('load-violin'));
+        await harness.runtime.handleRequest(createSessionRequest('load-trumpet', artifacts(), 'ddsp-trumpet:v1'));
+
+        const violin = harness.runtime.handleRequest(inferenceRequest('infer-violin', 125));
+        const trumpet = harness.runtime.handleRequest(inferenceRequest('infer-trumpet', 125, 'ddsp-trumpet:v1'));
+        await vi.waitFor(() => {
+            expect(violinModel.predict).toHaveBeenCalledOnce();
+            expect(trumpetModel.predict).toHaveBeenCalledOnce();
+        });
+        const releaseViolin = harness.runtime.handleRequest({
+            type: 'release-session',
+            requestId: 'release-violin',
+            modelId: 'ddsp-violin:v1',
+        });
+        violinData.resolve(new Float32Array(80_000));
+        await Promise.all([violin, releaseViolin]);
+
+        expect(violinModel.dispose).toHaveBeenCalledOnce();
+        expect(trumpetModel.dispose).not.toHaveBeenCalled();
+        expect(harness.responses).not.toContainEqual(expect.objectContaining({ requestId: 'infer-trumpet' }));
+
+        trumpetData.resolve(new Float32Array(80_000));
+        await trumpet;
+        expect(harness.responses).toContainEqual(
+            expect.objectContaining({ type: 'ddsp-result', requestId: 'infer-trumpet' })
+        );
+        expect(trumpetModel.dispose).not.toHaveBeenCalled();
+    });
+
+    it('should drain unread output data before dispose-worker tears down the model', async () => {
+        const outputData = deferred<Float32Array>();
+        const output = fakeTensor(new Float32Array(80_000), outputData.promise);
+        const harness = createHarness({ predict: vi.fn(() => output) });
+        await harness.runtime.handleRequest(createSessionRequest('load'));
+        const inference = harness.runtime.handleRequest(inferenceRequest('infer-before-dispose', 125));
+        await vi.waitFor(() => expect(harness.model.predict).toHaveBeenCalledOnce());
+
+        const dispose = harness.runtime.handleRequest({ type: 'dispose-worker' });
+        await Promise.resolve();
+        expect(harness.model.dispose).not.toHaveBeenCalled();
+        expect(output.dispose).not.toHaveBeenCalled();
+
+        outputData.resolve(new Float32Array(80_000));
+        await Promise.all([inference, dispose]);
+
+        expect(output.dispose).toHaveBeenCalledOnce();
+        expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
     it('should schedule idle disposal after inference failure', async () => {
@@ -609,7 +734,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         const teardownPorts = artifacts({ 'model.json': artifactPort(MODEL_JSON, 'pending') });
         const pending = teardown.runtime.handleRequest(createSessionRequest('teardown', teardownPorts));
         await vi.waitFor(() => expect(teardownPorts[0]?.modelDataPort.start).toHaveBeenCalledOnce());
-        teardown.runtime.dispose();
+        await teardown.runtime.dispose();
         await pending;
         for (const artifact of teardownPorts) {
             expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();

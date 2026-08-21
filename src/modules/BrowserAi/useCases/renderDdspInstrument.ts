@@ -16,7 +16,8 @@ import { clearActiveRender, startActiveRender } from '../stores/inferenceProgres
 import { cancelQueuedRender, enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441;
-const DDSP_RENDER_CACHE_REVISION = 'conditioned-v1';
+const DDSP_OUTPUT_SAMPLE_RATE = 44_100;
+const DDSP_RENDER_CACHE_REVISION = 'conditioned-v2';
 
 type RenderDdspInstrumentInput = {
     phraseId: string;
@@ -40,6 +41,26 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function exactTargetSamples(durationSec: number): number {
+    if (!Number.isFinite(durationSec) || durationSec <= 0) {
+        throw new TypeError('DDSP render duration must be positive and finite');
+    }
+    const targetSamples = Math.round(durationSec * DDSP_OUTPUT_SAMPLE_RATE);
+    if (!Number.isSafeInteger(targetSamples) || targetSamples <= 0) {
+        throw new RangeError('DDSP render duration must produce a positive safe sample count');
+    }
+    return targetSamples;
+}
+
+function fitExactLength(audio: Float32Array, targetSamples: number): Float32Array {
+    if (audio.length === targetSamples) {
+        return audio;
+    }
+    const exact = new Float32Array(targetSamples);
+    exact.set(audio.subarray(0, targetSamples));
+    return exact;
 }
 
 export const renderDdspInstrument = inject({
@@ -71,6 +92,7 @@ export const renderDdspInstrument = inject({
             if (!MODEL_RELEASE_ADMISSION.ddsp) {
                 throw new Error('DDSP model artifacts are not admitted in this release');
             }
+            const targetSamples44k = exactTargetSamples(durationSec);
             throwIfAborted(signal);
             const requestId = crypto.randomUUID();
             const modelId = `${instrument.id}:${instrument.artifactVersion}`;
@@ -96,10 +118,16 @@ export const renderDdspInstrument = inject({
                     const cacheKey = await computeRenderCacheKey({
                         modelId,
                         inputData,
-                        qualityParams: `ddsp-${DDSP_RENDER_CACHE_REVISION}-${String(nFrames)}`,
+                        qualityParams: `ddsp-${DDSP_RENDER_CACHE_REVISION}-${String(nFrames)}-samples44100-${String(targetSamples44k)}`,
                     });
                     throwIfAborted(signal);
-                    const cached = await readRenderCache({ cacheKey });
+                    const cachedCandidate = await readRenderCache({ cacheKey });
+                    const cached = cachedCandidate?.length === targetSamples44k ? cachedCandidate : null;
+                    if (cachedCandidate !== null && cached === null) {
+                        logger.warn(
+                            `[BrowserAi] Ignoring DDSP cache with wrong duration: ${String(cachedCandidate.length)} != ${String(targetSamples44k)}`
+                        );
+                    }
                     throwIfAborted(signal);
                     startActiveRender({
                         requestId,
@@ -129,7 +157,7 @@ export const renderDdspInstrument = inject({
                         return {
                             audio: cached,
                             backend,
-                            sampleRate: 44_100,
+                            sampleRate: DDSP_OUTPUT_SAMPLE_RATE,
                             provenance: {
                                 modelId: instrument.id,
                                 renderQuality: 'standard',
@@ -156,11 +184,12 @@ export const renderDdspInstrument = inject({
                     if (result.audio.length === 0) {
                         throw new Error('DDSP inference produced no audio');
                     }
-                    const audio = await resampleTo44100({
+                    const resampled = await resampleTo44100({
                         audio: result.audio,
                         fromSampleRate: result.nativeSampleRate,
                     });
                     throwIfAborted(signal);
+                    const audio = fitExactLength(resampled, targetSamples44k);
                     limitPeak(audio);
                     applyFades(audio, FADE_SAMPLES);
                     await writeRenderCache({ cacheKey, audio });
@@ -169,7 +198,7 @@ export const renderDdspInstrument = inject({
                     return {
                         audio,
                         backend: result.backend,
-                        sampleRate: 44_100,
+                        sampleRate: DDSP_OUTPUT_SAMPLE_RATE,
                         provenance: {
                             modelId: instrument.id,
                             renderQuality: 'standard',

@@ -100,7 +100,7 @@ test('Electron renderer recreates the WebGPU DDSP worker offline from OPFS', asy
                 .route('https://storage.googleapis.com/magentadata/**', (route) => route.abort('blockedbyclient'));
 
             const rendered = await page.evaluate(() => window.__SOURDAW_DDSP_PROBE__!.renderOffline());
-            expect(rendered).toMatchObject({ backend: 'webgpu', pcmLength: 22_050, finite: true });
+            expect(rendered).toMatchObject({ backend: 'webgpu', pcmLength: 22_054, finite: true });
             expectConditionedAudioSignature(rendered.signature);
         },
         shutdown: async (app) => {

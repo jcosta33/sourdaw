@@ -29,11 +29,11 @@ function deferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred, reject: rejectDeferred };
 }
 
-function result(sample = 0.25) {
+function result(sample = 0.25, sampleCount = 1_000) {
     return {
         type: 'ddsp-result' as const,
         requestId: 'worker-request',
-        audio: new Float32Array(1_000).fill(sample),
+        audio: new Float32Array(sampleCount).fill(sample),
         nativeSampleRate: 44_100,
         backend: 'webgpu' as const,
     };
@@ -120,7 +120,7 @@ describe('renderDdspInstrument request ownership', () => {
             undefined
         );
         expect(computeRenderCacheKey).toHaveBeenCalledWith(
-            expect.objectContaining({ modelId, qualityParams: 'ddsp-conditioned-v1-250' })
+            expect.objectContaining({ modelId, qualityParams: 'ddsp-conditioned-v2-250-samples44100-44100' })
         );
         expect(rendered.audio[500]).toBeCloseTo(0.25, 6);
         expectAdmittedDdspProvenance(rendered);
@@ -170,7 +170,7 @@ describe('renderDdspInstrument request ownership', () => {
     });
 
     it('should confirm the runtime backend before returning cached audio', async () => {
-        const cached = new Float32Array([0.1, 0.2]);
+        const cached = new Float32Array(44_100).fill(0.1);
         readRenderCache.mockResolvedValueOnce(cached);
 
         const rendered = await launch(60);
@@ -180,6 +180,75 @@ describe('renderDdspInstrument request ownership', () => {
         expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledOnce();
         expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
     });
+
+    it('should keep exact requested sample duration in cache identity and live output inside one feature-frame bucket', async () => {
+        computeRenderCacheKey.mockImplementation(async ({ qualityParams }: { qualityParams: string }) => qualityParams);
+        inferenceWorkerBridge.runDdspInference.mockResolvedValue(result(0.25, 30_000));
+        const renderAt = (phraseId: string, durationSec: number) =>
+            renderDdspInstrument({
+                phraseId,
+                instrumentId: 'ddsp-violin',
+                durationSec,
+                notes: [{ pitch: 60, velocity: 100, startSec: 0, durationSec: 0.1 }],
+            });
+
+        const first = await renderAt('duration-a', 0.5001);
+        const second = await renderAt('duration-b', 0.5039);
+
+        expect(first.audio).toHaveLength(22_054);
+        expect(second.audio).toHaveLength(22_222);
+        expect(computeRenderCacheKey).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ qualityParams: 'ddsp-conditioned-v2-126-samples44100-22054' })
+        );
+        expect(computeRenderCacheKey).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ qualityParams: 'ddsp-conditioned-v2-126-samples44100-22222' })
+        );
+        expect(computeRenderCacheKey.mock.calls[0]?.[0].inputData).toEqual(
+            computeRenderCacheKey.mock.calls[1]?.[0].inputData
+        );
+        expect(first.audio[22_054 - 442]).toBeCloseTo(0.25, 6);
+        expect(first.audio.at(-1)).toBe(0);
+        expectAdmittedDdspProvenance(first);
+        expectAdmittedDdspProvenance(second);
+    });
+
+    it('should reject a cached buffer with the wrong exact duration and replace it with exact live output', async () => {
+        const stale = new Float32Array(22_050).fill(0.1);
+        readRenderCache.mockResolvedValueOnce(stale);
+        inferenceWorkerBridge.runDdspInference.mockResolvedValueOnce(result(0.25, 30_000));
+
+        const rendered = await renderDdspInstrument({
+            phraseId: 'cached-duration',
+            instrumentId: 'ddsp-violin',
+            durationSec: 0.5001,
+            notes: [{ pitch: 60, velocity: 100, startSec: 0, durationSec: 0.1 }],
+        });
+
+        expect(rendered.audio).toHaveLength(22_054);
+        expect(rendered.audio).not.toBe(stale);
+        expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledOnce();
+        expect(writeRenderCache).toHaveBeenCalledWith({ cacheKey: 'cache-key', audio: rendered.audio });
+        expectAdmittedDdspProvenance(rendered);
+    });
+
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+        'should reject a non-positive or non-finite duration before queue and worker mutation: %s',
+        async (durationSec) => {
+            await expect(
+                renderDdspInstrument({
+                    phraseId: 'invalid-duration',
+                    instrumentId: 'ddsp-violin',
+                    durationSec,
+                    notes: [],
+                })
+            ).rejects.toThrow(/duration/u);
+
+            expect(inferenceWorkerBridge.loadDdspSession).not.toHaveBeenCalled();
+            expect(renderQueueStore.value?.entries).toEqual([]);
+        }
+    );
 
     it('should refuse a render if the runtime backend changes after session creation', async () => {
         inferenceWorkerBridge.runDdspInference.mockResolvedValue({ ...result(), backend: 'wasm' });

@@ -46,6 +46,13 @@ type SessionLoad = {
     subscribers: Set<string>;
 };
 
+type ActiveRequest = {
+    controller: AbortController;
+    modelId: string;
+    settled: Promise<void>;
+    settle: () => void;
+};
+
 type WeightSpec = {
     dtype: 'float32' | 'int32' | 'bool' | 'complex64' | 'string';
     name: string;
@@ -343,18 +350,20 @@ function closeArtifactPorts(artifacts: readonly DdspStoredArtifact[], closePort:
 }
 
 export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequestHandlerInput): {
-    dispose: () => void;
+    dispose: () => Promise<void>;
     handleRequest: (request: WorkerRequest) => Promise<void>;
 } {
     const sessions = new Map<string, DdspSession>();
     const sessionLoads = new Map<string, SessionLoad>();
     const requestLoads = new Map<string, SessionLoad>();
-    const activeRequests = new Map<string, AbortController>();
+    const activeRequests = new Map<string, ActiveRequest>();
+    const modelReleases = new Map<string, Promise<void>>();
     const disposedModels = new WeakSet<TfjsWorkerModel>();
     const closedPorts = new WeakSet<MessagePort>();
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let tfPromise: Promise<TfjsWorkerRuntime> | undefined;
     let disposed = false;
+    let disposePromise: Promise<void> | undefined;
 
     function closePort(port: MessagePort): void {
         if (closedPorts.has(port)) {
@@ -655,7 +664,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
     }
 
     function cancelRequest(requestId: string): void {
-        activeRequests.get(requestId)?.abort();
+        activeRequests.get(requestId)?.controller.abort();
         const load = requestLoads.get(requestId);
         if (load) {
             load.subscribers.delete(requestId);
@@ -666,32 +675,71 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         }
     }
 
-    function releaseSession(modelId: string): void {
-        sessionLoads.get(modelId)?.controller.abort();
-        const session = sessions.get(modelId);
-        if (session) {
-            disposeModel(session.model);
-            sessions.delete(modelId);
+    function releaseSession(modelId: string): Promise<void> {
+        const existing = modelReleases.get(modelId);
+        if (existing) {
+            return existing;
         }
+        cancelIdleCleanup();
+        const load = sessionLoads.get(modelId);
+        load?.controller.abort();
+        const matching = [...activeRequests.values()].filter((request) => request.modelId === modelId);
+        for (const request of matching) {
+            request.controller.abort();
+        }
+        const release = (async (): Promise<void> => {
+            await Promise.allSettled(matching.map((request) => request.settled));
+            if (load) {
+                await load.promise.catch(() => undefined);
+            }
+            const session = sessions.get(modelId);
+            if (session) {
+                disposeModel(session.model);
+                sessions.delete(modelId);
+            }
+        })();
+        const tracked = release.finally(() => {
+            if (modelReleases.get(modelId) === tracked) {
+                modelReleases.delete(modelId);
+            }
+        });
+        modelReleases.set(modelId, tracked);
+        return tracked;
     }
 
-    function dispose(): void {
-        if (disposed) {
-            return;
+    function dispose(): Promise<void> {
+        if (disposePromise) {
+            return disposePromise;
         }
         disposed = true;
         cancelIdleCleanup();
-        for (const controller of activeRequests.values()) {
-            controller.abort();
+        const requests = [...activeRequests.values()];
+        for (const request of requests) {
+            request.controller.abort();
         }
-        activeRequests.clear();
-        for (const load of sessionLoads.values()) {
+        const loads = [...sessionLoads.values()];
+        for (const load of loads) {
             load.controller.abort();
             closeArtifactPorts(load.artifacts, closePort);
         }
-        sessionLoads.clear();
-        requestLoads.clear();
-        disposeSessions();
+        const pending = [
+            ...requests.map((request) => request.settled),
+            ...loads.map((load) => load.promise.catch(() => undefined)),
+            ...modelReleases.values(),
+        ];
+        if (pending.length === 0) {
+            sessionLoads.clear();
+            requestLoads.clear();
+            disposeSessions();
+            disposePromise = Promise.resolve();
+            return disposePromise;
+        }
+        disposePromise = Promise.allSettled(pending).then(() => {
+            sessionLoads.clear();
+            requestLoads.clear();
+            disposeSessions();
+        });
+        return disposePromise;
     }
 
     async function handleRequest(request: WorkerRequest): Promise<void> {
@@ -700,12 +748,11 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             return;
         }
         if (request.type === 'dispose-worker') {
-            dispose();
+            await dispose();
             return;
         }
         if (request.type === 'release-session') {
-            cancelIdleCleanup();
-            releaseSession(request.modelId);
+            await releaseSession(request.modelId);
             if (request.requestId) {
                 input.postResponse({
                     type: 'session-released',
@@ -735,9 +782,21 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             }
             return;
         }
+        const releasing = modelReleases.get(request.modelId);
+        if (releasing) {
+            await releasing;
+        }
+        if (disposed) {
+            return;
+        }
         cancelIdleCleanup();
         const controller = new AbortController();
-        activeRequests.set(request.requestId, controller);
+        let settle = (): void => undefined;
+        const settled = new Promise<void>((resolve) => {
+            settle = resolve;
+        });
+        const activeRequest = { controller, modelId: request.modelId, settled, settle };
+        activeRequests.set(request.requestId, activeRequest);
         try {
             if (request.type === 'create-session-from-model-storage') {
                 await createSession(request, controller.signal);
@@ -753,9 +812,10 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 });
             }
         } finally {
-            if (activeRequests.get(request.requestId) === controller) {
+            if (activeRequests.get(request.requestId) === activeRequest) {
                 activeRequests.delete(request.requestId);
             }
+            activeRequest.settle();
             scheduleIdleCleanup();
         }
     }

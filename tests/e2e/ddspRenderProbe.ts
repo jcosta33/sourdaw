@@ -127,7 +127,7 @@ async function renderOffline(): Promise<{
         phraseId: `ddsp-probe-${crypto.randomUUID()}`,
         instrumentId: admittedInstrument.id,
         notes: [{ pitch: 69, velocity: 100, startSec: 0, durationSec: 0.4 }],
-        durationSec: 0.5,
+        durationSec: 0.5001,
     });
     const finite = result.audio.length > 0 && result.audio.every(Number.isFinite);
     if (!finite) {

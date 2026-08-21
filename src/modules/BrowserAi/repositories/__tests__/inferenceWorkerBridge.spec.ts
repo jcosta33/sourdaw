@@ -637,6 +637,45 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         await vi.advanceTimersByTimeAsync(60_000);
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
+
+    it('should reject a cancelled renderer promptly but keep session release pending until the worker drain ack', async () => {
+        const controller = new AbortController();
+        const render = inferenceWorkerBridge.runDdspInference(ddspRequest('draining-render'), controller.signal);
+        void render.catch(() => undefined);
+        await flush();
+        const worker = tfjsWorker();
+
+        controller.abort();
+        await expect(render).rejects.toMatchObject({ name: 'AbortError' });
+        expect(worker.postMessage).toHaveBeenCalledWith({ type: 'cancel-request', requestId: 'draining-render' });
+
+        const release = inferenceWorkerBridge.releaseDdspSession('violin-1');
+        await flush();
+        const releaseRequest = lastRequest(worker);
+        if (releaseRequest.type !== 'release-session' || !releaseRequest.requestId) {
+            throw new Error('Expected correlated DDSP release request');
+        }
+        let released = false;
+        void release.then(() => {
+            released = true;
+        });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'draining-render',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16_000,
+            backend: 'webgpu',
+        });
+        await flush();
+        expect(released).toBe(false);
+
+        reply(worker, {
+            type: 'session-released',
+            requestId: releaseRequest.requestId,
+            modelId: 'violin-1',
+        });
+        await expect(release).resolves.toBeUndefined();
+    });
 });
 
 describe('inferenceWorkerBridge — ONNX cancellation', () => {

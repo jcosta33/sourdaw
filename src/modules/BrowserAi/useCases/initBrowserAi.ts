@@ -19,6 +19,7 @@ import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroA
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
 import { checkVerifiedModel } from '../repositories/checkVerifiedModel';
 import { ddspModelStorage } from '../repositories/ddspModelStorage';
+import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
@@ -42,8 +43,14 @@ export const KOKORO_MODEL_ENTRY: KokoroModel = {
     sha256: KOKORO_MODEL_ARTIFACT.sha256,
 };
 
-export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkVerifiedModel, checkDdspInstrumentReady })(
-    ({ logger, detectCapabilitiesRepo, checkVerifiedModel, checkDdspInstrumentReady }) =>
+export const initBrowserAi = inject({
+    logger,
+    detectCapabilitiesRepo,
+    checkVerifiedModel,
+    checkDdspInstrumentReady,
+    withDdspInstrumentLock,
+})(
+    ({ logger, detectCapabilitiesRepo, checkVerifiedModel, checkDdspInstrumentReady, withDdspInstrumentLock }) =>
         async function initBrowserAi(): Promise<void> {
             logger.info('[BrowserAi] Initializing…');
 
@@ -76,12 +83,23 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkVerif
             const ddspInstruments: DdspInstrument[] = MODEL_RELEASE_ADMISSION.ddsp
                 ? await Promise.all(
                       DDSP_INSTRUMENT_CATALOG.map(async (cat) => {
-                          const ready =
-                              (await checkDdspInstrumentReady({
-                                  id: cat.id,
-                                  version: cat.artifactVersion,
-                                  artifacts: cat.artifacts,
-                              })) === true;
+                          let ready = false;
+                          try {
+                              ready = await withDdspInstrumentLock(
+                                  cat.id,
+                                  'shared',
+                                  async () =>
+                                      (await checkDdspInstrumentReady({
+                                          id: cat.id,
+                                          version: cat.artifactVersion,
+                                          artifacts: cat.artifacts,
+                                      })) === true
+                              );
+                          } catch (error) {
+                              logger.warn(
+                                  `[BrowserAi] DDSP startup readiness probe failed: ${cat.id}: ${String(error)}`
+                              );
+                          }
                           return {
                               ...cat,
                               status: ready ? ('ready' as const) : ('not-downloaded' as const),
