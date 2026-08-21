@@ -1,0 +1,21 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_fd36f97e5766d5 869,1076,5927,8924,9203,9779,11237,12803,15782,16274-16282,17564,18482,18941,19577-19585,21245,21983,22286-22294,22298,22547-22555,24377,24446-24454,25259
+src/modules/Routing/presentations/views/RoutingGraph.tsx
+  s_2175fca1f07426::t_8cd13710d84d66 5,239,245,256-257,260-261,264-265,268-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3e068186494a26f262cad8f52ae04dfa9f10e6c1",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
