@@ -1,113 +1,99 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openPianoRoll(page: import('@playwright/test').Page): Promise<boolean> {
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function focusWorkspace(page: Page): Promise<void> {
+    await page.locator('#main-content').click();
+}
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await expect(trackList).toBeVisible();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
+}
+
+async function openPianoRollOnNewClip(page: Page): Promise<void> {
+    await addMidiTrack(page);
     const canvas = page.getByLabel('Timeline editor surface');
-
-    // Try several positions to find a clip.
-    const positions = [
-        { x: 100, y: 40 },
-        { x: 200, y: 40 },
-        { x: 300, y: 40 },
-        { x: 150, y: 80 },
-        { x: 250, y: 80 },
-        { x: 100, y: 120 },
-    ];
-
-    for (const pos of positions) {
-        await canvas.dblclick({ position: pos });
-        await page.waitForTimeout(500);
-        const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
-        if (await pianoRoll.isVisible().catch(() => false)) {
-            return true;
-        }
-    }
-    return false;
+    await expect(canvas).toBeVisible();
+    await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
+    await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+    await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+    await canvas.dblclick({ position: { x: 300, y: 30 } });
+    await expect(page.getByLabel('Piano roll editor')).toBeVisible();
 }
 
-async function drawNotes(page: import('@playwright/test').Page): Promise<void> {
-    const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
-    await pianoRoll.dblclick({ position: { x: 80, y: 120 } });
-    await page.waitForTimeout(200);
-    await pianoRoll.dblclick({ position: { x: 160, y: 140 } });
-    await page.waitForTimeout(200);
-    await pianoRoll.dblclick({ position: { x: 240, y: 100 } });
-    await page.waitForTimeout(300);
-}
-
-test.describe('MIDI note operations deep — Pop Song template', () => {
+test.describe('MIDI note velocity and piano-roll chrome', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'Pop Song' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_new_project(page);
+        await focusWorkspace(page);
+        await openPianoRollOnNewClip(page);
     });
 
-    test('drawing notes in piano roll enables undo', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
-        await drawNotes(page);
+    test('stamping a note on the piano roll round-trips through undo and redo', async ({ page }) => {
+        const pianoRoll = page.getByLabel('Piano roll editor');
+        const undo = page.getByRole('button', { name: 'Undo', exact: true });
+        const redo = page.getByRole('button', { name: 'Redo', exact: true });
 
-        const undo = page.getByTestId('transport-undo');
-        await expect(undo).toBeEnabled({ timeout: 10_000 });
-    });
-
-    test('undo after drawing notes enables redo', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
-        await drawNotes(page);
-
-        const undo = page.getByTestId('transport-undo');
-        await expect(undo).toBeEnabled({ timeout: 10_000 });
+        await pianoRoll.click({ position: { x: 80, y: 80 } });
+        await expect(undo).toBeEnabled();
 
         await undo.click();
-        await page.waitForTimeout(500);
+        await expect(pianoRoll).toBeVisible();
+        await expect(redo).toBeEnabled();
 
-        const redo = page.getByTestId('transport-redo');
-        await expect(redo).toBeEnabled({ timeout: 10_000 });
+        await redo.click();
+        await expect(pianoRoll).toBeVisible();
+        await expect(undo).toBeEnabled();
     });
 
-    test('expression view reveals velocity lane', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
+    test('Expression view opens the velocity lane by default', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: /Toggle Expression View/i });
+        const lane = page.getByRole('combobox', { name: 'Active expression lane' });
 
-        const expression = page.getByTestId('toolbar-expression');
-        await expression.click();
-        await page.waitForTimeout(300);
+        await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(lane).toHaveCount(0);
 
-        const lane = page.locator('[aria-label="Active expression lane"]');
-        const hasLane = await lane.isVisible().catch(() => false);
-        expect(hasLane).toBe(true);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+        await expect(lane).toBeVisible();
+        await expect(lane).toHaveValue('velocity');
+        await expect(lane.getByRole('option', { name: 'Velocity', exact: true })).toHaveCount(1);
 
-        const select = lane.getByRole('combobox');
-        if (await select.isVisible().catch(() => false)) {
-            const value = await select.inputValue();
-            expect(value).toBe('velocity');
-        }
+        await toggle.click();
+        await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(lane).toHaveCount(0);
     });
 
-    test('scale root and type selectors are present in piano roll', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
+    test('scale root and type selectors hold a value', async ({ page }) => {
+        const root = page.getByRole('combobox', { name: 'Scale root note' });
+        const type = page.getByRole('combobox', { name: 'Scale type' });
 
-        await expect(page.getByTestId('toolbar-scale-root')).toBeVisible({ timeout: 5000 });
-        await expect(page.getByTestId('toolbar-scale-type')).toBeVisible({ timeout: 5000 });
+        await expect(root).toBeVisible();
+        await expect(type).toBeVisible();
+        await expect(root).not.toHaveValue('');
+        await expect(type).not.toHaveValue('');
     });
 
-    test('zoom slider present and has numeric value', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
+    test('zoom slider exposes a numeric value that keyboard input can raise', async ({ page }) => {
+        const zoom = page.getByRole('slider', { name: 'Piano roll zoom' });
+        await expect(zoom).toBeVisible();
 
-        const zoom = page.getByTestId('toolbar-zoom');
-        await expect(zoom).toBeVisible({ timeout: 5000 });
+        const before = Number(await zoom.getAttribute('aria-valuenow'));
+        expect(before).toBeGreaterThanOrEqual(25);
+        expect(before).toBeLessThanOrEqual(400);
 
-        const slider = zoom.getByRole('slider');
-        if (await slider.isVisible().catch(() => false)) {
-            const value = await slider.getAttribute('aria-valuenow');
-            expect(Number(value)).toBeGreaterThanOrEqual(25);
-        }
+        await zoom.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(zoom).toHaveAttribute('aria-valuenow', String(before + 25));
     });
 });
