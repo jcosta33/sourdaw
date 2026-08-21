@@ -328,10 +328,11 @@ export const inferenceWorkerBridge = {
      */
     cancelOnnxRequest(requestId: string): void {
         const pending = workerState.onnx.pendingRequests.get(requestId);
-        if (pending) {
-            workerState.onnx.pendingRequests.delete(requestId);
-            pending.reject(new Error('Render cancelled'));
+        if (!pending) {
+            return;
         }
+        workerState.onnx.pendingRequests.delete(requestId);
+        pending.reject(new Error('Render cancelled'));
         // Only tear down the shared worker if this was the last in-flight render —
         // otherwise we'd kill compute (and reject promises) for sibling renders.
         if (workerState.onnx.pendingRequests.size === 0 && workerState.onnx.worker) {
@@ -364,10 +365,11 @@ export const inferenceWorkerBridge = {
      */
     cancelTfjsRequest(requestId: string): void {
         const pending = workerState.tfjs.pendingRequests.get(requestId);
-        if (pending) {
-            workerState.tfjs.pendingRequests.delete(requestId);
-            pending.reject(new Error('Render cancelled'));
+        if (!pending) {
+            return;
         }
+        workerState.tfjs.pendingRequests.delete(requestId);
+        pending.reject(new Error('Render cancelled'));
         if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
             workerState.tfjs.worker.terminate();
             workerState.tfjs.worker = null;

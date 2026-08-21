@@ -164,15 +164,6 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     return { audio: cached, sampleRate: 44100, provenance };
                 }
 
-                startActiveRender({
-                    requestId,
-                    phraseId,
-                    pipeline: 'kokoro',
-                    status: 'rendering-browser',
-                    stage: 'Loading Kokoro TTS',
-                    progress: 0,
-                    startedAt: Date.now(),
-                });
                 updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
                 // 1. Load Kokoro model from OPFS → worker session cache
@@ -199,12 +190,25 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
 
                 // 4. Run Kokoro ONNX inference in the worker
                 //    inputIds and style buffers are transferred (zero-copy) — do not use after this call.
-                const result = await inferenceWorkerBridge.runKokoroTts({
+                startActiveRender({
                     requestId,
-                    inputIds,
-                    style,
-                    speed,
+                    phraseId,
+                    pipeline: 'kokoro',
+                    status: 'rendering-browser',
+                    stage: 'Synthesizing speech',
+                    progress: 0,
+                    startedAt: Date.now(),
                 });
+                const result = await inferenceWorkerBridge
+                    .runKokoroTts({
+                        requestId,
+                        inputIds,
+                        style,
+                        speed,
+                    })
+                    .finally(() => {
+                        clearActiveRender(requestId);
+                    });
                 assertCurrentRenderRequest(phraseId, requestId);
 
                 if (result.audio.length === 0) {

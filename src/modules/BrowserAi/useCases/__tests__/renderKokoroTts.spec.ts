@@ -179,6 +179,33 @@ describe('renderKokoroTts', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
     });
 
+    it('does not cancel a worker during voice preparation', async () => {
+        const pendingVoice = deferred<Response>();
+        sha256ArrayBuffer.mockResolvedValue(voice_hash('bm_george'));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => pendingVoice.promise)
+        );
+
+        const render = callRender({ speakerId: 'bm_george' });
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
+        pendingVoice.resolve({
+            ok: true,
+            statusText: 'OK',
+            arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(voice_embedding_buffer()),
+        } as Response);
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(runKokoroTts).not.toHaveBeenCalled();
+    });
+
     it('does not publish audio after cancellation while inference is in flight', async () => {
         const pendingInference = deferred<{
             type: 'tts-result';
@@ -222,8 +249,11 @@ describe('renderKokoroTts', () => {
         await vi.waitFor(() => expect(writeRenderCache).toHaveBeenCalledOnce());
         const requestId = renderQueueStore.value?.entries[0]?.requestId;
         expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
 
         cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
         pendingWrite.resolve();
 
         await expect(render).rejects.toThrow(/cancelled or superseded/);
