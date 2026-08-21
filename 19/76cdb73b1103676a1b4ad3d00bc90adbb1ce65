@@ -1,0 +1,26 @@
+src/modules/Project/useCases/semanticProjectIndex.ts
+  s_a40848e8f8cca9::t_78fec80ecee685 16,27-31,54-59,333
+  s_a40848e8f8cca9::t_c19c5b1feb2f4d 9
+  s_a40848e8f8cca9::t_91fb85b2b1ecc7 527
+src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts
+  s_a40848e8f8cca9::t_46bb259239984a 22,278-298
+  s_a40848e8f8cca9::t_95f695d3dc5847 299-303
+src/modules/Project/useCases/semanticProjectQueries.ts
+  s_a40848e8f8cca9::t_78fec80ecee685 19,311-312,315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1976cdb73b1103676a1b4ad3d00bc90adbb1ce65",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
