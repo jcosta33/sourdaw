@@ -368,6 +368,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     createMusicalPositionProjector: noop,
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
+    resolveTempoAtBeat: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
     setStopPlaybackCallback: noop,
