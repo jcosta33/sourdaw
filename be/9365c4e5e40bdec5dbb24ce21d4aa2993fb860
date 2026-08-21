@@ -1,0 +1,101 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_780d04a949cfed::t_d0cd0563a7873e 1
+  s_8e79c75e0aa665::t_2411bfc55b2ed3 893-909,1030-1048
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_780d04a949cfed::t_d0cd0563a7873e 1
+  s_8e79c75e0aa665::t_2411bfc55b2ed3 893-909,1030-1048
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_8e79c75e0aa665::t_2411bfc55b2ed3 54-70,191-209
+  s_780d04a949cfed::t_d0cd0563a7873e 1
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_8e79c75e0aa665::t_ef10abae83456c 14,706-709
+  s_8e79c75e0aa665::t_3e24a7bad741e4 1037-1042,1046-1049,1058-1072
+  s_e84e8bc036b9cf::t_69718db18d81ba 1050-1057
+  s_8e79c75e0aa665::t_5e83aceb99b53a 710
+  s_a40848e8f8cca9::t_81d458a7980b27 1036,1073
+  s_8e79c75e0aa665::t_bf1661ff72faf9 1043-1045
+  s_780d04a949cfed::t_12a01d2165038a 1074-1102
+release/open-source-inventory.json
+  s_780d04a949cfed::t_67cc4c332d8951 594,600,854
+  s_780d04a949cfed::t_12a01d2165038a 509
+  s_8e79c75e0aa665::t_01258df4f4bdb5 508
+crates/daw-dsp/src/grand_boule/coupled_strings.rs
+  s_8e79c75e0aa665::t_ef10abae83456c 19,139,146-147,155-156
+  s_8e79c75e0aa665::t_3e24a7bad741e4 220-222,235
+  s_e84e8bc036b9cf::t_f59c4ca58abb15 223-231
+  s_e84e8bc036b9cf::t_69718db18d81ba 232-234
+  s_8e79c75e0aa665::t_5e83aceb99b53a 148-150,157
+public/wasm/manifest.json
+  s_8e79c75e0aa665::t_d7409fd109814f 16
+  s_780d04a949cfed::t_8df64f7d2726c4 12,17-18,21
+.agents/decisions/README.md
+  s_8e79c75e0aa665::t_c064a32cb977af 49
+crates/daw-dsp/src/grand_boule/voice.rs
+  s_8e79c75e0aa665::t_3e24a7bad741e4 543-546
+  s_a40848e8f8cca9::t_697463d8fd6fe2 542
+crates/daw-dsp/src/grand_boule/string.rs
+  s_8e79c75e0aa665::t_11b2e935dc8b9b 197-200,207-208,302-305
+  s_8e79c75e0aa665::t_3e24a7bad741e4 458-477,480-481
+  s_8e79c75e0aa665::t_ef10abae83456c 35-67,178-179,185,214,228-229,278-280,284-285,291,308,310,314,327-329
+  s_e84e8bc036b9cf::t_69718db18d81ba 478-479
+  s_8e79c75e0aa665::t_b8773fabb3a7c1 141-144,153-174,250-252,262-277
+crates/daw-dsp/src/grand_boule/soundboard.rs
+  s_8e79c75e0aa665::t_d00066f318e903 310,312
+  s_8e79c75e0aa665::t_3e24a7bad741e4 306-309,311,313-317
+  s_8e79c75e0aa665::t_ef10abae83456c 53-66,233
+  s_8e79c75e0aa665::t_5e83aceb99b53a 218,221-228,253,318
+  s_780d04a949cfed::t_12a01d2165038a 80-81,99-100,112-115,229-232,249-252
+.agents/decisions/0033-grand-boule-string-soundboard-boundary.md
+  s_8e79c75e0aa665::t_bf1661ff72faf9 31-34
+  s_8e79c75e0aa665::t_01258df4f4bdb5 1-30,35-36,40-41,44-49
+  s_780d04a949cfed::t_12a01d2165038a 37-39,42-43,52-53
+  s_5d486857292807::t_12e7caf2059411 50-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "be9365c4e5e40bdec5dbb24ce21d4aa2993fb860",
+  "prompts": {},
+  "sessions": {
+    "s_5d486857292807": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0249f-0479-7dc1-bb4b-7ebe312e1fb4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_780d04a949cfed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a024bb-1a78-7ed0-933d-864943faec3d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_8e79c75e0aa665": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a02492-d817-76a1-91d9-44329a4dec2b",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e84e8bc036b9cf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a024a8-152b-7653-9c6b-1cce226706b5",
+        "model": "gpt-5.4"
+      },
+      "human_author": null
+    }
+  }
+}
