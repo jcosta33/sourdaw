@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_e60b890bdf2602 6,8,266-301,318-319
+  s_a40848e8f8cca9::t_d2d87e09f8c87e 302-317
+  s_a40848e8f8cca9::t_3b48ba4bb74cdf 320
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_e60b890bdf2602 8,17,55-84,108,111,157-197
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_d2d87e09f8c87e 119-132,153-193,288,393-398,409-411,564-571
+  s_a40848e8f8cca9::t_33304eecd8daef 134-152
+  s_a40848e8f8cca9::t_7c66b0ac03a031 19,133
+  s_a40848e8f8cca9::t_00bd59e928f9c0 572-573
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_966cf1b09f0b1a 1,130-132
+  s_a40848e8f8cca9::t_d2d87e09f8c87e 36-39,45-48,55-129,133-135,294-296,301-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7579845cbe501d575e910a849361c4cc260393d1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
