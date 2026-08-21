@@ -563,9 +563,9 @@
         },
         {
             "id": "grand-boule",
-            "kind": "patent-directed-component",
-            "retention": "defer-behind-admission",
-            "owner": "OS-05",
+            "kind": "project-source",
+            "retention": "keep",
+            "owner": "OS-10",
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "crates/daw-dsp/src/grand_boule/**",
@@ -582,8 +582,8 @@
                 "src/modules/GrandBoule/",
                 "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
                 "src/infra/release/deviceReleaseAdmission.ts",
-                "retained Grand Boule AudioEngine host, worker, and worklet source",
-                "active patent sources recorded in the readiness audit"
+                "Grand Boule AudioEngine host, worker, and worklet source",
+                "distributed daw-dsp WASM glue, declarations, mirrors, and binary"
             ],
             "revisions": [
                 "current tracked Rust source",
@@ -592,24 +592,23 @@
                 "current tracked AudioEngine host boundary"
             ],
             "digests": [
-                "tracked-set-sha256:3565ddf142d69dbc650cf3795df819b4be5d42ec6adc8b6885a31a33847a3f07:grand-boule-native-rust",
-                "tracked-set-sha256:9d6db6ed66261fc35777ee1b7285a692ea4e2de732c13523269a7f5d1768fa73:grand-boule-product-module",
-                "tracked-set-sha256:e3dcbf65cd71fe13596e6c0119c99ea6d82084085a0acd6636f61fc3ada560e1:grand-boule-product-descriptor",
-                "tracked-set-sha256:d81a023a3cc73d6c357998ba97fd73aa452b0f848dafdb247dca5ccf6465ac1d:grand-boule-release-admission",
-                "tracked-set-sha256:47a8669a605c554a9ace4001d4a3f647e0ddb4ae28703567dd90d77257adde2d:grand-boule-node-host",
+                "tracked-set-sha256:416b4a377a06bc59196185f13abc40e1dd53be8925ad76eabedc1c1c3262d34f:grand-boule-native-rust",
+                "tracked-set-sha256:dc617e4ed049837a93f1579cbaa9c99619b182aff4a970c96649dc002b53d95b:grand-boule-product-module",
+                "tracked-set-sha256:440ad6ef75e3ef532b9b1b7a3a7d55e8cbed6240d7784c42ca7461b3bc9d8a2c:grand-boule-product-descriptor",
+                "tracked-set-sha256:2c8c7dc7fac16bded7121cdd5a8de8cb8e8a42b2da6b45548e4e69ed64362260:grand-boule-release-admission",
+                "tracked-set-sha256:e88b521ae47d43f39cdad5784ed79b8e372045da8e8a2d433ac267ff0d783305:grand-boule-node-host",
                 "tracked-set-sha256:d2028fb5c96872cd29e93fc1599982d63f67b84aca679d031e46aca04825d935:grand-boule-ring-protocol",
-                "tracked-set-sha256:44e47a67b95ec9fb6bc518aa127db036ad405b16b2b7165c114fa793d66da170:grand-boule-worker-host",
-                "tracked-set-sha256:af5770faf2d09655c0494bae51e1b93d62e4e4c130e6f83c8d92ed0e9bbd5bc1:grand-boule-worklet-hosts"
+                "tracked-set-sha256:d5c6fb9a5b34beefbcee8fc240a90154f03c45dc86ab72f326997e8d2efaca66:grand-boule-worker-host",
+                "tracked-set-sha256:011c431d67eb00918e164e77667083a6afbf6509cf3dd5a5cbbf6f24bfe2f0b3:grand-boule-worklet-hosts"
             ],
-            "licenses": ["pending:OS-10-project-grant", "unverified:HAL-parameter-source-reuse-terms"],
-            "productSurfaces": ["Preserved Grand Boule source and project schema"],
+            "licenses": ["pending:OS-10-project-grant"],
+            "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADRs 0032 and 0034 retain the complete implementation while withholding Grand Boule from released discovery, runtime, generated WASM glue, declarations, and binary exports; the release checker inspects every artifact boundary.",
-                "ADR 0033 and focused Grand Boule Rust regressions cover the current engine's initial string configuration and pedal-driven mid-note decay reset: string-modal coefficients derive without soundboard controls or soundboard resonator state, and the rendered-bridge soundboard stage runs once per output frame after multiple voices render."
+                "ADR 0035 records the engineering release decision and the direct patent, provenance, and source-expression evidence.",
+                "ADR 0033 and focused Rust regressions pin independent string-modal coefficient derivation followed by a downstream soundboard stage.",
+                "The release checker requires Grand Boule in the Rust wasm32 graph, generated glue, declarations, mirrors, binary exports, and exact source digests."
             ],
-            "obligations": [
-                "Re-admit only after current patent-family, claim-element, design-around, and parameter-source proof."
-            ]
+            "obligations": ["Complete the OS-10 project grant before public release."]
         },
         {
             "id": "levain-sample-bank",
@@ -690,13 +689,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:4253201a4449cc4b1db17c1632124fcc9a9ddb872a865129d1c9ad20b9a5241e",
+                "daw-dsp sha256:4846afd6d5b9febafbe7eb29334efa9c68c8e3777f485f78b25033e0676274d8",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
                 "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:a2912b2561baca7fdce7d36cc6167e71923badcdb2adb44e88a31b0c16216793:public/wasm/manifest.json"
+                "sha256:2b02cb68d9a8f91d8f6522cce082df1dbd567f4283cb273d1e1de6ca5e3e8be2:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -950,7 +949,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "a2912b2561baca7fdce7d36cc6167e71923badcdb2adb44e88a31b0c16216793"
+            "sha256": "2b02cb68d9a8f91d8f6522cce082df1dbd567f4283cb273d1e1de6ca5e3e8be2"
         }
     ],
     "externalReferences": [

@@ -2,7 +2,7 @@
 type: adr
 id: 0032
 title: Withhold Grand Boule from release
-status: accepted
+status: superseded by 0035
 date: 2026-08-20
 owner: The Sourdaw team
 sources:

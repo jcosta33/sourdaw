@@ -1,6 +1,6 @@
 //! Pedal & damper model for the Grand Boule piano.
 //!
-//! Implements §5.2 of the spec:
+//! Implements the piano pedal model:
 //! * **Sustain (CC64)** — continuous "half-pedal". Maps pedal position to a
 //!   per-key damper bandwidth via a smoothstep. Notes above C7 (key 76)
 //!   have no damper.
@@ -12,7 +12,7 @@
 
 use super::parameters::{damper_strength, has_damper};
 
-/// Hammer stiffness multiplier under the una-corda pedal (§5.2).
+/// Hammer stiffness multiplier under the una-corda pedal.
 pub const UNA_CORDA_STIFFNESS_SCALE: f32 = 0.7;
 
 /// Sympathetic coupling scaling to un-excited strings under una-corda.

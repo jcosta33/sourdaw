@@ -21,16 +21,14 @@ export type GrandBouleConfig = {
     /**
      * Stretched-tuning amount (0.0 – 2.0). Scales the smooth Steinway D
      * Railsback curve baked into the engine. 0 = equal temperament (with
-     * per-note jitter still applied), 1 = full Jaatinen & Pätynen 2022
-     * Steinway D measurement (default), 2 = exaggerated stretch.
-     * Realism appendix §A8.
+     * per-note jitter still applied), 1 = the full project curve, and
+     * 2 = exaggerated stretch. The curve uses Jaatinen & Pätynen 2022 anchors.
      */
     stretchAmount: number;
     /**
      * Attack bite (0.0 – 2.0). Velocity multiplier for the longitudinal
-     * "string precursor" noise burst that gives the attack its bright
-     * chirp. 0 = no bite, 1 = neutral, 2 = exaggerated. Realism appendix
-     * §A6.
+     * "string precursor" noise burst that gives the attack its bright chirp.
+     * 0 = no bite, 1 = neutral, and 2 = exaggerated.
      */
     attackBite: number;
 };

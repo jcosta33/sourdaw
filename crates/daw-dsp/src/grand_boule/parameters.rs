@@ -1,8 +1,7 @@
 //! Physical parameter tables for the Grand Boule piano.
 //!
-//! Values are interpolated from Steinway D reference data per the plugin spec.
-//! All curves are key-indexed where `key = 1` is A0 (MIDI 21) and `key = 88` is
-//! C8 (MIDI 108).
+//! Project-authored curves are key-indexed from A0 (`key = 1`) through C8
+//! (`key = 88`).
 //!
 //! Every helper here is a pure function, allocation-free and panic-free over
 //! the valid key range.
@@ -46,7 +45,7 @@ impl Temperament {
     }
 }
 
-/// Historical temperament cent offsets relative to A = 0 per spec §4.
+/// Historical temperament cent offsets relative to A = 0.
 /// Indexed by pitch class: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B].
 const WERCKMEISTER_III: [f32; 12] = [11.7, 2.0, 3.9, 5.9, 2.0, 9.8, 0.0, 7.8, 3.9, 0.0, 7.8, 3.9];
 const KIRNBERGER_III: [f32; 12] = [
@@ -92,33 +91,28 @@ pub fn midi_to_hz_equal_tempered(midi_note: u8) -> f32 {
     A4_HZ * (2.0_f32).powf(semitones / 12.0)
 }
 
-/// Hammer stiffness `K` per Chaigne & Askenfelt (1994):
+/// Project hammer-stiffness curve:
 /// `log10(K(key)) ≈ 8.0 + 0.020·(key-1)`.
 ///
-/// Ranges from ~10⁸ (bass) to ~5.5×10⁹ (treble), consistent with measured
-/// data. The original spec slope of 0.048 was far too steep, producing K
-/// values 15–1000× larger than real pianos above the bass register, which
-/// caused chaotic velocity response and harpsichord-like contact pulses.
+/// Ranges from ~10⁸ in the bass to ~5.5×10⁹ in the treble.
 pub fn hammer_stiffness_k(key: u32) -> f32 {
     let exponent = 8.0_f32 + 0.020 * (key as f32 - 1.0);
     (10.0_f32).powf(exponent)
 }
 
-/// Hammer felt nonlinearity exponent per spec: `p(key) ≈ 2.0 + 0.017·(key-1)`.
+/// Project hammer-felt exponent curve: `p(key) = 2.0 + 0.017·(key-1)`.
 pub fn hammer_exponent_p(key: u32) -> f32 {
     2.0 + 0.017 * (key as f32 - 1.0)
 }
 
-/// Hammer mass in kilograms per spec: `m_H(key) ≈ 11.0·exp(-0.0134·(key-1))` grams.
+/// Project hammer-mass curve: `m_H(key) = 11.0·exp(-0.0134·(key-1))` grams.
 pub fn hammer_mass_kg(key: u32) -> f32 {
     let grams = 11.0_f32 * (-0.0134 * (key as f32 - 1.0)).exp();
     grams * 1.0e-3
 }
 
-/// Inharmonicity coefficient `B` interpolated log-linearly between the
-/// published anchor keys (A0=0.0002, C4=0.0007, C8=0.10). The piano inharmonicity
-/// grows roughly geometrically with key number; log-linear fits the published
-/// data well enough for a first-pass engine.
+/// Inharmonicity coefficient `B` interpolated log-linearly between three
+/// project constants: A0=0.0002, C4=0.0007, and C8=0.10.
 pub fn inharmonicity_b(key: u32) -> f32 {
     // Anchors: (key, B)
     const ANCHORS: [(f32, f32); 3] = [(1.0, 0.0002), (40.0, 0.0007), (88.0, 0.10)];
@@ -172,7 +166,7 @@ pub fn railsback_smooth_cents(key: u32) -> f32 {
 /// Railsback curve. Hinrichsen (2012) shows these are not measurement
 /// noise — they reflect individual string irregularities and partial-
 /// intensity variations and are essential for the "alive" character of
-/// a real instrument (§A8 of the realism appendix).
+/// a real instrument.
 ///
 /// The values are produced by a deterministic LCG seeded per key and
 /// then low-pass filtered across keys to give a correlation length of
@@ -220,7 +214,7 @@ pub fn railsback_cents(key: u32) -> f32 {
     railsback_smooth_cents(key) + railsback_jitter_cents(key)
 }
 
-/// Hammer strike position as a fraction of string length, per spec §3.5.
+/// Hammer strike position as a fraction of string length.
 /// Bass (~1/7) → middle (~1/8) → treble (~1/12).
 pub fn hammer_strike_ratio(key: u32) -> f32 {
     // Piecewise linear: bass (key 1) ≈ 1/7, middle (key 40) ≈ 1/8, treble (key 88) ≈ 1/12.
@@ -283,25 +277,25 @@ pub fn unison_detune_cents(key: u32, unison_index: u32) -> f32 {
 }
 
 /// Whether a key has a damper.
-/// Notes above C7 (key 76) have no dampers per spec §5.2.
+/// Notes above C7 (key 76) have no dampers.
 pub fn has_damper(key: u32) -> bool {
     key <= 76
 }
 
 /// Whether a key has phantom longitudinal modes.
-/// Only bass keys below C5 (key 52) per spec §7.1.
+/// Enabled below C5 (key 52).
 pub fn has_longitudinal_modes(key: u32) -> bool {
     key < 52
 }
 
 /// Whether a key has duplex-scale resonance.
-/// C4+ per spec §7.2.
+/// Enabled from C4 upward.
 pub fn has_duplex_resonance(key: u32) -> bool {
     key >= 40
 }
 
 /// Approximate damper coefficient at full pedal-up (key held) position.
-/// Scales with √n as the string's wavenumber per spec §5.2.
+/// Scales inversely with the square root of the key index.
 pub fn damper_strength(key: u32) -> f32 {
     let base = 80.0_f32;
     base / (key as f32).sqrt()

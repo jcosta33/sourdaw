@@ -1,6 +1,6 @@
 //! Coupled-string assembly with two-stage decay for the Grand Boule piano.
 //!
-//! Per spec §3.4, each piano key hosts 1–3 unison strings. Each string has
+//! Each piano key hosts one to three unison strings. Each string has
 //! two polarizations coupled through the bridge:
 //!
 //! * **Vertical** (aligned with the hammer strike) — fast decay, "prompt
@@ -33,7 +33,7 @@ fn sigma_bridge_hz(fundamental_hz: f32) -> f32 {
     0.8 + fundamental_hz * 0.004
 }
 
-/// Slow-polarization multiplier (`σ_bridge / 100`) from the spec.
+/// Slow-polarization multiplier (`σ_bridge / 100`).
 const SIGMA_SLOW_SCALE: f32 = 0.01;
 
 /// Gain applied to the vertical output before feeding it into the horizontal
@@ -251,7 +251,7 @@ mod tests {
     /// `reset_decay` is the engine's existing mid-note retune primitive — it
     /// rewrites c1/c2 for a new fundamental and never touches the ringing
     /// state (x1/x2/y1/y2), which only `reset()` clears. `PianoVoice::tick`
-    /// already calls it mid-note for the §A5.2 pitch glide, so retuning a
+    /// already calls it mid-note for pitch glide, so retuning a
     /// sounding string is a shipping code path, not a redesign. The open
     /// question is only whether doing it *every block, per bent voice* fits
     /// the audio deadline.

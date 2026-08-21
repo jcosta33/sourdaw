@@ -2,12 +2,11 @@
 //!
 //! Implements a power-law compression force `F = K·δ^p` where `δ` is the
 //! positive hammer-string interpenetration. The hammer is integrated with
-//! Störmer-Verlet (leapfrog) per the spec `§3.2`. Oversampling is handled by
+//! Störmer-Verlet integration. Oversampling is handled by
 //! the caller — this type is a pure state machine over arbitrary `dt`.
 //!
 //! [`HammerState::tick_stulov`] implements Stulov's simplified three-parameter
-//! hereditary form (Stulov 2005, *Acta Acustica* 91:1086 — see realism
-//! appendix §A2.1):
+//! hereditary form (Stulov 2005, *Acta Acustica* 91:1086):
 //!
 //! ```text
 //! F(t) = Q₀ · ( δᵖ(t)  +  a · δ̇(t) · |δ(t)|^(p−1) )
@@ -29,9 +28,7 @@ pub struct HammerState {
     pub released: bool,
     /// Previous-sample compression, used for the Stulov δ̇ finite difference.
     prev_compression: f32,
-    /// Output state of the velocity-dependent contact lowpass filter (§A2.4).
-    /// One-pole filter on the force pulse modelling the contact-time
-    /// envelope shaping the spectral envelope.
+    /// Output state of the one-pole contact-time filter that shapes the force spectrum.
     contact_filter_state: f32,
 }
 
@@ -40,8 +37,7 @@ pub struct HammerState {
 pub struct HammerParams {
     /// Power-law stiffness coefficient `K` (≡ Stulov `Q₀`).
     pub stiffness_k: f32,
-    /// Power-law exponent `p` (typically 2.0–3.5; bass ≈ 2, treble ≈ 4 per
-    /// the realism appendix §A2.4).
+    /// Power-law exponent `p`; the project curve rises with key number.
     pub exponent_p: f32,
     /// Hammer mass in kilograms.
     pub mass_kg: f32,
@@ -50,10 +46,9 @@ pub struct HammerParams {
     /// reports a ≈ 310 µs for note 49.  Set to `0.0` to fall back to the
     /// memoryless power law.
     pub stulov_a: f32,
-    /// Velocity-dependent contact lowpass coefficient `α` in
-    /// `y[n] = α·y[n−1] + (1−α)·x[n]`. Computed from `f_c(v)` per
-    /// realism appendix §A2.4 — high velocity ⇒ wider contact spectrum
-    /// (brighter), low velocity ⇒ darker.  Set to `0.0` to disable.
+    /// Velocity-dependent contact low-pass coefficient `α` in
+    /// `y[n] = α·y[n−1] + (1−α)·x[n]`. Higher velocity produces a wider
+    /// contact spectrum. Set to `0.0` to disable.
     pub contact_lp_alpha: f32,
 }
 
@@ -71,7 +66,7 @@ impl HammerState {
 
     /// Launch the hammer toward the string with an initial velocity.
     ///
-    /// `velocity` should be negative in the spec's convention (hammer moving
+    /// `velocity` should be negative when the hammer moves
     /// toward the string), but callers commonly pass a positive "strike speed"
     /// — the sign is normalised here.
     pub fn strike(&mut self, strike_velocity: f32) {
@@ -84,8 +79,8 @@ impl HammerState {
 
     /// Apply the velocity-dependent contact lowpass to a raw force value
     /// and return the filtered force. The filter is a single one-pole IIR
-    /// whose pole `α` is set per-strike from `f_c(v)` (§A2.4 of the realism
-    /// appendix). When `params.contact_lp_alpha == 0.0` the filter passes
+    /// whose pole `α` is set per strike from `f_c(v)`. When
+    /// `params.contact_lp_alpha == 0.0` the filter passes
     /// the input through unchanged.
     #[inline]
     fn apply_contact_lowpass(&mut self, force: f32, alpha: f32) -> f32 {
@@ -125,7 +120,7 @@ impl HammerState {
     }
 
     /// Same as [`Self::tick`] but uses Stulov's three-parameter hereditary
-    /// form `F = Q₀·(δᵖ + a·δ̇·|δ|^(p−1))` (§A2.1 of the realism appendix).
+    /// form `F = Q₀·(δᵖ + a·δ̇·|δ|^(p−1))`.
     /// The δ̇ term is computed from a one-sample finite difference, no
     /// history buffer needed. More expensive than [`Self::tick`] but still
     /// allocation-free and branch-free in the hot path.
@@ -168,8 +163,7 @@ impl HammerState {
 ///
 /// `f_c(v) = f_min + (f_max − f_min)·(1 − e^{−β·v})` saturates at high
 /// velocity (Aramaki et al. 2000), then `α = exp(−2π·f_c / fs)` produces
-/// the standard one-pole pole.  See §A2.4 for the derivation and the
-/// measured Russell & Rossing (1998) anchor values.
+/// the standard one-pole pole.
 pub fn contact_lowpass_alpha(
     strike_velocity: f32,
     f_min_hz: f32,
@@ -203,7 +197,7 @@ mod tests {
     fn stulov_form_produces_asymmetric_pulse() {
         // The Stulov damping term means loading (compression rising) and
         // unloading (compression falling) at the same δ produce different
-        // forces — that asymmetry is the entire point of §A2.1.
+        // forces; that asymmetry is intentional.
         let mut state = HammerState::idle();
         state.strike(4.0);
         let mut params = default_params();

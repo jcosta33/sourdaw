@@ -17,8 +17,8 @@ import { installWorkletGlobals, makeChannels } from '../../services/__tests__/wa
  * write head). Every `sampleFrame` in the app is an *AudioContext* frame. The
  * two clocks differ by however far the consuming worklet is ahead of the frames
  * it has read, which only the worklet can measure — so this drives the real
- * `GrandBouleProcessor` over the same SABs rather than asserting the worker
- * against a number the spec made up.
+ * `GrandBouleProcessor` over the same SABs rather than asserting an invented
+ * worker offset.
  */
 
 const BLOCK_FRAMES = 128;
@@ -69,9 +69,7 @@ class GrandBouleInstanceMock {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: wasmMemory })),
-}));
-vi.mock('../../worklets/grandBouleWasmInstance', () => ({
-    createGrandBouleWasmInstance: () => new GrandBouleInstanceMock(),
+    GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
 // The worker's zero-delay yield. Hold the callback instead of queuing it so each

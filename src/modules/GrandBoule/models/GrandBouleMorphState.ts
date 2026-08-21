@@ -1,5 +1,5 @@
 /**
- * Morph/layer state for the Grand Boule piano plugin (spec §3.1).
+ * Morph/layer state for the Grand Boule piano plugin.
  *
  * Defines the per-model physical-modeling parameters and the morph state
  * that controls blending between two piano models. Models are pure data

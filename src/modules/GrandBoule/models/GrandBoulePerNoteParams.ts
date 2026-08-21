@@ -1,5 +1,5 @@
 /**
- * Per-note physical parameter overrides for the Grand Boule piano (§3.1).
+ * Per-note physical parameter overrides for the Grand Boule piano.
  *
  * Each key (1–88) may carry up to 8 multiplier parameters that deviate from
  * the global voicing curve. All values are multipliers where 1.0 = neutral

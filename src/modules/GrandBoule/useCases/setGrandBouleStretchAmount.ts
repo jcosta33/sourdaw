@@ -7,7 +7,7 @@ import { type Store } from '#/infra/store/types';
  * Jaatinen & Pätynen 2022 Steinway D curve (default), 2.0 = double-stretch
  * for users who want exaggerated treble brilliance.
  *
- * Per the realism appendix §A8 — Hinrichsen's per-note jitter is preserved
+ * Hinrichsen's per-note jitter is preserved
  * regardless of this knob.
  */
 

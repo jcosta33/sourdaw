@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule morph position and dispatch interpolated
- * physical-modeling parameters to the engine (spec §3.1).
+ * physical-modeling parameters to the engine.
  *
  * Linearly interpolates every numeric model parameter between model A and
  * model B according to the new morph position, then forwards the blended

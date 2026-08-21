@@ -1,4 +1,4 @@
-//! Native device coverage and the shipped browser-WASM Grand Boule exclusion.
+//! Native and browser-WASM device benchmark coverage.
 //!
 //! # Why this test exists
 //!
@@ -20,10 +20,8 @@
 //! A directory under `src/` whose `mod.rs` declares a `#[wasm_bindgen]`
 //! `pub struct <Name>Instance` **and** a `pub fn process(`. That is the shape
 //! every worklet drives, and it is the shape the bench's budget claim is about.
-//! Grand Boule remains in this native population even though `lib.rs` gates its
-//! complete module out of wasm32. The separate browser-WASM assertion below
-//! prevents its withheld constructor from returning to browser benchmark
-//! imports, recipes, runner totals, or the `DEVICE_IDS` census.
+//! The separate browser-WASM assertion pins Grand Boule's constructor, recipe,
+//! Worker total, and ring-consumer measurement.
 //!
 //! # What counts as covered
 //!
@@ -189,7 +187,7 @@ fn every_native_device_is_constructed_by_the_native_cost_bench() {
 }
 
 #[test]
-fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
+fn released_grand_boule_is_in_the_browser_wasm_bench() {
     let root = crate_root();
     let processor = std::fs::read_to_string(root.join("benches/wasm/quantumCostProcessor.js"))
         .expect("browser WASM processor source must be readable");
@@ -197,33 +195,26 @@ fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
         .expect("browser WASM recipes must be readable");
     let runner = std::fs::read_to_string(root.join("benches/wasm/run.mjs"))
         .expect("browser WASM runner must be readable");
-    let current_record = std::fs::read_to_string(root.join("benches/quantum-cost-table.json"))
-        .expect("current browser WASM cost record must be readable");
-
     assert!(
-        !processor.contains("GrandBouleInstance"),
-        "the browser WASM processor must not statically import the withheld GrandBouleInstance export"
+        processor.contains("GrandBouleInstance"),
+        "the browser WASM processor must import GrandBouleInstance"
     );
-    for forbidden in [
+    for required in [
         "'grand_boule',",
         "wanted('grand_boule')",
         "new dsp.GrandBouleInstance",
     ] {
         assert!(
-            !recipes.contains(forbidden),
-            "the browser WASM recipe/census must not contain withheld Grand Boule marker `{forbidden}`"
+            recipes.contains(required),
+            "the browser WASM recipe/census is missing Grand Boule marker `{required}`"
         );
     }
-    for forbidden in ["REFERENCE_PROJECT_WORKER", "['grand_boule', 1]"] {
+    for required in ["REFERENCE_PROJECT_WORKER", "['grand_boule', 1]"] {
         assert!(
-            !runner.contains(forbidden),
-            "the browser WASM runner must not contain withheld Grand Boule marker `{forbidden}`"
+            runner.contains(required),
+            "the browser WASM runner is missing Grand Boule Worker marker `{required}`"
         );
     }
-    assert!(
-        !current_record.contains("\"id\": \"grand_boule\""),
-        "the current browser WASM cost record must not retain a Grand Boule DSP row"
-    );
 
     for required in [
         "publishGrandBouleConsumerClock",
@@ -234,7 +225,7 @@ fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
     ] {
         assert!(
             recipes.contains(required),
-            "the retained host ring-consumer benchmark must reproduce the production consumed branch marker `{required}`"
+            "the ring-consumer benchmark must reproduce production marker `{required}`"
         );
     }
     assert!(
@@ -250,9 +241,8 @@ fn grand_boule_remains_in_the_native_cost_bench() {
     assert!(bench.contains("GrandBouleInstance::new"));
     assert!(bench.contains("bench_grand_boule_process_block"));
     assert!(bench.contains("bench_grand_boule_instance"));
-    assert!(!bench.contains("REFERENCE_PROJECT_WORKER"));
-    assert!(!bench.contains("WORKER line item, Grand Boule"));
-    assert!(bench.contains("native-only evidence"));
+    assert!(bench.contains("REFERENCE_PROJECT_WORKER"));
+    assert!(bench.contains("WORKER Grand Boule"));
 }
 
 /// The deliberately broken fixtures ADR 0015 rule 2 (iv) requires.

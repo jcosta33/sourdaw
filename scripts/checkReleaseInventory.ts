@@ -213,7 +213,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
     for (const file of files) {
         if (!existsSync(resolve(root, file))) {
-            throw new Error(`Grand Boule preserved source is missing: ${file}`);
+            throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
@@ -226,7 +226,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
 function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
-        throw new Error(`Grand Boule preserved source boundary has no tracked files: ${pathspecs.join(', ')}`);
+        throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
     return trackedFilesSha256(root, files);
 }
@@ -363,29 +363,35 @@ export function distributedWasmArtifactCensus(root: string): DistributedWasmArti
 
 export function assertGrandBouleRustWasmBoundary(root: string): void {
     const source = readFileSync(resolve(root, 'crates/daw-dsp/src/lib.rs'), 'utf8');
+    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
     const gatedModule =
         /#\[cfg\s*\(\s*not\s*\(\s*target_arch\s*=\s*"wasm32"\s*\)\s*\)\s*\]\s*pub\s+mod\s+grand_boule\s*;/u;
-    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
-    if (declarations.length !== 1 || !gatedModule.test(source)) {
-        throw new Error('Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
+    if (declarations.length !== 1 || gatedModule.test(source)) {
+        throw new Error('Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
     }
 }
 
-export function assertGrandBouleWithheldFromWasm(root: string): void {
+export function assertGrandBouleReleasedInWasm(root: string): void {
     const census = distributedWasmArtifactCensus(root);
-    for (const path of census.textArtifacts) {
-        if (namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
-            throw new Error(`Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`);
+    const dawDspPackage = wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp');
+    if (dawDspPackage === undefined) {
+        throw new Error('distributed WASM contract is missing the daw-dsp package');
+    }
+    const dawDspArtifacts = new Set(dawDspPackage.artifacts);
+
+    for (const path of census.textArtifacts.filter(
+        (artifact) => dawDspArtifacts.has(artifact) && !artifact.endsWith('/package.json')
+    )) {
+        if (!namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
+            throw new Error(`Grand Boule must be exposed by distributed daw-dsp WASM surface ${path}`);
         }
     }
 
-    for (const path of census.wasmArtifacts) {
+    for (const path of census.wasmArtifacts.filter((artifact) => dawDspArtifacts.has(artifact))) {
         const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
-        const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
-        if (forbiddenExport !== undefined) {
-            throw new Error(
-                `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${path}:${forbiddenExport.name}`
-            );
+        const grandBouleExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
+        if (grandBouleExport === undefined) {
+            throw new Error(`Grand Boule must be exposed by distributed daw-dsp WASM binary ${path}`);
         }
     }
 }
@@ -401,18 +407,18 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
     };
 }
 
-type GrandBoulePreservationBoundary = {
+type GrandBouleReleaseBoundary = {
     path: string;
     gitPathspec: string;
     digestLabel: string;
 };
 
-export const GRAND_BOULE_PRESERVATION_REGISTRY = {
-    kind: 'patent-directed-component',
-    retention: 'defer-behind-admission',
-    owner: 'OS-05',
+export const GRAND_BOULE_RELEASE_REGISTRY = {
+    kind: 'project-source',
+    retention: 'keep',
+    owner: 'OS-10',
     releaseModes: ['source', 'web', 'desktop'],
-    productSurfaces: ['Preserved Grand Boule source and project schema'],
+    productSurfaces: ['Grand Boule source, browser WASM, and desktop runtime'],
     boundaries: [
         {
             path: 'crates/daw-dsp/src/grand_boule/**',
@@ -454,7 +460,7 @@ export const GRAND_BOULE_PRESERVATION_REGISTRY = {
             gitPathspec: ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
             digestLabel: 'grand-boule-worklet-hosts',
         },
-    ] satisfies readonly GrandBoulePreservationBoundary[],
+    ] satisfies readonly GrandBouleReleaseBoundary[],
 } as const;
 
 export function grandBouleReleaseInventoryContract(
@@ -473,18 +479,18 @@ export function grandBouleReleaseInventoryContract(
     | 'productSurfaces'
 > {
     return {
-        kind: GRAND_BOULE_PRESERVATION_REGISTRY.kind,
-        retention: GRAND_BOULE_PRESERVATION_REGISTRY.retention,
-        owner: GRAND_BOULE_PRESERVATION_REGISTRY.owner,
-        releaseModes: [...GRAND_BOULE_PRESERVATION_REGISTRY.releaseModes],
-        paths: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(({ path }) => path),
+        kind: GRAND_BOULE_RELEASE_REGISTRY.kind,
+        retention: GRAND_BOULE_RELEASE_REGISTRY.retention,
+        owner: GRAND_BOULE_RELEASE_REGISTRY.owner,
+        releaseModes: [...GRAND_BOULE_RELEASE_REGISTRY.releaseModes],
+        paths: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ path }) => path),
         sources: [
             'crates/daw-dsp/src/grand_boule/',
             'src/modules/GrandBoule/',
             'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
             'src/infra/release/deviceReleaseAdmission.ts',
-            'retained Grand Boule AudioEngine host, worker, and worklet source',
-            'active patent sources recorded in the readiness audit',
+            'Grand Boule AudioEngine host, worker, and worklet source',
+            'distributed daw-dsp WASM glue, declarations, mirrors, and binary',
         ],
         revisions: [
             'current tracked Rust source',
@@ -492,12 +498,12 @@ export function grandBouleReleaseInventoryContract(
             'current tracked Grand Boule descriptor and release-admission boundary',
             'current tracked AudioEngine host boundary',
         ],
-        digests: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(
+        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
             ({ gitPathspec, digestLabel }) =>
                 `tracked-set-sha256:${trackedSetSha256(root, [gitPathspec])}:${digestLabel}`
         ),
-        licenses: ['pending:OS-10-project-grant', 'unverified:HAL-parameter-source-reuse-terms'],
-        productSurfaces: [...GRAND_BOULE_PRESERVATION_REGISTRY.productSurfaces],
+        licenses: ['pending:OS-10-project-grant'],
+        productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
 }
 
@@ -1069,7 +1075,7 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         stdio: 'inherit',
     });
     assertGrandBouleRustWasmBoundary(root);
-    assertGrandBouleWithheldFromWasm(root);
+    assertGrandBouleReleasedInWasm(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')

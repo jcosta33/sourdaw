@@ -1356,7 +1356,7 @@ export class TrackNode {
             pendingLoad.bypassed = bypassed;
         }
         dn.controller?.setBypass?.(bypassed);
-        // Hosted instruments (Fermenter / retained Grand Boule / Levain) keep their worklet
+        // WASM instruments (Fermenter / Grand Boule / Levain) keep their worklet
         // running on bypass — their setBypass only flips a JS flag that gates new
         // noteOn, so any voices already held keep sounding. Releasing all voices
         // when entering bypass stops the held audio at its source.

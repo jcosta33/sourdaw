@@ -1,6 +1,6 @@
 //! Parametric soundboard resonance bank for the Grand Boule piano.
 //!
-//! Implements §3.6 Option C — a bank of ~192 parallel biquad resonators
+//! Implements a bank of parallel biquad resonators
 //! tuned to a plausible piano soundboard mode distribution. The soundboard
 //! is a single global element (one per engine, not per voice) driven by the
 //! aggregate bridge force of all active voices.
@@ -14,8 +14,7 @@
 
 use crate::primitives::flush_denormal;
 
-/// Number of soundboard modes. 192 = 24 × 8 for `f32x8` SIMD alignment and
-/// sits near the upper end of the spec's 100–200 range.
+/// Number of soundboard modes. 192 = 24 × 8 for `f32x8` SIMD alignment.
 pub const SOUNDBOARD_MODES: usize = 192;
 
 /// Lowest soundboard resonance (Hz). A full-size concert grand's
@@ -27,8 +26,8 @@ const MODE_MIN_HZ: f32 = 30.0;
 /// the radiation HF hump and contribute little.
 const MODE_MAX_HZ: f32 = 7_800.0;
 
-/// Plate↔waveguide transition frequency (§A3 of the realism appendix —
-/// Chaigne, Cotté & Viggiano 2013, JASA 133(4)). Below this frequency the
+/// Plate-to-waveguide transition frequency.
+/// (Chaigne, Cotté & Viggiano 2013, JASA 133(4)). Below this frequency the
 /// soundboard vibrates as a single homogeneous orthotropic plate; above it
 /// the inter-rib spaces act as waveguides and the modes localise. The
 /// implication for synthesis is that the plate region has a *lower* modal
@@ -118,7 +117,7 @@ impl Soundboard {
     /// Rebuild mode coefficients. Called from `new` and whenever the sample
     /// rate changes.
     ///
-    /// The mode set is split at `PLATE_WAVEGUIDE_HZ` per §A3:
+    /// The mode set is split at `PLATE_WAVEGUIDE_HZ`:
     ///
     /// * **Plate region** (≤ 1.1 kHz, ~32 % of modes): low density, high Q
     ///   in the lows, broadly correlated L/R radiation (most plate modes

@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 
-/** String-vibration visualiser (§8). WebGPU compute shader with Canvas2D fallback. */
+/** String-vibration visualiser with a WebGPU compute shader and Canvas2D fallback. */
 
 const NUM_STRINGS = 88;
 const DECAY = 0.985;

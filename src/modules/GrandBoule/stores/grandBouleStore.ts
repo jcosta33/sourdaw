@@ -34,13 +34,13 @@ export type GrandBouleState = {
     config: GrandBouleConfig;
     parameters: GrandBoulePresetParameters;
     pedals: GrandBoulePedalState;
-    /** MIDI controller calibration per spec §3.1. */
+    /** MIDI controller calibration. */
     midiCalibration: GrandBouleMidiCalibration;
-    /** Per-note parameter overrides per spec §3.1. */
+    /** Per-note parameter overrides. */
     perNoteOverrides: GrandBoulePerNoteMap;
-    /** Morph/layer state per spec §3.1. */
+    /** Morph/layer state. */
     morph: GrandBouleMorphState;
-    /** Active historical temperament per spec §4. */
+    /** Active historical temperament. */
     temperament: TemperamentIndex;
 };
 
@@ -86,7 +86,7 @@ export const grandBouleStore = createGrandBouleStore('default');
  * Map (unlike the single `Record<deviceId, State>` stores other modules use,
  * which a `.set({})` clears wholesale). Project teardown must reset every
  * device's slice here, or a prior project's Grand Boule state leaks into a New
- * Project (§13.1).
+ * project.
  *
  * Every Map entry's value is reset to a fresh default in place rather than
  * dropping the entries, so any open panel still subscribed to its store keeps a

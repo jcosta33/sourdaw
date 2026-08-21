@@ -8,14 +8,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
     assertGrandBouleReleaseInventory,
+    assertGrandBouleReleasedInWasm,
     assertGrandBouleRustWasmBoundary,
-    assertGrandBouleWithheldFromWasm,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
     DDSP_TFJS_RUNTIME_PATHS,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
-    GRAND_BOULE_PRESERVATION_REGISTRY,
+    GRAND_BOULE_RELEASE_REGISTRY,
     grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
@@ -33,6 +33,7 @@ import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
+const repositoryDawDspArtifacts = new Set(wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp')?.artifacts ?? []);
 
 function wasmWithFunctionExport(name: string): Uint8Array {
     const encodedName = new TextEncoder().encode(name);
@@ -74,11 +75,19 @@ function wasmWithFunctionExport(name: string): Uint8Array {
 function writeDistributedWasmFixture(root: string, binaryExport = 'allowed_instance_new'): void {
     for (const path of repositoryDistributedArtifacts.textArtifacts) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
-        writeFileSync(join(root, path), 'export class AllowedInstance {}');
+        writeFileSync(
+            join(root, path),
+            repositoryDawDspArtifacts.has(path) && !path.endsWith('/package.json')
+                ? 'export class GrandBouleInstance {}'
+                : 'export class AllowedInstance {}'
+        );
     }
     for (const path of repositoryDistributedArtifacts.wasmArtifacts) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
-        writeFileSync(join(root, path), wasmWithFunctionExport(binaryExport));
+        writeFileSync(
+            join(root, path),
+            wasmWithFunctionExport(repositoryDawDspArtifacts.has(path) ? 'grandbouleinstance_new' : binaryExport)
+        );
     }
     mkdirSync(join(root, 'public/wasm'), { recursive: true });
     writeFileSync(
@@ -101,7 +110,7 @@ function writeDistributedWasmFixture(root: string, binaryExport = 'allowed_insta
     );
 }
 
-function writeGrandBoulePreservationFixture(root: string): void {
+function writeGrandBouleReleaseFixture(root: string): void {
     for (const [path, contents] of [
         ['crates/daw-dsp/src/grand_boule/engine.rs', 'native engine'],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
@@ -109,7 +118,7 @@ function writeGrandBoulePreservationFixture(root: string): void {
             'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
             "export const GRAND_BOULE_DESCRIPTOR = { id: 'grand-boule' };",
         ],
-        ['src/infra/release/deviceReleaseAdmission.ts', "export const withheld = new Set(['grand-boule']);"],
+        ['src/infra/release/deviceReleaseAdmission.ts', 'export const withheld = new Set<string>();'],
         ['src/modules/AudioEngine/engine/GrandBouleNode.ts', 'export class GrandBouleNode {}'],
         ['src/modules/AudioEngine/models/GrandBouleRingProtocol.ts', 'export const ring = 1;'],
         ['src/modules/AudioEngine/workers/grandBouleEngineWorker.ts', 'export const worker = 1;'],
@@ -172,57 +181,58 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
-    it('gates the complete Grand Boule Rust module out of the wasm32 crate graph', () => {
+    it('includes the complete Grand Boule Rust module in the wasm32 crate graph', () => {
         expect(() => assertGrandBouleRustWasmBoundary(repositoryRoot)).not.toThrow();
 
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-rust-boundary-'));
         try {
             const lib = join(root, 'crates/daw-dsp/src/lib.rs');
             mkdirSync(dirname(lib), { recursive: true });
-            writeFileSync(lib, 'pub mod grand_boule;');
+            writeFileSync(lib, '#[cfg(not(target_arch = "wasm32"))]\npub mod grand_boule;\n');
             expect(() => assertGrandBouleRustWasmBoundary(root)).toThrow(
-                'Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
+                'Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
             );
-            writeFileSync(lib, '#[cfg(not(target_arch = "wasm32"))]\npub mod grand_boule;\npub mod grand_boule;\n');
+            writeFileSync(lib, 'pub mod grand_boule;\npub mod grand_boule;\n');
             expect(() => assertGrandBouleRustWasmBoundary(root)).toThrow(
-                'Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
+                'Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it('withholds Grand Boule construction from every distributed daw-dsp WASM surface', () => {
-        expect(() => assertGrandBouleWithheldFromWasm(repositoryRoot)).not.toThrow();
+    it('exposes Grand Boule construction from every distributed daw-dsp WASM surface', () => {
+        expect(() => assertGrandBouleReleasedInWasm(repositoryRoot)).not.toThrow();
     });
 
-    it.each(repositoryDistributedArtifacts.textArtifacts)(
-        'rejects a returning Grand Boule construction path in declared distributed text artifact %s',
-        (path) => {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-text-'));
+    it.each(
+        repositoryDistributedArtifacts.textArtifacts.filter(
+            (path) => repositoryDawDspArtifacts.has(path) && !path.endsWith('/package.json')
+        )
+    )('rejects a missing Grand Boule construction path in declared daw-dsp text artifact %s', (path) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-text-'));
 
-            try {
-                writeDistributedWasmFixture(root);
-                writeFileSync(join(root, path), 'export class GrandBouleInstance {}');
-                expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
-                    `Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`
-                );
-            } finally {
-                rmSync(root, { recursive: true, force: true });
-            }
+        try {
+            writeDistributedWasmFixture(root);
+            writeFileSync(join(root, path), 'export class AllowedInstance {}');
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
+                `Grand Boule must be exposed by distributed daw-dsp WASM surface ${path}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
         }
-    );
+    });
 
-    it.each(repositoryDistributedArtifacts.wasmArtifacts)(
-        'rejects a returning Grand Boule export in declared distributed binary artifact %s',
+    it.each(repositoryDistributedArtifacts.wasmArtifacts.filter((path) => repositoryDawDspArtifacts.has(path)))(
+        'rejects a missing Grand Boule export in declared daw-dsp binary artifact %s',
         (path) => {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-binary-'));
 
             try {
                 writeDistributedWasmFixture(root);
-                writeFileSync(join(root, path), wasmWithFunctionExport('grandbouleinstance_new'));
-                expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
-                    `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${path}:grandbouleinstance_new`
+                writeFileSync(join(root, path), wasmWithFunctionExport('allowed_instance_new'));
+                expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
+                    `Grand Boule must be exposed by distributed daw-dsp WASM binary ${path}`
                 );
             } finally {
                 rmSync(root, { recursive: true, force: true });
@@ -264,7 +274,7 @@ describe('release inventory', () => {
             writeDistributedWasmFixture(root);
             mkdirSync(dirname(join(root, path)), { recursive: true });
             writeFileSync(join(root, path), contents);
-            expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(`${label} has unexpected artifact ${path}`);
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(`${label} has unexpected artifact ${path}`);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -284,15 +294,13 @@ describe('release inventory', () => {
                 artifacts: {},
             };
             writeFileSync(manifestPath, JSON.stringify(manifest));
-            expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
-                'WASM manifest has unexpected package hostile'
-            );
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow('WASM manifest has unexpected package hostile');
 
             writeDistributedWasmFixture(root);
             const changed = JSON.parse(readFileSync(manifestPath, 'utf8')) as WasmManifest;
             changed.packages['proof-chamber']!.artifacts['public/wasm/hostile.js'] = 'sha256:fixture';
             writeFileSync(manifestPath, JSON.stringify(changed));
-            expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
                 'WASM manifest package proof-chamber has unexpected artifact public/wasm/hostile.js'
             );
         } finally {
@@ -336,22 +344,22 @@ describe('release inventory', () => {
 
     it('binds Grand Boule source bytes to its inventory digest', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-provenance-'));
-        writeGrandBoulePreservationFixture(root);
+        writeGrandBouleReleaseFixture(root);
         const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');
 
         try {
             const before = grandBouleReleaseInventoryContract(root);
-            expect(before.retention).toBe('defer-behind-admission');
+            expect(before.retention).toBe('keep');
             expect(before.releaseModes).toEqual(['source', 'web', 'desktop']);
-            expect(before.paths).toEqual(GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(({ path }) => path));
+            expect(before.paths).toEqual(GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ path }) => path));
             expect(before.paths).toContain('src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts');
             expect(before.paths).toContain('src/infra/release/deviceReleaseAdmission.ts');
             expect(before.paths).toContain('src/modules/AudioEngine/worklets/grandBoule*.ts');
             expect(before.paths).not.toContain('src/modules/AudioEngine/worklets/**');
-            expect(before.productSurfaces).toEqual(['Preserved Grand Boule source and project schema']);
-            expect(before.digests).toHaveLength(GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.length);
+            expect(before.productSurfaces).toEqual(['Grand Boule source, browser WASM, and desktop runtime']);
+            expect(before.digests).toHaveLength(GRAND_BOULE_RELEASE_REGISTRY.boundaries.length);
             expect(before.digests).toEqual(
-                GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(({ digestLabel }) =>
+                GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ digestLabel }) =>
                     expect.stringMatching(new RegExp(`^tracked-set-sha256:[0-9a-f]{64}:${digestLabel}$`))
                 )
             );
@@ -374,7 +382,7 @@ describe('release inventory', () => {
 
     it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-assertion-'));
-        writeGrandBoulePreservationFixture(root);
+        writeGrandBouleReleaseFixture(root);
 
         try {
             const current = grandBouleReleaseInventoryContract(root);
@@ -392,7 +400,7 @@ describe('release inventory', () => {
             ).toThrow('Grand Boule release inventory digests does not match provenance');
 
             for (const [field, value] of [
-                ['retention', 'keep'],
+                ['retention', 'defer-behind-admission'],
                 ['releaseModes', ['source']],
                 ['paths', current.paths.slice(1)],
             ] as const) {
@@ -403,20 +411,20 @@ describe('release inventory', () => {
 
             rmSync(join(root, 'src/modules/GrandBoule/models/GrandBouleConfig.ts'));
             expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
-                'Grand Boule preserved source is missing: src/modules/GrandBoule/models/GrandBouleConfig.ts'
+                'Grand Boule release source is missing: src/modules/GrandBoule/models/GrandBouleConfig.ts'
             );
 
-            writeGrandBoulePreservationFixture(root);
+            writeGrandBouleReleaseFixture(root);
             const preserved = grandBouleReleaseInventoryContract(root);
             rmSync(join(root, 'src/infra/release/deviceReleaseAdmission.ts'));
             expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
-                'Grand Boule preserved source is missing: src/infra/release/deviceReleaseAdmission.ts'
+                'Grand Boule release source is missing: src/infra/release/deviceReleaseAdmission.ts'
             );
 
-            writeGrandBoulePreservationFixture(root);
+            writeGrandBouleReleaseFixture(root);
             rmSync(join(root, 'src/modules/AudioEngine/worklets/grandBouleProcessor.ts'));
             expect(() => assertGrandBouleReleaseInventory(root, preserved)).toThrow(
-                'Grand Boule preserved source is missing: src/modules/AudioEngine/worklets/grandBouleProcessor.ts'
+                'Grand Boule release source is missing: src/modules/AudioEngine/worklets/grandBouleProcessor.ts'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });

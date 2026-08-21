@@ -808,6 +808,184 @@ export class GlutenInstance {
 if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
 
 /**
+ * Grand Boule host instance for native and WASM integration.
+ */
+export class GrandBouleInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        GrandBouleInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_grandbouleinstance_free(ptr, 0);
+    }
+    /**
+     * Panic: silence every voice immediately.
+     */
+    all_notes_off() {
+        wasm.grandbouleinstance_all_notes_off(this.__wbg_ptr);
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.grandbouleinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pointer to the right channel buffer (call after `process`).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.grandbouleinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Current DSP-owned render lifecycle for the worker host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.grandbouleinstance_lifecycle_state(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Load an attack-sample clip into the hybrid sampled-attack set.
+     * @param {number} key
+     * @param {Float32Array} samples
+     */
+    load_attack_clip(key, samples) {
+        const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.grandbouleinstance_load_attack_clip(this.__wbg_ptr, key, ptr0, len0);
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} voice_count
+     */
+    constructor(sample_rate, voice_count) {
+        const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);
+        this.__wbg_ptr = ret;
+        GrandBouleInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Apply MPE per-note expression to the voice held on `channel` at
+     * `midi_note` (audit MD-2).
+     *
+     * Grand Boule sounds `bend_semitones` only: the ringing modal strings are
+     * retuned in place. `pressure` and `slide` have no physical counterpart on
+     * a struck string and are dropped — the expression registry advertises
+     * pitch bend alone, so the editor never offers those lanes for this device.
+     * @param {number} midi_note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     */
+    note_expression(midi_note, channel, bend_semitones, pressure, slide) {
+        wasm.grandbouleinstance_note_expression(this.__wbg_ptr, midi_note, channel, bend_semitones, pressure, slide);
+    }
+    /**
+     * Begin the release phase for any voice holding this note.
+     * @param {number} midi_note
+     */
+    note_off(midi_note) {
+        wasm.grandbouleinstance_note_off(this.__wbg_ptr, midi_note);
+    }
+    /**
+     * Note-off narrowed to one MPE member channel (audit MD-2).
+     * @param {number} midi_note
+     * @param {number} channel
+     */
+    note_off_on_channel(midi_note, channel) {
+        wasm.grandbouleinstance_note_off_on_channel(this.__wbg_ptr, midi_note, channel);
+    }
+    /**
+     * Trigger a note. `midi_note` covers the full MIDI range; out-of-piano
+     * notes are silently ignored.
+     * @param {number} midi_note
+     * @param {number} velocity
+     */
+    note_on(midi_note, velocity) {
+        wasm.grandbouleinstance_note_on(this.__wbg_ptr, midi_note, velocity);
+    }
+    /**
+     * Trigger a MIDI 2.0 note-on with 16-bit velocity and Q24 pitch offset.
+     * @param {number} midi_note
+     * @param {number} velocity_16bit
+     * @param {number} pitch_offset_q24
+     */
+    note_on_midi2(midi_note, velocity_16bit, pitch_offset_q24) {
+        wasm.grandbouleinstance_note_on_midi2(this.__wbg_ptr, midi_note, velocity_16bit, pitch_offset_q24);
+    }
+    /**
+     * Trigger a note carrying its MPE member channel.
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {number} channel
+     */
+    note_on_with_channel(midi_note, velocity, channel) {
+        wasm.grandbouleinstance_note_on_with_channel(this.__wbg_ptr, midi_note, velocity, channel);
+    }
+    /**
+     * Render a block of audio and return a pointer to the left channel.
+     * The caller reads both channels from WASM memory.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.grandbouleinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a global parameter (`master_gain`, `soundboard_send`,
+     * `sympathetic_send`).
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.grandbouleinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+    /**
+     * Set the sostenuto pedal state.
+     * @param {boolean} engaged
+     */
+    set_sostenuto(engaged) {
+        wasm.grandbouleinstance_set_sostenuto(this.__wbg_ptr, engaged);
+    }
+    /**
+     * Set the sustain pedal position (0..1).
+     * @param {number} position
+     */
+    set_sustain(position) {
+        wasm.grandbouleinstance_set_sustain(this.__wbg_ptr, position);
+    }
+    /**
+     * Set the historical temperament (0 = Equal, 1 = Werckmeister III,
+     * 2 = Kirnberger III, 3 = Vallotti, 4 = Young II, 5 = Meantone ¼-comma).
+     * @param {number} index
+     */
+    set_temperament(index) {
+        wasm.grandbouleinstance_set_temperament(this.__wbg_ptr, index);
+    }
+    /**
+     * Set the una-corda pedal state.
+     * @param {boolean} engaged
+     */
+    set_una_corda(engaged) {
+        wasm.grandbouleinstance_set_una_corda(this.__wbg_ptr, engaged);
+    }
+}
+if (Symbol.dispose) GrandBouleInstance.prototype[Symbol.dispose] = GrandBouleInstance.prototype.free;
+
+/**
  * WASM-exported Grinder instance for AudioWorklet.
  */
 export class GrinderInstance {
@@ -1842,6 +2020,9 @@ const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefine
 const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr, 1));
+const GrandBouleInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_grandbouleinstance_free(ptr, 1));
 const GrinderInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr, 1));

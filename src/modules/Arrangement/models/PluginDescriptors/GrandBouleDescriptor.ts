@@ -1,6 +1,6 @@
 /**
- * Preserved Grand Boule physical-modeling piano descriptor.
- * Release admission withholds it from distributed discovery and construction.
+ * Grand Boule physical-modeling piano descriptor.
+ * Registers Grand Boule as an instrument for MIDI tracks.
  */
 
 import { type PluginDescriptor } from '../DeviceParameterTypes';

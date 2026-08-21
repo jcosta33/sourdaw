@@ -55,7 +55,7 @@ import { StringVibrationView } from '../components/StringVibrationView';
 import { GRAND_BOULE_PER_NOTE_AVAILABLE } from '../helpers/perNoteAvailability';
 
 /**
- * Grand Boule piano plugin panel view (§8).
+ * Grand Boule piano plugin panel.
  *
  * Composes the interactive keyboard, the string-vibration visualiser, the
  * spectral waterfall, and the global/pedal controls. Subscribes to the
@@ -161,7 +161,7 @@ const MICROPHONE_POSITIONS = [
 ] as const;
 
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    // §52.1 — Derive the engine handle from a subscribed track list so the
+    // Derive the engine handle from a subscribed track list so the
     // React Compiler can memoize this across the many per-note re-renders
     // (setActiveNotes fires on every MIDI noteOn). Previously: full
     // getAllTracks().find() scan per render.
@@ -170,7 +170,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         .flatMap((track) => track.devices)
         .find((device) => device.id === deviceId)?.parameterValues;
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId, tracks: trackState.tracks });
-    // §209.1 — Typed default instead of non-null assertion on live value.
+    // Keep the live value typed without a non-null assertion.
     const store = createGrandBouleStore(deviceId);
     const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
@@ -344,7 +344,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </Stack>
                     </SectionCard>
 
-                    <SectionCard title="Morph" detail="Piano model blending (§3.1).">
+                    <SectionCard title="Morph" detail="Piano model blending.">
                         <MorphPanel
                             morph={morph}
                             onMorphPositionChange={(position) =>
@@ -481,7 +481,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             </Stack>
                         </Grid>
                     </SectionCard>
-                    <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
+                    <SectionCard title="Realism" detail="Stretched tuning and attack bite.">
                         <Grid cols={2} gapX={2} gapY={3}>
                             <Knob
                                 value={config.stretchAmount}
@@ -505,7 +505,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                         </Grid>
                     </SectionCard>
-                    <SectionCard title="Per-Note" detail="Key-specific parameter editing (§3.1).">
+                    <SectionCard title="Per-Note" detail="Key-specific parameter editing.">
                         {GRAND_BOULE_PER_NOTE_AVAILABLE ? (
                             <PerNoteEditor
                                 perNoteOverrides={liveState.perNoteOverrides}
@@ -551,7 +551,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         )}
                     </SectionCard>
 
-                    <SectionCard title="MIDI Calibration" detail="Controller tuning (§3.1).">
+                    <SectionCard title="MIDI Calibration" detail="Controller tuning.">
                         <MidiCalibrationPanel
                             calibration={liveState.midiCalibration}
                             lastVelocity={lastVelocity}
@@ -655,7 +655,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </Stack>
                     </SectionCard>
 
-                    <SectionCard title="Tuning" detail="Historical temperament (§4).">
+                    <SectionCard title="Tuning" detail="Historical temperament.">
                         <Stack gap={1}>
                             {TEMPERAMENT_OPTIONS.map((option) => {
                                 const active = temperament === option.value;

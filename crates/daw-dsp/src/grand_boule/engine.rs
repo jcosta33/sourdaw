@@ -103,11 +103,11 @@ pub struct GrandBouleEngine {
     /// Overall tone color offset from piano model (-1..+1).
     tone_color: f32,
     /// Multiplier for the Steinway D Railsback stretched-tuning curve
-    /// (§A8). 0.0 = no stretch (equal-tempered fundamentals), 1.0 = the
+    /// 0.0 disables stretch; 1.0 applies the full project curve.
     /// measured Jaatinen & Pätynen Steinway D curve, > 1.0 = exaggerated
     /// stretch. Per-note jitter is preserved at full strength.
     stretch_amount: f32,
-    /// Velocity multiplier for the §A6 string-precursor "bite" noise burst.
+    /// Velocity multiplier for the string-precursor "bite" noise burst.
     /// 0.0 disables the burst entirely, 1.0 = neutral (matches the
     /// hammer's actual MIDI velocity), > 1.0 over-emphasises the chirp.
     attack_bite: f32,
@@ -232,7 +232,7 @@ impl GrandBouleEngine {
         // Apply historical temperament offset on top of the caller's pitch ratio.
         let temperament_cents = temperament_offset_cents(self.temperament, midi_note);
         let temperament_ratio = (2.0_f32).powf(temperament_cents / 1200.0);
-        // Stretched-tuning amount (§A8). The default Railsback curve baked
+        // Scale the default Railsback curve by the configured stretch amount.
         // into `key_fundamental_hz` is the full Steinway D measurement
         // (Jaatinen & Pätynen 2022). Users who want less or more stretch
         // dial that in via the `stretch_amount` knob (0..2). We compute
@@ -252,7 +252,7 @@ impl GrandBouleEngine {
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
         self.noise
             .trigger(NoiseEvent::HammerLetoff, shaped_velocity);
-        // §A6 string-precursor "bite" — the longitudinal pulse that
+        // String-precursor "bite": a longitudinal pulse that
         // reaches the bridge before the transverse wave. Velocity-scaled
         // so soft notes barely whisper it but ff hits get a clear chirp.
         // The `attack_bite` user knob multiplies that velocity, letting
@@ -288,7 +288,7 @@ impl GrandBouleEngine {
             }
         }
 
-        // Voice stealing per §4.2.
+        // Steal the lowest-priority active voice when the pool is full.
         let (highest_midi, lowest_midi) = self.extreme_notes();
         let mut victim_index: Option<usize> = None;
         let mut best_priority: Option<(u8, u8, u64)> = None;
@@ -549,7 +549,7 @@ impl GrandBouleEngine {
             "stretch_amount" => self.stretch_amount = value.clamp(0.0, 2.0),
             "attack_bite" => self.attack_bite = value.clamp(0.0, 2.0),
             // Voice rendering tier: 0 = Standard (power-law hammer),
-            // 1 = High (Stulov hysteresis hammer, §A2). Without this the
+            // 1 = High (Stulov hysteresis hammer). Without this the
             // Stulov path was unreachable in the shipped instrument.
             "quality" => {
                 let quality = if value >= 0.5 {
@@ -559,7 +559,7 @@ impl GrandBouleEngine {
                 };
                 self.set_voice_quality(quality);
             }
-            // Half-pedal damper-lift point (research §7.3 `threshold_low`),
+            // Lower edge of the half-pedal damper-lift curve,
             // calibrated per controller from the MIDI calibration panel.
             "sustain_threshold" => self.pedals.set_half_pedal_low(value),
             // Time constant smoothing the continuous sustain controller on its
@@ -2311,7 +2311,7 @@ mod tests {
 
     // ── Half-pedal engagement threshold (`sustain_threshold`) ──────────────
     //
-    // Research §7.3 fixes the damper curve at `smoothstep(CC64, low, high)`
+    // The damper curve is `smoothstep(CC64, low, high)`.
     // with `low = 0.15`. The Grand Boule MIDI-calibration panel exposes that
     // `low` edge as "Sus Thresh" so a pedal whose travel or rest position
     // differs from the reference can be calibrated to it. These prove the

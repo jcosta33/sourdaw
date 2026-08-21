@@ -19,6 +19,18 @@ import type {
     RuntimeGraphTrackStripInitializationDelta,
 } from '../../models/RuntimeGraphDelta';
 
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
+
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+
+    return {
+        ...actual,
+        isDeviceReleaseAdmitted: (type: string) =>
+            !injectedWithheldDeviceTypes.has(type) && actual.isDeviceReleaseAdmitted(type),
+    };
+});
+
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
 // nodes that AudioEngineImpl reads directly (preFaderTap / analyserNode for
 // sends and sidechain, deviceNodes for note-off fan-out, meterNode for the
@@ -102,7 +114,7 @@ vi.mock('../../engine/TrackNode', () => {
                 precedingDeviceIds?: readonly string[],
                 parameterIds: readonly string[] = []
             ) => {
-                if (type === 'grand-boule') {
+                if (type === 'grand-boule' || injectedWithheldDeviceTypes.has(type)) {
                     return false;
                 }
                 if (
@@ -516,6 +528,7 @@ describe('AudioEngine', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        injectedWithheldDeviceTypes.clear();
         window.localStorage.clear();
         mockCtx = createMockAudioContext();
 
@@ -679,25 +692,38 @@ describe('AudioEngine', () => {
         expect(engine.getRuntimeGraphRevision()).toBe(1);
     });
 
-    it('warns once per project when withheld devices remain silent', () => {
+    it('admits Grand Boule snapshots without a withholding warning', () => {
         const first = engine.initializeTrackStripFromSnapshot(
             createTrackStripInitialization(0, [
-                { id: 'withheld-1', type: 'grand-boule' },
-                { id: 'withheld-2', type: 'grand-boule' },
+                { id: 'grand-boule-1', type: 'grand-boule' },
+                { id: 'grand-boule-2', type: 'grand-boule' },
+            ])
+        );
+
+        expect(first).toEqual(expect.objectContaining({ acceptance: 'accepted', application: 'applied' }));
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('warns once per project when withheld devices remain silent', () => {
+        injectedWithheldDeviceTypes.add('test-withheld-device');
+        const first = engine.initializeTrackStripFromSnapshot(
+            createTrackStripInitialization(0, [
+                { id: 'withheld-1', type: 'test-withheld-device' },
+                { id: 'withheld-2', type: 'test-withheld-device' },
             ])
         );
 
         expect(first).toEqual(expect.objectContaining({ acceptance: 'accepted', application: 'applied' }));
         expect(notifyUser).toHaveBeenCalledOnce();
         expect(notifyUser).toHaveBeenCalledWith(
-            '"grand-boule" is withheld from this build. Its project data is preserved, but it will remain silent.',
+            '"test-withheld-device" is withheld from this build. Its project data is preserved, but it will remain silent.',
             'warning'
         );
 
         engine.resetGraph();
         engine.initializeTrackStripFromSnapshot(
             createTrackStripInitialization(engine.getRuntimeGraphRevision(), [
-                { id: 'withheld-next-project', type: 'grand-boule' },
+                { id: 'withheld-next-project', type: 'test-withheld-device' },
             ])
         );
 

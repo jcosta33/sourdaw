@@ -1,4 +1,4 @@
-//! Longitudinal (phantom) partial generator for bass strings (§A5.1).
+//! Longitudinal partial generator for bass strings.
 //!
 //! Bass piano strings exhibit longitudinal vibration modes coupled
 //! nonlinearly to the transverse modes. Per Bank & Sujbert (2005, JASA

@@ -1,5 +1,5 @@
 /**
- * Morph/layer panel for the Grand Boule piano plugin (spec §3.1).
+ * Morph/layer panel for the Grand Boule piano plugin.
  *
  * Lets the user pick two piano models, blend between them with a morph
  * knob, adjust layer balance, and toggle the morph engine on/off.
@@ -167,7 +167,7 @@ export const MorphPanel = ({
         <DawPluginSectionCard
             className="grand-boule-window"
             title="Morph"
-            detail="Blend between piano models (§3.1)."
+            detail="Blend between piano models."
             titleClassName="text-neutral-400/80"
         >
             <Stack gap={3}>

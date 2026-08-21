@@ -899,8 +899,8 @@
     },
     {
       "id": "grand_boule_ring_consumer",
-      "label": "Grand Boule retained ring consumer (host transport only)",
-      "note": "retained host transport only, with no Grand Boule WASM DSP or constructor; reproduces the successful consumer branch from grandBouleProcessor.ts",
+      "label": "Grand Boule ring consumer",
+      "note": "live audio-thread transport; reproduces the successful consumer branch from grandBouleProcessor.ts",
       "costSite": "audio-thread",
       "warmVerify": {
         "ok": true,

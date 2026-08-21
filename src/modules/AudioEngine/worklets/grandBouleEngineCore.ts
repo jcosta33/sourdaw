@@ -1,20 +1,15 @@
 /**
- * Retained Grand Boule engine-core contract shared by two host designs.
+ * Grand Boule engine core shared by two host designs.
  *
- * Release admission withholds both paths and distributed daw-dsp WASM exposes
- * no constructor. Focused tests inject a structural instance so this complete
- * host source can retain its transport and dispatch behavior.
- *
- *  - **Worker ring** publishes rendered blocks into a
+ *  - **Live** the WASM engine runs in a Worker and publishes rendered blocks into a
  *    SharedArrayBuffer ring that a consumer worklet drains. A Grand Boule
  *    overload starves its own ring and only Grand Boule drops out; the rest of
  *    the session keeps its deadline.
- *  - **Inline offline** runs the injected engine inside an `AudioWorkletProcessor`.
+ *  - **Offline** the engine runs inside an `AudioWorkletProcessor`.
  *    An `OfflineAudioContext` has no system-level audio callback and therefore no
  *    load value and no underrun (Web Audio §2.6), so the ring protects against a
  *    deadline that does not exist — while its back-pressure and its
- *    consumer-offset plane are precisely what collapse an export into silence
- *    (INVENTORY-device-clock-parity G-1).
+ *    consumer-offset plane can collapse an export into silence.
  *
  * Every serious plugin API formalises the same split: VST3
  * `ProcessSetup::processMode`, CLAP `clap_plugin_render`. What must *not* differ
@@ -23,8 +18,7 @@
  *
  * ## Isolation, and why this file lives in `worklets/`
  *
- * It may import `../wasm/daw_dsp.js`, plus its inert local construction seam,
- * and nothing else. One of its two hosts is an
+ * It may import `../wasm/daw_dsp.js` and nothing else. One of its two hosts is an
  * `AudioWorkletGlobalScope`, which has no DOM, no `fetch` and no app module
  * graph; the other is a Worker under the same rule. An import added here that
  * reaches into `src/app`, `src/helpers` or another module breaks both.
@@ -49,9 +43,7 @@
  * `grandBouleDispatchParity.spec.ts` exists for.
  */
 
-import { initSync } from '../wasm/daw_dsp.js';
-
-import { createGrandBouleWasmInstance, type GrandBouleInstance } from './grandBouleWasmInstance';
+import { initSync, GrandBouleInstance } from '../wasm/daw_dsp.js';
 
 /** Voice ceiling both hosts construct the engine with. */
 export const GRAND_BOULE_VOICE_COUNT = 64;
@@ -137,8 +129,7 @@ export type CreateGrandBouleInstanceOutput = {
 };
 
 /**
- * Instantiate the retained host engine through the source-owned seam. The seam
- * is inert in production and injected only by focused host tests.
+ * Instantiate the WASM engine. Both hosts use the same voice ceiling and path.
  */
 export function createGrandBouleInstance({
     wasmModule,
@@ -146,7 +137,7 @@ export function createGrandBouleInstance({
 }: CreateGrandBouleInstanceInput): CreateGrandBouleInstanceOutput {
     const exports = initSync({ module: wasmModule });
     return {
-        instance: createGrandBouleWasmInstance(sampleRate, GRAND_BOULE_VOICE_COUNT),
+        instance: new GrandBouleInstance(sampleRate, GRAND_BOULE_VOICE_COUNT),
         memory: exports.memory,
     };
 }

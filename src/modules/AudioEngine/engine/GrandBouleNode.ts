@@ -1,14 +1,10 @@
 /**
- * Retained GrandBouleNode host source, over two transport designs.
+ * GrandBouleNode - one control surface over two transport designs.
  *
- * This design is not release-reachable while admission withholds Grand Boule
- * and the distributed daw-dsp WASM has no constructor. Focused tests inject an
- * inert structural instance to preserve its host and transport behavior.
- *
- * **Worker ring** (`createWorkerRingTransport`):
+ * **Live** (`createWorkerRingTransport`):
  *   Main thread  →  Web Worker (WASM engine)  →  SAB ring buffer  →  AudioWorklet (consumer)
  *
- * The retained design places the physical-modeling engine on a Web Worker that renders
+ * The physical-modeling engine runs on a Web Worker that renders
  * ahead into a SharedArrayBuffer. The AudioWorklet `process()` just copies from
  * the ring — microseconds of work, and an overload starves this device's own
  * ring instead of missing the graph's deadline and glitching every track.

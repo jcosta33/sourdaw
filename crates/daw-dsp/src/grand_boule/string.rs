@@ -1,7 +1,7 @@
 //! Modal string resonator for the Grand Boule piano.
 //!
-//! Implements the sum-of-biquads representation of a stiff piano string per
-//! spec §3.5. Coefficients come from the impulse-invariant transform:
+//! Implements a sum-of-biquads stiff-string model. Coefficients come from the
+//! impulse-invariant transform:
 //!
 //! ```text
 //! θ = 2π·f_k / f_s
@@ -12,7 +12,7 @@
 //! y[n] = C0·(x[n] - x[n-2]) + C1·y[n-1] + C2·y[n-2]
 //! ```
 //!
-//! Layout is **Struct-of-Arrays** (§7.3) with 64-byte alignment so the inner
+//! Layout is 64-byte-aligned Struct-of-Arrays so the inner
 //! loop auto-vectorises to 8-wide SIMD on release builds. All state is fixed
 //! size — no allocations at tick time, no conditional branches in the hot
 //! path beyond the partial-count cap.
@@ -22,14 +22,12 @@ use crate::primitives::{flush_denormal, flush_denormal_f64};
 
 /// Maximum number of modal partials tracked per resonator bank.
 /// 80 covers partials up to ~20 kHz even for bass notes and aligns to
-/// 10 × f32x8 SIMD lanes. Research (Pianoteq analysis) indicates 60–130
-/// modes per note for best-in-class realism.
+/// 10 × f32x8 SIMD lanes.
 pub const MAX_PARTIALS: usize = 80;
 
 /// Maximum number of low-frequency partials processed in f64 precision.
-/// Per spec §7.3: "Use f64 for resonators below 200 Hz." Bass notes at
-/// A0 (27.5 Hz) have up to 7 partials below 200 Hz; with 80 max partials
-/// we keep 8 slots which is sufficient.
+/// Bass notes at A0 have up to seven partials below 200 Hz, so eight f64 slots
+/// cover the low-frequency bank.
 const MAX_F64_PARTIALS: usize = 8;
 
 /// Physical inputs that derive a string modal bank's coefficients.
@@ -69,7 +67,7 @@ impl StringModalParameters {
 /// polarization of one string.
 ///
 /// Partials below 200 Hz are processed in f64 precision for numerical
-/// stability with very narrow bandwidths (spec §7.3). The f64 partials
+/// stability with very narrow bandwidths. The f64 partials
 /// are stored separately and summed first before adding f32 partials.
 #[repr(C, align(64))]
 #[derive(Clone, Debug)]
@@ -193,7 +191,7 @@ impl ModalString {
                 continue;
             }
 
-            // Spec §3.5: A_n ∝ sin(nπ · x_hammer / L) / n
+            // Modal amplitude follows sin(nπ · strike_ratio) / n.
             let amp = (partial_number * PI * parameters.hammer_strike_ratio)
                 .sin()
                 .abs()
@@ -207,8 +205,7 @@ impl ModalString {
             let bandwidth =
                 parameters.base_bandwidth_hz + 0.000005 * freq * freq.sqrt() + extra_damping_hz;
 
-            // §7.3: Use f64 for resonators below 200 Hz for numerical stability
-            // with very narrow bandwidths.
+            // Use f64 below 200 Hz to stabilize narrow bandwidths.
             if freq < 200.0 && f64_count < MAX_F64_PARTIALS {
                 let freq64 = freq as f64;
                 let sr64 = parameters.sample_rate as f64;
@@ -381,7 +378,7 @@ impl ModalString {
     }
 
     /// Process one sample. f64 partials (below 200 Hz) are processed first
-    /// for numerical stability (§7.3), then f32 partials via the SIMD-friendly
+    /// for numerical stability, then f32 partials via the SIMD-friendly
     /// SoA loop.
     #[inline]
     pub fn tick(&mut self, input: f32) -> f32 {
@@ -420,9 +417,8 @@ impl ModalString {
         output
     }
 
-    /// Cheaper linear-model tick — used by progressive simplification (§4.1)
-    /// once a voice has aged past the threshold. Reduces the effective partial
-    /// count by half, keeping the loudest low partials (largest amp ∝ 1/n).
+    /// Cheaper linear-model tick used after a voice ages past the threshold.
+    /// Reduces the effective partial count by half, keeping the loudest low partials (largest amp ∝ 1/n).
     /// f64 partials are always processed in full (they are already few).
     #[inline]
     pub fn tick_simplified(&mut self, input: f32) -> f32 {
