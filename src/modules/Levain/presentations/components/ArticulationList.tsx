@@ -7,7 +7,7 @@
 import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
-import { Stack } from '#/components/layout';
+import { Grid, Stack } from '#/components/layout';
 
 import { type ArticulationEntry, type ArticulationType } from '../../models/LevainPatch';
 
@@ -29,7 +29,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
 
     if (grid) {
         return (
-            <div className="grid grid-cols-3 gap-1.5 p-2">
+            <Grid cols={3} gap={1.5} className="p-2">
                 {enabled.map((art) => {
                     const isActive = art.type === current;
                     return (
@@ -51,7 +51,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                         </DawPluginChip>
                     );
                 })}
-            </div>
+            </Grid>
         );
     }
 

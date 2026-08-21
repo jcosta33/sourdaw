@@ -13,10 +13,26 @@ import {
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
 
+import { createProjectId, CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
+
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function migrateVersion1ProjectIdentity(value: unknown): unknown {
+    if (!isRecord(value) || value.version !== 1 || !isRecord(value.meta) || typeof value.meta.createdAt !== 'number') {
+        return value;
+    }
+    return {
+        ...value,
+        version: CURRENT_PROJECT_VERSION,
+        meta: {
+            ...value.meta,
+            projectId: createProjectId(),
+        },
+    };
 }
 
 function normalizeAutomationPoint(value: unknown): unknown {
@@ -508,7 +524,7 @@ export function normalizeLegacyProjectData(value: unknown): NormalizeLegacyProje
     }
     const normalizedGrooves = normalizeGrooveFields(stripLegacyYeastViewState(value));
     if (normalizedGrooves.meta !== undefined || normalizedGrooves.arrangement !== undefined) {
-        return normalizeAutomationFields(normalizedGrooves);
+        return migrateVersion1ProjectIdentity(normalizeAutomationFields(normalizedGrooves));
     }
     if (typeof normalizedGrooves.name !== 'string' || !isRecord(normalizedGrooves.tracks)) {
         return normalizedGrooves;
@@ -538,30 +554,32 @@ export function normalizeLegacyProjectData(value: unknown): NormalizeLegacyProje
         activeArrangementId = normalizedGrooves.activeArrangementId;
     }
 
-    return normalizeAutomationFields({
-        version: normalizedGrooves.version,
-        meta: {
-            name: normalizedGrooves.name,
-            createdAt: normalizedGrooves.createdAt,
-            updatedAt: normalizedGrooves.updatedAt,
-            keyRoot: 0,
-            scaleName: 'major',
-            tuning: { name: '12-TET', frequencies: [] },
-        },
-        transport: normalizedGrooves.transport,
-        arrangement: { tracks: normalizedGrooves.tracks.tracks },
-        automation: normalizedGrooves.automation,
-        midi: normalizedGrooves.midi,
-        grooves: normalizedGrooves.grooves,
-        yeast: normalizedGrooves.yeast,
-        mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
-        markers,
-        tempoMap: normalizedGrooves.tempoMap,
-        timeSignatureMap: normalizedGrooves.timeSignatureMap,
-        takeLanes: normalizedGrooves.takeLanes,
-        sidechainRoutes: normalizedGrooves.sidechainRoutes,
-        arrangements,
-        activeArrangementId,
-        history: { checkpoints: [] },
-    });
+    return migrateVersion1ProjectIdentity(
+        normalizeAutomationFields({
+            version: normalizedGrooves.version,
+            meta: {
+                name: normalizedGrooves.name,
+                createdAt: normalizedGrooves.createdAt,
+                updatedAt: normalizedGrooves.updatedAt,
+                keyRoot: 0,
+                scaleName: 'major',
+                tuning: { name: '12-TET', frequencies: [] },
+            },
+            transport: normalizedGrooves.transport,
+            arrangement: { tracks: normalizedGrooves.tracks.tracks },
+            automation: normalizedGrooves.automation,
+            midi: normalizedGrooves.midi,
+            grooves: normalizedGrooves.grooves,
+            yeast: normalizedGrooves.yeast,
+            mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
+            markers,
+            tempoMap: normalizedGrooves.tempoMap,
+            timeSignatureMap: normalizedGrooves.timeSignatureMap,
+            takeLanes: normalizedGrooves.takeLanes,
+            sidechainRoutes: normalizedGrooves.sidechainRoutes,
+            arrangements,
+            activeArrangementId,
+            history: { checkpoints: [] },
+        })
+    );
 }

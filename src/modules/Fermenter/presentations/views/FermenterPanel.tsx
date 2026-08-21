@@ -5,8 +5,9 @@ import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 import { Slider } from '#/components/ui/slider';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { MidiLearnRotaryKnob } from '#/modules/ControlSurface/presentations/views';
@@ -575,7 +576,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     <Row align="stretch" gap={1}>
                         {showSave ? (
                             <>
-                                <input
+                                <Input
                                     type="text"
                                     value={saveName}
                                     onChange={(event) => setSaveName(event.target.value)}
@@ -648,7 +649,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </Row>
                 </Row>
 
-                <div className="grid shrink-0 grid-cols-4 gap-2.5">
+                <Grid cols={4} gap={2.5} className="shrink-0">
                     <MetricTile
                         label="Engine"
                         value={ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
@@ -669,7 +670,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         value={patch.stereoWidth.toFixed(2)}
                         detail={`${patch.numLayers} layer${patch.numLayers === 1 ? '' : 's'}`}
                     />
-                </div>
+                </Grid>
 
                 <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden">
                     <Stack as="section" gap={2.5} className="fermenter-window overflow-hidden p-2.5">

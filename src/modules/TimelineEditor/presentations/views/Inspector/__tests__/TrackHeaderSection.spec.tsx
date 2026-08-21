@@ -55,13 +55,21 @@ vi.mock('#/components/ui/button', () => ({
         onClick,
         variant,
         'aria-pressed': ariaPressed,
-    }: {
-        children: React.ReactNode;
-        onClick?: () => void;
-        variant?: string;
-        'aria-pressed'?: boolean;
-    }) => (
-        <button data-testid="button" data-variant={variant} data-pressed={ariaPressed} onClick={onClick}>
+        'aria-label': ariaLabel,
+        title,
+        ...props
+    }: React.ComponentProps<'button'> & { variant?: string }) => (
+        <button
+            type="button"
+            data-testid="button"
+            data-variant={variant}
+            data-pressed={ariaPressed}
+            aria-pressed={ariaPressed}
+            aria-label={ariaLabel}
+            title={title}
+            onClick={onClick}
+            {...props}
+        >
             {children}
         </button>
     ),

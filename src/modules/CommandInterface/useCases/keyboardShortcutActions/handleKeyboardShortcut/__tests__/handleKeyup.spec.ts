@@ -17,10 +17,10 @@ describe('handleKeyup', () => {
         vi.clearAllMocks();
     });
 
-    it('emits voice.toggle inactive on releasing v', () => {
+    it('does not synthesize a voice admission on releasing v', () => {
         handleKeyup('v');
 
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: false });
+        expect(eventBus.emit).not.toHaveBeenCalled();
     });
 
     it('asks Workspace to finish any matching tool swap for the released key', () => {

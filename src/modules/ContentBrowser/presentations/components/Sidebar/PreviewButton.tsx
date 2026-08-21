@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { Play, Square } from 'lucide-react';
 
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type PreviewButtonProps = {
@@ -11,7 +12,9 @@ type PreviewButtonProps = {
 };
 
 export const PreviewButton = ({ isPlaying, onPlay, onStop }: PreviewButtonProps): ReactElement => (
-    <button
+    <Button
+        variant="bare"
+        size="bare"
         type="button"
         className={cn(
             'size-4 shrink-0 flex items-center justify-center rounded transition-colors',
@@ -28,5 +31,5 @@ export const PreviewButton = ({ isPlaying, onPlay, onStop }: PreviewButtonProps)
         aria-label={isPlaying ? 'Stop preview' : 'Preview sound'}
     >
         {isPlaying ? <Square className="size-2.5 fill-current" /> : <Play className="size-2.5 fill-current" />}
-    </button>
+    </Button>
 );

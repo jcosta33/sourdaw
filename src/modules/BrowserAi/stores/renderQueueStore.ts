@@ -22,6 +22,8 @@ export type RenderQueueState = {
     cachedPhraseIds: string[];
     /** Map of phraseId → render status for the canvas stale badge */
     phraseStatusMap: Record<string, PhraseRenderStatus>;
+    /** Current or terminal request owner for each phrase. */
+    phraseRequestIds?: Record<string, string>;
 };
 
 export const renderQueueStore = createStore<RenderQueueState>({
@@ -29,8 +31,16 @@ export const renderQueueStore = createStore<RenderQueueState>({
         entries: [],
         cachedPhraseIds: [],
         phraseStatusMap: {},
+        phraseRequestIds: {},
     },
 });
+
+export function isCurrentRenderRequest(phraseId: string, requestId: string): boolean {
+    return (
+        renderQueueStore.value?.entries.some((entry) => entry.phraseId === phraseId && entry.requestId === requestId) ??
+        false
+    );
+}
 
 export function enqueueRender(entry: RenderQueueEntry): void {
     renderQueueStore.update((state) => {
@@ -39,18 +49,28 @@ export function enqueueRender(entry: RenderQueueEntry): void {
         }
         return {
             ...state,
-            entries: [...state.entries, entry],
+            entries: [...state.entries.filter((event) => event.phraseId !== entry.phraseId), entry],
             phraseStatusMap: { ...state.phraseStatusMap, [entry.phraseId]: 'queued' },
+            phraseRequestIds: { ...(state.phraseRequestIds ?? {}), [entry.phraseId]: entry.requestId },
         };
     });
 }
 
-export function updateRenderStatus(phraseId: string, status: PhraseRenderStatus): void {
+export function updateRenderStatus(phraseId: string, requestId: string, status: PhraseRenderStatus): void {
     renderQueueStore.update((state) => {
         if (!state) {
             return state;
         }
-        const entries = state.entries.map((event) => (event.phraseId === phraseId ? { ...event, status } : event));
+        const ownsPhrase = state.entries.some((event) => event.phraseId === phraseId && event.requestId === requestId);
+        if (!ownsPhrase) {
+            return state;
+        }
+        const entries =
+            status === 'error'
+                ? state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId)
+                : state.entries.map((event) =>
+                      event.phraseId === phraseId && event.requestId === requestId ? { ...event, status } : event
+                  );
         return {
             ...state,
             entries,
@@ -59,16 +79,20 @@ export function updateRenderStatus(phraseId: string, status: PhraseRenderStatus)
     });
 }
 
-export function markRenderComplete(phraseId: string, cacheKey: string): void {
+export function markRenderComplete(phraseId: string, requestId: string, cacheKey: string): void {
     renderQueueStore.update((state) => {
         if (!state) {
+            return state;
+        }
+        const ownsPhrase = state.entries.some((event) => event.phraseId === phraseId && event.requestId === requestId);
+        if (!ownsPhrase) {
             return state;
         }
         // Drop the completed entry from the queue — its terminal state lives in
         // phraseStatusMap (which the StatusBar count and the stale-subscription read).
         // Keeping completed entries grew `entries` unbounded for the session, since
         // nothing in the module removes them on success.
-        const entries = state.entries.filter((event) => event.phraseId !== phraseId);
+        const entries = state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId);
         const cachedPhraseIds = state.cachedPhraseIds.includes(cacheKey)
             ? state.cachedPhraseIds
             : [...state.cachedPhraseIds, cacheKey];
@@ -93,14 +117,27 @@ export function markPhraseStale(phraseId: string): void {
     });
 }
 
-export function cancelQueuedRender(phraseId: string): void {
+export function cancelQueuedRender(phraseId: string, requestId: string, hasActiveRender = false): void {
     renderQueueStore.update((state) => {
         if (!state) {
             return state;
         }
-        const entries = state.entries.filter((event) => event.phraseId !== phraseId);
-        const phraseStatusMap = { ...state.phraseStatusMap };
-        delete phraseStatusMap[phraseId];
-        return { ...state, entries, phraseStatusMap };
+        const phraseEntries = state.entries.filter((event) => event.phraseId === phraseId);
+        const ownsPhrase = phraseEntries.some((event) => event.requestId === requestId);
+        const currentRequestId = state.phraseRequestIds?.[phraseId];
+        if (currentRequestId !== undefined && currentRequestId !== requestId) {
+            return state;
+        }
+        if (!ownsPhrase && (phraseEntries.length > 0 || !hasActiveRender)) {
+            return state;
+        }
+        const entries = ownsPhrase
+            ? state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId)
+            : state.entries;
+        return {
+            ...state,
+            entries,
+            phraseStatusMap: { ...state.phraseStatusMap, [phraseId]: 'not-rendered' },
+        };
     });
 }

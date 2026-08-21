@@ -5,6 +5,7 @@ import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Check } from 'lucid
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
@@ -153,18 +154,18 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
                         <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-1.5">
+                            <Row justify="between" gap={2}>
+                                <Row gap={1.5}>
                                     <Sparkles className="size-3 text-primary" aria-hidden="true" />
                                     <span className="text-xs font-semibold text-foreground">AI Model</span>
-                                </div>
+                                </Row>
                                 <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
                                     {backendLabel}
                                 </DawMicroBadge>
-                            </div>
+                            </Row>
                         </div>
 
-                        <div className="px-2 py-2 space-y-1.5">
+                        <Stack gap={1.5} className="px-2 py-2">
                             {backend === 'webllm' ? (
                                 <>
                                     {WEBLLM_MODELS.map((model) => (
@@ -181,16 +182,16 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                                         {modelInfo.description}
                                     </p>
-                                    <div className="flex gap-3 mt-1.5 text-[10px] text-muted-foreground">
-                                        <span className="inline-flex items-center gap-1">
+                                    <Row align="stretch" gap={3} className="mt-1.5 text-[10px] text-muted-foreground">
+                                        <Row as="span" gap={1} className="inline-flex">
                                             <Download className="size-3 opacity-60" aria-hidden="true" />
                                             {modelInfo.downloadSize}
-                                        </span>
-                                        <span className="inline-flex items-center gap-1">
+                                        </Row>
+                                        <Row as="span" gap={1} className="inline-flex">
                                             <Cpu className="size-3 opacity-60" aria-hidden="true" />
                                             {modelInfo.ramUsage}
-                                        </span>
-                                    </div>
+                                        </Row>
+                                    </Row>
                                 </div>
                             )}
 
@@ -218,7 +219,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     </Button>
                                 </>
                             )}
-                        </div>
+                        </Stack>
                     </DropdownPanel>
                 ) : null}
             </div>
@@ -228,12 +229,12 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     // ── Loading: progress indicator ─────────────────────────────────────────
     if (status.state === 'loading') {
         return (
-            <div className="flex items-center gap-1.5" title={status.text}>
+            <Row gap={1.5} title={status.text}>
                 <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
                 <span className="text-[10px] text-primary whitespace-nowrap tabular-nums">
                     {Math.round(status.progress * 100)}%
                 </span>
-            </div>
+            </Row>
         );
     }
 
@@ -256,20 +257,20 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
                         <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
-                            <div className="flex items-center justify-between gap-2">
+                            <Row justify="between" gap={2}>
                                 <span className="text-xs font-semibold text-foreground truncate">
                                     {modelInfo.displayName}
                                 </span>
                                 <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
                                     {backendLabel}
                                 </DawMicroBadge>
-                            </div>
+                            </Row>
                         </div>
-                        <div className="px-3 py-2.5 space-y-2.5">
-                            <div className="flex items-center gap-1.5 text-[10px] text-primary">
+                        <Stack gap={2.5} className="px-3 py-2.5">
+                            <Row gap={1.5} className="text-[10px] text-primary">
                                 <DawStatusDot tone="primary" pulse />
                                 <span>Active · {modelInfo.ramUsage} RAM</span>
-                            </div>
+                            </Row>
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -282,7 +283,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 <Power className="size-3 mr-1.5" aria-hidden="true" />
                                 Unload from Memory
                             </Button>
-                        </div>
+                        </Stack>
                     </DropdownPanel>
                 ) : null}
             </div>
@@ -292,10 +293,10 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     // ── Generating ──────────────────────────────────────────────────────────
     if (status.state === 'generating') {
         return (
-            <div className="flex items-center gap-1.5">
+            <Row gap={1.5}>
                 <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
                 <span className="text-[10px] text-primary whitespace-nowrap">Thinking…</span>
-            </div>
+            </Row>
         );
     }
 
@@ -330,22 +331,22 @@ const ModelOption = ({ model, isSelected, onSelect }: ModelOptionProps): ReactEl
         description={model.description}
         className={isSelected ? 'border-primary/30 bg-primary/10' : 'hover:bg-muted/30'}
         endSlot={
-            <div className="flex items-center gap-1.5">
+            <Row gap={1.5}>
                 <span className="text-[9px] text-muted-foreground">{model.parameterCount}</span>
                 {isSelected ? <Check className="size-3 text-primary" /> : null}
-            </div>
+            </Row>
         }
         onClick={onSelect}
     >
-        <div className="flex gap-3 mt-1 text-[9px] text-muted-foreground/70">
-            <span className="inline-flex items-center gap-0.5">
+        <Row align="stretch" gap={3} className="mt-1 text-[9px] text-muted-foreground/70">
+            <Row as="span" gap={0.5} className="inline-flex">
                 <Download className="size-2.5" aria-hidden="true" />
                 {model.downloadSize}
-            </span>
-            <span className="inline-flex items-center gap-0.5">
+            </Row>
+            <Row as="span" gap={0.5} className="inline-flex">
                 <Cpu className="size-2.5" aria-hidden="true" />
                 {model.ramUsage}
-            </span>
-        </div>
+            </Row>
+        </Row>
     </DawChooserCard>
 );

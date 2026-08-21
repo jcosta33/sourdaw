@@ -16,7 +16,7 @@ vi.mock('../../repositories/inferenceWorkerBridge', () => ({
 
 import { type ActiveRender } from '../../models/RenderProgress';
 import { inferenceProgressStore, startActiveRender } from '../../stores/inferenceProgressStore';
-import { enqueueRender, renderQueueStore } from '../../stores/renderQueueStore';
+import { enqueueRender, markRenderComplete, renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 
 function seedActiveRender(over: Partial<ActiveRender> = {}): ActiveRender {
@@ -42,7 +42,7 @@ describe('cancelRender', () => {
         terminateTfjsWorker.mockClear();
         // Reset stores to a clean slate between cases.
         inferenceProgressStore.set({ activeRenders: {} });
-        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
     });
 
     it('cancels only the targeted ONNX request, never the whole worker (kokoro)', () => {
@@ -81,13 +81,19 @@ describe('cancelRender', () => {
         // Active render says DDSP, but there is NO matching queue entry (stale/missing lookup).
         // The old code fell to the ONNX terminate branch here, killing unrelated ONNX renders.
         seedActiveRender({ requestId: 'req-T', phraseId: 'phrase-T', pipeline: 'ddsp' });
-        // renderQueueStore intentionally left empty.
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: { 'phrase-T': 'rendering-browser' },
+            phraseRequestIds: { 'phrase-T': 'req-T' },
+        });
 
         cancelRender({ phraseId: 'phrase-T', requestId: 'req-T' });
 
         expect(cancelTfjsRequest).toHaveBeenCalledWith('req-T');
         expect(cancelOnnxRequest).not.toHaveBeenCalled();
         expect(terminateOnnxWorker).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-T']).toBe('not-rendered');
     });
 
     it('does NOT terminate the ONNX worker when the pipeline is unknown (no active render, no queue entry)', () => {
@@ -101,21 +107,45 @@ describe('cancelRender', () => {
         expect(terminateTfjsWorker).not.toHaveBeenCalled();
     });
 
-    it('falls back to the queue-entry pipeline when there is no active render', () => {
-        // No active render in the progress store, but the queue still has the entry.
+    it('does nothing when the request belongs to a different phrase', () => {
+        seedActiveRender({ requestId: 'req-A', phraseId: 'phrase-A', pipeline: 'kokoro' });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-A',
+            pipeline: 'kokoro',
+            status: 'rendering-browser',
+            queuedAt: 1,
+        });
+
+        cancelRender({ phraseId: 'phrase-B', requestId: 'req-A' });
+
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
+        expect(inferenceProgressStore.value?.activeRenders['req-A']).toBeDefined();
+        expect(renderQueueStore.value?.entries).toEqual([
+            expect.objectContaining({ phraseId: 'phrase-A', requestId: 'req-A' }),
+        ]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
+    });
+
+    it('cancels a queue-only Kokoro render without touching the shared ONNX worker', () => {
+        // A preparing request has not entered a worker pipeline yet, so cancelling it
+        // must not tear down a worker/session that may belong to a sibling render.
         enqueueRender({
             phraseId: 'phrase-Q',
             requestId: 'req-Q',
-            pipeline: 'ddsp',
-            status: 'queued',
+            pipeline: 'kokoro',
+            status: 'preparing',
             queuedAt: Date.now(),
         });
 
         cancelRender({ phraseId: 'phrase-Q', requestId: 'req-Q' });
 
-        expect(cancelTfjsRequest).toHaveBeenCalledWith('req-Q');
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
         expect(cancelOnnxRequest).not.toHaveBeenCalled();
         expect(terminateOnnxWorker).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-Q']).toBe('not-rendered');
     });
 
     it('cancelling render A leaves render B untouched on the shared ONNX worker', () => {
@@ -139,6 +169,100 @@ describe('cancelRender', () => {
         expect(terminateOnnxWorker).not.toHaveBeenCalled();
         // Render B's active-render state remains in the store.
         expect(inferenceProgressStore.value?.activeRenders['req-B']).toBeDefined();
+    });
+
+    it('does not remove the newer queued request when an older request for the same phrase is cancelled', () => {
+        seedActiveRender({ requestId: 'req-old', phraseId: 'phrase-A', pipeline: 'ddsp' });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-old',
+            pipeline: 'ddsp',
+            status: 'rendering-browser',
+            queuedAt: 1,
+        });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-new',
+            pipeline: 'ddsp',
+            status: 'queued',
+            queuedAt: 2,
+        });
+
+        cancelRender({ phraseId: 'phrase-A', requestId: 'req-old' });
+
+        expect(renderQueueStore.value?.entries).toEqual([
+            expect.objectContaining({ phraseId: 'phrase-A', requestId: 'req-new' }),
+        ]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
+        expect(cancelTfjsRequest).toHaveBeenCalledOnce();
+        expect(cancelTfjsRequest).toHaveBeenCalledWith('req-old');
+        expect(cancelTfjsRequest).not.toHaveBeenCalledWith('req-new');
+    });
+
+    it('does not let an older active cancellation overwrite a newer completed phrase', () => {
+        seedActiveRender({ requestId: 'req-old', phraseId: 'phrase-A', pipeline: 'kokoro' });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-new',
+            pipeline: 'kokoro',
+            status: 'rendering-browser',
+            queuedAt: 2,
+        });
+        markRenderComplete('phrase-A', 'req-new', 'cache-key-new');
+
+        cancelRender({ phraseId: 'phrase-A', requestId: 'req-old' });
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual(['cache-key-new']);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
+        expect(cancelOnnxRequest).toHaveBeenCalledOnce();
+        expect(cancelOnnxRequest).toHaveBeenCalledWith('req-old');
+        expect(cancelOnnxRequest).not.toHaveBeenCalledWith('req-new');
+    });
+
+    it('retains terminal and queued owners across different phrases', () => {
+        seedActiveRender({ requestId: 'req-old-A', phraseId: 'phrase-A', pipeline: 'ddsp' });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-new-A',
+            pipeline: 'kokoro',
+            status: 'rendering-browser',
+            queuedAt: 2,
+        });
+        markRenderComplete('phrase-A', 'req-new-A', 'cache-key-A');
+        enqueueRender({
+            phraseId: 'phrase-B',
+            requestId: 'req-B',
+            pipeline: 'kokoro',
+            status: 'queued',
+            queuedAt: 3,
+        });
+
+        cancelRender({ phraseId: 'phrase-A', requestId: 'req-old-A' });
+
+        expect(renderQueueStore.value?.phraseStatusMap).toMatchObject({
+            'phrase-A': 'preview',
+            'phrase-B': 'queued',
+        });
+        expect(renderQueueStore.value?.phraseRequestIds).toEqual({
+            'phrase-A': 'req-new-A',
+            'phrase-B': 'req-B',
+        });
+    });
+
+    it('marks the current queued request not rendered when it is cancelled', () => {
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-current',
+            pipeline: 'ddsp',
+            status: 'queued',
+            queuedAt: 1,
+        });
+
+        cancelRender({ phraseId: 'phrase-A', requestId: 'req-current' });
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('not-rendered');
     });
 
     it('clears the cancelled render from the active-render store', () => {

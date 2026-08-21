@@ -5,6 +5,8 @@ import { type ReactElement } from 'react';
 
 import { File, Star, SearchCode, AlertTriangle, Plus } from 'lucide-react';
 
+import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 import { type SampleRecord, isBrowserDecodeRisky } from '../../models/LibraryTypes';
@@ -73,12 +75,13 @@ export const SampleRow = ({
     tabIndex = -1,
     onKeyDown,
 }: SampleRowProps): ReactElement => (
-    <div
+    <Row
+        gap={1}
+        className="rounded px-1.5 py-0.5 hover:bg-white/[0.06] focus:bg-white/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan/60 cursor-grab active:cursor-grabbing group"
         role="option"
         aria-selected={tabIndex === 0}
         aria-label={`Sample ${sample.displayName}${sample.favorite ? ', favorite' : ''}`}
         tabIndex={tabIndex}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/[0.06] focus:bg-white/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan/60 cursor-grab active:cursor-grabbing group"
         draggable
         onDragStart={onDragStart}
         onClick={onClick}
@@ -101,7 +104,9 @@ export const SampleRow = ({
         title={sample.relativePath}
     >
         {/* Play button */}
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             aria-label={isPlaying ? `Stop ${sample.displayName}` : `Play ${sample.displayName}`}
             className={cn(
@@ -118,7 +123,7 @@ export const SampleRow = ({
             }}
         >
             {isPlaying ? <span className="text-[8px] font-bold">■</span> : <span className="text-[8px]">▶</span>}
-        </button>
+        </Button>
 
         <File className="size-3 text-muted-foreground/40 shrink-0" />
         <span className="flex-1 text-[10px] text-foreground truncate">{sample.displayName}</span>
@@ -160,7 +165,9 @@ export const SampleRow = ({
 
         {/* Add to track — keyboard/non-pointer alternative to drag-to-timeline */}
         {onAddToTrack ? (
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 aria-label={`Add ${sample.displayName} to track`}
                 className="size-3 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-muted-foreground hover:text-accent-cyan"
@@ -171,11 +178,13 @@ export const SampleRow = ({
                 title="Add to track"
             >
                 <Plus className="size-3" />
-            </button>
+            </Button>
         ) : null}
 
         {/* Favorite */}
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             aria-pressed={sample.favorite}
             aria-label={
@@ -195,10 +204,12 @@ export const SampleRow = ({
             <Star
                 className={cn('size-3', sample.favorite ? 'text-amber-400 fill-amber-400' : 'text-muted-foreground')}
             />
-        </button>
+        </Button>
 
         {/* Find Similar (G2) */}
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             aria-label={`Find samples similar to ${sample.displayName}`}
             className="size-3 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-muted-foreground hover:text-accent-cyan"
@@ -209,6 +220,6 @@ export const SampleRow = ({
             title="Find similar samples"
         >
             <SearchCode className="size-3" />
-        </button>
-    </div>
+        </Button>
+    </Row>
 );

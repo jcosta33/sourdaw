@@ -14,16 +14,67 @@ import { type ProductionBrief } from './ProductionBrief';
  * builds cannot read, and add the corresponding migration so older files can
  * still be loaded.
  */
-export const CURRENT_PROJECT_VERSION = 1;
+export const CURRENT_PROJECT_VERSION = 2;
 
 /**
  * The oldest schema version this build is still able to load. Files at a
  * version below this (or above {@link CURRENT_PROJECT_VERSION}) are rejected by
- * the import validators rather than silently misread. Today there is a single
- * supported version, so this equals {@link CURRENT_PROJECT_VERSION}; when a
- * migration table is introduced this becomes the floor of that table.
+ * the import validators rather than silently misread. Version 1 remains the
+ * floor while the forward migration adds the canonical project identity.
  */
 export const MIN_SUPPORTED_PROJECT_VERSION = 1;
+
+const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** RFC 9562 UUID versions 1-8 in the interoperable 10xx variant. */
+export function isCanonicalProjectId(value: unknown): value is string {
+    return typeof value === 'string' && PROJECT_ID_PATTERN.test(value);
+}
+
+/** Mint a collision-resistant project address once, at project creation or migration. */
+export function createProjectId(): string {
+    return crypto.randomUUID();
+}
+
+function hashProjectIdentitySeed(value: string): readonly [number, number, number, number] {
+    let first = 1_779_033_703;
+    let second = 3_144_134_277;
+    let third = 1_013_904_242;
+    let fourth = 2_773_480_762;
+    for (let index = 0; index < value.length; index++) {
+        const code = value.charCodeAt(index);
+        first = second ^ Math.imul(first ^ code, 597_399_067);
+        second = third ^ Math.imul(second ^ code, 2_869_860_233);
+        third = fourth ^ Math.imul(third ^ code, 951_274_213);
+        fourth = first ^ Math.imul(fourth ^ code, 2_716_044_179);
+    }
+    first = Math.imul(third ^ (first >>> 18), 597_399_067);
+    second = Math.imul(fourth ^ (second >>> 22), 2_869_860_233);
+    third = Math.imul(first ^ (third >>> 17), 951_274_213);
+    fourth = Math.imul(second ^ (fourth >>> 19), 2_716_044_179);
+    return [
+        (first ^ second ^ third ^ fourth) >>> 0,
+        (second ^ first) >>> 0,
+        (third ^ first) >>> 0,
+        (fourth ^ first) >>> 0,
+    ];
+}
+
+function hex32(value: number): string {
+    return value.toString(16).padStart(8, '0');
+}
+
+/** UUIDv8-shaped deterministic address for legacy projects that predate a project UUID. */
+export function deriveDeterministicProjectId(legacyProjectId: string, stableEntropy?: string): string {
+    const [first, second, third, fourth] = hashProjectIdentitySeed(
+        stableEntropy ? `${legacyProjectId}\u0000${stableEntropy}` : legacyProjectId
+    );
+    const hex = `${hex32(first)}${hex32(second)}${hex32(third)}${hex32(fourth)}`;
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${(
+        (Number.parseInt(hex.slice(16, 17), 16) & 3) |
+        8
+    ).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 /**
  * True when `version` is one this build can load — i.e. within the inclusive
@@ -117,6 +168,8 @@ export type ProjectAdjustmentLayers = {
 };
 
 export type ProjectMeta = {
+    /** Stable project address. Version-1 files omit it and mint one during the explicit forward migration. */
+    projectId?: string;
     name: string;
     createdAt: number;
     updatedAt: number;
@@ -128,6 +181,10 @@ export type ProjectMeta = {
     };
     productionBrief?: ProductionBrief;
 };
+
+export function deriveProjectIdFromMeta(meta: ProjectMeta): string {
+    return deriveDeterministicProjectId(String(meta.createdAt));
+}
 
 export type ProjectTransport = {
     tempo: number;

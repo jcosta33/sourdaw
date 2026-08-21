@@ -4,7 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -48,21 +48,21 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                 />
             </Row>
             <SectionHeader title="Controls" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['comp-threshold', 'comp-ratio']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            </Grid>
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['comp-attack', 'comp-release']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            </Grid>
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['comp-knee', 'comp-makeup']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
         </Stack>
     );
 };

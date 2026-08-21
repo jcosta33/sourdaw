@@ -4,6 +4,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { Grid } from '#/components/layout';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
@@ -225,7 +226,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         menuInnerContent = (
             <div className="p-2">
                 <DawMenuMutedRow className="mb-1.5 px-0 py-0">Track Color</DawMenuMutedRow>
-                <div className="grid grid-cols-5 gap-1">
+                <Grid cols={5} gap={1}>
                     {TRACK_COLOR_PRESETS.map((color) => (
                         <DawSwatchButton
                             key={color}
@@ -239,7 +240,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             aria-label={`Set color`}
                         />
                     ))}
-                </div>
+                </Grid>
             </div>
         );
     } else if (showInputMon) {

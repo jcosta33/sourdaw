@@ -550,6 +550,30 @@ describe('inferenceWorkerBridge — ONNX cancellation', () => {
         expect(() => inferenceWorkerBridge.cancelOnnxRequest('never-existed')).not.toThrow();
         expect(installedWorkers).toHaveLength(0);
     });
+
+    it('keeps an initialized ONNX worker alive for unknown and completed request ids', async () => {
+        const load = inferenceWorkerBridge.loadOnnxSession({ modelId: 'kokoro', modelData: new ArrayBuffer(4) });
+        await flush();
+        const worker = onnxWorker();
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'kokoro',
+            executionProviders: ['wasm'],
+        });
+        await load;
+
+        inferenceWorkerBridge.cancelOnnxRequest('unknown');
+        expect(worker.terminate).not.toHaveBeenCalled();
+
+        const completed = inferenceWorkerBridge.runDiffSingerPhrase(diffSingerRequest('finished'));
+        await flush();
+        reply(worker, { type: 'diffsinger-result', requestId: 'finished', audio: new Float32Array([1]) });
+        await completed;
+
+        inferenceWorkerBridge.cancelOnnxRequest('finished');
+        expect(worker.terminate).not.toHaveBeenCalled();
+    });
 });
 
 describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
@@ -568,6 +592,21 @@ describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
 });
 
 describe('inferenceWorkerBridge — TF.js cancellation', () => {
+    it('keeps an initialized TF.js worker alive for an unknown request id', async () => {
+        const load = inferenceWorkerBridge.loadDdspSession({
+            modelId: 'violin-1',
+            modelUrl: 'https://cdn.example/violin-1/model.json',
+        });
+        await flush();
+        const worker = tfjsWorker();
+        reply(worker, { type: 'session-created', requestId: lastRequestId(worker), modelId: 'violin-1' });
+        await load;
+
+        inferenceWorkerBridge.cancelTfjsRequest('unknown');
+
+        expect(worker.terminate).not.toHaveBeenCalled();
+    });
+
     it('clears a pending idle-destroy timer when cancelling the last in-flight DDSP request', async () => {
         vi.useFakeTimers();
         const a = inferenceWorkerBridge.runDdspInference(ddspRequest('a'));

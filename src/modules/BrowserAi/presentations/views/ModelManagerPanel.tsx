@@ -4,6 +4,8 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
@@ -62,7 +64,7 @@ function ModelAction({
 
     if (status === 'downloading') {
         return (
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <div
                     className="w-12 h-1 bg-border/40 rounded-full overflow-hidden"
                     role="progressbar"
@@ -79,55 +81,61 @@ function ModelAction({
                 <span className="text-[9px] text-muted-foreground tabular-nums">
                     {Math.round(downloadProgress * 100)}%
                 </span>
-            </div>
+            </Row>
         );
     }
 
     if (status === 'ready') {
         return (
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <DawMicroBadge tone="success" aria-label={`${name} downloaded and ready`}>
                     ✓ Ready
                 </DawMicroBadge>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={handleRemove}
                     className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
                     aria-label={`Remove ${name} from storage`}
                 >
                     Remove
-                </button>
-            </div>
+                </Button>
+            </Row>
         );
     }
 
     if (status === 'error') {
         return (
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <DawMicroBadge tone="danger" aria-label={`${name} download failed`}>
                     Failed
                 </DawMicroBadge>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={handleDownload}
                     className="text-[9px] text-muted-foreground hover:text-foreground transition-colors"
                     aria-label={`Retry downloading ${name}`}
                 >
                     Retry
-                </button>
-            </div>
+                </Button>
+            </Row>
         );
     }
 
     return (
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             onClick={handleDownload}
             className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
             aria-label={`Download ${name} (${formatBytes(sizeBytes)})`}
         >
             Download
-        </button>
+        </Button>
     );
 }
 
@@ -154,10 +162,10 @@ export function ModelManagerPanel(): ReactElement {
     const nearLimit = usagePercent > 80;
 
     return (
-        <div className="flex flex-col gap-3 p-3" aria-label="AI Model Manager">
+        <Stack gap={3} className="p-3" aria-label="AI Model Manager">
             {/* Storage */}
             <DawUtilitySection title="Storage">
-                <div className="space-y-1.5">
+                <Stack gap={1.5}>
                     <div
                         className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
                         role="progressbar"
@@ -177,12 +185,12 @@ export function ModelManagerPanel(): ReactElement {
                         valueClassName={nearLimit ? 'text-[var(--color-accent-orange)]' : undefined}
                     />
                     <DawReadoutRow label="Limit" value={formatBytes(limitBytes)} />
-                </div>
+                </Stack>
             </DawUtilitySection>
 
             {MODEL_RELEASE_ADMISSION.ddsp ? (
                 <DawUtilitySection title="DDSP Instruments" detail="Monophonic synthesis · Google Research">
-                    <div className="space-y-0.5">
+                    <Stack gap={0.5}>
                         {instruments.map((instrument) => {
                             const status = 'status' in instrument ? instrument.status : 'error';
                             const description =
@@ -212,7 +220,7 @@ export function ModelManagerPanel(): ReactElement {
                                 />
                             );
                         })}
-                    </div>
+                    </Stack>
                 </DawUtilitySection>
             ) : null}
 
@@ -238,15 +246,17 @@ export function ModelManagerPanel(): ReactElement {
             ) : null}
 
             {/* Attribution */}
-            <section
+            <Stack
+                as="section"
+                gap={0.5}
+                className="text-[9px] text-muted-foreground/55 border-t border-border/20 pt-2"
                 aria-labelledby="credits-heading"
-                className="text-[9px] text-muted-foreground/55 border-t border-border/20 pt-2 space-y-0.5"
             >
                 <p id="credits-heading" className="font-medium text-muted-foreground/70 mb-1">
                     AI Model Credits
                 </p>
                 {MODEL_RELEASE_ADMISSION.kokoro ? <p>Kokoro TTS: hexgrad. Apache 2.0.</p> : null}
-            </section>
-        </div>
+            </Stack>
+        </Stack>
     );
 }

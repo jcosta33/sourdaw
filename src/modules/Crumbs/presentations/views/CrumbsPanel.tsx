@@ -12,6 +12,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -263,7 +264,9 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     </span>
                                 </Row>
                                 <Row align="stretch" gap={2}>
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
@@ -290,8 +293,10 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         }}
                                     >
                                         Arm
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
@@ -309,7 +314,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         }}
                                     >
                                         Stop
-                                    </button>
+                                    </Button>
                                 </Row>
                             </Stack>
                         </SectionCard>
@@ -358,25 +363,29 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
                     {mode === 'slice' ? (
                         <SectionCard title="Slices" detail={`${slices?.markers.length ?? 0} markers`}>
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                 onClick={() => detectAndSetSlices(deviceId, 'superflux')}
                             >
                                 Auto-detect slices
-                            </button>
+                            </Button>
                         </SectionCard>
                     ) : null}
 
                     {activeSample ? (
                         <SectionCard title="Loop" detail="Smart loop point detection">
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                 onClick={() => detectAndApplyLoopPoints(deviceId)}
                             >
                                 Detect loop points
-                            </button>
+                            </Button>
                         </SectionCard>
                     ) : null}
                 </Stack>

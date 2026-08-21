@@ -7,6 +7,7 @@ import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { DawMetricCluster } from '#/components/daw/DawMetricCluster';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot, getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -95,7 +96,7 @@ export const StatusBar = (): ReactElement => {
         // that changes at human pace and carries meaning: the clip-selection label.
         <footer aria-label="Application status">
             <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
-                <div className="flex items-center gap-3">
+                <Row gap={3}>
                     {/*
                      * "UI CPU", not bare "CPU": this is a main-thread busyness
                      * estimate from requestIdleCallback and frame overrun, and
@@ -210,13 +211,13 @@ export const StatusBar = (): ReactElement => {
                             </span>
                         }
                     />
-                </div>
+                </Row>
 
                 <span role="status" className="text-[10px] text-muted-foreground">
                     {selectionLabel}
                 </span>
 
-                <div className="flex items-center gap-3">
+                <Row gap={3}>
                     {undoState.lastAction ? (
                         <span className="text-[10px] text-muted-foreground/60">Last: {undoState.lastAction.label}</span>
                     ) : null}
@@ -278,7 +279,7 @@ export const StatusBar = (): ReactElement => {
                         {undoState.undoCount} undo{undoState.undoCount !== 1 ? 's' : ''}
                     </Button>
                     <span ref={engineStateRef} className={getDawStatusDotClassName()} title="Engine: suspended" />
-                </div>
+                </Row>
             </DawControlStrip>
         </footer>
     );

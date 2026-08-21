@@ -16,6 +16,9 @@
  */
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
 
 type ModulationDockProps = {
@@ -39,21 +42,22 @@ const MOD_SOURCES = [
 
 export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: ModulationDockProps): ReactElement => {
     return (
-        <div className="flex flex-col gap-2 p-2">
+        <Stack gap={2} className="p-2">
             <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
                 Modulation Sources
             </div>
 
             {/* Source pills */}
-            <div className="flex flex-wrap gap-1">
+            <Row align="stretch" wrap gap={1}>
                 {MOD_SOURCES.map((source, i) => {
                     const modVal = modValues[i] ?? 0;
                     const activeAssignments = patch.modAssignments.filter((a) => a.sourceId === source.id);
 
                     return (
-                        <div
+                        <Row
+                            gap={1}
+                            className="px-1.5 py-0.5 rounded text-[7px] font-medium border"
                             key={source.id}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-medium border"
                             style={{
                                 borderColor: `${source.color}40`,
                                 backgroundColor: `${source.color}10`,
@@ -74,19 +78,19 @@ export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: Modulat
                             {activeAssignments.length > 0 ? (
                                 <span className="text-[6px] opacity-50">({activeAssignments.length})</span>
                             ) : null}
-                        </div>
+                        </Row>
                     );
                 })}
-            </div>
+            </Row>
 
             {/* Active assignments list */}
             {patch.modAssignments.length > 0 ? (
-                <div className="space-y-0.5 mt-1">
+                <Stack gap={0.5} className="mt-1">
                     <div className="text-[7px] text-muted-foreground/40 uppercase">Active Assignments</div>
                     {patch.modAssignments.map((assignment, idx) => {
                         const source = MOD_SOURCES.find((s) => s.id === assignment.sourceId);
                         return (
-                            <div key={idx} className="flex items-center gap-1 text-[7px]">
+                            <Row gap={1} className="text-[7px]" key={idx}>
                                 <span style={{ color: source?.color ?? 'white' }}>
                                     {source?.label ?? assignment.sourceId}
                                 </span>
@@ -96,18 +100,20 @@ export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: Modulat
                                     {assignment.amount > 0 ? '+' : ''}
                                     {(assignment.amount * 100).toFixed(0)}%
                                 </span>
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     className="text-[6px] text-muted-foreground/30 hover:text-red-400 ml-auto"
                                     onClick={() => onAssignmentRemove(idx)}
                                 >
                                     ×
-                                </button>
-                            </div>
+                                </Button>
+                            </Row>
                         );
                     })}
-                </div>
+                </Stack>
             ) : null}
-        </div>
+        </Stack>
     );
 };

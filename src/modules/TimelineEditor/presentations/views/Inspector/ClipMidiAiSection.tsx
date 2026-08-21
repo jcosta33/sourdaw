@@ -691,7 +691,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 >
                     {/* Mode toggle */}
                     <Row align="stretch" gap={1} className="mb-2">
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             onClick={() => setVocalMode('spoken')}
                             className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
@@ -701,15 +703,17 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                             }`}
                         >
                             Spoken
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             disabled
                             className="flex-1 h-5 text-[9px] font-medium rounded bg-surface-overlay/30 text-muted-foreground/40"
                             title="Singing synthesis requires an admitted vocoder"
                         >
                             Sung unavailable
-                        </button>
+                        </Button>
                     </Row>
                     {/* ── Spoken mode (Kokoro TTS) ── */}
                     {renderIife_13()}

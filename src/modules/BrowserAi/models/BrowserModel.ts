@@ -42,6 +42,10 @@ export type DdspInstrument = BrowserModel & {
     instrument: string;
     /** TF.js GraphModel frame rate (250 Hz for standard DDSP) */
     frameRate: number;
+    /** Pinned multi-file GraphModel artifact set when the instrument is release-admitted. */
+    artifacts?: readonly import('./DdspArtifactManifest').DdspArtifact[];
+    /** Immutable source version for the pinned artifact set. */
+    artifactVersion?: string;
 };
 
 export type KokoroModel = BrowserModel & {

@@ -19,3 +19,6 @@ export { hostedLlmProviderStatusStore } from './hostedLlmProviderStatusStore';
 
 export { voiceStatusStore } from './voiceStatusStore';
 export type { VoiceStatus } from './voiceStatusStore';
+
+export { voiceInputAvailabilityStore } from './voiceInputAvailabilityStore';
+export type { VoiceInputAvailability } from './voiceInputAvailabilityStore';

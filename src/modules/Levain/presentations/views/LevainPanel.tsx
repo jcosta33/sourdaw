@@ -8,7 +8,8 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
 import { type InstrumentId } from '../../models/LevainPatch';
@@ -150,7 +151,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             {visibleInstruments.map((instrument) => {
                                 const active = patch.instrumentId === instrument.id;
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={instrument.id}
                                         type="button"
                                         aria-pressed={active}
@@ -170,7 +173,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 {instrument.family}
                                             </span>
                                         </Row>
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Stack>
@@ -245,7 +248,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 />
                             </SectionCard>
 
-                            <div className="grid grid-cols-2 gap-3">
+                            <Grid cols={2} gap={3}>
                                 <SectionCard
                                     title="Lift"
                                     detail="Transition timing and portamento stay tactile instead of technical."
@@ -272,7 +275,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         }
                                     />
                                 </SectionCard>
-                            </div>
+                            </Grid>
                         </Stack>
 
                         <Stack gap={3} className="overflow-y-auto pr-1">

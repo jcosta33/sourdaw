@@ -20,6 +20,7 @@ import { EVENT_CHANNEL, STREAM_CHANNEL } from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
+import { forwardNativeEvent } from './nativeEventRouter.js';
 import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
@@ -27,6 +28,7 @@ import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
+import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
 
 // Logging must never crash the shell. When stdout or stderr is a closed pipe
@@ -335,7 +337,7 @@ const startNativeSurface = (): void => {
     try {
         const addon = loadNativeAddon({ path: addonPath, load: createRequire(import.meta.url) });
         nativeHost = new addon.SourdawNative((event, payload) => {
-            events.emit(event, payload);
+            forwardNativeEvent(event, payload, events, rendererTarget);
         });
     } catch (error) {
         console.error(
@@ -358,6 +360,8 @@ const startNativeSurface = (): void => {
         // renderer-visible surface is identical either way.
         commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_COMMAND),
     });
+
+    registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
     registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });

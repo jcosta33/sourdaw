@@ -540,6 +540,11 @@ impl PianoVoice {
         self.retune_strings();
     }
 
+    #[cfg(test)]
+    pub(crate) fn string_modal_coefficient_signature(&self) -> u64 {
+        self.strings.modal_coefficient_signature()
+    }
+
     /// Render one output sample from this voice.
     #[inline]
     pub fn tick(&mut self) -> f32 {

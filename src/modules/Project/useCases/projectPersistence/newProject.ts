@@ -11,10 +11,10 @@ import {
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
-import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore, type ProjectStoreState } from '../../stores/projectStore';
+import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
@@ -111,22 +111,13 @@ async function activateNewProject({
     runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
     runCommittedStep('master track creation', () => addTrack({ name: 'Master', kind: 'master', select: false }));
     runCommittedStep('project metadata publication', () => {
-        const createdAt = Date.now();
-        projectStore.set({
-            name,
-            createdAt,
-            updatedAt: createdAt,
-            dirty: false,
-            loading: false,
-            keyRoot: 0,
-            scaleName: 'chromatic',
-            tuning: {
-                name: 'Equal Temperament',
-                frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
-            },
-            productionBrief: createDefaultProductionBrief(createdAt),
-            initialized: true,
-        });
+        projectStore.set(
+            createFreshProjectMetadata({
+                name,
+                loading: false,
+                initialized: true,
+            })
+        );
     });
     runCommittedStep('project cache removal', removeProjectJson);
     runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);

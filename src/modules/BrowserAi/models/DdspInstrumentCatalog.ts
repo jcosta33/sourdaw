@@ -2,67 +2,63 @@
  * Static catalog of available DDSP instrument models.
  *
  * Models are hosted by Google Magenta (TF.js GraphModel format).
- * Base URL: https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/{instrument}
- * TF.js loadGraphModel() receives the directory URL and appends /model.json automatically.
- *
- * Available instruments confirmed via HTTP 200 (2025-04):
- * violin, flute, trumpet, tenor_saxophone
+ * Each entry is pinned to the complete direct-host artifact set, never a caller-supplied URL.
  */
 
 import { type DdspInstrument } from './BrowserModel';
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION, type DdspArtifact } from './DdspArtifactManifest';
 
-const DDSP_BASE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp';
+export type AdmittedDdspInstrument<
+    TId extends string = string,
+    TInstrument extends keyof typeof DDSP_ARTIFACTS = keyof typeof DDSP_ARTIFACTS,
+> = Omit<DdspInstrument, 'id' | 'instrument' | 'status' | 'downloadProgress'> & {
+    id: TId;
+    instrument: TInstrument;
+    artifactVersion: string;
+    artifacts: readonly DdspArtifact[];
+};
 
-/**
- * Factory DDSP instrument catalog.
- */
-export const DDSP_INSTRUMENT_CATALOG: Omit<DdspInstrument, 'status' | 'downloadProgress'>[] = [
-    {
-        id: 'ddsp-violin',
-        name: 'Violin',
+function entry<TId extends string, TInstrument extends keyof typeof DDSP_ARTIFACTS>(
+    id: TId,
+    name: string,
+    instrument: TInstrument
+): AdmittedDdspInstrument<TId, TInstrument> {
+    const artifacts = DDSP_ARTIFACTS[instrument];
+    const entryArtifact = artifacts[0];
+    if (entryArtifact === undefined) {
+        throw new Error(`DDSP artifact manifest is empty: ${instrument}`);
+    }
+    return Object.freeze({
+        id,
+        name,
         family: 'ddsp',
-        instrument: 'violin',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/violin`,
+        instrument,
+        url: entryArtifact.url,
+        sizeBytes: artifacts.reduce((sum, artifact) => sum + artifact.sizeBytes, 0),
         license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
+        attribution: 'Magenta.js DDSP checkpoint — direct runtime download from Magenta.',
+        nativeSampleRate: 16_000,
         frameRate: 250,
-    },
-    {
-        id: 'ddsp-flute',
-        name: 'Flute',
-        family: 'ddsp',
-        instrument: 'flute',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/flute`,
-        license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
-        frameRate: 250,
-    },
-    {
-        id: 'ddsp-trumpet',
-        name: 'Trumpet',
-        family: 'ddsp',
-        instrument: 'trumpet',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/trumpet`,
-        license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
-        frameRate: 250,
-    },
-    {
-        id: 'ddsp-tenor-saxophone',
-        name: 'Tenor Saxophone',
-        family: 'ddsp',
-        instrument: 'tenor_saxophone',
-        sizeBytes: 14_800_000,
-        url: `${DDSP_BASE}/tenor_saxophone`,
-        license: 'Unverified',
-        attribution: 'DDSP checkpoint provenance pending',
-        nativeSampleRate: 16000,
-        frameRate: 250,
-    },
-];
+        artifacts,
+        artifactVersion: DDSP_CHECKPOINT_VERSION,
+    });
+}
+
+/** Factory DDSP catalog. It is intentionally not release admission. */
+export const DDSP_INSTRUMENT_CATALOG = Object.freeze([
+    entry('ddsp-violin', 'Violin', 'violin'),
+    entry('ddsp-flute', 'Flute', 'flute'),
+    entry('ddsp-trumpet', 'Trumpet', 'trumpet'),
+    entry('ddsp-tenor-saxophone', 'Tenor Saxophone', 'tenor_saxophone'),
+]);
+
+export type DdspInstrumentId = (typeof DDSP_INSTRUMENT_CATALOG)[number]['id'];
+
+/** Resolve only pinned release metadata; callers cannot supply artifact fields. */
+export function resolveDdspInstrument(id: DdspInstrumentId): AdmittedDdspInstrument {
+    const instrument = DDSP_INSTRUMENT_CATALOG.find((candidate) => candidate.id === id);
+    if (instrument === undefined) {
+        throw new Error(`DDSP instrument is not admitted: ${id}`);
+    }
+    return instrument;
+}

@@ -21,6 +21,7 @@ import { Music2, Plus, Power, Trash2 } from 'lucide-react';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -468,7 +469,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                 </span>
 
                 {/* Power toggle — matches mute/solo button styling */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className={cn(
                         'size-4 rounded flex items-center justify-center transition-colors',
@@ -488,11 +491,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                     }}
                 >
                     <Power className="size-2.5" />
-                </button>
+                </Button>
 
                 {/* Add button */}
                 <div className="relative" ref={addRef}>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5 transition-colors"
                         aria-label="Add chord event"
@@ -500,13 +505,15 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                         onClick={() => setShowAddMenu(!showAddMenu)}
                     >
                         <Plus className="size-2.5" />
-                    </button>
+                    </Button>
                     {showAddMenu ? <ChordPickerPopover onPick={handleQuickAdd} /> : null}
                 </div>
 
                 {/* Clear all — only show if there are events */}
                 {state.events.length > 0 ? (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="size-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
                         aria-label="Clear all chords"
@@ -517,7 +524,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                         }}
                     >
                         <Trash2 className="size-2.5" />
-                    </button>
+                    </Button>
                 ) : null}
             </Row>
             <span
@@ -551,7 +558,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                     }
 
                     return (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             key={event.id}
                             className={cn(
@@ -580,7 +589,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                             <span className="text-[9px] font-bold text-white/90 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis px-1.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
                                 {formatChordName(event)}
                             </span>
-                        </button>
+                        </Button>
                     );
                 })}
 
@@ -610,7 +619,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                         <>
                             <DawMenuMutedRow className="px-2">Beat {Math.floor(contextMenu.beat)}</DawMenuMutedRow>
                             {ROOT_NAMES.slice(0, 7).map((name, rootIdx) => (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     key={name}
                                     className="flex w-full items-center rounded-sm px-2 py-1 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
@@ -620,7 +631,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                                     tabIndex={-1}
                                 >
                                     Add {name}
-                                </button>
+                                </Button>
                             ))}
                         </>
                     ) : null}
@@ -630,7 +641,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                             <DawMenuMutedRow className="px-2">Quality</DawMenuMutedRow>
                             <Row align="stretch" wrap gap={0.5} className="px-2 pb-1" aria-label="Quality" role="group">
                                 {getContextMenuQualities(contextMenu.event.quality).map((query) => (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         key={query}
                                         className={cn(
@@ -654,13 +667,15 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                                         tabIndex={-1}
                                     >
                                         {query}
-                                    </button>
+                                    </Button>
                                 ))}
                             </Row>
                             <DawMenuMutedRow className="px-2">Root</DawMenuMutedRow>
                             <Row align="stretch" wrap gap={0.5} className="px-2 pb-1" aria-label="Root" role="group">
                                 {ROOT_NAMES.map((name, idx) => (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         key={name}
                                         className={cn(
@@ -684,11 +699,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                                         tabIndex={-1}
                                     >
                                         {name}
-                                    </button>
+                                    </Button>
                                 ))}
                             </Row>
                             <DawMenuSeparator className="my-0.5 border-border/50" />
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
                                 disabled={pending}
@@ -702,7 +719,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                                 tabIndex={-1}
                             >
                                 Delete Chord
-                            </button>
+                            </Button>
                         </>
                     ) : null}
                 </div>
@@ -722,14 +739,16 @@ const ChordPickerPopover = ({ onPick }: { onPick: (root: number, quality: ChordQ
                 </div>
                 <Row align="stretch" wrap gap={0.5} className="px-1 pb-1">
                     {ADD_MENU_QUALITIES.map((quality) => (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             key={`${name}-${quality}`}
                             className="rounded px-1.5 py-0.5 text-[9px] text-popover-foreground/80 hover:bg-accent hover:text-accent-foreground transition-colors"
                             onClick={() => onPick(rootIdx, quality)}
                         >
                             {quality === 'major' ? name : `${name}${quality}`}
-                        </button>
+                        </Button>
                     ))}
                 </Row>
             </div>

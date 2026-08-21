@@ -524,28 +524,34 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                     style={{ left: waveCtxMenu.x, top: waveCtxMenu.y }}
                     role="menu"
                 >
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
                         onClick={waveAct(() => normalizeClip(clipId))}
                     >
                         Normalize
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
                         onClick={waveAct(() => reverseClip(clipId))}
                     >
                         Reverse
-                    </button>
+                    </Button>
                     <DisabledFeatureWrapper
                         disabled={!isDesktopRuntime()}
                         reason="AI Denoise requires the Sourdaw desktop app."
                         className="w-full flex"
                     >
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className={cn(
                                 menuBtnClass,
@@ -564,9 +570,11 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                             <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
                                 {isDesktopRuntime() ? 'Desktop' : 'Web'}
                             </span>
-                        </button>
+                        </Button>
                     </DisabledFeatureWrapper>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(
                             menuBtnClass,
@@ -584,9 +592,11 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                     >
                         <span>AI Audio → MIDI</span>
                         <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">DSP</span>
-                    </button>
+                    </Button>
                     <div className={menuSepClass} />
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
@@ -600,7 +610,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         })}
                     >
                         {warpState.enabled ? 'Disable Warp' : 'Enable Warp'}
-                    </button>
+                    </Button>
                 </div>
             ) : null}
         </Stack>

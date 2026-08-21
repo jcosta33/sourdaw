@@ -98,13 +98,13 @@ describe('handleKeyboardShortcut', () => {
         vi.clearAllMocks();
     });
 
-    it('should emit voice.toggle on keyup for v', () => {
+    it('does not synthesize voice admission on keyup for v', () => {
         handleKeyup('v');
 
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: false });
+        expect(eventBus.emit).not.toHaveBeenCalled();
     });
 
-    it('should emit voice.toggle on keydown for v when not in an input', () => {
+    it('does not synthesize voice admission on keydown for v', () => {
         const desc: KeyDescriptor = {
             key: 'v',
             mod: false,
@@ -116,7 +116,7 @@ describe('handleKeyboardShortcut', () => {
 
         const prevent = handleKeydown(desc);
 
-        expect(prevent).toBe(true);
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: true });
+        expect(prevent).toBe(false);
+        expect(eventBus.emit).not.toHaveBeenCalled();
     });
 });

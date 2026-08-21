@@ -135,24 +135,12 @@ vi.mock('#/components/daw/DawMenuParts', () => ({
 vi.mock('#/components/ui/button', () => ({
     Button: ({
         children,
-        onClick,
-        disabled,
-        'aria-label': ariaLabel,
-        'aria-pressed': ariaPressed,
-    }: {
-        children: React.ReactNode;
-        onClick?: (e?: React.MouseEvent) => void;
-        disabled?: boolean;
-        'aria-label'?: string;
-        'aria-pressed'?: boolean;
-    }) => (
-        <button
-            data-testid="button"
-            aria-label={ariaLabel}
-            aria-pressed={ariaPressed}
-            onClick={onClick}
-            disabled={disabled}
-        >
+        variant,
+        size,
+        asChild: _asChild,
+        ...props
+    }: React.ComponentProps<'button'> & { variant?: string; size?: string; asChild?: boolean }) => (
+        <button type="button" data-testid="button" data-variant={variant} data-size={size} {...props}>
             {children}
         </button>
     ),

@@ -6,7 +6,7 @@ import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Stack } from '#/components/layout';
 import { compileAddDeviceAction, compileLoadPresetActions, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -94,7 +94,14 @@ export const EffectsTab = ({
             afterApplied?.(null);
             return;
         }
-        void executeAppAction(action).then(() => afterApplied?.(action.payload.deviceId ?? null));
+        void executeAppAction(action).then(
+            () => afterApplied?.(action.payload.deviceId ?? null),
+            (error: unknown) => {
+                if (isAppActionCommittedError(error)) {
+                    afterApplied?.(action.payload.deviceId ?? null);
+                }
+            }
+        );
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -225,7 +232,7 @@ export const EffectsTab = ({
                             // state is per device instance, so the panel must
                             // open bound to the device it just added
                             // (issue #2422).
-                            addDeviceThroughAction('Yeast', (deviceId) => panelActions?.showYeast(deviceId));
+                            addDeviceThroughAction('yeast', (deviceId) => panelActions?.showYeast(deviceId));
                         }}
                         theme={YEAST_THEME}
                     />

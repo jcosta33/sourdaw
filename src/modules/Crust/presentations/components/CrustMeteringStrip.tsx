@@ -8,6 +8,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { grColor } from './crustMeterColors';
 
@@ -213,7 +214,9 @@ export const CrustMeteringStrip = ({
             <MeterSection
                 title="TP max"
                 actions={
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         onClick={onResetTp}
                         aria-label="Reset true peak indicator"

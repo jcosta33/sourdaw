@@ -21,7 +21,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import { type GrandBouleMidiCalibration, MIDI_CALIBRATION_RANGES } from '../../models/GrandBouleMidiCalibration';
 
@@ -323,7 +323,7 @@ export const MidiCalibrationPanel = ({
                 />
 
                 {/* Calibration knobs — row 1: velocity shaping */}
-                <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                <Grid cols={3} gapX={2} gapY={3}>
                     <Knob
                         value={midiCalibration.velocityCurveExponent}
                         onChange={onVelocityCurveExponentChange}
@@ -354,12 +354,12 @@ export const MidiCalibrationPanel = ({
                         defaultValue={r.velocityCeiling.default}
                         readout={`${Math.round(midiCalibration.velocityCeiling * 100)}%`}
                     />
-                </div>
+                </Grid>
 
                 {/* Calibration knobs — row 2: controller tuning. Two knobs in a
                     three-column grid on purpose, so they stay aligned under row
                     one rather than stretching to fill the row. */}
-                <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                <Grid cols={3} gapX={2} gapY={3}>
                     <Knob
                         value={midiCalibration.ccSmoothingMs}
                         onChange={onCcSmoothingMsChange}
@@ -392,7 +392,7 @@ export const MidiCalibrationPanel = ({
                             'stays at the MIDI-standard halfway mark.'
                         }
                     />
-                </div>
+                </Grid>
 
                 {/* Reset defaults */}
                 <Row gap={2} className="pt-1">

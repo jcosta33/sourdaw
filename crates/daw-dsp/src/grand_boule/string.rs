@@ -32,6 +32,39 @@ pub const MAX_PARTIALS: usize = 80;
 /// we keep 8 slots which is sufficient.
 const MAX_F64_PARTIALS: usize = 8;
 
+/// Physical inputs that derive a string modal bank's coefficients.
+///
+/// This deliberately carries only per-string quantities. The soundboard is a
+/// separate resonator stage fed after the voice has rendered its bridge
+/// signal, so soundboard controls and state cannot participate in string
+/// coefficient derivation.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StringModalParameters {
+    fundamental_hz: f32,
+    key: u32,
+    hammer_strike_ratio: f32,
+    sample_rate: f32,
+    base_bandwidth_hz: f32,
+}
+
+impl StringModalParameters {
+    pub(crate) const fn new(
+        fundamental_hz: f32,
+        key: u32,
+        hammer_strike_ratio: f32,
+        sample_rate: f32,
+        base_bandwidth_hz: f32,
+    ) -> Self {
+        Self {
+            fundamental_hz,
+            key,
+            hammer_strike_ratio,
+            sample_rate,
+            base_bandwidth_hz,
+        }
+    }
+}
+
 /// Struct-of-Arrays modal resonator bank. One instance represents one
 /// polarization of one string.
 ///
@@ -105,15 +138,10 @@ impl ModalString {
 
     /// Configure the bank for a given key.
     ///
-    /// * `fundamental_hz` — Railsback-adjusted f1 in Hz for this unison.
-    /// * `key` — 1-based piano key, used to look up inharmonicity `B`.
-    /// * `hammer_strike_ratio` — fraction of string length at which the hammer
-    ///   strikes (controls which partials are suppressed).
-    /// * `sample_rate` — DSP sample rate in Hz.
-    /// * `base_bandwidth_hz` — baseline partial bandwidth (drives decay).
-    /// * `extra_damping_hz` — additional bandwidth added uniformly. Use this
-    ///   for bridge coupling (fast polarization), damper lowering, una corda
-    ///   attenuation, etc.
+    /// This retained scalar API is a compatibility wrapper for existing Rust
+    /// callers. Grand Boule's own voice path uses
+    /// [`Self::configure_from_string_parameters`] so coefficient derivation is
+    /// explicit at the string boundary.
     pub fn configure(
         &mut self,
         fundamental_hz: f32,
@@ -123,16 +151,38 @@ impl ModalString {
         base_bandwidth_hz: f32,
         extra_damping_hz: f32,
     ) {
+        self.configure_from_string_parameters(
+            StringModalParameters::new(
+                fundamental_hz,
+                key,
+                hammer_strike_ratio,
+                sample_rate,
+                base_bandwidth_hz,
+            ),
+            extra_damping_hz,
+        );
+    }
+
+    /// Configure the bank from its complete per-string coefficient inputs.
+    ///
+    /// * `extra_damping_hz` — additional bandwidth added uniformly. Use this
+    ///   for bridge coupling (fast polarization), damper lowering, una corda
+    ///   attenuation, etc.
+    pub(crate) fn configure_from_string_parameters(
+        &mut self,
+        parameters: StringModalParameters,
+        extra_damping_hz: f32,
+    ) {
         use core::f32::consts::{PI, TAU};
 
-        let b_coefficient = inharmonicity_b(key);
-        let nyquist = sample_rate * 0.5;
+        let b_coefficient = inharmonicity_b(parameters.key);
+        let nyquist = parameters.sample_rate * 0.5;
         let mut active = 0;
         let mut f64_count = 0_usize;
 
         for index in 0..MAX_PARTIALS {
             let partial_number = (index + 1) as f32;
-            let freq = fundamental_hz
+            let freq = parameters.fundamental_hz
                 * partial_number
                 * (1.0 + b_coefficient * partial_number * partial_number).sqrt();
 
@@ -144,20 +194,24 @@ impl ModalString {
             }
 
             // Spec §3.5: A_n ∝ sin(nπ · x_hammer / L) / n
-            let amp = (partial_number * PI * hammer_strike_ratio).sin().abs() / partial_number;
+            let amp = (partial_number * PI * parameters.hammer_strike_ratio)
+                .sin()
+                .abs()
+                / partial_number;
 
             // Partial bandwidth grows with frequency to approximate the b₂·ω²
             // damping term from the full wave equation. The coefficient is kept
             // small so that fundamentals ring for realistic durations (~10–20 s
             // at A4) while upper partials decay progressively faster (natural
             // brightness roll-off).
-            let bandwidth = base_bandwidth_hz + 0.000005 * freq * freq.sqrt() + extra_damping_hz;
+            let bandwidth =
+                parameters.base_bandwidth_hz + 0.000005 * freq * freq.sqrt() + extra_damping_hz;
 
             // §7.3: Use f64 for resonators below 200 Hz for numerical stability
             // with very narrow bandwidths.
             if freq < 200.0 && f64_count < MAX_F64_PARTIALS {
                 let freq64 = freq as f64;
-                let sr64 = sample_rate as f64;
+                let sr64 = parameters.sample_rate as f64;
                 let amp64 = amp as f64;
                 let bw64 = bandwidth as f64;
                 let theta64 = core::f64::consts::TAU * freq64 / sr64;
@@ -171,8 +225,8 @@ impl ModalString {
                 self.c2[index] = 0.0;
                 f64_count += 1;
             } else {
-                let theta = TAU * freq / sample_rate;
-                let r = (-PI * bandwidth / sample_rate).exp();
+                let theta = TAU * freq / parameters.sample_rate;
+                let r = (-PI * bandwidth / parameters.sample_rate).exp();
                 self.c0[index] = amp * (1.0 - r * r) * theta.sin() * 0.5;
                 self.c1[index] = 2.0 * r * theta.cos();
                 self.c2[index] = -(r * r);
@@ -193,6 +247,9 @@ impl ModalString {
     /// horizontal polarization picks up energy at the resonant frequency
     /// with the same efficiency as the vertical, but releases it far more
     /// slowly (Weinreich 1977, §3.4).
+    /// Compatibility wrapper for existing Rust callers of the aftersound
+    /// scalar API. Grand Boule's own voice path uses
+    /// [`Self::configure_aftersound_from_string_parameters`].
     pub fn configure_aftersound(
         &mut self,
         fundamental_hz: f32,
@@ -203,16 +260,35 @@ impl ModalString {
         c0_bandwidth_hz: f32,
         decay_bandwidth_hz: f32,
     ) {
+        self.configure_aftersound_from_string_parameters(
+            StringModalParameters::new(
+                fundamental_hz,
+                key,
+                hammer_strike_ratio,
+                sample_rate,
+                base_bandwidth_hz,
+            ),
+            c0_bandwidth_hz,
+            decay_bandwidth_hz,
+        );
+    }
+
+    pub(crate) fn configure_aftersound_from_string_parameters(
+        &mut self,
+        parameters: StringModalParameters,
+        c0_bandwidth_hz: f32,
+        decay_bandwidth_hz: f32,
+    ) {
         use core::f32::consts::{PI, TAU};
 
-        let b_coefficient = inharmonicity_b(key);
-        let nyquist = sample_rate * 0.5;
+        let b_coefficient = inharmonicity_b(parameters.key);
+        let nyquist = parameters.sample_rate * 0.5;
         let mut active = 0;
         let mut f64_count = 0_usize;
 
         for index in 0..MAX_PARTIALS {
             let partial_number = (index + 1) as f32;
-            let freq = fundamental_hz
+            let freq = parameters.fundamental_hz
                 * partial_number
                 * (1.0 + b_coefficient * partial_number * partial_number).sqrt();
 
@@ -223,16 +299,19 @@ impl ModalString {
                 continue;
             }
 
-            let amp = (partial_number * PI * hammer_strike_ratio).sin().abs() / partial_number;
+            let amp = (partial_number * PI * parameters.hammer_strike_ratio)
+                .sin()
+                .abs()
+                / partial_number;
             let bw_freq = 0.000005 * freq * freq.sqrt();
             // C0 uses the fast bandwidth for matched impulse response amplitude.
-            let bw_c0 = base_bandwidth_hz + bw_freq + c0_bandwidth_hz;
+            let bw_c0 = parameters.base_bandwidth_hz + bw_freq + c0_bandwidth_hz;
             // C1/C2 use the slow bandwidth for long decay.
-            let bw_decay = base_bandwidth_hz + bw_freq + decay_bandwidth_hz;
+            let bw_decay = parameters.base_bandwidth_hz + bw_freq + decay_bandwidth_hz;
 
             if freq < 200.0 && f64_count < MAX_F64_PARTIALS {
                 let freq64 = freq as f64;
-                let sr64 = sample_rate as f64;
+                let sr64 = parameters.sample_rate as f64;
                 let amp64 = amp as f64;
                 let theta64 = core::f64::consts::TAU * freq64 / sr64;
                 let r_c0 = (-core::f64::consts::PI * bw_c0 as f64 / sr64).exp();
@@ -245,9 +324,9 @@ impl ModalString {
                 self.c2[index] = 0.0;
                 f64_count += 1;
             } else {
-                let theta = TAU * freq / sample_rate;
-                let r_c0 = (-PI * bw_c0 / sample_rate).exp();
-                let r_decay = (-PI * bw_decay / sample_rate).exp();
+                let theta = TAU * freq / parameters.sample_rate;
+                let r_c0 = (-PI * bw_c0 / parameters.sample_rate).exp();
+                let r_decay = (-PI * bw_decay / parameters.sample_rate).exp();
                 self.c0[index] = amp * (1.0 - r_c0 * r_c0) * theta.sin() * 0.5;
                 self.c1[index] = 2.0 * r_decay * theta.cos();
                 self.c2[index] = -(r_decay * r_decay);
@@ -375,6 +454,30 @@ impl ModalString {
             output += y;
         }
         output
+    }
+
+    #[cfg(test)]
+    pub(crate) fn coefficient_signature(&self) -> u64 {
+        fn mix(signature: u64, coefficient: u64) -> u64 {
+            signature
+                .wrapping_mul(1_099_511_628_211)
+                .wrapping_add(coefficient)
+        }
+
+        let mut signature = 14_695_981_039_346_656_037_u64;
+        for coefficients in [&self.c0, &self.c1, &self.c2] {
+            for coefficient in coefficients {
+                signature = mix(signature, coefficient.to_bits() as u64);
+            }
+        }
+        for coefficients in [&self.c0_64, &self.c1_64, &self.c2_64] {
+            for coefficient in coefficients {
+                signature = mix(signature, coefficient.to_bits());
+            }
+        }
+        signature = mix(signature, self.f64_partials as u64);
+        signature = mix(signature, self.active_partials as u64);
+        signature
     }
 }
 

@@ -16,6 +16,7 @@
 import { type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type ArpStep, type NoteSelector, type StepType } from '../../models/ArpPattern';
 
@@ -142,7 +143,9 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             style={{ width: STEP_WIDTH, opacity: step.active ? probOpacity : 0.2 }}
                         >
                             {/* Which note of the held chord this step takes. */}
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 aria-label={`Step ${index + 1} note selector`}
                                 title={`Note selector: ${selectorEntry.label}`}
@@ -150,7 +153,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 onClick={() => cycleNoteSelector(index)}
                             >
                                 {selectorEntry.glyph}
-                            </button>
+                            </Button>
                             {/* Velocity bar. Pointer height sets velocity; the
                                 keyboard has no height, so Enter/Space performs the
                                 same on/off toggle the right-click gesture does. */}
@@ -194,7 +197,9 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 {octaveBadge()}
                             </div>
                             {/* Step number doubles as the step-type cycle. */}
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 aria-label={`Step ${index + 1} type`}
                                 title={`Step type: ${stepTypeEntry.label}`}
@@ -203,47 +208,55 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             >
                                 {index + 1}
                                 {stepTypeEntry.glyph}
-                            </button>
+                            </Button>
                         </div>
                     );
                 })}
 
                 {/* Add step button */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex items-center justify-center text-[8px] text-muted-foreground/40 hover:text-muted-foreground border border-dashed border-border/20 rounded cursor-pointer"
                     style={{ width: STEP_WIDTH, height: STEP_HEIGHT }}
                     onClick={() => onLengthChange(steps.length + 1)}
                 >
                     +
-                </button>
+                </Button>
             </Row>
             {/* Length control */}
             <Row gap={2} className="px-1">
                 <span className="text-[7px] text-muted-foreground">Steps: {steps.length}</span>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="text-[7px] text-muted-foreground hover:text-foreground cursor-pointer"
                     onClick={() => onLengthChange(Math.max(1, steps.length - 1))}
                 >
                     −
-                </button>
-                <button
+                </Button>
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="text-[7px] text-muted-foreground hover:text-foreground cursor-pointer"
                     onClick={() => onLengthChange(steps.length + 1)}
                 >
                     +
-                </button>
+                </Button>
                 {[4, 8, 16, 32].map((len) => (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={len}
                         type="button"
                         className={`text-[7px] px-1 rounded cursor-pointer ${steps.length === len ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
                         onClick={() => onLengthChange(len)}
                     >
                         {len}
-                    </button>
+                    </Button>
                 ))}
             </Row>
         </Stack>

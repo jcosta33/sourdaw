@@ -57,7 +57,9 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                                 <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
                                                     {formatSendLevel(level)}
                                                 </span>
-                                                <button
+                                                <Button
+                                                    variant="bare"
+                                                    size="bare"
                                                     type="button"
                                                     className="shrink-0"
                                                     onClick={() => toggleSendPreFader(track.id, bus.id)}
@@ -77,7 +79,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                                     >
                                                         {isPreFader ? 'PRE' : 'POST'}
                                                     </DawMicroBadge>
-                                                </button>
+                                                </Button>
                                             </Row>
                                         }
                                         valueClassName="font-normal"

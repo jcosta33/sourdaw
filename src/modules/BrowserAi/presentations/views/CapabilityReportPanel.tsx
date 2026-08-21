@@ -5,6 +5,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
@@ -133,19 +134,21 @@ export function CapabilityReportPanel(): ReactElement {
         <DawUtilitySection
             title="Browser AI Capabilities"
             actions={
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={handleRefresh}
                     className="text-[10px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                     aria-label="Re-detect capabilities"
                 >
                     Refresh
-                </button>
+                </Button>
             }
             role="status"
             aria-label="Browser AI capabilities"
         >
-            <div className="space-y-1">
+            <Stack gap={1}>
                 <DawReadoutRow label="WebGPU" value={<DawMicroBadge tone="success">Available</DawMicroBadge>} />
                 <DawReadoutRow
                     label="Render Performance"
@@ -171,7 +174,7 @@ export function CapabilityReportPanel(): ReactElement {
                         </DawMicroBadge>
                     }
                 />
-            </div>
+            </Stack>
         </DawUtilitySection>
     );
 }

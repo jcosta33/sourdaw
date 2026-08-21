@@ -14,12 +14,17 @@ pub struct ModelDownload {
 
 /// Get the shared model cache directory.
 pub fn model_dir() -> Result<PathBuf, String> {
-    let dir = dirs::data_dir()
-        .ok_or("Could not determine data directory")?
-        .join("com.sourdaw.app")
-        .join("models");
+    let dir = cached_model_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
     Ok(dir)
+}
+
+/// Locate the shared model cache without creating or mutating it.
+pub fn cached_model_dir() -> Result<PathBuf, String> {
+    Ok(dirs::data_dir()
+        .ok_or("Could not determine data directory")?
+        .join("com.sourdaw.app")
+        .join("models"))
 }
 
 /// One async lock per model filename, shared process-wide.
@@ -103,6 +108,123 @@ pub async fn ensure_model(model: &'static ModelDownload) -> Result<PathBuf, Stri
 
     eprintln!("[Model] {} ready", model.filename);
     Ok(path)
+}
+
+/// Verify and return an already-cached model without creating files,
+/// removing files, or entering a download path.
+pub async fn verify_cached_model(model: &'static ModelDownload) -> Result<PathBuf, String> {
+    validate_model_spec(model)?;
+    let path = cached_model_dir()?.join(model.filename);
+    if !path.is_file() {
+        return Err(format!(
+            "Verified local model {} is not cached.",
+            model.filename
+        ));
+    }
+    verify_model_file_off_thread(path.clone(), model).await?;
+    Ok(path)
+}
+
+/// Read a verified cached artifact through one non-link file handle. The bytes
+/// returned here are the exact bytes a local inference caller must consume;
+/// returning a path after verification would re-open a mutable name and leave
+/// a hash-to-parser replacement race.
+pub async fn read_verified_cached_model(model: &'static ModelDownload) -> Result<Vec<u8>, String> {
+    validate_model_spec(model)?;
+    let path = cached_model_dir()?.join(model.filename);
+    tokio::task::spawn_blocking(move || read_verified_cached_model_bytes(&path, model))
+        .await
+        .map_err(|error| format!("Verified model read task failed: {error}"))?
+}
+
+fn read_verified_cached_model_bytes(path: &Path, model: &ModelDownload) -> Result<Vec<u8>, String> {
+    read_verified_cached_model_bytes_after_read(path, model, || {})
+}
+
+/// Read the artifact exactly once, then hash the bytes that will be returned.
+/// The callback exists to pin the former verify-then-rewind boundary in a
+/// regression: replacing the on-disk file after this point cannot alter the
+/// already-owned buffer handed to Whisper.
+fn read_verified_cached_model_bytes_after_read(
+    path: &Path,
+    model: &ModelDownload,
+    after_read: impl FnOnce(),
+) -> Result<Vec<u8>, String> {
+    let link_metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "Verified local model {} is not cached: {error}",
+            model.filename
+        )
+    })?;
+    if link_metadata.file_type().is_symlink() {
+        return Err(format!(
+            "Verified local model {} must not be a symlink.",
+            model.filename
+        ));
+    }
+    #[cfg(windows)]
+    if {
+        use std::os::windows::fs::FileTypeExt;
+        link_metadata.file_type().is_reparse_point()
+    } {
+        return Err(format!(
+            "Verified local model {} must not be a reparse point.",
+            model.filename
+        ));
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path).map_err(|error| {
+        format!(
+            "Failed to open verified local model {}: {error}",
+            model.filename
+        )
+    })?;
+    let metadata = file.metadata().map_err(|error| {
+        format!(
+            "Failed to inspect verified local model {}: {error}",
+            model.filename
+        )
+    })?;
+    if !metadata.is_file() || metadata.len() != model.expected_size_bytes {
+        return Err(format!(
+            "Verified local model {} failed size validation.",
+            model.filename
+        ));
+    }
+
+    let mut bytes = Vec::with_capacity(model.expected_size_bytes as usize);
+    file.read_to_end(&mut bytes).map_err(|error| {
+        format!(
+            "Failed to read verified local model {}: {error}",
+            model.filename
+        )
+    })?;
+    if bytes.len() as u64 != model.expected_size_bytes {
+        return Err(format!(
+            "Verified local model {} changed while it was read.",
+            model.filename
+        ));
+    }
+    after_read();
+    let actual = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if actual != model.expected_sha256 {
+        return Err(format!(
+            "Verified local model {} failed hash validation.",
+            model.filename
+        ));
+    }
+
+    Ok(bytes)
 }
 
 /// Stream download with progress logging.
@@ -403,7 +525,65 @@ fn sha256_file(path: &PathBuf) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const SMALL_VERIFIED_MODEL: ModelDownload = ModelDownload {
+        filename: "small-verified-model.bin",
+        url: "https://invalid.example/small-verified-model.bin",
+        expected_sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        expected_size_bytes: 3,
+    };
+
+    fn isolated_model_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("sourdaw-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn cached_voice_reader_hashes_and_returns_the_same_open_file_bytes() {
+        let path = isolated_model_path("verified-bytes");
+        fs::write(&path, b"abc").expect("test artifact must be writable");
+
+        let bytes = read_verified_cached_model_bytes(&path, &SMALL_VERIFIED_MODEL)
+            .expect("the verified file handle must return its bytes");
+
+        fs::remove_file(&path).expect("test artifact must be removed");
+        assert_eq!(bytes, b"abc");
+    }
+
+    #[test]
+    fn cached_voice_reader_hashes_the_exact_bytes_returned_when_the_path_is_overwritten_after_read()
+    {
+        let path = isolated_model_path("same-length-overwrite");
+        fs::write(&path, b"abc").expect("test artifact must be writable");
+
+        let bytes =
+            read_verified_cached_model_bytes_after_read(&path, &SMALL_VERIFIED_MODEL, || {
+                fs::write(&path, b"xyz").expect("same-length replacement must be writable");
+            })
+            .expect("the initially read, verified bytes must remain the returned bytes");
+
+        fs::remove_file(&path).expect("test artifact must be removed");
+        assert_eq!(bytes, b"abc");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_voice_reader_rejects_a_symlink_before_it_can_be_verified_or_loaded() {
+        use std::os::unix::fs::symlink;
+
+        let target = isolated_model_path("symlink-target");
+        let link = isolated_model_path("symlink");
+        fs::write(&target, b"abc").expect("test target must be writable");
+        symlink(&target, &link).expect("test symlink must be created");
+
+        let error = read_verified_cached_model_bytes(&link, &SMALL_VERIFIED_MODEL)
+            .expect_err("a symbolic link must never become a Whisper input");
+
+        fs::remove_file(&link).expect("test symlink must be removed");
+        fs::remove_file(&target).expect("test target must be removed");
+        assert!(error.contains("must not be a symlink"));
+    }
 
     /// The per-model exclusion contract: one shared lock per model filename,
     /// independent locks across models. Without this, two `ensure_model`

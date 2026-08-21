@@ -44,7 +44,9 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                 <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
                                 {clip.isGhost ? <DawMicroBadge tone="primary">Ghost</DawMicroBadge> : null}
                                 {clip.type === 'midi' && !clip.isGhost ? (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         draggable
                                         aria-label={`Select or drag ${clip.name} as groove source`}
@@ -61,7 +63,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                         }}
                                     >
                                         <GripVertical aria-hidden="true" className="size-3" />
-                                    </button>
+                                    </Button>
                                 ) : null}
                             </Row>
                             <MetaText>

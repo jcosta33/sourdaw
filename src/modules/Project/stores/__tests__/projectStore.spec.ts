@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    findAutomergeStorageRawProjectionLosses,
+} from '#/infra/store/storage/createAutomergeStorage';
 
+import { isCanonicalProjectId } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '../projectStore';
 
 type TestDoc = {
@@ -12,7 +16,7 @@ type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>
 
 type DurableProjectMeta = Pick<
     ProjectStoreState,
-    'name' | 'createdAt' | 'updatedAt' | 'keyRoot' | 'scaleName' | 'tuning' | 'productionBrief'
+    'projectId' | 'name' | 'createdAt' | 'updatedAt' | 'keyRoot' | 'scaleName' | 'tuning' | 'productionBrief'
 >;
 
 const fake_doc: TestDoc = {};
@@ -59,6 +63,7 @@ function create_valid_tuning(): ProjectStoreState['tuning'] {
 
 function create_valid_meta(): DurableProjectMeta {
     return {
+        projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
         name: 'Loaded Project',
         createdAt: 1_700_000_000_000,
         updatedAt: 1_700_000_001_000,
@@ -92,7 +97,10 @@ describe('projectStore', () => {
 
         expect(() => projectStore.hydrate()).not.toThrow();
 
-        expect(projectStore.value).toEqual(defaultProjectStoreState);
+        expect(projectStore.value).toEqual({
+            ...defaultProjectStoreState,
+            projectId: undefined,
+        });
     });
 
     it('should hydrate valid durable metadata with cold-start transient defaults', () => {
@@ -104,9 +112,47 @@ describe('projectStore', () => {
             ...create_valid_meta(),
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
     });
+
+    it('keeps a legacy projection without identity visibly noncanonical', () => {
+        const { projectId: _projectId, ...legacyMeta } = create_valid_meta();
+        fake_doc.projectMeta = legacyMeta;
+
+        projectStore.hydrate();
+
+        expect(projectStore.value).toEqual({
+            ...legacyMeta,
+            projectId: undefined,
+            dirty: false,
+            loading: true,
+            identityMigrationPending: false,
+            initialized: false,
+        });
+    });
+
+    it.each(['not-a-uuid', '123e4567-e89b-42d3-7456-426614174000'])(
+        'keeps malformed persisted identity %s visibly noncanonical until migration',
+        (projectId) => {
+            const persistedMeta = { ...create_valid_meta(), projectId };
+            fake_doc.projectMeta = persistedMeta;
+
+            projectStore.hydrate();
+
+            expect(projectStore.value).toEqual({
+                ...persistedMeta,
+                projectId,
+                dirty: false,
+                loading: true,
+                identityMigrationPending: false,
+                initialized: false,
+            });
+            expect(isCanonicalProjectId(projectStore.value?.projectId)).toBe(false);
+            expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document: fake_doc })).toEqual([]);
+        }
+    );
 
     it('should ignore legacy persisted transient flags on cold-start hydration', () => {
         fake_doc.projectMeta = {
@@ -122,6 +168,7 @@ describe('projectStore', () => {
             ...create_valid_meta(),
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
     });
@@ -131,6 +178,7 @@ describe('projectStore', () => {
             ...create_default_state(),
             dirty: true,
             loading: false,
+            identityMigrationPending: false,
             initialized: true,
         });
         await flush_pending_frame();
@@ -145,6 +193,7 @@ describe('projectStore', () => {
             ...changed_meta,
             dirty: true,
             loading: false,
+            identityMigrationPending: false,
             initialized: true,
         });
     });
@@ -152,6 +201,7 @@ describe('projectStore', () => {
     it('should default malformed durable fields independently while preserving valid neighboring durable fields', () => {
         const valid_meta = create_valid_meta();
         fake_doc.projectMeta = {
+            projectId: valid_meta.projectId,
             name: valid_meta.name,
             createdAt: 'bad-date',
             updatedAt: valid_meta.updatedAt,
@@ -164,11 +214,13 @@ describe('projectStore', () => {
         projectStore.hydrate();
 
         expect(projectStore.value).toEqual({
+            projectId: valid_meta.projectId,
             name: valid_meta.name,
             createdAt: defaultProjectStoreState.createdAt,
             updatedAt: valid_meta.updatedAt,
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             keyRoot: defaultProjectStoreState.keyRoot,
             scaleName: valid_meta.scaleName,
             tuning: valid_meta.tuning,
@@ -214,6 +266,7 @@ describe('projectStore', () => {
                 ...valid_meta,
                 dirty: false,
                 loading: true,
+                identityMigrationPending: false,
                 tuning: defaultProjectStoreState.tuning,
                 initialized: false,
             });
@@ -230,6 +283,7 @@ describe('projectStore', () => {
             ...create_valid_meta(),
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
         expect(mutation_count).toBe(0);
@@ -248,6 +302,7 @@ describe('projectStore', () => {
         await flush_pending_frame();
 
         expect(fake_doc.projectMeta).toEqual(expect.objectContaining({ productionBrief }));
+        expect(fake_doc.projectMeta).toEqual(expect.objectContaining({ projectId: state.projectId }));
         expect(mutation_count).toBe(1);
     });
 });

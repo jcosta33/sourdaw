@@ -7,6 +7,8 @@ import { type ReactElement, useState } from 'react';
 import { Search, Star, ChevronRight } from 'lucide-react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields this browser renders.
 type SoundPreset = {
@@ -94,7 +96,7 @@ export const PresetBrowser = ({
             {/* Search */}
             <div className="relative px-2 py-1.5 shrink-0">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
-                <input
+                <Input
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -113,7 +115,9 @@ export const PresetBrowser = ({
                     }
 
                     return (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             key={cat.id}
                             type="button"
                             className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
@@ -127,7 +131,7 @@ export const PresetBrowser = ({
                         >
                             {cat.id === 'user' ? <Star className="size-2.5 inline mr-0.5" /> : null}
                             {cat.label}
-                        </button>
+                        </Button>
                     );
                 })}
             </Row>
@@ -140,7 +144,9 @@ export const PresetBrowser = ({
                     })
                         .slice(0, 10)
                         .map((tag) => (
-                            <button
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 key={tag}
                                 type="button"
                                 className={`px-1 py-0 rounded text-[6px] transition-colors ${
@@ -151,7 +157,7 @@ export const PresetBrowser = ({
                                 onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
                             >
                                 #{tag}
-                            </button>
+                            </Button>
                         ))}
                 </Row>
             ) : null}
@@ -161,7 +167,9 @@ export const PresetBrowser = ({
                     <div className="text-center text-[9px] text-muted-foreground/50 py-6">No presets found</div>
                 ) : (
                     filtered.map((preset) => (
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             key={preset.id}
                             type="button"
                             className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all ${
@@ -173,7 +181,7 @@ export const PresetBrowser = ({
                         >
                             <span className="text-[9px] font-medium truncate">{preset.name}</span>
                             <ChevronRight className="size-3 text-muted-foreground/30 shrink-0" />
-                        </button>
+                        </Button>
                     ))
                 )}
             </div>

@@ -1,6 +1,6 @@
-import { desktopInvoke } from '#/utils/desktopBridge';
+import { desktopStopVoiceDictation } from '#/utils/desktopBridge';
 
 /** Stop capture and trigger Whisper transcription. */
-export async function stopDictation(): Promise<void> {
-    await desktopInvoke('stop_dictation');
+export function stopDictation(sessionId: string): Promise<void> {
+    return desktopStopVoiceDictation(sessionId);
 }
