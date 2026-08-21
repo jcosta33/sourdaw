@@ -614,7 +614,7 @@
   {
     "id": "ui-059e1b3037c0c31b",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1811,
+    "line": 1803,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -866,7 +866,7 @@
   {
     "id": "ui-07bf67b6554e5d20",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 273,
+    "line": 274,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2324,7 +2324,7 @@
   {
     "id": "ui-148c430e034b454c",
     "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 55,
+    "line": 56,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2382,6 +2382,15 @@
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-15160bf9fec86127",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 43,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -2715,6 +2724,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-19141788d60cce32",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 87,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -3067,15 +3085,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-1d220615254365af",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 71,
-    "fingerprint": "div\tflex flex-wrap gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1d2596f97694ba22",
@@ -3436,15 +3445,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-1fab0d1c67bc1365",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 42,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1fc3c16ddfcecf2a",
@@ -5220,15 +5220,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-31ed47356de4ccd9",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 84,
-    "fingerprint": "div\tspace-y-0.5 mt-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-31fa4c3eedc68b46",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 193,
@@ -5933,7 +5924,7 @@
   {
     "id": "ui-39aafe9cd38d7efb",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 289,
+    "line": 290,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -6993,6 +6984,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-43542f8704af82e7",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 92,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-437a4e01f952e601",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackAlternativesSection.tsx",
     "line": 61,
@@ -7850,7 +7850,7 @@
   {
     "id": "ui-4cff677a48a9e262",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1476,
+    "line": 1460,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8939,7 +8939,7 @@
   {
     "id": "ui-5859d9f6a386b9ac",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 227,
+    "line": 228,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9218,7 +9218,7 @@
   {
     "id": "ui-5b081ebc7a54b4ce",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 195,
+    "line": 196,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9533,7 +9533,7 @@
   {
     "id": "ui-5e076ce323a81092",
     "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 31,
+    "line": 32,
     "fingerprint": "div\tflex flex-col gap-1 p-1.5 rounded-md border transition-colors cursor-pointer min-w-[70px]",
     "kind": "layout",
     "mapping": "Stack",
@@ -9794,7 +9794,7 @@
   {
     "id": "ui-6005ca0d9821321f",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 304,
+    "line": 305,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10404,6 +10404,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-6689af3eb01c45ca",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 56,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-66a2766734d33009",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 84,
@@ -10818,6 +10827,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-6b0d39b1ddbc22b7",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 44,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6b14f3fcae8dfb1e",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
     "line": 190,
@@ -10987,15 +11005,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6db7e263ebd12bcd",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 48,
-    "fingerprint": "div\tflex flex-wrap gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6dc30ae34e96f605",
@@ -11252,7 +11261,7 @@
   {
     "id": "ui-707ca75742c7a46b",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 335,
+    "line": 336,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11729,7 +11738,7 @@
   {
     "id": "ui-7571cc8a26958aea",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1842,
+    "line": 1829,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -11860,15 +11869,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-76468a060be61535",
-    "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1402,
-    "fingerprint": "div\tflex flex-wrap gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-766bc26eb1004e50",
@@ -12818,7 +12818,7 @@
   {
     "id": "ui-7e5eabdbb49f8179",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 372,
+    "line": 373,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -12845,7 +12845,7 @@
   {
     "id": "ui-7e7ee294dd7fffdb",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1621,
+    "line": 1577,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14285,7 +14285,7 @@
   {
     "id": "ui-8c971c797ea32f71",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1651,
+    "line": 1632,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14339,7 +14339,7 @@
   {
     "id": "ui-8cdf3c96b92a0af2",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1784,
+    "line": 1651,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15644,7 +15644,7 @@
   {
     "id": "ui-9c8e68afe750bf86",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1577,
+    "line": 1551,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15712,15 +15712,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-9d50ffeacce48d3b",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 54,
-    "fingerprint": "div\tflex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-medium border",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9d589f82e85456a0",
@@ -15806,7 +15797,7 @@
   {
     "id": "ui-9e8d0f0bba5e6fb0",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 351,
+    "line": 352,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -15878,7 +15869,7 @@
   {
     "id": "ui-9f0f22114d995fe6",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1460,
+    "line": 1402,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15986,7 +15977,7 @@
   {
     "id": "ui-9ff9a1366729c7b4",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1519,
+    "line": 1487,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16099,15 +16090,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-a13cb912b123c161",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 89,
-    "fingerprint": "div\tflex items-center gap-1 text-[7px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a146d27c2875b169",
@@ -16506,6 +16488,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-a4abbd74b37039c1",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 72,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a4af90e42eee8875",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx",
     "line": 66,
@@ -16580,7 +16571,7 @@
   {
     "id": "ui-a68cab625a6c662a",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1487,
+    "line": 1476,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16913,7 +16904,7 @@
   {
     "id": "ui-a9d51a17773eb23f",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1632,
+    "line": 1621,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17327,7 +17318,7 @@
   {
     "id": "ui-adfc6b27d525a5d7",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1803,
+    "line": 1784,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17404,6 +17395,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMiniSectionHeader",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-aee5eea80e0f2b3d",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 86,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-af0b36b9cc1e6f32",
@@ -17673,6 +17673,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b1389f361d70311c",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 39,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -18929,7 +18938,7 @@
   {
     "id": "ui-be0c93bd901e38fe",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1551,
+    "line": 1549,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -18956,7 +18965,7 @@
   {
     "id": "ui-be2d54d3138c0908",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 259,
+    "line": 260,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19060,15 +19069,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-bfeb3c0eee4cf624",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 85,
-    "fingerprint": "div\tflex flex-col items-center gap-0 mt-auto",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c00ee151dec3c1bd",
@@ -19311,6 +19311,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-c1e61d911c6e0b4c",
+    "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
+    "line": 1842,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -20520,6 +20529,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-ce23ac746418df6b",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 50,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ce5f679e5d055c6d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackLevelSection.tsx",
     "line": 100,
@@ -21260,7 +21278,7 @@
   {
     "id": "ui-d69512d95e56f8cc",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 181,
+    "line": 182,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -21454,15 +21472,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-d80a7f44fe73da46",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 42,
-    "fingerprint": "div\tflex flex-col gap-2 p-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d833376b9127c656",
@@ -21998,7 +22007,7 @@
   {
     "id": "ui-de023df580db7737",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 244,
+    "line": 245,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22304,7 +22313,7 @@
   {
     "id": "ui-e1f4dabf76c236e2",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 319,
+    "line": 320,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22313,7 +22322,7 @@
   {
     "id": "ui-e1f9b4b0179384f9",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1829,
+    "line": 1811,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -22610,7 +22619,7 @@
   {
     "id": "ui-e4b27d7b136305a5",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1549,
+    "line": 1519,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -22763,7 +22772,7 @@
   {
     "id": "ui-e67a968d724e7ac3",
     "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 99,
+    "line": 102,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24383,7 +24392,7 @@
   {
     "id": "ui-f6f651a9393cbd58",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 168,
+    "line": 169,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -24460,15 +24469,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f7ae52fdef253af4",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 38,
-    "fingerprint": "div\tflex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f7c914aa6a87b008",
@@ -24887,7 +24887,7 @@
   {
     "id": "ui-fbe8c0170a04250f",
     "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 43,
+    "line": 44,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25256,7 +25256,7 @@
   {
     "id": "ui-ff92cf3b7d042757",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
-    "line": 210,
+    "line": 211,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
