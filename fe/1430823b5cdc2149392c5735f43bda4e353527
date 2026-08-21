@@ -1,0 +1,19 @@
+src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts
+  s_27578aec2aab3b::t_7d90ee2883a8a9 10-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fe1430823b5cdc2149392c5735f43bda4e353527",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
