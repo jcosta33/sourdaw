@@ -603,11 +603,12 @@ impl LevainEngine {
             return;
         }
 
-        // Fire release trigger if available (audit F5).
-        self.trigger_release_if_available(note, cc1);
         self.fallback.note_off(note);
         self.voice_pool
             .release_note_matching(note, self.pending_note_off_channel);
+        // Fire release trigger if available (audit F5), after releasing sounding voices
+        // so the new release-trigger voice is not immediately silenced by this note-off.
+        self.trigger_release_if_available(note, cc1);
     }
 
     /// Note-off narrowed to one MPE member channel, so releasing a note on
@@ -986,9 +987,9 @@ impl LevainEngine {
     /// entry's delay elapses (audit F14).
     fn fire_deferred_release(&mut self, note: u8, cc1: f32) {
         self.auto_divisi.note_off(note);
-        self.trigger_release_if_available(note, cc1);
         self.voice_pool.release_note(note);
         self.legato.note_off(note);
+        self.trigger_release_if_available(note, cc1);
     }
 
     /// Look up a velocity-adjacent zone for the CC1 dynamic-layer crossfade
@@ -1856,6 +1857,13 @@ mod tests {
             before + 1,
             "note_off on a held note with an is_release zone available must \
              allocate an additional voice for the release trigger"
+        );
+
+        let out = render(&mut engine, 200);
+        let energy: f32 = out.iter().map(|s| s * s).sum();
+        assert!(
+            energy > 1e-4,
+            "release trigger must sound audio after note_off, not be immediately silenced"
         );
     }
 
