@@ -763,7 +763,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "8594f389faf1ca854355b65ee070859499f0a6fff4c6bf2bcb6033291c775e4e"
+            "sha256": "728835e50c1dc97634412728a7be672f458597e067c2e0121e4f095adf8dead2"
         },
         {
             "path": "server/package.json",
@@ -791,7 +791,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "55b8712577605f3841c3c4ef5de81d5fc68f7b1b599f838fd762b30918149d5a"
+            "sha256": "7de28ba843fa2780b77f635e8d133f26bf3add02ddadf5db6e1d69ab37a8d6fd"
         }
     ],
     "externalReferences": [
@@ -1070,6 +1070,12 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://x-access-token:${slot}@github.com/${slot}.git",
             "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/reconcileTrackerIssue.ts",
+            "value": "https://api.github.com/repos/${slot}",
+            "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
         },
         {
             "surface": "cloud-ai-providers",
