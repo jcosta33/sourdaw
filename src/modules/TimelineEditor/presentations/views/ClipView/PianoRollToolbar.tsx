@@ -156,6 +156,7 @@ export const PianoRollToolbar = ({
                     size="icon-xs"
                     onClick={() => onGridSnapChange(value)}
                     className="text-[9px] w-6 h-5"
+                    aria-pressed={gridSnap === value}
                 >
                     {renderIife_11()}
                 </Button>

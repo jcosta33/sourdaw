@@ -1,111 +1,109 @@
-import { test, expect } from '@playwright/test';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { expect, test, type Page } from '@playwright/test';
 
-async function openPianoRoll(page: import('@playwright/test').Page): Promise<boolean> {
-    const canvas = page.getByLabel('Timeline editor surface');
-    const positions = [{ x: 100, y: 40 }, { x: 200, y: 40 }, { x: 150, y: 80 }, { x: 250, y: 80 }];
-    for (const pos of positions) {
-        await canvas.dblclick({ position: pos });
-        await page.waitForTimeout(500);
-        if (await page.locator('[aria-label="Piano roll editor"]').isVisible().catch(() => false)) return true;
-    }
-    return false;
+import { launch_new_project, setupWorkspace } from './e2eUtils';
+
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function focusWorkspace(page: Page): Promise<void> {
+    await page.locator('#main-content').click();
 }
 
-test.describe('MIDI toolbar all toggles — Pop Song', () => {
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await expect(trackList).toBeVisible();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
+}
+
+async function openPianoRollOnNewClip(page: Page): Promise<void> {
+    await addMidiTrack(page);
+    const canvas = page.getByLabel('Timeline editor surface');
+    await expect(canvas).toBeVisible();
+    await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
+    await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+    await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+    await canvas.dblclick({ position: { x: 300, y: 30 } });
+    await expect(page.getByLabel('Piano roll editor')).toBeVisible();
+}
+
+test.describe('Piano roll toolbar toggles', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'Pop Song' }).click();
-        await wait_for_workspace_ready(page);
+        await launch_new_project(page);
+        await focusWorkspace(page);
+        await openPianoRollOnNewClip(page);
     });
 
-    test('enable every toolbar toggle one by one', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
+    test('Fold, Constrain, and Paint round-trip through pressed', async ({ page }) => {
+        const fold = page.getByRole('button', { name: 'Toggle fold to scale', exact: true });
+        const constrain = page.getByRole('button', { name: 'Constrain notes to scale', exact: true });
+        const paint = page.getByRole('button', { name: 'Toggle paint mode', exact: true });
 
-        const toggles = [
-            'toolbar-fold-to-scale',
-            'toolbar-constrain',
-            'toolbar-step-input',
-            'toolbar-ghost',
-            'toolbar-paint',
-            'toolbar-expression',
-        ];
+        await expect(fold).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(constrain).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(paint).not.toHaveAttribute('aria-pressed', 'true');
 
-        for (const id of toggles) {
-            const btn = page.getByTestId(id);
-            if (await btn.isVisible().catch(() => false)) {
-                const before = await btn.getAttribute('aria-pressed');
-                await btn.click();
-                await page.waitForTimeout(200);
-                await expect(btn).not.toHaveAttribute('aria-pressed', before ?? '');
-            }
-        }
+        await fold.click();
+        await constrain.click();
+        await paint.click();
+        await expect(fold).toHaveAttribute('aria-pressed', 'true');
+        await expect(constrain).toHaveAttribute('aria-pressed', 'true');
+        await expect(paint).toHaveAttribute('aria-pressed', 'true');
+
+        await fold.click();
+        await constrain.click();
+        await paint.click();
+        await expect(fold).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(constrain).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(paint).not.toHaveAttribute('aria-pressed', 'true');
     });
 
-    test('chord stamp reveals chord type selector', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
+    test('Chord stamp reveals Chord type and hides it when Chord turns off', async ({ page }) => {
+        const chord = page.getByRole('button', { name: 'Toggle chord stamp mode', exact: true });
+        const chordType = page.getByRole('combobox', { name: 'Chord type', exact: true });
 
-        await page.getByTestId('toolbar-chord').click();
-        await page.waitForTimeout(300);
-        await expect(page.getByTestId('toolbar-chord-type')).toBeVisible({ timeout: 5000 });
+        await expect(chord).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(chordType).toHaveCount(0);
+
+        await chord.click();
+        await expect(chord).toHaveAttribute('aria-pressed', 'true');
+        await expect(chordType).toBeVisible();
+        await expect(chordType).toHaveValue('major');
+
+        await chordType.selectOption('minor');
+        await expect(chordType).toHaveValue('minor');
+
+        await chord.click();
+        await expect(chord).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(chordType).toHaveCount(0);
     });
 
-    test('disable all toggles returns to default state', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
-
-        // Enable fold, constrain, paint.
-        await page.getByTestId('toolbar-fold-to-scale').click();
-        await page.getByTestId('toolbar-constrain').click();
-        await page.getByTestId('toolbar-paint').click();
-
-        // Verify all on.
-        await expect(page.getByTestId('toolbar-fold-to-scale')).toHaveAttribute('aria-pressed', 'true');
-        await expect(page.getByTestId('toolbar-constrain')).toHaveAttribute('aria-pressed', 'true');
-        await expect(page.getByTestId('toolbar-paint')).toHaveAttribute('aria-pressed', 'true');
-
-        // Disable all.
-        await page.getByTestId('toolbar-fold-to-scale').click();
-        await page.getByTestId('toolbar-constrain').click();
-        await page.getByTestId('toolbar-paint').click();
-
-        // Verify all off.
-        await expect(page.getByTestId('toolbar-fold-to-scale')).toHaveAttribute('aria-pressed', 'false');
-        await expect(page.getByTestId('toolbar-constrain')).toHaveAttribute('aria-pressed', 'false');
-        await expect(page.getByTestId('toolbar-paint')).toHaveAttribute('aria-pressed', 'false');
-    });
-
-    test('scale type selector changes value', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
-
-        const type = page.getByTestId('toolbar-scale-type');
-        const select = type.getByRole('combobox');
-        if (await select.isVisible().catch(() => false)) {
-            const before = await select.inputValue();
-            await select.selectOption({ index: 3 });
-            const after = await select.inputValue();
-            expect(after).not.toBe(before);
-        }
-    });
-
-    test('snap buttons switch active variant', async ({ page }) => {
-        const opened = await openPianoRoll(page);
-        if (!opened) return;
-
+    test('Ghost starts on and Snap 1/8 becomes the exclusive snap', async ({ page }) => {
+        const ghost = page.getByRole('button', { name: 'Toggle ghost notes', exact: true });
         const snap14 = page.getByRole('button', { name: '1/4', exact: true });
         const snap18 = page.getByRole('button', { name: '1/8', exact: true });
 
-        await snap18.click();
-        await page.waitForTimeout(200);
+        await expect(ghost).toHaveAttribute('aria-pressed', 'true');
+        await ghost.click();
+        await expect(ghost).not.toHaveAttribute('aria-pressed', 'true');
 
-        const v18 = await snap18.getAttribute('data-variant');
-        const v14 = await snap14.getAttribute('data-variant');
-        expect(v18).not.toBe(v14);
+        await expect(snap14).toHaveAttribute('aria-pressed', 'true');
+        await expect(snap18).not.toHaveAttribute('aria-pressed', 'true');
+
+        await snap18.click();
+        await expect(snap18).toHaveAttribute('aria-pressed', 'true');
+        await expect(snap14).not.toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('scale type changes from chromatic to major', async ({ page }) => {
+        const type = page.getByRole('combobox', { name: 'Scale type', exact: true });
+        await expect(type).toHaveValue('chromatic');
+        await type.selectOption('major');
+        await expect(type).toHaveValue('major');
     });
 });
