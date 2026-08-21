@@ -7,8 +7,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: exportCachedAudioBuffersMock,
 }));
 
+const trackStoreMock = vi.hoisted((): { value: { tracks: unknown[] } } => ({ value: { tracks: [] } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { tracks: [] } },
+    trackStore: trackStoreMock,
     markerStore: { value: { markers: [] } },
     takeLaneStore: { value: undefined },
     adjustmentLayerStore: { value: { layers: [] } },
@@ -39,7 +40,12 @@ vi.mock('#/modules/Transport/stores', () => ({
     timeSignatureMapStore: { value: undefined },
 }));
 const yeastStoreMock = vi.hoisted((): { value: unknown } => ({ value: { processors: [], uiLevel: 1 } }));
-vi.mock('#/modules/Yeast/stores', () => ({ yeastStore: yeastStoreMock }));
+// Per-device rack reads (issue #2422): keyed per test, empty rack for the rest.
+const yeastRacksMock = vi.hoisted((): Record<string, { processors: unknown[] }> => ({}));
+vi.mock('#/modules/Yeast/stores', () => ({
+    yeastStore: yeastStoreMock,
+    readYeastRack: (deviceId: string) => yeastRacksMock[deviceId] ?? { processors: [] },
+}));
 const productionBriefFixture = vi.hoisted(() => ({
     schemaVersion: 1 as const,
     id: 'production-brief',
@@ -79,8 +85,27 @@ vi.mock('../../../../stores/arrangementStore', async (importOriginal) => {
 import { sanitize_arrangement_store_state } from '../../../../stores/arrangementStore';
 import { buildProjectData } from '../buildProjectData';
 
+// Minimal runtime track for the builder's walks (devices, clips,
+// alternatives, freezeState). The Arrangement stores module is mocked here,
+// so the real track factory is not importable without dragging the module
+// graph through the mock.
+function yeastDeviceTrack(trackId: string, deviceId: string): Record<string, unknown> {
+    return {
+        id: trackId,
+        name: trackId,
+        devices: [{ id: deviceId, name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
+        clips: [],
+        alternatives: [],
+        freezeState: { frozenBufferId: undefined },
+    };
+}
+
 describe('buildProjectData', () => {
     beforeEach(() => {
+        trackStoreMock.value.tracks = [];
+        for (const key of Object.keys(yeastRacksMock)) {
+            delete yeastRacksMock[key];
+        }
         exportCachedAudioBuffersMock.mockReset();
         exportCachedAudioBuffersMock.mockResolvedValue({});
         Object.assign(productionBriefFixture, { id: 'production-brief', supersedesBriefId: null });
@@ -128,6 +153,58 @@ describe('buildProjectData', () => {
         const built = await buildProjectData({ includeAudioBuffers: false });
 
         expect(built?.data.meta.projectId).toBe(STORED_PROJECT_ID);
+    });
+
+    // Issue #2422: rack state is per device instance, and the file must carry
+    // EVERY device's rack — writing only the active device's rack would make
+    // a reopen silently discard every other rack. Mutation: reverting the
+    // builder to the active-rack snapshot reds this test (one rack missing).
+    it('writes every Yeast device rack, not just the active one', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        trackStoreMock.value.tracks = [
+            yeastDeviceTrack('track-a', 'device-a'),
+            yeastDeviceTrack('track-b', 'device-b'),
+        ];
+        const up = {
+            id: 'transpose-up',
+            type: 'transposer' as const,
+            name: 'Up',
+            bypassed: false,
+            params: { semitones: 12 },
+        };
+        const down = {
+            id: 'transpose-down',
+            type: 'transposer' as const,
+            name: 'Down',
+            bypassed: false,
+            params: { semitones: -12 },
+        };
+        yeastRacksMock['device-a'] = { processors: [up] };
+        yeastRacksMock['device-b'] = { processors: [down] };
+
+        const built = await buildProjectData({ includeAudioBuffers: false });
+
+        expect(built?.data.yeast).toEqual({
+            racks: {
+                'device-a': { processors: [up] },
+                'device-b': { processors: [down] },
+            },
+        });
+    });
+
+    it('omits the yeast section when no device rack holds a processor', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        trackStoreMock.value.tracks = [yeastDeviceTrack('track-a', 'device-a')];
+
+        const built = await buildProjectData({ includeAudioBuffers: false });
+
+        expect(built?.data.yeast).toBeUndefined();
     });
 
     it('refuses to serialize a version-2 snapshot before identity migration', async () => {
@@ -256,6 +333,10 @@ describe('buildProjectData', () => {
             arrangements: [],
             activeArrangementId: null,
         });
+        trackStoreMock.value.tracks = [yeastDeviceTrack('track-yeast', 'device-durable')];
+        yeastRacksMock['device-durable'] = {
+            processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+        };
         yeastStoreMock.value = {
             processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
             uiLevel: 3,
@@ -265,9 +346,19 @@ describe('buildProjectData', () => {
         const built = await buildProjectData();
 
         expect(built?.data.yeast).toEqual({
-            processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+            racks: {
+                'device-durable': {
+                    processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+                },
+            },
         });
         expect(built?.data.yeast).not.toHaveProperty('uiLevel');
+        expect(built?.data.yeast).toMatchObject({
+            racks: { 'device-durable': {} },
+        });
+        expect(built?.data.yeast).not.toMatchObject({
+            racks: { 'device-durable': { runtimeStatus: expect.anything() } },
+        });
     });
 
     it('does not throw on sanitizer-accepted minimal track rows inside an INACTIVE arrangement', async () => {

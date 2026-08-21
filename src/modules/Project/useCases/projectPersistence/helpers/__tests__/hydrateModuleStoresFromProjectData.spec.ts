@@ -162,6 +162,32 @@ describe('hydrateModuleStoresFromProjectData', () => {
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
     });
 
+    it('forwards the device-keyed yeast racks to the Yeast module untouched', () => {
+        // Issue #2422: the file carries one rack per Yeast device; hydration
+        // must hand the whole device-keyed section to the Yeast module, which
+        // writes each rack under its own device id.
+        const yeast = {
+            racks: {
+                'device-a': {
+                    processors: [
+                        {
+                            id: 'up',
+                            type: 'transposer' as const,
+                            name: 'Up',
+                            bypassed: false,
+                            params: { semitones: 12 },
+                        },
+                    ],
+                },
+                'device-b': { processors: [] },
+            },
+        } satisfies NonNullable<HydratableProjectData['yeast']>;
+
+        hydrateModuleStoresFromProjectData(createHydratableProjectData({ yeast }));
+
+        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(yeast);
+    });
+
     it('routes every persisted mix-state field to the module that owns it', () => {
         const vcaGroups = [{ id: 'vca-drums', name: 'Drums', gain: 0.5, muted: false, trackIds: ['track-kick'] }];
         const gainEnvelopes = [

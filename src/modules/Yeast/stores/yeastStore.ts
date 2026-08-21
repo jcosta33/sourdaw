@@ -39,17 +39,7 @@ const defaultState: YeastState = defaultYeastState;
  * key under merge.
  */
 function firstYeastDeviceIdInProjectOrder(): string | null {
-    const tracks = trackStore.value;
-    if (!tracks) {
-        return null;
-    }
-    for (const track of tracks.tracks) {
-        const device = track.devices.find((candidate) => candidate.type === 'yeast');
-        if (device) {
-            return device.id;
-        }
-    }
-    return null;
+    return yeastDeviceIdsInProjectOrder()[0] ?? null;
 }
 
 /**
@@ -84,6 +74,27 @@ let explicitActiveDeviceId: string | null = null;
 
 function activeYeastDeviceId(): string | null {
     return explicitActiveDeviceId ?? firstYeastDeviceId();
+}
+
+/**
+ * Every Yeast device id in project order — the per-device write order the
+ * flat project-file hydration uses, and the enumeration behind
+ * {@link firstYeastDeviceIdInProjectOrder}.
+ */
+export function yeastDeviceIdsInProjectOrder(): string[] {
+    const tracks = trackStore.value;
+    if (!tracks) {
+        return [];
+    }
+    const deviceIds: string[] = [];
+    for (const track of tracks.tracks) {
+        for (const device of track.devices) {
+            if (device.type === 'yeast') {
+                deviceIds.push(device.id);
+            }
+        }
+    }
+    return deviceIds;
 }
 
 /** The Yeast device a track's rack lives under — its first Yeast instance. */

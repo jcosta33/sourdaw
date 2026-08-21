@@ -100,7 +100,8 @@ export type ProjectData = {
     midi: ProjectMidi;
     chordTrack?: ProjectChordTrackState;
     grooves?: ProjectGrooveState;
-    yeast?: ProjectYeastState;
+    /** Device-keyed racks on write; the legacy flat form is read-tolerated. */
+    yeast?: ProjectYeastState | ProjectYeastFlatState;
     /**
      * DEAD FIELD — written, never read.
      *
@@ -379,7 +380,28 @@ export type ProjectYeastProcessor = {
     params?: Record<string, number>;
 };
 
+/** One Yeast device's rack, exactly as the pre-split file carried it. */
+export type ProjectYeastRack = {
+    processors: ProjectYeastProcessor[];
+};
+
+/**
+ * Yeast racks in the project file, keyed by device instance id — one rack per
+ * Yeast device (issue #2422), the same device-keyed shape the CRDT slot holds.
+ * Files saved before the per-device split carry a single project-wide rack;
+ * that legacy flat shape is still accepted on read and attaches to the first
+ * Yeast device in project order.
+ */
 export type ProjectYeastState = {
+    racks: Record<string, ProjectYeastRack>;
+};
+
+/**
+ * The pre-split single-rack section (`{ processors }`), kept as the accepted
+ * legacy input on read: hydrate attaches it to the first Yeast device in
+ * project order — the same owner the CRDT slot's v1→v2 parking picks.
+ */
+export type ProjectYeastFlatState = {
     processors: ProjectYeastProcessor[];
 };
 

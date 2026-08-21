@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { CURRENT_PROJECT_VERSION } from '../../../../models/ProjectData';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -89,7 +90,7 @@ describe('VCA clip-foundation lifecycle preservation', () => {
         if (!built) {
             throw new Error('Expected the canonical project builder to produce version-1 data');
         }
-        expect(built.data.version).toBe(1);
+        expect(built.data.version).toBe(CURRENT_PROJECT_VERSION);
         expect(built.data.arrangement.tracks[0]?.vcaGroupId).toBe('legacy-vca-active');
         expect(built.data.arrangements?.[1]?.tracks?.tracks[0]?.vcaGroupId).toBe('legacy-vca-saved');
 
