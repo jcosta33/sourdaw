@@ -5,7 +5,11 @@ import { agentRunCancellation } from '../cancelAgentRun';
 import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
 
 const CLEANUP_OWNER = 'stem-import-preparation';
-const registrations = new Map<string, () => void>();
+type PreparedStemImportRegistration = {
+    unregister: () => void;
+    protected: boolean;
+};
+const registrations = new Map<string, PreparedStemImportRegistration>();
 
 function key(runId: string, assetId: string): string {
     return `${runId}\u0000${assetId}`;
@@ -16,19 +20,38 @@ function registerPreparedStemImportResources(input: {
     stems: StemImportPromptScope['actionSeed']['stems'];
 }): void {
     for (const stem of input.stems) {
+        const registrationKey = key(input.runId, stem.audioBufferId);
         agentRunLifecycle.registerTemporaryAsset({
             runId: input.runId,
             assetId: stem.audioBufferId,
             kind: 'import',
             cleanupOwner: CLEANUP_OWNER,
         });
-        const unregister = agentRunCancellation.registerTemporaryAssetCleanup({
+        const registration: PreparedStemImportRegistration = { unregister: () => undefined, protected: false };
+        registration.unregister = agentRunCancellation.registerTemporaryAssetCleanup({
             runId: input.runId,
             assetId: stem.audioBufferId,
             cleanupOwner: CLEANUP_OWNER,
-            cleanup: () => discardPreparedStemImportResources([stem]),
+            cleanup: () => {
+                if (registrations.get(registrationKey)?.protected) {
+                    return;
+                }
+                discardPreparedStemImportResources([stem]);
+            },
         });
-        registrations.set(key(input.runId, stem.audioBufferId), unregister);
+        registrations.set(registrationKey, registration);
+    }
+}
+
+function protectPreparedStemImportResources(input: {
+    runId: string;
+    stems: StemImportPromptScope['actionSeed']['stems'];
+}): void {
+    for (const stem of input.stems) {
+        const registration = registrations.get(key(input.runId, stem.audioBufferId));
+        if (registration) {
+            registration.protected = true;
+        }
     }
 }
 
@@ -38,11 +61,11 @@ function releasePreparedStemImportResources(input: {
 }): void {
     for (const stem of input.stems) {
         const registrationKey = key(input.runId, stem.audioBufferId);
-        const unregister = registrations.get(registrationKey);
-        if (!unregister) {
+        const registration = registrations.get(registrationKey);
+        if (!registration) {
             continue;
         }
-        unregister();
+        registration.unregister();
         registrations.delete(registrationKey);
         agentRunLifecycle.forgetTemporaryAsset({
             runId: input.runId,
@@ -58,12 +81,24 @@ async function discardRegisteredPreparedStemImportResources(input: {
 }): Promise<void> {
     for (const stem of input.stems) {
         const registrationKey = key(input.runId, stem.audioBufferId);
+        const registration = registrations.get(registrationKey);
         const asset = agentRunLifecycle
             .get(input.runId)
             ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
         if (!asset) {
-            registrations.get(registrationKey)?.();
+            registration?.unregister();
             registrations.delete(registrationKey);
+            continue;
+        }
+        if (registration?.protected) {
+            discardPreparedStemImportResources([stem]);
+            registration.unregister();
+            registrations.delete(registrationKey);
+            agentRunLifecycle.forgetTemporaryAsset({
+                runId: input.runId,
+                assetId: stem.audioBufferId,
+                cleanupOwner: CLEANUP_OWNER,
+            });
             continue;
         }
         if (asset.status !== 'released') {
@@ -84,6 +119,7 @@ async function discardRegisteredPreparedStemImportResources(input: {
 
 export const preparedStemImportResources = {
     register: registerPreparedStemImportResources,
+    protect: protectPreparedStemImportResources,
     release: releasePreparedStemImportResources,
     discard: discardRegisteredPreparedStemImportResources,
 };

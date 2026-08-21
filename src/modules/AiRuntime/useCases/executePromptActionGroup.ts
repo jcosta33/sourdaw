@@ -269,7 +269,13 @@ export async function executePromptActionGroup(
             phase: 'executing',
             revision: input.projectRevision,
         });
-        execution = await executePlannedActions({ ...input, group, commandBatch });
+        execution = await executePlannedActions({
+            ...input,
+            group,
+            commandBatch,
+            onProjectCommitPrepared: () =>
+                preparedStemImportResources.protect({ runId: input.runId, stems: importedStems }),
+        });
     } catch (error) {
         const reason = getErrorMessage(error);
         if (settleCommand('failed')) {
@@ -294,7 +300,6 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
-            await discardImportedStems();
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -308,7 +313,6 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
-            await discardImportedStems();
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -366,7 +370,6 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'partially-completed');
         }
-        await discardImportedStems();
         notifyAiChange(`Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`, []);
         return { status: 'ambiguous' };
     }

@@ -88,6 +88,20 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             reason: 'Provider planning requires an application-owned budget admission.',
         }));
     let stemImportScope: StemImportPromptScope | undefined;
+    let stemImportResourcesRegistered = false;
+    const discardStemImportScope = async (): Promise<void> => {
+        if (!stemImportScope) {
+            return;
+        }
+        if (stemImportResourcesRegistered) {
+            await preparedStemImportResources.discard({
+                runId: streamIdentity.runId,
+                stems: stemImportScope.actionSeed.stems,
+            });
+            return;
+        }
+        discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+    };
     let result;
     try {
         result = await parsePromptToActions(
@@ -174,6 +188,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                     runId: streamIdentity.runId,
                     stems: stemImportScope.actionSeed.stems,
                 });
+                stemImportResourcesRegistered = true;
             }
             result = await parsePromptToActions(
                 input.prompt,
@@ -187,9 +202,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             );
         }
     } catch (error) {
-        if (stemImportScope) {
-            discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
-        }
+        await discardStemImportScope();
         let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
         if (error instanceof AiProposalInvalidatedError) {
             category = 'conflict';
@@ -212,7 +225,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         throw error;
     }
     if (stemImportScope && !result.actions.some((action) => action.type === 'importStemSet')) {
-        discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+        await discardStemImportScope();
     }
 
     const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(input.prompt, context, projectRevision);
@@ -226,7 +239,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
 
     if (input.signal?.aborted !== true && result.actions.length > 0 && captureProjectRevision() !== projectRevision) {
         if (stemImportScope) {
-            discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+            await discardStemImportScope();
         }
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     issueApprovalBinding: vi.fn(() => ({ token: 'exact-approval' })),
+    protectPreparedStemImportResources: vi.fn(),
     releasePreparedStemImportResources: vi.fn(),
     discardPreparedStemImportResources: vi.fn(),
 }));
@@ -33,6 +34,7 @@ vi.mock('../issueAgentCommandApprovalBinding', () => ({
 }));
 vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
     preparedStemImportResources: {
+        protect: mocks.protectPreparedStemImportResources,
         release: mocks.releasePreparedStemImportResources,
         discard: mocks.discardPreparedStemImportResources,
     },
@@ -217,10 +219,41 @@ describe('executePromptActionGroup', () => {
         }
     );
 
+    it('protects prepared stems at commit preparation before abort can run post-commit cleanup', async () => {
+        const controller = new AbortController();
+        const order: string[] = [];
+        seedRun();
+        mocks.protectPreparedStemImportResources.mockImplementation(() => order.push('protected'));
+        mocks.releasePreparedStemImportResources.mockImplementation(() => order.push('released'));
+        mocks.executePlannedActions.mockImplementation(async (input) => {
+            input.onProjectCommitPrepared?.();
+            order.push('post-commit');
+            controller.abort();
+            await Promise.resolve();
+            return {
+                status: 'committed',
+                actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+                receipt: verifiedReceipt('committed'),
+            };
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: [stemAction],
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                signal: controller.signal,
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        expect(order).toEqual(['protected', 'post-commit', 'released']);
+        expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+    });
+
     it.each([
         { execution: { status: 'invalidated', reason: 'Revision changed' }, outcome: 'failed' },
         { execution: { status: 'failed', reason: 'Execution failed' }, outcome: 'failed' },
-        { execution: { status: 'ambiguous', reason: 'Receipt missing' }, outcome: 'ambiguous' },
         { execution: { status: 'cancelled' }, outcome: 'cancelled' },
         { execution: { status: 'no-op' }, outcome: 'no-op' },
     ] as const)(
@@ -245,6 +278,23 @@ describe('executePromptActionGroup', () => {
             expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
         }
     );
+
+    it('retains prepared stem recovery ownership for an ambiguous execution outcome', async () => {
+        seedRun();
+        mocks.executePlannedActions.mockResolvedValue({ status: 'ambiguous', reason: 'Commit truth is unresolved' });
+
+        await expect(
+            executePromptActionGroup({
+                actions: [stemAction],
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'ambiguous' });
+
+        expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+        expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
+    });
 
     it.each([
         {
@@ -386,10 +436,7 @@ describe('executePromptActionGroup', () => {
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(warning, []);
-        expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
-            runId: RUN_ID,
-            stems: stemAction.payload.stems,
-        });
+        expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
         expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
     });
 

@@ -13,6 +13,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { agentRunCancellation } from '../../cancelAgentRun';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
 import { preparedStemImportResources } from '../registerPreparedStemImportResources';
 
@@ -83,5 +84,31 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
         expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
         expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
+
+        expect(() => preparedStemImportResources.register({ runId: 'stem-discarded', stems })).not.toThrow();
+        preparedStemImportResources.release({ runId: 'stem-discarded', stems });
+        expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
+    });
+
+    it('protects commit-prepared stems from cancellation cleanup until ownership transfers', async () => {
+        agentRunLifecycle.create({
+            runId: 'stem-protected',
+            request: 'Import stems.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        preparedStemImportResources.register({ runId: 'stem-protected', stems });
+        preparedStemImportResources.protect({ runId: 'stem-protected', stems });
+
+        await agentRunCancellation.cancel({ runId: 'stem-protected', reason: 'Abort during post-commit effects.' });
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get('stem-protected')?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'released' }),
+        ]);
+
+        preparedStemImportResources.release({ runId: 'stem-protected', stems });
+        expect(agentRunLifecycle.get('stem-protected')?.temporaryAssets).toEqual([]);
     });
 });

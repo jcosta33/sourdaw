@@ -1,9 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'rev-1'),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
     parsePromptToActions: vi.fn(),
+    prepareStemImport: vi.fn(),
+    createStemImportPromptScope: vi.fn(),
+    discardRawPreparedStemImportResources: vi.fn(),
+    registerPreparedStemImportResources: vi.fn(),
+    discardRegisteredPreparedStemImportResources: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -17,13 +22,46 @@ vi.mock('../getProjectContext', () => ({
 vi.mock('../parsePromptToActions', () => ({
     parsePromptToActions: mocks.parsePromptToActions,
 }));
+vi.mock('../agentReference/prepareStemImport', () => ({
+    prepareStemImport: mocks.prepareStemImport,
+}));
+vi.mock('../agentReference/createStemImportPromptScope', () => ({
+    createStemImportPromptScope: mocks.createStemImportPromptScope,
+}));
+vi.mock('../agentReference/discardPreparedStemImportResources', () => ({
+    discardPreparedStemImportResources: mocks.discardRawPreparedStemImportResources,
+}));
+vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
+    preparedStemImportResources: {
+        register: mocks.registerPreparedStemImportResources,
+        discard: mocks.discardRegisteredPreparedStemImportResources,
+    },
+}));
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { planPromptActions } from '../planPromptActions';
 
+const stemImportScope = {
+    actionSeed: {
+        stems: [{ audioBufferId: 'prepared-buffer-1', assetLeaseId: 'prepared-lease-1' }],
+    },
+};
+
+function seedAdmittedRun(): void {
+    agentRunLifecycle.create({ runId: 'stem-run', request: 'Import stems', mode: 'apply', createdRevision: 'rev-1' });
+}
+
 describe('planPromptActions', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        agentRunLifecycle.clear();
+        mocks.captureProjectRevision.mockReset().mockReturnValue('rev-1');
+        mocks.parsePromptToActions.mockReset();
+        mocks.prepareStemImport.mockReset().mockResolvedValue({ status: 'prepared' });
+        mocks.createStemImportPromptScope.mockReset().mockReturnValue(stemImportScope);
+    });
     it('returns the parsed actions when the project revision is unchanged', async () => {
         mocks.captureProjectRevision.mockReturnValue('rev-1');
         mocks.parsePromptToActions.mockResolvedValue({ actions: [{ type: 'testAction' }], raw: 'parsed' });
@@ -182,5 +220,64 @@ describe('planPromptActions', () => {
             cancellation: { generation: 1 },
             errors: [expect.objectContaining({ category: 'cancellation' })],
         });
+    });
+
+    it('discards registered prepared stems through their owner when provider replanning throws', async () => {
+        seedAdmittedRun();
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({ actions: [], preparationRequest: 'stem-import' })
+            .mockRejectedValueOnce(new Error('Provider replanning failed'));
+
+        await expect(
+            planPromptActions({
+                prompt: 'Import stems',
+                streamIdentity: { runId: 'stem-run', requestId: 'request-1', cancellationGeneration: 0 },
+            })
+        ).rejects.toThrow('Provider replanning failed');
+
+        expect(mocks.discardRegisteredPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: 'stem-run',
+            stems: stemImportScope.actionSeed.stems,
+        });
+        expect(mocks.discardRawPreparedStemImportResources).not.toHaveBeenCalled();
+    });
+
+    it('discards registered prepared stems through their owner when replanning rejects the import', async () => {
+        seedAdmittedRun();
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({ actions: [], preparationRequest: 'stem-import' })
+            .mockResolvedValueOnce({ actions: [], rejectionReason: 'Import rejected' });
+
+        await planPromptActions({
+            prompt: 'Import stems',
+            streamIdentity: { runId: 'stem-run', requestId: 'request-1', cancellationGeneration: 0 },
+        });
+
+        expect(mocks.discardRegisteredPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: 'stem-run',
+            stems: stemImportScope.actionSeed.stems,
+        });
+        expect(mocks.discardRawPreparedStemImportResources).not.toHaveBeenCalled();
+    });
+
+    it('discards registered prepared stems through their owner when the project revision invalidates the plan', async () => {
+        seedAdmittedRun();
+        mocks.captureProjectRevision.mockReturnValueOnce('rev-1').mockReturnValueOnce('rev-2');
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({ actions: [], preparationRequest: 'stem-import' })
+            .mockResolvedValueOnce({ actions: [{ type: 'importStemSet', payload: stemImportScope.actionSeed }] });
+
+        await expect(
+            planPromptActions({
+                prompt: 'Import stems',
+                streamIdentity: { runId: 'stem-run', requestId: 'request-1', cancellationGeneration: 0 },
+            })
+        ).rejects.toThrow(AiProposalInvalidatedError);
+
+        expect(mocks.discardRegisteredPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: 'stem-run',
+            stems: stemImportScope.actionSeed.stems,
+        });
+        expect(mocks.discardRawPreparedStemImportResources).not.toHaveBeenCalled();
     });
 });
