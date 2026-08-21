@@ -259,10 +259,13 @@ the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
 
-`deliver` and `issue:reconcile` enforce that by construction: they read their whole script closure
-from `origin/main`, execute it from a snapshot, and never read the lane's copy. A lane that is
-merely behind `main` therefore delivers without merging first — the code that runs is main's either
-way, and forcing a merge to prove it only risks staling generated artifacts.
+`deliver` and `issue:reconcile` enforce that for the scripts they execute: the command's whole
+script closure is read from `origin/main` and run from a snapshot, so a lane's copy of any of them
+never runs. A lane that is merely behind `main` therefore delivers without merging first — the code
+that runs is main's either way, and forcing a merge to prove it only risks staling generated
+artifacts. Their loader, `scripts/trustedGithubWriteBootstrap.ts`, is the exception: `package.json`
+resolves it from the working tree, and nothing in the snapshot imports it, so it is the one file in
+the closure that runs as the lane holds it.
 
 Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
 account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually

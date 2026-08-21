@@ -87,11 +87,12 @@ describe('package scripts and gitignore', () => {
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
-        // A lane holding a different copy of any trusted script — mutated, or
+        // A lane holding a different copy of any executed script — mutated, or
         // simply older than main — still delivers, and still runs main's code.
         // Every source handed to the snapshot comes from the pinned origin
-        // commit, and the port exposes no way to read the lane's copy at all,
-        // so no lane state can reach the GitHub write.
+        // commit, and the port exposes no way to read the lane's copy at all.
+        // This says nothing about the loader itself, which `package.json`
+        // resolves from the working tree and no snapshot imports.
         let executedSources: ReadonlyMap<string, string> | undefined;
         const exitCode = await runTrustedGithubWriteCommand('deliver', ['42'], {
             resolveOriginMain: () => 'trusted-sha',

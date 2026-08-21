@@ -104,14 +104,29 @@ export async function runTrustedGithubWriteCommand(
     if (commit.trim() === '') {
         throw new Error('origin/main did not resolve to a commit');
     }
-    // The lane's own copy of these scripts is never read, and never compared.
-    // Integrity comes from executing the `origin/main` snapshot below: whatever
-    // a lane holds — mutated, or merely older than main — cannot reach the
-    // GitHub write, because it is not the code that runs. Comparing the two and
-    // refusing on a difference protected nothing the snapshot does not already
-    // protect, and it forced a lane that had merely fallen behind to merge main
-    // before it could deliver. A merge can leave generated artifacts stale, so
-    // that requirement cost real safety to buy none.
+    // Every script the command *executes* is read from `origin/main` and run
+    // from the snapshot below, so whatever a lane holds for those — mutated, or
+    // merely older than main — cannot reach the GitHub write. Refusing on a
+    // difference protected none of them any further, and it forced a lane that
+    // had only fallen behind to merge main first. A merge can resolve cleanly
+    // and leave generated artifacts stale, so that requirement cost real safety
+    // to buy none.
+    //
+    // This file is not one of those, and the distinction is the whole security
+    // story here. `pnpm deliver` resolves this loader from the lane's own root,
+    // so the code that pins the commit, builds the snapshot and decides whether
+    // to run it is always the working-tree copy; nothing in the snapshot imports
+    // it, so the snapshot cannot vouch for it. The comparison removed above did
+    // cover this one file, but only against honest drift — a hostile edit would
+    // delete the check along with everything else — and honest drift is exactly
+    // the behind-a-moved-main case this change exists to permit.
+    //
+    // Verifying the loader properly means re-executing main's copy rather than
+    // refusing, and that cannot land here: main's copy derives the repository
+    // root from its own module URL, so a copy executed out of a temporary
+    // directory would run git against that directory. It needs a loader on main
+    // that accepts the root from its caller, which is a later change, not this
+    // one. Filed as #2671 rather than asserted away.
     const sources = new Map<string, string>();
     for (const path of trustedDependencyPaths(command)) {
         sources.set(path, port.readOriginSource(commit, path));
