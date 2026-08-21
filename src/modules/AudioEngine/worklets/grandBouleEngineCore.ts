@@ -22,7 +22,8 @@
  *
  * ## Isolation, and why this file lives in `worklets/`
  *
- * It may import `../wasm/daw_dsp.js` and nothing else. One of its two hosts is an
+ * It may import `../wasm/daw_dsp.js`, plus its inert local construction seam,
+ * and nothing else. One of its two hosts is an
  * `AudioWorkletGlobalScope`, which has no DOM, no `fetch` and no app module
  * graph; the other is a Worker under the same rule. An import added here that
  * reaches into `src/app`, `src/helpers` or another module breaks both.
@@ -47,7 +48,9 @@
  * `grandBouleDispatchParity.spec.ts` exists for.
  */
 
-import { initSync, GrandBouleInstance } from '../wasm/daw_dsp.js';
+import { initSync } from '../wasm/daw_dsp.js';
+
+import { createGrandBouleWasmInstance, type GrandBouleInstance } from './grandBouleWasmInstance';
 
 /** Voice ceiling both hosts construct the engine with. */
 export const GRAND_BOULE_VOICE_COUNT = 64;
@@ -133,8 +136,8 @@ export type CreateGrandBouleInstanceOutput = {
 };
 
 /**
- * Instantiate the WASM engine. Both hosts construct it the same way, at the same
- * voice count, so a change here cannot reach one transport and miss the other.
+ * Instantiate the retained host engine through the source-owned seam. The seam
+ * is inert in production and injected only by focused host tests.
  */
 export function createGrandBouleInstance({
     wasmModule,
@@ -142,7 +145,7 @@ export function createGrandBouleInstance({
 }: CreateGrandBouleInstanceInput): CreateGrandBouleInstanceOutput {
     const exports = initSync({ module: wasmModule });
     return {
-        instance: new GrandBouleInstance(sampleRate, GRAND_BOULE_VOICE_COUNT),
+        instance: createGrandBouleWasmInstance(sampleRate, GRAND_BOULE_VOICE_COUNT),
         memory: exports.memory,
     };
 }

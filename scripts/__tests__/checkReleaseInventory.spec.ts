@@ -1,13 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 import {
     assertGrandBouleReleaseInventory,
+    assertGrandBouleWithheldFromWasm,
     audioWorkletReleaseInventoryContract,
+    GRAND_BOULE_WASM_BINARY,
+    GRAND_BOULE_WASM_TEXT_SURFACES,
     grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
@@ -24,6 +28,52 @@ import {
 import type { WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+function wasmWithFunctionExport(name: string): Uint8Array {
+    const encodedName = new TextEncoder().encode(name);
+    if (encodedName.length >= 128) {
+        throw new RangeError('fixture export name must fit in one unsigned LEB128 byte');
+    }
+    const exportPayload = [1, encodedName.length, ...encodedName, 0, 0];
+    return Uint8Array.from([
+        0x00,
+        0x61,
+        0x73,
+        0x6d,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x04,
+        0x01,
+        0x60,
+        0x00,
+        0x00,
+        0x03,
+        0x02,
+        0x01,
+        0x00,
+        0x07,
+        exportPayload.length,
+        ...exportPayload,
+        0x0a,
+        0x04,
+        0x01,
+        0x02,
+        0x00,
+        0x0b,
+    ]);
+}
+
+function writeGrandBouleWasmFixture(root: string, binaryExport = 'allowed_instance_new'): void {
+    for (const path of GRAND_BOULE_WASM_TEXT_SURFACES) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), 'export class AllowedInstance {}');
+    }
+    writeFileSync(join(root, GRAND_BOULE_WASM_BINARY), wasmWithFunctionExport(binaryExport));
+}
 
 function inventory(): ReleaseInventory {
     return {
@@ -61,6 +111,31 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('withholds Grand Boule construction from every distributed daw-dsp WASM surface', () => {
+        expect(() => assertGrandBouleWithheldFromWasm(repositoryRoot)).not.toThrow();
+    });
+
+    it('rejects a returning Grand Boule construction path in glue, types, or the WASM export table', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-'));
+
+        try {
+            writeGrandBouleWasmFixture(root);
+            expect(() => assertGrandBouleWithheldFromWasm(root)).not.toThrow();
+
+            writeFileSync(join(root, GRAND_BOULE_WASM_TEXT_SURFACES[0]), 'export class GrandBouleInstance {}');
+            expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
+                'Grand Boule must not be exposed by distributed daw-dsp WASM surface'
+            );
+
+            writeGrandBouleWasmFixture(root, 'grandbouleinstance_new');
+            expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
+                'Grand Boule must not be exposed by distributed daw-dsp WASM binary export grandbouleinstance_new'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds Grand Boule source bytes to its inventory digest', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-provenance-'));
         const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');

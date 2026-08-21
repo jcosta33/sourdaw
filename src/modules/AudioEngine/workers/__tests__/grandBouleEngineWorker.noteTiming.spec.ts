@@ -69,7 +69,9 @@ class GrandBouleInstanceMock {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: wasmMemory })),
-    GrandBouleInstance: GrandBouleInstanceMock,
+}));
+vi.mock('../../worklets/grandBouleWasmInstance', () => ({
+    createGrandBouleWasmInstance: () => new GrandBouleInstanceMock(),
 }));
 
 // The worker's zero-delay yield. Hold the callback instead of queuing it so each

@@ -141,7 +141,10 @@ const wasmStub = vi.hoisted(() => {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: () => ({ memory: wasmStub.memory }),
-    GrandBouleInstance: wasmStub.GrandBouleInstanceStub,
+}));
+vi.mock('../grandBouleWasmInstance', () => ({
+    createGrandBouleWasmInstance: (sampleRate: number, voiceCount: number) =>
+        new wasmStub.GrandBouleInstanceStub(sampleRate, voiceCount),
 }));
 
 // The `?worker&url` imports resolve to a bundler URL that vitest cannot serve;

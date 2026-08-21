@@ -502,16 +502,15 @@
             "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
             "revisions": ["current tracked source"],
             "digests": [
-                "tree-sha256:13cb084231f39aeb1adf77f75638f85d72409cd1090862a56d13f196fdede6bd:crates/daw-dsp/src/grand_boule"
+                "tree-sha256:19f06484de46346cb8c26fd0f37d22a01d3308423aec90989e2b61eaa61804d1:crates/daw-dsp/src/grand_boule"
             ],
             "licenses": ["pending:OS-10-project-grant", "unverified:HAL-parameter-source-reuse-terms"],
             "productSurfaces": ["Preserved Grand Boule source and project schema"],
             "evidence": [
-                "ADR 0032 requires Grand Boule to be withheld from every released discovery and runtime path; direct GrandBouleInstance construction remains exposed in distributed WASM and blocks release.",
+                "ADRs 0032 and 0034 retain the complete implementation while withholding Grand Boule from released discovery, runtime, generated WASM glue, declarations, and binary exports; the release checker inspects every artifact boundary.",
                 "ADR 0033 and focused Grand Boule Rust regressions cover the current engine's initial string configuration and pedal-driven mid-note decay reset: string-modal coefficients derive without soundboard controls or soundboard resonator state, and the rendered-bridge soundboard stage runs once per output frame after multiple voices render."
             ],
             "obligations": [
-                "Remove direct GrandBouleInstance construction from distributed WASM before release.",
                 "Re-admit only after current patent-family, claim-element, design-around, and parameter-source proof."
             ]
         },
@@ -594,13 +593,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:e4697af164e2a57f5e3b5bac4b7501b4181c58ff21a897e4b3e76e9eef5cf579",
+                "daw-dsp sha256:7248936e894c74dbef7c22d747d6a5fcd316975597768c7173d01160e93acd13",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
                 "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:9886cbd2e420ebd9efe777c2143f16e68828f5a1a402161f6e0bf6a8f87af759:public/wasm/manifest.json"
+                "sha256:6b33c5b1b1e4c52eccfbf299ef3bc495695af39f3df76a94fc03974c0bd7bded:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -854,7 +853,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "9886cbd2e420ebd9efe777c2143f16e68828f5a1a402161f6e0bf6a8f87af759"
+            "sha256": "6b33c5b1b1e4c52eccfbf299ef3bc495695af39f3df76a94fc03974c0bd7bded"
         }
     ],
     "externalReferences": [

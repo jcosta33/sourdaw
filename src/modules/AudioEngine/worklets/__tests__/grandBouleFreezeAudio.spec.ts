@@ -145,7 +145,10 @@ const wasmStub = vi.hoisted(() => {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: () => ({ memory: wasmStub.memory }),
-    GrandBouleInstance: wasmStub.GrandBouleInstanceStub,
+}));
+vi.mock('../grandBouleWasmInstance', () => ({
+    createGrandBouleWasmInstance: (sampleRate: number, voiceCount: number) =>
+        new wasmStub.GrandBouleInstanceStub(sampleRate, voiceCount),
 }));
 
 vi.mock('../grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));

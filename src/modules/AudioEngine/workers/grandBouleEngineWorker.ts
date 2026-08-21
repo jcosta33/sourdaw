@@ -66,7 +66,6 @@ import {
     GRAND_BOULE_SLEEP_HEAD_IDX,
     GRAND_BOULE_WRITE_HEAD_IDX,
 } from '../models/GrandBouleRingProtocol';
-import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 import { type GrandBouleConsumerClock, readGrandBouleConsumerClock } from '../worklets/grandBouleConsumerClock';
 import {
     createGrandBouleBlockViews,
@@ -75,6 +74,7 @@ import {
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from '../worklets/grandBouleEngineCore';
+import { type GrandBouleInstance } from '../worklets/grandBouleWasmInstance';
 
 /** Render block size — matches AudioWorklet quantum. */
 const BLOCK_SIZE = 128;

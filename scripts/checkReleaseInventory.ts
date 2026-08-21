@@ -195,6 +195,39 @@ export const AUDIO_WORKLET_SOURCES = [
     'public/audio/worklets/sidechain-compressor-processor.js',
 ] as const;
 
+export const GRAND_BOULE_WASM_TEXT_SURFACES = [
+    'public/wasm/daw-dsp/daw_dsp.js',
+    'public/wasm/daw-dsp/daw_dsp.d.ts',
+    'public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts',
+    'src/modules/AudioEngine/wasm/daw_dsp.js',
+    'src/modules/AudioEngine/wasm/daw_dsp.d.ts',
+] as const;
+
+export const GRAND_BOULE_WASM_BINARY = 'public/wasm/daw-dsp/daw_dsp_bg.wasm';
+
+function namesGrandBoule(value: string): boolean {
+    return value
+        .replaceAll(/[^A-Za-z0-9]/g, '')
+        .toLowerCase()
+        .includes('grandboule');
+}
+
+export function assertGrandBouleWithheldFromWasm(root: string): void {
+    for (const path of GRAND_BOULE_WASM_TEXT_SURFACES) {
+        if (namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
+            throw new Error(`Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`);
+        }
+    }
+
+    const module = new WebAssembly.Module(readFileSync(resolve(root, GRAND_BOULE_WASM_BINARY)));
+    const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
+    if (forbiddenExport !== undefined) {
+        throw new Error(
+            `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${forbiddenExport.name}`
+        );
+    }
+}
+
 export function audioWorkletReleaseInventoryContract(root: string): SurfaceContract {
     return {
         kind: 'project-source',
@@ -734,6 +767,7 @@ export function checkReleaseInventory(root: string): void {
         cwd: root,
         stdio: 'inherit',
     });
+    assertGrandBouleWithheldFromWasm(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
     const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');

@@ -40,7 +40,6 @@
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
-import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 
 import {
     createGrandBouleBlockViews,
@@ -50,6 +49,7 @@ import {
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
+import { type GrandBouleInstance } from './grandBouleWasmInstance';
 
 /**
  * The Web Audio render quantum. Restated here rather than imported: worklet code

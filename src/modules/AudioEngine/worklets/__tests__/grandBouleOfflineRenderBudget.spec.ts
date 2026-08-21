@@ -6,7 +6,8 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { RENDER_TIMEOUT_MULTIPLIER } from '../../useCases/offlineRender/constants';
 
 /**
- * Can a 64-voice Grand Boule render finish inside the export timeout?
+ * Can the preserved 64-voice Grand Boule host path finish inside the export
+ * timeout when its source-owned engine seam is injected?
  *
  * `renderTrackSubgraphOffline` budgets `RENDER_TIMEOUT_MULTIPLIER` seconds of
  * wall clock per second of audio. Moving the engine into the worklet for offline
@@ -15,12 +16,12 @@ import { RENDER_TIMEOUT_MULTIPLIER } from '../../useCases/offlineRender/constant
  * theoretical question and becomes the thing that decides whether a user's export
  * dies at the timeout.
  *
- * This measures it. Real `daw-dsp` WASM off disk, the real
- * `grandBouleOfflineProcessor`, real 128-frame quanta, 64 voices held for the
- * whole run — the render's actual inner loop. What it does not include is the
- * surrounding Web Audio graph (a handful of gain nodes) and the per-second
- * suspend round trips, neither of which is Grand Boule's cost and both of which
- * are small next to a physical-model piano.
+ * This measures the real released `daw-dsp` module loading path, the real
+ * `grandBouleOfflineProcessor`, real 128-frame quanta, and 64 injected voices
+ * held for the whole run. The distributed module deliberately has no Grand
+ * Boule constructor, so focused host tests provide a deterministic in-memory
+ * engine through `grandBouleWasmInstance`; native Rust benches retain the DSP
+ * performance proof.
  *
  * The threshold is not a performance target anyone tuned. It is the named
  * blocker from the spec: over `RENDER_TIMEOUT_MULTIPLIER` and the offline
@@ -61,6 +62,73 @@ type HarnessPort = {
     postMessage: (message: unknown) => void;
 };
 
+const wasmStub = vi.hoisted(() => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const maxBlockFrames = 4096;
+    const leftPtr = 0;
+    const rightPtr = maxBlockFrames * Float32Array.BYTES_PER_ELEMENT;
+
+    class GrandBouleInstanceStub {
+        readonly phases = new Map<number, number>();
+
+        constructor(readonly instanceSampleRate: number) {}
+
+        note_on(midiNote: number, _velocity: number): void {
+            this.phases.set(midiNote, this.phases.get(midiNote) ?? 0);
+        }
+        note_on_with_channel(midiNote: number, velocity: number, _channel: number): void {
+            this.note_on(midiNote, velocity);
+        }
+        note_off(midiNote: number): void {
+            this.phases.delete(midiNote);
+        }
+        note_off_on_channel(midiNote: number, _channel: number): void {
+            this.phases.delete(midiNote);
+        }
+        note_expression(): void {}
+        set_param(): void {}
+        set_sustain(): void {}
+        set_una_corda(): void {}
+        set_sostenuto(): void {}
+        note_on_midi2(): void {}
+        set_temperament(): void {}
+        load_attack_clip(): void {}
+        all_notes_off(): void {
+            this.phases.clear();
+        }
+
+        process(frames: number): number {
+            const left = new Float32Array(memory.buffer, leftPtr, frames);
+            const right = new Float32Array(memory.buffer, rightPtr, frames);
+            left.fill(0);
+            right.fill(0);
+            for (const [midiNote, phase] of this.phases) {
+                const step = (2 * Math.PI * (440 * 2 ** ((midiNote - 69) / 12))) / this.instanceSampleRate;
+                for (let index = 0; index < frames; index++) {
+                    const sample = Math.sin(phase + step * index) * 0.3;
+                    left[index] = (left[index] ?? 0) + sample;
+                    right[index] = (right[index] ?? 0) + sample;
+                }
+                this.phases.set(midiNote, phase + step * frames);
+            }
+            return leftPtr;
+        }
+
+        get_right_ptr(): number {
+            return rightPtr;
+        }
+    }
+
+    return { memory, GrandBouleInstanceStub };
+});
+
+vi.mock('../../wasm/daw_dsp.js', () => ({
+    initSync: () => ({ memory: wasmStub.memory }),
+}));
+vi.mock('../grandBouleWasmInstance', () => ({
+    createGrandBouleWasmInstance: (sampleRate: number) => new wasmStub.GrandBouleInstanceStub(sampleRate),
+}));
+
 const processorRegistry = new Map<string, new (...args: unknown[]) => ProcessorLike>();
 let pendingProcessorPort: HarnessPort | null = null;
 let harnessFrame = 0;
@@ -75,7 +143,7 @@ class AudioWorkletProcessorShim {
     }
 }
 
-describe('a 64-voice Grand Boule offline render fits the export budget', () => {
+describe('the injected 64-voice Grand Boule offline host path fits the export budget', () => {
     let processor: ProcessorLike;
     let port: HarnessPort;
 
@@ -124,7 +192,7 @@ describe('a 64-voice Grand Boule offline render fits the export budget', () => {
             const left = new Float32Array(QUANTUM_FRAMES);
             const right = new Float32Array(QUANTUM_FRAMES);
 
-            // One warm-up block so the measurement excludes wasm tier-up on the very
+            // One warm-up block so the measurement excludes engine tier-up on the
             // first call rather than attributing it to the render.
             processor.process([], [[left, right]]);
 
