@@ -23,6 +23,7 @@ type Harness = {
     backend: { value: string };
     loadGraphModel: Mock<TfjsWorkerRuntime['loadGraphModel']>;
     model: { dispose: Mock<() => void>; predict: Mock<TfjsWorkerModel['predict']> };
+    posts: Array<{ response: WorkerResponse; transfer: Transferable[] | undefined }>;
     responses: WorkerResponse[];
     runtime: ReturnType<typeof createTfjsInferenceRequestHandler>;
     tensor1d: Mock<TfjsWorkerRuntime['tensor1d']>;
@@ -168,6 +169,7 @@ function createHarness(input: { backend?: string; output?: FakeTensor } = {}): H
         return model;
     });
     const tensor1d = vi.fn((values: Float32Array) => fakeTensor(Float32Array.from(values), { shape: [values.length] }));
+    const posts: Harness['posts'] = [];
     const responses: WorkerResponse[] = [];
     const runtime = createTfjsInferenceRequestHandler({
         initializeTfjs: vi.fn(async () => ({
@@ -175,10 +177,13 @@ function createHarness(input: { backend?: string; output?: FakeTensor } = {}): H
             loadGraphModel,
             tensor1d,
         })),
-        postResponse: (response) => responses.push(response),
+        postResponse: (response, transfer) => {
+            posts.push({ response, transfer });
+            responses.push(response);
+        },
     });
     runtimes.push(runtime);
-    return { backend, loadGraphModel, model, responses, runtime, tensor1d };
+    return { backend, loadGraphModel, model, posts, responses, runtime, tensor1d };
 }
 
 afterEach(async () => {
@@ -411,12 +416,17 @@ describe('tfjsInferenceWorkerRuntime', () => {
             f0_hz: expect.objectContaining({ values: Float32Array.from([220, 221, 222, 223]) }),
             loudness_db: expect.objectContaining({ values: Float32Array.from([-60, -59, -58, -57]) }),
         });
-        expect(harness.responses.at(-1)).toMatchObject({
+        const response = harness.responses.at(-1);
+        expect(response).toMatchObject({
             type: 'ddsp-result',
             requestId: 'infer',
             backend: 'webgpu',
             audio: Float32Array.from([0.1, -0.2, 0.3, -0.4]),
         });
+        if (response?.type !== 'ddsp-result') {
+            throw new Error('Expected a DDSP inference response');
+        }
+        expect(harness.posts.at(-1)).toEqual({ response, transfer: [response.audio.buffer] });
         for (const tensor of harness.tensor1d.mock.results.map(({ value }) => value)) {
             expect(tensor.dispose).toHaveBeenCalledOnce();
         }
