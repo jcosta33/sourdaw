@@ -13,7 +13,7 @@ function sample(name: string): ScannedPlugin {
         category: 'Fx',
         path: '/tmp',
         version: '1',
-        clap_id: `com.test.${name}`,
+        descriptor_id: `com.test.${name}`,
         num_inputs: 2,
         num_outputs: 2,
         num_parameters: 4,

@@ -5,6 +5,7 @@ import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
+import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { takeLaneStore } from '../stores/takeLaneStore';
 
 import { getTrackStoreState } from './getTrackStoreState';
@@ -77,6 +78,13 @@ export function captureTrackRemovalSnapshot(trackId: string): RestoreTrackPayloa
         }
     }
 
+    // Gain envelopes and warp state hang off clip identity rather than the track, so
+    // removal drops them silently unless they are carried here. Only clips that actually
+    // hold satellite state are recorded.
+    const clipSatellites = clipIds
+        .map((clipId) => readClipSatelliteEntry(clipId))
+        .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
+
     const takeLaneState = takeLaneStore.value;
     const takeLanes = takeLaneState ? takeLaneState.lanes.filter((lane) => lane.trackId === trackId) : [];
     const takeLaneSnapshots = structuredClone(takeLanes);
@@ -108,6 +116,7 @@ export function captureTrackRemovalSnapshot(trackId: string): RestoreTrackPayloa
         wasSelected: trackState?.selectedTrackId === trackId,
         routingPatches,
         automationLaneSnapshots,
+        clipSatellites,
         midiNotesByClipId,
         midiCcByClipId,
         midiPitchBendByClipId,

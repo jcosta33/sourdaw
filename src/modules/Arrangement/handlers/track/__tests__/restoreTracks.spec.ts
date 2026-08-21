@@ -58,6 +58,7 @@ function createRestore(trackId: string, trackIndex: number) {
         wasSelected: false,
         routingPatches: [],
         automationLaneSnapshots: [],
+        clipSatellites: [],
         midiNotesByClipId: {},
         midiCcByClipId: {},
         midiPitchBendByClipId: {},

@@ -6,6 +6,7 @@ import { type ReactElement } from 'react';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -48,7 +49,7 @@ export const ProofImagerSection = ({
     }
 
     return (
-        <div className="flex flex-col gap-1.5 px-2">
+        <Stack gap={1.5} className="px-2">
             <DawPluginSectionHeader
                 title="Stereo Imager"
                 size="xs"
@@ -75,9 +76,9 @@ export const ProofImagerSection = ({
 
             <div className={`flex flex-col gap-2 ${patch.imgBypassed ? 'opacity-30' : ''}`}>
                 {/* Per-band width knobs */}
-                <div className="flex justify-around">
+                <Row align="stretch" justify="around">
                     {BAND_LABELS.map((label, i) => (
-                        <div key={label} className="flex flex-col items-center gap-0.5">
+                        <Stack align="center" gap={0.5} key={label}>
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <RotaryKnob
                                 value={patch.imgBandWidth[i]!}
@@ -97,12 +98,12 @@ export const ProofImagerSection = ({
                                     ? 'Mono'
                                     : `${(patch.imgBandWidth[i]! * 100).toFixed(0)}%`}
                             </span>
-                        </div>
+                        </Stack>
                     ))}
-                </div>
+                </Row>
 
                 {/* Auto mono bass */}
-                <div className="flex items-center gap-2 px-1">
+                <Row gap={2} className="px-1">
                     <DawPluginToggle
                         pressed={patch.imgAutoMonoBass}
                         aria-label="Imager auto mono bass"
@@ -142,10 +143,10 @@ export const ProofImagerSection = ({
                     <span className="text-[6px] text-muted-foreground font-mono">
                         {patch.imgMonoBassFreq.toFixed(0)} Hz
                     </span>
-                </div>
+                </Row>
 
                 {/* Correlation meter */}
-                <div className="flex items-center gap-2 px-1">
+                <Row gap={2} className="px-1">
                     <span className="text-[7px] text-muted-foreground shrink-0">Correlation</span>
                     <div className="flex-1 h-2 bg-surface-inset rounded overflow-hidden relative">
                         {/* Center line */}
@@ -163,8 +164,8 @@ export const ProofImagerSection = ({
                     <span className="text-[7px] text-muted-foreground font-mono w-8 text-right">
                         {correlation.toFixed(2)}
                     </span>
-                </div>
+                </Row>
             </div>
-        </div>
+        </Stack>
     );
 };

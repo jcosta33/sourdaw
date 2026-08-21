@@ -3,6 +3,7 @@ import { type ChangeEvent, type ReactElement } from 'react';
 import { Settings } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
@@ -37,7 +38,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
         <>
             <SectionTitle icon={<Settings className="size-4" />} title="General" />
             <FieldGroup label="Track Height">
-                <div className="flex gap-2">
+                <Row align="stretch" gap={2}>
                     {trackHeights.map((h) => (
                         <Button
                             key={h}
@@ -49,14 +50,14 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                             {h}
                         </Button>
                     ))}
-                </div>
+                </Row>
             </FieldGroup>
             <GridSubdivisionSection
                 value={prefs.gridSubdivision}
                 onChange={(value) => update({ gridSubdivision: value })}
             />
             <Separator />
-            <div className="space-y-3">
+            <Stack gap={3}>
                 <ToggleRow
                     label="Snap to Grid"
                     value={prefs.snapToGrid}
@@ -67,7 +68,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     value={prefs.snapToZeroCrossing}
                     onChange={(value) => update({ snapToZeroCrossing: value })}
                 />
-                <div className="space-y-2">
+                <Stack gap={2}>
                     <ToggleRow
                         label="Auto Save"
                         value={prefs.autoSave}
@@ -91,23 +92,23 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                         Auto Save creates a reopenable local project snapshot while playback is stopped. Turning it off
                         stops scheduled snapshots; crash-recovery data still updates in the background.
                     </p>
-                </div>
+                </Stack>
                 <ToggleRow
                     label="Show Minimap"
                     value={prefs.showMinimap}
                     onChange={(value) => update({ showMinimap: value })}
                 />
-            </div>
+            </Stack>
             <Separator />
             <FieldGroup label="Metronome">
-                <div className="space-y-2">
+                <Stack gap={2}>
                     <ToggleRow
                         label="Enabled"
                         value={prefs.metronomeEnabled}
                         onChange={(value) => update({ metronomeEnabled: value })}
                     />
                     {prefs.metronomeEnabled ? (
-                        <div className="space-y-1">
+                        <Stack gap={1}>
                             <label className="text-[10px] text-muted-foreground block">Volume</label>
                             <Slider
                                 value={[prefs.metronomeVolume * 100]}
@@ -121,16 +122,16 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                                 className="w-full"
                                 aria-label="Metronome volume"
                             />
-                        </div>
+                        </Stack>
                     ) : null}
-                </div>
+                </Stack>
             </FieldGroup>
             <Separator />
             <FieldGroup label="Recording">
-                <div className="space-y-3">
-                    <div className="space-y-1">
+                <Stack gap={3}>
+                    <Stack gap={1}>
                         <label className="text-[10px] text-muted-foreground block">Count-In (bars)</label>
-                        <div className="flex gap-1">
+                        <Row align="stretch" gap={1}>
                             {([0, 1, 2, 4] as const).map((bars) => (
                                 <Button
                                     key={bars}
@@ -141,10 +142,10 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                                     {bars === 0 ? 'Off' : `${bars}`}
                                 </Button>
                             ))}
-                        </div>
-                    </div>
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between">
+                        </Row>
+                    </Stack>
+                    <Stack gap={1}>
+                        <Row justify="between">
                             <span className="text-xs text-foreground">Pre-roll</span>
                             <Button
                                 variant={prefs.preRollEnabled ? 'secondary' : 'ghost'}
@@ -153,11 +154,11 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                             >
                                 {prefs.preRollEnabled ? 'On' : 'Off'}
                             </Button>
-                        </div>
+                        </Row>
                         {prefs.preRollEnabled ? (
-                            <div className="space-y-1">
+                            <Stack gap={1}>
                                 <label className="text-[10px] text-muted-foreground block">Pre-roll bars</label>
-                                <div className="flex gap-1">
+                                <Row align="stretch" gap={1}>
                                     {([1, 2, 4] as const).map((bars) => (
                                         <Button
                                             key={bars}
@@ -168,20 +169,20 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                                             {bars}
                                         </Button>
                                     ))}
-                                </div>
-                            </div>
+                                </Row>
+                            </Stack>
                         ) : null}
-                    </div>
-                </div>
+                    </Stack>
+                </Stack>
             </FieldGroup>
             <Separator />
             <FieldGroup label="Mixer">
-                <div className="space-y-1">
+                <Stack gap={1}>
                     <label className="text-[10px] text-muted-foreground block">Solo Mode</label>
                     <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
                         Determines how soloed tracks affect others. SIP (Solo In Place) is standard.
                     </p>
-                    <div className="flex gap-1">
+                    <Row align="stretch" gap={1}>
                         {[
                             {
                                 value: 'sip' as SoloModePreference,
@@ -212,8 +213,8 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                                 <TooltipContent>{mode.desc}</TooltipContent>
                             </Tooltip>
                         ))}
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             </FieldGroup>
             <VoiceKeyEditor currentKey={prefs.voiceCommandKey} onChange={(key) => update({ voiceCommandKey: key })} />
         </>

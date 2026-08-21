@@ -1,4 +1,6 @@
-import { findWasmDescriptor } from '../engine/wasmDeviceRegistry';
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+
+import { findReleasedWasmDescriptor } from '../engine/wasmDeviceRegistry';
 import {
     getBuiltinDeviceRuntimeVersion,
     projectDeviceRuntimeCapabilities,
@@ -8,14 +10,17 @@ import {
 } from '../models/BuiltinDeviceRuntime';
 import { BUILTIN_DEVICE_NODE_FACTORIES } from '../repositories/deviceNodeFactory';
 import { FAUST_OFFLINE_RUNTIME } from '../repositories/deviceStrategy/FaustDeviceStrategy';
+import { findReleasedNativeDspDeviceFactory } from '../repositories/deviceStrategy/findReleasedNativeDspDeviceFactory';
 import { NATIVE_DSP_DEVICE_FACTORIES } from '../repositories/deviceStrategy/nativeDspDeviceFactories';
 
 function runtimeComponent(deviceType: string): AgentBuiltinDeviceRuntime | null {
+    if (!isDeviceReleaseAdmitted(deviceType)) {
+        return null;
+    }
+
     const webAudioFactory = BUILTIN_DEVICE_NODE_FACTORIES.find((factory) => factory.type === deviceType);
-    const wasmDescriptor = webAudioFactory ? undefined : findWasmDescriptor(deviceType);
-    const nativeDspFactory = webAudioFactory
-        ? undefined
-        : NATIVE_DSP_DEVICE_FACTORIES.find((factory) => factory.matches(deviceType));
+    const wasmDescriptor = webAudioFactory ? undefined : findReleasedWasmDescriptor(deviceType);
+    const nativeDspFactory = webAudioFactory ? undefined : findReleasedNativeDspDeviceFactory(deviceType);
     const live: DeviceRuntimeLiveFacts | undefined = webAudioFactory?.runtime.live ?? wasmDescriptor?.runtime;
     const offline: DeviceRuntimeOfflineFacts | undefined =
         webAudioFactory?.runtime.offline ??

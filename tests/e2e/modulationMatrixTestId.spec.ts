@@ -1,71 +1,81 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openModulationTab(page: import('@playwright/test').Page): Promise<void> {
-    // Open the bottom dock.
-    const dock = page.getByTestId('toggle-bottom-dock');
-    const isOpen = await dock.getAttribute('aria-pressed');
-    if (isOpen === 'false') {
-        await dock.click();
-        await page.waitForTimeout(500);
-    }
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-    // Switch to the Modulation tab.
-    const modTab = page.locator('#bottom-dock-tab-modulation');
-    if (await modTab.isVisible().catch(() => false)) {
-        await modTab.click();
-        await page.waitForTimeout(500);
+async function addMidiTrack(page: Page): Promise<void> {
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    const before = await trackList.getByRole('row').count();
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
+}
+
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
+    if ((await dock.getAttribute('aria-pressed')) === 'false') {
+        await dock.click();
     }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+function modulationMatrix(page: Page) {
+    return page.getByRole('region', { name: 'Modulation matrix' });
 }
 
 test.describe('Modulation matrix — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+        await addMidiTrack(page);
+        await openBottomTab(page, 'Modulation');
+    });
 
-        // Add a track.
-        const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-        await emptyStateMidiButton.waitFor({ state: 'visible' });
-        await emptyStateMidiButton.click();
-        const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-        await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor({ state: 'visible' });
-        await openModulationTab(page);
+    test('modulation tab is selected in the bottom dock', async ({ page }) => {
+        const tab = page
+            .getByRole('tablist', { name: 'Bottom dock' })
+            .getByRole('tab', { name: 'Modulation', exact: true });
+        await expect(tab).toBeVisible();
+        await expect(tab).toHaveAttribute('aria-selected', 'true');
     });
 
     test('New Modulator button is present via test ID', async ({ page }) => {
+        const newBtn = page.getByRole('button', { name: 'New Modulator' });
+        await expect(newBtn).toBeVisible();
+        await expect(newBtn).toHaveAttribute('data-testid', 'modulation-new-button');
+        await expect(newBtn).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    test('clicking New Modulator opens the create form', async ({ page }) => {
         const newBtn = page.getByTestId('modulation-new-button');
-        const hasBtn = await newBtn.isVisible().catch(() => false);
-        if (!hasBtn) {
-            await expect(newBtn).toBeAttached({ timeout: 10_000 });
-        }
+        await expect(newBtn).toHaveAttribute('aria-expanded', 'false');
+        await expect(page.getByLabel('Modulator name')).toHaveCount(0);
+
+        await newBtn.click();
+
+        await expect(newBtn).toHaveAttribute('aria-expanded', 'true');
+        await expect(page.getByLabel('Modulator name')).toBeVisible();
+        await expect(page.getByLabel('Modulator kind')).toBeVisible();
     });
 
-    test('clicking New Modulator toggles aria-expanded', async ({ page }) => {
-        const newBtn = page.getByTestId('modulation-new-button');
-        if (await newBtn.isVisible().catch(() => false)) {
-            const before = await newBtn.getAttribute('aria-expanded');
-            await newBtn.click();
-            await page.waitForTimeout(300);
-            await expect(newBtn).not.toHaveAttribute('aria-expanded', before ?? '');
-        }
+    test('modulation matrix shows the empty state', async ({ page }) => {
+        await expect(modulationMatrix(page)).toBeVisible();
+        await expect(page.getByText('No modulators')).toBeVisible();
     });
 
-    test('modulation matrix shows empty state text', async ({ page }) => {
-        const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        if (await matrix.isVisible().catch(() => false)) {
-            const text = (await matrix.innerText()).trim();
-            expect(text.length).toBeGreaterThan(0);
-        }
-    });
+    test('adding an LFO replaces the empty state with a named modulator', async ({ page }) => {
+        await expect(page.getByText('No modulators')).toBeVisible();
 
-    test('modulation tab is accessible in the bottom dock', async ({ page }) => {
-        const modTab = page.locator('#bottom-dock-tab-modulation');
-        const hasTab = await modTab.isVisible().catch(() => false);
-        if (hasTab) {
-            // The tab should be a tab role.
-            const role = await modTab.getAttribute('role');
-            expect(role === 'tab' || role === 'button' || role === null).toBe(true);
-        }
+        await page.getByTestId('modulation-new-button').click();
+        await modulationMatrix(page).getByRole('button', { name: 'Add' }).click();
+
+        await expect(page.getByText('No modulators')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Remove modulator LFO' })).toBeVisible();
     });
 });

@@ -28,6 +28,7 @@ import { handleRestoreClipPlacement } from './handleRestoreClipPlacement';
 import { handleRestoreClipSplitState } from './handleRestoreClipSplitState';
 import { handleRestoreCrossfadeClips } from './handleRestoreCrossfadeClips';
 import { handleRestoreReversedClip } from './handleRestoreReversedClip';
+import { handleRestoreStripSilenceState } from './handleRestoreStripSilenceState';
 import { handleReverseClip } from './handleReverseClip';
 import { handleSetClipColor } from './handleSetClipColor';
 import { handleSetClipFade } from './handleSetClipFade';
@@ -79,5 +80,6 @@ export const clipHandlers = {
     duplicateTimeRange: handleDuplicateTimeRange,
     exportMidi: handleExportMidi,
     stripSilence: handleStripSilence,
+    restoreStripSilenceState: handleRestoreStripSilenceState,
     arpeggiate: handleArpeggiate,
 };

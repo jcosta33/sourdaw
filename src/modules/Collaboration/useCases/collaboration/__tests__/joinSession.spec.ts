@@ -57,6 +57,7 @@ describe('joinSession', () => {
             peers: [],
             connectionStatus: 'disconnected',
             error: null,
+            quarantinedPeerIds: [],
         });
 
         acceptOffer = vi.fn().mockResolvedValue('fake-answer-sdp');
@@ -149,6 +150,7 @@ describe('joinSession', () => {
         expect(collaborationStore.value).toMatchObject({
             connectionStatus: 'error',
             error: 'offer rejected',
+            quarantinedPeerIds: [],
             isEnabled: false,
             isHost: false,
         });
@@ -192,6 +194,7 @@ describe('joinSession', () => {
             isHost: false,
             connectionStatus: 'connecting',
             error: null,
+            quarantinedPeerIds: [],
         });
         expect(state?.peers).toEqual([
             {

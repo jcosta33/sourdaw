@@ -30,6 +30,7 @@ const baseState: CollaborationState = {
     peers: [],
     connectionStatus: 'connected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 const resetStoreShape = {
@@ -42,6 +43,7 @@ const resetStoreShape = {
     peers: [],
     connectionStatus: 'disconnected',
     error: null,
+    quarantinedPeerIds: [],
 };
 
 describe('leaveSession', () => {

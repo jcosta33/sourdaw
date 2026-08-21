@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
+import { clearProofMeters, proofStore, updateProofMeters } from '#/modules/Proof/stores';
 
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
@@ -16,6 +17,7 @@ import { type GrinderNodeResult } from '../GrinderNode';
 import { type KneadNodeResult } from '../KneadNode';
 import { type LevainNodeResult } from '../LevainNode';
 import { type ProofChamberNodeResult } from '../ProofChamberNode';
+import { type ProofMeterData, type ProofNodeResult } from '../ProofNode';
 import { type ScoringNodeResult } from '../ScoringNode';
 import { type ToasterNodeResult } from '../ToasterNode';
 import { findWasmDescriptor, type WasmDeviceCreateDeps } from '../wasmDeviceRegistry';
@@ -26,6 +28,7 @@ const factoryMocks = vi.hoisted(() => ({
     createLevainNode: vi.fn(),
     createCrumbsNode: vi.fn(),
     createProofChamberNode: vi.fn(),
+    createProofNode: vi.fn(),
     createGlutenNode: vi.fn(),
     createCrustNode: vi.fn(),
     createBacteriaNode: vi.fn(),
@@ -58,6 +61,10 @@ vi.mock('../CrumbsNode', async (importOriginal) => ({
 vi.mock('../ProofChamberNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../ProofChamberNode')>()),
     createProofChamberNode: factoryMocks.createProofChamberNode,
+}));
+vi.mock('../ProofNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../ProofNode')>()),
+    createProofNode: factoryMocks.createProofNode,
 }));
 vi.mock('../GlutenNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GlutenNode')>()),
@@ -729,6 +736,249 @@ describe('wasmDeviceRegistry descriptors', () => {
             await requireDescriptor('dutch-oven').create(deps).loadPromise;
             expect(result.destroy).toHaveBeenCalledTimes(1);
             expect(externalLatencyRegistry.has('oven-1')).toBe(false);
+        });
+    });
+
+    describe('proof', () => {
+        it('keeps a healthy loaded Proof device ready and controllable until its runtime callback reports a fault', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const replaceRuntimeFailure = vi.fn(() => true);
+            const unregisterProofDevice = vi.fn();
+            setAudioDeviceRuntimeSink({ unregisterProofDevice });
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'proof',
+                deviceId: 'proof-healthy',
+                onRuntimeFailure: replaceRuntimeFailure,
+            });
+
+            await requireDescriptor('proof').create(deps).loadPromise;
+
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(loaded.controller?.ready).toBe(true);
+            loaded.controller?.setParam('lim_ceiling', -1);
+            expect(result.setParam).toHaveBeenCalledWith('lim_ceiling', -1);
+            expect(result.destroy).not.toHaveBeenCalled();
+            expect(replaceRuntimeFailure).not.toHaveBeenCalled();
+            expect(unregisterProofDevice).not.toHaveBeenCalled();
+            expect(externalLatencyRegistry.has('proof-healthy')).toBe(true);
+        });
+
+        it('preserves an explicit invalid live target so Proof fails closed instead of selecting legacy raw controls', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 0 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const parameterIds = Object.freeze(['lim_ceiling']);
+            const deps = createDeps({
+                trackId: '',
+                deviceType: 'proof',
+                deviceId: 'proof-invalid-live-target',
+                parameterIds,
+            });
+
+            await requireDescriptor('proof').create(deps).loadPromise;
+
+            expect(factoryMocks.createProofNode).toHaveBeenCalledWith(
+                deps.context,
+                undefined,
+                deps.signal,
+                {
+                    trackId: '',
+                    deviceId: 'proof-invalid-live-target',
+                    deviceType: 'proof',
+                    parameterIds,
+                },
+                expect.any(Function)
+            );
+        });
+
+        it('replaces the TrackNode-facing controller after a terminal runtime fault so later writes cannot grow the loading queue', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const onRuntimeFailure = vi.fn(() => true);
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'proof',
+                deviceId: 'proof-fault',
+                onRuntimeFailure,
+            });
+            const { placeholder, loadPromise } = requireDescriptor('proof').create(deps);
+            const loadingController = placeholder.controller;
+            await loadPromise;
+            const reportRuntimeFailure = factoryMocks.createProofNode.mock.calls[0]?.[4];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected ProofNode to receive a post-ready runtime failure callback');
+            }
+            reportRuntimeFailure('processor trapped');
+            expect(placeholder.controller).not.toBe(loadingController);
+            expect(placeholder.controller?.ready).toBe(false);
+            placeholder.controller?.setParam('lim_ceiling', -1);
+            placeholder.controller?.setParam('input_gain', 2);
+            expect(result.setParam).not.toHaveBeenCalled();
+        });
+
+        // Promotion is refused *after* the descriptor has reported latency,
+        // registered the control bridge and taken ownership of the meter
+        // callback. The graph does not hold this node, so every one of those
+        // has to come back off — otherwise PDC keeps compensating for a device
+        // that is not in the chain and Proof control writes route into it.
+        it('unwinds latency, control routing and meter ownership when the graph refuses the promotion', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 480 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            const registerProofDevice = vi.fn();
+            const unregisterProofDevice = vi.fn();
+            const clearProofMetersSpy = vi.fn();
+            setAudioDeviceRuntimeSink({
+                registerProofDevice,
+                unregisterProofDevice,
+                clearProofMeters: clearProofMetersSpy,
+            });
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'proof',
+                deviceId: 'proof-refused',
+                onLoaded: vi.fn(() => false),
+            });
+
+            await requireDescriptor('proof').create(deps).loadPromise;
+
+            // The refused exit is only reachable once these have already run.
+            expect(registerProofDevice).toHaveBeenCalledTimes(1);
+            expect(result.onMeterData).toHaveBeenCalledTimes(1);
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(unregisterProofDevice).toHaveBeenCalledWith('proof-refused');
+            expect(clearProofMetersSpy).toHaveBeenCalledWith('proof-refused');
+            expect(externalLatencyRegistry.has('proof-refused')).toBe(false);
+        });
+
+        // Ordinary removal, driven through the real Proof store rather than a
+        // spy: a same-id replacement must not inherit the removed device's
+        // meters, and clearing them must not take the patch with it.
+        it('clears the removed device meters without disturbing its persistent Proof state', async () => {
+            const result: ProofNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                reorderModules: vi.fn(),
+                resetIntegrated: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createProofNode.mockResolvedValue(result);
+            proofStore.set({});
+            setAudioDeviceRuntimeSink({
+                unregisterProofDevice: vi.fn(),
+                updateProofMeters,
+                clearProofMeters,
+            });
+            const deps = createDeps({ trackId: 'track-1', deviceType: 'proof', deviceId: 'proof-removed' });
+
+            await requireDescriptor('proof').create(deps).loadPromise;
+
+            // Push one frame through the callback the descriptor registered —
+            // the same route a live worklet uses.
+            const meterCallback = vi.mocked(result.onMeterData).mock.calls[0]?.[0];
+            if (!meterCallback) {
+                throw new TypeError('expected the descriptor to subscribe to Proof meter data');
+            }
+            const frame: ProofMeterData = {
+                inputLufs: -18,
+                outputLufs: -14,
+                outputStLufs: -13,
+                integratedLufs: -14.1,
+                truePeakDb: -0.3,
+                lra: 6.5,
+                correlation: 0.8,
+                limiterGrDb: -2.1,
+                dynGr: [-1, -2, -3, -4],
+                tapPeaks: [{ peakL: -6, peakR: -5 }],
+                latency: 256,
+            };
+            meterCallback(frame);
+            const seeded = proofStore.value?.['proof-removed'];
+            if (!seeded) {
+                throw new TypeError('expected the meter frame to materialise a Proof instance');
+            }
+            // Persistent state the user owns: a chosen UI level, an A/B flag and
+            // a named patch. None of it is telemetry.
+            proofStore.set({
+                ...proofStore.value,
+                'proof-removed': {
+                    ...seeded,
+                    uiLevel: 4,
+                    abBypass: true,
+                    patch: { ...seeded.patch, name: 'Streaming Master' },
+                },
+            });
+            expect(proofStore.value?.['proof-removed']?.integratedLufs).toBe(-14.1);
+
+            lastLoadedNode(deps.onLoaded).controller?.destroy?.();
+
+            const state = proofStore.value?.['proof-removed'];
+            expect(state?.integratedLufs).toBe(-100);
+            expect(state?.truePeakDb).toBe(-100);
+            expect(state?.limiterGrDb).toBe(0);
+            expect(state?.latency).toBe(0);
+            expect(state?.dynGr).toEqual([0, 0, 0, 0]);
+            expect(state?.tapPeaks).toHaveLength(6);
+            expect(state?.tapPeaks[0]).toEqual({ peakL: -100, peakR: -100 });
+            // …and the persistent half survives the removal untouched.
+            expect(state?.uiLevel).toBe(4);
+            expect(state?.abBypass).toBe(true);
+            expect(state?.patch.name).toBe('Streaming Master');
         });
     });
 

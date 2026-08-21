@@ -8,6 +8,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type HumanizeConfig } from '../../models/LevainPatch';
 
@@ -18,12 +19,12 @@ type HumanizePanelProps = {
 
 export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactElement => {
     return (
-        <div className="space-y-4 max-w-[340px]">
+        <Stack gap={4} className="max-w-[340px]">
             {/* Header */}
             <DawPluginSectionHeader title="Humanization" titleClassName="text-muted-foreground" />
 
             {/* Hero: large humanize knob centered */}
-            <div className="flex flex-col items-center gap-1 py-2">
+            <Stack align="center" gap={1} className="py-2">
                 <RotaryKnob
                     value={config.amount}
                     onChange={(v) => onChange({ amount: v })}
@@ -38,11 +39,11 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                 <span className="text-[7px] text-muted-foreground/40 tabular-nums">
                     {Math.round(config.amount * 100)}%
                 </span>
-            </div>
+            </Stack>
 
             {/* Detail knobs row */}
-            <div className="flex items-end gap-2 justify-center">
-                <div className="flex flex-col items-center gap-0">
+            <Row align="end" justify="center" gap={2}>
+                <Stack align="center">
                     <RotaryKnob
                         value={config.timingMaxMs}
                         onChange={(v) => onChange({ timingMaxMs: v })}
@@ -57,9 +58,9 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{config.timingMaxMs.toFixed(0)}ms
                     </span>
-                </div>
+                </Stack>
 
-                <div className="flex flex-col items-center gap-0">
+                <Stack align="center">
                     <RotaryKnob
                         value={config.tuningMaxCents}
                         onChange={(v) => onChange({ tuningMaxCents: v })}
@@ -74,9 +75,9 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{config.tuningMaxCents.toFixed(0)}ct
                     </span>
-                </div>
+                </Stack>
 
-                <div className="flex flex-col items-center gap-0">
+                <Stack align="center">
                     <RotaryKnob
                         value={config.dynamicMax * 100}
                         onChange={(v) => onChange({ dynamicMax: v / 100 })}
@@ -91,9 +92,9 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{(config.dynamicMax * 100).toFixed(0)}%
                     </span>
-                </div>
+                </Stack>
 
-                <div className="flex flex-col items-center gap-0">
+                <Stack align="center">
                     <RotaryKnob
                         value={config.vibratoVarMax * 100}
                         onChange={(v) => onChange({ vibratoVarMax: v / 100 })}
@@ -108,8 +109,8 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         ±{(config.vibratoVarMax * 100).toFixed(0)}%
                     </span>
-                </div>
-            </div>
-        </div>
+                </Stack>
+            </Row>
+        </Stack>
     );
 };

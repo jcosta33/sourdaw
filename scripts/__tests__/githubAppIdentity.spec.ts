@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_LOGIN,
+    TRACKER_AUTHOR_MINT_PERMISSIONS,
+    isAuthorBotLogin,
     AUTHOR_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_LOGIN,
@@ -15,6 +17,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    authenticateTrackerAuthor,
     createGhSession,
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
@@ -23,6 +26,7 @@ import {
     loadRoleCredentials,
     mintInstallationToken,
     parseDotenv,
+    parseGraphqlResponse,
     resolvePrimaryRoot,
     type FileReader,
     type GitHubJsonClient,
@@ -59,7 +63,13 @@ GH_TOKEN=parent-token
     };
 }
 
-function mintClient(input: { login: string; permissions: Record<string, string>; token?: string }): {
+function mintClient(input: {
+    login: string;
+    permissions: Record<string, string>;
+    token?: string;
+    appStatus?: number;
+    mintStatus?: number;
+}): {
     requests: Array<{ url: string; body?: string }>;
     request: GitHubJsonClient;
 } {
@@ -70,11 +80,11 @@ function mintClient(input: { login: string; permissions: Record<string, string>;
             requests.push({ url, body: init.body });
             if (url.includes('/access_tokens')) {
                 return {
-                    status: 201,
+                    status: input.mintStatus ?? 201,
                     body: { token: input.token ?? 'ghs_minted', permissions: input.permissions },
                 };
             }
-            return { status: 200, body: { slug: input.login.replace('[bot]', '') } };
+            return { status: input.appStatus ?? 200, body: { slug: input.login.replace('[bot]', '') } };
         },
     };
 }
@@ -151,6 +161,15 @@ describe('dotenv and role files', () => {
     });
 });
 
+describe('GraphQL envelopes', () => {
+    it.each(['[]', 'null', '{"errors":{}}', '{"data":{},"errors":[]}', '{}'])(
+        'rejects malformed envelopes: %s',
+        (response) => {
+            expect(() => parseGraphqlResponse(response, 'GraphQL query')).toThrow(/invalid GraphQL envelope/i);
+        }
+    );
+});
+
 describe('installation mint', () => {
     it('mints reviewer permissions without contents write and checks login', async () => {
         const { requests, request } = mintClient({
@@ -168,6 +187,43 @@ describe('installation mint', () => {
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: REVIEWER_MINT_PERMISSIONS });
         expect(minted.login).toBe(REVIEWER_BOT_LOGIN);
         expect(minted.token).toBe('ghs_minted');
+    });
+    it('rejects a non-success App identity response even when its slug matches', async () => {
+        const { request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write' },
+            appStatus: 401,
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/failed to verify GitHub App identity/i);
+    });
+    it.each([
+        ['installation token mint', { mintStatus: 202 }, /failed to mint GitHub App installation token/],
+        ['App identity', { appStatus: 202 }, /failed to verify GitHub App identity/],
+    ])('rejects a 202 %s response with an otherwise valid payload', async (_case, statuses, expected) => {
+        const { request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write' },
+            ...statuses,
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(expected);
     });
 
     it('refuses a reviewer token with contents write before further GitHub writes', async () => {
@@ -206,6 +262,24 @@ describe('installation mint', () => {
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
+    it.each([
+        ['missing', { contents: 'read' }],
+        ['downgraded', { contents: 'read', pull_requests: 'read' }],
+    ])('refuses a reviewer token with %s pull_requests before further GitHub writes', async (_case, permissions) => {
+        const { requests, request } = mintClient({ login: REVIEWER_BOT_LOGIN, permissions });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/pull_requests is (?:<missing>|read)/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
     it('refuses extra write grants on a minted token before further GitHub writes', async () => {
         const { requests, request } = mintClient({
             login: REVIEWER_BOT_LOGIN,
@@ -221,6 +295,28 @@ describe('installation mint', () => {
                 request,
             })
         ).rejects.toThrow(/administration: write/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
+    it.each([
+        [
+            'unrequested admin',
+            { contents: 'read', pull_requests: 'write', repository_projects: 'admin' },
+            /repository_projects: admin/,
+        ],
+        ['requested write upgraded to admin', { contents: 'read', pull_requests: 'admin' }, /pull_requests is admin/],
+    ])('refuses %s before further GitHub writes', async (_case, permissions, expected) => {
+        const { requests, request } = mintClient({ login: REVIEWER_BOT_LOGIN, permissions });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(expected);
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
@@ -274,6 +370,64 @@ describe('installation mint', () => {
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
         expect(requests[0]?.body).not.toContain('administration');
         expect(requests[0]?.body).not.toContain('workflows');
+    });
+
+    it('requests only issues write for tracker maintenance', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write' },
+        });
+        await mintInstallationToken({
+            appId: '4650613',
+            installationId: '1',
+            privateKey: pem,
+            permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
+            expectedLogin: AUTHOR_BOT_LOGIN,
+            request,
+        });
+        expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
+        expect(requests[0]?.body).not.toContain('contents');
+        expect(requests[0]?.body).not.toContain('pull_requests');
+    });
+
+    it('creates an isolated issues-only tracker author session', async () => {
+        const parent: NodeJS.ProcessEnv = { PATH: '/usr/bin', GH_TOKEN: 'inherited' };
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write' },
+            token: 'ghs_tracker',
+        });
+        const auth = await authenticateTrackerAuthor({
+            primaryRoot: '/repo',
+            readFile: files(),
+            request,
+            env: parent,
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
+            expect(auth.session.env.GH_TOKEN).toBe('ghs_tracker');
+            expect(parent.GH_TOKEN).toBeUndefined();
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it('refuses extra write grants on a tracker maintenance token', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { issues: 'write', contents: 'write' },
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '4650613',
+                installationId: '1',
+                privateKey: pem,
+                permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
+                expectedLogin: AUTHOR_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/contents: write/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
     it('refuses a minted login that is not the expected bot', async () => {
@@ -463,5 +617,13 @@ describe('repository and trusted blob', () => {
         expect(isReviewerBotLogin('jcosta33-author[bot]')).toBe(false);
         expect(isReviewerBotLogin('jcosta33')).toBe(false);
         expect(isReviewerBotLogin(undefined)).toBe(false);
+    });
+
+    it('normalizes GraphQL and REST author bot logins without accepting other actors', () => {
+        expect(isAuthorBotLogin('jcosta33-author[bot]')).toBe(true);
+        expect(isAuthorBotLogin('jcosta33-author')).toBe(true);
+        expect(isAuthorBotLogin('jcosta33-reviewer[bot]')).toBe(false);
+        expect(isAuthorBotLogin('jcosta33')).toBe(false);
+        expect(isAuthorBotLogin(undefined)).toBe(false);
     });
 });

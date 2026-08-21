@@ -43,6 +43,8 @@ const mocks = vi.hoisted(() => ({
     rippleDeleteClips: vi.fn<typeof rippleDeleteClips>(),
     getMidiStoreState: vi.fn<() => MidiStoreState | null>(),
     removeMidiClipData: vi.fn<(clipIds: readonly string[]) => void>(),
+    readClipSatelliteEntry: vi.fn(),
+    readClipScopedAutomationLanes: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -66,6 +68,14 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     removeMidiClipData: mocks.removeMidiClipData,
 }));
 
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
+}));
+
+vi.mock('../../../useCases/clip/readClipScopedAutomationLanes', () => ({
+    readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
+}));
+
 describe('handleRemoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -73,6 +83,12 @@ describe('handleRemoveClip', () => {
         mocks.planRippleDelete.mockReturnValue(null);
         mocks.rippleDeleteClips.mockReturnValue(null);
         mocks.getMidiStoreState.mockReturnValue(null);
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        }));
+        mocks.readClipScopedAutomationLanes.mockReturnValue([]);
     });
 
     describe('execute', () => {
@@ -128,7 +144,12 @@ describe('handleRemoveClip', () => {
             const clip2 = createTestClip({ id: 'c2', startBeat: 1, endBeat: 2 });
             const removedClips: TestClip[] = [clip1, clip2];
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip1] }] });
-            mocks.rippleDeleteClips.mockReturnValue({ removedClips, shiftedClips: [] });
+            mocks.rippleDeleteClips.mockReturnValue({
+                removedClips,
+                shiftedClips: [],
+                clipSatellites: [],
+                clipAutomationLanes: [],
+            });
 
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
@@ -182,12 +203,39 @@ describe('handleRemoveClip', () => {
             expect(desc.inverseAction.payload.ripplePlan).toBeNull();
         });
 
+        it('captures the removed clip gain envelope, warp state, and automation lanes into the ripple plan', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+            mocks.planRippleDelete.mockReturnValue({
+                removedClips: [createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 })],
+                shiftedClips: [],
+                clipSatellites: [],
+                clipAutomationLanes: [],
+            });
+            const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
+            mocks.readClipSatelliteEntry.mockReturnValue({ clipId: 'c1', gainEnvelope, warpState: null });
+            const lane = { id: 'lane-1', clipId: 'c1' };
+            mocks.readClipScopedAutomationLanes.mockReturnValue([lane]);
+
+            const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            if (!desc.inverseAction || desc.inverseAction.type !== 'restoreClip') {
+                throw new Error('Expected a restoreClip inverse action');
+            }
+            expect(desc.inverseAction.payload.ripplePlan?.clipSatellites).toEqual([
+                { clipId: 'c1', gainEnvelope, warpState: null },
+            ]);
+            expect(desc.inverseAction.payload.ripplePlan?.clipAutomationLanes).toEqual([lane]);
+        });
+
         it('records null MIDI snapshots when the clip has no MIDI data', () => {
             const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
             mocks.planRippleDelete.mockReturnValue({
                 removedClips: [createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 })],
                 shiftedClips: [],
+                clipSatellites: [],
+                clipAutomationLanes: [],
             });
             // No MIDI store -> every snapshot falls through to null.
             mocks.getMidiStoreState.mockReturnValue(null);
@@ -206,7 +254,12 @@ describe('handleRemoveClip', () => {
             const mockClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
             const rippleRemovedClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
             const rippleShift = { clipId: 'c2', origStartBeat: 1, origEndBeat: 2, automationDelta: -1 };
-            const ripplePlanSource = { removedClips: [rippleRemovedClip], shiftedClips: [rippleShift] };
+            const ripplePlanSource = {
+                removedClips: [rippleRemovedClip],
+                shiftedClips: [rippleShift],
+                clipSatellites: [],
+                clipAutomationLanes: [],
+            };
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [mockClip] }] });
             mocks.planRippleDelete.mockReturnValue(ripplePlanSource);
 

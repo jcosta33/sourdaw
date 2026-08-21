@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginSectionHeaderProps = HTMLAttributes<HTMLDivElement> & {
@@ -17,7 +18,7 @@ export const DawPluginSectionHeader = ({
     size = 'sm',
     ...props
 }: DawPluginSectionHeaderProps): ReactElement => (
-    <div className={cn('flex items-center justify-between gap-2', className)} {...props}>
+    <Row justify="between" gap={2} className={className} {...props}>
         <span
             className={cn(
                 'uppercase tracking-wider',
@@ -27,6 +28,6 @@ export const DawPluginSectionHeader = ({
         >
             {title}
         </span>
-        {actions ? <div className="flex items-center gap-1">{actions}</div> : null}
-    </div>
+        {actions ? <Row gap={1}>{actions}</Row> : null}
+    </Row>
 );

@@ -7,22 +7,53 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fail } from './prContract.ts';
 
 export const AUTHOR_BOT_LOGIN = 'jcosta33-author[bot]';
+export const AUTHOR_GRAPHQL_LOGIN = 'jcosta33-author';
 export const REVIEWER_BOT_LOGIN = 'jcosta33-reviewer[bot]';
 export const REVIEWER_GRAPHQL_LOGIN = 'jcosta33-reviewer';
 
 export function isReviewerBotLogin(login: string | undefined | null): boolean {
     return login === REVIEWER_BOT_LOGIN || login === REVIEWER_GRAPHQL_LOGIN;
 }
+export function isAuthorBotLogin(login: string | undefined | null): boolean {
+    return login === AUTHOR_BOT_LOGIN || login === AUTHOR_GRAPHQL_LOGIN;
+}
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
+/**
+ * The one branch a pull request may target. `lane:publish` opens every pull request against it and
+ * `deliver` merges into nothing else, so a base that is not this branch is a retarget the delivery
+ * scripts did not make.
+ */
+export const REQUIRED_BASE_BRANCH = 'main';
 export const GITHUB_HTTPS_REMOTE = `https://github.com/${REQUIRED_REPOSITORY}.git`;
 export function githubAuthenticatedRemote(token: string): string {
     return `https://x-access-token:${token}@github.com/${REQUIRED_REPOSITORY}.git`;
 }
 export const AUTHOR_LOCK_REASON = 'active:sourdaw-author';
 
+/**
+ * `removeLane` locks a lane `lane-remove:<pid>` for the length of a removal, so that reason records
+ * work in flight rather than an owner. It and `AUTHOR_LOCK_REASON` are the only lock reasons lane
+ * tooling writes, and both readers of the marker share this one definition: `removeLane` asks
+ * whether the pid is still alive, `publishLane` only needs to know the lock names nobody. A pid that
+ * is not a safe positive integer is not this marker, so it is treated as an unrecognized reason
+ * rather than handed on as a number no caller can act on.
+ */
+export function removalLockPid(lockReason: string | undefined): number | undefined {
+    const captured = /^lane-remove:(\d+)$/.exec(lockReason ?? '')?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const pid = Number(captured);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
 export const AUTHOR_MINT_PERMISSIONS = {
     contents: 'write',
     pull_requests: 'write',
+} as const;
+
+export const TRACKER_AUTHOR_MINT_PERMISSIONS = {
+    issues: 'write',
 } as const;
 
 export const REVIEWER_MINT_PERMISSIONS = {
@@ -40,8 +71,9 @@ export type RoleCredentials = {
 };
 
 export type MintPermissions = {
-    contents: 'read' | 'write';
-    pull_requests: 'write';
+    contents?: 'read' | 'write';
+    pull_requests?: 'write';
+    issues?: 'write';
 };
 
 export type MintedInstallation = {
@@ -178,7 +210,7 @@ export async function mintInstallationToken(input: {
             body: JSON.stringify({ permissions: input.permissions }),
         }
     );
-    if (minted.status < 200 || minted.status >= 300 || minted.body === null || typeof minted.body !== 'object') {
+    if (minted.status !== 201 || minted.body === null || typeof minted.body !== 'object') {
         fail('failed to mint GitHub App installation token');
     }
     const payload = minted.body as { token?: unknown; permissions?: unknown };
@@ -195,6 +227,9 @@ export async function mintInstallationToken(input: {
             'X-GitHub-Api-Version': '2022-11-28',
         },
     });
+    if (app.status !== 200) {
+        fail('failed to verify GitHub App identity');
+    }
     const slug =
         app.body !== null && typeof app.body === 'object' && 'slug' in app.body && typeof app.body.slug === 'string'
             ? app.body.slug
@@ -222,6 +257,26 @@ export async function authenticateRole(input: {
         privateKey: credentials.privateKey,
         permissions: input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS,
         expectedLogin: input.role === 'author' ? AUTHOR_BOT_LOGIN : REVIEWER_BOT_LOGIN,
+        request: input.request,
+    });
+    return { credentials, minted, session: createGhSession(minted.token, env) };
+}
+
+export async function authenticateTrackerAuthor(input: {
+    primaryRoot: string;
+    readFile?: FileReader;
+    request?: GitHubJsonClient;
+    env?: NodeJS.ProcessEnv;
+}): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
+    const env = input.env ?? process.env;
+    clearInheritedGithubEnv(env);
+    const credentials = loadRoleCredentials(input.primaryRoot, 'author', input.readFile);
+    const minted = await mintInstallationToken({
+        appId: credentials.appId,
+        installationId: credentials.installationId,
+        privateKey: credentials.privateKey,
+        permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
+        expectedLogin: AUTHOR_BOT_LOGIN,
         request: input.request,
     });
     return { credentials, minted, session: createGhSession(minted.token, env) };
@@ -363,6 +418,18 @@ export function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
+export function parseGraphqlResponse<Value>(value: string, label: string): Value {
+    const response = parseJson<unknown>(value, label);
+    if (typeof response !== 'object' || response === null || Array.isArray(response)) {
+        fail(`${label} returned an invalid GraphQL envelope`);
+    }
+    const envelope = response as { data?: unknown; errors?: unknown };
+    if (!Object.hasOwn(envelope, 'data') || Object.hasOwn(envelope, 'errors')) {
+        fail(`${label} returned an invalid GraphQL envelope`);
+    }
+    return response as Value;
+}
+
 async function defaultGitHubRequest(
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string }
@@ -406,13 +473,15 @@ function assertMintedPermissions(requested: MintPermissions, granted: Record<str
     if (requested.contents === 'read' && granted.contents === 'write') {
         fail('reviewer installation token granted contents: write');
     }
-    if (granted.contents !== requested.contents) {
-        fail(`installation token contents is ${granted.contents ?? '<missing>'}; expected ${requested.contents}`);
+    for (const [name, expected] of Object.entries(requested)) {
+        if (granted[name] !== expected) {
+            fail(`installation token ${name} is ${granted[name] ?? '<missing>'}; expected ${expected}`);
+        }
     }
     const requestedNames = new Set(Object.keys(requested));
     for (const [key, level] of Object.entries(granted)) {
-        if (level === 'write' && !requestedNames.has(key)) {
-            fail(`installation token granted ${key}: write`);
+        if (!requestedNames.has(key) && level !== 'read' && level !== 'none') {
+            fail(`installation token granted ${key}: ${level}`);
         }
     }
 }

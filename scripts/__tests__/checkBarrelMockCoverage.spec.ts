@@ -23,22 +23,34 @@
  *     reads nothing both produce zero violations; the counts assert that this is
  *     distinguishable from a clean tree, which is the difference between failing
  *     closed and failing open.
- *  4. **Real-tree mutation.** Dropping the `...(await importOriginal())` line from
- *     the `#/modules/Project/presentations/views` factory in
+ *  3b. **The exemption mechanism.** A row in `exemptions` mutes only the key names
+ *     it lists for its (spec, barrel) pair — not the whole pair. A planted fixture
+ *     proves a name outside the row still violates, and `staleExemptions` proves a
+ *     row whose listed keys the graph walk stops needing is reported rather than
+ *     left to quietly outlive the debt it was written for.
+ *  4. **Real-tree mutation.** The factory in
  *     `src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx`
- *     — keeping the `async (importOriginal) =>` signature, which is the shape a
- *     textual check cannot tell from a real spread — makes the real-tree case red.
+ *     already lists all three of `#/modules/Project/presentations/views`'s exports
+ *     by name (`RecentProjectsMenu`, `ArrangementSelector`, `MissingMediaPanel`) —
+ *     dropping only the `...(await importOriginal())` spread leaves every consumed
+ *     name still covered by the hand-written keys, so that alone stays green.
+ *     Dropping the spread *and* removing the `MissingMediaPanel` key — keeping the
+ *     `async (importOriginal) =>` signature, which is the shape a textual check
+ *     cannot tell from a real spread — makes the real-tree case red, naming
+ *     `MissingMediaPanel` and `TransportBar.tsx` as the consumer.
  */
 
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
     allBarrelKinds,
     analyzeSpecs,
+    gatedBarrelKinds,
     readFileFacts,
     scanRepository,
+    type ExemptionRow,
     type FileFacts,
 } from '../checkBarrelMockCoverage';
 
@@ -305,44 +317,200 @@ describe('checkBarrelMockCoverage — the analysis cannot pass by deriving nothi
     });
 });
 
-describe('checkBarrelMockCoverage — the real tree', () => {
-    it('has no presentations/views barrel mock that omits an export its graph imports', () => {
-        const result = scanRepository();
+describe('checkBarrelMockCoverage — the exemption mechanism', () => {
+    // #2412's own escape hatch: hitting the gate was answerable by appending a row
+    // to `exemptions` with no test ever exercising what a row actually does. The
+    // defect that shipped because of it (finding 1 on this pull request): a row
+    // muted the whole (spec, barrel) pair, so a name the row's `reason` never
+    // mentioned — `trackStore` in `ensureTrackStrips.spec.ts`, read directly by
+    // `ensureTrackStrips.ts` — went invisible too. These tests plant exactly that
+    // shape: three names missing, one row naming only one of them.
+    const exemptSpecPath = 'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx';
 
-        expect(
-            result.violations.map((violation) => `${violation.spec.replace(`${sourceRoot}/`, '')}: ${violation.barrel}`)
-        ).toEqual([]);
+    function threeMissingKeysFixture(): Fixture {
+        return buildFixture({
+            [barrel]:
+                "export { Alpha } from './Alpha';\nexport { Beta } from './Beta';\nexport { Gamma } from './Gamma';\n",
+            'src/modules/Host/presentations/views/HostPanel.tsx': `import { Alpha, Beta, Gamma } from '${barrelSpecifier}';\nexport const HostPanel = () => [Alpha, Beta, Gamma];\n`,
+            [exemptSpecPath]: `vi.mock('${barrelSpecifier}', () => ({ Alpha: () => null }));\nimport { HostPanel } from '../HostPanel';\n`,
+        });
+    }
+
+    it('mutes only the key names a row lists — an unnamed missing key still violates', () => {
+        const fixture = threeMissingKeysFixture();
+        const rows: ExemptionRow[] = [
+            { spec: exemptSpecPath, barrel: barrelSpecifier, missingKeys: ['Beta'], reason: 'test' },
+        ];
+
+        const result = analyzeSpecs({ ...fixture, exemptions: rows });
+
+        // Beta is muted; Gamma is not named by the row and still reports, which is
+        // exactly the property the pair-level bug in finding 1 did not have.
+        expect(result.violations.map((violation) => violation.missing)).toEqual([['Gamma']]);
+        expect(result.staleExemptions).toEqual([]);
+    });
+
+    it('without the row, both unnamed keys violate — proves the row is doing the muting, not something else', () => {
+        const fixture = threeMissingKeysFixture();
+
+        const result = analyzeSpecs({ ...fixture, exemptions: [] });
+
+        expect(result.violations.map((violation) => violation.missing)).toEqual([['Beta', 'Gamma']]);
+    });
+
+    it('reports a row that names a key the graph walk never found missing', () => {
+        const fixture = threeMissingKeysFixture();
+        const rows: ExemptionRow[] = [
+            {
+                spec: exemptSpecPath,
+                barrel: barrelSpecifier,
+                missingKeys: ['Beta', 'Gamma', 'NeverMissing'],
+                reason: 'test',
+            },
+        ];
+
+        const result = analyzeSpecs({ ...fixture, exemptions: rows });
+
+        expect(result.violations).toEqual([]);
+        expect(result.staleExemptions).toEqual([
+            { spec: exemptSpecPath, barrel: barrelSpecifier, unusedKeys: ['NeverMissing'] },
+        ]);
+    });
+
+    it('reports a row whose (spec, barrel) pair never matched this run — the repair to delete', () => {
+        const fixture = threeMissingKeysFixture();
+        const deadBarrel = '#/modules/Nonexistent/presentations/views';
+        const rows: ExemptionRow[] = [
+            { spec: exemptSpecPath, barrel: deadBarrel, missingKeys: ['Beta'], reason: 'test' },
+        ];
+
+        const result = analyzeSpecs({ ...fixture, exemptions: rows });
+
+        expect(result.staleExemptions).toEqual([{ spec: exemptSpecPath, barrel: deadBarrel, unusedKeys: ['Beta'] }]);
+    });
+});
+
+type RealTreeScan = ReturnType<typeof scanRepository>;
+
+/** `#/modules/Foo/Common/Bar/presentations/views` → `presentations/views`. No kind
+ * is a suffix of another, so the suffix test partitions the violations exactly. */
+function kindOf(barrel: string): string | undefined {
+    return allBarrelKinds.find((kind) => barrel.endsWith(`/${kind}`));
+}
+
+function describeViolations(result: RealTreeScan, predicate: (barrel: string) => boolean): string[] {
+    return result.violations
+        .filter((violation) => predicate(violation.barrel))
+        .map((violation) => `${violation.spec.replace(`${sourceRoot}/`, '')}: ${violation.barrel}`);
+}
+
+/**
+ * Floors, not pins: they separate "clean" from "measured nothing", and they sit far
+ * below the real tree so ordinary work never moves them. Break `fileExists`,
+ * `readFacts`, the parser or the glob and one of these is 0 — which is also what a
+ * clean tree looks like on the violation list alone.
+ */
+function expectDerivedEnough(result: RealTreeScan): void {
+    expect(result.analyzedSpecCount).toBeGreaterThanOrEqual(5);
+    expect(result.resolvedMockCount).toBeGreaterThanOrEqual(50);
+    expect(result.graphNodeCount).toBeGreaterThanOrEqual(500);
+}
+
+/**
+ * Scanning the real tree costs seconds. Three `it` bodies each running their own
+ * scan is how this suite went red the moment the gate widened past
+ * `presentations/views`: not one assertion failed, all three blew vitest's 5s
+ * default while the analysis they were waiting on was clean. One scan per barrel-kind
+ * set, hoisted, with a timeout sized to the work instead of to a single-kind scan.
+ */
+describe('checkBarrelMockCoverage — the real tree', () => {
+    let gated: RealTreeScan;
+    let everyKind: RealTreeScan;
+
+    beforeAll(() => {
+        gated = scanRepository();
+        everyKind = scanRepository(allBarrelKinds);
+    }, 120_000);
+
+    // One claim per gated kind, named for that kind, reading only that kind's
+    // violations. `scanRepository()` scans every gated kind at once, so a single
+    // combined assertion would report a `stores` regression under a test named for
+    // `presentations/views` — the name has to keep meaning what it says.
+    //
+    // "No violations" is only a coverage claim when something was analysed. For
+    // `stores` and `presentations/views` that population must be nonzero — an
+    // empty gate proves nothing. `events` is the deliberate exception: no spec
+    // mocks an `events` contract barrel today, so its population is zero and its
+    // claim is a pre-commitment, not a measurement. Asserting that zero explicitly
+    // means the day it stops being zero this test starts failing until someone
+    // rereads `gatedBarrelKinds`' doc comment, instead of the per-kind claim
+    // quietly starting to mean something it never used to.
+    it.each(gatedBarrelKinds)('has no %s barrel mock that omits an export its graph imports', (kind) => {
+        expect(describeViolations(gated, (barrel) => kindOf(barrel) === kind)).toEqual([]);
+        if (kind === 'events') {
+            expect(gated.matchedBarrelKindCounts.events ?? 0).toBe(0);
+        } else {
+            expect(gated.matchedBarrelKindCounts[kind] ?? 0).toBeGreaterThan(0);
+        }
+    });
+
+    // The scope contract behind those names. The `it.each` above auto-adds a claim
+    // for any newly gated kind — no edit needed there. This literal list is the
+    // opposite: it names every currently gated kind by hand, so both widening and
+    // narrowing the gate require editing this line. That is deliberate — e.g.
+    // narrowing away `presentations/views` would otherwise delete the claim this
+    // whole file exists to make, silently, with nothing forcing a second look.
+    it('claims every barrel kind the gate blocks on', () => {
+        expect([...gatedBarrelKinds].toSorted()).toEqual(['events', 'presentations/views', 'stores']);
     });
 
     it('derived enough to have a verdict — no spec parses, resolves or walks to nothing', () => {
-        const result = scanRepository();
+        expect(gated.extractionFailures).toEqual([]);
+        expectDerivedEnough(gated);
+    });
 
-        expect(result.extractionFailures).toEqual([]);
-        // Floors, not pins: they separate "clean" from "measured nothing". Break
-        // `fileExists`, `readFacts`, the parser or the glob and one of these is 0.
-        expect(result.analyzedSpecCount).toBeGreaterThanOrEqual(5);
-        expect(result.resolvedMockCount).toBeGreaterThanOrEqual(50);
-        expect(result.graphNodeCount).toBeGreaterThanOrEqual(500);
+    // Every row in `exemptions` must still match live debt: its (spec, barrel)
+    // pair still gets mocked exhaustively without a spread, and every key it
+    // lists is still one the graph walk finds missing. A repaired spec — the
+    // named keys stubbed or the mock spread — stops feeding `seenKeys` for its
+    // row, and `staleExemptions` reports it rather than letting the row linger
+    // as debt bookkeeping for debt that no longer exists. This is also the
+    // real-tree half of the exemption mechanism's own coverage: the planted
+    // fixture above proves a row mutes only its named keys, this proves the
+    // eight real rows are not doing that against nothing.
+    it('carries no stale exemption row — every row still matches live debt', () => {
+        expect(gated.staleExemptions).toEqual([]);
     });
 
     /**
-     * The ratchet over the three barrel kinds the gate does not block.
+     * What holds the ungated kinds, in place of the scalar that used to.
      *
-     * A per-row baseline was refused, and that refusal was about a table whose only
-     * content is "pre-existing" — 109 rows nobody reads, each needing exemption
-     * semantics. It said nothing about a scalar, and without one nothing holds the
-     * number at all: `--all` is invoked by no script, and the gate itself only ever
-     * scans `presentations/views`. So the 109 could become 130 unnoticed.
+     * The scalar did not work. `does not grow the ungated barrel-mock debt beyond
+     * its measured 127 pairs` was written against 109 in a source comment and 127
+     * in the assertion while the tree held 101 — three numbers for one quantity, in
+     * one change. A ratchet 26 pairs above the real figure passes a 26-pair
+     * regression, and the only way to tighten it is to re-type it, which is the
+     * move that produced the slack. Worse, it was defeated by exactly the failure
+     * this file's zero-derivation cases exist to catch: a `--all` scan that derived
+     * nothing reports zero pairs, and zero is comfortably under any ceiling.
      *
-     * One assertion, no table: pair 110 reds, and every pair repaid is a free
-     * ratchet down (lower the number in the same commit). The unit is the (spec,
-     * barrel) pair, not the violation, because one pair is counted once per
-     * consuming module and the pair is what a person actually fixes.
+     * The property underneath is the one worth holding, and it does not drift with
+     * unrelated work. `--all` must stay a strict widening of the gate: every pair
+     * it finds belongs to a kind the gate does not cover, so the gated kinds read
+     * zero through both entry points, and `--all` must have derived enough to be
+     * saying so. Repaying `useCases` debt to zero keeps this green; regressing a
+     * gated kind, or blinding the wider scan, does not.
      */
-    it('does not grow the ungated barrel-mock debt beyond its measured 127 pairs', () => {
-        const result = scanRepository(allBarrelKinds);
-        const pairs = new Set(result.violations.map((violation) => `${violation.spec} ${violation.barrel}`));
-
-        expect(pairs.size).toBeLessThanOrEqual(127);
+    it('confines the debt --all measures to the kinds the gate does not cover', () => {
+        expect(
+            describeViolations(everyKind, (barrel) => gatedBarrelKinds.some((kind) => kindOf(barrel) === kind))
+        ).toEqual([]);
+        expect(everyKind.extractionFailures).toEqual([]);
+        expectDerivedEnough(everyKind);
+        // `--all` scans a superset of the gate's mocks over the same spec glob, so
+        // it can never walk less than the gate did. A drop means it stopped walking.
+        expect(everyKind.analyzedSpecCount).toBeGreaterThanOrEqual(gated.analyzedSpecCount);
+        expect(everyKind.graphNodeCount).toBeGreaterThanOrEqual(gated.graphNodeCount);
+        expect(everyKind.resolvedMockCount).toBeGreaterThanOrEqual(gated.resolvedMockCount);
     });
 });

@@ -1,85 +1,118 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-// Open the Gluten (bus compressor) panel by selecting a track that carries one
-// and clicking its device entry in the device chain. Returns once a named knob
-// is reachable.
-async function openGlutenPanel(page: import('@playwright/test').Page): Promise<void> {
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
     const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    const drumBus = trackList.getByRole('row').filter({ hasText: /Drum Bus/i }).first();
-    await drumBus.click();
-    await page.waitForTimeout(500);
+    const before = await trackList.getByRole('row').count();
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
+    await trackList
+        .getByRole('row')
+        .filter({ has: page.getByText('MIDI', { exact: true }) })
+        .first()
+        .click();
+}
 
-    await page.getByText('Drum Glue', { exact: false }).first().click();
-    await page.waitForTimeout(800);
-    // The panel mounts named knobs as role="slider".
-    await expect(page.getByRole('slider', { name: 'Threshold' })).toBeVisible({ timeout: 10_000 });
+function inspector(page: Page) {
+    return page.getByRole('complementary', { name: 'Inspector panel' });
+}
+
+async function openGlutenThreshold(page: Page): Promise<Locator> {
+    const panel = inspector(page);
+    await panel.getByRole('button', { name: 'Add device' }).click();
+    await page.getByRole('menuitem', { name: /^Gluten$/ }).click();
+    await expect(panel.getByRole('button', { name: /^Bypass Gluten$/i })).toBeVisible();
+
+    await panel
+        .locator('[data-testid^="device-card-"]')
+        .filter({ has: page.getByText('Gluten', { exact: true }) })
+        .click();
+
+    const knob = page.getByRole('slider', { name: 'Threshold' });
+    await expect(knob).toBeVisible();
+    return knob;
+}
+
+async function numericAttribute(knob: Locator, name: string): Promise<number> {
+    const raw = await knob.getAttribute(name);
+    if (raw === null || raw === '') {
+        throw new Error(`${name} is missing`);
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+        throw new Error(`${name} is not a finite number: ${raw}`);
+    }
+    return value;
+}
+
+async function valueNow(knob: Locator): Promise<number> {
+    return numericAttribute(knob, 'aria-valuenow');
 }
 
 test.describe('Device parameter knob — keyboard increment (Gluten)', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
-        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        await page.getByRole('button', { name: 'Pop Song' }).click();
-        await wait_for_workspace_ready(page);
-        await openGlutenPanel(page);
+        await launch_new_project(page);
+        await addMidiTrack(page);
     });
 
     test('ArrowUp increments aria-valuenow', async ({ page }) => {
-        const knob = page.getByRole('slider', { name: 'Threshold' }).first();
+        const knob = await openGlutenThreshold(page);
         await knob.focus();
+        const before = await valueNow(knob);
 
-        const before = Number(await knob.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
 
-        const after = Number(await knob.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(() => valueNow(knob)).toBeGreaterThan(before);
     });
 
     test('ArrowDown decrements aria-valuenow', async ({ page }) => {
-        const knob = page.getByRole('slider', { name: 'Threshold' }).first();
+        const knob = await openGlutenThreshold(page);
         await knob.focus();
+        const before = await valueNow(knob);
 
-        // Nudge up first so there is room to come back down unambiguously.
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const raised = Number(await knob.getAttribute('aria-valuenow'));
+        await expect.poll(() => valueNow(knob)).toBeGreaterThan(before);
+        const raised = await valueNow(knob);
 
         await page.keyboard.press('ArrowDown');
-        await page.waitForTimeout(200);
-        const lowered = Number(await knob.getAttribute('aria-valuenow'));
-        expect(lowered).toBeLessThan(raised);
+
+        await expect.poll(() => valueNow(knob)).toBeLessThan(raised);
     });
 
     test('Home sets the knob to its minimum', async ({ page }) => {
-        const knob = page.getByRole('slider', { name: 'Threshold' }).first();
-        const min = Number(await knob.getAttribute('aria-valuemin'));
-
+        const knob = await openGlutenThreshold(page);
+        const min = await numericAttribute(knob, 'aria-valuemin');
+        const max = await numericAttribute(knob, 'aria-valuemax');
+        expect(min).not.toBe(max);
         await knob.focus();
-        await page.keyboard.press('End'); // push to max first
-        await page.waitForTimeout(200);
-        await page.keyboard.press('Home');
-        await page.waitForTimeout(200);
 
-        const after = Number(await knob.getAttribute('aria-valuenow'));
-        expect(after).toBe(min);
+        await page.keyboard.press('End');
+        await expect.poll(() => valueNow(knob)).toBe(max);
+
+        await page.keyboard.press('Home');
+
+        await expect.poll(() => valueNow(knob)).toBe(min);
     });
 
     test('End sets the knob to its maximum', async ({ page }) => {
-        const knob = page.getByRole('slider', { name: 'Threshold' }).first();
-        const max = Number(await knob.getAttribute('aria-valuemax'));
-
+        const knob = await openGlutenThreshold(page);
+        const min = await numericAttribute(knob, 'aria-valuemin');
+        const max = await numericAttribute(knob, 'aria-valuemax');
+        expect(min).not.toBe(max);
         await knob.focus();
-        await page.keyboard.press('Home'); // floor it first
-        await page.waitForTimeout(200);
-        await page.keyboard.press('End');
-        await page.waitForTimeout(200);
 
-        const after = Number(await knob.getAttribute('aria-valuenow'));
-        expect(after).toBe(max);
+        await page.keyboard.press('Home');
+        await expect.poll(() => valueNow(knob)).toBe(min);
+
+        await page.keyboard.press('End');
+
+        await expect.poll(() => valueNow(knob)).toBe(max);
     });
 });

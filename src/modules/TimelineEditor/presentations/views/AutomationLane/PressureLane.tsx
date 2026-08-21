@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 
 import { setNotePressure } from '#/modules/MIDI/useCases';
 
@@ -9,7 +9,8 @@ type PressureLaneProps = {
     trackId: string;
     selectedNoteIds: Set<string>;
     beatWidth: number;
-    contentWidth: number;
+    /** Scroll container the lane is laid out inside — see `NotePropertyLane`. */
+    scrollRef: RefObject<HTMLElement | null>;
 };
 
 const getPressure = (note: { pressure?: number }): number => note.pressure ?? 0;

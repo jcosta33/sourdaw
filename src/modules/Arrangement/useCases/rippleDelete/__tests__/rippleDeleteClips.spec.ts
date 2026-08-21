@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
     setTrackState: vi.fn(),
     planRippleDelete: vi.fn(),
     shiftClipAutomation: vi.fn<(clipId: string, delta: number) => void>(),
+    readClipSatelliteEntry: vi.fn(),
+    removeClipSatelliteData: vi.fn(),
+    readClipScopedAutomationLanes: vi.fn(),
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
@@ -25,8 +28,28 @@ vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
 }));
 
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
+}));
+
+vi.mock('../../clip/removeClipSatelliteData', () => ({
+    removeClipSatelliteData: mocks.removeClipSatelliteData,
+}));
+
+vi.mock('../../clip/readClipScopedAutomationLanes', () => ({
+    readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
+}));
+
 describe('rippleDeleteClips', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        }));
+        mocks.readClipScopedAutomationLanes.mockReturnValue([]);
+    });
 
     it('executes the plan and updates state', () => {
         const mockPlan = {
@@ -48,7 +71,39 @@ describe('rippleDeleteClips', () => {
         }
         const newState = setCall[0];
         expect(newState.tracks[0].clips).toEqual([{ id: 'c2' }]);
-        expect(result).toEqual({ removedClips: [{ id: 'c1' }], shiftedClips: [] });
+        expect(result).toEqual({
+            removedClips: [{ id: 'c1' }],
+            shiftedClips: [],
+            clipSatellites: [],
+            clipAutomationLanes: [],
+        });
+    });
+
+    it('captures a removed clip satellites before retiring them, and retires them from the live stores', () => {
+        const mockPlan = {
+            removedClips: [{ id: 'c1' }],
+            shiftedClips: [],
+            nextClips: [{ id: 'c2' }],
+        };
+        mocks.planRippleDelete.mockReturnValue(mockPlan);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c2' }] }],
+        });
+        const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
+        mocks.readClipSatelliteEntry.mockReturnValue({ clipId: 'c1', gainEnvelope, warpState: null });
+        const lane = { id: 'lane-1', clipId: 'c1' };
+        mocks.readClipScopedAutomationLanes.mockReturnValue([lane]);
+
+        const result = rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });
+
+        // The satellites must be captured, and captured BEFORE the retiring
+        // sweep runs — otherwise the capture would read them already gone.
+        expect(result?.clipSatellites).toEqual([{ clipId: 'c1', gainEnvelope, warpState: null }]);
+        expect(result?.clipAutomationLanes).toEqual([lane]);
+        expect(mocks.removeClipSatelliteData).toHaveBeenCalledWith(['c1']);
+        const captureOrder = mocks.readClipSatelliteEntry.mock.invocationCallOrder[0];
+        const retireOrder = mocks.removeClipSatelliteData.mock.invocationCallOrder[0];
+        expect(captureOrder).toBeLessThan(retireOrder as number);
     });
 
     it('shifts collateral clips automation by the ripple delta (regression: ledger M-025)', () => {

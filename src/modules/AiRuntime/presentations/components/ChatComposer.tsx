@@ -2,6 +2,7 @@ import { type KeyboardEvent, type ReactElement, type RefObject } from 'react';
 
 import { Brain, Send, Square, Zap } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
@@ -62,8 +63,12 @@ export const ChatComposer = ({
                 boxShadow: '0 -1px 0 rgba(255,255,255,0.03)',
             }}
         >
-            <div className="mb-2 flex items-center justify-between px-1">
-                <label className="flex items-center gap-1.5 rounded border border-border/50 bg-surface-inset px-2 py-1 text-[10px] font-medium text-muted-foreground">
+            <Row justify="between" className="mb-2 px-1">
+                <Row
+                    as="label"
+                    gap={1.5}
+                    className="rounded border border-border/50 bg-surface-inset px-2 py-1 text-[10px] font-medium text-muted-foreground"
+                >
                     <Zap className="size-3" />
                     <span>Mode</span>
                     <select
@@ -79,7 +84,7 @@ export const ChatComposer = ({
                             </option>
                         ))}
                     </select>
-                </label>
+                </Row>
 
                 <button
                     type="button"
@@ -96,9 +101,12 @@ export const ChatComposer = ({
                     <Brain className="size-3" />
                     Think
                 </button>
-            </div>
+            </Row>
 
-            <div className="relative flex rounded-lg border border-border bg-surface-base shadow-sm transition-all focus-within:border-[var(--color-accent-lavender)]/50 focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50">
+            <Row
+                align="stretch"
+                className="relative rounded-lg border border-border bg-surface-base shadow-sm transition-all focus-within:border-[var(--color-accent-lavender)]/50 focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50"
+            >
                 <textarea
                     ref={textareaRef}
                     value={inputValue}
@@ -111,7 +119,7 @@ export const ChatComposer = ({
                     disabled={isGenerating || !isLlmAvailable}
                     rows={1}
                 />
-                <div className="flex shrink-0 items-start justify-end p-2 pb-0">
+                <Row align="start" justify="end" shrink={false} className="p-2 pb-0">
                     <Button
                         size="icon-sm"
                         disabled={!isGenerating && (!inputValue.trim() || !isLlmAvailable)}
@@ -121,8 +129,8 @@ export const ChatComposer = ({
                     >
                         {isGenerating ? <Square className="size-3 fill-current" /> : <Send className="size-3.5" />}
                     </Button>
-                </div>
-            </div>
+                </Row>
+            </Row>
         </div>
     );
 };

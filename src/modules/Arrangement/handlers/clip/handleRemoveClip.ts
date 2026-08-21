@@ -1,6 +1,8 @@
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
+import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
@@ -56,6 +58,10 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             ? {
                   removedClips: structuredClone(plan.removedClips) as readonly MinimalClipShape[],
                   shiftedClips: structuredClone(plan.shiftedClips),
+                  clipSatellites: plan.removedClips
+                      .map((clip) => readClipSatelliteEntry(clip.id))
+                      .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null),
+                  clipAutomationLanes: readClipScopedAutomationLanes(plan.removedClips.map((clip) => clip.id)),
               }
             : null;
 

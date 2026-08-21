@@ -13,9 +13,14 @@ import { getTrackStoreState } from './getTrackStoreState';
 /**
  * Snapshot named tracks' clip collections plus the MIDI satellite state those
  * clips (and their hidden alternatives) own — the general primitive `cutClip`,
- * `pasteClip` and `stripSilence` build their guarded restore on. A pure read:
- * callers snapshot before a write for `expected`, and again after for
- * `replacement`, via two separate calls.
+ * `pasteClip`, `flattenTrack` and `consolidateAllTracks` build their guarded
+ * restore on. A pure read: callers snapshot before a write for `expected`, and
+ * again after for `replacement`, via two separate calls.
+ *
+ * `stripSilence` is deliberately not one of them: it owns a purpose-built,
+ * satellite-aware inverse in `restoreStripSilenceState`, which migrates
+ * clip-scoped automation lanes onto the produced segments. This whole-track
+ * snapshot is the broader tool and would lose that migration.
  *
  * A track id absent from the live store is skipped rather than throwing —
  * `describe()` runs before `execute()`, so a track already gone by the time

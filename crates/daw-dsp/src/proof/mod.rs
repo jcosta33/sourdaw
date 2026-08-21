@@ -161,8 +161,70 @@ impl ProofInstance {
         self.chain.latency_samples() as u32
     }
 
+    /// Reset the panel's integrated-loudness measures together. Loudness range
+    /// shares the same "since when" question as integrated loudness — both are
+    /// figures about one programme — so a reset that touched integrated LUFS
+    /// and true peak but left `chain.lra` accumulating from device
+    /// instantiation would make the two readings on the same panel describe
+    /// different programmes.
     pub fn reset_integrated(&mut self) {
         self.chain.integrated_lufs.reset();
         self.chain.true_peak.reset();
+        self.chain.lra.reset();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `reset_integrated` is the "Reset Integrated" action on the mastering
+    //! panel. It used to clear `integrated_lufs` and `true_peak` but leave
+    //! `chain.lra` (loudness range) accumulating from device instantiation, so
+    //! the two figures on the same panel described different programmes after
+    //! every reset.
+
+    use super::ProofInstance;
+
+    const SR: f32 = 48_000.0;
+
+    /// Feed a loud stretch then a quiet stretch straight into the loudness
+    /// range meter, so it accumulates a genuine non-zero range — proof that
+    /// this test can actually distinguish "reset" from "never touched".
+    fn build_up_a_nonzero_loudness_range(proof: &mut ProofInstance) {
+        let sr = SR as f64;
+        for block in 0..40_i32 {
+            let amplitude = if block % 2 == 0 { 0.8 } else { 0.03 };
+            for n in 0..4_800_i32 {
+                let phase = block * 4_800 + n;
+                let s =
+                    amplitude * (2.0 * core::f64::consts::PI * 1_000.0 * phase as f64 / sr).sin();
+                proof.chain.lra.process_sample(s as f32, s as f32);
+            }
+        }
+    }
+
+    #[test]
+    fn reset_integrated_also_resets_loudness_range() {
+        let mut proof = ProofInstance::new(SR);
+        build_up_a_nonzero_loudness_range(&mut proof);
+
+        let before_reset = proof.get_lra();
+        assert_ne!(
+            before_reset, 0.0,
+            "the loudness range meter must have accumulated a non-zero reading before \
+             reset for this test to prove anything — a freshly constructed LoudnessRange \
+             reads 0.0"
+        );
+
+        proof.reset_integrated();
+
+        assert_eq!(
+            proof.get_lra(),
+            0.0,
+            "reset_integrated must return the loudness range reading to a freshly \
+             constructed meter's value (0.0) — if it stops calling chain.lra.reset() the \
+             LRA figure keeps accumulating from device instantiation while integrated \
+             loudness restarts, and the two figures on the same panel describe different \
+             programmes"
+        );
     }
 }

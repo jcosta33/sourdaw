@@ -8,6 +8,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { Stack } from '#/components/layout';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -52,7 +53,7 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
     };
 
     return (
-        <div className="flex flex-col gap-1.5 px-2">
+        <Stack gap={1.5} className="px-2">
             <DawPluginSectionHeader
                 title="EQ"
                 size="xs"
@@ -91,9 +92,11 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
 
             <div className={`flex gap-1 overflow-x-auto ${patch.eqBypassed ? 'opacity-30' : ''}`}>
                 {patch.eqBands.map((band, i) => (
-                    <div
+                    <Stack
+                        align="center"
+                        gap={0.5}
+                        className="min-w-[52px] px-0.5 py-1 rounded bg-surface-base/50"
                         key={EQ_BAND_KEYS[i]}
-                        className="flex flex-col items-center gap-0.5 min-w-[52px] px-0.5 py-1 rounded bg-surface-base/50"
                     >
                         {/* Enable toggle */}
                         <button
@@ -190,9 +193,9 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                                 </option>
                             ))}
                         </DawCompactSelect>
-                    </div>
+                    </Stack>
                 ))}
             </div>
-        </div>
+        </Stack>
     );
 };

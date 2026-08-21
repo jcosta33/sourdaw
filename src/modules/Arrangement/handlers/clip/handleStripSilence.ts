@@ -1,58 +1,65 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
-import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
+import { prepareStripSilence } from '../../useCases/prepareStripSilence';
+import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
 import { stripSilence } from '../../useCases/stripSilence';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-type PendingStripSilenceSnapshot = {
-    trackId: string;
-    // See `handleCutClip`'s matching field for the describe-then-finalize
-    // rationale: `execute()` fills this in place once the strip lands, and
-    // the `describe()` result already references this same array.
-    postStripState: TrackClipStateSnapshot[];
-};
+type StripSilenceAction = Extract<AppAction, { type: 'stripSilence' }>;
 
-const pendingStripSilenceSnapshots = new WeakMap<object, PendingStripSilenceSnapshot>();
+function prepareAction(action: StripSilenceAction) {
+    delete action.payload.expected;
+    delete action.payload.replacement;
+    return prepareStripSilence({
+        clipId: action.payload.clipId,
+        threshold: action.payload.threshold,
+        minDuration: action.payload.minDuration,
+    });
+}
 
 export const handleStripSilence = createHandler<'stripSilence'>({
+    materializeCommandArguments: (action) => {
+        const plan = prepareAction(action);
+        if (!plan) {
+            return;
+        }
+        action.payload.expected = plan.previous;
+        action.payload.replacement = plan.next;
+    },
     execute: (action) => {
-        const didWrite = stripSilence(action.payload.clipId, action.payload.threshold, action.payload.minDuration);
-        if (!didWrite) {
-            return { status: 'no-write' };
+        if (action.payload.expected && action.payload.replacement) {
+            return toHandlerExecutionResult(
+                restoreStripSilenceState({
+                    expected: action.payload.expected,
+                    replacement: action.payload.replacement,
+                })
+            );
         }
-
-        const pending = pendingStripSilenceSnapshots.get(action);
-        if (pending) {
-            const settled = captureTrackClipStates([pending.trackId]);
-            pending.postStripState.push(...settled);
-        }
-
-        return { status: 'written' };
+        return toHandlerExecutionResult(
+            stripSilence(action.payload.clipId, action.payload.threshold, action.payload.minDuration)
+        );
     },
     describe: (action) => {
-        // `resolveEligibleClipWriteTarget` runs the same eligibility gate
-        // `stripSilence()` runs internally, before it has rewritten anything.
-        const target = resolveEligibleClipWriteTarget({ clipId: action.payload.clipId });
-        if (target.status !== 'eligible' || !('trackId' in target)) {
+        const plan = prepareAction(action);
+        if (!plan) {
             return { label: 'Strip silence', inverseAction: null };
         }
-
-        const preStripState = captureTrackClipStates([target.trackId]);
-        const postStripState: TrackClipStateSnapshot[] = [];
-        pendingStripSilenceSnapshots.set(action, { trackId: target.trackId, postStripState });
-
+        action.payload.expected = plan.previous;
+        action.payload.replacement = plan.next;
         return {
             label: 'Strip silence',
             inverseAction: {
-                type: 'restoreTrackClipStates',
-                payload: { expected: postStripState, replacement: preStripState },
+                type: 'restoreStripSilenceState',
+                payload: { expected: plan.next, replacement: plan.previous },
             },
             redoAction: {
-                type: 'restoreTrackClipStates',
-                payload: { expected: preStripState, replacement: postStripState },
+                type: 'restoreStripSilenceState',
+                payload: { expected: plan.previous, replacement: plan.next },
             },
         };
     },
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
     undoable: true,
 });

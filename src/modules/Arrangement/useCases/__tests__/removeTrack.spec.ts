@@ -15,6 +15,7 @@ const ownerUseCases = vi.hoisted(() => ({
     setTrackOutput: vi.fn(),
     getAllSidechainRoutes: vi.fn().mockReturnValue([]),
     removeSidechainRoute: vi.fn(),
+    removeClipSatelliteData: vi.fn(),
 }));
 
 vi.mock('../../repositories/track/getTrackState', () => ({
@@ -51,6 +52,9 @@ vi.mock('../../stores/takeLaneStore', () => ({
         set: vi.fn(),
     },
 }));
+vi.mock('../clip/removeClipSatelliteData', () => ({
+    removeClipSatelliteData: ownerUseCases.removeClipSatelliteData,
+}));
 
 const mockEventBus = {
     emit: vi.fn(),
@@ -71,6 +75,7 @@ describe('removeTrack', () => {
         ownerUseCases.getAllSidechainRoutes.mockReset();
         ownerUseCases.getAllSidechainRoutes.mockReturnValue([]);
         ownerUseCases.removeSidechainRoute.mockReset();
+        ownerUseCases.removeClipSatelliteData.mockReset();
     });
 
     it('should return early when track state is missing', () => {
@@ -115,6 +120,9 @@ describe('removeTrack', () => {
         expect(setTrackState).toHaveBeenCalled();
         expect(ownerUseCases.removeAutomationLanesForTrack).toHaveBeenCalledWith('t1');
         expect(ownerUseCases.removeMidiClipData).toHaveBeenCalledWith(['c1', 'c2', 'c3']);
+        // Regression (#2108): a removed track's clips must not leave their gain
+        // envelope / warp state orphaned behind their retired clip ids.
+        expect(ownerUseCases.removeClipSatelliteData).toHaveBeenCalledWith(['c1', 'c2', 'c3']);
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 't1' });
         // The engine strip for the deleted track must be torn down, otherwise its
         // node keeps processing in the live graph (leaked node).

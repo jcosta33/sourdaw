@@ -1,0 +1,84 @@
+{
+    "schemaVersion": 1,
+    "components": [
+        {
+            "id": "faustwasm",
+            "package": "@grame/faustwasm",
+            "version": "0.16.7",
+            "specifier": "0.16.7",
+            "integrity": "sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
+            "repository": "https://github.com/grame-cncm/faustwasm",
+            "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+            "modifications": "none",
+            "distribution": "copied-byte-for-byte",
+            "packageLicense": "LGPL-3.0",
+            "license": "LGPL-2.1-or-later",
+            "licenseFiles": {
+                "public/legal/faustwasm-COPYING.txt": "sha256:587bc956e3703e11aa8f4350193d6f5e37b497d84a552abdbe348b48e542d5a1"
+            },
+            "packageFiles": {
+                "COPYING.txt": "sha256:c747ba23f84a8b47ebc6007bf536215b3ceeab6bfa2f803cab422a512e3f1ed3",
+                "libfaust-wasm/libfaust-wasm.data": "sha256:1a5acda82475a3196eb09444fc6cc42951ae3b8c062828fc4b6f0155a6f23f3f",
+                "libfaust-wasm/libfaust-wasm.js": "sha256:3e582a8a47128ae1eb594c7e39c9a706844304d2377f11439cf3a9f8a8be2622",
+                "libfaust-wasm/libfaust-wasm.wasm": "sha256:c84e10786d9090eb5a70cab806f66b1cf82009d5c0836c473d3cb76fae7e76db"
+            },
+            "shippedFiles": {
+                "public/faust/libfaust-wasm.data": "libfaust-wasm/libfaust-wasm.data",
+                "public/faust/libfaust-wasm.js": "libfaust-wasm/libfaust-wasm.js",
+                "public/faust/libfaust-wasm.wasm": "libfaust-wasm/libfaust-wasm.wasm"
+            },
+            "sources": [
+                {
+                    "id": "faustwasm",
+                    "repository": "https://github.com/grame-cncm/faustwasm",
+                    "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+                    "relationship": "npm-gitHead",
+                    "archive": "https://github.com/grame-cncm/faustwasm/archive/a1ae243d885d6494409a2a4a227cbdd2a6833edf.tar.gz"
+                },
+                {
+                    "id": "faust-core",
+                    "repository": "https://github.com/grame-cncm/faust",
+                    "revision": "011423ab76674cd96009385af15cadcd281a3259",
+                    "version": "2.86.2",
+                    "relationship": "embedded-version-match",
+                    "archive": "https://github.com/grame-cncm/faust/archive/011423ab76674cd96009385af15cadcd281a3259.tar.gz"
+                }
+            ]
+        },
+        {
+            "id": "lamejs",
+            "package": "@breezystack/lamejs",
+            "version": "1.2.7",
+            "specifier": "1.2.7",
+            "integrity": "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
+            "repository": "https://github.com/gideonstele/lamejs",
+            "revision": "1fb0ef5fa177413107e2e107d054a9b994e3f79c",
+            "modifications": "none",
+            "distribution": "vite-bundle",
+            "packageLicense": "LGPL-3.0",
+            "license": "LGPL-3.0-only",
+            "licenseFiles": {
+                "public/legal/LGPL-3.0-and-GPL-3.0.txt": "sha256:5eecce16e59e24ddd9d3712012517a033f2cd0459ace22b43d5659d4624abff0",
+                "public/legal/lamejs-NOTICE.txt": "sha256:b89d10b0c083613ad440e2357ef7b2cddb22e79495237d533efde4cfa3cee5fc"
+            },
+            "packageFiles": {
+                "LICENSE": "sha256:cd144ca132e3842b01f5ed2d6f3a32141e24a1cc15e115aa5f19a2294ce0a379",
+                "dist/lamejs.js": "sha256:1c5f944911ccf2f6e29ab36c2e568363210ab16f50c0d76077060f40ecf91d28"
+            },
+            "shippedFiles": {},
+            "sources": [
+                {
+                    "id": "lamejs",
+                    "repository": "https://github.com/gideonstele/lamejs",
+                    "revision": "1fb0ef5fa177413107e2e107d054a9b994e3f79c",
+                    "relationship": "npm-gitHead",
+                    "archive": "https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz"
+                }
+            ],
+            "integration": {
+                "file": "src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts",
+                "import": "@breezystack/lamejs"
+            }
+        }
+    ]
+}
