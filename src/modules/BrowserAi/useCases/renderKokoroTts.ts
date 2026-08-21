@@ -122,46 +122,44 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
             if (!voice) {
                 throw new Error(`Unknown Kokoro voice "${speakerId}"`);
             }
-
             // Deterministic cache key
             const textEncoder = new TextEncoder();
             const durationKey =
                 targetDurationSec !== undefined && targetDurationSec > 0 ? `:${String(targetDurationSec)}` : '';
             const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}${durationKey}`).buffer;
-            const cacheKey = await computeRenderCacheKey({
-                modelId: KOKORO_MODEL_ID,
-                inputData,
-                qualityParams: 'kokoro-q8',
-            });
-
-            // Check render cache
-            const cached = await readRenderCache({ cacheKey });
-            if (cached) {
-                logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
-                const provenance: RenderProvenance = {
-                    modelId: KOKORO_MODEL_ID,
-                    voiceId: speakerId,
-                    renderQuality: 'standard',
-                    renderedAt: Date.now(),
-                    tier: 'browser-preview',
-                };
-                markRenderComplete(phraseId, cacheKey);
-                return { audio: cached, sampleRate: 44100, provenance };
-            }
-
             enqueueRender({ phraseId, requestId, pipeline: 'kokoro', status: 'preparing', queuedAt: Date.now() });
-            startActiveRender({
-                requestId,
-                phraseId,
-                pipeline: 'kokoro',
-                status: 'rendering-browser',
-                stage: 'Loading Kokoro TTS',
-                progress: 0,
-                startedAt: Date.now(),
-            });
 
             try {
-                updateRenderStatus(phraseId, 'rendering-browser');
+                const cacheKey = await computeRenderCacheKey({
+                    modelId: KOKORO_MODEL_ID,
+                    inputData,
+                    qualityParams: 'kokoro-q8',
+                });
+
+                const cached = await readRenderCache({ cacheKey });
+                if (cached) {
+                    logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
+                    const provenance: RenderProvenance = {
+                        modelId: KOKORO_MODEL_ID,
+                        voiceId: speakerId,
+                        renderQuality: 'standard',
+                        renderedAt: Date.now(),
+                        tier: 'browser-preview',
+                    };
+                    markRenderComplete(phraseId, requestId, cacheKey);
+                    return { audio: cached, sampleRate: 44100, provenance };
+                }
+
+                startActiveRender({
+                    requestId,
+                    phraseId,
+                    pipeline: 'kokoro',
+                    status: 'rendering-browser',
+                    stage: 'Loading Kokoro TTS',
+                    progress: 0,
+                    startedAt: Date.now(),
+                });
+                updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
                 // 1. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
@@ -220,7 +218,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                 applyFades(finalAudio, FADE_SAMPLES);
 
                 await writeRenderCache({ cacheKey, audio: finalAudio });
-                markRenderComplete(phraseId, cacheKey);
+                markRenderComplete(phraseId, requestId, cacheKey);
 
                 const provenance: RenderProvenance = {
                     modelId: KOKORO_MODEL_ID,
@@ -233,7 +231,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                 logger.info(`[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / 44100)}s)`);
                 return { audio: finalAudio, sampleRate: 44100, provenance };
             } catch (error) {
-                updateRenderStatus(phraseId, 'error');
+                updateRenderStatus(phraseId, requestId, 'error');
                 throw error;
             } finally {
                 clearActiveRender(requestId);

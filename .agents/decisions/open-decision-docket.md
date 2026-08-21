@@ -155,7 +155,7 @@ code: no (all dormant).
 | Subsystem | Module(s) | State today | Decision |
 |---|---|---|---|
 | **Extension module** (whole) | Extension | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module. **RESOLVED 2026-07-18 (#427): module deleted — user decision (unfreeze + delete), ADR-0011 W7.** |
-| **DDSP synthesis pipeline** | BrowserAi | TF.js worker is a stub returning `UNAVAILABLE` (`workers/tfjsInferenceWorker.ts:16,40`); PR #101 de-advertised the four DDSP instruments as unavailable instead of `ready`, but the synthesis pipeline itself remains unbuilt | Build the inference, or remove the pipeline |
+| **DDSP synthesis pipeline** | BrowserAi | Exact Magenta runtime artifacts are pinned by URL, size, and SHA-256; direct-only downloads publish versioned OPFS generation truth; a TF.js worker confirms WebGPU before rendering. Checkpoint permission is recorded separately and no Apache license is claimed for the weights. | **RESOLVED 2026-08-21 (#2261): admitted browser and desktop pipeline is implemented and test-guarded.** |
 | **RAVE timbre-transfer** | BrowserAi | Model discovery is OPFS-gated and no factory weights are available; placeholder encode/decode/transfer operations remain unshipped | Build model provisioning and real inference, or remove the placeholder pipeline |
 | **WAM plugin host** | Plugin | `loadWAMPlugin` never called by any production JS (`useCases/wamPluginHost/hostOperations/loadWAMPlugin.ts`) | Build host load/query + UI, or remove the host surface |
 | **Push 2 hardware controller** | ControlSurface | Protocol/codec primitives exist, but no production hardware transport owns them; the two files remain visible `no-orphans` warnings. `handlePadPress` now does an indexed write with a clamped velocity instead of a full `.map()` scan (issue #1828 F-6/F-7); `updateDisplay`/`setPadColor`/`setPadMode`/`setScale`/`mapEncoder` and `pushStore`'s UI reader are still unreached outside specs | Build the connection lifecycle tracked by #1745; do not delete or exempt the primitives |
@@ -1135,7 +1135,7 @@ do, that table is the record and this list is the pointer.
 - **Native plugin hosting: ship or gate.** Unreachable today via two independent mechanisms (the ACL
   grants 3 of ~78 commands; `start_native_engine` has no caller). Shipping is an XL transport
   rework; gating removes VST/AU/CLAP as an advertised capability.
-- **Capabilities to remove or build.** Crust, CvGate, RAVE, the DDSP/TF.js instruments, Bacteria's
+- **Capabilities to remove or build.** Crust, CvGate, RAVE, Bacteria's
   three dead distortion modes, Levain's macros and mic strips, Proof's linear-phase EQ, Crumbs' pads
   and slices, Toaster's internal sequencer. Each removal deletes something a user may have
   configured and persisted. Several are cheaper to *build* than the survey assumed — the DSP already
@@ -1172,8 +1172,8 @@ re-litigated; ADR 0016 is the record.
   the work is deferred.
 - **Unbuilt feature subsystems (finish-or-remove)** — **finish, wherever it can run in the browser.**
   That is the scope rule now, and it replaces the per-row finish-or-remove call for every
-  browser-capable entry in the table above. Two rows (RAVE, DDSP/TF.js) carry an unproven premise:
-  establish that the models run in-browser at acceptable cost before committing to a shape. Rows
+  browser-capable entry in the table above. RAVE carries an unproven premise: establish that its
+  models run in-browser at acceptable cost before committing to a shape. Rows
   whose home is native — the native CRDT backend, Push hardware, MIDI hardware controllers — follow
   the desktop deferral.
 - **Correctness versus existing mixes** — **there are no users; correctness wins outright.** No

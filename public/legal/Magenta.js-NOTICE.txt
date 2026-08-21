@@ -1,0 +1,37 @@
+Magenta.js DDSP code notice
+
+Sourdaw includes code adapted from the Magenta.js DDSP implementation at this
+immutable upstream revision:
+
+https://github.com/magenta/magenta-js/tree/0692eb2b79681f062c6b6dd53a0361967f298caa
+
+The adapted code basis is limited to these exact upstream source files:
+
+- music/src/ddsp/ddsp.ts
+  Feature conditioning, frame conversion, and chunk padding.
+- music/src/ddsp/model.ts
+  DDSP chunk scheduling, one-second overlap, post-gain, and GraphModel Roll
+  operation registration adapted by Sourdaw's tfjsInferenceWorker.ts.
+- music/src/ddsp/constants.ts
+  Conditioning and one-second crossfade constants.
+- music/src/ddsp/audio_utils.ts
+  Linear overlap/crossfade behavior.
+
+Exact sources:
+
+https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts
+https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts
+https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/constants.ts
+https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/audio_utils.ts
+
+Copyright 2020 Google Inc. All Rights Reserved.
+Copyright 2018 The Magenta Team. All rights reserved.
+
+Licensed under the Apache License, Version 2.0. The complete unmodified license
+text is distributed beside this notice as Apache-2.0.txt. Sourdaw's worker and
+runtime contain adaptations and modifications of the behavior identified above.
+
+This notice and Apache-2.0 grant apply only to the Magenta.js source-code basis.
+They do not state or imply that the separately downloaded Magenta DDSP checkpoint
+weights are Apache-2.0. The checkpoint weights remain separately permissioned and
+license-unverified in Sourdaw's release inventory.

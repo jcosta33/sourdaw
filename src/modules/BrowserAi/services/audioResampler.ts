@@ -83,6 +83,29 @@ export function normalizePeak(audio: Float32Array): void {
 }
 
 /**
+ * Preserve checkpoint dynamics unless the rendered signal would clip.
+ * Non-finite model output is made silent before the peak is measured.
+ */
+export function limitPeak(audio: Float32Array): void {
+    let peak = 0;
+    for (let index = 0; index < audio.length; index += 1) {
+        const sample = audio[index]!;
+        if (!Number.isFinite(sample)) {
+            audio[index] = 0;
+            continue;
+        }
+        peak = Math.max(peak, Math.abs(sample));
+    }
+    if (peak <= 1) {
+        return;
+    }
+    const scale = 1 / peak;
+    for (let index = 0; index < audio.length; index += 1) {
+        audio[index]! *= scale;
+    }
+}
+
+/**
  * Convert MIDI note number to frequency in Hz.
  * MIDI 69 (A4) = 440 Hz.
  */

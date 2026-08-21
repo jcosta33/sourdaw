@@ -242,7 +242,55 @@ describe('downloadModel storage worker stream', () => {
 
         await downloadModel({ spec: baseSpec, signal: controller.signal });
 
-        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { signal: controller.signal });
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'error', signal: controller.signal });
+    });
+
+    it('should follow the verified Kokoro redirect while retaining exact size and SHA verification', async () => {
+        const bytes = new Uint8Array(30);
+        const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+            if (init?.redirect !== 'follow') {
+                throw new TypeError('redirect rejected');
+            }
+            return streamingResponse([bytes], bytes.byteLength);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await downloadModel({
+            spec: {
+                ...baseSpec,
+                family: 'kokoro',
+                url: 'https://huggingface.co/pinned/kokoro.onnx',
+                sha256: 'a'.repeat(64),
+            },
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith('https://huggingface.co/pinned/kokoro.onnx', {
+            redirect: 'follow',
+            signal: undefined,
+        });
+        expect(beginModelWrite).toHaveBeenCalledWith(
+            expect.objectContaining({ expectedSizeBytes: bytes.byteLength, expectedSha256: 'a'.repeat(64) })
+        );
+    });
+
+    it('should reject a DDSP redirect before opening storage', async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+            if (init?.redirect === 'error') {
+                throw new TypeError('redirect rejected');
+            }
+            return streamingResponse([new Uint8Array(30)], 30);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const promise = downloadModel({ spec: { ...baseSpec, redirectPolicy: 'reject' } });
+        const rejection = expect(promise).rejects.toThrow('redirect rejected');
+        await vi.runAllTimersAsync();
+        await rejection;
+
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'error', signal: undefined });
+        expect(beginModelWrite).not.toHaveBeenCalled();
     });
 
     it('passes exact release verification and archive extraction to the storage worker', async () => {

@@ -1,0 +1,414 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
+const inferenceWorkerBridge = vi.hoisted(() => ({
+    loadDdspSession: vi.fn(),
+    runDdspInference: vi.fn(),
+}));
+
+vi.mock('../../repositories/inferenceWorkerBridge', () => ({ inferenceWorkerBridge }));
+
+import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
+import { renderQueueStore } from '../../stores/renderQueueStore';
+import { renderDdspInstrument } from '../renderDdspInstrument';
+
+type Deferred<T> = {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+    reject: (reason: unknown) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+    let resolveDeferred: (value: T) => void = () => undefined;
+    let rejectDeferred: (reason: unknown) => void = () => undefined;
+    const promise = new Promise<T>((resolve, reject) => {
+        resolveDeferred = resolve;
+        rejectDeferred = reject;
+    });
+    return { promise, resolve: resolveDeferred, reject: rejectDeferred };
+}
+
+function result(sample = 0.25, sampleCount = 1_000) {
+    return {
+        type: 'ddsp-result' as const,
+        requestId: 'worker-request',
+        audio: new Float32Array(sampleCount).fill(sample),
+        nativeSampleRate: 44_100,
+        backend: 'webgpu' as const,
+    };
+}
+
+function expectAdmittedDdspProvenance(rendered: Awaited<ReturnType<typeof renderDdspInstrument>>): void {
+    expect(rendered.provenance).toEqual({
+        modelId: 'ddsp-violin',
+        renderQuality: 'standard',
+        renderedAt: expect.any(Number),
+        tier: 'browser-preview',
+    });
+    expect(Number.isFinite(rendered.provenance.renderedAt)).toBe(true);
+}
+
+const REQUEST_A = '00000000-0000-4000-8000-00000000000a';
+const REQUEST_B = '00000000-0000-4000-8000-00000000000b';
+
+describe('renderDdspInstrument request ownership', () => {
+    const computeRenderCacheKey = vi.fn().mockResolvedValue('cache-key');
+    const readRenderCache = vi.fn().mockResolvedValue(null);
+    const writeRenderCache = vi.fn().mockResolvedValue(undefined);
+    const checkDdspInstrumentReady = vi.fn().mockResolvedValue(true);
+    const withDdspInstrumentLock = vi.fn(
+        (_id: string, _mode: 'shared' | 'exclusive', operation: () => Promise<unknown>) => operation()
+    );
+    const logger = {
+        debug: vi.fn(),
+        error: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+    };
+
+    const launch = (pitch: number, signal?: AbortSignal) =>
+        renderDdspInstrument({
+            phraseId: 'phrase-A',
+            instrumentId: 'ddsp-violin',
+            durationSec: 1,
+            notes: [{ pitch, velocity: 100, startSec: 0, durationSec: 0.5 }],
+            signal,
+        });
+
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        readRenderCache.mockReset().mockResolvedValue(null);
+        computeRenderCacheKey.mockReset().mockResolvedValue('cache-key');
+        writeRenderCache.mockReset().mockResolvedValue(undefined);
+        checkDdspInstrumentReady.mockReset().mockResolvedValue(true);
+        withDdspInstrumentLock.mockClear();
+        inferenceWorkerBridge.loadDdspSession.mockReset().mockResolvedValue('webgpu');
+        inferenceWorkerBridge.runDdspInference.mockReset();
+        inferenceProgressStore.set({ activeRenders: {} });
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+        injectDependencies(renderDdspInstrument, {
+            logger,
+            computeRenderCacheKey,
+            readRenderCache,
+            writeRenderCache,
+            ddspModelStorage: { checkDdspInstrumentReady },
+            inferenceWorkerBridge,
+            withDdspInstrumentLock,
+        });
+    });
+
+    it('should return the confirmed runtime backend and use the versioned model key end to end', async () => {
+        inferenceWorkerBridge.runDdspInference.mockResolvedValue(result());
+
+        const rendered = await launch(60);
+
+        const modelId = 'ddsp-violin:magenta-js-ddsp-2020-01-05';
+        expect(rendered.backend).toBe('webgpu');
+        expect(withDdspInstrumentLock).toHaveBeenCalledWith('ddsp-violin', 'shared', expect.any(Function));
+        expect(checkDdspInstrumentReady).toHaveBeenCalledWith({
+            id: 'ddsp-violin',
+            version: 'magenta-js-ddsp-2020-01-05',
+            artifacts: expect.any(Array),
+        });
+        expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledWith(
+            expect.objectContaining({ modelId }),
+            undefined
+        );
+        expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledWith(
+            expect.objectContaining({ modelId }),
+            undefined
+        );
+        expect(computeRenderCacheKey).toHaveBeenCalledWith(
+            expect.objectContaining({ modelId, qualityParams: 'ddsp-conditioned-v2-250-samples44100-44100' })
+        );
+        expect(rendered.audio[500]).toBeCloseTo(0.25, 6);
+        expectAdmittedDdspProvenance(rendered);
+    });
+
+    it('should hold the shared generation lock through readiness, session creation, and inference', async () => {
+        const pending = deferred<ReturnType<typeof result>>();
+        let insideSharedLock = false;
+        withDdspInstrumentLock.mockImplementationOnce(async (_id, mode, operation) => {
+            expect(mode).toBe('shared');
+            insideSharedLock = true;
+            try {
+                return await operation();
+            } finally {
+                insideSharedLock = false;
+            }
+        });
+        checkDdspInstrumentReady.mockImplementationOnce(async () => {
+            expect(insideSharedLock).toBe(true);
+            return true;
+        });
+        inferenceWorkerBridge.loadDdspSession.mockImplementationOnce(async () => {
+            expect(insideSharedLock).toBe(true);
+            return 'webgpu';
+        });
+        inferenceWorkerBridge.runDdspInference.mockImplementationOnce(async () => {
+            expect(insideSharedLock).toBe(true);
+            return pending.promise;
+        });
+
+        const rendering = launch(60);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledOnce());
+        expect(insideSharedLock).toBe(true);
+        pending.resolve(result());
+        await rendering;
+        expect(insideSharedLock).toBe(false);
+    });
+
+    it('should refuse a render starting after removal or seeing an unpublished/wrong generation', async () => {
+        checkDdspInstrumentReady.mockResolvedValueOnce(false);
+
+        await expect(launch(60)).rejects.toThrow('generation is not ready');
+
+        expect(inferenceWorkerBridge.loadDdspSession).not.toHaveBeenCalled();
+        expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
+    });
+
+    it('should confirm the runtime backend before returning cached audio', async () => {
+        const cached = new Float32Array(44_100).fill(0.1);
+        readRenderCache.mockResolvedValueOnce(cached);
+
+        const rendered = await launch(60);
+
+        expect(rendered).toMatchObject({ audio: cached, backend: 'webgpu', sampleRate: 44_100 });
+        expectAdmittedDdspProvenance(rendered);
+        expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledOnce();
+        expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
+    });
+
+    it('should keep exact requested sample duration in cache identity and live output inside one feature-frame bucket', async () => {
+        computeRenderCacheKey.mockImplementation(async ({ qualityParams }: { qualityParams: string }) => qualityParams);
+        inferenceWorkerBridge.runDdspInference.mockResolvedValue(result(0.25, 30_000));
+        const renderAt = (phraseId: string, durationSec: number) =>
+            renderDdspInstrument({
+                phraseId,
+                instrumentId: 'ddsp-violin',
+                durationSec,
+                notes: [{ pitch: 60, velocity: 100, startSec: 0, durationSec: 0.1 }],
+            });
+
+        const first = await renderAt('duration-a', 0.5001);
+        const second = await renderAt('duration-b', 0.5039);
+
+        expect(first.audio).toHaveLength(22_054);
+        expect(second.audio).toHaveLength(22_222);
+        expect(computeRenderCacheKey).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ qualityParams: 'ddsp-conditioned-v2-126-samples44100-22054' })
+        );
+        expect(computeRenderCacheKey).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ qualityParams: 'ddsp-conditioned-v2-126-samples44100-22222' })
+        );
+        expect(computeRenderCacheKey.mock.calls[0]?.[0].inputData).toEqual(
+            computeRenderCacheKey.mock.calls[1]?.[0].inputData
+        );
+        expect(first.audio[22_054 - 442]).toBeCloseTo(0.25, 6);
+        expect(first.audio.at(-1)).toBe(0);
+        expectAdmittedDdspProvenance(first);
+        expectAdmittedDdspProvenance(second);
+    });
+
+    it('should reject a cached buffer with the wrong exact duration and replace it with exact live output', async () => {
+        const stale = new Float32Array(22_050).fill(0.1);
+        readRenderCache.mockResolvedValueOnce(stale);
+        inferenceWorkerBridge.runDdspInference.mockResolvedValueOnce(result(0.25, 30_000));
+
+        const rendered = await renderDdspInstrument({
+            phraseId: 'cached-duration',
+            instrumentId: 'ddsp-violin',
+            durationSec: 0.5001,
+            notes: [{ pitch: 60, velocity: 100, startSec: 0, durationSec: 0.1 }],
+        });
+
+        expect(rendered.audio).toHaveLength(22_054);
+        expect(rendered.audio).not.toBe(stale);
+        expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledOnce();
+        expect(writeRenderCache).toHaveBeenCalledWith({ cacheKey: 'cache-key', audio: rendered.audio });
+        expectAdmittedDdspProvenance(rendered);
+    });
+
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+        'should reject a non-positive or non-finite duration before queue and worker mutation: %s',
+        async (durationSec) => {
+            await expect(
+                renderDdspInstrument({
+                    phraseId: 'invalid-duration',
+                    instrumentId: 'ddsp-violin',
+                    durationSec,
+                    notes: [],
+                })
+            ).rejects.toThrow(/duration/u);
+
+            expect(inferenceWorkerBridge.loadDdspSession).not.toHaveBeenCalled();
+            expect(renderQueueStore.value?.entries).toEqual([]);
+        }
+    );
+
+    it('should refuse a render if the runtime backend changes after session creation', async () => {
+        inferenceWorkerBridge.runDdspInference.mockResolvedValue({ ...result(), backend: 'wasm' });
+
+        await expect(launch(60)).rejects.toThrow('webgpu -> wasm');
+
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
+    });
+
+    it('should keep the newer request current when the older request completes first', async () => {
+        const older = deferred<ReturnType<typeof result>>();
+        const newer = deferred<ReturnType<typeof result>>();
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
+        inferenceWorkerBridge.runDdspInference
+            .mockImplementationOnce(() => older.promise)
+            .mockImplementationOnce(() => newer.promise);
+
+        const olderRender = launch(60);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(1));
+        const newerRender = launch(62);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(2));
+
+        older.resolve(result(0.1));
+        await olderRender;
+
+        expect(renderQueueStore.value?.entries).toEqual([
+            expect.objectContaining({ phraseId: 'phrase-A', requestId: REQUEST_B }),
+        ]);
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('rendering-browser');
+        expect(inferenceProgressStore.value?.activeRenders[REQUEST_B]).toBeDefined();
+
+        newer.resolve(result(0.2));
+        await newerRender;
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.cachedPhraseIds).toHaveLength(1);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
+    });
+
+    it('should not let an older completion overwrite a newer request that already completed', async () => {
+        const older = deferred<ReturnType<typeof result>>();
+        const newer = deferred<ReturnType<typeof result>>();
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
+        inferenceWorkerBridge.runDdspInference
+            .mockImplementationOnce(() => older.promise)
+            .mockImplementationOnce(() => newer.promise);
+
+        const olderRender = launch(60);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(1));
+        const newerRender = launch(62);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(2));
+
+        newer.resolve(result(0.2));
+        await newerRender;
+        const completedState = structuredClone(renderQueueStore.value);
+
+        older.resolve(result(0.1));
+        await olderRender;
+
+        expect(renderQueueStore.value).toEqual(completedState);
+        expect(renderQueueStore.value?.cachedPhraseIds).toHaveLength(1);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
+    });
+
+    it('should ignore an older failure but record the current request failure', async () => {
+        const older = deferred<ReturnType<typeof result>>();
+        const newer = deferred<ReturnType<typeof result>>();
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
+        inferenceWorkerBridge.runDdspInference
+            .mockImplementationOnce(() => older.promise)
+            .mockImplementationOnce(() => newer.promise);
+
+        const olderRender = launch(60);
+        void olderRender.catch(() => undefined);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(1));
+        const newerRender = launch(62);
+        void newerRender.catch(() => undefined);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(2));
+
+        older.reject(new Error('older failed'));
+        await expect(olderRender).rejects.toThrow('older failed');
+        expect(renderQueueStore.value?.entries).toEqual([
+            expect.objectContaining({ requestId: REQUEST_B, status: 'rendering-browser' }),
+        ]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('rendering-browser');
+        expect(inferenceProgressStore.value?.activeRenders[REQUEST_B]).toBeDefined();
+
+        newer.reject(new Error('newer failed'));
+        await expect(newerRender).rejects.toThrow('newer failed');
+        expect(renderQueueStore.value?.entries[0]).toEqual(
+            expect.objectContaining({ requestId: REQUEST_B, status: 'error' })
+        );
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
+    });
+
+    it('should propagate late cancellation without letting the old request remove the newer one', async () => {
+        const older = deferred<ReturnType<typeof result>>();
+        const newer = deferred<ReturnType<typeof result>>();
+        const olderController = new AbortController();
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
+        inferenceWorkerBridge.runDdspInference
+            .mockImplementationOnce((_input: unknown, signal: AbortSignal | undefined) => {
+                signal?.addEventListener(
+                    'abort',
+                    () => older.reject(new DOMException('Render cancelled', 'AbortError')),
+                    { once: true }
+                );
+                return older.promise;
+            })
+            .mockImplementationOnce(() => newer.promise);
+
+        const olderRender = launch(60, olderController.signal);
+        void olderRender.catch(() => undefined);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(1));
+        const newerRender = launch(62);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledTimes(2));
+
+        olderController.abort();
+        await expect(olderRender).rejects.toMatchObject({ name: 'AbortError' });
+        expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenNthCalledWith(
+            1,
+            expect.any(Object),
+            olderController.signal
+        );
+        expect(inferenceWorkerBridge.runDdspInference).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ requestId: REQUEST_A }),
+            olderController.signal
+        );
+        expect(renderQueueStore.value?.entries).toEqual([expect.objectContaining({ requestId: REQUEST_B })]);
+        expect(inferenceProgressStore.value?.activeRenders[REQUEST_B]).toBeDefined();
+
+        newer.resolve(result(0.2));
+        await newerRender;
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
+    });
+
+    it('should remove only the current request when that request is cancelled', async () => {
+        const pending = deferred<ReturnType<typeof result>>();
+        const controller = new AbortController();
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A);
+        inferenceWorkerBridge.runDdspInference.mockImplementationOnce(
+            (_input: unknown, signal: AbortSignal | undefined) => {
+                signal?.addEventListener(
+                    'abort',
+                    () => pending.reject(new DOMException('Render cancelled', 'AbortError')),
+                    { once: true }
+                );
+                return pending.promise;
+            }
+        );
+
+        const renderPromise = launch(60, controller.signal);
+        void renderPromise.catch(() => undefined);
+        await vi.waitFor(() => expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledOnce());
+        controller.abort();
+
+        await expect(renderPromise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('not-rendered');
+        expect(inferenceProgressStore.value?.activeRenders[REQUEST_A]).toBeUndefined();
+    });
+});

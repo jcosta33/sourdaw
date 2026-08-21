@@ -4,7 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { modelRegistryStore } from '#/modules/BrowserAi/stores';
-import { downloadModel, KOKORO_MODEL_ENTRY, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { downloadModel, KOKORO_MODEL_ENTRY, renderDdspInstrument, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
@@ -73,6 +74,7 @@ vi.mock('#/modules/BrowserAi/useCases', async (importOriginal) => {
     return {
         ...actual,
         downloadModel: vi.fn(),
+        renderDdspInstrument: vi.fn(),
         renderKokoroTts: vi.fn(),
     };
 });
@@ -266,6 +268,19 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
     };
 
+    const captureLaunchAbort = () => {
+        const abort = AbortController.prototype.abort;
+        let abortedSignal: AbortSignal | undefined;
+        const spy = vi.spyOn(AbortController.prototype, 'abort').mockImplementation(function captureSignal(
+            this: AbortController,
+            reason?: unknown
+        ): void {
+            abortedSignal = this.signal;
+            abort.call(this, reason);
+        });
+        return { spy, signal: () => abortedSignal };
+    };
+
     const makeRenderOutput = () => ({
         audio: new Float32Array([0.25, -0.25]),
         sampleRate: 44100,
@@ -276,6 +291,46 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             tier: 'browser-preview' as const,
         },
     });
+
+    const ddspInstrument = {
+        id: 'ddsp-violin',
+        name: 'Violin',
+        family: 'ddsp' as const,
+        instrument: 'violin',
+        url: 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json',
+        sizeBytes: 4,
+        license: 'Unverified' as const,
+        attribution: 'Magenta',
+        nativeSampleRate: 16_000,
+        frameRate: 250,
+        artifactVersion: 'v1',
+        artifacts: [],
+        status: 'ready' as const,
+        downloadProgress: 1,
+    };
+
+    const setDdspReadyRegistry = (): void => {
+        modelRegistryStore.set({
+            ddspInstruments: [ddspInstrument],
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+    };
+
+    const setDdspNotes = (...clips: Clip[]): void => {
+        midiStoreMock.state = {
+            notesByClipId: Object.fromEntries(
+                clips.map((clip) => [
+                    clip.id,
+                    [{ id: `note-${clip.id}`, pitch: 60, velocity: 100, startBeat: 0, duration: 1 }],
+                ])
+            ),
+        };
+    };
+
+    const ddspButton = (): HTMLElement => screen.getByRole('button', { name: /Rendering…|Render Instrument/ });
 
     const installTtsMock = (): void => {
         vi.mocked(renderKokoroTts).mockImplementation(async () => {
@@ -311,6 +366,8 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
     beforeEach(() => {
         vi.clearAllMocks();
         midiStoreMock.state = null;
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
         ttsCalls = newCallLog();
         variationCalls = newCallLog();
         variationTokenSinks.length = 0;
@@ -321,6 +378,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         // clearMocks/mockReset in vite.config.ts nor any global reset in setupTests.ts. Without
         // this, an implementation installed by one test leaks into every later test in the file.
         vi.mocked(renderKokoroTts).mockReset();
+        vi.mocked(renderDdspInstrument).mockReset();
         vi.mocked(generateMidiVariations).mockReset();
         modelRegistryStore.set({
             ddspInstruments: [],
@@ -329,18 +387,21 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             vocoder: null,
             storageUsedBytes: 0,
         });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
+        vi.restoreAllMocks();
     });
 
     // ADR 0015 — a launch stops owning the panel two independent ways, and both are driven in
     // both directions here:
     //
     //   identity     — the panel moved to another clip   (`renderedClipIdRef` vs `launchClipId`)
-    //   supersession — a newer launch replaced this one  (`signal.aborted`)
+    //   cancellation  — clip-change cleanup aborted it   (`signal.aborted`)
     //
-    // Supersession is reachable because the clip-change reset clears the in-flight flags, so an
-    // A→B→A round trip re-enables a button whose first job is still running. Every absence
-    // assertion below is pinned by a positive twin, so "never write anything back" would red the
-    // pair rather than pass it.
+    // An A→B→A round trip is useful because clip identity matches again when the abandoned A job
+    // settles; only the signal proves the committed B transition cancelled its panel ownership.
+    // Every absence assertion below is pinned by a positive twin, so "never write anything back"
+    // would red the pair rather than pass it.
 
     it('downloads Kokoro through its exact artifact manifest', () => {
         render(<ClipMidiAiSection clip={clipA} />);
@@ -354,6 +415,263 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
             sha256: KOKORO_MODEL_ENTRY.sha256,
         });
+    });
+
+    it('should use the transport default tempo when the tempo map is empty', async () => {
+        setDdspReadyRegistry();
+        const nonzeroTimelineClip = { ...clipA, startBeat: 8, endBeat: 12 };
+        transportStore.set({ ...defaultTransportState, tempo: 90 });
+        tempoMapStore.set({ changes: [] });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [nonzeroTimelineClip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 1 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue({
+            audio: new Float32Array([0.1, 0.2]),
+            sampleRate: 44_100,
+            provenance: {
+                modelId: ddspInstrument.id,
+                renderQuality: 'standard',
+                renderedAt: 1,
+                tier: 'browser-preview',
+            },
+        });
+
+        render(<ClipMidiAiSection clip={nonzeroTimelineClip} />);
+        fireEvent.click(screen.getByRole('button', { name: /Render Instrument/ }));
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input).toEqual(
+            expect.objectContaining({
+                phraseId: `${nonzeroTimelineClip.id}-ddsp`,
+                instrumentId: ddspInstrument.id,
+                signal: expect.any(AbortSignal),
+            })
+        );
+        expect(input?.durationSec).toBeCloseTo(8 / 3, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(2 / 3, 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(2 / 3, 9);
+    });
+
+    it('should integrate a mid-clip tempo step for clip-relative DDSP timing', async () => {
+        setDdspReadyRegistry();
+        const clip = { ...clipA, startBeat: 8, endBeat: 12 };
+        tempoMapStore.set({
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'step', beat: 10, tempo: 60, curve: 'instant' },
+            ],
+        });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [clip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 2 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue(makeRenderOutput());
+
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.click(ddspButton());
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input?.durationSec).toBeCloseTo(3, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(0.5, 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(1.5, 9);
+    });
+
+    it('should integrate a tempo ramp crossed by the clip and its note', async () => {
+        setDdspReadyRegistry();
+        const clip = { ...clipA, startBeat: 8, endBeat: 12 };
+        tempoMapStore.set({
+            changes: [
+                { id: 'ramp', beat: 8, tempo: 60, curve: 'linear' },
+                { id: 'target', beat: 12, tempo: 120, curve: 'instant' },
+            ],
+        });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [clip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 2 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue(makeRenderOutput());
+
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.click(ddspButton());
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input?.durationSec).toBeCloseTo(4 * Math.LN2, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(4 * Math.log(75 / 60), 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(4 * Math.log(105 / 75), 9);
+    });
+
+    it('should use a tempo-map event before the clip while keeping note timing clip-relative', async () => {
+        setDdspReadyRegistry();
+        const clip = { ...clipA, startBeat: 8, endBeat: 12 };
+        tempoMapStore.set({ changes: [{ id: 'prior', beat: 4, tempo: 150, curve: 'instant' }] });
+        midiStoreMock.state = {
+            notesByClipId: {
+                [clip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 1 }],
+            },
+        };
+        vi.mocked(renderDdspInstrument).mockResolvedValue(makeRenderOutput());
+
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.click(ddspButton());
+
+        await screen.findByTestId('ai-render-preview');
+        const input = vi.mocked(renderDdspInstrument).mock.calls[0]?.[0];
+        expect(input?.durationSec).toBeCloseTo(1.6, 9);
+        expect(input?.notes[0]?.startSec).toBeCloseTo(0.4, 9);
+        expect(input?.notes[0]?.durationSec).toBeCloseTo(0.4, 9);
+    });
+
+    it('should drop a DDSP completion after switching clips while the current launch still paints and notifies', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const first = createGate();
+        const second = createGate();
+        let firstSignal: AbortSignal | undefined;
+        let firstAbortCount = 0;
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async ({ signal }) => {
+                firstSignal = signal;
+                signal?.addEventListener('abort', () => {
+                    firstAbortCount += 1;
+                });
+                await first.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await second.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        expect(firstSignal?.aborted).toBe(true);
+        expect(firstAbortCount).toBe(1);
+        fireEvent.click(ddspButton());
+        await settleJobs(() => first.open());
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        await settleJobs(() => second.open());
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
+        expect(firstAbortCount).toBe(1);
+    });
+
+    it('should abort the owned DDSP render on unmount and ignore its late completion', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA);
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        let abortCount = 0;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            signal?.addEventListener('abort', () => {
+                abortCount += 1;
+            });
+            await pending.promise;
+            return makeRenderOutput();
+        });
+
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        unmount();
+
+        expect(signal?.aborted).toBe(true);
+        expect(abortCount).toBe(1);
+        await settleJobs(() => pending.open());
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(abortCount).toBe(1);
+    });
+
+    it('should keep an A→B→A-abandoned DDSP completion out of the fresh A panel', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const first = createGate();
+        const second = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await first.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await second.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        rerender(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        await settleJobs(() => first.open());
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        await settleJobs(() => second.open());
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+    });
+
+    it('should not report a DDSP failure or clear the newer spinner after switching clips', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const abandoned = createGate();
+        const current = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await abandoned.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await current.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        fireEvent.click(ddspButton());
+
+        await settleJobs(() => abandoned.fail(new Error('abandoned DDSP failure')));
+
+        // Removing the ownership guard in either catch or finally makes this error toast appear
+        // or returns clip B's still-pending launch to an enabled button.
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+        expect(ddspButton()).toHaveTextContent('Rendering…');
+
+        await settleJobs(() => current.open());
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
+    });
+
+    it('should suppress an A→B→A-abandoned DDSP failure while reporting the fresh A failure', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const abandoned = createGate();
+        const current = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await abandoned.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await current.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        rerender(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+
+        await settleJobs(() => abandoned.fail(new Error('abandoned DDSP failure')));
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+        expect(ddspButton()).toHaveTextContent('Rendering…');
+
+        await settleJobs(() => current.fail(new Error('current DDSP failure')));
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('current DDSP failure', 'error');
+        expect(ddspButton()).toHaveTextContent('Render Instrument');
     });
 
     it('discards a TTS render that resolves after a clip switch (audit M-250)', async () => {
@@ -397,6 +715,43 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             '3 alternatives rendered — drag one onto an audio track',
         ]);
         expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(3);
+    });
+
+    it('should abort the owned TTS render on unmount and ignore its late completion', async () => {
+        setKokoroReadyRegistry();
+        installTtsMock();
+        const pending = hold(ttsCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        launchTtsRender('hello world');
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.open());
+        expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(1);
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
+    it('should abort the owned TTS render on unmount and ignore its late failure', async () => {
+        setKokoroReadyRegistry();
+        installTtsMock();
+        const pending = hold(ttsCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        launchTtsRender('hello world');
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.fail(new Error('late TTS failure')));
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
 
     it('does not report a TTS failure that arrives after a clip switch (audit M-250)', async () => {
@@ -451,14 +806,14 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(renderButton().textContent).toContain('Rendering…');
     });
 
-    // Same-clip supersession. The clip-change reset clears isRenderingTts, so an
-    // A→B→A round trip re-enables the render button while the first job is still in flight —
-    // `launchClipId` is identical for both launches and cannot separate them.
+    // The clip-change reset clears isRenderingTts, so an A→B→A round trip re-enables the render
+    // button while the first job is still in flight. `launchClipId` matches again after returning
+    // to A, so this specifically proves the committed clip-change cleanup aborted the old launch.
 
-    it('discards a TTS launch superseded by a newer launch on the same clip (audit M-250)', async () => {
+    it('should keep an A→B→A-abandoned TTS launch out of the fresh A panel (audit M-250)', async () => {
         setKokoroReadyRegistry();
         installTtsMock();
-        const superseded = hold(ttsCalls, 1);
+        const abandoned = hold(ttsCalls, 1);
         hold(ttsCalls, 2);
         const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
         launchTtsRender('first take');
@@ -468,11 +823,11 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         launchTtsRender('second take');
         expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(2);
 
-        await settleJobs(() => superseded.open());
+        await settleJobs(() => abandoned.open());
 
-        // Mutation that reds this test: drop `ttsLaunchRef.current?.abort()` from the launch in
-        // handlePreviewVoice, or drop the `signal.aborted` branch from stillOwnsPanel — the
-        // first launch then paints its previews and stops the second launch's spinner.
+        // Mutation that reds this test: omit TTS from the clip-change cleanup, or drop the
+        // `signal.aborted` branch from stillOwnsPanel — the abandoned launch then paints its
+        // previews and stops the fresh launch's spinner.
         expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
         expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
         expect(renderButton().textContent).toContain('Rendering…');
@@ -509,6 +864,38 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('MIDI variations generated', [
             '3 variations created as alternative clips',
         ]);
+    });
+
+    it('should abort the owned variation generation on unmount and ignore its late completion', async () => {
+        installVariationsMock();
+        const pending = hold(variationCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(variationsButton());
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.open());
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
+    it('should abort the owned variation generation on unmount and ignore its late failure', async () => {
+        installVariationsMock();
+        const pending = hold(variationCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(variationsButton());
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.fail(new Error('late variation failure')));
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
 
     it("keeps an abandoned generation out of the new clip's streaming readout (audit M-250)", async () => {
@@ -576,9 +963,9 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(variationsButton().textContent).toContain('Generating…');
     });
 
-    it('discards a variation launch superseded by a newer launch on the same clip (audit M-250)', async () => {
+    it('should keep an A→B→A-abandoned variation launch out of the fresh A panel (audit M-250)', async () => {
         installVariationsMock();
-        const superseded = hold(variationCalls, 1);
+        const abandoned = hold(variationCalls, 1);
         hold(variationCalls, 2);
         const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
         fireEvent.click(variationsButton());
@@ -588,11 +975,11 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         fireEvent.click(variationsButton());
         expect(vi.mocked(generateMidiVariations)).toHaveBeenCalledTimes(2);
 
-        await settleJobs(() => superseded.open());
+        await settleJobs(() => abandoned.open());
 
-        // Mutation that reds this test: drop `variationsLaunchRef.current?.abort()` from the
-        // launch in handleGenerateVariations, or drop the `signal.aborted` branch from
-        // stillOwnsPanel — the first launch then announces and stops the second's spinner.
+        // Mutation that reds this test: omit variations from the clip-change cleanup, or drop
+        // the `signal.aborted` branch from stillOwnsPanel — the abandoned launch then announces
+        // and stops the fresh launch's spinner.
         expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
         expect(variationsButton().textContent).toContain('Generating…');
     });

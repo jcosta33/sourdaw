@@ -35,6 +35,33 @@ that exact compiler commit produced the binary.
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
 [RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
 
+## TensorFlow.js runtime
+
+Browser and desktop DDSP rendering includes the exact ten-package closure recorded in
+[TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt). Most of the closure is Apache-2.0, but
+`@tensorflow/tfjs-layers` is dual-licensed under Apache-2.0 AND MIT and `seedrandom` is MIT.
+
+The complete shared Apache text is [Apache-2.0.txt](./Apache-2.0.txt). The exact upstream
+TensorFlow.js Layers dual-license file, with its copyrights, is
+[TensorFlow.js-Layers-LICENSE.txt](./TensorFlow.js-Layers-LICENSE.txt). The exact `seedrandom`
+and bundled Alea MIT notices are [seedrandom-MIT.txt](./seedrandom-MIT.txt).
+
+This attribution applies to the TensorFlow.js runtime only. It does not state or imply that the
+separately downloaded Magenta DDSP checkpoint weights are licensed under Apache-2.0.
+
+## Magenta.js DDSP code basis
+
+Sourdaw's DDSP worker adapts feature conditioning, chunk overlap/crossfade, post-gain, and the
+GraphModel `Roll` operation from Magenta.js at immutable revision
+`0692eb2b79681f062c6b6dd53a0361967f298caa`. The upstream source files retain Google's copyright
+notice and are licensed under Apache License 2.0.
+
+See [Magenta.js-NOTICE.txt](./Magenta.js-NOTICE.txt) for the exact files, revision, copyright, and
+adaptation scope. The complete license is [Apache-2.0.txt](./Apache-2.0.txt).
+
+This code attribution is separate from the downloaded Magenta DDSP checkpoint weights. Sourdaw does
+not describe those weights as Apache-2.0.
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).

@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkDdspTfjsWorkerBundle, DDSP_TFJS_BUNDLE_PACKAGES } from './checkDdspTfjsWorkerBundle.ts';
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
@@ -65,8 +66,173 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+export const TFJS_APACHE_LICENSE_PATH = 'public/legal/Apache-2.0.txt';
+export const TFJS_NOTICE_PATH = 'public/legal/TensorFlow.js-NOTICE.txt';
+export const TFJS_LAYERS_LICENSE_PATH = 'public/legal/TensorFlow.js-Layers-LICENSE.txt';
+export const SEEDRANDOM_LICENSE_PATH = 'public/legal/seedrandom-MIT.txt';
+export const MAGENTA_NOTICE_PATH = 'public/legal/Magenta.js-NOTICE.txt';
+export const THIRD_PARTY_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
+
+export const DDSP_RELEASE_INVENTORY_PATHS = [
+    'index.html',
+    'package.json',
+    'pnpm-lock.yaml',
+    TFJS_APACHE_LICENSE_PATH,
+    TFJS_NOTICE_PATH,
+    TFJS_LAYERS_LICENSE_PATH,
+    SEEDRANDOM_LICENSE_PATH,
+    MAGENTA_NOTICE_PATH,
+    THIRD_PARTY_NOTICE_PATH,
+    'vite.config.ts',
+    'electron-builder.yml',
+    'electron/main.ts',
+    'electron/protocol.ts',
+    'electron/security.ts',
+    'electron/__tests__/webviewSecurity.spec.ts',
+    'scripts/electronE2EIsolation.ts',
+    'scripts/runElectronE2E.ts',
+    'scripts/checkDdspTfjsWorkerBundle.ts',
+    'scripts/checkReleaseInventory.ts',
+    'scripts/__tests__/checkDdspTfjsWorkerBundle.spec.ts',
+    'scripts/__tests__/checkReleaseInventory.spec.ts',
+    'scripts/__tests__/electronE2EIsolation.spec.ts',
+    'scripts/__tests__/runElectronE2E.spec.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/BrowserModel.ts',
+    'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/models/InferenceRequest.ts',
+    'src/modules/BrowserAi/models/ModelDownloadProgress.ts',
+    'src/modules/BrowserAi/models/ModelStorageWorkerProtocol.ts',
+    'src/modules/BrowserAi/models/RenderProgress.ts',
+    'src/modules/BrowserAi/models/StorageStatus.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/abortWritable.ts',
+    'src/modules/BrowserAi/repositories/computeRenderCacheKey.ts',
+    'src/modules/BrowserAi/repositories/ddspModelStorage.ts',
+    'src/modules/BrowserAi/repositories/getStorageStatus.ts',
+    'src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/isNotFoundError.ts',
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/readRenderCache.ts',
+    'src/modules/BrowserAi/repositories/sha256ArrayBuffer.ts',
+    'src/modules/BrowserAi/repositories/storageConstants.ts',
+    'src/modules/BrowserAi/repositories/toOpfsPath.ts',
+    'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+    'src/modules/BrowserAi/repositories/writeRenderCache.ts',
+    'src/modules/BrowserAi/services/audioResampler.ts',
+    'src/modules/BrowserAi/services/midiToDdspInput.ts',
+    'src/modules/BrowserAi/stores/inferenceProgressStore.ts',
+    'src/modules/BrowserAi/stores/modelRegistryStore.ts',
+    'src/modules/BrowserAi/stores/renderQueueStore.ts',
+    'src/modules/BrowserAi/useCases/cancelRender.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/index.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/isDdspInstrumentId.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorker.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+    'src/modules/BrowserAi/workers/tfjsInferenceWorker.ts',
+    'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
+    'src/modules/Preferences/presentations/views/preferences/AiSection.tsx',
+    'src/modules/Transport/useCases/index.ts',
+    'src/modules/Transport/useCases/secondsBetweenBeats.ts',
+    'src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx',
+    'tests/e2e/ddspProductionCspElectron.playwright.config.ts',
+    'tests/e2e/ddspProductionCspElectron.spec.ts',
+    'tests/e2e/ddspRender.playwright.config.ts',
+    'tests/e2e/ddspRender.spec.ts',
+    'tests/e2e/ddspRenderElectron.playwright.config.ts',
+    'tests/e2e/ddspRenderElectron.spec.ts',
+    'tests/e2e/ddspRenderProbe.html',
+    'tests/e2e/ddspRenderProbe.ts',
+    'tests/e2e/modelManagerAdmission.spec.ts',
+] as const;
+
+export const DDSP_RELEASE_INVENTORY_CONTRACT = {
+    kind: 'model-stack',
+    paths: [...DDSP_RELEASE_INVENTORY_PATHS],
+    sources: [
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/constants.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/audio_utils.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/LICENSE',
+        'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-layers/LICENSE',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs/package.json',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-backend-webgpu/package.json',
+        'https://github.com/dcodeIO/long.js/tree/941c5c62471168b5d18153755c2a7b38d2560e58',
+        'https://github.com/davidbau/seedrandom/tree/4460ad325a0a15273a211e509f03ae0beb99511a',
+        'package.json',
+        'pnpm-lock.yaml',
+    ],
+    revisions: [
+        'magenta-js 0692eb2b79681f062c6b6dd53a0361967f298caa music/checkpoints/README.md',
+        'magenta-js DDSP code 0692eb2b79681f062c6b6dd53a0361967f298caa',
+        'magenta-js-ddsp-2020-01-05',
+        'TensorFlow.js tfjs-v4.22.0 e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
+        ...DDSP_TFJS_BUNDLE_PACKAGES.map(({ name, version }) => `${name} ${version}`),
+    ],
+    digests: [
+        'sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json',
+        'sha256:e2df331d82cf56ed58c202c7af545b305f6794c655897dfc45535620a0d2fc12:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/group1-shard1of1.bin',
+        'sha256:9cfae64cf6e36007192a479f6f74e26356ed0e6d4521d242498bcb4e04723269:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/settings.json',
+        'sha256:81a2187d58ca5d02e30b755aaa9abed171b0269a7cf2207f445a177af9add434:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/model.json',
+        'sha256:1ce83914040927c5713ad80131c9bfa7eed960b696ca8f17176392b7287ad745:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/group1-shard1of1.bin',
+        'sha256:d4b754db5cd6fe4937de3bd205c4db1aa6d824b8a35571f62047b7a546628fc3:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/settings.json',
+        'sha256:20cf69198fc87decefce850fc5315562f2d72c01da89cd16581dc868f1daa5b5:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/model.json',
+        'sha256:4785eff16aef6d5e620f70866b865e3cb6462f0670edeeb9711603a354170538:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/group1-shard1of1.bin',
+        'sha256:60e26d8fd06c963b2828c112f70d4e5667fc9cd328fe6a65977fe839d6393e93:173:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/settings.json',
+        'sha256:1b334b0639c2dd7f19e904a977339c7e4b53fe7fde4f56cc7c9797c99789787e:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/model.json',
+        'sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin',
+        'sha256:4632398ffae90dc12dccf6bb9480102c6947f5c5eb5829415108f25d8cf0a7fe:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json',
+    ],
+    licenses: [
+        'permission:Magenta-checkpoints-README-direct-application-loading-or-self-hosting',
+        'unverified:checkpoint-weights-no-license-grant-established',
+        'Apache-2.0:magenta-js-ddsp-code',
+        'Apache-2.0:@tensorflow/tfjs',
+        'Apache-2.0:@tensorflow/tfjs-backend-webgpu',
+        'Apache-2.0:@tensorflow/tfjs-backend-cpu',
+        'Apache-2.0:@tensorflow/tfjs-backend-webgl',
+        'Apache-2.0:@tensorflow/tfjs-converter',
+        'Apache-2.0:@tensorflow/tfjs-core',
+        'Apache-2.0:@tensorflow/tfjs-data',
+        'Apache-2.0-AND-MIT:@tensorflow/tfjs-layers',
+        'Apache-2.0:long',
+        'MIT:seedrandom',
+        `Apache-2.0-license-text:${TFJS_APACHE_LICENSE_PATH}`,
+        `dual-license-text:${TFJS_LAYERS_LICENSE_PATH}`,
+        `MIT-license-notices:${SEEDRANDOM_LICENSE_PATH}`,
+        `attribution-notice:${MAGENTA_NOTICE_PATH}`,
+        `attribution-notice:${TFJS_NOTICE_PATH}`,
+    ],
+    evidence: [
+        'The immutable Magenta checkpoint README permits direct application loading and downloading/self-hosting for the four named DDSP checkpoint directories.',
+        'The manifest pins the exact URL, byte count, and SHA-256 of all twelve runtime-downloaded artifacts before OPFS readiness.',
+        'Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface.',
+        'The immutable Magenta.js DDSP source headers and repository license establish Apache-2.0 for the adapted code basis, including model.ts Roll registration.',
+        'The TensorFlow.js 4.22.0 package metadata and unmodified Apache-2.0 license are pinned to upstream commit e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7.',
+        'The production TFJS worker source map is checked against the exact ten-package closure before web or desktop build completion.',
+    ],
+    obligations: [
+        'Do not describe the checkpoint weights as Apache-2.0; the cited checkpoint permission does not establish that license.',
+        'Preserve per-file size and SHA-256 admission before readiness or inference.',
+        'Keep the Magenta.js copyright, code-basis attribution, modification notice, and Apache-2.0 license with distributed source and desktop builds.',
+        'Keep TensorFlow.js Apache-2.0 attribution and notices with distributed source and desktop builds.',
+        'Keep the TensorFlow.js Layers dual Apache-2.0 and MIT license, seedrandom and Alea MIT notices, and exact closure record with distributed web and desktop builds.',
+        'Download checkpoint weights at runtime only until redistribution rights are independently established.',
+    ],
+} as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
+    'ddsp-models': DDSP_RELEASE_INVENTORY_PATHS,
     'rave-models': [
         'src/modules/BrowserAi/handlers/rave/**',
         'src/modules/BrowserAi/stores/rave.ts',
@@ -138,6 +304,29 @@ function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+export function ddspReleaseInventoryContract(root: string) {
+    return {
+        ...DDSP_RELEASE_INVENTORY_CONTRACT,
+        paths: [...DDSP_RELEASE_INVENTORY_CONTRACT.paths],
+        sources: [...DDSP_RELEASE_INVENTORY_CONTRACT.sources],
+        revisions: [...DDSP_RELEASE_INVENTORY_CONTRACT.revisions],
+        digests: [
+            ...DDSP_RELEASE_INVENTORY_CONTRACT.digests,
+            ...[
+                TFJS_APACHE_LICENSE_PATH,
+                MAGENTA_NOTICE_PATH,
+                TFJS_NOTICE_PATH,
+                THIRD_PARTY_NOTICE_PATH,
+                TFJS_LAYERS_LICENSE_PATH,
+                SEEDRANDOM_LICENSE_PATH,
+            ].map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+        ],
+        licenses: [...DDSP_RELEASE_INVENTORY_CONTRACT.licenses],
+        evidence: [...DDSP_RELEASE_INVENTORY_CONTRACT.evidence],
+        obligations: [...DDSP_RELEASE_INVENTORY_CONTRACT.obligations],
+    };
+}
+
 export const AUDIO_WORKLET_SOURCES = [
     'public/audio/worklets/native-plugin-bridge-processor.js',
     'public/audio/worklets/sidechain-compressor-processor.js',
@@ -184,7 +373,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
 
 function assertSurfaceContract(
     surface: ReleaseSurface | undefined,
-    expected: Partial<SurfaceContract>,
+    expected: Readonly<Record<string, unknown>>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
@@ -647,6 +836,9 @@ export function checkReleaseInventory(root: string): void {
     assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
+    const ddspSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    assertSurfaceContract(ddspSurface, ddspReleaseInventoryContract(root), 'DDSP');
+    checkDdspTfjsWorkerBundle(root, false);
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

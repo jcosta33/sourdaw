@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { normalizePeak, midiToHz, velocityToDb, resampleTo44100 } from '../audioResampler';
+import { limitPeak, normalizePeak, midiToHz, velocityToDb, resampleTo44100 } from '../audioResampler';
 
 class FakeAudioBuffer {
     private readonly channelData: Float32Array[];
@@ -88,6 +88,24 @@ describe('normalizePeak', () => {
         expect(audio[1]).toBe(0);
         expect(audio[0]).toBe(1);
         expect(audio[2]).toBeCloseTo(-0.3, 6);
+    });
+});
+
+describe('limitPeak', () => {
+    it('should preserve intended dynamics below the clipping boundary', () => {
+        const audio = new Float32Array([0.25, -0.5, 0.1]);
+
+        limitPeak(audio);
+
+        expect(audio).toEqual(new Float32Array([0.25, -0.5, 0.1]));
+    });
+
+    it('should attenuate only when the finite peak would clip and clear invalid samples', () => {
+        const audio = new Float32Array([2, -1, Number.NaN]);
+
+        limitPeak(audio);
+
+        expect(audio).toEqual(new Float32Array([1, -0.5, 0]));
     });
 });
 

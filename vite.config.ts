@@ -29,6 +29,12 @@ export default defineConfig({
             'Cross-Origin-Embedder-Policy': 'require-corp',
         },
     },
+    // These imports live behind the DDSP worker entry, so Vite cannot discover
+    // them during its initial page crawl. If they are optimized on first
+    // inference instead, Vite sends a full reload while the render is pending.
+    optimizeDeps: {
+        include: ['@tensorflow/tfjs', '@tensorflow/tfjs-backend-webgpu'],
+    },
     define: {
         __APP_VERSION__: JSON.stringify(version),
     },

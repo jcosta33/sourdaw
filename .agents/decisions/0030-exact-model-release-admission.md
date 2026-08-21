@@ -14,6 +14,8 @@ sources:
     - https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC
     - https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC
     - https://github.com/magenta/ddsp
+    - https://github.com/magenta/magenta-js/blob/master/music/checkpoints/README.md
+    - https://github.com/magenta/magenta-js/commit/0692eb2b79681f062c6b6dd53a0361967f298caa
     - .agents/decisions/0016-ultracode-session-scope-and-standard.md
 ---
 
@@ -32,20 +34,23 @@ used with it. Mutable URLs and inherited claims cannot prove distributed bytes.
 One release contract records model-stack admission. An unadmitted stack is unreachable and absent
 from product controls. Its neutral architecture may remain.
 
-| Stack                   | Decision | Proof                                                                                             |
-| ----------------------- | -------- | ------------------------------------------------------------------------------------------------- |
-| Basic Pitch 1.0.1       | Admit    | Apache-2.0 package metadata and lockfile integrity cover the bundled model.                       |
-| Kokoro ONNX             | Admit    | Commit `1939ad2a`; exact model size and SHA-256; exact size and SHA-256 for each exposed voice.   |
-| Whisper                 | Admit    | Pinned `ggml-base.en.bin` size and SHA-256; MIT model repository; Unlicense `whisper-rs` runtime. |
-| DDSP checkpoints        | Withhold | Exact GCS checkpoint licenses and immutable digests remain unproved.                              |
-| RAVE models             | Withhold | No model artifact, source, digest, or license is admitted.                                        |
-| WebLLM Qwen conversions | Withhold | Base Qwen licenses do not prove the exact MLC quantized artifact repositories.                    |
-| Native denoise          | Keep     | The current downward expander is first-party DSP with no external model artifact.                 |
-| Stem separation         | Withhold | No replacement model stack is admitted; the current repository reports it unavailable.            |
+| Stack                   | Decision | Proof                                                                                                       |
+| ----------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| Basic Pitch 1.0.1       | Admit    | Apache-2.0 package metadata and lockfile integrity cover the bundled model.                                 |
+| Kokoro ONNX             | Admit    | Commit `1939ad2a`; exact model size and SHA-256; exact size and SHA-256 for each exposed voice.             |
+| Whisper                 | Admit    | Pinned `ggml-base.en.bin` size and SHA-256; MIT model repository; Unlicense `whisper-rs` runtime.           |
+| DDSP checkpoints        | Admit    | Magenta.js documents direct application loading; Sourdaw pins each direct-download file's size and SHA-256. |
+| RAVE models             | Withhold | No model artifact, source, digest, or license is admitted.                                                  |
+| WebLLM Qwen conversions | Withhold | Base Qwen licenses do not prove the exact MLC quantized artifact repositories.                              |
+| Native denoise          | Keep     | The current downward expander is first-party DSP with no external model artifact.                           |
+| Stem separation         | Withhold | No replacement model stack is admitted; the current repository reports it unavailable.                      |
 
 Kokoro downloads use the pinned revision, a versioned cache key, exact byte counts, and SHA-256
-verification before storage or inference. The release contract blocks WebLLM and RAVE before model
-loading and keeps DDSP out of the runtime registry and model manager.
+verification before storage or inference. DDSP downloads only at runtime from Magenta's documented
+checkpoint URLs, through a versioned file manifest and exact byte/digest validation before OPFS
+readiness or inference. Sourdaw does not bundle, mirror, or redistribute DDSP weights. This admission
+rests on Magenta's checkpoint-specific direct-use permission, not a claim that the external weights
+inherit Apache-2.0. The release contract continues to block WebLLM and RAVE before model loading.
 
 ## Consequences
 
@@ -53,5 +58,5 @@ loading and keeps DDSP out of the runtime registry and model manager.
 - This release has no browser-local language model.
 - Kokoro, Whisper, and Basic Pitch remain available with their notices.
 - Native denoise remains available without a model dependency.
-- DDSP, RAVE, or WebLLM can return only after a later ADR admits exact artifacts and obligations.
+- RAVE or WebLLM can return only after a later ADR admits exact artifacts and obligations.
 - Stem separation remains unavailable until a complete replacement stack passes admission.

@@ -14,7 +14,7 @@ import type { DeliveryAuthentication, DeliveryCoordinatorDependencies, DeliveryP
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 
 describe('package scripts and gitignore', () => {
-    it('defines the trusted pnpm commands as direct node invocations', () => {
+    it('should define the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
@@ -24,6 +24,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
+        expect(pkg.scripts['pr:describe']).toBe('node scripts/describePullRequest.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
@@ -58,6 +59,7 @@ describe('package scripts and gitignore', () => {
             'removeLane.ts',
             'resolveReviewThread.ts',
             'supersedePullRequest.ts',
+            'describePullRequest.ts',
             'reconcileTrackerIssue.ts',
             'trackerIssueReconciliation.ts',
             'trustedGithubWriteBootstrap.ts',

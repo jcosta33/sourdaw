@@ -141,6 +141,46 @@ describe('cancelRender', () => {
         expect(inferenceProgressStore.value?.activeRenders['req-B']).toBeDefined();
     });
 
+    it('should not remove the newer queued request when an older request for the same phrase is cancelled', () => {
+        seedActiveRender({ requestId: 'req-old', phraseId: 'phrase-A', pipeline: 'ddsp' });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-old',
+            pipeline: 'ddsp',
+            status: 'rendering-browser',
+            queuedAt: 1,
+        });
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-new',
+            pipeline: 'ddsp',
+            status: 'queued',
+            queuedAt: 2,
+        });
+
+        cancelRender({ phraseId: 'phrase-A', requestId: 'req-old' });
+
+        expect(renderQueueStore.value?.entries).toEqual([
+            expect.objectContaining({ phraseId: 'phrase-A', requestId: 'req-new' }),
+        ]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
+    });
+
+    it('should mark the current queued request not rendered when it is cancelled', () => {
+        enqueueRender({
+            phraseId: 'phrase-A',
+            requestId: 'req-current',
+            pipeline: 'ddsp',
+            status: 'queued',
+            queuedAt: 1,
+        });
+
+        cancelRender({ phraseId: 'phrase-A', requestId: 'req-current' });
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('not-rendered');
+    });
+
     it('clears the cancelled render from the active-render store', () => {
         seedActiveRender({ requestId: 'req-A', phraseId: 'phrase-A', pipeline: 'kokoro' });
 

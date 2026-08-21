@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,8 +6,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
     audioWorkletReleaseInventoryContract,
+    ddspReleaseInventoryContract,
+    DDSP_RELEASE_INVENTORY_CONTRACT,
+    DDSP_RELEASE_INVENTORY_PATHS,
     loadRepositorySnapshot,
+    REQUIRED_COMPONENT_PATHS,
     REQUIRED_SNAPSHOT_PATHS,
+    SEEDRANDOM_LICENSE_PATH,
+    TFJS_APACHE_LICENSE_PATH,
+    TFJS_LAYERS_LICENSE_PATH,
+    TFJS_NOTICE_PATH,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
     type ReleaseInventory,
@@ -19,6 +27,8 @@ import {
 import type { WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
+const MAGENTA_NOTICE_PATH = 'public/legal/Magenta.js-NOTICE.txt';
+const THIRD_PARTY_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
 
 function inventory(): ReleaseInventory {
     return {
@@ -56,6 +66,126 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('should pin the complete DDSP execution surface without laundering checkpoint weights into Apache', () => {
+        expect(REQUIRED_COMPONENT_PATHS['ddsp-models']).toEqual(DDSP_RELEASE_INVENTORY_PATHS);
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.sources[0]).toBe(
+            'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md'
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.digests).toHaveLength(12);
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.digests).toContain(
+            'sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin'
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).toContain(
+            'unverified:checkpoint-weights-no-license-grant-established'
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toContain(MAGENTA_NOTICE_PATH);
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toEqual(
+            expect.arrayContaining([TFJS_LAYERS_LICENSE_PATH, SEEDRANDOM_LICENSE_PATH])
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.sources).toEqual(
+            expect.arrayContaining([
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts',
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/constants.ts',
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/audio_utils.ts',
+            ])
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).toEqual(
+            expect.arrayContaining(['Apache-2.0:magenta-js-ddsp-code', `attribution-notice:${MAGENTA_NOTICE_PATH}`])
+        );
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toContain('index.html');
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toEqual(
+            expect.arrayContaining([
+                'src/modules/Transport/useCases/secondsBetweenBeats.ts',
+                'src/modules/Transport/useCases/index.ts',
+            ])
+        );
+    });
+
+    it('should reject an omitted DDSP timing dependency even when generic project source covers it', () => {
+        const value = inventory();
+        value.surfaces.push({
+            ...value.surfaces[0]!,
+            id: 'ddsp-models',
+            paths: ['src/modules/Transport/useCases/index.ts'],
+        });
+        const state = snapshot();
+        state.releaseFiles.push(
+            'src/modules/Transport/useCases/index.ts',
+            'src/modules/Transport/useCases/secondsBetweenBeats.ts'
+        );
+
+        expect(
+            validateReleaseInventory(value, state, [], {
+                'ddsp-models': [
+                    'src/modules/Transport/useCases/index.ts',
+                    'src/modules/Transport/useCases/secondsBetweenBeats.ts',
+                ],
+            })
+        ).toContain(
+            'ddsp-models: required component paths missing:\n- src/modules/Transport/useCases/secondsBetweenBeats.ts'
+        );
+    });
+
+    it('should bind every shipped DDSP runtime notice and exact upstream license byte set', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-tfjs-legal-'));
+        const legal = join(root, 'public/legal');
+        mkdirSync(legal, { recursive: true });
+        writeFileSync(join(root, TFJS_APACHE_LICENSE_PATH), 'full Apache license');
+        writeFileSync(join(root, TFJS_NOTICE_PATH), 'TensorFlow.js 4.22.0 notice');
+        writeFileSync(join(root, MAGENTA_NOTICE_PATH), 'Magenta.js DDSP code notice');
+        writeFileSync(join(root, THIRD_PARTY_NOTICE_PATH), 'third-party notice index');
+        writeFileSync(join(root, TFJS_LAYERS_LICENSE_PATH), 'TensorFlow.js Layers dual license');
+        writeFileSync(join(root, SEEDRANDOM_LICENSE_PATH), 'seedrandom MIT notices');
+
+        try {
+            const before = ddspReleaseInventoryContract(root);
+            expect(before.paths).toEqual(
+                expect.arrayContaining([
+                    TFJS_APACHE_LICENSE_PATH,
+                    TFJS_NOTICE_PATH,
+                    MAGENTA_NOTICE_PATH,
+                    THIRD_PARTY_NOTICE_PATH,
+                    TFJS_LAYERS_LICENSE_PATH,
+                    SEEDRANDOM_LICENSE_PATH,
+                ])
+            );
+            expect(before.sources).toContain(
+                'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE'
+            );
+            expect(before.digests).toEqual(
+                expect.arrayContaining([
+                    expect.stringMatching(new RegExp(`${TFJS_APACHE_LICENSE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${TFJS_NOTICE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${MAGENTA_NOTICE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${THIRD_PARTY_NOTICE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${TFJS_LAYERS_LICENSE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${SEEDRANDOM_LICENSE_PATH}$`, 'u')),
+                ])
+            );
+
+            for (const path of [
+                TFJS_APACHE_LICENSE_PATH,
+                TFJS_NOTICE_PATH,
+                MAGENTA_NOTICE_PATH,
+                THIRD_PARTY_NOTICE_PATH,
+                TFJS_LAYERS_LICENSE_PATH,
+                SEEDRANDOM_LICENSE_PATH,
+            ]) {
+                const original = readFileSync(join(root, path), 'utf8');
+                writeFileSync(join(root, path), `${original} drift`);
+                expect(ddspReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+                writeFileSync(join(root, path), original);
+                rmSync(join(root, path));
+                expect(() => ddspReleaseInventoryContract(root)).toThrow();
+                writeFileSync(join(root, path), original);
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds the shipped trademark notice', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-trademark-notice-'));
         const legal = join(root, 'public/legal');

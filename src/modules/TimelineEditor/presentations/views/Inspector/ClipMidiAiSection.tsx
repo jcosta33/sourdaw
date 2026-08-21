@@ -1,6 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
-import { Sparkles, Loader2, Music, Mic, AudioLines, Download } from 'lucide-react';
+import { Sparkles, Loader2, Music, Mic, AudioLines, Download, Cpu } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
@@ -20,9 +20,12 @@ import {
     renderDiffSingerPhrase,
     downloadModel,
     KOKORO_MODEL_ENTRY,
+    isDdspInstrumentId,
+    renderDdspInstrument,
 } from '#/modules/BrowserAi/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { tempoMapStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -61,6 +64,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
     const [isRenderingTts, setIsRenderingTts] = useState(false);
+    const [isRenderingDdsp, setIsRenderingDdsp] = useState(false);
+    const [ddspInstrumentId, setDdspInstrumentId] = useState('');
+    const [ddspResult, setDdspResult] = useState<RenderResult | null>(null);
     // DiffSinger SVS uses diffusion-based synthesis with configurable step count.
     const [svsRenderQuality, setSvsRenderQuality] = useState<RenderQuality>('standard');
     const [ttsText, setTtsText] = useState('');
@@ -89,6 +95,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;
     const vocoderStatus = registry?.vocoder?.status ?? 'not-downloaded';
     const vocoderProgress = registry?.vocoder?.downloadProgress ?? 0;
+    const readyDdspInstruments = registry?.ddspInstruments.filter((instrument) => instrument.status === 'ready') ?? [];
+    const selectedDdspInstrument =
+        readyDdspInstruments.find((instrument) => instrument.id === ddspInstrumentId) ?? readyDdspInstruments[0];
 
     // Every AI action here runs for seconds while the panel stays interactive, so each one has
     // to prove it still owns the panel before writing anything back (audit M-250). Two
@@ -98,15 +107,34 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     //     invalidated on switch, because the switch is only observable during render, where
     //     mutating a ref is unsafe (concurrent rendering can discard a render) and calling
     //     abort() is a side effect. A comparison has no such window and needs no bookkeeping.
-    //   supersession — a newer launch for the SAME clip replaced this one. Identity cannot see
-    //     that, so each launch owns an AbortController which the next launch aborts, entirely
-    //     inside event handlers. This is reachable: the render-time reset below clears the
-    //     `isGenerating…` / `isRendering…` flags on every clip change, so one A→B→A round trip
-    //     re-enables a button whose first job is still in flight.
+    //   cancellation — a committed clip change, unmount, or replacement launch aborts the
+    //     owning controller. Identity alone cannot distinguish an abandoned A launch after an
+    //     A→B→A selection round trip, so the signal remains part of every ownership check.
     const renderedClipIdRef = useRef(clip.id);
     const variationsLaunchRef = useRef<AbortController | null>(null);
+    const ddspLaunchRef = useRef<AbortController | null>(null);
     const ttsLaunchRef = useRef<AbortController | null>(null);
     const svsLaunchRef = useRef<AbortController | null>(null);
+
+    useEffect(
+        () => () => {
+            // A committed selection change or unmount ends this panel's ownership.
+            // Clear before aborting so a later cleanup cannot cancel the same launch twice.
+            const activeVariationsLaunch = variationsLaunchRef.current;
+            const activeDdspLaunch = ddspLaunchRef.current;
+            const activeTtsLaunch = ttsLaunchRef.current;
+            const activeSvsLaunch = svsLaunchRef.current;
+            variationsLaunchRef.current = null;
+            ddspLaunchRef.current = null;
+            ttsLaunchRef.current = null;
+            svsLaunchRef.current = null;
+            activeVariationsLaunch?.abort();
+            activeDdspLaunch?.abort();
+            activeTtsLaunch?.abort();
+            activeSvsLaunch?.abort();
+        },
+        [clip.id]
+    );
 
     const stillOwnsPanel = ({ signal, launchClipId }: StillOwnsPanelInput): boolean => {
         if (signal.aborted) {
@@ -152,7 +180,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'Variation generation failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (variationsLaunchRef.current === launch) {
+                variationsLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 // Only the launch that still owns the panel may clear its spinner. An abandoned
                 // launch would otherwise stop the spinner of the job running right now.
                 setIsGeneratingVariations(false);
@@ -161,8 +193,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     };
 
     // Re-point the panel at the newly selected clip and drop the previous clip's scratch state.
-    // Note this also clears the in-flight flags, which is what makes same-clip supersession
-    // reachable — see the launch-ownership comment above.
+    // This also clears the in-flight flags so a fresh launch is available after a clip switch;
+    // the lifecycle cleanup above cancels the launch owned by the previous committed panel.
     if (renderedClipIdRef.current !== clip.id) {
         renderedClipIdRef.current = clip.id;
         setTtsText('');
@@ -172,7 +204,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setVariationTokenCount(0);
         setIsGeneratingVariations(false);
         setIsRenderingTts(false);
+        setIsRenderingDdsp(false);
         setIsRenderingSvs(false);
+        setDdspResult(null);
         setTtsResults([]);
         setSvsResults([]);
     }
@@ -187,6 +221,72 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         });
     };
 
+    const handleRenderDdsp = async (): Promise<void> => {
+        const instrument = selectedDdspInstrument;
+        const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
+        if (!instrument) {
+            notifyUser('Download a DDSP instrument in AI Model Manager first', 'error');
+            return;
+        }
+        if (notes.length === 0) {
+            notifyUser('No MIDI notes in this clip to render', 'error');
+            return;
+        }
+        if (!isDdspInstrumentId(instrument.id)) {
+            notifyUser('The selected DDSP instrument is not admitted in this release', 'error');
+            return;
+        }
+        const tempoChanges = tempoMapStore.value?.changes ?? [];
+        const defaultTempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
+        setIsRenderingDdsp(true);
+        setDdspResult(null);
+        ddspLaunchRef.current?.abort();
+        const launch = new AbortController();
+        ddspLaunchRef.current = launch;
+        const { signal } = launch;
+        const launchClipId = clip.id;
+        try {
+            const result = await renderDdspInstrument({
+                phraseId: `${clip.id}-ddsp`,
+                instrumentId: instrument.id,
+                durationSec: secondsBetweenBeats(tempoChanges, clip.startBeat, clip.endBeat, defaultTempo),
+                notes: notes.map((note) => {
+                    const absoluteStartBeat = clip.startBeat + note.startBeat;
+                    return {
+                        pitch: note.pitch,
+                        velocity: note.velocity,
+                        startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, absoluteStartBeat, defaultTempo),
+                        durationSec: secondsBetweenBeats(
+                            tempoChanges,
+                            absoluteStartBeat,
+                            absoluteStartBeat + note.duration,
+                            defaultTempo
+                        ),
+                    };
+                }),
+                signal,
+            });
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                return;
+            }
+            setDdspResult({ audio: result.audio, sampleRate: result.sampleRate, label: 'DDSP', name: instrument.name });
+            notifyAiChange('Instrument render complete', [`${instrument.name} rendered — drag it onto an audio track`]);
+        } catch (error) {
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                return;
+            }
+            notifyUser(error instanceof Error ? error.message : 'DDSP render failed', 'error');
+        } finally {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (ddspLaunchRef.current === launch) {
+                ddspLaunchRef.current = null;
+            }
+            if (ownsPanel) {
+                setIsRenderingDdsp(false);
+            }
+        }
+    };
+
     const handlePreviewVoice = async (): Promise<void> => {
         if (!ttsText.trim()) {
             notifyUser('Enter some text to preview', 'error');
@@ -196,10 +296,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('Download the voice model first', 'error');
             return;
         }
-        const tempoState = tempoMapStore.value;
-        const bpm = tempoState?.changes[0]?.tempo ?? 120;
-        const beatsPerSecond = bpm / 60;
-        const targetDurationSec = (clip.endBeat - clip.startBeat) / beatsPerSecond;
+        const tempoChanges = tempoMapStore.value?.changes ?? [];
+        const defaultTempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
+        const targetDurationSec = secondsBetweenBeats(tempoChanges, clip.startBeat, clip.endBeat, defaultTempo);
 
         const baseSpeed = parseFloat(ttsSpeed);
         if (!isFinite(baseSpeed) || baseSpeed <= 0) {
@@ -252,7 +351,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'TTS render failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (ttsLaunchRef.current === launch) {
+                ttsLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 // Only the launch that still owns the panel may clear its spinner. An
                 // abandoned launch would otherwise stop the spinner of the render running now.
                 setIsRenderingTts(false);
@@ -302,14 +405,22 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             const voiceName = activeVoicebank?.name ?? selectedVoicebankId;
             const lyrics = diffSingerLyrics.trim() || 'la la la';
             const lyricsPreview = lyrics.slice(0, 20) + (lyrics.length > 20 ? '…' : '');
-            const tempo = tempoMapStore.value?.changes[0]?.tempo ?? 120;
-            const secondsPerBeat = 60 / tempo;
-            const timedNotes = notes.map((note) => ({
-                pitch: note.pitch,
-                velocity: note.velocity,
-                startSec: note.startBeat * secondsPerBeat,
-                durationSec: note.duration * secondsPerBeat,
-            }));
+            const tempoChanges = tempoMapStore.value?.changes ?? [];
+            const defaultTempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
+            const timedNotes = notes.map((note) => {
+                const absoluteStartBeat = clip.startBeat + note.startBeat;
+                return {
+                    pitch: note.pitch,
+                    velocity: note.velocity,
+                    startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, absoluteStartBeat, defaultTempo),
+                    durationSec: secondsBetweenBeats(
+                        tempoChanges,
+                        absoluteStartBeat,
+                        absoluteStartBeat + note.duration,
+                        defaultTempo
+                    ),
+                };
+            });
             // Sequential — the ONNX worker is single-threaded so parallel
             // calls would serialize anyway, just with noisier logs.
             const results: RenderResult[] = [];
@@ -359,7 +470,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'Singing render failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (svsLaunchRef.current === launch) {
+                svsLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 // Only the launch that still owns the panel may clear its spinner. An
                 // abandoned launch would otherwise stop the spinner of the render running now.
                 setIsRenderingSvs(false);
@@ -756,6 +871,63 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         )}
                     </Button>
                 </DawPluginSectionCard>
+
+                {isUnsupported ? null : (
+                    <DawPluginSectionCard
+                        title="Instrument"
+                        detail={<Cpu className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
+                        detailMode="badge"
+                    >
+                        {readyDdspInstruments.length === 0 ? (
+                            <DawEmptyState
+                                compact
+                                title="Download an instrument to get started"
+                                description="DDSP instruments are verified direct downloads from Magenta in AI Model Manager."
+                            />
+                        ) : (
+                            <div className="space-y-2">
+                                <DawCompactSelect
+                                    value={selectedDdspInstrument?.id ?? ''}
+                                    onChange={(event) => setDdspInstrumentId(event.target.value)}
+                                    aria-label="DDSP instrument"
+                                    className="w-full"
+                                >
+                                    {readyDdspInstruments.map((instrument) => (
+                                        <option key={instrument.id} value={instrument.id}>
+                                            {instrument.name}
+                                        </option>
+                                    ))}
+                                </DawCompactSelect>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)]"
+                                    onClick={handleRenderDdsp}
+                                    disabled={isRenderingDdsp}
+                                >
+                                    {isRenderingDdsp ? (
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />{' '}
+                                            Rendering…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Cpu className="size-3 mr-1" aria-hidden="true" /> Render Instrument
+                                        </>
+                                    )}
+                                </Button>
+                                {ddspResult ? (
+                                    <AiRenderClipPreview
+                                        audio={ddspResult.audio}
+                                        sampleRate={ddspResult.sampleRate}
+                                        label={ddspResult.label}
+                                        name={ddspResult.name}
+                                    />
+                                ) : null}
+                            </div>
+                        )}
+                    </DawPluginSectionCard>
+                )}
 
                 {/* Vocals — unified section for Spoken (Kokoro TTS) and Sung (DiffSinger SVS) */}
                 {renderIife_12()}

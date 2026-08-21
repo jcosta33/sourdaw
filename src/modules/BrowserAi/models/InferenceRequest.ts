@@ -18,9 +18,26 @@ export type SessionOptions = {
 };
 
 export type OnnxExecutionProvider = NonNullable<SessionOptions['executionProviders']>[number];
+export type DdspStoredArtifact = {
+    modelId: string;
+    path: 'model.json' | 'group1-shard1of1.bin' | 'settings.json';
+    sizeBytes: number;
+    sha256: string;
+    /** Already-verified artifact stream from the model-storage worker. */
+    modelDataPort: MessagePort;
+};
 
 // Main thread → Worker
 export type WorkerRequest =
+    | {
+          /** Abort one in-flight worker request without disturbing newer siblings. */
+          type: 'cancel-request';
+          requestId: string;
+      }
+    | {
+          /** Release every session and pending resource before worker termination. */
+          type: 'dispose-worker';
+      }
     | {
           type: 'create-session';
           /** UUID used to correlate with the session-created response */
@@ -46,6 +63,8 @@ export type WorkerRequest =
     | {
           type: 'release-session';
           modelId: string;
+          /** Present when the caller must wait until disposal is complete. */
+          requestId?: string;
       }
     | {
           type: 'get-status';
@@ -53,16 +72,12 @@ export type WorkerRequest =
           requestId: string;
       }
     | {
-          /**
-           * Load a TF.js GraphModel from a CDN directory URL.
-           * Used for DDSP instruments (multi-file models: model.json + weight shards).
-           * TF.js handles IndexedDB caching internally.
-           */
-          type: 'create-session-from-url';
+          /** Load a TF.js GraphModel from verified OPFS artifacts. */
+          type: 'create-session-from-model-storage';
           /** UUID used to correlate with the session-created response */
           requestId: string;
           modelId: string;
-          modelUrl: string;
+          artifacts: DdspStoredArtifact[];
       }
     | {
           type: 'run-ddsp-inference';
@@ -113,6 +128,8 @@ export type WorkerResponse =
           requestId: string;
           modelId: string;
           executionProviders?: OnnxExecutionProvider[];
+          /** Set by DDSP after TF.js has selected the required runtime backend. */
+          backend?: string;
       }
     | {
           type: 'inference-result';
@@ -125,6 +142,12 @@ export type WorkerResponse =
           /** PCM audio at model native sample rate */
           audio: Float32Array;
           nativeSampleRate: number;
+          backend: string;
+      }
+    | {
+          type: 'session-released';
+          requestId: string;
+          modelId: string;
       }
     | {
           type: 'tts-result';
