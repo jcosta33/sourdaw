@@ -1,0 +1,21 @@
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_487e9aa1e46063::t_251008fc0364a2 1,6,10-11,13-32,36-45,49-50,60-70,125,127,130,175,186-200,205-220
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_487e9aa1e46063::t_a5feff763d4f68 1,12,14,16-22,24-45,110,112,163-165,171,176-177,189-193,195-198,201-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d6065bfe2583a251c8a62ebba24de703a6ddc2c5",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
