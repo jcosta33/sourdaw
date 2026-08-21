@@ -10,6 +10,7 @@ import { type ReactElement, useState, useRef, useEffect, type DragEvent } from '
 
 import { Upload } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 
 type IrBrowserDecodeResult = {
@@ -101,7 +102,7 @@ export const IrBrowser = ({ onFileDrop, onIrLoaded }: IrBrowserProps): ReactElem
     }, [waveform]);
 
     return (
-        <div className="flex flex-col gap-1">
+        <Stack gap={1}>
             <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">Impulse Response</span>
             {/* Drop zone */}
             <div
@@ -128,12 +129,12 @@ export const IrBrowser = ({ onFileDrop, onIrLoaded }: IrBrowserProps): ReactElem
                         </span>
                     </div>
                 ) : (
-                    <div className="flex items-center justify-center gap-1 py-2 text-muted-foreground/40">
+                    <Row justify="center" gap={1} className="py-2 text-muted-foreground/40">
                         <Upload className="size-3" />
                         <span className="text-[8px]">Drop WAV/AIFF here</span>
-                    </div>
+                    </Row>
                 )}
             </div>
-        </div>
+        </Stack>
     );
 };

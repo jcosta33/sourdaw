@@ -13,6 +13,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -267,7 +268,11 @@ function KnobCell({
     activeRange?: ChamberControlRange;
 }): ReactElement {
     return (
-        <div className="flex min-w-[68px] flex-col items-center gap-1 rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-2 py-2 shadow-[var(--shadow-elevation-inset)]">
+        <Stack
+            align="center"
+            gap={1}
+            className="min-w-[68px] rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-2 py-2 shadow-[var(--shadow-elevation-inset)]"
+        >
             <RotaryKnob
                 value={value}
                 onChange={onChange}
@@ -289,7 +294,7 @@ function KnobCell({
             />
             <div className="text-[8px] uppercase tracking-[0.2em] text-white/58">{label}</div>
             {readout ? <div className="font-mono text-[9px] text-white/42">{readout}</div> : null}
-        </div>
+        </Stack>
     );
 }
 
@@ -504,7 +509,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     }
 
     return (
-        <div className="proof-chamber-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
+        <Row align="stretch" gap={3} className="proof-chamber-faceplate h-full min-h-0 overflow-hidden p-3">
             <DawPluginRail className="h-full w-[248px] shrink-0">
                 <SectionCard title="Space tray" detail={params.space}>
                     <div>
@@ -532,7 +537,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 </SectionCard>
 
                 <SectionCard title="Flavor" detail={algorithmBadge(params.algorithm)}>
-                    <div className="flex flex-wrap gap-1.5">
+                    <Row align="stretch" wrap gap={1.5}>
                         {VINTAGE_MODES.map((mode) => {
                             const active = params.vintage === mode.id;
                             return (
@@ -541,8 +546,8 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 </ChamberChip>
                             );
                         })}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    </Row>
+                    <Row align="stretch" wrap gap={1.5}>
                         {ALGORITHMS.map((algorithm) => {
                             const active = params.algorithm === algorithm.id;
                             return (
@@ -555,8 +560,8 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 </ChamberChip>
                             );
                         })}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    </Row>
+                    <Row align="stretch" wrap gap={1.5}>
                         {/*
                          * The chip still opens the overlay on an algorithm that
                          * cannot hear it — this is a *view* toggle, not a
@@ -597,7 +602,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         >
                             Saturation
                         </GatedChip>
-                    </div>
+                    </Row>
                 </SectionCard>
 
                 <SectionCard title="IR tray" detail="Cabinet-free">
@@ -610,16 +615,16 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 </SectionCard>
             </DawPluginRail>
 
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-                <header className="proof-chamber-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
-                    <div className="space-y-1">
+            <Stack as="section" grow gap={3} className="min-w-0 overflow-y-auto pr-1">
+                <Row as="header" wrap gap={2.5} shrink={false} className="proof-chamber-window px-3 py-2">
+                    <Stack gap={1}>
                         <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]/72">
                             Reverb stage
                         </div>
                         <div className="text-[14px] font-semibold text-white/92">
                             {SPACES.find((space) => space.id === params.space)?.label ?? 'Hall'}
                         </div>
-                    </div>
+                    </Stack>
                     <DawPluginMetricStrip className="ml-auto">
                         <StatusTile
                             label="Decay"
@@ -642,15 +647,15 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             accent="var(--color-accent-lavender)"
                         />
                     </DawPluginMetricStrip>
-                </header>
+                </Row>
 
                 <div className="grid min-h-0 shrink-0 grid-cols-[minmax(0,1.1fr)_280px] gap-3">
                     <div className="proof-chamber-window min-h-[280px] overflow-hidden">
-                        <div className="flex h-full min-h-0 flex-col">
-                            <div className="flex items-center justify-between px-3 py-2">
+                        <Stack className="h-full">
+                            <Row justify="between" className="px-3 py-2">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
                                 <ChamberLed>{tailViewLed}</ChamberLed>
-                            </div>
+                            </Row>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
                                 <ReverbSpectrogram decay={effectiveDecay} damping={effectiveDamping} />
                                 {showDecayEq ? (
@@ -698,7 +703,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     />
                                 </div>
                             ) : null}
-                        </div>
+                        </Stack>
                     </div>
 
                     <DawPluginRail as="div">
@@ -731,7 +736,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             </DawPluginReadoutList>
                         </SectionCard>
                         <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>
-                            <div className="flex flex-wrap gap-1.5">
+                            <Row align="stretch" wrap gap={1.5}>
                                 <GatedChip
                                     gate={gateFor('shimmer', 'Shimmer')}
                                     active={params.shimmer}
@@ -753,7 +758,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 >
                                     Saturation
                                 </GatedChip>
-                            </div>
+                            </Row>
                             {params.shimmer ? (
                                 <div className="grid grid-cols-2 gap-2">
                                     <KnobCell
@@ -783,7 +788,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 </div>
                             ) : null}
                             {params.saturation ? (
-                                <div className="flex flex-wrap gap-1.5">
+                                <Row align="stretch" wrap gap={1.5}>
                                     {SATURATION_CURVES.map((curve) => (
                                         <GatedChip
                                             key={curve.id}
@@ -794,23 +799,23 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             {curve.label}
                                         </GatedChip>
                                     ))}
-                                </div>
+                                </Row>
                             ) : null}
                         </SectionCard>
                     </DawPluginRail>
                 </div>
 
                 <section className="proof-chamber-window shrink-0 p-3">
-                    <div className="mb-3 flex items-center justify-between gap-3">
+                    <Row justify="between" gap={3} className="mb-3">
                         <div>
                             <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Control deck</div>
                             <div className="mt-1 text-[13px] font-semibold text-white/88">Space, tone, motion</div>
                         </div>
-                        <div className="flex items-center gap-2 text-[10px] text-white/48">
+                        <Row gap={2} className="text-[10px] text-white/48">
                             <Waves className="size-3.5" />
                             <span>Keep the tail centered, tweak the edges on the right.</span>
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
 
                     <div className="grid gap-3 xl:grid-cols-5 md:grid-cols-3">
                         <SectionCard title="Core" detail="Size">
@@ -1014,7 +1019,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     readout={formatValue(params.density, '%')}
                                 />
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
+                            <Row align="stretch" wrap gap={1.5}>
                                 {VINTAGE_MODES.map((mode) => (
                                     <ChamberChip
                                         key={mode.id}
@@ -1024,7 +1029,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                         {mode.label}
                                     </ChamberChip>
                                 ))}
-                            </div>
+                            </Row>
                         </SectionCard>
 
                         <SectionCard title="Engine" detail="Algo">
@@ -1035,7 +1040,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     headerSize="xs"
                                     titleClassName="text-white/46"
                                 >
-                                    <div className="flex flex-wrap gap-1.5">
+                                    <Row align="stretch" wrap gap={1.5}>
                                         {ALGORITHMS.map((algorithm) => (
                                             <ChamberChip
                                                 key={algorithm.id}
@@ -1045,7 +1050,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                                 {algorithm.label}
                                             </ChamberChip>
                                         ))}
-                                    </div>
+                                    </Row>
                                 </DawPluginInsetCard>
                                 <DawPluginInsetCard
                                     className="proof-chamber-window"
@@ -1053,17 +1058,17 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     headerSize="xs"
                                     titleClassName="text-white/46"
                                 >
-                                    <div className="flex flex-wrap gap-1.5">
+                                    <Row align="stretch" wrap gap={1.5}>
                                         <ChamberLed>{params.freeze ? 'Freeze on' : 'Freeze off'}</ChamberLed>
                                         <ChamberLed>{params.shimmer ? 'Shimmer on' : 'Shimmer off'}</ChamberLed>
-                                    </div>
+                                    </Row>
                                 </DawPluginInsetCard>
                             </div>
                         </SectionCard>
                     </div>
                 </section>
-            </section>
-        </div>
+            </Stack>
+        </Row>
     );
 };
 
