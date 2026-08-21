@@ -1,0 +1,21 @@
+tests/e2e/promptBarTestId.spec.ts
+  s_24b1bdbc3c31ad::t_fa2c565fa015d4 31,41-44,51,55-56
+  s_24b1bdbc3c31ad::t_78fdd2c1f85f43 30,39
+  s_24b1bdbc3c31ad::t_2a46d1ab168bf7 1,5,7,12-14,16-19,21-23,26-29,33-34,37-38,46-49,52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4d7e34d19dd256e19751c8209babdc7adb942e21",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
