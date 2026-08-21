@@ -1,0 +1,39 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_73f0fc61b2a8dc 20-28,752,1109-1117,1157,1184,1283,1424-1432,1703-1711,2135-2143,2282,2297-2305,3578,3596,3666-3669,3671-3672,3890-3898,3980-3988,4817-4825,5162,5414,6014-6022,6026,6068-6076,6194-6202,6512,6629,6863,7337-7345,8456,8564,8627,8699,9311,9392,9425-9433,9596-9604,10229,11093,11579,11687,11774-11782,12332-12340,13340-13348,13829,14783,15701,16574,16826,17096,17321,17435-17443,18581,18680,19514-19522,19625,19667-19675,19679,19814,20075,20093,20504-20512,20786,20912,21047,21128,21245,21326,21353,21504,21506-21507,21510,21515,21749,22664-22672,22790-22798,22973,23036,23762-23770,23798-23806,24017,24080,24224,24662-24670,25139-25147
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  s_2175fca1f07426::t_e9913940a13380 8,55,79,97,110,134,223,228,278,283,306,311,363,368,425,430,487,492,531,536,580,585,638,643,679,684-685,704,716,721,782,787,865,870,905,910,933
+src/modules/Yeast/presentations/components/StepPatternEditor.tsx
+  s_487e9aa1e46063::t_569dcc390cc802 18-19,89,91,220,222,248-249
+src/modules/Yeast/presentations/views/GrooveDropTarget.tsx
+  s_487e9aa1e46063::t_d8c3353c00a615 3,168,172,188,200,211,214
+src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx
+  s_487e9aa1e46063::t_fca0086c00087d 3-4,143-144,157,162
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_487e9aa1e46063::t_7637b5f8f918bb 19,255-256,269,271
+src/modules/Yeast/presentations/views/YeastPreviewSurface.tsx
+  s_487e9aa1e46063::t_0b96a92d09d1dc 3,295,314
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fd4ff3df996cfe3f486b3ea0b1b83bead7085a63",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
