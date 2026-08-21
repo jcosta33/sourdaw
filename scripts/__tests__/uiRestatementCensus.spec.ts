@@ -248,6 +248,22 @@ export const Notes = () => <span>{hint}</span>;
         expect(byFile['src/modules/Demo/presentations/views/FormSelect.tsx']?.disposition).toBe('eligible');
     });
 
+    it('marks transparent chrome-embedded textareas as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ChromeNotes.tsx': `export const ChromeNotes = () => (
+  <textarea className="bg-transparent text-foreground outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/FormNotes.tsx': `export const FormNotes = () => (
+  <textarea className="h-8 w-full rounded border bg-surface-inset" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ChromeNotes.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/FormNotes.tsx']?.disposition).toBe('eligible');
+    });
+
     it('marks transparent chrome-embedded inputs as one-off', () => {
         const root = tree({
             'src/modules/Demo/presentations/views/ChromeSearch.tsx': `export const ChromeSearch = () => (
