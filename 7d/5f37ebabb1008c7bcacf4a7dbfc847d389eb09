@@ -1,0 +1,19 @@
+src/modules/AudioEngine/presentations/views/__tests__/PluginBrowser.spec.tsx
+  s_24b1bdbc3c31ad::t_32e27f0ea1d6d4 103-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7d5f37ebabb1008c7bcacf4a7dbfc847d389eb09",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
