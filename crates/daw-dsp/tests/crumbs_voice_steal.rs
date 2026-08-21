@@ -118,10 +118,8 @@ fn note_on(engine: &mut CrumbsEngine, note: u8, velocity: u8) {
 fn saturated_engine(release_secs: f32) -> CrumbsEngine {
     let mut engine = configured_engine(release_secs);
     note_on(&mut engine, VICTIM_NOTE, VICTIM_VELOCITY);
-    for note in 0..=127_u8 {
-        if note == VICTIM_NOTE {
-            continue;
-        }
+    for index in 0..127_usize {
+        let note = (index % 59) as u8;
         note_on(&mut engine, note, FILLER_VELOCITY);
     }
     assert_eq!(
@@ -463,7 +461,8 @@ fn a_fading_steal_tail_is_still_reported_as_sounding() {
 /// measuring the incoming one.
 fn uniformly_quiet_saturated_engine() -> CrumbsEngine {
     let mut engine = configured_engine(0.01);
-    for note in 0..=127_u8 {
+    for index in 0..MAX_VOICES {
+        let note = (index % 59) as u8;
         note_on(&mut engine, note, FILLER_VELOCITY);
     }
     assert_eq!(
@@ -656,7 +655,8 @@ fn engine_with_pool_and_fades_all_busy() -> CrumbsEngine {
     render(&mut engine, 8);
     // 128 steals inside one 3 ms fade: every tail slot ends up in flight, and
     // the pool refills behind them.
-    for note in 0..=127_u8 {
+    for index in 0..MAX_VOICES {
+        let note = (index % 59) as u8;
         note_on(&mut engine, note, FILLER_VELOCITY);
     }
     assert_eq!(
@@ -695,7 +695,8 @@ fn all_sound_off_leaves_nothing_sounding_when_every_fade_slot_is_busy() {
 fn the_reported_voice_count_is_not_clamped_by_its_storage() {
     let mut engine = saturated_engine(0.01);
     engine.handle_command(CrumbsCommand::AllSoundOff);
-    for note in 0..=127_u8 {
+    for index in 0..MAX_VOICES {
+        let note = (index % 59) as u8;
         note_on(&mut engine, note, FILLER_VELOCITY);
     }
     render(&mut engine, 1);
