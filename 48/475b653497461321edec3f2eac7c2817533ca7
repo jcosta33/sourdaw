@@ -1,0 +1,21 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_24b1bdbc3c31ad::t_c736198f07cd1c 5
+  s_24b1bdbc3c31ad::t_ec2e9ac25b0d60 203-208
+  s_24b1bdbc3c31ad::t_dbdda9c273b1d1 31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "48475b653497461321edec3f2eac7c2817533ca7",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
