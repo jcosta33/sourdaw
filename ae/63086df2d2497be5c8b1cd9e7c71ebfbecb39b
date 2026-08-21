@@ -1,0 +1,85 @@
+scripts/deliverPullRequest.ts
+  s_a40848e8f8cca9::t_dbcc77bc71a2cc 3,13,21-29,68-69,73-77,80-81,158-171,188-189,191,195-198,202,218-223,225-237,239-247,249-255,257-265,335,338,342,365
+  s_a40848e8f8cca9::t_6b2d387ff4fb1c 78-79,199-200,442-443,445-450,458-459
+  s_a40848e8f8cca9::t_8a26a6dd09b4a4 742,746
+  s_a40848e8f8cca9::t_778ff6814570bf 31,172-187,190,192-194,201,203-217,224,238,248,256,695,715
+  s_a40848e8f8cca9::t_16a0f3ea08c266 437-441,444,451-457,460-465,634-663
+  s_a40848e8f8cca9::t_38529b353aa6d1 665-666,688-694,696-697,699-714,716-723,725-734,745,747-750,757-765
+  s_a40848e8f8cca9::t_f903071ab3f033 698,724,744
+  s_a40848e8f8cca9::t_49788234f3e59b 368,664,735-737,766-767
+scripts/__tests__/prContract.spec.ts
+  s_a40848e8f8cca9::t_7ab6465c80f47a 144
+  s_a40848e8f8cca9::t_1543952125fdfa 10,15,136-143,145-152
+  s_a40848e8f8cca9::t_1c46053b67fec6 153-154
+scripts/__tests__/reconcileTrackerIssue.spec.ts
+  s_a40848e8f8cca9::t_d3b0498abf2bfb 43-57,207-230,248-252,286-301,303-305,406,500-503
+  s_a40848e8f8cca9::t_e613dd645c67c5 76,206,302
+  s_a40848e8f8cca9::t_aaca0d009afb54 2-4,13,306,308-320,515-535
+  s_a40848e8f8cca9::t_bcdfe6d674eaac 166-169,189,191,202
+  s_a40848e8f8cca9::t_4a47220ec42a19 545-548
+  s_a40848e8f8cca9::t_2dacf586f7b59d 171-187,231-247
+  s_487e9aa1e46063::t_067651902bce12 307,536
+scripts/trustedGithubWriteBootstrap.ts
+  s_a40848e8f8cca9::t_e27c1419db67b5 4,41-44,46,50-77
+  s_a40848e8f8cca9::t_910a1c43dccd09 1-3,5-36,45,47-49,78-116,118-153
+  s_a40848e8f8cca9::t_f73f7b77664083 37-40,117
+package.json
+  s_a40848e8f8cca9::t_910a1c43dccd09 29,37
+scripts/prContract.ts
+  s_a40848e8f8cca9::t_aafec76ba06575 108-114,121-123,218-263
+  s_487e9aa1e46063::t_161add1bbafcda 264
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_e27c1419db67b5 71,101-113
+  s_a40848e8f8cca9::t_8a42f2cde9aed7 72,75-100,117-184
+  s_a40848e8f8cca9::t_d3b0498abf2bfb 1,25,73-74
+  s_a40848e8f8cca9::t_d6ba48d1b8d070 6-11
+  s_a40848e8f8cca9::t_b3565b00d0072b 23,59,70,116
+scripts/trackerIssueReconciliation.ts
+  s_a40848e8f8cca9::t_aadf67c3ff18da 123
+  s_a40848e8f8cca9::t_baae05facd1ad0 23-25,28,71-75,77-79,81-82,91-93,95-108,111,187,201-202,205,208,217,225,273-274,281,297-299
+  s_24b1bdbc3c31ad::t_a7f486e95fb53a 300-302
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_a40848e8f8cca9::t_315d1f7c96a790 124-135,138-141
+  s_a40848e8f8cca9::t_d3b0498abf2bfb 1,216,219-223,226-244,264-268,311-321,324-327,335,397-398,400-406,409-410,420,427,444,450
+  s_a40848e8f8cca9::t_80d6a1ddbdba8f 474-481
+  s_a40848e8f8cca9::t_a20a4f43b7b72e 69,123,142-148,151-155,158-159
+  s_a40848e8f8cca9::t_70173837ddaaed 136-137,149-150,156-157,224-225,322-323,407-408,463-464,471-472,500-501
+  s_a40848e8f8cca9::t_4ff438f012c5cc 454-462,465-470,473,482-499,502-511
+scripts/reconcileTrackerIssue.ts
+  s_a40848e8f8cca9::t_98e6fdc8b55f1c 307-308
+  s_a40848e8f8cca9::t_affcc25deb3ff1 2,4,117-127,129,131,134,136,138,145-147,152,154-162,239-243,248,293,311,357-358
+  s_a40848e8f8cca9::t_2dacf586f7b59d 289,309-310
+  s_a40848e8f8cca9::t_dbb5d8bc81990f 3,128,130,132-133,135,137,139-144,148-151,153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ae63086df2d2497be5c8b1cd9e7c71ebfbecb39b",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
