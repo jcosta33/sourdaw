@@ -685,6 +685,15 @@ fn report_cpal_runtime_failure(
     }
 }
 
+fn cpal_runtime_failure_callback(
+    stream_failed: Arc<AtomicBool>,
+    stream_failure: Arc<Mutex<Option<String>>>,
+) -> impl FnMut(cpal::Error) + Send + 'static {
+    move |error| {
+        report_cpal_runtime_failure(&stream_failed, &stream_failure, error);
+    }
+}
+
 fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("No microphone found")?;
@@ -712,13 +721,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
                     buf.0.extend_from_slice(&data[..count]);
                 }
             },
-            {
-                let stream_failed = stream_failed.clone();
-                let stream_failure = stream_failure.clone();
-                move |error| {
-                    report_cpal_runtime_failure(&stream_failed, &stream_failure, error);
-                }
-            },
+            cpal_runtime_failure_callback(stream_failed.clone(), stream_failure.clone()),
             None,
         )
         .map_err(|e| format!("Failed to build mic stream: {e}"))?;
@@ -1049,11 +1052,14 @@ mod tests {
 
     #[test]
     fn cpal_runtime_error_rejects_before_capture_sample_extraction() {
-        let stream_failed = AtomicBool::new(false);
-        let stream_failure = Mutex::new(None);
-        // This calls the exact nonblocking transition wired to CPAL's runtime
-        // error callback, rather than pre-seeding the state it is meant to set.
-        report_cpal_runtime_failure(&stream_failed, &stream_failure, "disconnected");
+        let stream_failed = Arc::new(AtomicBool::new(false));
+        let stream_failure = Arc::new(Mutex::new(None));
+        let mut error_callback =
+            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&stream_failure));
+        error_callback(cpal::Error::with_message(
+            cpal::ErrorKind::DeviceNotAvailable,
+            "disconnected",
+        ));
         let result = finish_capture_after_stream_status(
             SensitiveCaptureBuffer(vec![0.2, -0.3]),
             &stream_failed,
