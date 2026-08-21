@@ -2,11 +2,11 @@ import { generateGroupId, isExecutableAppActionType } from '#/modules/Command/us
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
-import { describePlannedAction } from './describePlannedAction';
+import { agentRunLifecycle } from './agentRunLifecycle';
 import { executePlannedActions } from './executePlannedActions';
-import { getProjectContext } from './getProjectContext';
+import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
+import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 
 type ExecutePromptActionGroupInput = {
     actions: readonly AppAction[];
@@ -15,6 +15,12 @@ type ExecutePromptActionGroupInput = {
     executionMode?: 'atomic';
     signal?: AbortSignal;
     successVerb?: 'Executed' | 'Confirmed';
+    runId: string;
+    prepared: {
+        commandBatch: Parameters<typeof issueAgentCommandApprovalBinding>[0]['commandBatch'];
+        agentApproval: Parameters<typeof issueAgentCommandApprovalBinding>[0]['approval'] | null;
+        requiresConfirmation: boolean;
+    };
 };
 
 export async function executePromptActionGroup(input: ExecutePromptActionGroupInput): Promise<void> {
@@ -26,37 +32,47 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
         return;
     }
 
-    const context = getProjectContext();
     const group = generateGroupId(input.prompt);
-    const commandBatch = compilePlannedActionCommandBatch({
-        actions: input.actions,
-        actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
-        autoCommit: true,
-        autoCommitApproval: () =>
-            captureProjectRevision() === input.projectRevision
-                ? { status: 'valid' }
-                : { status: 'invalid', reason: 'The command-palette source revision is stale.' },
-        context,
-        group,
-        intent: input.prompt,
-        projectRevision: input.projectRevision,
-        runId: `prompt-execution-${crypto.randomUUID()}`,
-    }).commandBatch;
+    const commandBatch = (() => {
+        if (!input.prepared.agentApproval) {
+            return input.prepared.commandBatch;
+        }
+        return {
+            ...input.prepared.commandBatch,
+            approvalBinding: issueAgentCommandApprovalBinding({
+                approval: input.prepared.agentApproval,
+                commandBatch: input.prepared.commandBatch,
+            }),
+        };
+    })();
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'executing', revision: input.projectRevision });
     const execution = await executePlannedActions({ ...input, group, commandBatch });
     if (execution.status === 'committed' || execution.status === 'executed') {
+        if (execution.receipt) {
+            recordAgentRunReceiptSaga({ runId: input.runId, receipt: execution.receipt, actions: input.actions });
+        }
+        agentRunLifecycle.transitionPhase({
+            runId: input.runId,
+            phase: 'completed',
+            revision: captureProjectRevision(),
+        });
         return;
     }
     if (execution.status === 'invalidated' || execution.status === 'failed') {
+        agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'failed' });
         notifyAiChange(`Command not executed: ${execution.reason}`, []);
         return;
     }
     if (execution.status === 'ambiguous') {
+        agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'partially-completed' });
         notifyAiChange(`Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`, []);
         return;
     }
     if (execution.status === 'cancelled') {
+        agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
         notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
         return;
     }
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'completed' });
     notifyAiChange('No project changes were needed.', []);
 }

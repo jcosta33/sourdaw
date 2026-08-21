@@ -2,19 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
-import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { executePlannedActions } from '../executePlannedActions';
 import { executePromptActionGroup } from '../executePromptActionGroup';
 import { notifyAiChange } from '../notifyAiChange';
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
-    compilePlannedActionCommandBatch: vi.fn(() => ({
-        commandBatch: { serialized: 'command-batch', authority: { projectId: 'revision-1' } },
-        commandEnvelopes: ['command-envelope'],
-    })),
     executePlannedActions: vi.fn(),
     notifyAiChange: vi.fn(),
+    agentRunLifecycle: { transitionPhase: vi.fn() },
+    issueApprovalBinding: vi.fn(() => ({ token: 'exact-approval' })),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -24,15 +21,12 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: () => mocks.projectRevision.value,
 }));
-vi.mock('../compilePlannedActionCommandBatch', () => ({
-    compilePlannedActionCommandBatch: mocks.compilePlannedActionCommandBatch,
-}));
-vi.mock('../describePlannedAction', () => ({
-    describePlannedAction: ({ action }: { action: AppAction }) => action.type,
-}));
 vi.mock('../executePlannedActions', () => ({ executePlannedActions: mocks.executePlannedActions }));
-vi.mock('../getProjectContext', () => ({ getProjectContext: () => ({ tracks: [] }) }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
+vi.mock('../agentRunLifecycle', () => ({ agentRunLifecycle: mocks.agentRunLifecycle }));
+vi.mock('../issueAgentCommandApprovalBinding', () => ({
+    issueAgentCommandApprovalBinding: mocks.issueApprovalBinding,
+}));
 
 describe('executePromptActionGroup', () => {
     beforeEach(() => {
@@ -41,26 +35,25 @@ describe('executePromptActionGroup', () => {
         mocks.executePlannedActions.mockResolvedValue({ status: 'committed', actions: [] });
     });
 
-    it('owns command compilation, approval revalidation, and dispatch outside presentation code', async () => {
+    const admitted = () => ({
+        runId: 'prompt-run-1',
+        prepared: {
+            commandBatch: { serialized: 'command-batch', authority: { projectId: 'revision-1' } } as never,
+            agentApproval: null,
+            requiresConfirmation: false,
+        },
+    });
+
+    it('dispatches only an already-admitted command batch outside presentation code', async () => {
         const action = { type: 'togglePlayback' } satisfies AppAction;
 
-        await executePromptActionGroup({ actions: [action], prompt: 'Play', projectRevision: 'revision-1' });
-
-        expect(vi.mocked(compilePlannedActionCommandBatch)).toHaveBeenCalledWith(
-            expect.objectContaining({
-                actions: [action],
-                actionLabels: ['togglePlayback'],
-                autoCommit: true,
-                projectRevision: 'revision-1',
-            })
-        );
-        const compileInput = vi.mocked(compilePlannedActionCommandBatch).mock.calls[0]?.[0];
-        expect(compileInput?.autoCommitApproval?.()).toEqual({ status: 'valid' });
-        mocks.projectRevision.value = 'revision-2';
-        expect(compileInput?.autoCommitApproval?.()).toEqual({
-            status: 'invalid',
-            reason: 'The command-palette source revision is stale.',
+        await executePromptActionGroup({
+            actions: [action],
+            prompt: 'Play',
+            projectRevision: 'revision-1',
+            ...admitted(),
         });
+
         expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
             expect.objectContaining({ actions: [action], prompt: 'Play', projectRevision: 'revision-1' })
         );
@@ -71,13 +64,64 @@ describe('executePromptActionGroup', () => {
             actions: [{ type: 'removeAllTracks' }],
             prompt: 'Delete everything',
             projectRevision: 'revision-1',
+            ...admitted(),
         });
 
-        expect(vi.mocked(compilePlannedActionCommandBatch)).not.toHaveBeenCalled();
         expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
             'Command not executed: one or more actions are not available through the approved command boundary.',
             []
+        );
+    });
+
+    it('keeps an admitted prompt run non-terminal until execution records its outcome', async () => {
+        const action = { type: 'togglePlayback' } satisfies AppAction;
+
+        await executePromptActionGroup({
+            actions: [action],
+            prompt: 'Play',
+            projectRevision: 'revision-1',
+            ...admitted(),
+        });
+
+        expect(mocks.agentRunLifecycle.transitionPhase).toHaveBeenCalledWith(
+            expect.objectContaining({ runId: 'prompt-run-1', phase: 'completed' })
+        );
+    });
+
+    it('never creates a synthetic execution run while dispatching an admitted run', async () => {
+        const action = { type: 'togglePlayback' } satisfies AppAction;
+
+        await executePromptActionGroup({
+            actions: [action],
+            prompt: 'Play',
+            projectRevision: 'revision-1',
+            ...admitted(),
+        });
+
+        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
+            expect.objectContaining({ runId: 'prompt-run-1' })
+        );
+    });
+
+    it('binds the exact application-issued approval to the admitted command batch', async () => {
+        const action = { type: 'togglePlayback' } satisfies AppAction;
+        const approval = { actorId: 'artist-1', fingerprint: 'compiled-risk-fingerprint' } as never;
+        const commandBatch = { serialized: 'command-batch', authority: { projectId: 'revision-1' } } as never;
+
+        await executePromptActionGroup({
+            actions: [action],
+            prompt: 'Play',
+            projectRevision: 'revision-1',
+            runId: 'prompt-run-1',
+            prepared: { commandBatch, agentApproval: approval, requiresConfirmation: true },
+        });
+
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith({ approval, commandBatch });
+        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
+            expect.objectContaining({
+                commandBatch: expect.objectContaining({ approvalBinding: { token: 'exact-approval' } }),
+            })
         );
     });
 });

@@ -48,11 +48,12 @@ export { parsePromptToActions } from './parsePromptToActions';
 export { planPromptActions } from './planPromptActions';
 export { executePlannedActions } from './executePlannedActions';
 export { executePromptActionGroup } from './executePromptActionGroup';
+export { submitAdmittedPromptRequest } from './submitAdmittedPromptRequest';
 export { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 
-export { onPromptInjection } from './onPromptInjection';
-export { injectPromptCommand } from './promptInjection';
 export { injectVoicePromptDraft } from './injectVoicePromptDraft';
+export { injectPromptDraft } from './injectPromptDraft';
+export { onPromptDraft } from './onPromptDraft';
 export { onVoicePromptDraft } from './onVoicePromptDraft';
 export { createVoicePromptDraftAdmission } from './voicePromptDraftAdmission';
 
