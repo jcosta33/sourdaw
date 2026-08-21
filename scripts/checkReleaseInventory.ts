@@ -102,6 +102,7 @@ const DDSP_TFJS_LEGAL_PATHS = [
 ] as const;
 
 export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md';
+const DDSP_ARTIFACT_MANIFEST_PATH = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
 
 export const DDSP_MODEL_PATHS = [
     DDSP_ADMISSION_DECISION_PATH,
@@ -114,9 +115,11 @@ export const DDSP_MODEL_PATHS = [
     'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
     'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
     'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
     'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
     'src/modules/BrowserAi/useCases/downloadModel.ts',
     'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
     'src/modules/BrowserAi/useCases/removeModel.ts',
     'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
@@ -615,6 +618,12 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): Partial<R
 
 /** Exact admitted identity, delivery boundary, and legal status of the Magenta DDSP checkpoints. */
 export function ddspModelsReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
+    const decision = readFileSync(resolve(root, DDSP_ADMISSION_DECISION_PATH), 'utf8');
+    const admittedManifest = /Admitted `DdspArtifactManifest` SHA-256:\s*`([a-f0-9]{64})`/u.exec(decision)?.[1];
+    const currentManifest = fileSha256(resolve(root, DDSP_ARTIFACT_MANIFEST_PATH));
+    if (admittedManifest === undefined || admittedManifest !== currentManifest) {
+        throw new Error('ADR 0035 does not admit the current DDSP artifact manifest');
+    }
     const artifacts = Object.values(DDSP_ARTIFACTS).flat();
 
     return {
@@ -638,7 +647,7 @@ export function ddspModelsReleaseInventoryContract(root: string): Partial<Releas
         digests: [
             `sha256:${fileSha256(resolve(root, DDSP_ADMISSION_DECISION_PATH))}:${DDSP_ADMISSION_DECISION_PATH}`,
             `sha256:${fileSha256(resolve(root, 'electron/protocol.ts'))}:electron/protocol.ts`,
-            `sha256:${fileSha256(resolve(root, 'src/modules/BrowserAi/models/DdspArtifactManifest.ts'))}:src/modules/BrowserAi/models/DdspArtifactManifest.ts`,
+            `sha256:${currentManifest}:${DDSP_ARTIFACT_MANIFEST_PATH}`,
             `sha256:${fileSha256(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'))}:public/legal/THIRD-PARTY-NOTICES.md`,
             ...artifacts.map(({ sha256, sizeBytes, url }) => `sha256:${sha256}:bytes:${sizeBytes}:${url}`),
         ],

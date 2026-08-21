@@ -35,6 +35,9 @@ runtime. Neither source grants a license for the checkpoint weights.
 
 - Sourdaw admits the exact twelve artifacts pinned by `DdspArtifactManifest`, not a mutable
   checkpoint directory or caller-supplied URL.
+- Admitted `DdspArtifactManifest` SHA-256:
+  `6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec`. A changed manifest requires
+  a later admission decision; editing this accepted decision is not an update mechanism.
 - The user's browser fetches those bytes directly from Magenta only after an explicit instrument
   download action. The download repository stages the response and verifies the declared byte size
   and SHA-256 before publishing a generation for readiness or use.

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -37,6 +38,10 @@ import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
+
+function sha256(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+}
 
 function wasmWithFunctionExport(name: string): Uint8Array {
     const encodedName = new TextEncoder().encode(name);
@@ -320,6 +325,8 @@ describe('release inventory', () => {
         expect(contract.paths).toEqual(
             expect.arrayContaining([
                 'electron/protocol.ts',
+                'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+                'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
                 'src/modules/BrowserAi/useCases/downloadModel.ts',
                 'src/modules/BrowserAi/useCases/removeModel.ts',
                 'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
@@ -335,31 +342,66 @@ describe('release inventory', () => {
         );
     });
 
-    it.each([
-        DDSP_ADMISSION_DECISION_PATH,
-        'electron/protocol.ts',
-        'public/legal/THIRD-PARTY-NOTICES.md',
-        'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
-    ])('rejects admitted DDSP provenance drift in %s', (changedPath) => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-model-admission-'));
-        const hashedPaths = [
-            DDSP_ADMISSION_DECISION_PATH,
-            'electron/protocol.ts',
-            'public/legal/THIRD-PARTY-NOTICES.md',
-            'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
-        ];
-        for (const path of hashedPaths) {
+    it.each([DDSP_ADMISSION_DECISION_PATH, 'electron/protocol.ts', 'public/legal/THIRD-PARTY-NOTICES.md'])(
+        'rejects admitted DDSP provenance drift in %s',
+        (changedPath) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-model-admission-'));
+            const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+            const manifest = `baseline:${manifestPath}`;
+            const hashedPaths = ['electron/protocol.ts', 'public/legal/THIRD-PARTY-NOTICES.md', manifestPath];
+            for (const path of hashedPaths) {
+                mkdirSync(dirname(join(root, path)), { recursive: true });
+                writeFileSync(join(root, path), path === manifestPath ? manifest : `baseline:${path}`);
+            }
+            mkdirSync(dirname(join(root, DDSP_ADMISSION_DECISION_PATH)), { recursive: true });
+            writeFileSync(
+                join(root, DDSP_ADMISSION_DECISION_PATH),
+                `Admitted \`DdspArtifactManifest\` SHA-256: \`${sha256(manifest)}\``
+            );
+
+            try {
+                const admitted = ddspModelsReleaseInventoryContract(root);
+                expect(() => assertDdspModelsReleaseInventory(root, admitted)).not.toThrow();
+
+                writeFileSync(join(root, changedPath), `changed:${changedPath}`);
+                expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
+                    changedPath === DDSP_ADMISSION_DECISION_PATH
+                        ? 'ADR 0035 does not admit the current DDSP artifact manifest'
+                        : 'DDSP models release inventory digests does not match provenance'
+                );
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it('rejects a regenerated DDSP inventory when the manifest changes without a new admission decision', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-manifest-anchor-'));
+        const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+        const manifest = 'admitted manifest';
+        for (const [path, value] of [
+            [manifestPath, manifest],
+            ['electron/protocol.ts', 'protocol'],
+            ['public/legal/THIRD-PARTY-NOTICES.md', 'notice'],
+            [DDSP_ADMISSION_DECISION_PATH, `Admitted \`DdspArtifactManifest\` SHA-256: \`${sha256(manifest)}\``],
+        ] as const) {
             mkdirSync(dirname(join(root, path)), { recursive: true });
-            writeFileSync(join(root, path), `baseline:${path}`);
+            writeFileSync(join(root, path), value);
         }
 
         try {
             const admitted = ddspModelsReleaseInventoryContract(root);
-            expect(() => assertDdspModelsReleaseInventory(root, admitted)).not.toThrow();
+            const changedManifest = 'changed manifest and artifact identities';
+            writeFileSync(join(root, manifestPath), changedManifest);
+            const regenerated = {
+                ...admitted,
+                digests: admitted.digests?.map((digest) =>
+                    digest.endsWith(`:${manifestPath}`) ? `sha256:${sha256(changedManifest)}:${manifestPath}` : digest
+                ),
+            };
 
-            writeFileSync(join(root, changedPath), `changed:${changedPath}`);
-            expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
-                'DDSP models release inventory digests does not match provenance'
+            expect(() => assertDdspModelsReleaseInventory(root, regenerated)).toThrow(
+                'ADR 0035 does not admit the current DDSP artifact manifest'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });

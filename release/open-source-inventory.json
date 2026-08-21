@@ -407,9 +407,11 @@
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts",
+                "src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts",
                 "src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "src/modules/BrowserAi/useCases/downloadModel.ts",
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "src/modules/BrowserAi/useCases/removeDdspInstrument.ts",
                 "src/modules/BrowserAi/useCases/removeModel.ts",
                 "src/modules/BrowserAi/useCases/renderDdspInstrument.ts"
             ],
@@ -426,7 +428,7 @@
                 "12 exact artifacts"
             ],
             "digests": [
-                "sha256:34b2aa205d9abe0ed49e5afc9f63ba277c3f8729d2ce15cfd8d0939989b9f335:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
+                "sha256:902f1a41373c9e6884eb4f39eb369d3e897116b2204bbe2fab869c06b843a9d1:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md",
