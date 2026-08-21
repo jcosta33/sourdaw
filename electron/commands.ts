@@ -110,8 +110,19 @@ export const EXPOSED_COMMANDS = [
  * reason: Tauri's `allow-sourdaw-commands` capability granted all of them to
  * the main window (`src-tauri/permissions/sourdaw-commands.toml`), and they
  * carried into `EXPOSED_COMMANDS` unchanged at the Tauri-to-Electron cutover.
- * No caller for any of them has ever existed in `src/` — Link has no UI or use
- * case wired to it — so they stay denied here until one does.
+ * The callers that grant was written for were already gone by then. The
+ * transport UI's Link toggle went in jcosta33/sourdaw#1640, and `4497e0047`
+ * (jcosta33/sourdaw#2039) deleted the `linkBridge` repositories, the `link`
+ * use cases and `linkStatusStore` as orphaned — hours before `2b67adcd7`
+ * created this shell's surface, which is why the grants arrived callerless.
+ * Nothing in `src/` has invoked them since.
+ *
+ * The reason that outlasts any of that: Link is a declared-unsupported
+ * capability surface. `crates/sourdaw-native/src/commands/link.rs` answers
+ * every one of these with `supported: false` and a "not implemented in this
+ * build" message, and `crates/sourdaw-native/AGENTS.md` pins that no native
+ * Link library is linked. Exposing them would widen the renderer's reach onto
+ * stubs, so they stay denied until Link is implemented and a caller exists.
  *
  * The offline graph commands (`map_graph_batch`, `register_timeline_sample`,
  * `render_graph_offline`) are exposed as of the D3.c.2 cutover

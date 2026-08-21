@@ -16,7 +16,8 @@
  * every exposed command has a production caller, so the surface never widens
  * ahead of a real need.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -60,28 +61,36 @@ const ADDON_PLUMBING: ReadonlySet<string> = new Set([
 /** Every command the product registers: the addon surface minus plumbing. */
 const registeredCommands = (): string[] => addonMethods().filter((name) => !ADDON_PLUMBING.has(name));
 
+/** The renderer's copy of the argument table, at the one path it lives at. */
+const SEAM_TABLE_PATH = join('src', 'utils', 'sourdawCommandArguments.ts');
+
 /**
  * Every production TypeScript source under a directory, concatenated. Specs,
  * stories and E2E files are excluded: a command whose only mention is a test
  * has no caller.
+ *
+ * `skip` is per-call rather than baked in, because the two callers want
+ * opposite things from an exclusion. In the `src` caller scan an excluded file
+ * makes the check stricter; in the `electron` renderer-import pin an excluded
+ * file can only hide a breach. A skip shared by both — and keyed on a bare
+ * filename rather than on the one path it means to exclude — would silently
+ * exempt any shell file that happened to carry that name from the pin.
  */
-const readProductionTypescript = (directory: string): string =>
+const readProductionTypescript = (directory: string, skip: (path: string) => boolean = () => false): string =>
     readdirSync(directory, { withFileTypes: true })
         .filter((entry) => entry.name !== '__tests__' && entry.name !== 'out')
         .flatMap((entry) => {
             const path = join(directory, entry.name);
             if (entry.isDirectory()) {
-                return [readProductionTypescript(path)];
+                return [readProductionTypescript(path, skip)];
             }
             if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) {
                 return [];
             }
-            if (
-                entry.name.includes('.spec.') ||
-                entry.name.includes('.stories.') ||
-                entry.name.includes('.e2e.') ||
-                entry.name === 'sourdawCommandArguments.ts'
-            ) {
+            if (entry.name.includes('.spec.') || entry.name.includes('.stories.') || entry.name.includes('.e2e.')) {
+                return [];
+            }
+            if (skip(path)) {
                 return [];
             }
             return [readFileSync(path, 'utf8')];
@@ -108,11 +117,11 @@ describe('the Electron command surface', () => {
         // this check passes on any quoted occurrence, reachable or not. An
         // exposure therefore also needs the call chain verified by hand and
         // recorded in the exposing commit.
-        const productionSource = readProductionTypescript('src');
+        const productionSource = readProductionTypescript('src', (path) => path === SEAM_TABLE_PATH);
         // The seam table's own quoted command names would satisfy every
         // membership check below regardless of whether a real caller exists,
         // so its exclusion from the scan is load-bearing: prove it is still
-        // in effect rather than trusting the directory-walk skip silently.
+        // in effect rather than trusting the walk's skip silently.
         // The identifier alone is the wrong probe — `desktopBridge.ts` is a
         // legitimate production caller and imports it by name — so this
         // matches the *declaration*, which only the seam table itself carries.
@@ -153,14 +162,36 @@ describe('the Electron command surface', () => {
     });
 
     it('keeps shell runtime code out of the renderer tree', () => {
-        // Only the specs may import from `src/` (this file cross-checks the
-        // renderer's seam table). `electron/tsconfig.json` maps `#/*` for that
-        // spec-only use; this pin is what keeps the mapping from becoming a
-        // runtime dependency on the renderer bundle.
+        // Only the specs may reach into `src/` (this file cross-checks the
+        // renderer's seam table, through the explicit relative import at the
+        // top). `electron/tsconfig.json` carries no `paths` alias, so `#/` is
+        // unresolvable in the shell to begin with; this pin is what keeps
+        // either route from becoming a runtime dependency on the renderer.
         const shellSource = readProductionTypescript('electron');
 
         expect(shellSource).not.toMatch(/from\s+'#\//u);
         expect(shellSource).not.toMatch(/from\s+'\.\.\/src\//u);
+    });
+
+    it('scans a shell file that shares the seam table filename', () => {
+        // The seam-table exclusion belongs to the `src` caller scan alone. Held
+        // in the shared walk it would also exempt a shell file of that name
+        // from the pin above, where an exclusion can only hide a breach — and
+        // a shell-side copy of the argument table is exactly the file that
+        // would arrive under that name. Run against a throwaway tree so the
+        // pin's real inputs are never disturbed.
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-shell-scan-'));
+
+        try {
+            writeFileSync(join(directory, 'sourdawCommandArguments.ts'), "import { x } from '#/x';\n");
+
+            expect(
+                readProductionTypescript(directory),
+                'the shared walk exempts the seam table filename everywhere'
+            ).toMatch(/from\s+'#\//u);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
     });
 });
 
