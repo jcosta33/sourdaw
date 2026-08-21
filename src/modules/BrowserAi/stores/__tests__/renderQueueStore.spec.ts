@@ -59,7 +59,7 @@ describe('markRenderComplete', () => {
         expect(previewEntries).toEqual([]);
     });
 
-    it('leaves a newer same-phrase request untouched when an older request completes', () => {
+    it('should leave a newer same-phrase request untouched when an older request completes', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-old' }));
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
 
@@ -72,7 +72,7 @@ describe('markRenderComplete', () => {
         });
     });
 
-    it('lets the current same-phrase request complete after an older completion was ignored', () => {
+    it('should let the current same-phrase request complete after an older completion was ignored', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-old' }));
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
         markRenderComplete('phrase-A', 'req-old', 'cache-key-old');
@@ -109,7 +109,7 @@ describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('stale');
     });
 
-    it('removes the current queued entry and marks its phrase not rendered on cancel', () => {
+    it('should remove the current queued entry and mark its phrase not rendered on cancel', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-A' }));
 
         cancelQueuedRender('phrase-A', 'req-A');
@@ -118,7 +118,7 @@ describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('not-rendered');
     });
 
-    it('does not let an older failure overwrite the newer same-phrase request', () => {
+    it('should not let an older failure overwrite the newer same-phrase request', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-old' }));
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
 
@@ -130,7 +130,7 @@ describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
     });
 
-    it('lets the current same-phrase failure update its own status', () => {
+    it('should let the current same-phrase failure update its own status', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
 
         updateRenderStatus('phrase-A', 'req-new', 'error');
@@ -139,7 +139,7 @@ describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
     });
 
-    it('does not let an older cancellation remove the newer same-phrase request', () => {
+    it('should not let an older cancellation remove the newer same-phrase request', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-old' }));
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
 

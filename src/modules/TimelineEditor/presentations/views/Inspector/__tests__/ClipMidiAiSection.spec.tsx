@@ -417,7 +417,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
     });
 
-    it('uses the transport default tempo when the tempo map is empty', async () => {
+    it('should use the transport default tempo when the tempo map is empty', async () => {
         setDdspReadyRegistry();
         const nonzeroTimelineClip = { ...clipA, startBeat: 8, endBeat: 12 };
         transportStore.set({ ...defaultTransportState, tempo: 90 });
@@ -455,7 +455,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(input?.notes[0]?.durationSec).toBeCloseTo(2 / 3, 9);
     });
 
-    it('integrates a mid-clip tempo step for clip-relative DDSP timing', async () => {
+    it('should integrate a mid-clip tempo step for clip-relative DDSP timing', async () => {
         setDdspReadyRegistry();
         const clip = { ...clipA, startBeat: 8, endBeat: 12 };
         tempoMapStore.set({
@@ -481,7 +481,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(input?.notes[0]?.durationSec).toBeCloseTo(1.5, 9);
     });
 
-    it('integrates a tempo ramp crossed by the clip and its note', async () => {
+    it('should integrate a tempo ramp crossed by the clip and its note', async () => {
         setDdspReadyRegistry();
         const clip = { ...clipA, startBeat: 8, endBeat: 12 };
         tempoMapStore.set({
@@ -507,7 +507,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(input?.notes[0]?.durationSec).toBeCloseTo(4 * Math.log(105 / 75), 9);
     });
 
-    it('uses a tempo-map event before the clip while keeping note timing clip-relative', async () => {
+    it('should use a tempo-map event before the clip while keeping note timing clip-relative', async () => {
         setDdspReadyRegistry();
         const clip = { ...clipA, startBeat: 8, endBeat: 12 };
         tempoMapStore.set({ changes: [{ id: 'prior', beat: 4, tempo: 150, curve: 'instant' }] });
@@ -528,7 +528,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(input?.notes[0]?.durationSec).toBeCloseTo(0.4, 9);
     });
 
-    it('drops a DDSP completion after switching clips while the current launch still paints and notifies', async () => {
+    it('should drop a DDSP completion after switching clips while the current launch still paints and notifies', async () => {
         setDdspReadyRegistry();
         setDdspNotes(clipA, clipB);
         const first = createGate();
@@ -563,7 +563,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(firstAbortCount).toBe(1);
     });
 
-    it('aborts the owned DDSP render on unmount and ignores its late completion', async () => {
+    it('should abort the owned DDSP render on unmount and ignore its late completion', async () => {
         setDdspReadyRegistry();
         setDdspNotes(clipA);
         const pending = createGate();
@@ -589,7 +589,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(abortCount).toBe(1);
     });
 
-    it('keeps an A→B→A-abandoned DDSP completion out of the fresh A panel', async () => {
+    it('should keep an A→B→A-abandoned DDSP completion out of the fresh A panel', async () => {
         setDdspReadyRegistry();
         setDdspNotes(clipA, clipB);
         const first = createGate();
@@ -614,7 +614,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
     });
 
-    it('does not report a DDSP failure or clear the newer spinner after switching clips', async () => {
+    it('should not report a DDSP failure or clear the newer spinner after switching clips', async () => {
         setDdspReadyRegistry();
         setDdspNotes(clipA, clipB);
         const abandoned = createGate();
@@ -645,7 +645,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
     });
 
-    it('suppresses an A→B→A-abandoned DDSP failure while reporting the fresh A failure', async () => {
+    it('should suppress an A→B→A-abandoned DDSP failure while reporting the fresh A failure', async () => {
         setDdspReadyRegistry();
         setDdspNotes(clipA, clipB);
         const abandoned = createGate();
@@ -717,7 +717,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(3);
     });
 
-    it('aborts the owned TTS render on unmount and ignores its late completion', async () => {
+    it('should abort the owned TTS render on unmount and ignore its late completion', async () => {
         setKokoroReadyRegistry();
         installTtsMock();
         const pending = hold(ttsCalls, 1);
@@ -736,7 +736,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
 
-    it('aborts the owned TTS render on unmount and ignores its late failure', async () => {
+    it('should abort the owned TTS render on unmount and ignore its late failure', async () => {
         setKokoroReadyRegistry();
         installTtsMock();
         const pending = hold(ttsCalls, 1);
@@ -810,7 +810,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
     // button while the first job is still in flight. `launchClipId` matches again after returning
     // to A, so this specifically proves the committed clip-change cleanup aborted the old launch.
 
-    it('keeps an A→B→A-abandoned TTS launch out of the fresh A panel (audit M-250)', async () => {
+    it('should keep an A→B→A-abandoned TTS launch out of the fresh A panel (audit M-250)', async () => {
         setKokoroReadyRegistry();
         installTtsMock();
         const abandoned = hold(ttsCalls, 1);
@@ -866,7 +866,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         ]);
     });
 
-    it('aborts the owned variation generation on unmount and ignores its late completion', async () => {
+    it('should abort the owned variation generation on unmount and ignore its late completion', async () => {
         installVariationsMock();
         const pending = hold(variationCalls, 1);
         const abort = captureLaunchAbort();
@@ -882,7 +882,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
 
-    it('aborts the owned variation generation on unmount and ignores its late failure', async () => {
+    it('should abort the owned variation generation on unmount and ignore its late failure', async () => {
         installVariationsMock();
         const pending = hold(variationCalls, 1);
         const abort = captureLaunchAbort();
@@ -963,7 +963,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(variationsButton().textContent).toContain('Generating…');
     });
 
-    it('keeps an A→B→A-abandoned variation launch out of the fresh A panel (audit M-250)', async () => {
+    it('should keep an A→B→A-abandoned variation launch out of the fresh A panel (audit M-250)', async () => {
         installVariationsMock();
         const abandoned = hold(variationCalls, 1);
         hold(variationCalls, 2);

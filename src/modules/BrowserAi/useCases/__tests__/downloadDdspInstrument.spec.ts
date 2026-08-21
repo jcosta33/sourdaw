@@ -56,14 +56,14 @@ describe('downloadDdspInstrument', () => {
         modelRegistryStore.set(registry());
     });
 
-    it('rejects a forged structural manifest at the catalog-ID boundary', () => {
+    it('should reject a forged structural manifest at the catalog-ID boundary', () => {
         expect(() =>
             downloadDdspInstrument({ id: instrument.id, artifacts: [] } as unknown as typeof instrument.id)
         ).toThrow('DDSP instrument is not admitted');
     });
 
     it.each(admittedInstruments)(
-        'delegates every exact %s checkpoint artifact in manifest order and changes only its status',
+        'should delegate every exact %s checkpoint artifact in manifest order and change only its status',
         async (candidate) => {
             const downloadModelRepo = vi.fn<DownloadModelRepo>().mockResolvedValue(undefined);
             const publishDdspInstrumentGeneration = vi.fn().mockResolvedValue(undefined);
@@ -116,7 +116,7 @@ describe('downloadDdspInstrument', () => {
         }
     );
 
-    it('cleans all partial artifacts when a download is cancelled or fails before the marker commit', async () => {
+    it('should clean all partial artifacts when a download is cancelled or fails before the marker commit', async () => {
         const failure = new DOMException('cancelled', 'AbortError');
         const downloadModelRepo = vi
             .fn<DownloadModelRepo>()
@@ -150,7 +150,7 @@ describe('downloadDdspInstrument', () => {
         expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({ status: 'error', downloadProgress: 0 });
     });
 
-    it('lets an overlapping caller reuse the generation published by the lock holder', async () => {
+    it('should let an overlapping caller reuse the generation published by the lock holder', async () => {
         let releaseFirstArtifact: (() => void) | undefined;
         const firstArtifact = new Promise<void>((resolve) => {
             releaseFirstArtifact = resolve;
@@ -203,7 +203,7 @@ describe('downloadDdspInstrument', () => {
         expect(withDdspInstrumentLock).toHaveBeenCalledWith(instrument.id, 'exclusive', expect.any(Function));
     });
 
-    it('finishes aborted cleanup before a queued retry publishes and never deletes the replacement', async () => {
+    it('should finish aborted cleanup before a queued retry publishes and never deletes the replacement', async () => {
         const events: string[] = [];
         let ready = false;
         let releaseCleanup: (() => void) | undefined;

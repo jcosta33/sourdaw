@@ -10,7 +10,7 @@ type LaunchedFixture = {
 };
 
 describe('Electron E2E user-data isolation', () => {
-    it('gives every launch a unique absolute user-data argument and never falls back to the default profile', async () => {
+    it('should give every launch a unique absolute user-data argument and never falls back to the default profile', async () => {
         const launches: string[] = [];
 
         for (let index = 0; index < 2; index += 1) {
@@ -31,7 +31,7 @@ describe('Electron E2E user-data isolation', () => {
         expect(launches.every((directory) => !existsSync(directory))).toBe(true);
     });
 
-    it('confirms shutdown before removing only the exact temporary directory on success', async () => {
+    it('should confirm shutdown before removing only the exact temporary directory on success', async () => {
         const events: string[] = [];
         let directory = '';
         let sibling = '';
@@ -63,7 +63,7 @@ describe('Electron E2E user-data isolation', () => {
     });
 
     it.each(['launch failure', 'probe failure', 'probe timeout', 'shutdown failure'])(
-        'removes the isolated profile after %s',
+        'should remove the isolated profile after %s',
         async (failure) => {
             let directory = '';
             const shutdown = vi.fn(() =>

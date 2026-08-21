@@ -151,7 +151,7 @@ describe('renderKokoroTts', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
     });
 
-    it('does not let an older delayed cache hit reclaim a phrase from a newer render', async () => {
+    it('should not let an older delayed cache hit reclaim a phrase from a newer render', async () => {
         const oldCache = deferred<Float32Array | null>();
         const newerInference = deferred<{
             type: 'tts-result';

@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkDdspTfjsWorkerBundle, DDSP_TFJS_BUNDLE_PACKAGES } from './checkDdspTfjsWorkerBundle.ts';
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
@@ -67,6 +68,8 @@ export const REQUIRED_MARKS = [
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
 export const TFJS_APACHE_LICENSE_PATH = 'public/legal/Apache-2.0.txt';
 export const TFJS_NOTICE_PATH = 'public/legal/TensorFlow.js-NOTICE.txt';
+export const TFJS_LAYERS_LICENSE_PATH = 'public/legal/TensorFlow.js-Layers-LICENSE.txt';
+export const SEEDRANDOM_LICENSE_PATH = 'public/legal/seedrandom-MIT.txt';
 export const MAGENTA_NOTICE_PATH = 'public/legal/Magenta.js-NOTICE.txt';
 export const THIRD_PARTY_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
 
@@ -76,6 +79,8 @@ export const DDSP_RELEASE_INVENTORY_PATHS = [
     'pnpm-lock.yaml',
     TFJS_APACHE_LICENSE_PATH,
     TFJS_NOTICE_PATH,
+    TFJS_LAYERS_LICENSE_PATH,
+    SEEDRANDOM_LICENSE_PATH,
     MAGENTA_NOTICE_PATH,
     THIRD_PARTY_NOTICE_PATH,
     'vite.config.ts',
@@ -86,7 +91,9 @@ export const DDSP_RELEASE_INVENTORY_PATHS = [
     'electron/__tests__/webviewSecurity.spec.ts',
     'scripts/electronE2EIsolation.ts',
     'scripts/runElectronE2E.ts',
+    'scripts/checkDdspTfjsWorkerBundle.ts',
     'scripts/checkReleaseInventory.ts',
+    'scripts/__tests__/checkDdspTfjsWorkerBundle.spec.ts',
     'scripts/__tests__/checkReleaseInventory.spec.ts',
     'scripts/__tests__/electronE2EIsolation.spec.ts',
     'scripts/__tests__/runElectronE2E.spec.ts',
@@ -157,8 +164,11 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
         'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/LICENSE',
         'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
         'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-layers/LICENSE',
         'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs/package.json',
         'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-backend-webgpu/package.json',
+        'https://github.com/dcodeIO/long.js/tree/941c5c62471168b5d18153755c2a7b38d2560e58',
+        'https://github.com/davidbau/seedrandom/tree/4460ad325a0a15273a211e509f03ae0beb99511a',
         'package.json',
         'pnpm-lock.yaml',
     ],
@@ -167,8 +177,7 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
         'magenta-js DDSP code 0692eb2b79681f062c6b6dd53a0361967f298caa',
         'magenta-js-ddsp-2020-01-05',
         'TensorFlow.js tfjs-v4.22.0 e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
-        '@tensorflow/tfjs 4.22.0',
-        '@tensorflow/tfjs-backend-webgpu 4.22.0',
+        ...DDSP_TFJS_BUNDLE_PACKAGES.map(({ name, version }) => `${name} ${version}`),
     ],
     digests: [
         'sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json',
@@ -190,7 +199,17 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
         'Apache-2.0:magenta-js-ddsp-code',
         'Apache-2.0:@tensorflow/tfjs',
         'Apache-2.0:@tensorflow/tfjs-backend-webgpu',
+        'Apache-2.0:@tensorflow/tfjs-backend-cpu',
+        'Apache-2.0:@tensorflow/tfjs-backend-webgl',
+        'Apache-2.0:@tensorflow/tfjs-converter',
+        'Apache-2.0:@tensorflow/tfjs-core',
+        'Apache-2.0:@tensorflow/tfjs-data',
+        'Apache-2.0-AND-MIT:@tensorflow/tfjs-layers',
+        'Apache-2.0:long',
+        'MIT:seedrandom',
         `Apache-2.0-license-text:${TFJS_APACHE_LICENSE_PATH}`,
+        `dual-license-text:${TFJS_LAYERS_LICENSE_PATH}`,
+        `MIT-license-notices:${SEEDRANDOM_LICENSE_PATH}`,
         `attribution-notice:${MAGENTA_NOTICE_PATH}`,
         `attribution-notice:${TFJS_NOTICE_PATH}`,
     ],
@@ -200,12 +219,14 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
         'Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface.',
         'The immutable Magenta.js DDSP source headers and repository license establish Apache-2.0 for the adapted code basis, including model.ts Roll registration.',
         'The TensorFlow.js 4.22.0 package metadata and unmodified Apache-2.0 license are pinned to upstream commit e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7.',
+        'The production TFJS worker source map is checked against the exact ten-package closure before web or desktop build completion.',
     ],
     obligations: [
         'Do not describe the checkpoint weights as Apache-2.0; the cited checkpoint permission does not establish that license.',
         'Preserve per-file size and SHA-256 admission before readiness or inference.',
         'Keep the Magenta.js copyright, code-basis attribution, modification notice, and Apache-2.0 license with distributed source and desktop builds.',
         'Keep TensorFlow.js Apache-2.0 attribution and notices with distributed source and desktop builds.',
+        'Keep the TensorFlow.js Layers dual Apache-2.0 and MIT license, seedrandom and Alea MIT notices, and exact closure record with distributed web and desktop builds.',
         'Download checkpoint weights at runtime only until redistribution rights are independently established.',
     ],
 } as const;
@@ -291,9 +312,14 @@ export function ddspReleaseInventoryContract(root: string) {
         revisions: [...DDSP_RELEASE_INVENTORY_CONTRACT.revisions],
         digests: [
             ...DDSP_RELEASE_INVENTORY_CONTRACT.digests,
-            ...[TFJS_APACHE_LICENSE_PATH, MAGENTA_NOTICE_PATH, TFJS_NOTICE_PATH, THIRD_PARTY_NOTICE_PATH].map(
-                (path) => `sha256:${fileSha256(resolve(root, path))}:${path}`
-            ),
+            ...[
+                TFJS_APACHE_LICENSE_PATH,
+                MAGENTA_NOTICE_PATH,
+                TFJS_NOTICE_PATH,
+                THIRD_PARTY_NOTICE_PATH,
+                TFJS_LAYERS_LICENSE_PATH,
+                SEEDRANDOM_LICENSE_PATH,
+            ].map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
         ],
         licenses: [...DDSP_RELEASE_INVENTORY_CONTRACT.licenses],
         evidence: [...DDSP_RELEASE_INVENTORY_CONTRACT.evidence],
@@ -812,6 +838,7 @@ export function checkReleaseInventory(root: string): void {
     assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
     const ddspSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
     assertSurfaceContract(ddspSurface, ddspReleaseInventoryContract(root), 'DDSP');
+    checkDdspTfjsWorkerBundle(root, false);
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

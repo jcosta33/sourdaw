@@ -37,9 +37,14 @@ See [SOURCES.json](./SOURCES.json) for exact package, source, and file identitie
 
 ## TensorFlow.js runtime
 
-Browser and desktop DDSP rendering includes TensorFlow.js 4.22.0 and its WebGPU backend under the
-Apache License 2.0. See [TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt) for the exact packages
-and immutable source revision, and [Apache-2.0.txt](./Apache-2.0.txt) for the complete license text.
+Browser and desktop DDSP rendering includes the exact ten-package closure recorded in
+[TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt). Most of the closure is Apache-2.0, but
+`@tensorflow/tfjs-layers` is dual-licensed under Apache-2.0 AND MIT and `seedrandom` is MIT.
+
+The complete shared Apache text is [Apache-2.0.txt](./Apache-2.0.txt). The exact upstream
+TensorFlow.js Layers dual-license file, with its copyrights, is
+[TensorFlow.js-Layers-LICENSE.txt](./TensorFlow.js-Layers-LICENSE.txt). The exact `seedrandom`
+and bundled Alea MIT notices are [seedrandom-MIT.txt](./seedrandom-MIT.txt).
 
 This attribution applies to the TensorFlow.js runtime only. It does not state or imply that the
 separately downloaded Magenta DDSP checkpoint weights are licensed under Apache-2.0.

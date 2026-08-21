@@ -377,7 +377,7 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
         await expect(ddspLoad).resolves.toBe('webgpu');
     });
 
-    it('aborts a pending DDSP session load through the worker without retaining dead state', async () => {
+    it('should abort a pending DDSP session load through the worker without retaining dead state', async () => {
         const controller = new AbortController();
         model_storage_mocks.readModel.mockResolvedValue(new MessageChannel().port1);
         const ddspLoad = inferenceWorkerBridge.loadDdspSession(
@@ -403,7 +403,7 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
         expect(worker.terminate).not.toHaveBeenCalled();
     });
 
-    it('arms worker teardown after a DDSP model-load failure', async () => {
+    it('should arm worker teardown after a DDSP model-load failure', async () => {
         vi.useFakeTimers();
         model_storage_mocks.readModel.mockResolvedValue(new MessageChannel().port1);
         const ddspLoad = inferenceWorkerBridge.loadDdspSession({
@@ -446,7 +446,7 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         expect(worker.onmessageerror).toBeNull();
     });
 
-    it('arms idle teardown after an inference failure', async () => {
+    it('should arm idle teardown after an inference failure', async () => {
         vi.useFakeTimers();
         const promise = inferenceWorkerBridge.runDdspInference(ddspRequest('failed'));
         await flush();
@@ -603,7 +603,7 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         expect(worker.postMessage).toHaveBeenCalledWith({ type: 'release-session', modelId: 'm1' });
     });
 
-    it('waits for confirmed TF.js DDSP session disposal before resolving removal', async () => {
+    it('should wait for confirmed TF.js DDSP session disposal before resolving removal', async () => {
         vi.useFakeTimers();
         model_storage_mocks.readModel.mockResolvedValue(new MessageChannel().port1);
         const load = inferenceWorkerBridge.loadDdspSession({
@@ -695,7 +695,7 @@ describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
 });
 
 describe('inferenceWorkerBridge — TF.js cancellation', () => {
-    it('turns an AbortSignal into targeted DDSP worker cancellation', async () => {
+    it('should turn an AbortSignal into targeted DDSP worker cancellation', async () => {
         const controller = new AbortController();
         const render = inferenceWorkerBridge.runDdspInference(ddspRequest('abort-me'), controller.signal);
         void render.catch(() => undefined);
@@ -709,7 +709,7 @@ describe('inferenceWorkerBridge — TF.js cancellation', () => {
         expect(worker.terminate).not.toHaveBeenCalled();
     });
 
-    it('cancels only the targeted DDSP request while a sibling survives', async () => {
+    it('should cancel only the targeted DDSP request while a sibling survives', async () => {
         const kept = inferenceWorkerBridge.runDdspInference(ddspRequest('keep'));
         const cancelled = inferenceWorkerBridge.runDdspInference(ddspRequest('cancel-me'));
         await flush();

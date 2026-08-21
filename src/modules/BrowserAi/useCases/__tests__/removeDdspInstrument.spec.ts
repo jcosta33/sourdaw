@@ -35,7 +35,7 @@ describe('removeDdspInstrument', () => {
         modelRegistryStore.set(registry());
     });
 
-    it('only reports not-downloaded and refreshes usage after strict artifact deletion succeeds', async () => {
+    it('should only report not-downloaded and refresh usage after strict artifact deletion succeeds', async () => {
         const removeDdspInstrumentGenerations = vi.fn().mockResolvedValue(undefined);
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         const releaseDdspSession = vi.fn().mockResolvedValue(undefined);
@@ -70,7 +70,7 @@ describe('removeDdspInstrument', () => {
         expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
     });
 
-    it('invalidates ready truth and refreshes usage when generation cleanup partially fails', async () => {
+    it('should invalidate ready truth and refresh usage when generation cleanup partially fails', async () => {
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         injectDependencies(removeDdspInstrument, {
             ddspModelStorage: {
@@ -95,7 +95,7 @@ describe('removeDdspInstrument', () => {
         expect(getStorageStatus).toHaveBeenCalledTimes(1);
     });
 
-    it('does not invalidate storage when session release fails', async () => {
+    it('should not invalidate storage when session release fails', async () => {
         const removeDdspInstrumentGenerations = vi.fn();
         injectDependencies(removeDdspInstrument, {
             ddspModelStorage: { removeDdspInstrumentGenerations },

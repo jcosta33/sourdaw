@@ -81,7 +81,7 @@ describe('withDdspInstrumentLock', () => {
         injectDependencies(withDdspInstrumentLock, { locks: createLockManager() });
     });
 
-    it('allows sibling shared renders and queues exclusive removal/download until both release', async () => {
+    it('should allow sibling shared renders and queue exclusive removal/download until both release', async () => {
         const first = gate();
         const second = gate();
         const events: string[] = [];

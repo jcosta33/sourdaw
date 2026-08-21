@@ -114,7 +114,7 @@ describe('initBrowserAi', () => {
         );
     });
 
-    it('derives DDSP readiness from the complete validated OPFS artifact set', async () => {
+    it('should derive DDSP readiness from the complete validated OPFS artifact set', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
         const check_ddsp_instrument_ready = vi.fn<CheckDdspInstrumentReady>().mockResolvedValue(true);

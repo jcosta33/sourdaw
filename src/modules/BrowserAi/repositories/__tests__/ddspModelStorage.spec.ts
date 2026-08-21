@@ -213,7 +213,7 @@ describe('ddspModelStorage generation index', () => {
         vi.clearAllMocks();
     });
 
-    it('publishes v2 before deleting the exact indexed v1 generation and leaves v2 ready', async () => {
+    it('should publish v2 before deleting the exact indexed v1 generation and leave v2 ready', async () => {
         const v1 = 'v1';
         const v1Generation = generation(v1);
         const foreignPath = `${instrument.id}/foreign/not-indexed.bin`;
@@ -260,7 +260,7 @@ describe('ddspModelStorage generation index', () => {
     });
 
     it.each(['size', 'sha256'] as const)(
-        'fails readiness and publication when one admitted artifact has the wrong %s',
+        'should fail readiness and publication when one admitted artifact has the wrong %s',
         async (field) => {
             const currentGeneration = generation(storage.version);
             const marker = readyMarkerBytes();
@@ -301,7 +301,7 @@ describe('ddspModelStorage generation index', () => {
         }
     );
 
-    it('keeps v2 current and ready with stale metadata when indexed v1 cleanup partially fails', async () => {
+    it('should keep v2 current and ready with stale metadata when indexed v1 cleanup partially fails', async () => {
         const v1 = 'v1';
         const v1Generation = generation(v1);
         const failedPath = v1Generation.artifactIds[1]!;
@@ -324,7 +324,7 @@ describe('ddspModelStorage generation index', () => {
         await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(true);
     });
 
-    it('fails closed on a malformed index for readiness and publication', async () => {
+    it('should fail closed on a malformed index for readiness and publication', async () => {
         const testStorage = storageBridge({
             files: new Map([[indexModelId, bytes({ currentVersion: storage.version, generations: [] })]]),
         });
@@ -338,7 +338,7 @@ describe('ddspModelStorage generation index', () => {
         expect(testStorage.bridge.deleteModel).not.toHaveBeenCalled();
     });
 
-    it('clears current before removal and preserves cleanup metadata after an artifact delete fails', async () => {
+    it('should clear current before removal and preserve cleanup metadata after an artifact delete fails', async () => {
         const currentGeneration = generation(storage.version);
         const failedPath = currentGeneration.artifactIds[1]!;
         const foreignPath = `${instrument.id}/foreign/not-indexed.bin`;

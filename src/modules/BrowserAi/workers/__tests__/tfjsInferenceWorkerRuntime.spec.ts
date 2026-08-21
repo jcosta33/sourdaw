@@ -238,7 +238,7 @@ afterEach(() => {
 });
 
 describe('tfjsInferenceWorkerRuntime', () => {
-    it('parses every required checkpoint conditioning field', () => {
+    it('should parse every required checkpoint conditioning field', () => {
         expect(parseDdspSettings(SETTINGS)).toEqual(VIOLIN_SETTINGS);
     });
 
@@ -249,7 +249,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         ['meanPitch', 111],
         ['postGain', 0],
         ['modelMaxFrameLength', 1],
-    ] as const)('rejects missing, non-finite, and out-of-range %s settings', (field, outOfRange) => {
+    ] as const)('should reject missing, non-finite, and out-of-range %s settings', (field, outOfRange) => {
         const missing = { ...VIOLIN_SETTINGS } as Record<string, number>;
         delete missing[field];
         expect(() => parseDdspSettings(settingsBytes(missing))).toThrow(field);
@@ -273,7 +273,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
             expectedPitch: [0, 110, 220, 440],
             expectedLoudness: [-120, -102.78986, -83.12112, -63.45238],
         },
-    ])('normalizes fixed MIDI features for the $name checkpoint before prediction', async (example) => {
+    ])('should normalize fixed MIDI features for the $name checkpoint before prediction', async (example) => {
         const harness = createHarness();
         await harness.runtime.handleRequest(
             createSessionRequest('load', artifacts({}, settingsBytes(example.settings)))
@@ -292,7 +292,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expectArrayClose(feeds.loudness_db.values.subarray(0, 4), example.expectedLoudness);
     });
 
-    it('preserves silence and uses the model sentinel values only for chunk padding', async () => {
+    it('should preserve silence and use the model sentinel values only for chunk padding', async () => {
         const harness = createHarness();
         await harness.runtime.handleRequest(
             createSessionRequest('load', artifacts({}, settingsBytes({ ...VIOLIN_SETTINGS, modelMaxFrameLength: 4 })))
@@ -309,7 +309,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(feeds.loudness_db.values).toEqual(new Float32Array([-120, -120, -120, -120]));
     });
 
-    it('applies checkpoint postGain to model audio before publishing', async () => {
+    it('should apply checkpoint postGain to model audio before publishing', async () => {
         const modelAudio = new Float32Array(80_000).fill(0.25);
         const harness = createHarness({ predict: vi.fn(() => fakeTensor(modelAudio, modelAudio)) });
         await harness.runtime.handleRequest(createSessionRequest('load'));
@@ -324,7 +324,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(response.audio.at(-1)).toBeCloseTo(0.5, 6);
     });
 
-    it('keeps the voiced register invariant when identical notes gain leading and trailing rests', async () => {
+    it('should keep the voiced register invariant when identical notes gain leading and trailing rests', async () => {
         const voicedPitch = Float32Array.from([110, 110, 110, 110]);
         const voicedLoudness = Float32Array.from([-80, -60, -50, -70]);
         const bare = await predictConditionedFeatures(voicedPitch, voicedLoudness);
@@ -348,7 +348,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expectArrayClose(padded.f0_hz.subarray(4, 8), Array.from(bare.f0_hz.subarray(0, 4)));
     });
 
-    it('does not shift the reviewer A4 note to the pitch ceiling when the phrase contains rest padding', async () => {
+    it('should not shift the reviewer A4 note to the pitch ceiling when the phrase contains rest padding', async () => {
         const note = [{ pitch: 69, velocity: 100, startSec: 0, durationSec: 0.1 }];
         const shortInput = midiToDdspInput({ notes: note, durationSec: 0.1 });
         const paddedInput = midiToDdspInput({ notes: note, durationSec: 1 });
@@ -359,13 +359,13 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(padded.f0_hz[1]).not.toBeCloseTo(4_698.64, 1);
     });
 
-    it('leaves all-rest pitch at finite zero', async () => {
+    it('should leave all-rest pitch at finite zero', async () => {
         const conditioned = await predictConditionedFeatures(new Float32Array(250), new Float32Array(250).fill(-120));
 
         expect(conditioned.f0_hz.subarray(0, 250).every((pitch) => pitch === 0 && Number.isFinite(pitch))).toBe(true);
     });
 
-    it('computes pitch register from voiced frames only when two notes are separated by rests', async () => {
+    it('should compute pitch register from voiced frames only when two notes are separated by rests', async () => {
         const conditioned = await predictConditionedFeatures(
             Float32Array.from([0, 220, 220, 0, 440, 440, 0]),
             Float32Array.from([-120, -60, -50, -120, -60, -50, -120])
@@ -374,7 +374,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expectArrayClose(conditioned.f0_hz.subarray(0, 7), [0, 220, 220, 0, 440, 440, 0]);
     });
 
-    it('still applies a positive checkpoint octave shift to genuinely voiced notes', async () => {
+    it('should still apply a positive checkpoint octave shift to genuinely voiced notes', async () => {
         const conditioned = await predictConditionedFeatures(
             Float32Array.from([110, 110, 220]),
             Float32Array.from([-80, -60, -50])
@@ -383,7 +383,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expectArrayClose(conditioned.f0_hz.subarray(0, 3), [220, 220, 440]);
     });
 
-    it('coalesces TF.js initialization and concurrent identical model loads', async () => {
+    it('should coalesce TF.js initialization and concurrent identical model loads', async () => {
         const modelGate = deferred<FakeModel>();
         const harness = createHarness({
             loadGraphModel: vi.fn(async (handler: { load: () => Promise<unknown> }) => {
@@ -411,7 +411,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
-    it('disposes a model exactly once when cancellation makes its completed load a loser', async () => {
+    it('should dispose a model exactly once when cancellation makes its completed load a loser', async () => {
         const modelGate = deferred<FakeModel>();
         const harness = createHarness({
             loadGraphModel: vi.fn(async (handler: { load: () => Promise<unknown> }) => {
@@ -432,7 +432,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
-    it('disposes a model exactly once when post-load backend validation fails', async () => {
+    it('should dispose a model exactly once when post-load backend validation fails', async () => {
         const harness = createHarness();
         harness.loadGraphModel.mockImplementationOnce(async (handler: { load: () => Promise<unknown> }) => {
             await handler.load();
@@ -452,7 +452,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
-    it('disposes loaded sessions exactly once on release and on idle eviction', async () => {
+    it('should dispose loaded sessions exactly once on release and on idle eviction', async () => {
         vi.useFakeTimers();
         const released = createHarness();
         await released.runtime.handleRequest(createSessionRequest('release-load'));
@@ -476,7 +476,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(idle.model.dispose).toHaveBeenCalledOnce();
     });
 
-    it('schedules idle disposal after inference failure', async () => {
+    it('should schedule idle disposal after inference failure', async () => {
         vi.useFakeTimers();
         const harness = createHarness({
             predict: vi.fn(() => {
@@ -491,7 +491,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
-    it('waits for every overlapping request before disposing an idle session', async () => {
+    it('should wait for every overlapping request before disposing an idle session', async () => {
         vi.useFakeTimers();
         const slowData = deferred<Float32Array>();
         const fastAudio = new Float32Array(80_000).fill(1);
@@ -543,7 +543,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
             requestArtifacts: () => artifacts({ 'model.json': artifactPort(MODEL_JSON, 'malformed') }),
             expectedError: 'model.json',
         },
-    ])('closes every transferred port after $name', async ({ requestArtifacts, expectedError }) => {
+    ])('should close every transferred port after $name', async ({ requestArtifacts, expectedError }) => {
         const harness = createHarness();
         const requestPorts = requestArtifacts();
 
@@ -559,7 +559,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
-    it('closes every unread port when the session already exists', async () => {
+    it('should close every unread port when the session already exists', async () => {
         const harness = createHarness();
         await harness.runtime.handleRequest(createSessionRequest('first'));
         const unusedArtifacts = artifacts();
@@ -573,7 +573,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
-    it('closes every transferred port when GraphModel loading fails', async () => {
+    it('should close every transferred port when GraphModel loading fails', async () => {
         const harness = createHarness({
             loadGraphModel: vi.fn(async (handler: { load: () => Promise<unknown> }) => {
                 await handler.load();
@@ -594,7 +594,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
-    it('closes pending load ports when the request is cancelled or the worker is disposed', async () => {
+    it('should close pending load ports when the request is cancelled or the worker is disposed', async () => {
         const harness = createHarness();
         const cancelledPorts = artifacts({ 'model.json': artifactPort(MODEL_JSON, 'pending') });
         const cancelled = harness.runtime.handleRequest(createSessionRequest('cancel', cancelledPorts));
@@ -616,7 +616,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
-    it('closes every transferred port after a successful model load', async () => {
+    it('should close every transferred port after a successful model load', async () => {
         const harness = createHarness();
         const loadedArtifacts = artifacts();
 
@@ -627,7 +627,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
     });
 
-    it('crops a short render to its exact requested native-sample duration', async () => {
+    it('should crop a short render to its exact requested native-sample duration', async () => {
         const harness = createHarness();
         await harness.runtime.handleRequest(createSessionRequest('load'));
 
@@ -646,7 +646,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(harness.model.predict).toHaveBeenCalledOnce();
     });
 
-    it('overlaps long inputs in order with the Magenta one-second linear crossfade and exact final length', async () => {
+    it('should overlap long inputs in order with the Magenta one-second linear crossfade and exact final length', async () => {
         const firstChunk = new Float32Array(80_000).fill(1);
         const secondChunk = new Float32Array(80_000).fill(3);
         const harness = createHarness({
@@ -684,7 +684,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(response.audio[80_000]).toBe(6);
     });
 
-    it('stops before predicting a later chunk when the request is cancelled', async () => {
+    it('should stop before predicting a later chunk when the request is cancelled', async () => {
         const firstData = deferred<Float32Array>();
         const harness = createHarness({
             predict: vi.fn(() => fakeTensor(new Float32Array(80_000), firstData.promise)),
@@ -701,7 +701,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(harness.responses.some((response) => response.type === 'ddsp-result')).toBe(false);
     });
 
-    it('publishes only the backend reported by the selected TF.js runtime', async () => {
+    it('should publish only the backend reported by the selected TF.js runtime', async () => {
         const harness = createHarness({ backend: 'webgpu' });
         await harness.runtime.handleRequest(createSessionRequest('load'));
         await harness.runtime.handleRequest(inferenceRequest('render', 125));

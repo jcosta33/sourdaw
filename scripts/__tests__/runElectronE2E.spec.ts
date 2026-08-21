@@ -9,6 +9,7 @@ import {
     assertElectronBuildInputsClean,
     assertPackagedBuildInputsClean,
     createPackagedProvenance,
+    DDSP_RUNTIME_LEGAL_FILES,
     runWithCleanElectronBuildInputs,
     validatePackagedProvenance,
 } from '../runElectronE2E';
@@ -26,14 +27,14 @@ function packagedFixture(): { root: string; arch: NodeJS.Architecture } {
     write(root, `${contents}/MacOS/Sourdaw`, 'launcher');
     write(root, `${contents}/Resources/app.asar`, 'current application');
     write(root, `${contents}/Info.plist`, '<key>ElectronAsarIntegrity</key><dict><key>Resources/app.asar</key></dict>');
-    write(root, `${contents}/Resources/legal/Apache-2.0.txt`, 'Apache license');
-    write(root, `${contents}/Resources/legal/Magenta.js-NOTICE.txt`, 'Magenta.js notice');
-    write(root, `${contents}/Resources/legal/TensorFlow.js-NOTICE.txt`, 'TensorFlow.js notice');
+    for (const name of DDSP_RUNTIME_LEGAL_FILES) {
+        write(root, `${contents}/Resources/legal/${name}`, `legal:${name}`);
+    }
     return { root, arch };
 }
 
 describe('Electron packaged E2E provenance', () => {
-    it('fails when app.asar is stale even if the executable launcher is unchanged', () => {
+    it('should fail when app.asar is stale even if the executable launcher is unchanged', () => {
         const fixture = packagedFixture();
         try {
             const provenance = createPackagedProvenance(fixture.root, fixture.arch, 'head');
@@ -53,7 +54,7 @@ describe('Electron packaged E2E provenance', () => {
         }
     });
 
-    it('pins Info.plist integrity metadata and deterministically records unpacked files or their absence', () => {
+    it('should pin Info.plist integrity metadata and deterministically record unpacked files or their absence', () => {
         const fixture = packagedFixture();
         try {
             const absent = createPackagedProvenance(fixture.root, fixture.arch, 'head');
@@ -78,35 +79,34 @@ describe('Electron packaged E2E provenance', () => {
         }
     });
 
-    it('pins every shipped DDSP runtime legal file and rejects missing or changed packaged notices', () => {
+    it('should pin every shipped DDSP runtime legal file and reject each removed or changed resource', () => {
         const fixture = packagedFixture();
         const legalRoot = `release/desktop/mac-${fixture.arch}/Sourdaw.app/Contents/Resources/legal`;
         try {
             const provenance = createPackagedProvenance(fixture.root, fixture.arch, 'head');
-            expect(provenance.files).toEqual(
-                expect.objectContaining({
-                    [`${legalRoot}/Apache-2.0.txt`]: expect.stringMatching(/^[0-9a-f]{64}$/u),
-                    [`${legalRoot}/Magenta.js-NOTICE.txt`]: expect.stringMatching(/^[0-9a-f]{64}$/u),
-                    [`${legalRoot}/TensorFlow.js-NOTICE.txt`]: expect.stringMatching(/^[0-9a-f]{64}$/u),
-                })
-            );
+            for (const name of DDSP_RUNTIME_LEGAL_FILES) {
+                expect(provenance.files[`${legalRoot}/${name}`]).toMatch(/^[0-9a-f]{64}$/u);
+            }
             expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toEqual([]);
 
-            write(fixture.root, `${legalRoot}/Magenta.js-NOTICE.txt`, 'changed notice');
-            expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toContain(
-                `${legalRoot}/Magenta.js-NOTICE.txt: packaged output drifted`
-            );
-
-            rmSync(join(fixture.root, `${legalRoot}/TensorFlow.js-NOTICE.txt`));
-            expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toContain(
-                `${legalRoot}/TensorFlow.js-NOTICE.txt: packaged output missing`
-            );
+            for (const name of DDSP_RUNTIME_LEGAL_FILES) {
+                write(fixture.root, `${legalRoot}/${name}`, 'changed notice');
+                expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toContain(
+                    `${legalRoot}/${name}: packaged output drifted`
+                );
+                write(fixture.root, `${legalRoot}/${name}`, `legal:${name}`);
+                rmSync(join(fixture.root, `${legalRoot}/${name}`));
+                expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toContain(
+                    `${legalRoot}/${name}: packaged output missing`
+                );
+                write(fixture.root, `${legalRoot}/${name}`, `legal:${name}`);
+            }
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
     });
 
-    it('refuses tracked or untracked build inputs but ignores generated and ignored package output', () => {
+    it('should refuse tracked or untracked build inputs but ignore generated and ignored package output', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-packaged-inputs-'));
         try {
             execFileSync('git', ['init'], { cwd: root });
@@ -137,7 +137,7 @@ describe('Electron packaged E2E provenance', () => {
         }
     });
 
-    it('checks development inputs before running the build and rejects dirty renderer files', () => {
+    it('should check development inputs before running the build and reject dirty renderer files', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-development-inputs-'));
         try {
             execFileSync('git', ['init'], { cwd: root });
@@ -177,7 +177,7 @@ describe('Electron packaged E2E provenance', () => {
         }
     });
 
-    it('rejects dirty or untracked root index.html in both build modes while allowing ignored outputs', () => {
+    it('should reject dirty or untracked root index.html in both build modes while allowing ignored outputs', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-index-input-'));
         try {
             execFileSync('git', ['init'], { cwd: root });

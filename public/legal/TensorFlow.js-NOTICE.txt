@@ -1,16 +1,41 @@
-TensorFlow.js runtime notice
+TensorFlow.js DDSP worker runtime notice
 
-Sourdaw distributes these TensorFlow.js runtime packages:
+The production DDSP worker source map proves that Sourdaw distributes this exact
+third-party package closure:
 
-- @tensorflow/tfjs 4.22.0
-- @tensorflow/tfjs-backend-webgpu 4.22.0
+- @tensorflow/tfjs 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-backend-cpu 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-backend-webgl 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-backend-webgpu 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-converter 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-core 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-data 4.22.0 — Apache-2.0
+- @tensorflow/tfjs-layers 4.22.0 — Apache-2.0 AND MIT
+- long 4.0.0 — Apache-2.0
+- seedrandom 3.0.5 — MIT
 
-Upstream project: TensorFlow.js
-Source: https://github.com/tensorflow/tfjs/tree/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7
-Release tag: tfjs-v4.22.0
-License: Apache License 2.0
-License text: Apache-2.0.txt
+TensorFlow.js source revision and release tag:
+https://github.com/tensorflow/tfjs/tree/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7
+tfjs-v4.22.0
 
-This notice applies to the TensorFlow.js runtime packages only. The Magenta
-DDSP checkpoint weights downloaded by Sourdaw have separate permission and
-provenance records and are not described as Apache-2.0.
+The complete Apache-2.0 text shared by the Apache-licensed packages is in
+Apache-2.0.txt. TensorFlow.js Layers' exact upstream dual-license file, including
+the François Chollet, Google LLC, Microsoft LLC, and contributor copyrights, is
+in TensorFlow.js-Layers-LICENSE.txt.
+
+long 4.0.0 source and package metadata:
+https://github.com/dcodeIO/long.js/tree/941c5c62471168b5d18153755c2a7b38d2560e58
+
+seedrandom 3.0.5 immutable source:
+https://github.com/davidbau/seedrandom/tree/4460ad325a0a15273a211e509f03ae0beb99511a
+
+seedrandom-MIT.txt preserves the exact David Bau MIT license and the separate
+Johannes Baagøe MIT notice carried by the bundled Alea implementation.
+
+scripts/checkDdspTfjsWorkerBundle.ts reads the production worker source map and
+fails the build if a package is added, removed, or changes version without this
+closure and its legal payload being reconciled.
+
+This notice applies to runtime code only. The Magenta DDSP checkpoint weights
+downloaded by Sourdaw have separate permission and provenance records and are
+not described as Apache-2.0 or MIT.

@@ -75,7 +75,7 @@ describe('ModelManagerPanel', () => {
         use_case_mocks.removeModel.mockResolvedValue(undefined);
     });
 
-    it('shows admitted DDSP checkpoints as direct Magenta downloads, never a browser cache claim', () => {
+    it('should show admitted DDSP checkpoints as direct Magenta downloads, never a browser cache claim', () => {
         mocks.registryState = create_base_registry();
 
         render(<ModelManagerPanel />);
@@ -85,7 +85,7 @@ describe('ModelManagerPanel', () => {
         expect(screen.queryByText(/cached by browser/i)).not.toBeInTheDocument();
     });
 
-    it('shows a useful failed state and retry action for a DDSP registry error', () => {
+    it('should show a useful failed state and retry action for a DDSP registry error', () => {
         mocks.registryState = create_registry_with_unavailable_ddsp();
 
         render(<ModelManagerPanel />);
@@ -95,7 +95,7 @@ describe('ModelManagerPanel', () => {
         expect(screen.queryByRole('button', { name: 'Download Violin from Magenta' })).not.toBeInTheDocument();
     });
 
-    it('shows DDSP download progress and disables a second launch while that instrument is downloading', () => {
+    it('should show DDSP download progress and disable a second launch while that instrument is downloading', () => {
         mocks.registryState = {
             ...create_base_registry(),
             ddspInstruments: [
@@ -115,7 +115,7 @@ describe('ModelManagerPanel', () => {
     });
 
     it.each([new Error('network request rejected'), new Error('integrity mismatch'), new Error('OPFS write denied')])(
-        'keeps the failed retry UI and reports a rejected DDSP action: %s',
+        'should keep the failed retry UI and report a rejected DDSP action: %s',
         async (failure) => {
             mocks.registryState = create_registry_with_unavailable_ddsp();
             use_case_mocks.downloadDdspInstrument.mockRejectedValue(failure);
@@ -134,7 +134,7 @@ describe('ModelManagerPanel', () => {
         }
     );
 
-    it('disables a DDSP retry while the existing download flow is in flight', async () => {
+    it('should disable a DDSP retry while the existing download flow is in flight', async () => {
         mocks.registryState = create_registry_with_unavailable_ddsp();
         let finish = (): void => undefined;
         use_case_mocks.downloadDdspInstrument.mockImplementation(
@@ -153,7 +153,7 @@ describe('ModelManagerPanel', () => {
         await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Retry downloading Violin' })).toBeEnabled());
     });
 
-    it('logs a rejected DDSP removal without lying that the instrument was removed', async () => {
+    it('should log a rejected DDSP removal without lying that the instrument was removed', async () => {
         mocks.registryState = {
             ...create_base_registry(),
             ddspInstruments: [

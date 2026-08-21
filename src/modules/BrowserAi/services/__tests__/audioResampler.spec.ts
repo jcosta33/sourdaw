@@ -92,7 +92,7 @@ describe('normalizePeak', () => {
 });
 
 describe('limitPeak', () => {
-    it('preserves intended dynamics below the clipping boundary', () => {
+    it('should preserve intended dynamics below the clipping boundary', () => {
         const audio = new Float32Array([0.25, -0.5, 0.1]);
 
         limitPeak(audio);
@@ -100,7 +100,7 @@ describe('limitPeak', () => {
         expect(audio).toEqual(new Float32Array([0.25, -0.5, 0.1]));
     });
 
-    it('attenuates only when the finite peak would clip and clears invalid samples', () => {
+    it('should attenuate only when the finite peak would clip and clear invalid samples', () => {
         const audio = new Float32Array([2, -1, Number.NaN]);
 
         limitPeak(audio);

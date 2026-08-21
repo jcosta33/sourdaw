@@ -123,7 +123,7 @@ describe('the production Content-Security-Policy', () => {
         expect(readProductionTypescript('src')).not.toMatch(/new\s+Worker\s*\(\s*URL\.createObjectURL/gu);
     });
 
-    it('refuses the exact CORS-readable outside-prefix probe that a wider checkpoint source would admit', () => {
+    it('should refuse the exact CORS-readable outside-prefix probe that a wider checkpoint source would admit', () => {
         expect(DDSP_CORS_READABLE_OUTSIDE_CSP_PROBE_URL).toBe(
             'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json'
         );

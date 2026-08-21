@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,7 +12,9 @@ import {
     loadRepositorySnapshot,
     REQUIRED_COMPONENT_PATHS,
     REQUIRED_SNAPSHOT_PATHS,
+    SEEDRANDOM_LICENSE_PATH,
     TFJS_APACHE_LICENSE_PATH,
+    TFJS_LAYERS_LICENSE_PATH,
     TFJS_NOTICE_PATH,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
@@ -64,7 +66,7 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
-    it('pins the complete DDSP execution surface without laundering checkpoint weights into Apache', () => {
+    it('should pin the complete DDSP execution surface without laundering checkpoint weights into Apache', () => {
         expect(REQUIRED_COMPONENT_PATHS['ddsp-models']).toEqual(DDSP_RELEASE_INVENTORY_PATHS);
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.sources[0]).toBe(
             'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md'
@@ -78,6 +80,9 @@ describe('release inventory', () => {
         );
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
         expect(DDSP_RELEASE_INVENTORY_PATHS).toContain(MAGENTA_NOTICE_PATH);
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toEqual(
+            expect.arrayContaining([TFJS_LAYERS_LICENSE_PATH, SEEDRANDOM_LICENSE_PATH])
+        );
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.sources).toEqual(
             expect.arrayContaining([
                 'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts',
@@ -98,7 +103,7 @@ describe('release inventory', () => {
         );
     });
 
-    it('rejects an omitted DDSP timing dependency even when generic project source covers it', () => {
+    it('should reject an omitted DDSP timing dependency even when generic project source covers it', () => {
         const value = inventory();
         value.surfaces.push({
             ...value.surfaces[0]!,
@@ -123,7 +128,7 @@ describe('release inventory', () => {
         );
     });
 
-    it('binds the shipped Magenta.js and TensorFlow.js notices plus full Apache license bytes', () => {
+    it('should bind every shipped DDSP runtime notice and exact upstream license byte set', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-tfjs-legal-'));
         const legal = join(root, 'public/legal');
         mkdirSync(legal, { recursive: true });
@@ -131,6 +136,8 @@ describe('release inventory', () => {
         writeFileSync(join(root, TFJS_NOTICE_PATH), 'TensorFlow.js 4.22.0 notice');
         writeFileSync(join(root, MAGENTA_NOTICE_PATH), 'Magenta.js DDSP code notice');
         writeFileSync(join(root, THIRD_PARTY_NOTICE_PATH), 'third-party notice index');
+        writeFileSync(join(root, TFJS_LAYERS_LICENSE_PATH), 'TensorFlow.js Layers dual license');
+        writeFileSync(join(root, SEEDRANDOM_LICENSE_PATH), 'seedrandom MIT notices');
 
         try {
             const before = ddspReleaseInventoryContract(root);
@@ -140,6 +147,8 @@ describe('release inventory', () => {
                     TFJS_NOTICE_PATH,
                     MAGENTA_NOTICE_PATH,
                     THIRD_PARTY_NOTICE_PATH,
+                    TFJS_LAYERS_LICENSE_PATH,
+                    SEEDRANDOM_LICENSE_PATH,
                 ])
             );
             expect(before.sources).toContain(
@@ -151,13 +160,27 @@ describe('release inventory', () => {
                     expect.stringMatching(new RegExp(`${TFJS_NOTICE_PATH}$`, 'u')),
                     expect.stringMatching(new RegExp(`${MAGENTA_NOTICE_PATH}$`, 'u')),
                     expect.stringMatching(new RegExp(`${THIRD_PARTY_NOTICE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${TFJS_LAYERS_LICENSE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${SEEDRANDOM_LICENSE_PATH}$`, 'u')),
                 ])
             );
 
-            writeFileSync(join(root, MAGENTA_NOTICE_PATH), 'changed');
-            expect(ddspReleaseInventoryContract(root).digests).not.toEqual(before.digests);
-            rmSync(join(root, MAGENTA_NOTICE_PATH));
-            expect(() => ddspReleaseInventoryContract(root)).toThrow();
+            for (const path of [
+                TFJS_APACHE_LICENSE_PATH,
+                TFJS_NOTICE_PATH,
+                MAGENTA_NOTICE_PATH,
+                THIRD_PARTY_NOTICE_PATH,
+                TFJS_LAYERS_LICENSE_PATH,
+                SEEDRANDOM_LICENSE_PATH,
+            ]) {
+                const original = readFileSync(join(root, path), 'utf8');
+                writeFileSync(join(root, path), `${original} drift`);
+                expect(ddspReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+                writeFileSync(join(root, path), original);
+                rmSync(join(root, path));
+                expect(() => ddspReleaseInventoryContract(root)).toThrow();
+                writeFileSync(join(root, path), original);
+            }
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

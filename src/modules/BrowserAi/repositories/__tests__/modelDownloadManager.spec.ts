@@ -245,7 +245,7 @@ describe('downloadModel storage worker stream', () => {
         expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'error', signal: controller.signal });
     });
 
-    it('follows the verified Kokoro redirect while retaining exact size and SHA verification', async () => {
+    it('should follow the verified Kokoro redirect while retaining exact size and SHA verification', async () => {
         const bytes = new Uint8Array(30);
         const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
             if (init?.redirect !== 'follow') {
@@ -273,7 +273,7 @@ describe('downloadModel storage worker stream', () => {
         );
     });
 
-    it('rejects a DDSP redirect before opening storage', async () => {
+    it('should reject a DDSP redirect before opening storage', async () => {
         vi.useFakeTimers();
         const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
             if (init?.redirect === 'error') {

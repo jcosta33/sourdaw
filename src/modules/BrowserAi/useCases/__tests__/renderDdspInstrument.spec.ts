@@ -98,7 +98,7 @@ describe('renderDdspInstrument request ownership', () => {
         });
     });
 
-    it('returns the confirmed runtime backend and uses the versioned model key end to end', async () => {
+    it('should return the confirmed runtime backend and use the versioned model key end to end', async () => {
         inferenceWorkerBridge.runDdspInference.mockResolvedValue(result());
 
         const rendered = await launch(60);
@@ -126,7 +126,7 @@ describe('renderDdspInstrument request ownership', () => {
         expectAdmittedDdspProvenance(rendered);
     });
 
-    it('holds the shared generation lock through readiness, session creation, and inference', async () => {
+    it('should hold the shared generation lock through readiness, session creation, and inference', async () => {
         const pending = deferred<ReturnType<typeof result>>();
         let insideSharedLock = false;
         withDdspInstrumentLock.mockImplementationOnce(async (_id, mode, operation) => {
@@ -159,7 +159,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(insideSharedLock).toBe(false);
     });
 
-    it('refuses a render starting after removal or seeing an unpublished/wrong generation', async () => {
+    it('should refuse a render starting after removal or seeing an unpublished/wrong generation', async () => {
         checkDdspInstrumentReady.mockResolvedValueOnce(false);
 
         await expect(launch(60)).rejects.toThrow('generation is not ready');
@@ -169,7 +169,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(writeRenderCache).not.toHaveBeenCalled();
     });
 
-    it('confirms the runtime backend before returning cached audio', async () => {
+    it('should confirm the runtime backend before returning cached audio', async () => {
         const cached = new Float32Array([0.1, 0.2]);
         readRenderCache.mockResolvedValueOnce(cached);
 
@@ -181,7 +181,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
     });
 
-    it('refuses a render if the runtime backend changes after session creation', async () => {
+    it('should refuse a render if the runtime backend changes after session creation', async () => {
         inferenceWorkerBridge.runDdspInference.mockResolvedValue({ ...result(), backend: 'wasm' });
 
         await expect(launch(60)).rejects.toThrow('webgpu -> wasm');
@@ -189,7 +189,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
     });
 
-    it('keeps the newer request current when the older request completes first', async () => {
+    it('should keep the newer request current when the older request completes first', async () => {
         const older = deferred<ReturnType<typeof result>>();
         const newer = deferred<ReturnType<typeof result>>();
         vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
@@ -219,7 +219,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
     });
 
-    it('does not let an older completion overwrite a newer request that already completed', async () => {
+    it('should not let an older completion overwrite a newer request that already completed', async () => {
         const older = deferred<ReturnType<typeof result>>();
         const newer = deferred<ReturnType<typeof result>>();
         vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
@@ -244,7 +244,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
     });
 
-    it('ignores an older failure but records the current request failure', async () => {
+    it('should ignore an older failure but record the current request failure', async () => {
         const older = deferred<ReturnType<typeof result>>();
         const newer = deferred<ReturnType<typeof result>>();
         vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A).mockReturnValueOnce(REQUEST_B);
@@ -275,7 +275,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
     });
 
-    it('propagates late cancellation without letting the old request remove the newer one', async () => {
+    it('should propagate late cancellation without letting the old request remove the newer one', async () => {
         const older = deferred<ReturnType<typeof result>>();
         const newer = deferred<ReturnType<typeof result>>();
         const olderController = new AbortController();
@@ -317,7 +317,7 @@ describe('renderDdspInstrument request ownership', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
     });
 
-    it('removes only the current request when that request is cancelled', async () => {
+    it('should remove only the current request when that request is cancelled', async () => {
         const pending = deferred<ReturnType<typeof result>>();
         const controller = new AbortController();
         vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(REQUEST_A);

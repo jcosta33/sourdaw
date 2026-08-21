@@ -36,7 +36,14 @@ const APP_CONTENTS = join(PACKAGED_EXECUTABLE, '..', '..');
 const APP_ASAR = join(APP_CONTENTS, 'Resources', 'app.asar');
 const INFO_PLIST = join(APP_CONTENTS, 'Info.plist');
 const APP_ASAR_UNPACKED = join(APP_CONTENTS, 'Resources', 'app.asar.unpacked');
-const DDSP_RUNTIME_LEGAL_FILES = ['Apache-2.0.txt', 'Magenta.js-NOTICE.txt', 'TensorFlow.js-NOTICE.txt'] as const;
+const DDSP_RUNTIME_LEGAL_FILES = [
+    'THIRD-PARTY-NOTICES.md',
+    'Apache-2.0.txt',
+    'Magenta.js-NOTICE.txt',
+    'TensorFlow.js-NOTICE.txt',
+    'TensorFlow.js-Layers-LICENSE.txt',
+    'seedrandom-MIT.txt',
+] as const;
 const PACKAGED_LEGAL_ROOT = join(APP_CONTENTS, 'Resources', 'legal');
 const OUTSIDE_CSP_PROBE_URL =
     'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json';

@@ -141,7 +141,7 @@ describe('cancelRender', () => {
         expect(inferenceProgressStore.value?.activeRenders['req-B']).toBeDefined();
     });
 
-    it('does not remove the newer queued request when an older request for the same phrase is cancelled', () => {
+    it('should not remove the newer queued request when an older request for the same phrase is cancelled', () => {
         seedActiveRender({ requestId: 'req-old', phraseId: 'phrase-A', pipeline: 'ddsp' });
         enqueueRender({
             phraseId: 'phrase-A',
@@ -166,7 +166,7 @@ describe('cancelRender', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
     });
 
-    it('marks the current queued request not rendered when it is cancelled', () => {
+    it('should mark the current queued request not rendered when it is cancelled', () => {
         enqueueRender({
             phraseId: 'phrase-A',
             requestId: 'req-current',

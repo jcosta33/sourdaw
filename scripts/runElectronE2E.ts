@@ -44,9 +44,12 @@ export const ELECTRON_BUILD_INPUTS = [
 ] as const;
 
 export const DDSP_RUNTIME_LEGAL_FILES = [
+    'THIRD-PARTY-NOTICES.md',
     'Apache-2.0.txt',
     'Magenta.js-NOTICE.txt',
     'TensorFlow.js-NOTICE.txt',
+    'TensorFlow.js-Layers-LICENSE.txt',
+    'seedrandom-MIT.txt',
 ] as const;
 
 function run(command: string, args: readonly string[]): void {
