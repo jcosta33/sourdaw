@@ -1,0 +1,21 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_7a95ad31afe357 671,869,1121,4280,5810,5936,7583,8942,9221,9797,11255,12011,12821,15809,16025,17771,18293,18860,18959,19913,19931,21263,21416,22001,22307,22667,23189,24080,24284-24292,24395,25259
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_2175fca1f07426::t_81754bd54e60a7 16,390,416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "81a1c32344d16f94b2f38ff257f4ef2632fe76b5",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
