@@ -42,7 +42,7 @@ test.describe('Inspector track notes and gain', () => {
     });
 
     test('MIDI gain starts at 80 and steps up', async ({ page }) => {
-        const gain = page.getByTestId('inspector-track-gain').getByRole('slider');
+        const gain = page.getByRole('slider', { name: /^MIDI(?: \d+)? gain$/ });
         await expect(gain).toHaveAttribute('aria-valuenow', '80');
         await gain.focus();
         await page.keyboard.press('ArrowRight');
