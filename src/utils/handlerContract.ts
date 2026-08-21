@@ -313,7 +313,10 @@ export type TrackHeightSnapshot = { readonly trackId: string; readonly height: n
  */
 export type TrackCollectionAlternativeSnapshot = {
     readonly id: string;
-    readonly clips: readonly ClipSnapshot[];
+    /** Whole clips, for the same reason `TrackClipStateSnapshot.clips` carries them:
+     *  the restore replaces each alternative's clip array outright, so the guard has
+     *  to be able to see an edit *inside* one of those clips, not just its id. */
+    readonly clips: readonly ClipStateSnapshot[];
 };
 export type TrackCollectionFieldsSnapshot = {
     readonly kind: TrackKind;
@@ -332,7 +335,15 @@ export type TrackCollectionFieldsSnapshot = {
 };
 export type TrackClipStateSnapshot = {
     readonly trackId: string;
-    readonly clips: readonly ClipSnapshot[];
+    /**
+     * Declared wide enough to be *compared*, not just written back — the same reason
+     * `TrackCollectionFieldsSnapshot.devices` is. `captureTrackClipStates` has always
+     * put whole cloned clips here and the restore has always written the whole array
+     * back, so a narrower declaration only ever hid that from the guard: an id
+     * sequence is byte-identical across every in-place clip edit, and a guard that
+     * can read no more than the id authorises overwriting all of them.
+     */
+    readonly clips: readonly ClipStateSnapshot[];
     /** Everything the rewrite overwrites besides `clips`. See the type's own note. */
     readonly trackFields: TrackCollectionFieldsSnapshot;
     readonly midiNotesByClipId: Record<string, MidiNotesSnapshot>;

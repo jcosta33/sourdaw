@@ -1,37 +1,190 @@
+import { midiStore } from '#/modules/MIDI/stores';
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
+    type ClipSatelliteEntrySnapshot,
+    type ClipStateSnapshot,
     type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
-    type DeviceStateValueSnapshot,
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
 } from '#/utils/handlerContract';
 
-import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
-import { type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
+import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { type Clip, type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
 
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
- * Two clip collections hold the same clips in the same order. Compared by id
- * sequence rather than deep equality — a deep compare would spuriously conflict on
- * recomputed fields, while an id-sequence compare is what actually detects a clip
- * added, removed, split or reordered since the snapshot was captured.
+ * Structural compare over a JSON-shaped payload — the whole-value equality test for
+ * anything this restore replaces outright rather than field by field.
+ *
+ * Safe to recurse without a cycle guard, and that safety is a property of the inputs
+ * rather than of this function. Every value that reaches it is either a live store
+ * value or a `structuredClone` of one taken moments earlier, and each of those stores
+ * admits only JSON-safe scalars, arrays and plain records:
+ * `normalize_device_state_value` in `trackStore` for a device-state chunk, the MIDI
+ * store's own key validation for notes, and `readClipSatelliteEntry`'s normalizers for
+ * a clip's satellites. Nothing here can be self-referential or a class instance.
+ *
+ * `Object.is` at the leaves rather than `===`, matching `parameterValuesMatch`. The
+ * two values being compared are always in-session — an undo entry does not outlive
+ * the project load that cleared the history — so neither side has been through the
+ * JSON round trip that would normalize `-0` to `0`, and no arithmetic in the model
+ * produces `NaN`. The distinction cannot arise without an author, which is the only
+ * property this guard needs from it.
  */
-function clipIdSequenceMatches(
-    liveClips: readonly { readonly id: string }[] | undefined,
-    expectedClips: readonly { readonly id: string }[] | undefined
+function structuralValueMatches(live: unknown, expected: unknown): boolean {
+    if (Array.isArray(live) || Array.isArray(expected)) {
+        if (!Array.isArray(live) || !Array.isArray(expected) || live.length !== expected.length) {
+            return false;
+        }
+        return live.every((entry, index) => structuralValueMatches(entry, expected[index]));
+    }
+    if (isPlainRecord(live) || isPlainRecord(expected)) {
+        if (!isPlainRecord(live) || !isPlainRecord(expected)) {
+            return false;
+        }
+        const liveKeys = Object.keys(live);
+        if (liveKeys.length !== Object.keys(expected).length) {
+            return false;
+        }
+        return liveKeys.every((key) => structuralValueMatches(live[key], expected[key]));
+    }
+    return Object.is(live, expected);
+}
+
+/**
+ * A field this guard deliberately does not compare. Returning `true` unconditionally
+ * is the point: the field stays in its comparator table, so the mapped type still
+ * refuses to compile when a new one appears, while recording that this particular one
+ * must never be allowed to refuse an undo. Every use carries its reason beside it.
+ */
+const notCompared = (): boolean => true;
+
+/**
+ * One comparator per field `writeTrackClipState` replaces on a clip, keyed by `Clip`'s
+ * own keys with `-?` so an added field does not compile until somebody decides how it
+ * is compared. That gate is the entire reason this is a table rather than a deep
+ * equality call.
+ *
+ * Comparing clip *contents* — not just the id sequence — is what this restore
+ * actually needs. `updateClipInStore` replaces a clip in place at its existing index,
+ * so every single-clip edit in the product leaves the id sequence byte-identical: a
+ * guard that reads no further authorises overwriting position, length, gain, fades,
+ * lock, colour, stretch, loop and retune state with the pre-operation values, and
+ * reports it as a clean restore.
+ *
+ * The comparison is safe to make this wide because every field below is *authored*.
+ * Three properties establish that, and all three had to hold:
+ *
+ * 1. No clip field is default-filled on the way in. `Clip` has no counterpart to
+ *    `normalizeTrack`: `normalize_clip` in `trackStore` and `hydrateClip` in the
+ *    `.sdaw` loader both copy an optional field only when it is already present and
+ *    never synthesize one. So an absent field stays absent on both sides, and there
+ *    is no load-time fill for a comparator to trip over.
+ * 2. Nothing recomputes a clip field on a schedule, a render pass or a subscription.
+ *    `buildTimelineRenderModel` reads these fields into a view model and writes none
+ *    of them back — including `isLinkedInstance`, which it derives from
+ *    `parentClipId` for display only. The one derived store write is
+ *    `propagateParentChanges`, pushing a parent's `midiOffsetBeats` onto a linked
+ *    instance: a real change to project truth that the restore would undo, so
+ *    conflicting on it is correct, and it is gated behind an inequality test so it
+ *    cannot churn.
+ * 3. The writes that land asynchronously still carry an authored change. A recording
+ *    buffer resolving onto `audioBufferId`, and a Knead pitch analysis resolving onto
+ *    `kneadState`, both arrive on a later tick — but each follows from the musician
+ *    arming and recording, or opening the Knead editor on that clip, and each leaves
+ *    permanent project truth the restore would silently revert.
+ *
+ * That matters because the cost of over-refusing is worse than the loss being fixed:
+ * `undo` leaves a conflicted entry on `past` and reports nothing to the user, so a
+ * comparator that trips on churn nobody authored kills undo for the rest of the
+ * session with every older edit stranded behind it.
+ */
+type ClipFieldComparators = {
+    readonly [Key in keyof Clip]-?: (live: Clip, expected: ClipStateSnapshot) => boolean;
+};
+
+const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
+    id: (live, expected) => live.id === expected.id,
+    trackId: (live, expected) => live.trackId === expected.trackId,
+    name: (live, expected) => live.name === expected.name,
+    startBeat: (live, expected) => live.startBeat === expected.startBeat,
+    endBeat: (live, expected) => live.endBeat === expected.endBeat,
+    type: (live, expected) => live.type === expected.type,
+    audioBufferId: (live, expected) => live.audioBufferId === expected.audioBufferId,
+    assetHash: (live, expected) => live.assetHash === expected.assetHash,
+    audioOffsetBeats: (live, expected) => live.audioOffsetBeats === expected.audioOffsetBeats,
+    midiOffsetBeats: (live, expected) => live.midiOffsetBeats === expected.midiOffsetBeats,
+    fadeInBeats: (live, expected) => live.fadeInBeats === expected.fadeInBeats,
+    fadeOutBeats: (live, expected) => live.fadeOutBeats === expected.fadeOutBeats,
+    gain: (live, expected) => live.gain === expected.gain,
+    color: (live, expected) => live.color === expected.color,
+    locked: (live, expected) => live.locked === expected.locked,
+    muted: (live, expected) => live.muted === expected.muted,
+    stretchMode: (live, expected) => live.stretchMode === expected.stretchMode,
+    stretchRatio: (live, expected) => live.stretchRatio === expected.stretchRatio,
+    loopEnabled: (live, expected) => live.loopEnabled === expected.loopEnabled,
+    loopLength: (live, expected) => live.loopLength === expected.loopLength,
+    followAction: (live, expected) => live.followAction === expected.followAction,
+    generating: (live, expected) => live.generating === expected.generating,
+    isGhost: (live, expected) => live.isGhost === expected.isGhost,
+    // Excluded: a view toggle that happens to be persisted, not clip content.
+    // `toggleInlineEditing` flips it when the musician opens the in-place MIDI editor
+    // on a clip, which is an ordinary thing to be doing on one clip of a track while
+    // undoing an edit to another. Restoring a stale value closes an editor — visible,
+    // and one click to reopen. Refusing the undo instead costs the whole undo stack,
+    // silently, and that trade is never worth making for an editor's open state.
+    isInlineEditing: notCompared,
+    parentClipId: (live, expected) => live.parentClipId === expected.parentClipId,
+    isLinkedInstance: (live, expected) => live.isLinkedInstance === expected.isLinkedInstance,
+    sourceKeyRoot: (live, expected) => live.sourceKeyRoot === expected.sourceKeyRoot,
+    sourceScaleName: (live, expected) => live.sourceScaleName === expected.sourceScaleName,
+    overrides: (live, expected) => structuralValueMatches(live.overrides, expected.overrides),
+    // Structural rather than field-by-field, because the live value is wider than the
+    // model declares: `updateClipKneadState` writes the Knead module's own
+    // `KneadClipState`, which carries tolerance and per-blob fields `ClipKneadState`
+    // does not name. Comparing only the declared fields would miss exactly the retune
+    // edits this is here to protect, since Knead's writes do not go through
+    // `executeAppAction` and file no undo entry of their own.
+    //
+    // Compared despite churning on every frame of a pitch-blob drag, and despite the
+    // Knead editor auto-filling it from an async analysis when it opens on a clip with
+    // none. Neither is churn nobody authored: the drag's final value is what the
+    // musician left there, and the analysis only runs for a clip whose editor they
+    // opened. Both persist, and both are what the restore would throw away.
+    kneadState: (live, expected) => structuralValueMatches(live.kneadState, expected.kneadState),
+};
+
+/**
+ * Two clip collections hold the same clips, in the same order, with the same contents.
+ * Positional and length-checked first, so an added, removed, split or reordered clip
+ * still conflicts exactly as it did when this compared ids alone.
+ */
+function clipsMatch(
+    liveClips: readonly Clip[] | undefined,
+    expectedClips: readonly ClipStateSnapshot[] | undefined
 ): boolean {
     const live = liveClips ?? [];
     const expected = expectedClips ?? [];
     if (live.length !== expected.length) {
         return false;
     }
-    return live.every((clip, index) => clip.id === expected[index]?.id);
+    return live.every((clip, index) => {
+        const expectedClip = expected[index];
+        if (expectedClip === undefined) {
+            return false;
+        }
+        return Object.values(CLIP_FIELD_COMPARATORS).every((matches) => matches(clip, expectedClip));
+    });
 }
 
 /**
@@ -54,45 +207,6 @@ function parameterValuesMatch(
     return liveKeys.every((key) => Object.is(liveValues[key], expectedValues[key]));
 }
 
-function deviceStateRecordMatches(
-    live: Readonly<Record<string, DeviceStateValueSnapshot>>,
-    expected: Readonly<Record<string, DeviceStateValueSnapshot>>
-): boolean {
-    const liveKeys = Object.keys(live);
-    if (liveKeys.length !== Object.keys(expected).length) {
-        return false;
-    }
-    return liveKeys.every((key) => deviceStateValueMatches(live[key], expected[key]));
-}
-
-/**
- * Structural compare over a device-state payload. Safe to recurse without a cycle
- * guard: `normalize_device_state_value` in `trackStore` admits only JSON-safe scalars,
- * arrays and plain records into the slot, so nothing here can be self-referential or a
- * class instance.
- */
-function deviceStateValueMatches(
-    live: DeviceStateValueSnapshot | undefined,
-    expected: DeviceStateValueSnapshot | undefined
-): boolean {
-    if (live === undefined || expected === undefined) {
-        return live === expected;
-    }
-    if (Array.isArray(live) || Array.isArray(expected)) {
-        if (!Array.isArray(live) || !Array.isArray(expected) || live.length !== expected.length) {
-            return false;
-        }
-        return live.every((entry, index) => deviceStateValueMatches(entry, expected[index]));
-    }
-    if (live !== null && typeof live === 'object') {
-        if (expected === null || typeof expected !== 'object') {
-            return false;
-        }
-        return deviceStateRecordMatches(live, expected);
-    }
-    return Object.is(live, expected);
-}
-
 function deviceStateMatches(
     live: DeviceStateChunkSnapshot | undefined,
     expected: DeviceStateChunkSnapshot | undefined
@@ -100,7 +214,7 @@ function deviceStateMatches(
     if (live === undefined || expected === undefined) {
         return live === expected;
     }
-    return live.version === expected.version && deviceStateRecordMatches(live.data, expected.data);
+    return live.version === expected.version && structuralValueMatches(live.data, expected.data);
 }
 
 /**
@@ -157,7 +271,7 @@ function alternativesMatch(
         return (
             expectedAlternative !== undefined &&
             alternative.id === expectedAlternative.id &&
-            clipIdSequenceMatches(alternative.clips, expectedAlternative.clips)
+            clipsMatch(alternative.clips, expectedAlternative.clips)
         );
     });
 }
@@ -197,24 +311,79 @@ const TRACK_FIELD_COMPARATORS: TrackFieldComparators = {
 };
 
 /**
- * The live track still holds everything this snapshot is about to overwrite: the
- * clip id sequence *and* every track-level field. Both halves are load-bearing.
- * `cutClip` and `pasteClip` touch only clips, so their snapshots carry track fields
- * the forward path never rewrote — guarding on clips alone would let undo silently
- * hand back a stale device chain, freeze take or alternative set that a collaborator
- * changed in between. The four callers all capture `expected` as the post-write
- * state, so on an undivergent undo these fields already agree and the stricter
- * comparison costs them nothing.
+ * One clip's MIDI lane, compared against the live store.
+ *
+ * Keyed by what the snapshot carries rather than by what the track holds, because the
+ * snapshot's keys are exactly what `writeTrackClipState` replaces. A clip whose lane
+ * was empty at capture has no key here and is not written, so notes recorded onto it
+ * since survive the restore untouched and must not refuse it.
+ */
+function midiLanesMatch(
+    live: Readonly<Record<string, readonly unknown[]>> | undefined,
+    expected: Readonly<Record<string, readonly { readonly id: string }[]>>
+): boolean {
+    return Object.keys(expected).every((clipId) => structuralValueMatches(live?.[clipId], expected[clipId]));
+}
+
+/**
+ * Each captured satellite record against the live one for the same clip. Both sides
+ * come out of `readClipSatelliteEntry`, which normalizes on read and drops absent
+ * optional marker keys, so the two are structurally comparable by construction.
+ */
+function clipSatellitesMatch(expected: readonly ClipSatelliteEntrySnapshot[]): boolean {
+    return expected.every((satellite) => structuralValueMatches(readClipSatelliteEntry(satellite.clipId), satellite));
+}
+
+/**
+ * One guard per key of the snapshot, keyed by `TrackClipStateSnapshot`'s own keys with
+ * `-?`. Same gate as the two comparator tables below it, one level up: a key added to
+ * the snapshot is a key `writeTrackClipState` will write, and it does not compile
+ * until this table says how the guard sees it.
+ *
+ * The table exists because the four MIDI and satellite keys were being written with no
+ * comparator at all. `captureTrackClipStates` snapshots MIDI and satellites for *every*
+ * clip id on the track — clips the operation never touched, and clips inside hidden
+ * alternatives — and the restore writes all of them back. A note edited on a clip that
+ * merely shares a track with the cut clip was therefore reverted by that cut's undo,
+ * and reported as `written`.
+ */
+type SnapshotEntryGuards = {
+    readonly [Key in keyof TrackClipStateSnapshot]-?: (track: Track, entry: TrackClipStateSnapshot) => boolean;
+};
+
+const SNAPSHOT_ENTRY_GUARDS: SnapshotEntryGuards = {
+    trackId: (track, entry) => track.id === entry.trackId,
+    clips: (track, entry) => clipsMatch(track.clips, entry.clips),
+    // `cutClip` and `pasteClip` touch only clips, so their snapshots carry track fields
+    // the forward path never rewrote — guarding on clips alone would let undo silently
+    // hand back a stale device chain, freeze take or alternative set that a collaborator
+    // changed in between.
+    trackFields: (track, entry) =>
+        Object.values(TRACK_FIELD_COMPARATORS).every((matches) => matches(track, entry.trackFields)),
+    midiNotesByClipId: (_track, entry) => midiLanesMatch(midiStore.value?.notesByClipId, entry.midiNotesByClipId),
+    midiCcByClipId: (_track, entry) => midiLanesMatch(midiStore.value?.ccByClipId, entry.midiCcByClipId),
+    midiPitchBendByClipId: (_track, entry) =>
+        midiLanesMatch(midiStore.value?.pitchBendByClipId, entry.midiPitchBendByClipId),
+    clipSatellites: (_track, entry) => clipSatellitesMatch(entry.clipSatellites),
+    // Excluded here because it is guarded elsewhere, not because it is unguarded:
+    // `applyClipAutomationLaneTransition` compares live lanes against `expected` before
+    // writing anything, and `execute` runs it ahead of every track write so a refusal
+    // there has written nothing. Comparing it a second time here would only duplicate
+    // that check against the same live state.
+    clipAutomationLanes: notCompared,
+};
+
+/**
+ * The live track still holds everything this snapshot is about to overwrite. The four
+ * callers all capture `expected` as the post-write state, so on an undivergent undo
+ * every one of these already agrees and the strict comparison costs them nothing.
  */
 function entryMatchesLiveState(entry: TrackClipStateSnapshot): boolean {
     const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === entry.trackId);
     if (!track) {
         return false;
     }
-    if (!clipIdSequenceMatches(track.clips, entry.clips)) {
-        return false;
-    }
-    return Object.values(TRACK_FIELD_COMPARATORS).every((matches) => matches(track, entry.trackFields));
+    return Object.values(SNAPSHOT_ENTRY_GUARDS).every((matches) => matches(track, entry));
 }
 
 /**
@@ -285,10 +454,11 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
 /**
  * General guarded restore for whole-track clip-collection rewrites (cut, paste,
  * flatten, consolidate). Every named track must still match `expected` on
- * everything the write replaces — its clip id sequence and every track-level field
- * `writeTrackClipState` overwrites — before anything is written. A single divergent
- * track refuses the entire batch, because a partial restore is exactly the lost
- * update this handler exists to prevent.
+ * everything the write replaces — every key of the snapshot, down to the contents of
+ * each clip — before anything is written. `SNAPSHOT_ENTRY_GUARDS` is where that
+ * "everything" is enforced rather than asserted. A single divergent track refuses the
+ * entire batch, because a partial restore is exactly the lost update this handler
+ * exists to prevent.
  *
  * The guard is two halves and needs both: every `expected` entry matches live state,
  * and every `replacement` entry is named by `expected`. The second is what makes an

@@ -16,6 +16,9 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultKneadState, kneadStore } from '#/modules/Knead/stores';
+import { updateClipKneadState } from '#/modules/Knead/useCases';
+import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -96,6 +99,15 @@ describe('track-state guarded undo integration', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         clipSelectionStore.set(defaultClipSelectionState);
+        // The guard reads both of these now, so a note or a retune left behind by one
+        // case would decide the next one's conflict.
+        midiStore.set({
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        kneadStore.set({ ...defaultKneadState });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -222,6 +234,87 @@ describe('track-state guarded undo integration', () => {
                 data: { kitId: 'kit-909', pads: ['kick'] },
             });
             expect(track('track-1')?.clips).toEqual([]);
+        });
+
+        /** Seed a second clip on `track-1` so the cut has a sibling to spare. */
+        function seedSiblingClip() {
+            const sibling = ClipDummy.create({ id: 'clip-sibling', trackId: 'track-1', startBeat: 8, endBeat: 12 });
+            const state = trackStore.value!;
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((candidate) =>
+                    candidate.id === 'track-1' ? { ...candidate, clips: [...candidate.clips, sibling] } : candidate
+                ),
+            });
+            return sibling;
+        }
+
+        it('cut: conflicts rather than reverting a Knead retune on a clip that only shares the track', async () => {
+            seedClipWithEnvelope();
+            seedSiblingClip();
+            kneadStore.set({ ...defaultKneadState });
+            await run({ type: 'cutClip' });
+            // Only the selected clip goes; the sibling is untouched by the cut, and its
+            // id keeps the same position in what is left.
+            expect(track('track-1')?.clips.map((clip) => clip.id)).toEqual(['clip-sibling']);
+
+            // The reachable single-user case: retune a *different* clip on the same track
+            // in the Knead editor. `updateClipKneadState` writes through
+            // `updateClipInStore` without going through `executeAppAction`, so this files
+            // no undo entry of its own — exactly the situation `deviceState` is in.
+            updateClipKneadState('clip-sibling', (state) => ({ ...state, retuneSpeedMs: 4, humanizePercent: 90 }));
+            const retuned = track('track-1')?.clips[0]?.kneadState;
+            expect(retuned).toMatchObject({ retuneSpeedMs: 4, humanizePercent: 90 });
+
+            await undo();
+
+            // The decisive assertion: the cut's snapshot carries the sibling clip as it
+            // stood *before* the retune, and the restore replaces the whole clip array.
+            // A guard that compares only the clip id sequence sees no change — the
+            // sibling's id is in the same position on both sides — authorises the write,
+            // and the retune is gone with no conflict reported.
+            expect(track('track-1')?.clips[0]?.kneadState).toMatchObject({
+                retuneSpeedMs: 4,
+                humanizePercent: 90,
+            });
+            // Nothing is written at all, so the cut clip stays cut.
+            expect(track('track-1')?.clips.map((clip) => clip.id)).toEqual(['clip-sibling']);
+            expect(readClipSatelliteEntry('clip-1').gainEnvelope).toBeNull();
+        });
+
+        it('cut: conflicts rather than reverting a MIDI note edit on a clip that only shares the track', async () => {
+            seedClipWithEnvelope();
+            seedSiblingClip();
+            midiStore.set({
+                probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+                ccByClipId: {},
+                pitchBendByClipId: {},
+                notesByClipId: {
+                    'clip-sibling': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+                },
+            });
+
+            await run({ type: 'cutClip' });
+
+            // A note edit on the sibling — an ordinary piano-roll drag, on a clip the cut
+            // never touched.
+            midiStore.set({
+                ...midiStore.value!,
+                notesByClipId: {
+                    'clip-sibling': [{ id: 'note-1', pitch: 67, startBeat: 0, duration: 1, velocity: 100 }],
+                },
+            });
+
+            await undo();
+
+            // The decisive assertion: `captureTrackClipStates` snapshots MIDI for *every*
+            // clip id on the track, and `restoreMidiClipData` replaces a clip's whole note
+            // array. With no comparator over those snapshot keys the cut's undo reverts
+            // the sibling's note to pitch 60 and reports the restore as written.
+            expect(midiStore.value?.notesByClipId['clip-sibling']).toEqual([
+                { id: 'note-1', pitch: 67, startBeat: 0, duration: 1, velocity: 100 },
+            ]);
+            expect(track('track-1')?.clips.map((clip) => clip.id)).toEqual(['clip-sibling']);
         });
 
         it('cut: conflicts rather than clobbering an edit inside a non-active alternative', async () => {

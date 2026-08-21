@@ -8,15 +8,32 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip, type Track } from '../../../stores/trackStore';
 import { handleRestoreTrackClipStates } from '../handleRestoreTrackClipStates';
+
+/** The three per-clip MIDI maps the guard reads off the live store. */
+type MidiLanes = Readonly<Record<string, readonly { readonly id: string }[]>>;
+type FakeMidiState = {
+    notesByClipId: MidiLanes;
+    ccByClipId: MidiLanes;
+    pitchBendByClipId: MidiLanes;
+};
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     updateTrack: vi.fn(),
     restoreMidiClipData: vi.fn(),
     writeClipSatelliteEntry: vi.fn(),
+    readClipSatelliteEntry: vi.fn((clipId: string): ClipSatelliteEntrySnapshot => ({
+        clipId,
+        gainEnvelope: null,
+        warpState: null,
+    })),
     applyClipAutomationLaneTransition: vi.fn(() => true),
+    midiStore: { value: null as FakeMidiState | null },
 }));
+
+vi.mock('#/modules/MIDI/stores', () => ({ midiStore: mocks.midiStore }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
@@ -32,6 +49,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 
 vi.mock('../../../stores/clipSatelliteState', () => ({
     writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
 }));
 
 vi.mock('../../../useCases/clip/applyClipAutomationLaneTransition', () => ({
@@ -48,6 +66,22 @@ const TRACK_FIELDS = {
     alternatives: [{ id: 'alt-1', clips: [] }],
 } as const satisfies TrackClipStateSnapshot['trackFields'];
 
+/**
+ * The clips both sides of the guard are built from.
+ *
+ * One helper for the live track and the snapshot deliberately. `ClipDummy.create`
+ * defaults `trackId` to `'track-1'`, so the live tracks here used to be seeded with
+ * `ClipDummy.create({ id })` while the snapshot passed the real track id — leaving the
+ * two sides disagreeing on a field the guard did not read. Every test in this file
+ * passed anyway, because the guard compared ids alone. Building both sides from one
+ * helper is what makes a content comparison mean something here: it puts the fixture
+ * in the state an undivergent undo is actually in, so a test that expects a match is
+ * asserting agreement rather than a comparison that never happened.
+ */
+function clipsFor(trackId: string, clipIds: readonly string[]): Clip[] {
+    return clipIds.map((id) => ClipDummy.create({ id, trackId }));
+}
+
 function snapshotFor(
     trackId: string,
     clipIds: readonly string[],
@@ -55,7 +89,7 @@ function snapshotFor(
 ): TrackClipStateSnapshot {
     return {
         trackId,
-        clips: clipIds.map((id) => ClipDummy.create({ id, trackId })),
+        clips: clipsFor(trackId, clipIds),
         trackFields: TRACK_FIELDS,
         midiNotesByClipId: {},
         midiCcByClipId: {},
@@ -66,10 +100,24 @@ function snapshotFor(
     };
 }
 
+/** A live track carrying exactly the clips `snapshotFor` would snapshot for it. */
+function liveTrack(trackId: string, clipIds: readonly string[], overrides?: Partial<Track>): Track {
+    return TrackDummy.create({ id: trackId, clips: clipsFor(trackId, clipIds), ...overrides });
+}
+
 describe('handleRestoreTrackClipStates', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.applyClipAutomationLaneTransition.mockReturnValue(true);
+        // `clearAllMocks` clears recorded calls, not implementations, so a
+        // `mockReturnValue` from one test would otherwise stand for the rest of the
+        // file. Both of these are read by the guard on every case.
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        }));
+        mocks.midiStore.value = null;
     });
 
     describe('execute', () => {
@@ -90,10 +138,7 @@ describe('handleRestoreTrackClipStates', () => {
         });
 
         it('refuses when a clip was added on the named track since capture', () => {
-            const track = TrackDummy.create({
-                id: 't1',
-                clips: [ClipDummy.create({ id: 'c1' }), ClipDummy.create({ id: 'c2' })],
-            });
+            const track = liveTrack('t1', ['c1', 'c2']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -109,7 +154,7 @@ describe('handleRestoreTrackClipStates', () => {
         });
 
         it('refuses when a clip was removed on the named track since capture', () => {
-            const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
+            const track = liveTrack('t1', ['c1']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -125,10 +170,7 @@ describe('handleRestoreTrackClipStates', () => {
         });
 
         it('refuses when the clip order on the named track has changed since capture', () => {
-            const track = TrackDummy.create({
-                id: 't1',
-                clips: [ClipDummy.create({ id: 'c2' }), ClipDummy.create({ id: 'c1' })],
-            });
+            const track = liveTrack('t1', ['c2', 'c1']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -146,11 +188,8 @@ describe('handleRestoreTrackClipStates', () => {
         it('writes nothing at all when only one of several named tracks diverges', () => {
             // Decisive test: a partial restore across the batch is exactly the lost
             // update this handler exists to prevent. t1 still matches; t2 does not.
-            const trackOne = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
-            const trackTwo = TrackDummy.create({
-                id: 't2',
-                clips: [ClipDummy.create({ id: 'c2' }), ClipDummy.create({ id: 'c3' })],
-            });
+            const trackOne = liveTrack('t1', ['c1']);
+            const trackTwo = liveTrack('t2', ['c2', 'c3']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [trackOne, trackTwo] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -166,16 +205,160 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
         });
 
+        it('refuses when a clip was edited in place, leaving the id sequence identical', () => {
+            // The reachable single-user case. `updateClipInStore` replaces a clip at its
+            // existing index, so every in-place edit — position, length, gain, fades,
+            // lock, colour — leaves the id sequence byte-identical. A guard that reads
+            // no further than the id reports a match and drops the pre-operation clip on
+            // top of the edit.
+            const [edited] = clipsFor('t1', ['c1']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [TrackDummy.create({ id: 't1', clips: [{ ...edited!, gain: 0.25, endBeat: 9 }] })],
+            });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'])],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
+        it('refuses when a sibling clip was retuned in place through the Knead editor', () => {
+            // Knead writes `kneadState` through `updateClipInStore` without going through
+            // `executeAppAction`, so a retune files no undo entry of its own to protect
+            // it — the same situation `deviceState` is in. The retuned clip is not the
+            // clip being restored; it only shares a track with it.
+            const [kept, retuned] = clipsFor('t1', ['c1', 'c2']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    TrackDummy.create({
+                        id: 't1',
+                        clips: [
+                            kept!,
+                            {
+                                ...retuned!,
+                                kneadState: {
+                                    blobs: [],
+                                    retuneSpeedMs: 5,
+                                    humanizePercent: 0,
+                                    formantPreserve: true,
+                                },
+                            },
+                        ],
+                    }),
+                ],
+            });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1', 'c2'])],
+                    replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
+        it('refuses when MIDI notes on a clip the snapshot carries were edited since capture', () => {
+            // `captureTrackClipStates` snapshots MIDI for every clip id on the track, and
+            // the restore writes all of them back. A note edited on a clip that merely
+            // shares a track with the cut clip is inside that blast radius.
+            // `MidiNotesSnapshot` declares only `id`, while the capture puts whole cloned
+            // notes here — so the pitch difference these two carry is invisible to the
+            // declared type and has to be compared structurally.
+            const capturedNote = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+            const editedNote = { ...capturedNote, pitch: 67 };
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack('t1', ['c1'])] });
+            mocks.midiStore.value = {
+                notesByClipId: { c1: [editedNote] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'], { midiNotesByClipId: { c1: [capturedNote] } })],
+                    replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+        });
+
+        it('refuses when a gain envelope the snapshot would overwrite was redrawn since capture', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack('t1', ['c1'])] });
+            mocks.readClipSatelliteEntry.mockReturnValue({
+                clipId: 'c1',
+                gainEnvelope: { clipId: 'c1', points: [{ id: 'gain-1', beatOffset: 0, gainDb: 0 }], enabled: true },
+                warpState: null,
+            });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['c1'], {
+                            clipSatellites: [
+                                {
+                                    clipId: 'c1',
+                                    gainEnvelope: {
+                                        clipId: 'c1',
+                                        points: [{ id: 'gain-1', beatOffset: 0, gainDb: -12 }],
+                                        enabled: true,
+                                    },
+                                    warpState: null,
+                                },
+                            ],
+                        }),
+                    ],
+                    replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
+        });
+
+        it('still restores when the only difference is an inline editor left open', () => {
+            // The exclusion, exercised rather than asserted in a comment. Refusing here
+            // would trade a closed editor — one click to reopen — for a dead undo stack
+            // the user is never told about.
+            const [clip] = clipsFor('t1', ['c1']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [TrackDummy.create({ id: 't1', clips: [{ ...clip!, isInlineEditing: true }] })],
+            });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'])],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
+        });
+
         it('writes every replacement entry, clips and MIDI satellites, once the whole guard holds', () => {
             // The live track is what `flattenTrack` leaves behind: an audio track with
             // no devices, unfrozen, on a fresh alternative. The snapshot is what stood
             // there before, and every one of those fields has to come back — restoring
             // only `clips` hands the musician their MIDI clips on an audio track with no
             // instrument, no plugins and the frozen take gone.
-            const track = TrackDummy.create({
-                id: 't1',
+            const track = liveTrack('t1', ['c1'], {
                 kind: 'audio',
-                clips: [ClipDummy.create({ id: 'c1' })],
                 devices: [],
                 frozen: false,
                 freezeState: { status: 'unfrozen' },
@@ -186,7 +369,7 @@ describe('handleRestoreTrackClipStates', () => {
             const note = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
             const cc = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
             const pitchBend = { id: 'pb-1', value: 0, beat: 0, channel: 0 };
-            const restoredClip = ClipDummy.create({ id: 'restored-c1' });
+            const restoredClip = ClipDummy.create({ id: 'restored-c1', trackId: 't1' });
             // What the live track holds now — `flattenTrack`'s own output. `expected` is
             // always the post-write state, so the guard compares these against live.
             const postFlattenFields = {
@@ -281,7 +464,7 @@ describe('handleRestoreTrackClipStates', () => {
             // Ordering proof: the lane transition runs before the first track write, so
             // a refusal there leaves the project exactly as it was rather than clips
             // restored with their automation gone.
-            const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
+            const track = liveTrack('t1', ['c1']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
             mocks.applyClipAutomationLaneTransition.mockReturnValue(false);
 
@@ -299,8 +482,8 @@ describe('handleRestoreTrackClipStates', () => {
         });
 
         it('refuses a replacement track the guard never covered', () => {
-            const trackOne = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
-            const trackTwo = TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'c2' })] });
+            const trackOne = liveTrack('t1', ['c1']);
+            const trackTwo = liveTrack('t2', ['c2']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [trackOne, trackTwo] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -321,7 +504,7 @@ describe('handleRestoreTrackClipStates', () => {
             // `Array.every` is vacuously true on `[]`, so the entry-match half of the
             // guard says yes here. The counterpart requirement is what refuses: an empty
             // expected set describes no live state, so it can name no track to write.
-            const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
+            const track = liveTrack('t1', ['c1']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -334,8 +517,8 @@ describe('handleRestoreTrackClipStates', () => {
         });
 
         it('writes every named track when the whole guard holds across several tracks', () => {
-            const trackOne = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
-            const trackTwo = TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'c2' })] });
+            const trackOne = liveTrack('t1', ['c1']);
+            const trackTwo = liveTrack('t2', ['c2']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [trackOne, trackTwo] });
 
             const result = handleRestoreTrackClipStates.execute({
@@ -364,7 +547,7 @@ describe('handleRestoreTrackClipStates', () => {
 
     describe('isNoop', () => {
         it('is true when every replacement entry already matches live state', () => {
-            const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
+            const track = liveTrack('t1', ['c1']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
             const isNoop = handleRestoreTrackClipStates.isNoop?.({
@@ -379,7 +562,7 @@ describe('handleRestoreTrackClipStates', () => {
         });
 
         it('is false when a replacement entry does not match live state', () => {
-            const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1' })] });
+            const track = liveTrack('t1', ['c1']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
             const isNoop = handleRestoreTrackClipStates.isNoop?.({
