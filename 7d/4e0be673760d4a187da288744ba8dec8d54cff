@@ -1,0 +1,19 @@
+scripts/__tests__/uiRestatementCensus.spec.ts
+  s_2175fca1f07426::t_bdc7b17334ac02 251-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7d4e0be673760d4a187da288744ba8dec8d54cff",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
