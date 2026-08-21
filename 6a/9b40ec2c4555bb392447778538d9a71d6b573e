@@ -1,0 +1,53 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_bb8700e2dbcac6 27,208,239
+  s_a40848e8f8cca9::t_5d39281ae14ab6 781
+  s_a40848e8f8cca9::t_856daa8c663709 897,1027
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_a0e336d5193400 3,5,13-16
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_2f241752963566 469,519,586,706,810
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_a0e336d5193400 148-150,451,459,461-469
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_46deab3f520377 516
+  s_a40848e8f8cca9::t_95956892f39e06 39,565,587,589
+  s_a40848e8f8cca9::t_63f6ae2d3a5e83 41-42,55-95
+  s_a40848e8f8cca9::t_67e7232b2afaaa 44,540-543
+  s_a40848e8f8cca9::t_a07eb5bad55bc6 420-421,428-430
+  s_a40848e8f8cca9::t_d58dfa7621e366 545,548-551,553-555,557-559
+  s_a40848e8f8cca9::t_64ed83c899c1d0 422-427,431
+  s_a40848e8f8cca9::t_55d46ce0dcf16e 415-418,457,462,520-532,564,566,593
+  s_a40848e8f8cca9::t_85de812e4b42f1 442-453,461,465-466,468-475
+  s_a40848e8f8cca9::t_2dc8e5a3cabd31 467
+  s_a40848e8f8cca9::t_cbb1c0ddf3c622 13
+  s_a40848e8f8cca9::t_446eb853aec75b 533-538
+  s_a40848e8f8cca9::t_89cf4cacb2bb84 34,99-100,419,432-441,454-456,458-460,463-464,476-515,517-519,539,546-547,556,560-563
+  s_a40848e8f8cca9::t_e54692175656ac 544,552,567-586,588,590-592
+  s_24b1bdbc3c31ad::t_6862397895e9ad 96,594
+src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_a0e336d5193400 58-77,143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6a9b40ec2c4555bb392447778538d9a71d6b573e",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
