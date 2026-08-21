@@ -1,0 +1,237 @@
+crates/daw-dsp/src/levain/engine.rs
+  s_487e9aa1e46063::t_3de875e9cfd3df 2758-2768
+crates/daw-dsp/src/levain/voice.rs
+  s_487e9aa1e46063::t_e3a29e72f15d15 999-1002,1005,1007-1021,1133-1390
+electron-builder.yml
+  s_487e9aa1e46063::t_6f57f7ce16efe1 73-75,92-95
+electron/__tests__/commands.spec.ts
+  s_487e9aa1e46063::t_ca07ea4ea0503b 19-20,64-66,71-77,79,85,93-95,120-130,165-169,175-195
+electron/__tests__/webviewSecurity.spec.ts
+  s_487e9aa1e46063::t_3a37d8ac668ea6 306,311-315,317-320
+electron/commands.ts
+  s_487e9aa1e46063::t_7544c1c36f185e 100-125,146-147,149,151-152,157
+electron/main.ts
+  s_487e9aa1e46063::t_751196475e7812 90-99
+electron/security.ts
+  s_487e9aa1e46063::t_fb9e330090c52b 176,181-191
+package.json
+  s_487e9aa1e46063::t_9a98def0aa507f 25-28,33,41,79-80,147-148
+pnpm-lock.yaml
+  s_487e9aa1e46063::t_c823d9a0f876ce 15,18,216-218
+public/faust/libfaust-wasm.js
+  s_487e9aa1e46063::t_a8e5807f04437d 1,3-9,11-13,15-16,18-20
+public/legal/ELECTRON-SOURCES.json
+  s_487e9aa1e46063::t_ae353d9a761525 1-56
+public/legal/LGPL-3.0-and-GPL-3.0.txt
+  s_487e9aa1e46063::t_2d54227060ddd3 1-840
+public/legal/RELINKING.md
+  s_487e9aa1e46063::t_b98dd28dea7454 1-33
+public/legal/SOURCES.json
+  s_487e9aa1e46063::t_39f6df439e48ea 1-84
+public/legal/THIRD-PARTY-NOTICES.md
+  s_487e9aa1e46063::t_c47943606806cd 1-36
+public/legal/faustwasm-COPYING.txt
+  s_487e9aa1e46063::t_7ff4cb22ac5379 1-520
+public/legal/lamejs-NOTICE.txt
+  s_487e9aa1e46063::t_5820913298f151 1-12
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_24b1bdbc3c31ad::t_ca257d50866218 1,963-1034
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_24b1bdbc3c31ad::t_a1d8bbcc16920d 1,124-195
+public/wasm/manifest.json
+  s_2175fca1f07426::t_06dbdf93188b9c 12,16-18,21
+release/open-source-inventory.json
+  s_487e9aa1e46063::t_0411c7b465495f 80-116,118-121,123-125,173,178-182,185-186,188-189,191,193-194,552-573,575,577,588-601,603,607-608,612-624,627-630,651,653-656,788,800,816,820-952,1096-1101
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_487e9aa1e46063::t_b79f373e3b2aff 1-2,6-15,27,29,61-63,73-268
+scripts/__tests__/checkElectronRuntimeProvenance.spec.ts
+  s_487e9aa1e46063::t_22f1195d829e7b 1-252
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_487e9aa1e46063::t_19cf354bcc4d43 1-355
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_487e9aa1e46063::t_772d180b34a108 8,14,17-18,57-112
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_487e9aa1e46063::t_f99d7c404b866a 1,9,17,21-22,29-32,69,123-159,216,219-244,264-268,311-327,330-345,349-542
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_487e9aa1e46063::t_059ad746cb398e 11,20,375-469
+scripts/__tests__/prContract.spec.ts
+  s_487e9aa1e46063::t_dbfc95b86bfed0 9-10,15,101-154
+scripts/__tests__/reconcileTrackerIssue.spec.ts
+  s_487e9aa1e46063::t_6526bb12942de2 1-625
+scripts/__tests__/removeLane.spec.ts
+  s_487e9aa1e46063::t_4758d257a39f57 155-160,211-257,264-268
+scripts/__tests__/resourceGuard.spec.ts
+  s_487e9aa1e46063::t_418cf749910cec 2,526-664
+scripts/__tests__/stageElectronLegalFiles.spec.ts
+  s_487e9aa1e46063::t_ca5c887c650c3e 1-145
+scripts/checkElectronRuntimeProvenance.ts
+  s_487e9aa1e46063::t_ebaae1e59dda5b 1-308
+scripts/checkLgplRuntimeProvenance.ts
+  s_487e9aa1e46063::t_bf75e2685111c7 1-487
+scripts/checkReleaseInventory.ts
+  s_487e9aa1e46063::t_4ed1c0480b379b 9,11-12,95-96,134-179,619-634
+scripts/deliverPullRequest.ts
+  s_487e9aa1e46063::t_91ee6cde741c62 3,10,13,16,21-31,68-69,73-85,109-115,144,152-268,314-333,338,341,345,357,359,368,371,440-468,637-669,691-740,742-743,745,747-753,755-756,760-770
+scripts/electronRuntimeContract.ts
+  s_487e9aa1e46063::t_e83c343de3facc 1-109
+scripts/flipElectronFuses.ts
+  s_487e9aa1e46063::t_156e2e44c1f203 51-52,57-62,74,83-170,225
+scripts/githubAppIdentity.ts
+  s_487e9aa1e46063::t_49e83b478d9307 55-58,74-76,265-284,476-479
+scripts/prContract.ts
+  s_487e9aa1e46063::t_a5db9b455fed89 103-114,120-123,161,167,173-270
+scripts/reconcileTrackerIssue.ts
+  s_487e9aa1e46063::t_94ca074e0e7dc4 1-405
+scripts/removeLane.ts
+  s_487e9aa1e46063::t_1597123242d167 176-184,190-191,256-262
+scripts/resourceGuard.ts
+  s_487e9aa1e46063::t_520f33d96a4373 884-890,903-911,1054-1062,1067-1080
+scripts/trackerIssueReconciliation.ts
+  s_487e9aa1e46063::t_696469c88aab22 1-334
+scripts/trustedGithubWriteBootstrap.ts
+  s_487e9aa1e46063::t_d2b938f14a44be 1-217
+scripts/ui-restatement-census.json
+  s_487e9aa1e46063::t_128fc64a6d6555 38-46,146-154,509,533-541,986,1499,1661,1706,1839,1841-1842,1844-1845,1904,1994,2072-2080,2099-2107,2525,2846-2854,3053-3061,3389,3431-3439,3542,3902,4583-4591,4739,4754-4762,5567,5888-5896,6062,6122-6130,6683,6827,7421,7538,7805-7813,7832-7840,7997,8807,9122,9614-9622,9716,10091-10099,10535,10580,10928-10936,10958,11036-11044,11345,11558-11566,11624,11756-11764,12506,12755-12763,12944-12952,13574-13582,14045,14411-14419,14519-14527,14945,14981,15638,15879,15881-15882,15885,16436-16444,17141,17804-17812,18470-18478,18722-18730,19400,19472,20192,20606,20612-20620,20831,21638-21646,21674-21682,21839,22133-22141,22196-22204,22280,22415,22487,22991,23648,24350,24527-24535,24626-24634,24719,24725-24733,24824-24832
+src/app/__tests__/bootstrap.spec.ts
+  s_487e9aa1e46063::t_6d452fea00babd 371
+src/app/bootstrap.ts
+  s_487e9aa1e46063::t_fd05e6b6a01132 142,230
+src/modules/AudioEngine/engine/__tests__/ProofNode.spec.ts
+  s_487e9aa1e46063::t_22ee08386181f6 1,5-80,131-208
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_487e9aa1e46063::t_dd0efba1a25236 4,20,855-982
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_487e9aa1e46063::t_787272bfde1caa 1383-1422,1448,1516,1523-1525,1532
+src/modules/AudioEngine/repositories/offlineScheduler/offlinePpqEndpointProjectorState.ts
+  s_487e9aa1e46063::t_0945aeef9a0963 25-30,33-47
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflinePpqEndpointProjector.ts
+  s_487e9aa1e46063::t_f27bda71978605 1-5,7-23,25
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_487e9aa1e46063::t_75b8212d035104 152,175,724
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_487e9aa1e46063::t_e411f1a6ea6f17 149,181,245,507,529-548
+src/modules/AudioEngine/useCases/__tests__/renderOfflineCancellation.spec.ts
+  s_487e9aa1e46063::t_bcb75a30378e9c 161
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_487e9aa1e46063::t_dd37fa8371c2b0 219
+src/modules/AudioEngine/useCases/configureOfflinePpqEndpointProjection.ts
+  s_487e9aa1e46063::t_eef69079fd28b3 3,5-6
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_487e9aa1e46063::t_598e45e04db7cd 158,176-182,353,390
+src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts
+  s_487e9aa1e46063::t_92114c35e108b1 203
+src/modules/AudioEngine/useCases/offlineRender/__tests__/frozenPrintMixerParity.spec.ts
+  s_487e9aa1e46063::t_c12cf549d9d9de 336
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_487e9aa1e46063::t_9d782790203c3f 497
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_487e9aa1e46063::t_c2c44a1eaa743f 359
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveRenderContext.spec.ts
+  s_487e9aa1e46063::t_ffa368cc5cc078 17-20,74-77,80-83
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_487e9aa1e46063::t_a63c8f0d5b980d 432,609,663,707,791,846,878,958,1073
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_487e9aa1e46063::t_55b0cbe7e0ff8c 5,271-274,853-994
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_487e9aa1e46063::t_067e6e319565d3 337
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  s_487e9aa1e46063::t_287307e8fde2ae 23,36-47,97,119-150,167-171,185-186,192
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_487e9aa1e46063::t_0d2503d8c5783f 61-64,86-92,164,187-191,380
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_487e9aa1e46063::t_470172005f48cb 142-155,307
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_487e9aa1e46063::t_d945599868f6b9 21,45-46,104
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_487e9aa1e46063::t_d965515b971405 29-32,85-92,200,212-216,796
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_487e9aa1e46063::t_e125af14f3cec9 113,119-125,250,420
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_24b1bdbc3c31ad::t_7385033ba0f17f 1,963-1034
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_487e9aa1e46063::t_1304951ccc3d39 200
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_487e9aa1e46063::t_ee1fff0b124d4e 218
+src/modules/BrowserAi/workers/__tests__/modelStorageWorkerRuntime.spec.ts
+  s_487e9aa1e46063::t_44cb9429c23d7b 1455-1486
+src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx
+  s_487e9aa1e46063::t_e09eca70a3fc5d 1,111,119,129,139,147,208,251
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/OnlineSampleBrowserBranches.spec.tsx
+  s_487e9aa1e46063::t_357ff253bc6f3a 33,35-37,42
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_487e9aa1e46063::t_cf6dae966facb7 65-71
+src/modules/Preferences/presentations/views/ShortcutsSection.tsx
+  s_487e9aa1e46063::t_cddf1a75d0196f 7,160,165,167,179,191,197,200-203,211,217,219
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_487e9aa1e46063::t_135429590bcfad 6,188,201,289,304,311,339
+src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx
+  s_487e9aa1e46063::t_9d571d9d9efb06 5,24,41,55,72
+src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx
+  s_487e9aa1e46063::t_c025399fad290d 6,41,53,60,71,95,101,104,111,125,127,131-132,134,145-148,157,159,161,172-173,175-176,180,185,216-217
+src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx
+  s_487e9aa1e46063::t_55a6e4c3cb438a 5,25-26,28,43-44,46,48,63-64,66,68,83-84,86,88,103-105
+src/modules/Preferences/presentations/views/preferences/MidiSection.tsx
+  s_487e9aa1e46063::t_0a2b511d301a4e 6,31,48
+src/modules/Preferences/presentations/views/preferencesShared.tsx
+  s_487e9aa1e46063::t_a161ac33a8fefb 6,15,19,25,28,44,59,92,104,126,128,147,149
+src/modules/Proof/stores/__tests__/proofStore.spec.ts
+  s_487e9aa1e46063::t_d2b6e43f1cbc43 11-12,177-285
+src/modules/Transport/useCases/index.ts
+  s_487e9aa1e46063::t_b4b48159faa73f 28
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_487e9aa1e46063::t_1a8eba3e11415c 15,121-133,139-143,527-583,775-802
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_487e9aa1e46063::t_f6b2fa6bde390f 230-247,249-250,253-265,267-268,271,276,289-295,313-326
+src/modules/Transport/useCases/tempoMap/resolveTempoAtBeat.ts
+  s_487e9aa1e46063::t_4f9681ca5fa233 1-21
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_487e9aa1e46063::t_a00a058bb392d5 3,232-246
+src/modules/WorkspaceShell/presentations/views/Transport/AutoScrollToggle.tsx
+  s_487e9aa1e46063::t_dd31a681a513dd 27
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/AutoScrollToggle.spec.tsx
+  s_487e9aa1e46063::t_3ddfbdf32fe8dc 5,25,44-65
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_487e9aa1e46063::t_2d6afb7727364f 253-264
+tests/e2e/automationPointDrawUndo.spec.ts
+  s_487e9aa1e46063::t_814bcddfc7f127 1,3,5-22,26-30,32-38,41-43,46-49,56-57,59,64-67,74-77,82,85-86,91
+tests/e2e/deviceAndModulator.spec.ts
+  s_487e9aa1e46063::t_0982f2484bb29c 1-2,7-9,11-18,21-24,26-29,32-34,38,41-42,47-48,50-55,58-60,66,69,73-75,77-95,101,104,108-109,112,118
+tests/e2e/devicePanelTestId.spec.ts
+  s_487e9aa1e46063::t_fcd99910c94680 1,3,5-9,13,16-21,24-27,29-30,32-37,40-46,48-53,56-62,65-67,69-71,76-78
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  s_487e9aa1e46063::t_0ea64b7b6a0602 1-3,7-12,15-20,22-25,27-29,32,36-38,41-42,45-46,49-50,54-57,59-64,67-68,71-73,75-76,78-80,82-84,87-89,91-92,94-100,103-105,107-108,110-116,119-124,127-128,131-132,136-139,141-142,144-145,148-150,152-153,155-156,160-163,165-166,168-169
+tests/e2e/undoRedoAutoScrollTestId.spec.ts
+  s_487e9aa1e46063::t_8b03ad0f336906 1,5-52,55,61,63,65,69,73,77-78,80-81,86-89,91-97,99-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7ad3b29a0b9ff34c7cf720e8637b6932dd3b27d2",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
