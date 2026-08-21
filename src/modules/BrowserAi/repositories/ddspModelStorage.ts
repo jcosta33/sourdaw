@@ -102,9 +102,7 @@ const deleteDdspInstrumentArtifacts = inject({ modelStorageWorkerBridge })(
                 [
                     ...input.artifacts.map((artifact) => artifactModelId(input.id, artifact.path)),
                     readyModelId(input.id, input.version),
-                ].map(async (modelId) =>
-                    modelStorageWorkerBridge.deleteModel({ family: 'ddsp', modelId }).catch(() => undefined)
-                )
+                ].map(async (modelId) => modelStorageWorkerBridge.deleteModel({ family: 'ddsp', modelId }))
             );
         }
 );
@@ -113,4 +111,7 @@ export const ddspModelStorage = {
     checkDdspInstrumentReady,
     writeDdspReadyMarker,
     deleteDdspInstrumentArtifacts,
+    cleanupDdspInstrumentArtifacts: async (input: DdspStorageInput): Promise<void> => {
+        await deleteDdspInstrumentArtifacts(input).catch(() => undefined);
+    },
 };

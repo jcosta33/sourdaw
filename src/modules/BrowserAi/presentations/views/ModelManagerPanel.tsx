@@ -8,6 +8,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 
+import { type DdspInstrument } from '../../models/BrowserModel';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadDdspInstrument } from '../../useCases/downloadDdspInstrument';
@@ -130,6 +131,78 @@ function ModelAction({
     );
 }
 
+type AdmittedDdspInstrument = DdspInstrument & {
+    artifactVersion: string;
+    artifacts: NonNullable<DdspInstrument['artifacts']>;
+};
+
+function DdspInstrumentAction({ instrument }: { instrument: AdmittedDdspInstrument }): ReactElement {
+    const handleDownload = (): void => {
+        const download = downloadDdspInstrument as (candidate: AdmittedDdspInstrument) => Promise<void>;
+        void download(instrument).catch((error: unknown) => {
+            logger.error(new Error('[BrowserAi] Failed to download DDSP instrument', { cause: error }));
+        });
+    };
+    const handleRemove = (): void => {
+        const remove = removeDdspInstrument as (candidate: AdmittedDdspInstrument) => Promise<void>;
+        void remove(instrument).catch((error: unknown) => {
+            logger.error(new Error('[BrowserAi] Failed to remove DDSP instrument', { cause: error }));
+        });
+    };
+
+    if (instrument.status === 'ready') {
+        return (
+            <div className="flex items-center gap-2">
+                <DawMicroBadge tone="success" aria-label={`${instrument.name} stored and verified`}>
+                    ✓ Ready
+                </DawMicroBadge>
+                <button
+                    type="button"
+                    onClick={handleRemove}
+                    className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    aria-label={`Remove ${instrument.name} from storage`}
+                >
+                    Remove
+                </button>
+            </div>
+        );
+    }
+
+    if (instrument.status === 'downloading') {
+        return (
+            <div className="flex items-center gap-2" aria-label={`Downloading ${instrument.name}`}>
+                <div
+                    className="w-12 h-1 bg-border/40 rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={Math.round(instrument.downloadProgress * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Downloading ${instrument.name}: ${Math.round(instrument.downloadProgress * 100)}%`}
+                >
+                    <div
+                        className="h-full bg-[var(--color-accent-orange)] transition-all"
+                        style={{ width: `${Math.round(instrument.downloadProgress * 100)}%` }}
+                    />
+                </div>
+                <span className="text-[9px] text-muted-foreground tabular-nums">
+                    {Math.round(instrument.downloadProgress * 100)}%
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={handleDownload}
+            className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
+            aria-label={`Download ${instrument.name} from Magenta`}
+        >
+            Download
+        </button>
+    );
+}
+
 /** Model manager panel showing all downloadable AI models and their storage status */
 export function ModelManagerPanel(): ReactElement {
     const defaultRegistry = {
@@ -145,7 +218,18 @@ export function ModelManagerPanel(): ReactElement {
     const kokoroProgress = registry.kokoroModel?.downloadProgress ?? 0;
     // DDSP instruments: use registry status when available, fall back to static catalog
     const registryInstruments = registry.ddspInstruments;
-    const instruments = registryInstruments.length > 0 ? registryInstruments : DDSP_INSTRUMENT_CATALOG;
+    const instruments: AdmittedDdspInstrument[] =
+        registryInstruments.length > 0
+            ? (registryInstruments as AdmittedDdspInstrument[])
+            : DDSP_INSTRUMENT_CATALOG.map((instrument) => ({
+                  ...instrument,
+                  // Every catalog entry is backed by the admitted artifact manifest; make that
+                  // contract explicit before handing it to a user-triggered storage use case.
+                  artifactVersion: instrument.artifactVersion!,
+                  artifacts: instrument.artifacts!,
+                  status: 'not-downloaded' as const,
+                  downloadProgress: 0,
+              }));
 
     const totalUsed = registry.storageUsedBytes;
     const limitBytes = 2 * 1024 * 1024 * 1024;
@@ -183,9 +267,8 @@ export function ModelManagerPanel(): ReactElement {
                 <DawUtilitySection title="DDSP Instruments" detail="Monophonic synthesis · Google Research">
                     <div className="space-y-0.5">
                         {instruments.map((instrument) => {
-                            const status = 'status' in instrument ? instrument.status : 'error';
                             const description =
-                                status === 'ready'
+                                instrument.status === 'ready'
                                     ? `Magenta · ${formatBytes(instrument.sizeBytes)} · verified OPFS`
                                     : `Magenta direct download · ${formatBytes(instrument.sizeBytes)}`;
                             return (
@@ -193,35 +276,7 @@ export function ModelManagerPanel(): ReactElement {
                                     key={instrument.id}
                                     heading={instrument.name}
                                     description={description}
-                                    endSlot={
-                                        status === 'ready' ? (
-                                            <div className="flex items-center gap-2">
-                                                <DawMicroBadge
-                                                    tone="success"
-                                                    aria-label={`${instrument.name} stored and verified`}
-                                                >
-                                                    ✓ Ready
-                                                </DawMicroBadge>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void removeDdspInstrument(instrument)}
-                                                    className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                                                    aria-label={`Remove ${instrument.name} from storage`}
-                                                >
-                                                    Remove
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() => void downloadDdspInstrument(instrument)}
-                                                className="px-2 py-0.5 text-[9px] border border-border/50 rounded hover:bg-surface-hover transition-colors text-muted-foreground hover:text-foreground"
-                                                aria-label={`Download ${instrument.name} from Magenta`}
-                                            >
-                                                Download
-                                            </button>
-                                        )
-                                    }
+                                    endSlot={<DdspInstrumentAction instrument={instrument} />}
                                 />
                             );
                         })}

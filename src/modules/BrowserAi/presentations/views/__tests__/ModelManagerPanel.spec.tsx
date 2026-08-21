@@ -69,6 +69,10 @@ describe('ModelManagerPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.registryState = undefined;
+        use_case_mocks.downloadDdspInstrument.mockResolvedValue(undefined);
+        use_case_mocks.downloadModel.mockResolvedValue(undefined);
+        use_case_mocks.removeDdspInstrument.mockResolvedValue(undefined);
+        use_case_mocks.removeModel.mockResolvedValue(undefined);
     });
 
     it('shows admitted DDSP checkpoints as direct Magenta downloads, never a browser cache claim', () => {
@@ -79,6 +83,66 @@ describe('ModelManagerPanel', () => {
         expect(screen.getByText('DDSP Instruments')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Download Violin from Magenta' })).toBeInTheDocument();
         expect(screen.queryByText(/cached by browser/i)).not.toBeInTheDocument();
+    });
+
+    it('shows DDSP download progress and disables a second launch while that instrument is downloading', () => {
+        mocks.registryState = {
+            ...create_base_registry(),
+            ddspInstruments: [
+                {
+                    ...DDSP_INSTRUMENT_CATALOG[0]!,
+                    status: 'downloading',
+                    downloadProgress: 0.42,
+                },
+            ],
+        };
+
+        render(<ModelManagerPanel />);
+
+        expect(screen.getByLabelText('Downloading Violin: 42%')).toHaveAttribute('aria-valuenow', '42');
+        expect(screen.getByText('42%')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Download Violin from Magenta' })).not.toBeInTheDocument();
+    });
+
+    it('logs rejected DDSP panel actions instead of leaving an unhandled button promise', async () => {
+        mocks.registryState = create_registry_with_unavailable_ddsp();
+        const failure = new Error('Magenta request rejected');
+        use_case_mocks.downloadDdspInstrument.mockRejectedValue(failure);
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+        render(<ModelManagerPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Download Violin from Magenta' }));
+
+        await vi.waitFor(() => expect(loggerError).toHaveBeenCalledTimes(1));
+        const logged = loggerError.mock.calls[0]?.[0];
+        expect(logged).toBeInstanceOf(Error);
+        expect((logged as Error).cause).toBe(failure);
+        loggerError.mockRestore();
+    });
+
+    it('logs a rejected DDSP removal without lying that the instrument was removed', async () => {
+        mocks.registryState = {
+            ...create_base_registry(),
+            ddspInstruments: [
+                {
+                    ...DDSP_INSTRUMENT_CATALOG[0]!,
+                    status: 'ready',
+                    downloadProgress: 1,
+                },
+            ],
+        };
+        const failure = new Error('OPFS delete denied');
+        use_case_mocks.removeDdspInstrument.mockRejectedValue(failure);
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+        render(<ModelManagerPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Violin from storage' }));
+
+        await vi.waitFor(() => expect(loggerError).toHaveBeenCalledTimes(1));
+        const logged = loggerError.mock.calls[0]?.[0];
+        expect(logged).toBeInstanceOf(Error);
+        expect((logged as Error).cause).toBe(failure);
+        loggerError.mockRestore();
     });
 
     it('should download the Kokoro model when not-downloaded and show its download button', () => {

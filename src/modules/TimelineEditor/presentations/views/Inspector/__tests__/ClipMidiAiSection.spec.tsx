@@ -278,6 +278,46 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         },
     });
 
+    const ddspInstrument = {
+        id: 'ddsp-violin',
+        name: 'Violin',
+        family: 'ddsp' as const,
+        instrument: 'violin',
+        url: 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json',
+        sizeBytes: 4,
+        license: 'Unverified' as const,
+        attribution: 'Magenta',
+        nativeSampleRate: 16_000,
+        frameRate: 250,
+        artifactVersion: 'v1',
+        artifacts: [],
+        status: 'ready' as const,
+        downloadProgress: 1,
+    };
+
+    const setDdspReadyRegistry = (): void => {
+        modelRegistryStore.set({
+            ddspInstruments: [ddspInstrument],
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+    };
+
+    const setDdspNotes = (...clips: Clip[]): void => {
+        midiStoreMock.state = {
+            notesByClipId: Object.fromEntries(
+                clips.map((clip) => [
+                    clip.id,
+                    [{ id: `note-${clip.id}`, pitch: 60, velocity: 100, startBeat: 0, duration: 1 }],
+                ])
+            ),
+        };
+    };
+
+    const ddspButton = (): HTMLElement => screen.getByRole('button', { name: /Rendering…|Render Instrument/ });
+
     const installTtsMock = (): void => {
         vi.mocked(renderKokoroTts).mockImplementation(async () => {
             await awaitTurn(ttsCalls);
@@ -322,6 +362,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         // clearMocks/mockReset in vite.config.ts nor any global reset in setupTests.ts. Without
         // this, an implementation installed by one test leaks into every later test in the file.
         vi.mocked(renderKokoroTts).mockReset();
+        vi.mocked(renderDdspInstrument).mockReset();
         vi.mocked(generateMidiVariations).mockReset();
         modelRegistryStore.set({
             ddspInstruments: [],
@@ -358,29 +399,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
     });
 
     it('renders a verified DDSP instrument through the typed browser-AI caller', async () => {
-        const instrument = {
-            id: 'ddsp-violin',
-            name: 'Violin',
-            family: 'ddsp' as const,
-            instrument: 'violin',
-            url: 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json',
-            sizeBytes: 4,
-            license: 'Unverified' as const,
-            attribution: 'Magenta',
-            nativeSampleRate: 16_000,
-            frameRate: 250,
-            artifactVersion: 'v1',
-            artifacts: [],
-            status: 'ready' as const,
-            downloadProgress: 1,
-        };
-        modelRegistryStore.set({
-            ddspInstruments: [instrument],
-            kokoroModel: null,
-            diffSingerVoicebanks: [],
-            vocoder: null,
-            storageUsedBytes: 0,
-        });
+        setDdspReadyRegistry();
         const nonzeroTimelineClip = { ...clipA, startBeat: 8, endBeat: 12 };
         midiStoreMock.state = {
             notesByClipId: {
@@ -390,7 +409,12 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         vi.mocked(renderDdspInstrument).mockResolvedValue({
             audio: new Float32Array([0.1, 0.2]),
             sampleRate: 44_100,
-            provenance: { modelId: instrument.id, renderQuality: 'standard', renderedAt: 1, tier: 'browser-preview' },
+            provenance: {
+                modelId: ddspInstrument.id,
+                renderQuality: 'standard',
+                renderedAt: 1,
+                tier: 'browser-preview',
+            },
         });
 
         render(<ClipMidiAiSection clip={nonzeroTimelineClip} />);
@@ -400,10 +424,121 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
             expect.objectContaining({
                 phraseId: `${nonzeroTimelineClip.id}-ddsp`,
-                instrument,
+                instrument: ddspInstrument,
                 notes: [expect.objectContaining({ startSec: 0.5 })],
             })
         );
+    });
+
+    it('drops a DDSP completion after switching clips while the current launch still paints and notifies', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const first = createGate();
+        const second = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await first.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await second.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        fireEvent.click(ddspButton());
+        await settleJobs(() => first.open());
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        await settleJobs(() => second.open());
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
+    });
+
+    it('supersedes a same-clip DDSP launch across an A→B→A panel reset', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const first = createGate();
+        const second = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await first.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await second.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        rerender(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        await settleJobs(() => first.open());
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        await settleJobs(() => second.open());
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+    });
+
+    it('does not report a DDSP failure or clear the newer spinner after switching clips', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const abandoned = createGate();
+        const current = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await abandoned.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await current.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        fireEvent.click(ddspButton());
+
+        await settleJobs(() => abandoned.fail(new Error('abandoned DDSP failure')));
+
+        // Removing the ownership guard in either catch or finally makes this error toast appear
+        // or returns clip B's still-pending launch to an enabled button.
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+        expect(ddspButton()).toHaveTextContent('Rendering…');
+
+        await settleJobs(() => current.open());
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
+    });
+
+    it('suppresses a superseded same-clip DDSP failure while reporting the current failure', async () => {
+        setDdspReadyRegistry();
+        setDdspNotes(clipA, clipB);
+        const superseded = createGate();
+        const current = createGate();
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async () => {
+                await superseded.promise;
+                return makeRenderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await current.promise;
+                return makeRenderOutput();
+            });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        rerender(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(ddspButton());
+
+        await settleJobs(() => superseded.fail(new Error('superseded DDSP failure')));
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+        expect(ddspButton()).toHaveTextContent('Rendering…');
+
+        await settleJobs(() => current.fail(new Error('current DDSP failure')));
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('current DDSP failure', 'error');
+        expect(ddspButton()).toHaveTextContent('Render Instrument');
     });
 
     it('discards a TTS render that resolves after a clip switch (audit M-250)', async () => {
