@@ -695,7 +695,7 @@
   {
     "id": "ui-05f81ccfa3a22e3c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1375,
+    "line": 1350,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -1145,7 +1145,7 @@
   {
     "id": "ui-09e497e4bd5f1783",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 677,
+    "line": 675,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -4295,7 +4295,7 @@
   {
     "id": "ui-28c063d06a1ed493",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 663,
+    "line": 646,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -5816,7 +5816,7 @@
   {
     "id": "ui-38b7e580ba937311",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 646,
+    "line": 609,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7607,7 +7607,7 @@
   {
     "id": "ui-499187d2909eda5c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1350,
+    "line": 1278,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -11990,7 +11990,7 @@
   {
     "id": "ui-77d0e080d72d3f26",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 739,
+    "line": 718,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -15959,7 +15959,7 @@
   {
     "id": "ui-a03308da75020d4f",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1179,
+    "line": 1152,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -17759,7 +17759,7 @@
   {
     "id": "ui-b1f108858ed7ebf2",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 755,
+    "line": 739,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18281,7 +18281,7 @@
   {
     "id": "ui-b70d306bb9fbe7e7",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 785,
+    "line": 757,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18839,7 +18839,7 @@
   {
     "id": "ui-bd7d03e3a1c5bd1a",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 757,
+    "line": 755,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19847,7 +19847,7 @@
   {
     "id": "ui-c993f374321731af",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 609,
+    "line": 390,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19865,7 +19865,7 @@
   {
     "id": "ui-c9ac0c9adcc56dd0",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 675,
+    "line": 663,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21386,7 +21386,7 @@
   {
     "id": "ui-d7d9f1096315ee3e",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1152,
+    "line": 785,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -22655,7 +22655,7 @@
   {
     "id": "ui-e5309d3b37355c5f",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1278,
+    "line": 1179,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -23177,7 +23177,7 @@
   {
     "id": "ui-eaaa415d3a43cafd",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1400,
+    "line": 1375,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24059,7 +24059,7 @@
   {
     "id": "ui-f31b8bf2adcb794c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 718,
+    "line": 677,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24276,6 +24276,15 @@
     "id": "ui-f5d5f929054f4695",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx",
     "line": 113,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f60bba44fb1f4509",
+    "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
+    "line": 1400,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -25045,15 +25054,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-fd94ede1d068db25",
-    "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 390,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fd9b51f8d48c6529",
