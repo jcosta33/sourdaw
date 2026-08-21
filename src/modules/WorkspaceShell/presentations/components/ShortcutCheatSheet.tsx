@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 type ShortcutGroup = {
@@ -217,7 +217,7 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
                     }
                 />
 
-                <div className="grid grid-cols-2 gap-6 overflow-y-auto px-4 py-4">
+                <Grid cols={2} gap={6} className="overflow-y-auto px-4 py-4">
                     {SHORTCUT_GROUPS.map((group) => (
                         <div key={group.title}>
                             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
@@ -239,7 +239,7 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
                             </Stack>
                         </div>
                     ))}
-                </div>
+                </Grid>
 
                 <p className="px-4 py-3 text-center text-[10px] text-muted-foreground">
                     Press{' '}

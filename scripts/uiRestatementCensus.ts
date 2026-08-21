@@ -261,6 +261,30 @@ function readStaticText(expression: ts.Expression): { text: string; dynamic: boo
     return { text: '', dynamic: true };
 }
 
+function staticTypeAttribute(element: ts.JsxOpeningLikeElement): string | undefined {
+    for (const attribute of element.attributes.properties) {
+        if (!ts.isJsxAttribute(attribute) || !ts.isIdentifier(attribute.name) || attribute.name.text !== 'type') {
+            continue;
+        }
+        const initializer = attribute.initializer;
+        if (initializer === undefined) {
+            return undefined;
+        }
+        if (ts.isStringLiteral(initializer) || ts.isNoSubstitutionTemplateLiteral(initializer)) {
+            return initializer.text;
+        }
+        if (
+            ts.isJsxExpression(initializer) &&
+            initializer.expression !== undefined &&
+            (ts.isStringLiteral(initializer.expression) || ts.isNoSubstitutionTemplateLiteral(initializer.expression))
+        ) {
+            return initializer.expression.text;
+        }
+        return undefined;
+    }
+    return undefined;
+}
+
 function classNameAttribute(element: ts.JsxOpeningLikeElement): ts.Expression | undefined {
     for (const attribute of element.attributes.properties) {
         if (!ts.isJsxAttribute(attribute) || !ts.isIdentifier(attribute.name) || attribute.name.text !== 'className') {
@@ -291,12 +315,50 @@ function layoutMapping(classNames: string): 'Stack' | 'Row' | 'Grid' {
     return 'Row';
 }
 
-function nativeControlDisposition(relativePath: string): UiRestatementDisposition {
-    if (relativePath.startsWith('src/components/ui/')) {
+const NON_TEXT_INPUT_TYPES = new Set([
+    'button',
+    'color',
+    'file',
+    'hidden',
+    'image',
+    'radio',
+    'range',
+    'reset',
+    'submit',
+]);
+
+const NUMERIC_GRID_COLS = /(?:^|\s)grid-cols-[1-6](?:\s|$)/;
+
+function isDawCompactDefinition(relativePath: string): boolean {
+    return (
+        relativePath === 'src/components/daw/DawCompactCheckbox.tsx' ||
+        relativePath === 'src/components/daw/DawCompactInput.tsx' ||
+        relativePath === 'src/components/daw/DawCompactSelect.tsx' ||
+        relativePath === 'src/components/daw/DawCompactTextarea.tsx'
+    );
+}
+
+function nativeControlDisposition(
+    relativePath: string,
+    tag: string,
+    inputType: string | undefined,
+    classNames: string
+): UiRestatementDisposition {
+    if (relativePath.startsWith('src/components/ui/') || isDawCompactDefinition(relativePath)) {
         return 'semantic-wrapper';
     }
     if (relativePath.includes('/visualizers/')) {
         return 'renderer';
+    }
+    if (tag === 'input' && inputType !== undefined && NON_TEXT_INPUT_TYPES.has(inputType)) {
+        return 'one-off';
+    }
+    if (
+        tag === 'input' &&
+        classNames.includes('bg-transparent') &&
+        !/(?:^|\s)h-(?:5|6|7|8|10)(?:\s|$)/.test(classNames)
+    ) {
+        return 'one-off';
     }
     return 'eligible';
 }
@@ -313,6 +375,9 @@ function layoutDisposition(relativePath: string, classNames: string, dynamic: bo
     }
     if (COMPLEX_GRID.test(classNames)) {
         return 'complex-grid';
+    }
+    if (layoutMapping(classNames) === 'Grid' && !NUMERIC_GRID_COLS.test(classNames)) {
+        return 'one-off';
     }
     if (dynamic || RESPONSIVE_CLASS.test(classNames)) {
         return 'responsive-or-dynamic';
@@ -346,7 +411,8 @@ function classifyElement(
     tag: string,
     classNames: string,
     dynamic: boolean,
-    line: number
+    line: number,
+    inputType: string | undefined
 ): ClassifiedRow | undefined {
     if (LAYOUT_PRIMITIVES.has(tag)) {
         return classifiedRow(relativePath, line, `${tag}\t`, 'layout', tag, 'already-migrated');
@@ -368,7 +434,7 @@ function classifyElement(
             `${tag}\t`,
             'generic-control',
             mapping,
-            nativeControlDisposition(relativePath)
+            nativeControlDisposition(relativePath, tag, inputType, classNames)
         );
     }
     if (!LAYOUT_TAGS.has(tag) || !hasLayoutClass(classNames)) {
@@ -394,7 +460,14 @@ function scanSourceFile(relativePath: string, contents: string): UiRestatementRo
                 const attribute = classNameAttribute(node);
                 const parsed = attribute === undefined ? { text: '', dynamic: false } : readStaticText(attribute);
                 const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-                const row = classifyElement(relativePath, tag, parsed.text.trim(), parsed.dynamic, line);
+                const row = classifyElement(
+                    relativePath,
+                    tag,
+                    parsed.text.trim(),
+                    parsed.dynamic,
+                    line,
+                    tag === 'input' ? staticTypeAttribute(node) : undefined
+                );
                 if (row !== undefined) {
                     classified.push(row);
                 }

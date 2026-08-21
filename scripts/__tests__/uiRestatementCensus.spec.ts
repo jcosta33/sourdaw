@@ -196,6 +196,38 @@ export const Notes = () => <span>{hint}</span>;
         expect(scanUiRestatements(root)[0]?.disposition).toBe('renderer');
     });
 
+    it('marks DawCompact control definitions as semantic wrappers', () => {
+        const root = tree({
+            'src/components/daw/DawCompactCheckbox.tsx': `export const DawCompactCheckbox = () => <input type="checkbox" />;
+`,
+        });
+        expect(scanUiRestatements(root)[0]).toEqual(
+            expect.objectContaining({ mapping: 'Input', disposition: 'semantic-wrapper' })
+        );
+    });
+
+    it('marks file and range inputs as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Import.tsx': `export const Import = () => <input type="file" className="hidden" />;
+`,
+            'src/modules/Demo/presentations/views/Amount.tsx': `export const Amount = () => <input type="range" min={0} max={1} />;
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/Import.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/Amount.tsx']?.disposition).toBe('one-off');
+    });
+
+    it('marks implicit grids without numeric columns as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/StackGrid.tsx': `export const StackGrid = () => <div className="grid gap-2" />;
+`,
+        });
+        expect(scanUiRestatements(root)[0]).toEqual(
+            expect.objectContaining({ mapping: 'Grid', disposition: 'one-off' })
+        );
+    });
+
     it('marks daw hardware drawing shells as one-off', () => {
         const root = tree({
             'src/components/daw/Fader.tsx': `export const Fader = () => <div className="flex flex-col justify-between" />;

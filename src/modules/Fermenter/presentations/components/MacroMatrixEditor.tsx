@@ -1,6 +1,6 @@
 import { type ChangeEvent, type ReactElement, useState } from 'react';
 
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import {
     DEFAULT_MACRO_MAPPINGS,
@@ -176,7 +176,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                             </button>
                         </Row>
 
-                        <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Grid cols={2} gap={2} className="mt-2">
                             <NumberField
                                 label="Center"
                                 value={target.center}
@@ -197,7 +197,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                                 value={target.max}
                                 onChange={(value) => setTarget(targetIndex, { ...target, max: value })}
                             />
-                        </div>
+                        </Grid>
 
                         <Stack as="label" gap={1} className="mt-2">
                             <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">

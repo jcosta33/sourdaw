@@ -10,7 +10,7 @@ import { type ReactElement } from 'react';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import {
     type GrandBouleMorphState,
@@ -181,10 +181,10 @@ export const MorphPanel = ({
                 </Row>
 
                 {/* Model selectors */}
-                <div className="grid grid-cols-2 gap-2">
+                <Grid cols={2} gap={2}>
                     <ModelSelector label="Model A" selectedId={morph.modelA} onSelect={onModelAChange} />
                     <ModelSelector label="Model B" selectedId={morph.modelB} onSelect={onModelBChange} />
-                </div>
+                </Grid>
 
                 {/* Blend indicator */}
                 <BlendIndicator

@@ -8,7 +8,7 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -583,7 +583,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                     width={320}
                     height={152}
                 />
-                <div className="grid grid-cols-3 gap-3">
+                <Grid cols={3} gap={3}>
                     <StatusMeter
                         label="OD"
                         value={(patch.prePedals.find((pedal) => pedal.type === 'overdrive')?.params.drive ?? 0) / 10}
@@ -599,7 +599,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                         value={(patch.prePedals.find((pedal) => pedal.type === 'fuzz')?.params.fuzz ?? 0) / 10}
                         accent="var(--color-accent-lavender)"
                     />
-                </div>
+                </Grid>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
                 <div>
@@ -616,10 +616,10 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                     width={210}
                     height={152}
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <Grid cols={2} gap={3}>
                     <StatusMeter label="Gate" value={patch.gateEnabled ? 1 : 0} accent="var(--color-accent-cyan)" />
                     <StatusMeter label="Comp" value={compressor?.enabled ? 1 : 0} accent="var(--color-accent-peach)" />
-                </div>
+                </Grid>
             </Stack>
         </div>
     );
@@ -677,11 +677,11 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         </Row>
                     ) : null}
                 </Row>
-                <div className="grid grid-cols-3 gap-3">
+                <Grid cols={3} gap={3}>
                     <StatusMeter label="Thump" value={patch.backEmf} accent="var(--color-accent-cyan)" />
                     <StatusMeter label="Breakup" value={patch.coneBreakup} accent="var(--color-accent-peach)" />
                     <StatusMeter label="Damp" value={patch.cabDamping} accent="var(--color-accent-lavender)" />
-                </div>
+                </Grid>
                 <Row align="stretch" gap={2}>
                     <Stack gap={1}>
                         <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">Mic 1</span>
@@ -805,7 +805,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                             style={{ width: `${patch.neuralMix * 100}%` }}
                         />
                     </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2">
+                    <Grid cols={2} gap={2} className="mt-4">
                         <GrinderTelemetryMeter
                             deviceId={deviceId}
                             label="CPU"
@@ -819,7 +819,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                             telemetryKey="neuralWarmupProgress"
                             accent="var(--color-accent-cyan)"
                         />
-                    </div>
+                    </Grid>
                 </div>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
@@ -925,7 +925,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                     What lives here
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <Grid cols={2} gap={3}>
                     <StatusMeter
                         label="Bias"
                         value={Math.max(0, Math.min(1, patch.tubeBias))}
@@ -936,7 +936,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         value={Math.max(0, Math.min(1, patch.negFeedback))}
                         accent="var(--color-accent-amber)"
                     />
-                </div>
+                </Grid>
             </Stack>
         </div>
     );
@@ -1434,7 +1434,7 @@ function ControlDeck({
                             </DawPluginToggle>
                         ))}
                     </Row>
-                    <div className="grid grid-cols-2 gap-2">
+                    <Grid cols={2} gap={2}>
                         {POWER_TUBES.map((tube) => (
                             <DawPluginChip
                                 key={tube}
@@ -1461,7 +1461,7 @@ function ControlDeck({
                                 {rectifier}
                             </DawPluginChip>
                         ))}
-                    </div>
+                    </Grid>
                 </Stack>
             </Row>
         );
@@ -1629,7 +1629,7 @@ function ControlDeck({
                     <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-lavender)]">
                         Engine Mode
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <Grid cols={3} gap={2}>
                         {ENGINE_MODES.map((mode) => (
                             <button
                                 key={mode.id}
@@ -1651,7 +1651,7 @@ function ControlDeck({
                                 <div className="text-xs text-white/44">{mode.description}</div>
                             </button>
                         ))}
-                    </div>
+                    </Grid>
                 </Stack>
                 <GrinderKnob
                     deviceId={deviceId}
@@ -1972,7 +1972,7 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                     This is the loaded rig view. Grab a preset on the left, then hop into Amp, Drive, Cab, Neural, or
                     Lab when you want to get more specific.
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <Grid cols={3} gap={2}>
                     <GrinderTelemetryMeter
                         deviceId={deviceId}
                         label="Input"
@@ -1993,7 +1993,7 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                         accent="var(--color-accent-peach)"
                         transform={toDbPercent}
                     />
-                </div>
+                </Grid>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
                 <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">

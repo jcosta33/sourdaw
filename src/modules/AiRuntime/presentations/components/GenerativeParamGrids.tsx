@@ -18,6 +18,7 @@ import {
     Music4,
 } from 'lucide-react';
 
+import { Grid } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type GridProps = {
@@ -39,7 +40,7 @@ type GridContainerProps = GridProps & {
 
 const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerProps): ReactElement => {
     return (
-        <div className="grid grid-cols-2 gap-2" data-testid={gridTestId}>
+        <Grid cols={2} gap={2} data-testid={gridTestId}>
             {options.map((opt) => {
                 const isSelected = value === opt.id;
                 return (
@@ -85,7 +86,7 @@ const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerPr
                     </button>
                 );
             })}
-        </div>
+        </Grid>
     );
 };
 

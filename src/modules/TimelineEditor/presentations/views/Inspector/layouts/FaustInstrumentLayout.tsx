@@ -8,7 +8,7 @@ import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -182,11 +182,11 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                 return (
                     <div key={title} className="mb-4">
                         <SectionHeader title={title} />
-                        <div className="grid grid-cols-2 gap-2 mt-1">
+                        <Grid cols={2} gap={2} className="mt-1">
                             {params.map((param) => (
                                 <Param key={param.id} param={param} device={device} trackId={trackId} />
                             ))}
-                        </div>
+                        </Grid>
                     </div>
                 );
             })}

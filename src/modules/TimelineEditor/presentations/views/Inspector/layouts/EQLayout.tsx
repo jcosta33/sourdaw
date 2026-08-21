@@ -5,7 +5,7 @@
 import { type ReactElement } from 'react';
 
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -54,29 +54,29 @@ const EQLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElem
                 />
             </Row>
             <SectionHeader title="Low Band" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['eq-low-gain', 'eq-low-freq']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
             {filterParams(parameters, ['eq-low-q']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
             <SectionHeader title="Mid Band" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['eq-mid-gain', 'eq-mid-freq']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
             {filterParams(parameters, ['eq-mid-q']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
             <SectionHeader title="High Band" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['eq-high-gain', 'eq-high-freq']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
             {filterParams(parameters, ['eq-high-q']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}

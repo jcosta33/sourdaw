@@ -14,7 +14,7 @@ import { type ReactElement, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import {
     type GrandBoulePerNoteValues,
@@ -85,7 +85,7 @@ export const PerNoteEditor = ({
             </Row>
 
             {/* Parameter knobs — 4×2 grid */}
-            <div className="mt-2 grid grid-cols-4 gap-x-2 gap-y-3">
+            <Grid cols={4} gapX={2} gapY={3} className="mt-2">
                 {PER_NOTE_PARAM_DESCRIPTORS.map((descriptor) => {
                     const value = currentValues[descriptor.key];
                     const isDefault = value === defaults[descriptor.key];
@@ -117,7 +117,7 @@ export const PerNoteEditor = ({
                         </Stack>
                     );
                 })}
-            </div>
+            </Grid>
         </div>
     );
 };

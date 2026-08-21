@@ -7,7 +7,7 @@ import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
@@ -889,7 +889,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 <DawDialogBody scrollable className="gap-4 bg-transparent px-6 py-5">
                     <DawDialogSection tone="warm" title="Render Order">
-                        <div className="grid grid-cols-3 gap-2">
+                        <Grid cols={3} gap={2}>
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
                                 size="sm"
@@ -938,7 +938,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             >
                                 To Clip <span className="ml-1 text-[10px] opacity-60">(Inline)</span>
                             </Button>
-                        </div>
+                        </Grid>
                     </DawDialogSection>
 
                     <DawDialogSection tone="warm" title="Render Range">
@@ -1043,7 +1043,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     {mode !== 'render-to-clip' ? (
                         <>
                             <DawDialogSection tone="warm" title="Ingredients">
-                                <div className="grid grid-cols-3 gap-2">
+                                <Grid cols={3} gap={2}>
                                     {FORMAT_OPTIONS.map((freq) => {
                                         const active = formats.has(freq.value);
                                         return (
@@ -1075,7 +1075,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </button>
                                         );
                                     })}
-                                </div>
+                                </Grid>
                             </DawDialogSection>
 
                             <DawDialogSection

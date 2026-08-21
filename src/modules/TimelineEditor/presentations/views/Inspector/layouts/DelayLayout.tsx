@@ -4,7 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -47,16 +47,16 @@ const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactE
                 />
             </Row>
             <SectionHeader title="Controls" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['delay-time', 'delay-feedback']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            </Grid>
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['delay-lowcut', 'delay-highcut']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
             {filterParams(parameters, ['delay-mix']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}

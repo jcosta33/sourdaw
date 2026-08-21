@@ -4,7 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import { FM_ALGORITHM_NAMES } from '../../models/FermenterPatch';
 
@@ -54,7 +54,7 @@ export const FmSection = ({
             </div>
 
             {/* Operator ratios + levels */}
-            <div className="grid grid-cols-4 gap-1 px-1">
+            <Grid cols={4} gap={1} className="px-1">
                 {([0, 1, 2, 3] as const).map((i) => {
                     const ratio = ratios[i];
                     const level = levels[i];
@@ -90,7 +90,7 @@ export const FmSection = ({
                         </Stack>
                     );
                 })}
-            </div>
+            </Grid>
 
             {/* Feedback + Mod Depth */}
             <Row align="end" gap={2} className="px-1">
