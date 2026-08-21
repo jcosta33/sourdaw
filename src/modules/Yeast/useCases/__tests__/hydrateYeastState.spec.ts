@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { LEGACY_SHARED_RACK_DEVICE_ID } from '../../stores/yeastAutomergeStorage';
+
 const mocks = vi.hoisted(() => ({
     reconcile: vi.fn(),
     setActive: vi.fn(),
@@ -8,16 +10,22 @@ const mocks = vi.hoisted(() => ({
     value: { processors: [], uiLevel: 3 },
 }));
 
-vi.mock('../../stores/yeastStore', () => ({
-    yeastStore: {
-        get value() {
-            return mocks.value;
+vi.mock('../../stores/yeastStore', async () => {
+    // The reserved legacy key is real module state, not test state: take it
+    // from the storage module so this mock cannot drift from the contract.
+    const { LEGACY_SHARED_RACK_DEVICE_ID } = await import('../../stores/yeastAutomergeStorage');
+    return {
+        yeastStore: {
+            get value() {
+                return mocks.value;
+            },
+            set: mocks.set,
         },
-        set: mocks.set,
-    },
-    setActiveYeastDevice: mocks.setActive,
-    yeastDeviceIdsInProjectOrder: () => mocks.deviceIds,
-}));
+        setActiveYeastDevice: mocks.setActive,
+        yeastDeviceIdsInProjectOrder: () => mocks.deviceIds,
+        LEGACY_SHARED_RACK_DEVICE_ID,
+    };
+});
 vi.mock('../reconcileYeastGrooveAssignments', () => ({
     reconcileYeastGrooveAssignments: mocks.reconcile,
 }));
@@ -88,6 +96,24 @@ describe('hydrateYeastState', () => {
         expect(mocks.setActive.mock.calls).toEqual([['device-live'], ['device-stored'], [null]]);
         expect(mocks.set).toHaveBeenCalledWith({
             processors: [{ id: 'stored-groove', type: 'groove', name: 'Stored', bypassed: false }],
+            uiLevel: 3,
+        });
+    });
+
+    it('parks a legacy flat rack when no live Yeast device exists', () => {
+        // A pre-split file whose active arrangement holds no Yeast device:
+        // attaching to the live-first device would drop the rack entirely.
+        // The CRDT v1 path parks it under the reserved legacy key until a
+        // first device adopts; the flat path must do the same. Mutation:
+        // dropping the parked fallback reds this test.
+        mocks.deviceIds = [];
+        const flat = [{ id: 'legacy-groove', type: 'groove' as const, name: 'Legacy', bypassed: false }];
+
+        hydrateYeastState({ processors: flat });
+
+        expect(mocks.setActive.mock.calls).toEqual([[LEGACY_SHARED_RACK_DEVICE_ID], [null]]);
+        expect(mocks.set).toHaveBeenCalledWith({
+            processors: [{ id: 'legacy-groove', type: 'groove', name: 'Legacy', bypassed: false }],
             uiLevel: 3,
         });
     });

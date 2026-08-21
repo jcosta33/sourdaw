@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { yeastStore } from '../../stores/yeastStore';
-
 const projectionMocks = vi.hoisted(() => ({ createYeastRuntimeProjection: vi.fn() }));
+const rackMocks = vi.hoisted(() => ({
+    rack: { processors: [] as Array<Record<string, unknown>>, uiLevel: 1 },
+}));
+
+vi.mock('../../stores/yeastStore', () => ({
+    // The lookahead is sized per device (issue #2422): the caller names its
+    // rack and this is the read it gets back.
+    readYeastRack: () => rackMocks.rack,
+}));
 
 vi.mock('../createYeastRuntimeProjection', () => ({
     createYeastRuntimeProjection: projectionMocks.createYeastRuntimeProjection,
@@ -37,22 +44,22 @@ describe('getYeastSchedulingLookahead', () => {
 
     afterEach(() => {
         // Ensure the shared store never leaks a null into other suites.
-        yeastStore.set({ processors: [], uiLevel: 1 });
+        rackMocks.rack = { processors: [], uiLevel: 1 };
     });
 
     it('returns zero displacement when there are no processors', () => {
         projectionMocks.createYeastRuntimeProjection.mockReturnValue([]);
 
-        expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
     });
 
-    it('falls back to an empty processor list when the store is unhydrated (null)', () => {
-        // The store legitimately starts null before hydration; the lookahead must
-        // still report a safe zero window rather than throw.
-        yeastStore.set(null);
+    it('sizes the window from the named rack only', () => {
+        // The realtime input path processes a NAMED device (issue #2422);
+        // the window must come from that rack — an empty named rack reports
+        // a safe zero window regardless of what any other rack holds.
         projectionMocks.createYeastRuntimeProjection.mockReturnValue([]);
 
-        expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
         expect(projectionMocks.createYeastRuntimeProjection).toHaveBeenCalledWith([]);
     });
 
@@ -79,7 +86,7 @@ describe('getYeastSchedulingLookahead', () => {
         //   slot 1:  0.2 * 0.75 * 0.25 =  0.0375 -> late 0.0375
         //   slot 2:  0                          -> no change
         //   slot 3:  0.5 * 0.75 * 0.25 =  0.09375 -> late 0.09375
-        const result = getYeastSchedulingLookahead();
+        const result = getYeastSchedulingLookahead('device-live');
         expect(result.earlyBeats).toBeCloseTo(0.075, 10);
         expect(result.lateBeats).toBeCloseTo(0.09375, 10);
     });
@@ -94,7 +101,7 @@ describe('getYeastSchedulingLookahead', () => {
             },
         ]);
 
-        expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
     });
 
     it('ignores non-groove processors', () => {
@@ -107,7 +114,7 @@ describe('getYeastSchedulingLookahead', () => {
             },
         ]);
 
-        expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
     });
 
     it('reduces multiple active grooves to the single widest window', () => {
@@ -138,7 +145,7 @@ describe('getYeastSchedulingLookahead', () => {
 
         // groove-shallow: 0.1 * 1 * 0.25 = 0.025 late
         // groove-wide:   -0.5 * 1 * 0.5  = -0.25  early
-        expect(getYeastSchedulingLookahead()).toEqual({
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({
             earlyBeats: 0.25,
             lateBeats: 0.025,
         });
@@ -160,7 +167,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(0.1, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(0.1, 10);
         });
 
         it('clamps amount below 0 to zero blend (no displacement)', () => {
@@ -178,7 +185,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+            expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
         });
 
         it('uses the default amount (0.5) when amount is missing', () => {
@@ -196,7 +203,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(0.25, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(0.25, 10);
         });
 
         it('clamps stepBeats above 1 to a whole beat', () => {
@@ -214,7 +221,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(0.25, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(0.25, 10);
         });
 
         it('clamps stepBeats below 1/32 to the 1/32 minimum', () => {
@@ -232,7 +239,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(1 / 32, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(1 / 32, 10);
         });
 
         it('uses the default stepBeats (0.25) when missing', () => {
@@ -250,7 +257,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(0.25, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(0.25, 10);
         });
 
         it('clamps slotCount above 32 down to 32', () => {
@@ -267,7 +274,7 @@ describe('getYeastSchedulingLookahead', () => {
             ]);
 
             // slot 50 is beyond the clamped 32-slot window, so its offset is never read.
-            expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+            expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
         });
 
         it('clamps slotCount below 1 up to 1', () => {
@@ -285,7 +292,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(0.125, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(0.125, 10);
         });
 
         it('uses the default slotCount (16) when missing', () => {
@@ -301,7 +308,7 @@ describe('getYeastSchedulingLookahead', () => {
                 { id: 'groove-1', type: 'groove', bypassed: false, params: timing },
             ]);
 
-            expect(getYeastSchedulingLookahead().lateBeats).toBeCloseTo(0.125, 10);
+            expect(getYeastSchedulingLookahead('device-live').lateBeats).toBeCloseTo(0.125, 10);
         });
 
         it('treats a missing slot timing as zero offset', () => {
@@ -319,7 +326,7 @@ describe('getYeastSchedulingLookahead', () => {
                 },
             ]);
 
-            expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 0 });
+            expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 0 });
         });
     });
 
@@ -351,7 +358,7 @@ describe('getYeastSchedulingLookahead', () => {
             },
         ]);
 
-        expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0.5, lateBeats: 0.5 });
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0.5, lateBeats: 0.5 });
     });
 
     it('caps the reported window at MAX_GROOVE_LOOKAHEAD_BEATS (4) for an oversized displacement', () => {
@@ -372,6 +379,6 @@ describe('getYeastSchedulingLookahead', () => {
             },
         ]);
 
-        expect(getYeastSchedulingLookahead()).toEqual({ earlyBeats: 0, lateBeats: 4 });
+        expect(getYeastSchedulingLookahead('device-live')).toEqual({ earlyBeats: 0, lateBeats: 4 });
     });
 });

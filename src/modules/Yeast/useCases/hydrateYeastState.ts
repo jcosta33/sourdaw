@@ -1,4 +1,10 @@
-import { setActiveYeastDevice, yeastDeviceIdsInProjectOrder, yeastStore, type YeastState } from '../stores/yeastStore';
+import {
+    LEGACY_SHARED_RACK_DEVICE_ID,
+    setActiveYeastDevice,
+    yeastDeviceIdsInProjectOrder,
+    yeastStore,
+    type YeastState,
+} from '../stores/yeastStore';
 
 import { reconcileYeastGrooveAssignments } from './reconcileYeastGrooveAssignments';
 
@@ -32,10 +38,15 @@ export function hydrateYeastState(state: HydrateYeastStateInput): void {
             processorsById.set(deviceId, rack.processors);
         }
     } else if (state !== undefined) {
+        // The legacy flat form attaches to the first LIVE Yeast device in
+        // project order — the same owner the CRDT slot's v1→v2 parking
+        // adopts. With no live Yeast device (its holder lives only in a
+        // stored arrangement, or the file predates Yeast devices entirely)
+        // the rack parks under the CRDT slot's reserved legacy key instead
+        // of being dropped: it survives in the document and the first Yeast
+        // device to write adopts it, exactly as the CRDT path behaves.
         const firstDeviceId = yeastDeviceIdsInProjectOrder()[0];
-        if (firstDeviceId !== undefined) {
-            processorsById.set(firstDeviceId, state.processors);
-        }
+        processorsById.set(firstDeviceId ?? LEGACY_SHARED_RACK_DEVICE_ID, state.processors);
     }
 
     // Live devices first (project order), then any file-carried device the

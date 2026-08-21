@@ -32,6 +32,10 @@ vi.mock('../../../stores/yeastStore', () => ({
     // to that device's stored state. The old guard name (`getYeastRack`, a
     // main-thread MidiRack request) is gone with the engine isolation work.
     readYeastRack: () => yeastStore.value,
+    // The runtime-status publish routes through the processed rack; with no
+    // device pinned the temporary-pin path is never taken here.
+    getPinnedYeastDevice: () => null,
+    setActiveYeastDevice: vi.fn(),
 }));
 
 vi.mock('../../../engine/yeastRuntime', () => ({

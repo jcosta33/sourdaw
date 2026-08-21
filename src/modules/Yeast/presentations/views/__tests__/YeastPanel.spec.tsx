@@ -67,6 +67,9 @@ vi.mock('../../../stores/yeastStore', () => ({
     // The panel pins its device on mount (issue #2422); these tests drive the
     // store mock directly, so the pin is an observed no-op.
     setActiveYeastDevice: vi.fn(),
+    // Groove-assignment reconcile reads the union of every rack; the mocked
+    // active rack is the only one these tests carry.
+    readAllYeastRacks: () => [storeMock.yeastState ?? { processors: [], uiLevel: 1 }],
 }));
 
 vi.mock('../../../engine/yeastRuntime', async (importOriginal) => ({

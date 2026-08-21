@@ -38,7 +38,7 @@ const YEAST_RACK_SCHEMA_VERSION = 1;
  * {@link resolveRackFor}) and a write materializes it under that device's id,
  * so the legacy rack is attached to exactly one instance, never shared.
  */
-const LEGACY_SHARED_RACK_DEVICE_ID = '__legacy_shared_rack__';
+export const LEGACY_SHARED_RACK_DEVICE_ID = '__legacy_shared_rack__';
 
 /** Empty Yeast rack — the store's seed value and its projection default. */
 export const defaultYeastState: YeastState = {
@@ -387,6 +387,14 @@ export type YeastAutomergeStorageView = {
     setActiveDevice(deviceId: string | null): void;
     /** One device's decoded rack, independent of which device is active. */
     readRack(deviceId: string): YeastState;
+    /**
+     * Every device id the adapter holds a rack for — document-decoded and
+     * locally written alike, including the parked legacy key. The union the
+     * whole-project readers (groove-assignment reconcile) iterate; unlike a
+     * track-store enumeration it also covers devices that live only in
+     * stored arrangements.
+     */
+    listRackDeviceIds(): string[];
 };
 
 export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): YeastAutomergeStorageView {
@@ -629,5 +637,6 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
             }
             return buildViewState(resolveRackFor(deviceId));
         },
+        listRackDeviceIds: () => [...decodedRacks.keys()],
     };
 }

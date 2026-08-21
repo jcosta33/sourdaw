@@ -44,10 +44,10 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
             routeId: previewScope.routeId,
             projection,
         });
-        publishYeastRuntimeStatus();
+        publishYeastRuntimeStatus(input.rackId);
         output = processed ?? [...input.events];
     } catch {
-        publishYeastRuntimeStatus();
+        publishYeastRuntimeStatus(input.rackId);
         output = [...input.events];
     }
 

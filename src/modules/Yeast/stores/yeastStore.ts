@@ -23,6 +23,7 @@ import { type YeastState } from '../models/YeastState';
 import { createYeastAutomergeStorage, defaultYeastState } from './yeastAutomergeStorage';
 
 export type { YeastProcessorInfo, YeastProcessorType, YeastState } from '../models/YeastState';
+export { LEGACY_SHARED_RACK_DEVICE_ID } from './yeastAutomergeStorage';
 
 // Single source for the empty rack: the store seeds with it and the storage
 // adapter projects it when the document has no `yeast` slot (audit CC-2).
@@ -159,6 +160,25 @@ export function setActiveYeastDevice(deviceId: string | null): void {
  */
 export function readYeastRack(deviceId: string): YeastState {
     return yeastStorageView.readRack(deviceId);
+}
+
+/**
+ * Every rack this session holds — the union the whole-project readers use
+ * (groove-assignment reconcile), so a rack is never judged orphaned just
+ * because its device is not the active one or lives only in a stored
+ * arrangement. The active device's entry is its live view.
+ */
+export function readAllYeastRacks(): YeastState[] {
+    return yeastStorageView.listRackDeviceIds().map((deviceId) => yeastStorageView.readRack(deviceId));
+}
+
+/**
+ * The explicit device pin, `null` when the active rack resolves from
+ * selection. Callers that temporarily pin another device (the runtime-status
+ * publish) capture and restore this.
+ */
+export function getPinnedYeastDevice(): string | null {
+    return explicitActiveDeviceId;
 }
 
 /**
