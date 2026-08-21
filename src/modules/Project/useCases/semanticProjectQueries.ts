@@ -16,7 +16,7 @@ import {
 } from '../models/SemanticProjectQuery';
 import { projectStore } from '../stores/projectStore';
 
-import { semanticProjectIndex } from './semanticProjectIndex';
+import { isSemanticProjectIdentityReady, semanticProjectIndex } from './semanticProjectIndex';
 import { semanticRangeOverlaps } from './semanticRangeOverlap';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -308,11 +308,11 @@ function createProjectSummary(snapshot: SemanticProjectIndexSnapshot, warnings: 
 }
 
 function getSemanticProjectId(): string {
-    const projectId = projectStore.value?.projectId;
-    if (!projectId) {
+    const project = projectStore.value;
+    if (!isSemanticProjectIdentityReady(project)) {
         throw new Error('Semantic query requires a canonical project identity');
     }
-    return projectId;
+    return project.projectId;
 }
 
 function createSectionItems(

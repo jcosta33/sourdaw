@@ -19,6 +19,7 @@ import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { CURRENT_PROJECT_VERSION } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
 import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
+import { semanticProjectIndex } from '../semanticProjectIndex';
 import { querySemanticProject } from '../semanticProjectQueries';
 
 const SEMANTIC_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
@@ -270,6 +271,32 @@ describe('semantic project queries', () => {
         );
         expect(crossProjectDiff.items).toEqual([]);
         expect(crossProjectDiff.warnings).toContain(
+            'The requested revision is outside the retained semantic diff window.'
+        );
+    });
+
+    it.each([
+        { name: 'is missing', projectId: undefined, identityMigrationPending: false },
+        { name: 'is malformed', projectId: 'not-a-project-uuid', identityMigrationPending: false },
+        { name: 'is pending durability', projectId: SEMANTIC_PROJECT_ID, identityMigrationPending: true },
+    ])('fails closed when the project identity $name', ({ projectId, identityMigrationPending }) => {
+        const before = querySemanticProject({ type: 'object' });
+        const canonicalState = projectStore.value!;
+        projectStore.set({ ...canonicalState, projectId, identityMigrationPending });
+
+        expect(semanticProjectIndex.read().entities).not.toContainEqual(
+            expect.objectContaining({ kind: 'project-metadata' })
+        );
+        expect(() => querySemanticProject({ type: 'object' })).toThrow('canonical project identity');
+        expect(() => querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken })).toThrow(
+            'canonical project identity'
+        );
+
+        projectStore.set(canonicalState);
+        const restoredDiff = querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken });
+
+        expect(restoredDiff.items).toEqual([]);
+        expect(restoredDiff.warnings).not.toContain(
             'The requested revision is outside the retained semantic diff window.'
         );
     });
