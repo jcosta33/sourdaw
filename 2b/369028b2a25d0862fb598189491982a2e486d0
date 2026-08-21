@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_487e9aa1e46063::t_1979a9d20ecc77 188-321,325-329
+  s_487e9aa1e46063::t_eadfeae2415c44 322-324
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_487e9aa1e46063::t_2f66a37f275386 267,273
+  s_487e9aa1e46063::t_6d3d889841147d 341,347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2b369028b2a25d0862fb598189491982a2e486d0",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
