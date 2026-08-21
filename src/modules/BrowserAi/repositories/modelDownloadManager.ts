@@ -32,6 +32,8 @@ class ModelSizeError extends Error {
 type ModelDownloadSpec = {
     modelId: string;
     family: string;
+    /** Redirects are part of admitted source provenance for multi-file DDSP checkpoints. */
+    redirectPolicy?: 'follow' | 'reject';
     url: string;
     sha256?: string;
     sizeBytes: number;
@@ -98,7 +100,8 @@ export const downloadModel = inject({
 })(
     ({ logger, getStorageStatus, modelStorageWorkerBridge, requestPersistentStorage }) =>
         async function downloadModel({ spec, onProgress, signal }: DownloadModelInput): DownloadModelOutput {
-            const { modelId, family, url, sha256, sizeBytes } = spec;
+            const { modelId, family, redirectPolicy, url, sha256, sizeBytes } = spec;
+            const fetchRedirect = redirectPolicy ?? (family === 'ddsp' ? 'reject' : 'follow');
 
             updateModelStatus(modelId, { status: 'downloading', downloadProgress: 0 });
 
@@ -147,7 +150,10 @@ export const downloadModel = inject({
                             `[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`
                         );
 
-                        const response = await fetch(url, signal ? { signal } : undefined);
+                        const response = await fetch(url, {
+                            redirect: fetchRedirect === 'reject' ? 'error' : 'follow',
+                            signal,
+                        });
                         if (!response.ok) {
                             throw new Error(`HTTP ${String(response.status)}: ${response.statusText}`);
                         }

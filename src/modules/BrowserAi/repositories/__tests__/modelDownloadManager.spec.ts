@@ -242,7 +242,45 @@ describe('downloadModel storage worker stream', () => {
 
         await downloadModel({ spec: baseSpec, signal: controller.signal });
 
-        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { signal: controller.signal });
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'error', signal: controller.signal });
+    });
+
+    it('follows redirects for non-DDSP downloads while retaining worker integrity verification', async () => {
+        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await downloadModel({
+            spec: {
+                ...baseSpec,
+                family: 'kokoro',
+                sha256: 'a'.repeat(64),
+            },
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'follow', signal: undefined });
+        expect(beginModelWrite).toHaveBeenCalledWith(
+            expect.objectContaining({ expectedSha256: 'a'.repeat(64), expectedSizeBytes: 30 })
+        );
+    });
+
+    it('should reject a DDSP redirect before opening an OPFS write', async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+            if (init?.redirect === 'error') {
+                return Promise.reject(new TypeError('redirect rejected'));
+            }
+            return Promise.resolve(streamingResponse([new Uint8Array(30)], 30));
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const download = downloadModel({ spec: baseSpec });
+        const rejected = expect(download).rejects.toThrow('redirect rejected');
+        await vi.runAllTimersAsync();
+        await rejected;
+
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock).toHaveBeenCalledWith(baseSpec.url, { redirect: 'error', signal: undefined });
+        expect(beginModelWrite).not.toHaveBeenCalled();
     });
 
     it('passes exact release verification and archive extraction to the storage worker', async () => {
