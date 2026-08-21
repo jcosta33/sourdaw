@@ -1,0 +1,22 @@
+Magenta.js DDSP code notice
+
+Sourdaw includes an adapted GraphModel Roll operation from Magenta.js at this
+immutable upstream revision:
+
+https://github.com/magenta/magenta-js/tree/0692eb2b79681f062c6b6dd53a0361967f298caa
+
+The adapted source basis is limited to:
+
+https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts
+
+Copyright 2020 Google Inc. All Rights Reserved.
+Copyright 2018 The Magenta Team. All rights reserved.
+
+Licensed under the Apache License, Version 2.0. The complete unmodified license
+text is distributed beside this notice as Apache-2.0.txt. Sourdaw's worker
+contains a modified TypeScript adaptation of the operation registration.
+
+This notice and Apache-2.0 grant apply only to the Magenta.js source-code basis.
+They do not state or imply that the separately downloaded Magenta DDSP
+checkpoint artifacts are Apache-2.0. Those artifacts remain separately
+permissioned and release-withheld.

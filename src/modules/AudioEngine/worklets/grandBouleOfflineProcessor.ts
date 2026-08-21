@@ -1,7 +1,9 @@
 /**
- * AudioWorkletProcessor that *is* the Grand Boule engine, for offline rendering.
+ * Retained inline Grand Boule host for focused offline transport tests.
  *
- * This is a sibling of `grandBouleProcessor`, not a mode of it. That one is a
+ * Released daw-dsp WASM supplies no Grand Boule constructor, and release
+ * admission withholds this path. Tests inject a structural instance. This is a
+ * sibling of `grandBouleProcessor`, not a mode of it. That one is a
  * SharedArrayBuffer ring consumer whose `process()` copies published frames out
  * of a ring the engine Worker fills; this one owns a `GrandBouleInstance` and
  * renders the block itself. The two share no field and no line of `process()`,
@@ -20,9 +22,7 @@
  * the producer: `Atomics.wait` is banned in `AudioWorkletGlobalScope`, and the
  * working group explicitly refused to relax that for the offline case.
  *
- * Live keeps the Worker and the ring. A Grand Boule overload there starves its
- * own ring and only Grand Boule drops out, which is worth having in a browser tab
- * where missing the graph deadline glitches every track.
+ * The retained Worker-ring design isolates producer load from the consumer.
  *
  * ## Clock
  *
@@ -40,7 +40,6 @@
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
-import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 
 import {
     createGrandBouleBlockViews,
@@ -50,6 +49,7 @@ import {
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
+import { type GrandBouleInstance } from './grandBouleWasmInstance';
 
 /**
  * The Web Audio render quantum. Restated here rather than imported: worklet code

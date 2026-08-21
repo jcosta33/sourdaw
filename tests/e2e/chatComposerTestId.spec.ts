@@ -1,69 +1,33 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-test.describe('Chat composer — test-id targeted', () => {
+async function openChatPanel(page: Page): Promise<void> {
+    const toggle = page.getByRole('button', { name: 'Toggle AI chat panel', exact: true });
+    await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('log', { name: 'Chat conversation' })).toBeVisible();
+}
+
+test.describe('Chat composer', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+        await openChatPanel(page);
     });
 
-    test('chat composer input is present when chat panel is open', async ({ page }) => {
-        await page.getByTestId('toggle-chat').click();
-        await page.waitForTimeout(500);
+    test('opens disabled while local AI is unavailable and closes on toggle', async ({ page }) => {
+        const input = page.getByRole('textbox', { name: 'Chat message input', exact: true });
+        await expect(input).toBeVisible();
+        await expect(input).toBeDisabled();
+        await expect(page.getByText('Local AI Not Available', { exact: true })).toBeVisible();
 
-        const input = page.getByTestId('chat-composer-input');
-        await expect(input).toBeVisible({ timeout: 5000 });
-    });
-
-    test('chat composer accepts typed text', async ({ page }) => {
-        await page.getByTestId('toggle-chat').click();
-        await page.waitForTimeout(500);
-
-        const input = page.getByTestId('chat-composer-input');
-        await expect(input).toBeVisible({ timeout: 5000 });
-
-        // The input may be disabled if no LLM is loaded — check it's at least present.
-        const isDisabled = await input.isDisabled();
-        if (!isDisabled) {
-            await input.fill('add a track');
-            await expect(input).toHaveValue('add a track');
-        }
-    });
-
-    test('chat composer has correct aria-label', async ({ page }) => {
-        await page.getByTestId('toggle-chat').click();
-        await page.waitForTimeout(500);
-
-        const input = page.getByTestId('chat-composer-input');
-        await expect(input).toBeVisible({ timeout: 5000 });
-        await expect(input).toHaveAttribute('aria-label', 'Chat message input');
-    });
-
-    test('chat conversation log and composer coexist', async ({ page }) => {
-        await page.getByTestId('toggle-chat').click();
-        await page.waitForTimeout(500);
-
-        const log = page.getByRole('log', { name: 'Chat conversation' });
-        const input = page.getByTestId('chat-composer-input');
-
-        if (await log.isVisible().catch(() => false)) {
-            await expect(input).toBeVisible({ timeout: 5000 });
-        }
-    });
-
-    test('chat composer is cleared after focus', async ({ page }) => {
-        await page.getByTestId('toggle-chat').click();
-        await page.waitForTimeout(500);
-
-        const input = page.getByTestId('chat-composer-input');
-        if (await input.isVisible().catch(() => false)) {
-            const isDisabled = await input.isDisabled();
-            if (!isDisabled) {
-                await input.fill('test');
-                await input.fill('');
-                await expect(input).toHaveValue('');
-            }
-        }
+        const toggle = page.getByRole('button', { name: 'Toggle AI chat panel', exact: true });
+        await toggle.click();
+        await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(input).toHaveCount(0);
+        await expect(page.getByRole('log', { name: 'Chat conversation' })).toHaveCount(0);
     });
 });

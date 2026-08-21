@@ -24,7 +24,7 @@
  * to this file; the bench header states it.
  */
 
-import { initSync as initDsp, BacteriaInstance, CrumbsInstance, CrustInstance, FermenterInstance, GlutenInstance, GrandBouleInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
+import { initSync as initDsp, BacteriaInstance, CrumbsInstance, CrustInstance, FermenterInstance, GlutenInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
 import { initSync as initChamber, ProofChamberInstance } from '/src/modules/AudioEngine/wasm/proof_chamber.js';
 import { initSync as initScoring, ScoringInstance } from '/src/modules/AudioEngine/wasm/scoring.js';
 
@@ -32,6 +32,7 @@ import { buildDevices, QUANTUM } from './deviceRecipes.js';
 // The real shipped audio-thread code, type-stripped by the harness server, so
 // the ring-consumer row times the function production runs.
 import * as ring from '/src/modules/AudioEngine/models/GrandBouleRingProtocol.ts';
+import { publishGrandBouleConsumerClock } from '/src/modules/AudioEngine/worklets/grandBouleConsumerClock.ts';
 import { readBlockAcquire } from '/src/modules/AudioEngine/worklets/grandBouleProcessor.ts';
 
 /**
@@ -108,7 +109,6 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
                 CrustInstance,
                 FermenterInstance,
                 GlutenInstance,
-                GrandBouleInstance,
                 GrinderInstance,
                 KneadInstance,
                 LevainInstance,
@@ -118,6 +118,7 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
             chamber: { memory: chamberExports.memory, ProofChamberInstance },
             scoring: { memory: scoringExports.memory, ScoringInstance },
             ring,
+            publishGrandBouleConsumerClock,
             readBlockAcquire,
             });
         } catch (error) {

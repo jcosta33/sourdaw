@@ -1,10 +1,9 @@
 /**
- * AudioWorkletProcessor for the Grand Boule physical-modeling piano.
+ * Retained AudioWorklet ring consumer for the Grand Boule host design.
  *
- * This processor is a lightweight consumer — the heavy WASM DSP runs on a
- * dedicated Web Worker that renders ahead into a SharedArrayBuffer ring
- * buffer. This processor just copies from the ring to the WebAudio output,
- * which takes microseconds and never risks buffer underruns from DSP load.
+ * It constructs no DSP instance. Focused host tests may inject a producer for
+ * the SharedArrayBuffer ring; released product paths cannot obtain a Grand
+ * Boule constructor from daw-dsp WASM and remain blocked by release admission.
  *
  * Messages from main thread:
  *   { type: 'init', sab: SharedArrayBuffer }
