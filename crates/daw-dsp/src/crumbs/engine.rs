@@ -1599,4 +1599,64 @@ mod steal_tier_tests {
             engine.voices[target].note
         );
     }
+
+    /// Saturated pool of 128 voices at 1-octave transposition (+12 semitones, 49 units per voice)
+    /// consumes exactly 128 * 49 = 6272 work units, admitting all 128 voices.
+    /// Beyond 1 octave up (+24 semitones, 73 units per voice), the budget bounds the pool to
+    /// 6272 / 73 = 85 voices.
+    #[test]
+    fn resampling_work_budget_admits_128_octave_up_voices_and_bounds_extreme_transpositions() {
+        let mut engine = CrumbsEngine::new(48000.0);
+        let sample = Arc::new(super::super::sample::SampleData::from_mono(
+            vec![0.1; 4800],
+            48000,
+        ));
+        let sample_id = engine.add_sample(sample);
+        engine.set_active_sample(sample_id);
+
+        // 1. 128 voices at +12 semitones (note 72 vs root 60):
+        // Each costs 49 units. 128 * 49 = 6272 == MAX_RESAMPLING_WORK_UNITS.
+        for _ in 0..MAX_VOICES {
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 72,
+                velocity: 100,
+            });
+        }
+        assert_eq!(
+            engine.playable_voice_count(),
+            MAX_VOICES,
+            "all 128 voices at +12 semitones must fit in the resampling work budget"
+        );
+        assert_eq!(engine.resampling_work_units(), MAX_RESAMPLING_WORK_UNITS);
+
+        // A 129th note at +12 semitones would require 49 more work units and is refused by budget.
+        engine.handle_command(CrumbsCommand::NoteOn {
+            note: 72,
+            velocity: 100,
+        });
+        assert_eq!(
+            engine.playable_voice_count(),
+            MAX_VOICES,
+            "a 129th note exceeding work budget must be refused"
+        );
+
+        // 2. High pitch-up (+24 semitones, note 84 vs root 60):
+        // Each costs 73 units. Budget 6272 / 73 = 85 voices.
+        engine.handle_command(CrumbsCommand::AllSoundOff);
+        let mut left = [0.0f32; 1000];
+        let mut right = [0.0f32; 1000];
+        engine.process_block(&mut left, &mut right);
+
+        for _ in 0..MAX_VOICES {
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 84,
+                velocity: 100,
+            });
+        }
+        assert_eq!(
+            engine.playable_voice_count(),
+            85,
+            "voices at +24 semitones (73 units each) must be bounded by MAX_RESAMPLING_WORK_UNITS (6272 / 73 = 85)"
+        );
+    }
 }

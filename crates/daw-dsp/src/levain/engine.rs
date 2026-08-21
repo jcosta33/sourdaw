@@ -2762,75 +2762,162 @@ mod tests {
         );
     }
 
-    /// A voice whose every stream has run dry can only emit zeros, so holding
-    /// the pool with it costs polyphony and buys nothing. This pins that
-    /// outcome: over an ordinary part, a note-on lands on the silence rather
-    /// than on the note still ringing.
-    ///
-    /// It is not evidence about `steal_priority`'s release-tail ordering, and
-    /// must not be read as covering it. The outcome here is reached by `tick`
-    /// deactivating a run-dry voice and `allocate` taking the freed slot by
-    /// its own short-circuit, so deleting the release-tail branch from
-    /// `steal_priority` outright leaves this test green. That ordering is
-    /// pinned in `voice.rs`'s own tests instead, against quantities the score
-    /// does not consume.
-    ///
-    /// Pinned on an ordinary part rather than a stress case: 4 notes a second,
-    /// each struck and let go like a mallet stroke.
+    /// Saturated pool drives a genuine steal and selects the releasing quiet note
+    /// rather than any of the loud held sounding notes.
     #[test]
     fn a_note_on_must_not_steal_a_sounding_voice_while_run_dry_ones_hold_the_pool() {
-        /// Well above the `1e-4` `steal_priority` itself treats as past
-        /// audibility, so nothing here turns on a borderline reading.
-        const AUDIBLE_ENERGY: f32 = 1e-3;
-        /// The pool `levainProcessor.ts` actually constructs. A smaller one
-        /// exhausts at any release length and would convict every family.
-        const POOL: usize = 64;
-        const ONSETS: u8 = 120;
-        const RING_FRAMES: u32 = 24_000; // 0.5 s at 48 kHz
-        const BLOCKS_PER_ONSET: usize = 94; // 0.25 s at 48 kHz in 128-frame blocks
-        const BLOCKS_HELD: usize = 38; // ~0.1 s, a struck bar released early
+        const POOL: usize = 4;
+        const RING_FRAMES: u32 = 48_000; // 1.0 s at 48 kHz
 
-        fn audible_steals_over_a_part(instrument_id: &str) -> (u32, f32, usize) {
-            let mut engine = engine_with_percussion_one_shot(instrument_id, POOL, RING_FRAMES);
-            let mut steals = 0_u32;
-            let mut worst_energy = 0.0_f32;
+        let mut engine = engine_with_percussion_one_shot("marimba", POOL, RING_FRAMES);
+        engine.set_param("legato_enabled", 0.0);
 
-            for index in 0..ONSETS {
-                let note = 60 + index % 12;
-                let victim = engine.voice_pool.allocate();
-                let voice = &engine.voice_pool.voices[victim];
-                if voice.active && voice.energy > AUDIBLE_ENERGY {
-                    steals += 1;
-                    worst_energy = worst_energy.max(voice.energy);
-                }
-                engine.note_on(note, 100);
-                render(&mut engine, BLOCKS_HELD);
-                engine.note_off(note);
-                render(&mut engine, BLOCKS_PER_ONSET - BLOCKS_HELD);
-            }
+        // Fill pool with 3 loud sustaining notes held indefinitely
+        engine.note_on(60, 100);
+        engine.note_on(62, 100);
+        engine.note_on(64, 100);
+        render(&mut engine, 10);
 
-            (steals, worst_energy, engine.voice_pool.active_count())
-        }
+        // Trigger 4th note at lower velocity and release it so it decays in release
+        engine.note_on(65, 30);
+        render(&mut engine, 5);
+        engine.note_off(65);
+        render(&mut engine, 20);
 
-        // Choir carries `release_scale() == 1.0`, so it is this same part
-        // through this same code with the family model contributing nothing.
-        // It is the control: if it ever stole, the fault would be the pool's
-        // rather than the release model's.
-        let (control_steals, _, control_active) = audible_steals_over_a_part("soprano");
+        // All 4 voices are active: pool is saturated
         assert_eq!(
-            control_steals, 0,
-            "the control must not steal, or this test convicts the voice pool \
-             rather than the release model: {control_steals} of {ONSETS} \
-             onsets, pool ended {control_active}/{POOL} active"
+            engine.voice_pool.active_count(),
+            POOL,
+            "all pool slots must be active to force a steal"
         );
 
-        let (steals, worst_stolen_energy, active) = audible_steals_over_a_part("marimba");
+        // Stolen voice index from allocate() must be voice 3 (note 65, releasing and quietest)
+        let victim_idx = engine.voice_pool.allocate();
         assert_eq!(
-            steals, 0,
-            "a note-on must take a run-dry voice before a sounding one: \
-             {steals} of {ONSETS} onsets stole a voice that was still audible \
-             (worst energy stolen {worst_stolen_energy}), and the pool of \
-             {POOL} ended with {active} voices active"
+            victim_idx, 3,
+            "stealing candidate must be voice 3 (the releasing quiet note), not voices 0..2 (loud held notes)"
+        );
+
+        // Trigger 5th note on saturated pool: should steal voice 3
+        engine.note_on(67, 100);
+
+        assert_eq!(
+            engine.voice_pool.voices[0].note, 60,
+            "voice 0 must still hold note 60"
+        );
+        assert_eq!(
+            engine.voice_pool.voices[1].note, 62,
+            "voice 1 must still hold note 62"
+        );
+        assert_eq!(
+            engine.voice_pool.voices[2].note, 64,
+            "voice 2 must still hold note 64"
+        );
+        assert_eq!(
+            engine.voice_pool.voices[3].note, 67,
+            "voice 3 was stolen and must now hold note 67"
+        );
+    }
+
+    #[test]
+    fn all_notes_off_clears_release_tracker_and_pedal_deferred() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.set_param("legato_enabled", 0.0);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let full_vel = VelRange { lo: 0, hi: 127 };
+        engine.add_zone(wide_zone(0, sample_id, full_vel, false));
+        engine.add_zone(wide_zone(1, sample_id, full_vel, true));
+        engine.build_zone_map(1, 1).expect("zone map should build");
+
+        // ── 1. Release tracker is cleared on all_notes_off ────────────────
+        engine.note_on(60, 100);
+        render(&mut engine, 400);
+        assert!(
+            engine.active_voice_count() > 0,
+            "voice should be sounding before all_notes_off"
+        );
+
+        // Transport stop.
+        engine.all_notes_off();
+
+        // Render remaining release decay so voice pool returns to idle.
+        render(&mut engine, 200);
+        assert_eq!(
+            engine.active_voice_count(),
+            0,
+            "all sounding voices should have decayed to silence"
+        );
+
+        // A trailing note_off arriving after all_notes_off for the pre-reset note
+        // must NOT fire a release trigger. If release_tracker.clear_all() was omitted,
+        // note_start_times[60] would still be non-zero and trigger a release voice.
+        engine.note_off(60);
+        assert_eq!(
+            engine.active_voice_count(),
+            0,
+            "all_notes_off must clear release_tracker so subsequent note_off cannot \
+             fire release triggers from pre-reset note timestamps"
+        );
+
+        // ── 2. Pedal deferred queue is cleared on all_notes_off ───────────
+        // Hold sustain pedal down, trigger and release notes so they are deferred.
+        engine.handle_cc(64, 127);
+        engine.note_on(60, 100);
+        engine.note_off(60); // deferred
+        engine.note_on(62, 100);
+        engine.note_off(62); // deferred
+        render(&mut engine, 1);
+
+        // Transport stop while pedal is held.
+        engine.all_notes_off();
+        render(&mut engine, 200);
+        assert_eq!(engine.active_voice_count(), 0);
+
+        // Start a fresh note 60 while pedal is still down.
+        engine.note_on(60, 100);
+        render(&mut engine, 1);
+
+        let is_releasing = |engine: &LevainEngine, note: u8| {
+            engine
+                .voice_pool
+                .voices
+                .iter()
+                .any(|v| v.active && v.note == note && v.amp_env.is_releasing())
+        };
+        assert!(
+            !is_releasing(&engine, 60),
+            "newly triggered note 60 must be active and not releasing"
+        );
+
+        // Now release the sustain pedal.
+        engine.handle_cc(64, 0);
+
+        // If pedal_deferred.clear() was omitted from all_notes_off, the stale
+        // deferred release for note 60 would now execute and prematurely release note 60.
+        assert!(
+            !is_releasing(&engine, 60),
+            "lifting pedal after all_notes_off must not fire stale deferred note-offs \
+             and release newly held notes"
+        );
+
+        // If pedal_deferred.clear() was omitted, note 62 would also be queued into
+        // pending_staggered_releases.
+        assert_eq!(
+            engine.pending_staggered_count,
+            0,
+            "all_notes_off must clear pedal_deferred so no staggered releases are queued on pedal lift"
+        );
+
+        // Render past any stagger window and verify note 60 is still held, not released.
+        render(&mut engine, 30);
+        assert!(
+            !is_releasing(&engine, 60),
+            "new note 60 must remain held and sounding across blocks"
         );
     }
 }

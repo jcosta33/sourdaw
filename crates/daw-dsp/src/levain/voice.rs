@@ -569,6 +569,7 @@ pub struct LevainVoice {
     pub crossfade_amount: f32,
     pub crossfade_rate: f32,
     pub crossfading: bool,
+    pub steal_crossfading: bool,
 
     /// Third stream for the CC1 mod-wheel dynamic-layer crossfade, distinct
     /// from `crossfade_playback` (owned by legato) so the two features never
@@ -634,6 +635,7 @@ pub struct LevainVoice {
     tilt_lp: f32,
     /// Tilt one-pole coefficient for a ~1.2 kHz split, fixed at construction.
     tilt_coeff: f32,
+    pub sample_rate: f32,
 }
 
 impl LevainVoice {
@@ -653,6 +655,7 @@ impl LevainVoice {
             crossfade_amount: 0.0,
             crossfade_rate: 0.0,
             crossfading: false,
+            steal_crossfading: false,
             layer_secondary: SamplePlayback::new(),
             layer_active: false,
             layer_gain_primary: 1.0,
@@ -675,6 +678,7 @@ impl LevainVoice {
             base_gain: 1.0,
             tilt_lp: 0.0,
             tilt_coeff: 1.0 - (-std::f32::consts::TAU * 1200.0 / sample_rate.max(1.0)).exp(),
+            sample_rate,
         }
     }
 
@@ -689,6 +693,28 @@ impl LevainVoice {
         gain: f32,
         pool: &SamplePool,
     ) {
+        let was_sounding = self.active
+            && self.playback.active
+            && (self.amp_env.current_level() * self.gain.current > 1e-4);
+
+        if was_sounding {
+            // Declick fade when stealing a sounding voice:
+            // Move previous playback stream to crossfade slot with its effective gain,
+            // and fade it out over 1 ms so the transition does not click.
+            let old_gain_factor = self.amp_env.current_level() * self.gain.current;
+            self.crossfade_playback = self.playback.clone();
+            self.crossfade_playback.gain = self.playback.gain * old_gain_factor;
+            self.crossfade_amount = 0.0;
+            self.crossfade_rate = crossfade_rate_for(0.001, self.sample_rate);
+            self.crossfading = true;
+            self.steal_crossfading = true;
+        } else {
+            self.crossfading = false;
+            self.steal_crossfading = false;
+            self.crossfade_amount = 0.0;
+            self.crossfade_playback.active = false;
+        }
+
         self.active = true;
         self.note = note;
         self.channel = channel;
@@ -703,8 +729,6 @@ impl LevainVoice {
 
         self.playback
             .configure_with_pool(&zone.sample, note, db_to_linear(zone.gain_db), pool);
-        self.crossfading = false;
-        self.crossfade_amount = 0.0;
         self.layer_active = false;
         self.layer_gain_primary = 1.0;
         self.layer_gain_secondary = 0.0;
@@ -792,6 +816,7 @@ impl LevainVoice {
         self.crossfade_amount = 0.0;
         self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
+        self.steal_crossfading = false;
         self.zone_id = new_zone.id;
     }
 
@@ -816,6 +841,7 @@ impl LevainVoice {
         self.crossfade_amount = 0.0;
         self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
+        self.steal_crossfading = false;
     }
 
     /// Attach a second, velocity-adjacent zone that CC1 can blend towards
@@ -907,48 +933,40 @@ impl LevainVoice {
             return 0.0;
         }
 
-        self.age += 1;
-        self.samples_since_on += 1;
+        self.age = self.age.saturating_add(1);
+        self.samples_since_on = self.samples_since_on.saturating_add(1);
 
         let env = self.amp_env.tick();
-        if !self.amp_env.is_active() {
+        if !self.amp_env.is_active() && !self.steal_crossfading {
             self.active = false;
             return 0.0;
         }
 
         let primary = self.playback.read_sample(pool);
 
-        let mut sample = if self.crossfading {
+        let (mut sample, steal_fade_sample) = if self.crossfading {
             let secondary = self.crossfade_playback.read_sample(pool);
             self.crossfade_amount += self.crossfade_rate;
 
-            // The hand-over is over as soon as either side is finished: the
-            // ramp reached the end, or the outgoing stream ran out of
-            // recording to hand over.
-            //
-            // That second case is not an edge case. A transition recording is
-            // a short gesture — the ones this engine synthesises for its own
-            // fallback are shorter still — and any fade longer than it leaves
-            // `gain_old` weighting a stream that reads 0.0 while `gain_new`
-            // holds the arriving note under unity for the rest of the ramp.
-            // Equal power is the right law for two live streams and the wrong
-            // one for a live stream against silence, where it is just
-            // attenuation: a 100 ms recording under a 30 s fade left the line
-            // 15 dB down for half a minute. Completing here keeps the sum of
-            // powers constant, which is what equal power is for.
             let outgoing_finished = !self.crossfade_playback.active;
             if self.crossfade_amount >= 1.0 || outgoing_finished {
                 self.crossfade_amount = 1.0;
                 self.crossfading = false;
+                self.steal_crossfading = false;
                 self.crossfade_playback.active = false;
             }
 
             // Equal-power crossfade. Use sin_cos() for single call.
             let angle = self.crossfade_amount * std::f32::consts::FRAC_PI_2;
             let (gain_new, gain_old) = angle.sin_cos();
-            primary * gain_new + secondary * gain_old
+
+            if self.steal_crossfading {
+                (primary * gain_new, secondary * gain_old)
+            } else {
+                (primary * gain_new + secondary * gain_old, 0.0)
+            }
         } else {
-            primary
+            (primary, 0.0)
         };
 
         // CC1 mod-wheel dynamic-layer crossfade (audit F6): blend in the
@@ -988,42 +1006,58 @@ impl LevainVoice {
         };
 
         let gain = self.gain.tick();
+        let output = shaped * env * gain + steal_fade_sample;
 
-        // Track energy for voice stealing (simple exponential RMS).
-        let abs_sample = (shaped * env * gain).abs();
+        // Track energy for voice monitoring (simple exponential RMS).
+        let abs_sample = output.abs();
         self.energy = self.energy * self.energy_decay + abs_sample * (1.0 - self.energy_decay);
 
-        shaped * env * gain
+        output
     }
 
-    /// Voice stealing score: higher = more likely to be stolen. The ordering
-    /// holds for every input, free voices included, so a caller may rank the
-    /// whole pool on this one number: an inactive slot is `u32::MAX` because
-    /// reusing it costs nothing at all.
-    pub fn steal_priority(&self) -> u32 {
+    /// How loud this voice is right now, as a linear amplitude.
+    ///
+    /// The three factors that scale every sample this voice writes:
+    /// note velocity, the amp envelope's current level, and the smoothed voice
+    /// gain. Deliberately not `energy`, which is a one-pole of the *rendered*
+    /// signal: that starts at zero and takes time to build, so a freshly
+    /// struck note reads as silent and stealable if energy is used.
+    #[inline]
+    pub fn audible_level(&self) -> f32 {
+        (self.velocity as f32 / 127.0) * self.amp_env.current_level() * self.gain.current
+    }
+
+    /// Compare whether `self` is a better voice-stealing victim than `other`.
+    ///
+    /// Priority order:
+    /// 1. Inactive voices are chosen before any active voice.
+    /// 2. Releasing voices (`amp_env.is_releasing()`) are chosen before active held voices.
+    /// 3. Within the same class (releasing or active held), the voice with the lowest
+    ///    `audible_level()` is chosen.
+    /// 4. Tie-break: the older voice (`age`) is chosen (no saturation cap).
+    pub fn is_better_steal_victim(&self, other: &Self) -> bool {
         if !self.active {
-            return u32::MAX;
+            return other.active;
         }
-        // Past audibility takes both readings, because neither alone bounds
-        // what is left to hear. `energy` is an exponential mean of output
-        // already produced, so it reads zero for a note let go while the
-        // recording's own head was still quiet, with every sample still ahead
-        // of the playhead at full scale. The envelope supplies the missing
-        // ceiling: in Release `level` only shrinks, so under `1e-3` the whole
-        // remaining tail is bounded at -60 dBFS whatever the recording holds.
-        // The tier has to be that strict — stealing is a hard switch into
-        // `trigger`, which resets the envelope and restarts playback from
-        // sample 0 with no fade, so a voice caught here wrongly is cut to
-        // silence mid-sound.
-        if self.amp_env.is_releasing() && self.energy < 1e-4 && self.amp_env.current_level() < 1e-3
-        {
-            let age_score = self.age.min(10000);
-            return 10000 + age_score; // release tails past audibility sort above every sounding voice
+        if !other.active {
+            return false;
         }
-        // Lower energy = more stealable, older = more stealable.
-        let energy_score = ((1.0 - self.energy.min(1.0)) * 1000.0) as u32;
-        let age_score = self.age.min(10000);
-        2 + energy_score + age_score / 10
+
+        let self_releasing = self.amp_env.is_releasing();
+        let other_releasing = other.amp_env.is_releasing();
+
+        if self_releasing != other_releasing {
+            return self_releasing;
+        }
+
+        let self_level = self.audible_level();
+        let other_level = other.audible_level();
+
+        if (self_level - other_level).abs() > 1e-6 {
+            return self_level < other_level;
+        }
+
+        self.age > other.age
     }
 }
 
@@ -1052,13 +1086,10 @@ impl VoicePool {
             }
         }
 
-        // All busy: steal based on priority (highest priority score = best steal target).
+        // All busy: steal based on class, audible level, and age.
         let mut best_idx = 0;
-        let mut best_score = 0;
-        for (i, voice) in self.voices.iter().enumerate() {
-            let score = voice.steal_priority();
-            if score > best_score {
-                best_score = score;
+        for (i, voice) in self.voices.iter().enumerate().skip(1) {
+            if voice.is_better_steal_victim(&self.voices[best_idx]) {
                 best_idx = i;
             }
         }
@@ -1143,6 +1174,7 @@ mod tests {
     fn releasing_at(level_target: f32) -> LevainVoice {
         let mut voice = LevainVoice::new(SAMPLE_RATE);
         voice.active = true;
+        voice.velocity = 100;
         voice.amp_env.configure(&AdsrParams {
             attack: 0.0,
             decay: 0.0,
@@ -1215,12 +1247,7 @@ mod tests {
         (pool, zone)
     }
 
-    /// `energy` is a lagging mean of output the voice has *already* produced,
-    /// so on its own it cannot say what a releasing voice still has to play.
-    /// These two voices agree on every reading the score used before the
-    /// envelope ceiling was conjoined — both releasing, both at zero energy,
-    /// same age — and differ only in how much envelope is left. The one still
-    /// near full scale must be the more protected of the two.
+    /// A release tail still at full envelope must be more protected than a spent one.
     #[test]
     fn a_release_tail_still_at_full_envelope_outranks_a_spent_one() {
         let mut still_open = releasing_at(0.2);
@@ -1232,25 +1259,17 @@ mod tests {
         spent.age = 500;
 
         assert!(
-            still_open.steal_priority() < spent.steal_priority(),
-            "a tail at envelope level {} (every remaining sample bounded at \
-             {:.1} dBFS) scored {}, against {} for one at level {} that really \
-             is finished — equal or above means the score read only `energy`, \
-             which is 0.0 for both",
-            still_open.amp_env.current_level(),
-            20.0 * still_open.amp_env.current_level().log10(),
-            still_open.steal_priority(),
-            spent.steal_priority(),
-            spent.amp_env.current_level()
+            spent.is_better_steal_victim(&still_open),
+            "a spent tail at envelope level {} must be chosen as steal victim over one still open at level {}",
+            spent.amp_env.current_level(),
+            still_open.amp_env.current_level()
         );
     }
 
-    /// The shape an energy-only reading gets wrong, played rather than
-    /// stipulated: a zone whose recorded head is silent, struck and let go
-    /// inside that head. The voice has emitted nothing, so `energy` is 0.0 —
-    /// but the envelope is still open and the recording's body is still ahead
-    /// of the playhead, so the slot holds sound nobody has heard yet. The
-    /// oracle here is that rendered body, a quantity the score never reads.
+    /// The shape an energy-only reading gets wrong: a zone whose recorded head is
+    /// silent, struck and let go inside that head. The voice has emitted nothing,
+    /// so energy is 0.0 — but the envelope is still open and the recording's body
+    /// is still ahead of the playhead.
     #[test]
     fn a_zero_energy_release_tail_can_still_have_an_audible_body_to_render() {
         const HEAD_FRAMES: u32 = 22_050; // 0.5 s of recorded silence
@@ -1273,22 +1292,18 @@ mod tests {
 
         assert_eq!(
             heard_while_held, 0.0,
-            "the note must be let go before the recording says anything, or \
-             this is not the shape under test"
-        );
-        assert!(
-            voice.energy < 1e-4,
-            "the score's own audibility reading must be past its threshold \
-             here: energy {}",
-            voice.energy
+            "the note must be let go before the recording says anything, or this is not the shape under test"
         );
         assert!(voice.amp_env.is_releasing(), "the voice must be releasing");
 
-        let tail_score = voice.steal_priority();
         let mut spent = releasing_at(5e-4);
         spent.energy = 0.0;
         spent.age = voice.age;
-        let spent_score = spent.steal_priority();
+
+        assert!(
+            spent.is_better_steal_victim(&voice),
+            "a voice with unheard body left to render must be protected over a spent tail"
+        );
 
         // What stealing this slot would have thrown away.
         let mut discarded_peak = 0.0_f32;
@@ -1298,24 +1313,11 @@ mod tests {
 
         assert!(
             discarded_peak > 0.05,
-            "the tail must still render something plainly audible for this \
-             test to mean anything: peak {discarded_peak}"
-        );
-        assert!(
-            tail_score < spent_score,
-            "a voice with {discarded_peak} peak ({:.1} dBFS) of unheard body \
-             left to render scored {tail_score}, at or above the {spent_score} \
-             of a voice that really is past audibility — stealing is a hard \
-             switch into `trigger`, so that body is cut off, not faded",
-            20.0 * discarded_peak.log10()
+            "the tail must still render something plainly audible for this test to mean anything: peak {discarded_peak}"
         );
     }
 
-    /// The score is a total order over the whole pool, so it has to answer
-    /// for a free voice too: taking one costs nothing, which is the top of
-    /// the range. `VoicePool::allocate` reaches free voices by its own
-    /// short-circuit and never asks, but the score is public and the next
-    /// caller reads the ordering, not that short-circuit.
+    /// A free voice is the top of the stealing order.
     #[test]
     fn a_free_voice_is_the_top_of_the_stealing_order() {
         let free = LevainVoice::new(SAMPLE_RATE);
@@ -1325,56 +1327,36 @@ mod tests {
         spent.energy = 0.0;
         spent.age = 10_000;
 
-        assert_eq!(free.steal_priority(), u32::MAX);
         assert!(
-            free.steal_priority() > spent.steal_priority(),
-            "a free voice scored {}, at or below the {} of the most stealable \
-             active voice there is",
-            free.steal_priority(),
-            spent.steal_priority()
+            free.is_better_steal_victim(&spent),
+            "a free voice must be chosen before any active voice"
         );
     }
 
-    /// The release-tail branch must be what decides this, so the fixture is
-    /// built to rank the *other* way under the generic tier alone. The tail is
-    /// the least stealable voice that tier can describe — zero energy, zero
-    /// age, so `2 + 1000 + 0 = 1002` — while the sounding voice is nearly the
-    /// most stealable one it can describe: quiet but plainly audible, and as
-    /// old as the age term ever counts, so `2 + 950 + 1000`. Delete the branch
-    /// and the ordering inverts and this reds.
-    ///
-    /// That also pins the two tiers apart from the low end, which nothing else
-    /// does: the tail tier's floor is `10000` at age zero, and the generic
-    /// tier's ceiling is `2 + 1000 + 1000 = 2002`, so no sounding voice however
-    /// quiet or old can outrank a tail past audibility.
+    /// Releasing tail is preferred for stealing over a sounding held voice.
     #[test]
     fn steal_priority_prefers_inaudible_release_tail_over_sounding_voice() {
         let mut sounding = LevainVoice::new(SAMPLE_RATE);
         sounding.active = true;
         sounding.energy = 0.05;
         sounding.age = 10_000;
+        sounding.velocity = 100;
+        sounding.amp_env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 0.0,
+            sustain: 1.0,
+            release: 0.05,
+        });
+        sounding.amp_env.trigger();
+        sounding.amp_env.tick();
 
-        // A real decayed tail, driven through the stage machine. Writing
-        // `level` by hand — or triggering and releasing with no `tick` between,
-        // which leaves the attack unrun at `level == 0.0` — would enter the
-        // tier as a voice that never sounded rather than as a spent tail.
         let mut inaudible_releasing = releasing_at(5e-4);
         inaudible_releasing.energy = 0.0;
         inaudible_releasing.age = 0;
 
-        let tail = inaudible_releasing.steal_priority();
-        let audible = sounding.steal_priority();
         assert!(
-            tail > audible,
-            "a tail at envelope level {} with zero energy and zero age scored \
-             {tail}, against {audible} for a voice still sounding at energy \
-             {} and age {} — the generic tier ranks these the other way \
-             round ({} against {audible}), so equal or below means the \
-             release-tail branch did not decide it",
-            inaudible_releasing.amp_env.current_level(),
-            sounding.energy,
-            sounding.age,
-            2 + ((1.0 - inaudible_releasing.energy) * 1000.0) as u32 + inaudible_releasing.age / 10
+            inaudible_releasing.is_better_steal_victim(&sounding),
+            "releasing tail must be preferred for stealing over a sounding voice"
         );
 
         let mut pool = VoicePool {
@@ -1383,8 +1365,186 @@ mod tests {
         assert_eq!(
             pool.allocate(),
             1,
-            "`allocate` must take the spent tail at index 1, not the sounding \
-             voice at index 0 that the generic tier scores higher"
+            "`allocate` must take the releasing tail at index 1, not the sounding voice at index 0"
         );
+    }
+
+    #[test]
+    fn newly_struck_note_is_not_stolen_over_quiet_sustaining_note() {
+        let (pool, zone) = silent_headed_sample(0, 44100);
+
+        // Voice 0: quiet sustaining note (velocity 20, sustain 1.0, rendered for 5000 samples)
+        let mut quiet_sustaining = LevainVoice::new(SAMPLE_RATE);
+        quiet_sustaining.trigger(60, 0, 20, &zone, 0, 1.0, &pool);
+        for _ in 0..5000 {
+            quiet_sustaining.tick(&pool);
+        }
+
+        // Voice 1: loud newly-struck note (velocity 100, sustain 1.0, rendered for only 5 samples)
+        // In the old energy-based score, its energy was 0.0 so it was chosen as victim.
+        let mut loud_newly_struck = LevainVoice::new(SAMPLE_RATE);
+        loud_newly_struck.trigger(64, 0, 100, &zone, 0, 1.0, &pool);
+        for _ in 0..5 {
+            loud_newly_struck.tick(&pool);
+        }
+
+        assert!(
+            quiet_sustaining.is_better_steal_victim(&loud_newly_struck),
+            "quiet sustaining note (audible level {}) must be chosen as steal victim over loud newly struck note (audible level {})",
+            quiet_sustaining.audible_level(),
+            loud_newly_struck.audible_level()
+        );
+
+        let mut voice_pool = VoicePool {
+            voices: vec![loud_newly_struck, quiet_sustaining],
+        };
+        // allocate should choose index 1 (quiet sustaining), not index 0 (loud newly struck)
+        assert_eq!(voice_pool.allocate(), 1);
+    }
+
+    #[test]
+    fn releasing_note_is_stolen_before_held_sustaining_note() {
+        let (pool, zone) = silent_headed_sample(0, 44100);
+
+        // Voice 0: loud held sustaining note (velocity 100, sustain 1.0)
+        let mut held_voice = LevainVoice::new(SAMPLE_RATE);
+        held_voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        for _ in 0..1000 {
+            held_voice.tick(&pool);
+        }
+
+        // Voice 1: loud releasing note (velocity 100, but released)
+        let mut releasing_voice = LevainVoice::new(SAMPLE_RATE);
+        releasing_voice.trigger(64, 0, 100, &zone, 0, 1.0, &pool);
+        for _ in 0..1000 {
+            releasing_voice.tick(&pool);
+        }
+        releasing_voice.release();
+        for _ in 0..100 {
+            releasing_voice.tick(&pool);
+        }
+
+        assert!(releasing_voice.amp_env.is_releasing());
+        assert!(!held_voice.amp_env.is_releasing());
+        assert!(
+            releasing_voice.is_better_steal_victim(&held_voice),
+            "releasing note must be stolen before active held note"
+        );
+
+        let mut voice_pool = VoicePool {
+            voices: vec![held_voice, releasing_voice],
+        };
+        assert_eq!(voice_pool.allocate(), 1);
+    }
+
+    #[test]
+    fn oldest_note_discrimination_works_past_10000_samples() {
+        let (pool, zone) = silent_headed_sample(0, 88200);
+
+        // Both voices have identical velocity and envelope level (both sustaining at full level)
+        // Voice 0 is older: age 30,000 samples (> 208 ms / 10,000 samples)
+        let mut older_voice = LevainVoice::new(SAMPLE_RATE);
+        older_voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        for _ in 0..30000 {
+            older_voice.tick(&pool);
+        }
+
+        // Voice 1 is younger: age 15,000 samples (also > 10,000 samples)
+        let mut younger_voice = LevainVoice::new(SAMPLE_RATE);
+        younger_voice.trigger(64, 0, 100, &zone, 0, 1.0, &pool);
+        for _ in 0..15000 {
+            younger_voice.tick(&pool);
+        }
+
+        assert!(older_voice.age > 10000);
+        assert!(younger_voice.age > 10000);
+        assert_eq!(older_voice.audible_level(), younger_voice.audible_level());
+
+        assert!(
+            older_voice.is_better_steal_victim(&younger_voice),
+            "older voice (age {}) must be chosen as victim over younger voice (age {}) past 10,000 samples",
+            older_voice.age,
+            younger_voice.age
+        );
+
+        let mut voice_pool = VoicePool {
+            voices: vec![younger_voice, older_voice],
+        };
+        assert_eq!(voice_pool.allocate(), 1);
+    }
+
+    #[test]
+    fn steal_transition_renders_smoothly_without_click_discontinuity() {
+        // Create a constant tone
+        let frames = 44100;
+        let data: Vec<f32> = vec![0.8; frames as usize];
+        let mut pool = SamplePool::new();
+        let sample_id = pool.add(data, frames, 1, SAMPLE_RATE).unwrap();
+
+        let zone = Zone {
+            id: 0,
+            key: KeyRange { lo: 0, hi: 127 },
+            vel: VelRange { lo: 0, hi: 127 },
+            articulation: 0,
+            rr_pos: 0,
+            rr_len: 1,
+            mic: 0,
+            is_release: false,
+            sample: SampleRef {
+                sample_id,
+                root_key: 60,
+                tune_cents: 0,
+                start: 0,
+                end: frames,
+                loop_mode: LoopMode::Forward,
+                loop_start: 0,
+                loop_end: frames,
+                loop_crossfade: 0,
+            },
+            amp_env: AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.1,
+            },
+            gain_db: 0.0,
+        };
+
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 0, 127, &zone, 0, 1.0, &pool);
+
+        // Render until voice is stably outputting ~0.8
+        let mut last_sample = 0.0;
+        for _ in 0..500 {
+            last_sample = voice.tick(&pool);
+        }
+        assert!(
+            (last_sample - 0.8).abs() < 0.05,
+            "voice should be sounding near full scale: {last_sample}"
+        );
+
+        // Now steal the sounding voice with another note (e.g. note 67)
+        voice.trigger(67, 0, 127, &zone, 0, 1.0, &pool);
+
+        // Verify the very first sample rendered after the steal does NOT jump to 0.0 (no single-sample click)
+        let first_sample_after_steal = voice.tick(&pool);
+        let initial_step = (first_sample_after_steal - last_sample).abs();
+        assert!(
+            initial_step < 0.05,
+            "transition must be smooth at sample 0: last sample before steal was {last_sample}, first sample after was {first_sample_after_steal}, step was {initial_step}"
+        );
+
+        // Verify all samples during the 1 ms transition window have smooth sample-to-sample deltas
+        let fade_samples = (0.001 * SAMPLE_RATE).round() as usize; // ~44 samples
+        let mut prev = first_sample_after_steal;
+        for _ in 1..fade_samples {
+            let curr = voice.tick(&pool);
+            let delta = (curr - prev).abs();
+            assert!(
+                delta < 0.05,
+                "transition samples must change smoothly: step was {delta} between {prev} and {curr}"
+            );
+            prev = curr;
+        }
     }
 }

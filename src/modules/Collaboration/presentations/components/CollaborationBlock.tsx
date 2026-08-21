@@ -1,6 +1,7 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type CollaborationBlockProps = HTMLAttributes<HTMLDivElement> & {
@@ -28,10 +29,10 @@ export const CollaborationBlock = ({
         {...props}
     >
         {title || description ? (
-            <div className="mb-2 space-y-1">
+            <Stack gap={1} className="mb-2">
                 {title ? <DawEyebrowLabel size="sm">{title}</DawEyebrowLabel> : null}
                 {description ? <p className="text-[10px] leading-4 text-muted-foreground/70">{description}</p> : null}
-            </div>
+            </Stack>
         ) : null}
         {children}
     </div>

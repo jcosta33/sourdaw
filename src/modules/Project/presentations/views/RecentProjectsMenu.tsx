@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { DawKeycap } from '#/components/daw/DawKeycap';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
@@ -227,10 +228,10 @@ export const RecentProjectsMenu = (): ReactElement => {
                         role="menuitem"
                         onClick={handleSave}
                     >
-                        <span className="flex items-center gap-2">
+                        <Row as="span" gap={2}>
                             <Save className="size-3 text-muted-foreground" aria-hidden="true" />
                             Save
-                        </span>
+                        </Row>
                         <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
                             ⌘S
                         </DawKeycap>
@@ -242,10 +243,10 @@ export const RecentProjectsMenu = (): ReactElement => {
                         role="menuitem"
                         onClick={handleExportAudio}
                     >
-                        <span className="flex items-center gap-2">
+                        <Row as="span" gap={2}>
                             <Music className="size-3 text-muted-foreground" aria-hidden="true" />
                             Export Audio…
-                        </span>
+                        </Row>
                         <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
                             ⌘⇧E
                         </DawKeycap>
@@ -284,9 +285,10 @@ export const RecentProjectsMenu = (): ReactElement => {
                     ) : null}
 
                     {entries.map((entry) => (
-                        <div
+                        <Row
+                            gap={2}
+                            className="group px-3 py-1.5 hover:bg-accent/50 transition-colors cursor-pointer"
                             key={entry.key}
-                            className="group flex items-center gap-2 px-3 py-1.5 hover:bg-accent/50 transition-colors cursor-pointer"
                             role="menuitem"
                             tabIndex={0}
                             onClick={() => handleLoad(entry)}
@@ -315,7 +317,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                                     aria-hidden="true"
                                 />
                             </button>
-                        </div>
+                        </Row>
                     ))}
                 </div>
             ) : null}

@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type BacteriaBand } from '../../models/BacteriaPatch';
 
@@ -35,11 +36,11 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
         onClick={onSelect}
     >
         {/* Band header */}
-        <div className="flex items-center justify-between">
+        <Row justify="between">
             <span className={`text-[8px] font-bold ${isActive ? 'text-rose-400' : 'text-muted-foreground/60'}`}>
                 Band {index + 1}
             </span>
-            <div className="flex gap-0.5">
+            <Row align="stretch" gap={0.5}>
                 <button
                     type="button"
                     className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
@@ -64,11 +65,11 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                 >
                     M
                 </button>
-            </div>
-        </div>
+            </Row>
+        </Row>
 
         {/* Effect indicators */}
-        <div className="flex flex-wrap gap-0.5">
+        <Row align="stretch" wrap gap={0.5}>
             {EFFECT_INDICATORS.map(({ key, label, color }) => (
                 <span
                     key={key}
@@ -79,10 +80,10 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     {label}
                 </span>
             ))}
-        </div>
+        </Row>
 
         {/* Gain knob */}
-        <div className="flex flex-col items-center gap-0 mt-auto">
+        <Stack align="center" className="mt-auto">
             <RotaryKnob
                 value={band.gain}
                 onChange={(v) => onParamChange('gain', v)}
@@ -98,6 +99,6 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                 {band.gain > 0 ? '+' : ''}
                 {band.gain.toFixed(1)} dB
             </span>
-        </div>
+        </Stack>
     </div>
 );
