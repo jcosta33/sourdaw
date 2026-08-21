@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import {
     audioWorkletReleaseInventoryContract,
     loadRepositorySnapshot,
+    OWNER_VISUAL_ASSET_PATHS,
+    ownerVisualAssetReleaseInventoryContract,
     REQUIRED_SNAPSHOT_PATHS,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
@@ -56,6 +58,37 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('binds owner-created visual assets and every derived rendition', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-'));
+        mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
+        mkdirSync(join(root, 'build/icons/nested'), { recursive: true });
+        for (const path of [
+            'public/favicon.ico',
+            'public/icon-192.png',
+            'public/icon-transparent.png',
+            'public/icon.png',
+            'sourdaw.png',
+            'public/logo-parts/p00.png',
+            'build/icons/icon.png',
+            'build/icons/nested/icon.png',
+        ]) {
+            writeFileSync(join(root, path), path);
+        }
+
+        try {
+            const before = ownerVisualAssetReleaseInventoryContract(root);
+            expect(before.kind).toBe('owner-created-asset');
+            expect(before.paths).toEqual(OWNER_VISUAL_ASSET_PATHS);
+            expect(before.sources).toContain('owner attestation: Jose Costa, 2026-08-21');
+            expect(before.licenses).toEqual(['owner-created:pending-OS-10-project-license']);
+
+            writeFileSync(join(root, 'build/icons/nested/icon.png'), 'changed');
+            expect(ownerVisualAssetReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds the shipped trademark notice', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-trademark-notice-'));
         const legal = join(root, 'public/legal');

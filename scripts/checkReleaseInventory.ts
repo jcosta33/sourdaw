@@ -2,8 +2,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
@@ -65,6 +65,16 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+
+export const OWNER_VISUAL_ASSET_PATHS = [
+    'public/favicon.ico',
+    'public/icon-192.png',
+    'public/icon-transparent.png',
+    'public/icon.png',
+    'public/logo-parts/**',
+    'sourdaw.png',
+    'build/icons/**',
+] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
     'rave-models': [
@@ -138,6 +148,30 @@ function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function directorySha256(root: string, directory: string): string {
+    const absoluteRoot = resolve(root, directory);
+    const files: string[] = [];
+    const visit = (path: string): void => {
+        for (const entry of readdirSync(path, { withFileTypes: true })) {
+            const child = resolve(path, entry.name);
+            if (entry.isDirectory()) {
+                visit(child);
+            } else if (entry.isFile()) {
+                files.push(child);
+            }
+        }
+    };
+    visit(absoluteRoot);
+    const hash = createHash('sha256');
+    for (const file of files.sort()) {
+        hash.update(relative(absoluteRoot, file));
+        hash.update('\0');
+        hash.update(readFileSync(file));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
 export const AUDIO_WORKLET_SOURCES = [
     'public/audio/worklets/native-plugin-bridge-processor.js',
     'public/audio/worklets/sidechain-compressor-processor.js',
@@ -161,6 +195,32 @@ export function trademarkReleaseInventoryContract(root: string): TrademarkSurfac
         revisions: ['current release text'],
         digests: [`sha256:${fileSha256(resolve(root, TRADEMARK_NOTICE_PATH))}:${TRADEMARK_NOTICE_PATH}`],
         licenses: ['not-applicable:trademark-rights-not-granted'],
+    };
+}
+
+export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceContract {
+    const files = [
+        'public/favicon.ico',
+        'public/icon-192.png',
+        'public/icon-transparent.png',
+        'public/icon.png',
+        'sourdaw.png',
+    ];
+    return {
+        kind: 'owner-created-asset',
+        paths: [...OWNER_VISUAL_ASSET_PATHS],
+        sources: ['owner attestation: Jose Costa, 2026-08-21', 'public/icon.png'],
+        revisions: [
+            'git:130452d6d989b0f02ca81c36c2cf25178d6da362:public/icon.png',
+            'git:ddee040560bbdf5f954b8970d8e2fe736cd6d9b8:public/logo-parts',
+            'derived renditions',
+        ],
+        digests: [
+            ...files.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+            `tree-sha256:${directorySha256(root, 'public/logo-parts')}:public/logo-parts`,
+            `tree-sha256:${directorySha256(root, 'build/icons')}:build/icons`,
+        ],
+        licenses: ['owner-created:pending-OS-10-project-license'],
     };
 }
 
@@ -647,6 +707,12 @@ export function checkReleaseInventory(root: string): void {
     assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
+    const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
+    assertSurfaceContract(
+        ownerVisualAssetSurface,
+        ownerVisualAssetReleaseInventoryContract(root),
+        'owner visual asset'
+    );
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
