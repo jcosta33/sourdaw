@@ -286,6 +286,7 @@
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
+                "electron/main.ts",
                 "electron/protocol.ts",
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
