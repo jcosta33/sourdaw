@@ -7,6 +7,7 @@ import { type ReactElement, useRef, useState } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
@@ -142,7 +143,9 @@ export const PianoRollContextMenu = ({
             </DawMenuSectionLabel>
             <Row align="stretch" gap={1} className="px-3 py-0.5">
                 {([1, 0.5, 0.25, 0.125] as const).map((g) => (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         key={g}
                         className={pillBtnClass}
@@ -154,7 +157,7 @@ export const PianoRollContextMenu = ({
                         })}
                     >
                         {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
-                    </button>
+                    </Button>
                 ))}
             </Row>
             {/* Transpose */}
@@ -164,7 +167,9 @@ export const PianoRollContextMenu = ({
             </DawMenuSectionLabel>
             <Row align="stretch" gap={1} className="px-3 py-0.5">
                 {([-12, -1, 1, 12] as const).map((semi) => (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         key={semi}
                         className={pillBtnClass}
@@ -176,7 +181,7 @@ export const PianoRollContextMenu = ({
                         })}
                     >
                         {{ '-12': '-Oct', '-1': '-1', '1': '+1', '12': '+Oct' }[semi]}
-                    </button>
+                    </Button>
                 ))}
             </Row>
             {/* Scale */}
@@ -267,7 +272,9 @@ export const PianoRollContextMenu = ({
             </DawMenuSectionLabel>
             <Row align="stretch" gap={1} className="px-3 py-0.5">
                 {(['up', 'down'] as const).map((dir) => (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         key={dir}
                         className={`${pillBtnClass} disabled:opacity-40`}
@@ -290,7 +297,7 @@ export const PianoRollContextMenu = ({
                         })}
                     >
                         {dir === 'up' ? '↑ Up' : '↓ Down'}
-                    </button>
+                    </Button>
                 ))}
             </Row>
             {/* AI */}

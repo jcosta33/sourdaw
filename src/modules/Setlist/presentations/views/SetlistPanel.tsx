@@ -15,6 +15,7 @@ import {
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -148,8 +149,8 @@ export const SetlistPanel = (): ReactElement => {
     };
 
     return (
-        <div className="flex h-full flex-col bg-surface-base">
-            <div className="flex items-center gap-2 border-b border-border-hairline px-3 py-1.5 shrink-0">
+        <Stack className="h-full bg-surface-base">
+            <Row gap={2} shrink={false} className="border-b border-border-hairline px-3 py-1.5">
                 {editingSetlistName ? (
                     <DawCompactInput
                         size="micro"
@@ -166,13 +167,15 @@ export const SetlistPanel = (): ReactElement => {
                         }}
                     />
                 ) : (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="text-xs font-semibold text-foreground hover:text-accent-cyan"
                         onClick={() => setEditingSetlistName(true)}
                     >
                         {state.name}
-                    </button>
+                    </Button>
                 )}
 
                 <div className="text-[10px] text-muted-foreground">
@@ -181,7 +184,7 @@ export const SetlistPanel = (): ReactElement => {
                     <span>{progress.remainingLabel}</span>
                 </div>
 
-                <div className="ml-auto flex items-center gap-1">
+                <Row gap={1} className="ml-auto">
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
@@ -229,7 +232,7 @@ export const SetlistPanel = (): ReactElement => {
                         <TooltipContent>Auto-advance to next item</TooltipContent>
                     </Tooltip>
 
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Row gap={1} className="text-[10px] text-muted-foreground">
                         <Timer className="size-3" aria-hidden="true" />
                         <span>Count-in</span>
                         <DawCompactInput
@@ -245,7 +248,7 @@ export const SetlistPanel = (): ReactElement => {
                             aria-label="Count-in bars"
                         />
                         <span>bars</span>
-                    </div>
+                    </Row>
 
                     <div className="mx-1 h-4 w-px bg-border-hairline" aria-hidden="true" />
 
@@ -264,8 +267,8 @@ export const SetlistPanel = (): ReactElement => {
                         </TooltipTrigger>
                         <TooltipContent>Add item to setlist</TooltipContent>
                     </Tooltip>
-                </div>
-            </div>
+                </Row>
+            </Row>
 
             <div className="flex-1 overflow-y-auto">
                 {hasItems ? (
@@ -296,12 +299,15 @@ export const SetlistPanel = (): ReactElement => {
                                         dragOverIndex === index ? 'border-t-2 border-t-ring' : ''
                                     )}
                                 >
-                                    <span
-                                        className="flex size-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100"
+                                    <Row
+                                        as="span"
+                                        justify="center"
+                                        shrink={false}
+                                        className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100"
                                         aria-hidden="true"
                                     >
                                         <GripVertical className="size-3" />
-                                    </span>
+                                    </Row>
 
                                     <span
                                         className="h-5 w-1 shrink-0 rounded-full"
@@ -322,7 +328,7 @@ export const SetlistPanel = (): ReactElement => {
                                         )}
                                     </span>
 
-                                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <Row grow gap={2}>
                                         {isEditing ? (
                                             <DawCompactInput
                                                 size="micro"
@@ -343,7 +349,9 @@ export const SetlistPanel = (): ReactElement => {
                                                 }}
                                             />
                                         ) : (
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 className="truncate text-xs text-foreground hover:text-accent-cyan text-left"
                                                 onClick={(event) => {
@@ -352,9 +360,9 @@ export const SetlistPanel = (): ReactElement => {
                                                 }}
                                             >
                                                 {item.name}
-                                            </button>
+                                            </Button>
                                         )}
-                                    </div>
+                                    </Row>
 
                                     <span className="w-12 shrink-0 text-right font-mono text-[10px] text-muted-foreground">
                                         {formatDuration(item.estimatedDuration)}
@@ -362,7 +370,9 @@ export const SetlistPanel = (): ReactElement => {
 
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 className={cn(
                                                     'size-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors',
@@ -378,12 +388,12 @@ export const SetlistPanel = (): ReactElement => {
                                                 }}
                                             >
                                                 AS
-                                            </button>
+                                            </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>Auto-stop after this item finishes</TooltipContent>
                                     </Tooltip>
 
-                                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                                    <Row gap={0.5} shrink={false} className="opacity-0 group-hover:opacity-100">
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <Button
@@ -434,7 +444,7 @@ export const SetlistPanel = (): ReactElement => {
                                             </TooltipTrigger>
                                             <TooltipContent>Remove item</TooltipContent>
                                         </Tooltip>
-                                    </div>
+                                    </Row>
                                 </div>
                             );
                         })}
@@ -454,6 +464,6 @@ export const SetlistPanel = (): ReactElement => {
                     </div>
                 )}
             </div>
-        </div>
+        </Stack>
     );
 };

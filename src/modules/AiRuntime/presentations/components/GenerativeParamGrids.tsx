@@ -18,6 +18,8 @@ import {
     Music4,
 } from 'lucide-react';
 
+import { Grid } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type GridProps = {
@@ -39,11 +41,13 @@ type GridContainerProps = GridProps & {
 
 const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerProps): ReactElement => {
     return (
-        <div className="grid grid-cols-2 gap-2" data-testid={gridTestId}>
+        <Grid cols={2} gap={2} data-testid={gridTestId}>
             {options.map((opt) => {
                 const isSelected = value === opt.id;
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={opt.id}
                         type="button"
                         aria-pressed={isSelected}
@@ -82,10 +86,10 @@ const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerPr
                         >
                             {opt.label}
                         </span>
-                    </button>
+                    </Button>
                 );
             })}
-        </div>
+        </Grid>
     );
 };
 

@@ -1,6 +1,7 @@
-import { desktopListen } from '#/utils/desktopBridge';
+import { desktopListenVoiceDictationTerminal } from '#/utils/desktopBridge';
 
 export type DictationError = {
+    session_id: string;
     message: string;
 };
 
@@ -11,14 +12,16 @@ const MAX_DICTATION_ERROR_MESSAGE_LENGTH = 2_048;
  * resampling, or transcription fails, or when a transcription result cannot
  * be delivered. Returns an unlisten function to clean up the listener.
  */
-export async function onDictationError(handler: (error: DictationError) => void): Promise<() => void> {
-    const unlisten = await desktopListen('dictation-error', (payload: unknown) => {
+export function onDictationError(sessionId: string, handler: (error: DictationError) => void): () => void {
+    return desktopListenVoiceDictationTerminal(sessionId, (event, payload: unknown) => {
+        if (event !== 'dictation-error') {
+            return;
+        }
         const error = readDictationError(payload);
         if (error) {
             handler(error);
         }
     });
-    return unlisten;
 }
 
 function readDictationError(event: unknown): DictationError | null {
@@ -26,12 +29,15 @@ function readDictationError(event: unknown): DictationError | null {
         return null;
     }
     const { payload } = event;
-    if (typeof payload !== 'object' || payload === null || !('message' in payload)) {
+    if (typeof payload !== 'object' || payload === null || !('session_id' in payload) || !('message' in payload)) {
         return null;
     }
-    const { message } = payload;
+    const { session_id: sessionId, message } = payload;
+    if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128) {
+        return null;
+    }
     if (typeof message !== 'string' || message.length === 0 || message.length > MAX_DICTATION_ERROR_MESSAGE_LENGTH) {
         return null;
     }
-    return { message };
+    return { session_id: sessionId, message };
 }

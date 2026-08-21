@@ -7,7 +7,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerCard } from '#/components/daw/DawPickerCard';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -347,7 +347,7 @@ export const PatternBrowser = (): ReactElement => {
             {/* Generation controls */}
             {showControls ? (
                 <Stack gap={2} className="bg-surface-base/60 border border-border/40 rounded-lg p-2">
-                    <div className="grid grid-cols-3 gap-2">
+                    <Grid cols={3} gap={2}>
                         <CompactSelect
                             label="Key"
                             value={key}
@@ -368,16 +368,18 @@ export const PatternBrowser = (): ReactElement => {
                             options={genreOptions}
                             onChange={setActiveGenre}
                         />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    </Grid>
+                    <Grid cols={2} gap={3}>
                         <ParamSlider label="Density" value={density} onChange={setDensity} />
                         <ParamSlider label="Complexity" value={complexity} onChange={setComplexity} />
-                    </div>
+                    </Grid>
                 </Stack>
             ) : null}
             {/* Category filter */}
             <Row align="stretch" wrap gap={1}>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className={cn(
                         'px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
@@ -388,9 +390,11 @@ export const PatternBrowser = (): ReactElement => {
                     onClick={() => setActiveCategory(undefined)}
                 >
                     All
-                </button>
+                </Button>
                 {PATTERN_CATEGORIES.map((cat) => (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={cat.id}
                         type="button"
                         className={cn(
@@ -402,7 +406,7 @@ export const PatternBrowser = (): ReactElement => {
                         onClick={() => setActiveCategory(activeCategory === cat.id ? undefined : cat.id)}
                     >
                         {cat.label}
-                    </button>
+                    </Button>
                 ))}
                 <span className="text-[9px] text-muted-foreground/40 self-center ml-auto">
                     {filteredTemplates.length}/{PATTERN_TEMPLATES.length}
@@ -415,7 +419,7 @@ export const PatternBrowser = (): ReactElement => {
                     <span className="text-[11px]">No patterns match your filters</span>
                 </Stack>
             ) : (
-                <div className="grid grid-cols-2 gap-2">
+                <Grid cols={2} gap={2}>
                     {filteredTemplates.map((template) => (
                         <TemplateCard
                             key={template.id}
@@ -424,7 +428,7 @@ export const PatternBrowser = (): ReactElement => {
                             onInsert={handleInsertTemplate}
                         />
                     ))}
-                </div>
+                </Grid>
             )}
         </Stack>
     );

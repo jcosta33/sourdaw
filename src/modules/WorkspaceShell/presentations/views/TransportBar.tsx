@@ -1,8 +1,9 @@
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
-import { voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
+import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
+import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
@@ -52,15 +53,19 @@ export const TransportBar = (): ReactElement => {
 
     const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
     const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
-    const voiceInputAvailable = isVoiceInputAvailable();
+    const voiceInputAvailable = useStore(voiceInputAvailabilityStore, {
+        hasVerifiedLocalModel: false,
+    }).hasVerifiedLocalModel;
     const anyTrackArmed = tracks.some((time) => time.armed);
     const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 
     const isRecording = transport.isRecording;
 
     return (
-        <header
-            className="flex flex-col h-(--spacing-transport-height) shrink-0 border-b border-black transition-colors duration-300 relative z-50"
+        <Stack
+            as="header"
+            shrink={false}
+            className="h-(--spacing-transport-height) border-b border-black transition-colors duration-300 relative z-50"
             style={{
                 background: isRecording
                     ? 'linear-gradient(180deg, rgba(255,64,50,0.06) 0%, rgba(10,10,10,1) 40%)'
@@ -74,21 +79,18 @@ export const TransportBar = (): ReactElement => {
             aria-label="Transport controls"
         >
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
-            <div
-                className="desktop-titlebar-region flex w-full flex-1 min-h-[40px] items-center px-2"
-                data-testid="window-titlebar-region"
-            >
+            <Row grow className="desktop-titlebar-region w-full min-h-[40px] px-2" data-testid="window-titlebar-region">
                 {/* Left wing (flex-1 basis-0 ensures the center is absolutely geometrically centered) */}
-                <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">
+                <Row grow gap={1} className="basis-0">
                     <ProjectName name={project.name} dirty={project.dirty} />
                     <RecentProjectsMenu />
                     <Sep />
                     <ArrangementSelector />
                     <MissingMediaPanel />
-                </div>
+                </Row>
 
                 {/* Center stage */}
-                <div className="flex shrink-0 justify-center items-center gap-1 w-[40vw] max-w-[800px] min-w-[300px]">
+                <Row justify="center" gap={1} shrink={false} className="w-[40vw] max-w-[800px] min-w-[300px]">
                     <PromptBar />
                     <VoiceButton
                         isAvailable={voiceInputAvailable}
@@ -96,10 +98,10 @@ export const TransportBar = (): ReactElement => {
                         isTranscribing={voice.transcribing}
                         onToggle={toggleVoiceInput}
                     />
-                </div>
+                </Row>
 
                 {/* Right wing */}
-                <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
+                <Row justify="end" grow gap={1} className="basis-0">
                     <PanelToggles
                         sidebarOpen={sidebarOpen}
                         inspectorOpen={inspectorOpen}
@@ -109,15 +111,16 @@ export const TransportBar = (): ReactElement => {
                         virtualKeyboardOpen={virtualKeyboardOpen}
                         dualViewOpen={dualViewOpen}
                     />
-                </div>
-            </div>
+                </Row>
+            </Row>
 
             {/* Visual Separator */}
             <div className="w-full h-px bg-black/40 shadow-[0_1px_0_rgba(255,255,255,0.02)] shrink-0" />
 
             {/* ── ROW 2: Action Layer (Transport, Tools, Chronology) ── */}
-            <div
-                className="flex w-full flex-1 min-h-[46px] items-center px-2"
+            <Row
+                grow
+                className="w-full min-h-[46px] px-2"
                 style={{
                     background: isRecording
                         ? 'radial-gradient(ellipse at top, rgba(255,64,50,0.1) 0%, transparent 80%)'
@@ -125,7 +128,7 @@ export const TransportBar = (): ReactElement => {
                 }}
             >
                 {/* Left wing: Time and Tempo */}
-                <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">
+                <Row grow gap={1} className="basis-0">
                     <PlayheadDisplay
                         tempo={transport.tempo}
                         numerator={transport.timeSignatureNumerator}
@@ -135,10 +138,10 @@ export const TransportBar = (): ReactElement => {
                     <TempoEditor />
                     <Sep />
                     <PunchRecordingControls />
-                </div>
+                </Row>
 
                 {/* Center stage: Core Transport */}
-                <div className="flex shrink-0 justify-center items-center gap-1">
+                <Row justify="center" gap={1} shrink={false}>
                     <TransportControls
                         isPlaying={transport.isPlaying}
                         isRecording={transport.isRecording}
@@ -153,10 +156,10 @@ export const TransportBar = (): ReactElement => {
                         countInEnabled={transport.countInEnabled}
                         countInBars={transport.countInBars}
                     />
-                </div>
+                </Row>
 
                 {/* Right wing: Editing Tools */}
-                <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
+                <Row justify="end" grow gap={1} className="basis-0">
                     <AutoScrollToggle />
                     <Sep />
                     <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
@@ -164,8 +167,8 @@ export const TransportBar = (): ReactElement => {
                     <SoloModeSelector soloMode={soloMode} />
                     <Sep />
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-                </div>
-            </div>
-        </header>
+                </Row>
+            </Row>
+        </Stack>
     );
 };

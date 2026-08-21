@@ -1,5 +1,8 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useRef } from 'react';
 
+import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+
 import { SourdawLogo } from './SourdawLogo';
 
 type ProjectLoadFailureOverlayProps = {
@@ -46,13 +49,15 @@ export const ProjectLoadFailureOverlay = ({
     };
 
     return (
-        <div
+        <Stack
+            align="center"
+            justify="center"
+            className="fixed inset-0 z-[10000] px-6 text-center"
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="project-load-failure-title"
             aria-describedby="project-load-failure-message"
             onKeyDown={keepFocusInside}
-            className="fixed inset-0 z-[10000] flex flex-col items-center justify-center px-6 text-center"
             style={{ background: 'hsl(220,14%,8%)' }}
         >
             <SourdawLogo className="mb-6 h-20 opacity-80" />
@@ -69,14 +74,16 @@ export const ProjectLoadFailureOverlay = ({
                 Your saved projects were not modified. Reload to get back to them.
             </p>
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 ref={reloadRef}
                 type="button"
                 onClick={onReload}
                 className="rounded-md px-4 py-2 text-sm font-medium text-white/90 ring-1 ring-white/20 hover:ring-white/40"
             >
                 Reload
-            </button>
-        </div>
+            </Button>
+        </Stack>
     );
 };

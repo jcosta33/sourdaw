@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from 'react';
 
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { addMidiFx } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
 
@@ -59,7 +60,9 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                             + {fx.label}
                         </MixerInsetButton>
                     ))}
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="w-full text-[10px] text-muted-foreground hover:text-foreground"
                         onClick={(event) => {
@@ -68,7 +71,7 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                         }}
                     >
                         cancel
-                    </button>
+                    </Button>
                 </Stack>
             ) : (
                 <MixerInsetButton

@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { Power, Trash2, Settings2 } from 'lucide-react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
@@ -108,7 +109,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         <MixerStripValue size="sm">Rate</MixerStripValue>
                                     </Stack>
                                     <Stack align="center" gap={1}>
-                                        <select
+                                        <DawCompactSelect
                                             className="bg-surface-base text-[10px] rounded border border-border/50 px-1 outline-none"
                                             value={fx.parameterValues.mode || 0}
                                             onChange={(event) =>
@@ -119,7 +120,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             <option value={1}>Down</option>
                                             <option value={2}>UpDown</option>
                                             <option value={3}>Random</option>
-                                        </select>
+                                        </DawCompactSelect>
                                         <MixerStripValue size="sm">Mode</MixerStripValue>
                                     </Stack>
                                 </>

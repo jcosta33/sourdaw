@@ -3,8 +3,9 @@
  */
 import { type ReactElement } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import { FM_ALGORITHM_NAMES } from '../../models/FermenterPatch';
 
@@ -40,7 +41,7 @@ export const FmSection = ({
 
             {/* Algorithm selector */}
             <div className="px-1">
-                <select
+                <DawCompactSelect
                     value={algorithm}
                     onChange={(e) => onParam('fmAlgorithm', Number(e.target.value))}
                     className="w-full bg-surface-inset border border-border/40 rounded px-1.5 py-0.5 text-[9px] text-foreground cursor-pointer"
@@ -50,11 +51,11 @@ export const FmSection = ({
                             {name}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             </div>
 
             {/* Operator ratios + levels */}
-            <div className="grid grid-cols-4 gap-1 px-1">
+            <Grid cols={4} gap={1} className="px-1">
                 {([0, 1, 2, 3] as const).map((i) => {
                     const ratio = ratios[i];
                     const level = levels[i];
@@ -90,7 +91,7 @@ export const FmSection = ({
                         </Stack>
                     );
                 })}
-            </div>
+            </Grid>
 
             {/* Feedback + Mod Depth */}
             <Row align="end" gap={2} className="px-1">

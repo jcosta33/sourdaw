@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { desktopInvoke } from '#/utils/desktopBridge';
+import { desktopStartVoiceDictation } from '#/utils/desktopBridge';
 
 import { startDictation } from '../startDictation';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    desktopInvoke: vi.fn().mockResolvedValue(undefined),
+    desktopStartVoiceDictation: vi.fn().mockResolvedValue('session-1'),
 }));
 
 describe('startDictation (voiceNativeAdapter)', () => {
-    it('invokes start_dictation command', async () => {
-        await startDictation();
-        expect(desktopInvoke).toHaveBeenCalledWith('start_dictation');
+    it('uses the dedicated activation-gated dictation bridge', async () => {
+        await startDictation('session-1');
+        expect(desktopStartVoiceDictation).toHaveBeenCalledWith('session-1');
     });
 });

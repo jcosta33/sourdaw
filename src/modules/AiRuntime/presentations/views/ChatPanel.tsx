@@ -88,7 +88,9 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
     }, [isStreaming]);
 
     return (
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             onClick={() => setExpanded(!expanded)}
             aria-expanded={expanded}
@@ -119,7 +121,7 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
                     ) : null}
                 </div>
             ) : null}
-        </button>
+        </Button>
     );
 };
 

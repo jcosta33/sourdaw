@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { cvGateStore, defaultCvGateState } from '#/modules/CvGate/stores';
 
@@ -21,13 +22,15 @@ export const CvOutputStatusBadge = (): ReactElement | null => {
     const ariaLabel = `${count} CV/Gate output${count === 1 ? '' : 's'} configured`;
 
     return (
-        <span
-            className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-[var(--color-accent-cyan)]"
+        <Row
+            as="span"
+            gap={1}
+            className="h-5 rounded px-1.5 text-[10px] text-[var(--color-accent-cyan)]"
             aria-label={ariaLabel}
             title={ariaLabel}
         >
             <span className="inline-block size-1.5 rounded-full bg-[var(--color-accent-cyan)]" aria-hidden="true" />
             <span className="tabular-nums">{label}</span>
-        </span>
+        </Row>
     );
 };

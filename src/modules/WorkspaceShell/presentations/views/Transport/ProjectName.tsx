@@ -2,6 +2,8 @@ import { type ReactElement, useState } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '#/modules/Project/useCases';
 
@@ -23,7 +25,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
 
     if (editing) {
         return (
-            <div className="flex items-center gap-1.5 shrink-0">
+            <Row gap={1.5} shrink={false}>
                 <DawCompactInput
                     className="daw-readout-well w-32 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
@@ -39,14 +41,16 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     }}
                     autoFocus
                 />
-            </div>
+            </Row>
         );
     }
 
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     data-testid="project-name"
                     className="flex items-center gap-1.5 rounded-sm px-1.5 py-1 hover:bg-white/[0.04] transition-colors cursor-pointer group shrink-0"
@@ -57,7 +61,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     onDoubleClick={() => saveProject()}
                 >
                     {/* Project name in a subtle recessed badge */}
-                    <div className="daw-readout-well flex items-center gap-1 rounded-sm px-2 py-0.5">
+                    <Row gap={1} className="daw-readout-well rounded-sm px-2 py-0.5">
                         <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground truncate max-w-32 transition-colors">
                             {name}
                         </span>
@@ -72,8 +76,8 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                                 title="Unsaved changes"
                             />
                         ) : null}
-                    </div>
-                </button>
+                    </Row>
+                </Button>
             </TooltipTrigger>
             <TooltipContent>Click to rename, double-click to save</TooltipContent>
         </Tooltip>

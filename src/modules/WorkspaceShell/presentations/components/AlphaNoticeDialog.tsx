@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent } from '#/components/ui/dialog';
 
 import { SourdawLogo } from './SourdawLogo';
@@ -45,9 +47,13 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                     />
                 </div>
 
-                <div className="relative flex flex-col items-center gap-6 rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] p-10 text-center">
+                <Stack
+                    align="center"
+                    gap={6}
+                    className="relative rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] p-10 text-center"
+                >
                     {/* Logo & Title */}
-                    <div className="flex flex-col items-center gap-4">
+                    <Stack align="center" gap={4}>
                         <div className="relative">
                             <div className="absolute inset-0 rounded-full bg-[var(--color-accent-orange)]/20 blur-2xl scale-[2]" />
                             <SourdawLogo className="relative h-20 drop-shadow-[0_6px_24px_rgba(217,119,6,0.45)]" />
@@ -63,7 +69,7 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                                 Alpha Version 0.1.0
                             </p>
                         </div>
-                    </div>
+                    </Stack>
 
                     {/* Body Text */}
                     <p className="text-sm text-white/60 leading-relaxed max-w-[340px]">
@@ -74,17 +80,21 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                     </p>
 
                     {/* Actions */}
-                    <div className="flex w-full gap-3 mt-2">
-                        <button
+                    <Row align="stretch" gap={3} className="w-full mt-2">
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="group flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-[var(--color-accent-orange)]/25 bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)] transition-all duration-200 cursor-pointer hover:bg-[var(--color-accent-orange)]/20 hover:border-[var(--color-accent-orange)]/40 hover:shadow-[0_0_16px_rgba(217,119,6,0.2)]"
                             onClick={() => window.open('https://discord.gg/bJHmmfY4', '_blank')}
                         >
                             <DiscordIcon className="size-4" />
                             <span className="text-xs font-semibold">Join the Bakery</span>
-                        </button>
+                        </Button>
 
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="flex-1 flex items-center justify-center p-3 rounded-xl border border-white/[0.07] bg-white/[0.05] text-white/70 transition-all duration-200 cursor-pointer hover:bg-white/[0.1] hover:text-white"
                             onClick={() => {
@@ -92,9 +102,9 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                             }}
                         >
                             <span className="text-xs font-semibold">Let me cook</span>
-                        </button>
-                    </div>
-                </div>
+                        </Button>
+                    </Row>
+                </Stack>
             </DialogContent>
         </Dialog>
     );

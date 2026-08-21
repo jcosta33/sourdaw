@@ -15,7 +15,8 @@ const runKokoroTts = vi.hoisted(() =>
     >()
 );
 const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<MessagePort | null>>());
-const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
+type ReadRenderCacheInput = Parameters<typeof import('../../repositories/readRenderCache').readRenderCache>[0];
+const readRenderCache = vi.hoisted(() => vi.fn<(input: ReadRenderCacheInput) => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
 type ComputeRenderCacheKeyCall = Parameters<
     typeof import('../../repositories/computeRenderCacheKey').computeRenderCacheKey
@@ -28,11 +29,26 @@ const resampleTo44100 = vi.hoisted(() =>
 const applyFades = vi.hoisted(() => vi.fn());
 const sha256ArrayBuffer = vi.hoisted(() => vi.fn<() => Promise<string>>());
 const releaseGate = vi.hoisted(() => ({ kokoro: true }));
+const cancelOnnxRequest = vi.hoisted(() => vi.fn());
+const cancelTfjsRequest = vi.hoisted(() => vi.fn());
+
+type Deferred<TValue> = {
+    promise: Promise<TValue>;
+    resolve: (value: TValue) => void;
+};
+
+function deferred<TValue>(): Deferred<TValue> {
+    let resolveDeferred: (value: TValue) => void = () => undefined;
+    const promise = new Promise<TValue>((resolve) => {
+        resolveDeferred = resolve;
+    });
+    return { promise, resolve: resolveDeferred };
+}
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
 vi.mock('../../repositories/inferenceWorkerBridge', () => ({
-    inferenceWorkerBridge: { loadOnnxSession, runKokoroTts },
+    inferenceWorkerBridge: { loadOnnxSession, runKokoroTts, cancelOnnxRequest, cancelTfjsRequest },
 }));
 
 vi.mock('../../repositories/computeRenderCacheKey', () => ({ computeRenderCacheKey }));
@@ -46,6 +62,7 @@ vi.mock('../../services/audioResampler', () => ({ resampleTo44100, applyFades })
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
+import { cancelRender } from '../cancelRender';
 import { renderKokoroTts } from '../renderKokoroTts';
 
 function voice_embedding_buffer(): ArrayBuffer {
@@ -100,8 +117,10 @@ describe('renderKokoroTts', () => {
         resampleTo44100.mockReset().mockImplementation(({ audio }: { audio: Float32Array }) => Promise.resolve(audio));
         applyFades.mockReset();
         sha256ArrayBuffer.mockReset().mockResolvedValue(voice_hash('af_heart'));
+        cancelOnnxRequest.mockReset();
+        cancelTfjsRequest.mockReset();
         releaseGate.kokoro = true;
-        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
         inferenceProgressStore.set({ activeRenders: {} });
         stub_fetch_ok(voice_embedding_buffer());
     });
@@ -135,6 +154,229 @@ describe('renderKokoroTts', () => {
         expect(loadOnnxSession).not.toHaveBeenCalled();
         expect(runKokoroTts).not.toHaveBeenCalled();
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+    });
+
+    it('does not resume preparation after its queued request is cancelled', async () => {
+        const pendingCache = deferred<Float32Array | null>();
+        readRenderCache.mockReturnValue(pendingCache.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(readRenderCache).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
+        pendingCache.resolve(null);
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(readVerifiedModel).not.toHaveBeenCalled();
+        expect(loadOnnxSession).not.toHaveBeenCalled();
+        expect(runKokoroTts).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not cancel a worker during voice preparation', async () => {
+        const pendingVoice = deferred<Response>();
+        sha256ArrayBuffer.mockResolvedValue(voice_hash('bm_george'));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => pendingVoice.promise)
+        );
+
+        const render = callRender({ speakerId: 'bm_george' });
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
+        pendingVoice.resolve({
+            ok: true,
+            statusText: 'OK',
+            arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(voice_embedding_buffer()),
+        } as Response);
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(runKokoroTts).not.toHaveBeenCalled();
+    });
+
+    it('closes a model port returned after cancellation before it reaches the worker', async () => {
+        const pendingModel = deferred<MessagePort | null>();
+        const latePort = { close: vi.fn() } as unknown as MessagePort;
+        readVerifiedModel.mockReturnValue(pendingModel.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(readVerifiedModel).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingModel.resolve(latePort);
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(latePort.close).toHaveBeenCalledOnce();
+        expect(loadOnnxSession).not.toHaveBeenCalled();
+        expect(runKokoroTts).not.toHaveBeenCalled();
+    });
+
+    it('does not continue after cancellation while the ONNX session is loading', async () => {
+        const pendingSession = deferred<void>();
+        loadOnnxSession.mockReturnValue(pendingSession.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(loadOnnxSession).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingSession.resolve();
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(fetch).not.toHaveBeenCalled();
+        expect(runKokoroTts).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not continue after cancellation while the first resample is in flight', async () => {
+        const pendingResample = deferred<Float32Array>();
+        resampleTo44100.mockReturnValue(pendingResample.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(resampleTo44100).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingResample.resolve(new Float32Array(44100));
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not continue after cancellation while the stretch resample is in flight', async () => {
+        const pendingStretch = deferred<Float32Array>();
+        resampleTo44100.mockResolvedValueOnce(new Float32Array(44100)).mockReturnValueOnce(pendingStretch.promise);
+
+        const render = callRender({ targetDurationSec: 2 });
+        await vi.waitFor(() => expect(resampleTo44100).toHaveBeenCalledTimes(2));
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingStretch.resolve(new Float32Array(88200));
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not publish audio after cancellation while inference is in flight', async () => {
+        const pendingInference = deferred<{
+            type: 'tts-result';
+            requestId: string;
+            audio: Float32Array;
+            samplingRate: number;
+        }>();
+        runKokoroTts.mockReturnValue(pendingInference.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(runKokoroTts).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders[requestId!]).toMatchObject({
+            phraseId: 'phrase-1',
+            pipeline: 'kokoro',
+        });
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).toHaveBeenCalledOnce();
+        expect(cancelOnnxRequest).toHaveBeenCalledWith(requestId);
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
+        pendingInference.resolve({
+            type: 'tts-result',
+            requestId: requestId!,
+            audio: new Float32Array(2400),
+            samplingRate: 24000,
+        });
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not publish completion after cancellation while the cache write is in flight', async () => {
+        const pendingWrite = deferred<void>();
+        writeRenderCache.mockReturnValue(pendingWrite.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(writeRenderCache).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
+        pendingWrite.resolve();
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not let an older delayed cache hit reclaim a phrase from a newer render', async () => {
+        const oldCache = deferred<Float32Array | null>();
+        const newerInference = deferred<{
+            type: 'tts-result';
+            requestId: string;
+            audio: Float32Array;
+            samplingRate: number;
+        }>();
+        const cached = new Float32Array([0.25, 0.5]);
+        computeRenderCacheKey.mockResolvedValueOnce('old-cache-key').mockResolvedValueOnce('new-cache-key');
+        readRenderCache.mockImplementation(({ cacheKey }) =>
+            cacheKey === 'old-cache-key' ? oldCache.promise : Promise.resolve(null)
+        );
+        runKokoroTts.mockReturnValueOnce(newerInference.promise);
+
+        const oldRender = callRender({ text: 'old request' });
+        await vi.waitFor(() => expect(readRenderCache).toHaveBeenCalledWith({ cacheKey: 'old-cache-key' }));
+
+        const newerRender = callRender({ text: 'new request' });
+        await vi.waitFor(() => expect(runKokoroTts).toHaveBeenCalledOnce());
+        const newerOwner = renderQueueStore.value?.entries[0];
+        expect(newerOwner).toMatchObject({ phraseId: 'phrase-1', pipeline: 'kokoro', status: 'rendering-browser' });
+
+        oldCache.resolve(cached);
+        await expect(oldRender).rejects.toThrow(/cancelled or superseded/);
+
+        expect(renderQueueStore.value?.entries).toEqual([newerOwner]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('rendering-browser');
+        expect(renderQueueStore.value?.cachedPhraseIds).not.toContain('old-cache-key');
+
+        newerInference.resolve({
+            type: 'tts-result',
+            requestId: newerOwner!.requestId,
+            audio: new Float32Array(2400),
+            samplingRate: 24000,
+        });
+        await newerRender;
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+        expect(renderQueueStore.value?.cachedPhraseIds).toContain('new-cache-key');
     });
 
     it('should throw a re-download message when the Kokoro model is absent or invalid', async () => {

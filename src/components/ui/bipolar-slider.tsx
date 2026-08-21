@@ -1,5 +1,6 @@
 import { type ReactElement, type PointerEvent } from 'react';
 
+import { Row } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 
@@ -55,12 +56,12 @@ export const BipolarSlider = ({
     return (
         <div className={cn('flex flex-col gap-1 w-full', className)}>
             {label ? (
-                <div className="flex justify-between items-center px-1">
+                <Row justify="between" className="px-1">
                     <span className="text-[10px] text-muted-foreground">{label}</span>
                     <span className="text-[10px] font-mono text-muted-foreground">{formatValue(value)}</span>
-                </div>
+                </Row>
             ) : null}
-            <div className="relative pt-2 pb-1 px-1 h-6 flex items-center" onPointerDownCapture={handlePointerDown}>
+            <Row className="relative h-6 px-1 pt-2 pb-1" onPointerDownCapture={handlePointerDown}>
                 {/* Center tick */}
                 <div
                     className="absolute top-1 bottom-1 w-[2px] bg-white/10 z-0 transform -translate-x-1/2 pointer-events-none"
@@ -75,11 +76,11 @@ export const BipolarSlider = ({
                     step={step > 0 ? (step / range) * 100 : 0.1}
                     className="z-10"
                 />
-            </div>
+            </Row>
             {!label ? (
-                <div className="flex justify-center">
+                <Row align="stretch" justify="center">
                     <span className="text-[9px] font-mono text-muted-foreground">{formatValue(value)}</span>
-                </div>
+                </Row>
             ) : null}
         </div>
     );

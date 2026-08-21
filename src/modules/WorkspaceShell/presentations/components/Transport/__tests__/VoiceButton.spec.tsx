@@ -68,7 +68,7 @@ describe('VoiceButton', () => {
         expect(button).toHaveAttribute('aria-pressed', 'true');
     });
 
-    it('should dispatch the zero-argument toggle callback when clicked', () => {
+    it('passes the native browser event to the admission callback when clicked', () => {
         const onToggle = vi.fn();
 
         render(
@@ -79,6 +79,6 @@ describe('VoiceButton', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /Voice command/ }));
 
-        expect(onToggle).toHaveBeenCalledWith();
+        expect(onToggle).toHaveBeenCalledWith(expect.any(Event));
     });
 });

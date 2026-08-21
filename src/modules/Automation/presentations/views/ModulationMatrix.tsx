@@ -2,6 +2,7 @@ import { type ChangeEvent, type ReactElement, useState } from 'react';
 
 import { Plus, Trash2, X } from 'lucide-react';
 
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
@@ -472,7 +473,7 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                     {KIND_LABELS[modulator.kind]}
                 </span>
                 <Row as="label" gap={1} className="ml-2 text-[10px] text-muted-foreground">
-                    <input
+                    <DawCompactCheckbox
                         type="checkbox"
                         checked={modulator.enabled}
                         onChange={(event) => updateModulator(modulator.id, { enabled: event.target.checked })}

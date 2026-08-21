@@ -1,14 +1,15 @@
 use crate::events::{EventSink, EventSinkExt};
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use audioadapter_buffers::{direct::SequentialSliceOfVecs, owned::InterleavedOwned};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
-    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
-    WindowFunction,
+    audioadapter::Adapter, Async, FixedAsync, Resampler, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use zeroize::{Zeroize, Zeroizing};
 
 use super::{filesystem, model_download};
 
@@ -23,20 +24,104 @@ struct LoadedModel {
     name: String,
 }
 
+struct SensitiveCaptureBuffer(Vec<f32>);
+
+impl Drop for SensitiveCaptureBuffer {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+struct SensitiveF64Buffers(Vec<Vec<f64>>);
+
+impl Drop for SensitiveF64Buffers {
+    fn drop(&mut self) {
+        for buffer in &mut self.0 {
+            buffer.zeroize();
+        }
+    }
+}
+
+/// Owns rubato's output allocation until every success, error, or panic path
+/// has erased it. `InterleavedOwned` otherwise drops an ordinary `Vec<f64>`.
+struct SensitiveResamplerOutput<T: EraseOwnedOutput>(Option<T>);
+
+trait EraseOwnedOutput {
+    fn erase_owned_output(self);
+}
+
+impl EraseOwnedOutput for InterleavedOwned<f64> {
+    fn erase_owned_output(self) {
+        let mut data = self.take_data();
+        data.zeroize();
+    }
+}
+
+impl<T: EraseOwnedOutput> SensitiveResamplerOutput<T> {
+    fn new(output: T) -> Self {
+        Self(Some(output))
+    }
+}
+
+impl SensitiveResamplerOutput<InterleavedOwned<f64>> {
+    fn buffer_mut(&mut self) -> &mut InterleavedOwned<f64> {
+        self.0
+            .as_mut()
+            .expect("resampler output is present until erased")
+    }
+
+    fn copy_f32(&self, frames: usize) -> Vec<f32> {
+        let output = self
+            .0
+            .as_ref()
+            .expect("resampler output is present until erased");
+        (0..frames)
+            .map(|frame| {
+                output
+                    .read_sample(0, frame)
+                    .expect("rubato reported an output frame within its allocation")
+                    as f32
+            })
+            .collect()
+    }
+}
+
+impl<T: EraseOwnedOutput> Drop for SensitiveResamplerOutput<T> {
+    fn drop(&mut self) {
+        if let Some(output) = self.0.take() {
+            output.erase_owned_output();
+        }
+    }
+}
+
+/// `rubato::Async` retains f64 working/history buffers. Its documented reset
+/// clears those buffers, so Drop guarantees cleanup on all exit paths.
+struct SensitiveResampler<T: ResetRetainedState>(T);
+
+trait ResetRetainedState {
+    fn reset_retained_state(&mut self);
+}
+
+impl ResetRetainedState for Async<f64> {
+    fn reset_retained_state(&mut self) {
+        self.reset();
+    }
+}
+
+impl<T: ResetRetainedState> Drop for SensitiveResampler<T> {
+    fn drop(&mut self) {
+        self.0.reset_retained_state();
+    }
+}
+
 pub struct DictationState {
     loaded: Mutex<Option<LoadedModel>>,
-    /// Serializes `ensure_whisper_ready`'s check→download→build→store. The
-    /// `loaded` mutex alone cannot provide this: it must not be held across
-    /// the download's await points, so without this guard two concurrent
-    /// `ensure_whisper_ready` calls both observe not-loaded and both
-    /// download and build the ~142 MB model, the loser's context being
-    /// dropped on overwrite. Async so the second caller awaits the first.
-    /// `load_whisper_model` deliberately does *not* take this guard — the
-    /// explicit local-load entry point must never queue behind an
-    /// auto-download; explicit-load-wins is preserved by the re-check after
-    /// `produce` in `ensure_loaded_exclusively`.
+    /// Serializes local cache verification and context construction.
     load_guard: tokio::sync::Mutex<()>,
     stop_flag: Arc<AtomicBool>,
+    cancel_flag: Arc<AtomicBool>,
+    active_session_id: Arc<Mutex<Option<String>>>,
+    session_terminal: Arc<SessionTerminalControl>,
     /// Set for the lifetime of one record-then-transcribe session so a
     /// second `start_dictation` while one is in flight is rejected instead
     /// of silently resetting `stop_flag` and racing a second mic stream
@@ -51,8 +136,94 @@ impl Default for DictationState {
             loaded: Mutex::new(None),
             load_guard: tokio::sync::Mutex::new(()),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            active_session_id: Arc::new(Mutex::new(None)),
+            session_terminal: Arc::new(SessionTerminalControl::default()),
             session_active: Arc::new(AtomicBool::new(false)),
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SessionTerminalState {
+    Idle,
+    Active,
+    Cancelling,
+    ResultPublished,
+    Complete,
+}
+
+struct SessionTerminalControl {
+    state: Mutex<SessionTerminalState>,
+    complete: Condvar,
+}
+
+impl Default for SessionTerminalControl {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(SessionTerminalState::Idle),
+            complete: Condvar::new(),
+        }
+    }
+}
+
+impl SessionTerminalControl {
+    fn begin(&self) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| format!("Lock error: {error}"))?;
+        *state = SessionTerminalState::Active;
+        Ok(())
+    }
+
+    fn claim_result(&self) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if *state != SessionTerminalState::Active {
+            return false;
+        }
+        *state = SessionTerminalState::ResultPublished;
+        true
+    }
+
+    fn cancel_and_wait(&self) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| format!("Lock error: {error}"))?;
+        if *state == SessionTerminalState::ResultPublished
+            || *state == SessionTerminalState::Complete
+        {
+            return Err("Dictation session already resolved.".to_string());
+        }
+        if *state != SessionTerminalState::Active && *state != SessionTerminalState::Cancelling {
+            return Err("Dictation session is not active.".to_string());
+        }
+        *state = SessionTerminalState::Cancelling;
+        while *state != SessionTerminalState::Complete {
+            state = self
+                .complete
+                .wait(state)
+                .map_err(|error| format!("Lock error: {error}"))?;
+        }
+        Ok(())
+    }
+
+    fn finish(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            *state = SessionTerminalState::Complete;
+            self.complete.notify_all();
+        }
+    }
+
+    #[cfg(test)]
+    fn is_cancelling(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| *state == SessionTerminalState::Cancelling)
+            .unwrap_or(false)
     }
 }
 
@@ -72,6 +243,9 @@ impl Default for DictationState {
 struct DictationSessionGuard {
     session_active: Arc<AtomicBool>,
     events: Arc<dyn EventSink>,
+    session_id: String,
+    active_session_id: Arc<Mutex<Option<String>>>,
+    terminal: Arc<SessionTerminalControl>,
     /// Set by `emit_result`/`emit_error` once the session has told the
     /// frontend what happened, so `Drop`'s fallback below does not also
     /// double-emit for a path that already resolved normally.
@@ -80,9 +254,28 @@ struct DictationSessionGuard {
 
 impl DictationSessionGuard {
     fn new(session_active: Arc<AtomicBool>, events: Arc<dyn EventSink>) -> Self {
+        Self::with_session(
+            session_active,
+            Arc::new(Mutex::new(None)),
+            Arc::new(SessionTerminalControl::default()),
+            events,
+            "test-session".to_string(),
+        )
+    }
+
+    fn with_session(
+        session_active: Arc<AtomicBool>,
+        active_session_id: Arc<Mutex<Option<String>>>,
+        terminal: Arc<SessionTerminalControl>,
+        events: Arc<dyn EventSink>,
+        session_id: String,
+    ) -> Self {
         Self {
             session_active,
+            active_session_id,
+            terminal,
             events,
+            session_id,
             emitted: false,
         }
     }
@@ -96,14 +289,18 @@ impl DictationSessionGuard {
     /// Emit the session's `dictation-error` and mark it resolved.
     fn emit_error(&mut self, message: String) {
         self.emitted = true;
-        self.events
-            .emit("dictation-error", DictationErrorPayload { message });
+        self.events.emit(
+            "dictation-error",
+            DictationErrorPayload {
+                session_id: self.session_id.clone(),
+                message,
+            },
+        );
     }
 }
 
 impl Drop for DictationSessionGuard {
     fn drop(&mut self) {
-        self.session_active.store(false, Ordering::SeqCst);
         // Every ordinary exit path calls `emit_result`/`emit_error` before
         // returning. A path that did not — a panic unwinding out of
         // `transcribe` (whisper FFI included), or the closure never running
@@ -113,10 +310,21 @@ impl Drop for DictationSessionGuard {
             self.events.emit(
                 "dictation-error",
                 DictationErrorPayload {
+                    session_id: self.session_id.clone(),
                     message: "Dictation session ended unexpectedly.".to_string(),
                 },
             );
         }
+        // A successful cancellation acknowledgement may only be released
+        // after the terminal event and every local sensitive buffer have
+        // unwound from the worker scope.
+        self.session_active.store(false, Ordering::SeqCst);
+        if let Ok(mut active) = self.active_session_id.lock() {
+            if active.as_deref() == Some(self.session_id.as_str()) {
+                *active = None;
+            }
+        }
+        self.terminal.finish();
     }
 }
 
@@ -130,6 +338,7 @@ pub struct AsrStatus {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DictationResult {
+    pub session_id: String,
     pub text: String,
     pub duration_ms: u64,
 }
@@ -140,6 +349,7 @@ pub struct DictationResult {
 /// `dictation-result`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DictationErrorPayload {
+    pub session_id: String,
     pub message: String,
 }
 
@@ -153,7 +363,11 @@ enum DictationEmission {
     TooLong,
 }
 
-fn resolve_dictation_emission(text: String, duration_ms: u64) -> DictationEmission {
+fn resolve_dictation_emission(
+    session_id: String,
+    text: String,
+    duration_ms: u64,
+) -> DictationEmission {
     let text_units = text
         .encode_utf16()
         .take(MAX_DICTATION_TEXT_UTF16_UNITS + 1)
@@ -162,7 +376,11 @@ fn resolve_dictation_emission(text: String, duration_ms: u64) -> DictationEmissi
         return DictationEmission::TooLong;
     }
 
-    DictationEmission::Result(DictationResult { text, duration_ms })
+    DictationEmission::Result(DictationResult {
+        session_id,
+        text,
+        duration_ms,
+    })
 }
 
 /// Pure mapping from the loaded model's name to the status the frontend
@@ -191,59 +409,9 @@ fn try_begin_dictation_session(session_active: &AtomicBool) -> Result<(), String
     Ok(())
 }
 
-/// Serializes "observe not-loaded → produce → store" so a second concurrent
-/// caller awaits the first and receives its value instead of repeating the
-/// production. The already-loaded check runs *under* `load_guard`: checking
-/// before acquiring is exactly the check-then-act race this exists to close.
-///
-/// The slot is re-checked *after* `produce` as well: `load_whisper_model`
-/// writes the slot without taking `load_guard` (so an explicit local load
-/// never queues behind an in-flight auto-download), and an explicit load
-/// that lands mid-produce must win — the produced value is discarded and the
-/// explicitly loaded one returned, never overwritten.
-///
-/// Generic so the exclusion contract is testable without a real
-/// `WhisperContext` — see the `#[cfg(test)]` module.
-async fn ensure_loaded_exclusively<T, Fut>(
-    loaded: &Mutex<Option<T>>,
-    load_guard: &tokio::sync::Mutex<()>,
-    produce: impl FnOnce() -> Fut,
-) -> Result<T, String>
-where
-    T: Clone,
-    Fut: std::future::Future<Output = Result<T, String>>,
-{
-    let _exclusive = load_guard.lock().await;
-
-    {
-        let guard = loaded.lock().map_err(|e| format!("Lock error: {e}"))?;
-        if let Some(value) = guard.as_ref() {
-            return Ok(value.clone());
-        }
-    }
-
-    let value = produce().await?;
-
-    let mut guard = loaded.lock().map_err(|e| format!("Lock error: {e}"))?;
-    if let Some(existing) = guard.as_ref() {
-        // An explicit load landed while we were producing: it wins.
-        return Ok(existing.clone());
-    }
-    *guard = Some(value.clone());
-    Ok(value)
-}
-
 // ── Commands ────────────────────────────────────────────────────────────
 
-/// Load a Whisper GGML model from disk. Call once on startup or
-/// lazily before the first dictation session.
-///
-/// Deliberately replaces whatever is loaded, and deliberately does *not*
-/// take `load_guard`: this is the entry point a user reaches for when the
-/// auto-download is slow, so it must never queue behind one (the download is
-/// bounded only by a 3600 s HTTP timeout). An `ensure_whisper_ready` that
-/// finishes later will not overwrite this explicit load — its post-produce
-/// re-check in `ensure_loaded_exclusively` yields to the value stored here.
+/// Load a Whisper GGML model from a deliberate local file selection.
 pub async fn load_whisper_model(
     model_path: String,
     state: &DictationState,
@@ -288,30 +456,26 @@ const WHISPER_MODEL: model_download::ModelDownload = model_download::ModelDownlo
     expected_size_bytes: WHISPER_MODEL_SIZE_BYTES,
 };
 
-/// Ensure the Whisper model is downloaded and loaded.
-/// Auto-downloads `ggml-base.en.bin` (~142MB) from HuggingFace on first use.
-///
-/// The already-loaded short-circuit reports whatever model is actually
-/// loaded, not the default file: a caller may have loaded a custom model via
-/// `load_whisper_model` first. Concurrent calls serialize on `load_guard`
-/// inside `ensure_loaded_exclusively`, so exactly one downloads and builds.
-pub async fn ensure_whisper_ready(state: &DictationState) -> Result<AsrStatus, String> {
-    let loaded = ensure_loaded_exclusively(&state.loaded, &state.load_guard, || async {
-        let model_path = model_download::ensure_model(&WHISPER_MODEL).await?;
-        let model_path_str = model_path.to_string_lossy().to_string();
-
-        let ctx =
-            WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
-                .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
-
-        eprintln!("[Whisper] Model loaded: {}", WHISPER_MODEL_FILE);
-
-        Ok(LoadedModel {
-            ctx: Arc::new(ctx),
-            name: WHISPER_MODEL_FILE.to_string(),
-        })
-    })
-    .await?;
+/// Verify and load the bundled Whisper artifact from the local model cache.
+/// This boundary never creates cache directories, repairs files, or downloads.
+pub async fn load_cached_whisper_model(state: &DictationState) -> Result<AsrStatus, String> {
+    let model_bytes = model_download::read_verified_cached_model(&WHISPER_MODEL).await?;
+    let _exclusive = state.load_guard.lock().await;
+    let loaded = LoadedModel {
+        ctx: Arc::new(
+            WhisperContext::new_from_buffer_with_params(
+                &model_bytes,
+                WhisperContextParameters::default(),
+            )
+            .map_err(|e| format!("Failed to load verified local Whisper model: {e}"))?,
+        ),
+        name: WHISPER_MODEL_FILE.to_string(),
+    };
+    let mut guard = state
+        .loaded
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+    *guard = Some(loaded.clone());
 
     Ok(AsrStatus {
         loaded: true,
@@ -327,9 +491,13 @@ pub async fn ensure_whisper_ready(state: &DictationState) -> Result<AsrStatus, S
 /// (including an empty transcription) or a `dictation-error` event on
 /// failure. Rejects a second call while a session is already in flight.
 pub async fn start_dictation(
+    session_id: String,
     events: Arc<dyn EventSink>,
     state: &DictationState,
-) -> Result<(), String> {
+) -> Result<String, String> {
+    if session_id.is_empty() || session_id.len() > 128 {
+        return Err("Dictation session id is invalid.".to_string());
+    }
     let loaded = {
         let guard = state
             .loaded
@@ -341,35 +509,62 @@ pub async fn start_dictation(
     };
 
     try_begin_dictation_session(&state.session_active)?;
+    if let Err(error) = state.session_terminal.begin() {
+        state.session_active.store(false, Ordering::SeqCst);
+        return Err(error);
+    }
+    {
+        let mut active = match state.active_session_id.lock() {
+            Ok(active) => active,
+            Err(error) => {
+                state.session_active.store(false, Ordering::SeqCst);
+                return Err(format!("Lock error: {error}"));
+            }
+        };
+        *active = Some(session_id.clone());
+    }
 
-    // Reset stop flag
+    // Reset terminal controls only after this session owns the active id.
     state.stop_flag.store(false, Ordering::SeqCst);
+    state.cancel_flag.store(false, Ordering::SeqCst);
     let stop = state.stop_flag.clone();
+    let cancelled = state.cancel_flag.clone();
     let ctx = loaded.ctx;
 
     // Built here, right after the compare-exchange above, and moved whole
     // into the closure below — see `DictationSessionGuard` for why building
     // it as the closure's first statement would leave a gap where a spawn
     // that never runs wedges `session_active` forever.
-    let mut session_guard = DictationSessionGuard::new(state.session_active.clone(), events);
+    let mut session_guard = DictationSessionGuard::with_session(
+        state.session_active.clone(),
+        state.active_session_id.clone(),
+        state.session_terminal.clone(),
+        events,
+        session_id.clone(),
+    );
 
     tokio::task::spawn_blocking(move || {
         let record_result = record_mic(&stop);
         match record_result {
             Ok((samples, sample_rate, channels)) => {
+                let mut raw_audio = Zeroizing::new(samples);
+                if cancelled.load(Ordering::SeqCst) {
+                    session_guard.emit_error("Dictation session was cancelled.".to_string());
+                    return;
+                }
                 let start = std::time::Instant::now();
 
                 // Convert to mono if stereo
-                let mono = if channels > 1 {
-                    to_mono(&samples, channels as usize)
+                let mut mono_audio = if channels > 1 {
+                    Zeroizing::new(to_mono(&raw_audio, channels as usize))
                 } else {
-                    samples
+                    Zeroizing::new(std::mem::take(&mut *raw_audio))
                 };
 
                 // Resample to 16kHz
                 let audio_16k = if sample_rate != 16000 {
-                    match resample_to_16k(&mono, sample_rate) {
-                        Ok(resampled) => resampled,
+                    match resample_to_16k(&mono_audio, sample_rate) {
+                        Ok(resampled) => Zeroizing::new(resampled),
                         Err(e) => {
                             session_guard
                                 .emit_error(format!("Resampling the recording failed: {e}"));
@@ -377,14 +572,31 @@ pub async fn start_dictation(
                         }
                     }
                 } else {
-                    mono
+                    Zeroizing::new(std::mem::take(&mut *mono_audio))
                 };
+
+                if cancelled.load(Ordering::SeqCst) {
+                    session_guard.emit_error("Dictation session was cancelled.".to_string());
+                    return;
+                }
 
                 // Run Whisper inference
                 match transcribe(&ctx, &audio_16k) {
                     Ok(text) => {
+                        let mut text = Zeroizing::new(text);
                         let duration_ms = start.elapsed().as_millis() as u64;
-                        match resolve_dictation_emission(text, duration_ms) {
+                        if cancelled.load(Ordering::SeqCst)
+                            || !session_guard.terminal.claim_result()
+                        {
+                            session_guard
+                                .emit_error("Dictation session was cancelled.".to_string());
+                            return;
+                        }
+                        match resolve_dictation_emission(
+                            session_guard.session_id.clone(),
+                            std::mem::take(&mut *text),
+                            duration_ms,
+                        ) {
                             DictationEmission::Result(result) => {
                                 session_guard.emit_result(result);
                             }
@@ -409,13 +621,39 @@ pub async fn start_dictation(
         // stays silent.
     });
 
+    Ok(session_id)
+}
+
+fn control_active_session(
+    state: &DictationState,
+    session_id: &str,
+    cancelled: bool,
+) -> Result<(), String> {
+    let active = state
+        .active_session_id
+        .lock()
+        .map_err(|error| format!("Lock error: {error}"))?;
+    if active.as_deref() != Some(session_id) {
+        return Err("Dictation session is not active.".to_string());
+    }
+    drop(active);
+    if cancelled {
+        state.cancel_flag.store(true, Ordering::SeqCst);
+        state.stop_flag.store(true, Ordering::SeqCst);
+        return state.session_terminal.cancel_and_wait();
+    }
+    state.stop_flag.store(true, Ordering::SeqCst);
     Ok(())
 }
 
-/// Stop the current dictation recording.
-pub fn stop_dictation(state: &DictationState) -> Result<(), String> {
-    state.stop_flag.store(true, Ordering::SeqCst);
-    Ok(())
+/// Stop capture for the exact session and begin local transcription.
+pub fn stop_dictation(session_id: String, state: &DictationState) -> Result<(), String> {
+    control_active_session(state, &session_id, false)
+}
+
+/// Cancel the exact session, discard capture, and suppress any transcript.
+pub fn cancel_dictation(session_id: String, state: &DictationState) -> Result<(), String> {
+    control_active_session(state, &session_id, true)
 }
 
 /// Check the current ASR engine status.
@@ -433,6 +671,29 @@ pub async fn get_asr_status(state: &DictationState) -> Result<AsrStatus, String>
 
 /// Record audio from the default input device until the stop flag is set
 /// or 15 seconds elapse. Returns (samples, sample_rate, channels).
+fn report_cpal_runtime_failure(
+    stream_failed: &AtomicBool,
+    stream_failure: &Mutex<Option<String>>,
+    error: impl std::fmt::Display,
+) {
+    // The audio callback cannot wait for the capture buffer or terminal lock.
+    stream_failed.store(true, Ordering::SeqCst);
+    if let Ok(mut failure) = stream_failure.try_lock() {
+        if failure.is_none() {
+            *failure = Some(format!("Microphone stream failed: {error}"));
+        }
+    }
+}
+
+fn cpal_runtime_failure_callback(
+    stream_failed: Arc<AtomicBool>,
+    stream_failure: Arc<Mutex<Option<String>>>,
+) -> impl FnMut(cpal::Error) + Send + 'static {
+    move |error| {
+        report_cpal_runtime_failure(&stream_failed, &stream_failure, error);
+    }
+}
+
 fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("No microphone found")?;
@@ -443,20 +704,24 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
 
     let sample_rate = config.sample_rate();
     let channels = config.channels();
-    let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(
-        sample_rate as usize * 15 * channels as usize,
+    let capacity = sample_rate as usize * 15 * channels as usize;
+    let buffer: Arc<Mutex<SensitiveCaptureBuffer>> = Arc::new(Mutex::new(SensitiveCaptureBuffer(
+        Vec::with_capacity(capacity),
     )));
+    let stream_failed = Arc::new(AtomicBool::new(false));
+    let stream_failure = Arc::new(Mutex::new(None::<String>));
 
     let buf_writer = buffer.clone();
     let stream = device
         .build_input_stream(
             config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut buf) = buf_writer.lock() {
-                    buf.extend_from_slice(data);
+                if let Ok(mut buf) = buf_writer.try_lock() {
+                    let count = capacity.saturating_sub(buf.0.len()).min(data.len());
+                    buf.0.extend_from_slice(&data[..count]);
                 }
             },
-            |e| eprintln!("[Dictation] Mic stream error: {e}"),
+            cpal_runtime_failure_callback(stream_failed.clone(), stream_failure.clone()),
             None,
         )
         .map_err(|e| format!("Failed to build mic stream: {e}"))?;
@@ -468,7 +733,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     // Poll the stop flag every 50ms, up to 15 seconds
     let max_iters = 15_000 / 50;
     for _ in 0..max_iters {
-        if stop.load(Ordering::SeqCst) {
+        if stop.load(Ordering::SeqCst) || stream_failed.load(Ordering::SeqCst) {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -476,12 +741,33 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
 
     drop(stream);
 
-    let samples = buffer
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?
-        .clone();
+    let buffer = Arc::try_unwrap(buffer)
+        .map_err(|_| "Microphone capture did not release its callback buffer.".to_string())?
+        .into_inner()
+        .map_err(|error| format!("Lock error: {error}"))?;
+    let samples = finish_capture_after_stream_status(buffer, &stream_failed, &stream_failure)?;
 
     Ok((samples, sample_rate, channels))
+}
+
+/// CPAL's error callback is authoritative: do not extract a partial capture
+/// after it fired. Dropping the owned buffer on this error path zeroizes its
+/// contents before the dictation worker can resample or transcribe anything.
+fn finish_capture_after_stream_status(
+    mut buffer: SensitiveCaptureBuffer,
+    stream_failed: &AtomicBool,
+    stream_failure: &Mutex<Option<String>>,
+) -> Result<Vec<f32>, String> {
+    if stream_failed.load(Ordering::SeqCst) {
+        let error = stream_failure
+            .lock()
+            .map_err(|error| format!("Lock error: {error}"))?
+            .take()
+            .unwrap_or_else(|| "Microphone stream failed.".to_string());
+        return Err(error);
+    }
+
+    Ok(std::mem::take(&mut buffer.0))
 }
 
 /// Convert interleaved multi-channel audio to mono by averaging channels.
@@ -490,6 +776,17 @@ fn to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
         .chunks(channels)
         .map(|frame| frame.iter().sum::<f32>() / channels as f32)
         .collect()
+}
+
+/// Runs a fallible resampler step while retaining its f64 input under RAII
+/// erasure. The guard exists before the supplied operation begins, so both an
+/// error return and panic unwind erase the converted microphone samples.
+fn with_sensitive_resampler_input<T>(
+    input: Vec<f64>,
+    operation: impl FnOnce(&[Vec<f64>]) -> Result<T, String>,
+) -> Result<T, String> {
+    let input = SensitiveF64Buffers(vec![input]);
+    operation(&input.0)
 }
 
 /// Resample mono audio from `src_rate` to 16 kHz using rubato.
@@ -508,20 +805,27 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 
     let ratio = 16_000f64 / f64::from(src_rate);
 
-    let mut resampler = Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)
-        .map_err(|e| format!("Failed to create resampler: {e}"))?;
+    let mut resampler = SensitiveResampler(
+        Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)
+            .map_err(|e| format!("Failed to create resampler: {e}"))?,
+    );
 
-    let input_f64: Vec<f64> = input.iter().map(|&s| s as f64).collect();
-    let frames = input_f64.len();
-    let channels = [input_f64];
-    let adapter = SequentialSliceOfVecs::new(&channels, 1, frames)
-        .map_err(|e| format!("Resampler buffer error: {e}"))?;
+    let input_f64 = input.iter().map(|&sample| sample as f64).collect();
+    let frames = input.len();
+    let resampled = with_sensitive_resampler_input(input_f64, |channels| {
+        let adapter = SequentialSliceOfVecs::new(channels, 1, frames)
+            .map_err(|error| format!("Resampler buffer error: {error}"))?;
+        let needed = resampler.0.process_all_needed_output_len(frames);
+        let mut output = SensitiveResamplerOutput::new(InterleavedOwned::new(0.0, 1, needed));
+        let result = resampler
+            .0
+            .process_all_into_buffer(&adapter, output.buffer_mut(), frames, None)
+            .map(|(_input, output_len)| output.copy_f32(output_len));
+        drop(adapter);
+        result.map_err(|error| format!("Resample error: {error}"))
+    })?;
 
-    let resampled = resampler
-        .process_all(&adapter, frames, None)
-        .map_err(|e| format!("Resample error: {e}"))?;
-
-    Ok(resampled.take_data().iter().map(|&s| s as f32).collect())
+    Ok(resampled)
 }
 
 /// Run Whisper inference on 16 kHz mono f32 audio.
@@ -553,10 +857,92 @@ fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::Cell, rc::Rc};
+
+    struct ResetProbe(Rc<Cell<bool>>);
+
+    impl ResetRetainedState for ResetProbe {
+        fn reset_retained_state(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    struct EraseOutputProbe(Rc<Cell<bool>>);
+
+    impl EraseOwnedOutput for EraseOutputProbe {
+        fn erase_owned_output(self) {
+            self.0.set(true);
+        }
+    }
+
+    #[test]
+    fn local_voice_loader_has_no_route_into_the_model_downloader_or_network_client() {
+        const SPEECH_SOURCE: &str = include_str!("speech.rs");
+        let production_source = SPEECH_SOURCE
+            .rsplit_once("#[cfg(test)]")
+            .map(|(source, _tests)| source)
+            .expect("speech production source precedes its test module");
+
+        assert!(production_source.contains("model_download::read_verified_cached_model"));
+        assert!(!production_source.contains("model_download::ensure_model"));
+        assert!(!production_source.contains("reqwest::"));
+    }
+
+    #[test]
+    fn resampler_guards_clean_up_on_success_error_and_unwind() {
+        let success_reset = Rc::new(Cell::new(false));
+        {
+            let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&success_reset)));
+        }
+        assert!(success_reset.get());
+
+        let error_reset = Rc::new(Cell::new(false));
+        let error = (|| {
+            let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&error_reset)));
+            Err::<(), _>("forced resampler error")
+        })();
+        assert_eq!(error, Err("forced resampler error"));
+        assert!(error_reset.get());
+
+        let unwind_reset = Rc::new(Cell::new(false));
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&unwind_reset)));
+            panic!("forced resampler unwind");
+        }));
+        assert!(unwind.is_err());
+        assert!(unwind_reset.get());
+
+        let success_output = Rc::new(Cell::new(false));
+        {
+            let _output =
+                SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&success_output)));
+        }
+        assert!(success_output.get());
+
+        let error_output = Rc::new(Cell::new(false));
+        let error = (|| {
+            let _output = SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&error_output)));
+            Err::<(), _>("forced output error")
+        })();
+        assert_eq!(error, Err("forced output error"));
+        assert!(error_output.get());
+
+        let unwind_output = Rc::new(Cell::new(false));
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _output =
+                SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&unwind_output)));
+            panic!("forced output unwind");
+        }));
+        assert!(unwind.is_err());
+        assert!(unwind_output.get());
+
+        let result = resample_to_16k(&vec![0.25; 4_800], 48_000).unwrap();
+        assert!(!result.is_empty());
+    }
 
     #[test]
     fn dictation_event_source_boundary_admits_only_bounded_final_text() {
-        match resolve_dictation_emission("hello world".to_string(), 1500) {
+        match resolve_dictation_emission("session".to_string(), "hello world".to_string(), 1500) {
             DictationEmission::Result(result) => {
                 assert_eq!(result.text, "hello world");
                 assert_eq!(result.duration_ms, 1500);
@@ -566,15 +952,19 @@ mod tests {
 
         let exact_unicode_limit = "😀".repeat(16_384);
         assert!(matches!(
-            resolve_dictation_emission(exact_unicode_limit, 1501),
+            resolve_dictation_emission("session".to_string(), exact_unicode_limit, 1501),
             DictationEmission::Result(_)
         ));
         assert!(matches!(
-            resolve_dictation_emission("x".repeat(32_769), 1502),
+            resolve_dictation_emission("session".to_string(), "x".repeat(32_769), 1502),
             DictationEmission::TooLong
         ));
         assert!(matches!(
-            resolve_dictation_emission(format!("{}x", "😀".repeat(16_384)), 1503),
+            resolve_dictation_emission(
+                "session".to_string(),
+                format!("{}x", "😀".repeat(16_384)),
+                1503
+            ),
             DictationEmission::TooLong
         ));
     }
@@ -585,7 +975,7 @@ mod tests {
     /// intelligible) and must still resolve to a deliverable result.
     #[test]
     fn empty_transcription_resolves_to_an_empty_deliverable_result_not_silence() {
-        match resolve_dictation_emission(String::new(), 800) {
+        match resolve_dictation_emission("session".to_string(), String::new(), 800) {
             DictationEmission::Result(result) => {
                 assert_eq!(result.text, "");
                 assert_eq!(result.duration_ms, 800);
@@ -600,9 +990,8 @@ mod tests {
         assert!(status.loaded);
         assert_eq!(status.model_name, Some("my-custom-model.bin".to_string()));
 
-        // ensure_whisper_ready's short-circuit must report the model that is
-        // actually loaded, never the default file, when a custom model was
-        // loaded first via load_whisper_model.
+        // A custom local model remains the status source when it was loaded
+        // before the cached Whisper artifact.
         let custom = asr_status_from_loaded_name(Some(WHISPER_MODEL_FILE));
         assert_eq!(custom.model_name, Some(WHISPER_MODEL_FILE.to_string()));
         let other = asr_status_from_loaded_name(Some("fine-tuned-en.bin"));
@@ -633,6 +1022,54 @@ mod tests {
         // starting again is allowed.
         session_active.store(false, Ordering::SeqCst);
         assert!(try_begin_dictation_session(&session_active).is_ok());
+    }
+
+    #[test]
+    fn cancel_ack_linearizes_result_publication_until_worker_cleanup_completes() {
+        let terminal = Arc::new(SessionTerminalControl::default());
+        terminal.begin().unwrap();
+        let start_race = Arc::new(std::sync::Barrier::new(2));
+        let worker_terminal = terminal.clone();
+        let worker_race = start_race.clone();
+
+        let worker = std::thread::spawn(move || {
+            worker_race.wait();
+            while !worker_terminal.is_cancelling() {
+                std::thread::yield_now();
+            }
+            // The result edge loses to a successfully acknowledged cancel.
+            assert!(!worker_terminal.claim_result());
+            // This is the worker's final cleanup edge, after capture,
+            // resampling, and inference locals have unwound.
+            worker_terminal.finish();
+        });
+
+        start_race.wait();
+        assert!(terminal.cancel_and_wait().is_ok());
+        worker.join().unwrap();
+        assert!(!terminal.claim_result());
+    }
+
+    #[test]
+    fn cpal_runtime_error_rejects_before_capture_sample_extraction() {
+        let stream_failed = Arc::new(AtomicBool::new(false));
+        let stream_failure = Arc::new(Mutex::new(None));
+        let mut error_callback =
+            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&stream_failure));
+        error_callback(cpal::Error::with_message(
+            cpal::ErrorKind::DeviceNotAvailable,
+            "disconnected",
+        ));
+        let result = finish_capture_after_stream_status(
+            SensitiveCaptureBuffer(vec![0.2, -0.3]),
+            &stream_failed,
+            &stream_failure,
+        );
+
+        assert_eq!(
+            result,
+            Err("Microphone stream failed: disconnected".to_string())
+        );
     }
 
     /// Collects every event a mock `EventSink` receives, so a test can assert
@@ -669,6 +1106,7 @@ mod tests {
         {
             let mut guard = DictationSessionGuard::new(session_active.clone(), sink.clone());
             guard.emit_result(DictationResult {
+                session_id: "test-session".to_string(),
                 text: "hi".to_string(),
                 duration_ms: 10,
             });
@@ -725,151 +1163,5 @@ mod tests {
         assert!(!session_active.load(Ordering::SeqCst));
         assert_eq!(sink.events().len(), 1);
         assert_eq!(sink.events()[0].0, "dictation-error");
-    }
-
-    /// Regression for the `ensure_whisper_ready` check-then-act race: two
-    /// concurrent callers both observed not-loaded and both downloaded and
-    /// built the ~142 MB model, the loser's context dropped on overwrite.
-    /// The first caller is parked inside `produce` until the second has been
-    /// spawned and given time to run, so before the fix the second caller's
-    /// `produce` also runs and the build count reaches two; with the
-    /// exclusion it awaits the first and receives its value.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn concurrent_ensure_calls_build_exactly_once_and_share_the_result() {
-        use std::sync::atomic::AtomicUsize;
-
-        let loaded = Arc::new(Mutex::new(None::<u32>));
-        let load_guard = Arc::new(tokio::sync::Mutex::new(()));
-        let builds = Arc::new(AtomicUsize::new(0));
-        let first_entered = Arc::new(tokio::sync::Notify::new());
-        let release_first = Arc::new(tokio::sync::Notify::new());
-
-        let first = {
-            let loaded = loaded.clone();
-            let load_guard = load_guard.clone();
-            let builds = builds.clone();
-            let first_entered = first_entered.clone();
-            let release_first = release_first.clone();
-            tokio::spawn(async move {
-                ensure_loaded_exclusively(&loaded, &load_guard, || async {
-                    builds.fetch_add(1, Ordering::SeqCst);
-                    first_entered.notify_one();
-                    release_first.notified().await;
-                    Ok(7_u32)
-                })
-                .await
-            })
-        };
-        first_entered.notified().await;
-
-        let second = {
-            let loaded = loaded.clone();
-            let load_guard = load_guard.clone();
-            let builds = builds.clone();
-            tokio::spawn(async move {
-                ensure_loaded_exclusively(&loaded, &load_guard, || async {
-                    builds.fetch_add(1, Ordering::SeqCst);
-                    Ok(9_u32)
-                })
-                .await
-            })
-        };
-        // Give the second caller time to run its produce if the exclusion is
-        // broken; with the exclusion it parks on the guard here.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        release_first.notify_one();
-
-        let first_result = first.await.expect("first task must not panic");
-        let second_result = second.await.expect("second task must not panic");
-
-        assert_eq!(first_result, Ok(7));
-        assert_eq!(
-            second_result,
-            Ok(7),
-            "second caller must share the first build"
-        );
-        assert_eq!(
-            builds.load(Ordering::SeqCst),
-            1,
-            "exactly one build may run"
-        );
-    }
-
-    /// `load_whisper_model` writes the slot directly, without taking
-    /// `load_guard`, so an explicit load can land while
-    /// `ensure_loaded_exclusively` is mid-produce. The explicit load must
-    /// win: the produced value is discarded, and the slot is never
-    /// overwritten with it.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn an_explicit_load_landing_mid_produce_wins_over_the_produced_value() {
-        let loaded = Arc::new(Mutex::new(None::<u32>));
-        let load_guard = Arc::new(tokio::sync::Mutex::new(()));
-        let produce_entered = Arc::new(tokio::sync::Notify::new());
-        let release_produce = Arc::new(tokio::sync::Notify::new());
-
-        let ensure = {
-            let loaded = loaded.clone();
-            let load_guard = load_guard.clone();
-            let produce_entered = produce_entered.clone();
-            let release_produce = release_produce.clone();
-            tokio::spawn(async move {
-                ensure_loaded_exclusively(&loaded, &load_guard, || async {
-                    produce_entered.notify_one();
-                    release_produce.notified().await;
-                    Ok(7_u32)
-                })
-                .await
-            })
-        };
-        produce_entered.notified().await;
-
-        // Simulates load_whisper_model: store the explicit value under the
-        // `loaded` mutex alone, while the producer is parked mid-produce.
-        *loaded.lock().unwrap() = Some(42);
-        release_produce.notify_one();
-
-        let result = ensure.await.expect("ensure task must not panic");
-        assert_eq!(result, Ok(42), "the explicit load must win");
-        assert_eq!(
-            *loaded.lock().unwrap(),
-            Some(42),
-            "the produced value must never overwrite the explicit load"
-        );
-    }
-
-    /// A failed production releases the exclusion and stores nothing, so the
-    /// next caller retries instead of observing a poisoned or half-loaded
-    /// state.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_failed_load_releases_the_exclusion_and_the_next_caller_retries() {
-        use std::sync::atomic::AtomicUsize;
-
-        let loaded = Mutex::new(None::<u32>);
-        let load_guard = tokio::sync::Mutex::new(());
-        let attempts = AtomicUsize::new(0);
-
-        let failed = ensure_loaded_exclusively(&loaded, &load_guard, || async {
-            attempts.fetch_add(1, Ordering::SeqCst);
-            Err("download failed".to_string())
-        })
-        .await;
-        assert_eq!(failed, Err("download failed".to_string()));
-
-        let retried = ensure_loaded_exclusively(&loaded, &load_guard, || async {
-            attempts.fetch_add(1, Ordering::SeqCst);
-            Ok(3_u32)
-        })
-        .await;
-        assert_eq!(retried, Ok(3));
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
-
-        // Once stored, later callers get the value without re-producing.
-        let cached = ensure_loaded_exclusively(&loaded, &load_guard, || async {
-            attempts.fetch_add(1, Ordering::SeqCst);
-            Ok(4_u32)
-        })
-        .await;
-        assert_eq!(cached, Ok(3));
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 }

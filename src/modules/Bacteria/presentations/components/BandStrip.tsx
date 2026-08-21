@@ -5,6 +5,7 @@ import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type BacteriaBand } from '../../models/BacteriaPatch';
 
@@ -41,7 +42,9 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                 Band {index + 1}
             </span>
             <Row align="stretch" gap={0.5}>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
                         band.solo ? 'bg-amber-500 text-black' : 'text-muted-foreground/30 hover:text-foreground'
@@ -52,8 +55,10 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     }}
                 >
                     S
-                </button>
-                <button
+                </Button>
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
                         band.mute ? 'bg-red-500 text-white' : 'text-muted-foreground/30 hover:text-foreground'
@@ -64,7 +69,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     }}
                 >
                     M
-                </button>
+                </Button>
             </Row>
         </Row>
 

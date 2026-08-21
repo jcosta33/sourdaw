@@ -7,6 +7,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';
 import { trackStore, timelineViewStore } from '#/modules/Arrangement/stores';
@@ -273,7 +274,9 @@ export const AutomationBottomPanel = (): ReactElement => {
                                 style={{ height: lane.collapsed ? SPARKLINE_HEIGHT : LANE_HEIGHT }}
                             >
                                 <Row grow gap={1} className="self-start">
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         className="size-3.5 flex items-center justify-center text-muted-foreground/50 hover:text-foreground transition-colors shrink-0"
                                         onClick={() => toggleLaneCollapsed(lane.id)}
@@ -284,7 +287,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                                         ) : (
                                             <ChevronDown className="size-2.5" />
                                         )}
-                                    </button>
+                                    </Button>
                                     <div
                                         className="size-2 rounded-full shrink-0"
                                         style={{ backgroundColor: lane.color ?? trackColor }}
@@ -292,14 +295,16 @@ export const AutomationBottomPanel = (): ReactElement => {
                                     <span className="text-[9px] text-muted-foreground truncate flex-1">
                                         {lane.parameterName}
                                     </span>
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         type="button"
                                         className="size-3.5 flex items-center justify-center text-muted-foreground/30 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                                         onClick={() => handleRemoveLane(lane.id)}
                                         aria-label={`Remove ${lane.parameterName} lane`}
                                     >
                                         <Trash2 className="size-2.5" />
-                                    </button>
+                                    </Button>
                                 </Row>
                             </Row>
                         ))}

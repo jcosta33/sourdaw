@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react';
 
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
@@ -140,7 +141,7 @@ export const BounceOptionsDialog = ({
 
                     <Grid cols={2} gap={4}>
                         <DawDialogSection title="Normalization">
-                            <select
+                            <DawCompactSelect
                                 className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 value={options.normalization}
                                 onChange={(event) => {
@@ -152,11 +153,11 @@ export const BounceOptionsDialog = ({
                                 <option value="off">Off</option>
                                 <option value="protection">Peak Protection</option>
                                 <option value="full">Full Normalize</option>
-                            </select>
+                            </DawCompactSelect>
                         </DawDialogSection>
 
                         <DawDialogSection title="Tail Handling">
-                            <select
+                            <DawCompactSelect
                                 className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 value={options.tailHandling}
                                 onChange={(event) => {
@@ -168,7 +169,7 @@ export const BounceOptionsDialog = ({
                                 <option value="auto">Auto (Detect)</option>
                                 <option value="manual">Fixed (5s)</option>
                                 <option value="off">None (Strict)</option>
-                            </select>
+                            </DawCompactSelect>
                         </DawDialogSection>
                     </Grid>
                 </DawDialogBody>

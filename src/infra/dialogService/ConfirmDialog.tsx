@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
@@ -23,8 +24,9 @@ export const ConfirmDialog = (): ReactElement | null => {
     const isDanger = pending.variant === 'danger';
 
     return (
-        <div
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        <Row
+            justify="center"
+            className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
@@ -48,7 +50,7 @@ export const ConfirmDialog = (): ReactElement | null => {
                     </h2>
                 ) : null}
                 <p className="text-xs text-foreground/90 leading-relaxed">{pending.message}</p>
-                <div className="mt-4 flex justify-end gap-2">
+                <Row align="stretch" justify="end" gap={2} className="mt-4">
                     <Button variant="ghost" size="sm" onClick={cancel} autoFocus={!isDanger}>
                         {pending.cancelLabel ?? 'Cancel'}
                     </Button>
@@ -60,8 +62,8 @@ export const ConfirmDialog = (): ReactElement | null => {
                     >
                         {pending.confirmLabel ?? 'OK'}
                     </Button>
-                </div>
+                </Row>
             </div>
-        </div>
+        </Row>
     );
 };

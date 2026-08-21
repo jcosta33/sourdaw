@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { createAppActionCommittedError } from '#/modules/Command/useCases';
 
 import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { EffectsTab } from '../EffectsTab';
@@ -27,13 +28,10 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     getFactoryPresets: arrangementMocks.getFactoryPresets,
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: commandMocks.executeAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
-    pushUndoEntry: vi.fn(),
-    syncActionReplayMetadata: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
@@ -179,6 +177,49 @@ describe('EffectsTab', () => {
             await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77'));
         }
     );
+
+    it('opens Yeast only after addDevice commits the catalog id', async () => {
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                currentRoute={{ id: 'effects-midifx', title: 'MIDI FX' }}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
+
+        expect(arrangementMocks.compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'yeast');
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-1', deviceType: 'yeast', deviceId: 'device-77', expectedDeviceIds: [] },
+        });
+        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith(null));
+    });
+
+    it('opens Yeast when addDevice commits but post-commit processing fails', async () => {
+        commandMocks.executeAppAction.mockRejectedValue(
+            createAppActionCommittedError({
+                actionType: 'addDevice',
+                cause: new Error('runtime delta'),
+            })
+        );
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                currentRoute={{ id: 'effects-midifx', title: 'MIDI FX' }}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
+
+        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith(null));
+    });
 
     it('leaves the panel closed when the compiler rejects the add', () => {
         arrangementMocks.compileAddDeviceAction.mockReturnValue(null);

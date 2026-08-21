@@ -26,7 +26,6 @@ describe('getPlatformCapabilities', () => {
         expect(caps.hasNativeFileDialogs).toBe(false);
         expect(caps.hasMultiTrackRecording).toBe(false);
         expect(typeof caps.hasMidiInput).toBe('boolean');
-        expect(typeof caps.hasVoiceCommands).toBe('boolean');
     });
 
     it('should expose desktop capability flags when isDesktopRuntime is true', async () => {
@@ -41,7 +40,6 @@ describe('getPlatformCapabilities', () => {
         expect(caps.hasNativeFileDialogs).toBe(true);
         expect(caps.hasMultiTrackRecording).toBe(true);
         expect(caps.hasMidiInput).toBe(true);
-        expect(caps.hasVoiceCommands).toBe(true);
     });
 });
 

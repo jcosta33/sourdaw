@@ -6,4 +6,4 @@ export { AiChangeToast } from './AiChangeToast';
 export { ChatPanel } from './ChatPanel';
 export { GenerativeAiPanel } from './GenerativeAiPanel';
 export { MixAnalysisPanel } from './MixAnalysisPanel';
-export { VoiceCommandOverlay, isSpeechRecognitionAvailable } from './VoiceCommandOverlay';
+export { VoiceCommandOverlay } from './VoiceCommandOverlay';

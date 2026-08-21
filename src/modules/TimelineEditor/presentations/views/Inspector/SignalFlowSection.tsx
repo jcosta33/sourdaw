@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Button } from '#/components/ui/button';
 import { RoutingGraph } from '#/modules/Routing/presentations/views';
 
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
@@ -13,7 +14,9 @@ export const SignalFlowSection = (): ReactElement => {
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm">
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="flex w-full items-center gap-1"
                     onClick={() => {
@@ -32,7 +35,7 @@ export const SignalFlowSection = (): ReactElement => {
                     >
                         Signal Flow
                     </span>
-                </button>
+                </Button>
             </DawHeaderBand>
             {expanded ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">

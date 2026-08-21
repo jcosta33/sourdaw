@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
+import { Stack } from '#/components/layout';
 import { getTrackPeakLevel, getMasterPeakLevel, VUMeter } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
@@ -217,7 +218,7 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             aria-valuenow={MIN_DB}
             aria-valuetext="unavailable"
         >
-            <div className="flex flex-col justify-between py-0.5 pr-px shrink-0">
+            <Stack justify="between" shrink={false} className="py-0.5 pr-px">
                 {DB_MARKS.map((db) => (
                     <span
                         key={db}
@@ -227,7 +228,7 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
                         {db}
                     </span>
                 ))}
-            </div>
+            </Stack>
 
             <DawMeterFrame overlay="vertical" ref={containerRef} className={cn('rounded-sm', width)}>
                 <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full" />

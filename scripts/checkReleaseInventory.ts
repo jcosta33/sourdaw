@@ -269,7 +269,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
 }
 
 function assertSurfaceContract(
-    surface: ReleaseSurface | undefined,
+    surface: Partial<ReleaseSurface> | undefined,
     expected: Partial<SurfaceContract>,
     label: string
 ): void {

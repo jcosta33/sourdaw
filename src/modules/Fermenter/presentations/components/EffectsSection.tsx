@@ -12,6 +12,7 @@ import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 type EffectsSectionProps = {
     rotaryKnob?: RotaryKnobComponent;
@@ -265,14 +266,16 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                         />
                         <Row align="end" gap={0.5} className="pb-4">
                             {['Plate', 'FDN'].map((name, i) => (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     key={name}
                                     type="button"
                                     className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${Math.round(props.reverbType) === i ? 'bg-[var(--color-accent-mint)]/80 text-white' : 'text-muted-foreground/50 hover:text-foreground'}`}
                                     onClick={() => onParam('reverbType', i)}
                                 >
                                     {name}
-                                </button>
+                                </Button>
                             ))}
                         </Row>
                     </Row>

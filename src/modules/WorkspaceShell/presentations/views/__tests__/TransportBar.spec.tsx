@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { voiceStatusStore } from '#/modules/AiRuntime/stores';
+import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { togglePlayback } from '#/modules/Transport/useCases';
 
@@ -112,10 +112,12 @@ vi.mock('#/components/daw/DawInlineHint', () => ({
 }));
 
 let voiceStatus = { isListening: false, transcribing: false };
+let voiceInputAvailable = false;
 
 describe('TransportBar', () => {
     beforeEach(() => {
         voiceStatus = { isListening: false, transcribing: false };
+        voiceInputAvailable = false;
         voiceRuntimeMocks.isVoiceInputAvailable.mockClear();
         voiceRuntimeMocks.toggleVoiceInput.mockClear();
         voiceRuntimeMocks.isVoiceInputAvailable.mockReturnValue(false);
@@ -129,6 +131,9 @@ describe('TransportBar', () => {
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === voiceStatusStore) {
                 return voiceStatus;
+            }
+            if (store === voiceInputAvailabilityStore) {
+                return { hasVerifiedLocalModel: voiceInputAvailable };
             }
             // Return the caller's defaultValue so workspaceState/undo/etc. get
             // their proper defaults; override per-test via the trackStore check.
@@ -166,15 +171,14 @@ describe('TransportBar', () => {
         expect(togglePlayback).toHaveBeenCalled();
     });
 
-    it('should hide VoiceButton when AiRuntime reports unavailable voice input', () => {
+    it('hides VoiceButton before AiRuntime verifies a local model', () => {
         renderTransportBar();
 
-        expect(voiceRuntimeMocks.isVoiceInputAvailable).toHaveBeenCalledTimes(1);
         expect(screen.queryByRole('button', { name: /Voice command/ })).not.toBeInTheDocument();
     });
 
-    it('should pass transcribing status and zero-argument toggle ownership into VoiceButton', () => {
-        voiceRuntimeMocks.isVoiceInputAvailable.mockReturnValue(true);
+    it('passes the native browser event through the voice-button admission seam', () => {
+        voiceInputAvailable = true;
         voiceStatus = { isListening: false, transcribing: true };
 
         renderTransportBar();
@@ -184,7 +188,7 @@ describe('TransportBar', () => {
 
         fireEvent.click(voiceButton);
 
-        expect(voiceRuntimeMocks.toggleVoiceInput).toHaveBeenCalledWith();
+        expect(voiceRuntimeMocks.toggleVoiceInput).toHaveBeenCalledWith(expect.any(Event));
     });
 
     it('applies the recording background styling when transport is recording', () => {

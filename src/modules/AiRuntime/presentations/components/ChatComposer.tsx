@@ -86,7 +86,9 @@ export const ChatComposer = ({
                     </select>
                 </Row>
 
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     onClick={onToggleReasoning}
                     disabled={isGenerating}
@@ -100,7 +102,7 @@ export const ChatComposer = ({
                 >
                     <Brain className="size-3" />
                     Think
-                </button>
+                </Button>
             </Row>
 
             <Row

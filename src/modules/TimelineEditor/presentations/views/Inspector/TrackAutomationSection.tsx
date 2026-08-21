@@ -79,7 +79,9 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 role="menu"
                             >
                                 <DawMenuSectionLabel>Track</DawMenuSectionLabel>
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                                     role="menuitem"
@@ -89,8 +91,10 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     }}
                                 >
                                     Gain
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                                     role="menuitem"
@@ -100,7 +104,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     }}
                                 >
                                     Pan
-                                </button>
+                                </Button>
                                 {track.devices.length > 0 ? (
                                     <>
                                         <DawMenuSeparator />
@@ -125,7 +129,9 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                                 <div key={device.id}>
                                                     <DawMenuSectionLabel>{device.name}</DawMenuSectionLabel>
                                                     {autoParams.map((param) => (
-                                                        <button
+                                                        <Button
+                                                            variant="bare"
+                                                            size="bare"
                                                             type="button"
                                                             key={param.id}
                                                             className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
@@ -140,7 +146,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                                             }}
                                                         >
                                                             {param.name}
-                                                        </button>
+                                                        </Button>
                                                     ))}
                                                 </div>
                                             );

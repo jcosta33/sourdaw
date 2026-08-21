@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode } from 'react';
 
 import { X } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
@@ -32,12 +33,12 @@ export const InstrumentBottomPanel = ({
             className={`contain-strict flex flex-col bg-surface-base border-t ${borderColor} overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200`}
             style={{ height }}
         >
-            <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
+            <Row justify="between" shrink={false} className="px-3 py-1 border-b border-border/30 bg-surface-app/50">
                 <span className={`text-[10px] font-bold ${labelColor} uppercase tracking-wider`}>{label}</span>
                 <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label={`Close ${label}`}>
                     <X className="size-3.5" />
                 </Button>
-            </div>
+            </Row>
             {children}
         </div>
     </>

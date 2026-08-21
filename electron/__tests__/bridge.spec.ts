@@ -17,6 +17,11 @@ import {
     DIALOG_MESSAGE_CHANNEL,
     DIALOG_OPEN_CHANNEL,
     DIALOG_SAVE_CHANNEL,
+    VOICE_DICTATION_ARM_CHANNEL,
+    VOICE_DICTATION_DISARM_CHANNEL,
+    VOICE_DICTATION_START_CHANNEL,
+    VOICE_DICTATION_STOP_CHANNEL,
+    VOICE_DICTATION_TERMINAL_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -61,6 +66,7 @@ describe('the published surface', () => {
             'listen',
             'paths',
             'stream',
+            'voiceDictation',
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
@@ -80,6 +86,7 @@ describe('the published surface', () => {
             new Map([
                 [EVENT_CHANNEL, 1],
                 [STREAM_CHANNEL, 1],
+                [VOICE_DICTATION_TERMINAL_CHANNEL, 1],
             ])
         );
     });
@@ -107,6 +114,53 @@ describe('command admission', () => {
         await expect(bridge.stream('load_whisper_model', [], () => undefined)).rejects.toThrow(/Unknown or denied/u);
         await expect(bridge.invokeBinaryResponse('read_audio_file')).rejects.toThrow(/Unknown or denied/u);
         expect(fake.invoke).not.toHaveBeenCalled();
+    });
+});
+
+describe('voice activation admission', () => {
+    it('does not let a trusted stop click mint authority for a later start', async () => {
+        let click: ((event: { readonly isTrusted: boolean; readonly target: unknown }) => void) | undefined;
+        const voiceDocument = {
+            addEventListener: vi.fn((_type, listener) => {
+                click = listener;
+            }),
+        };
+        const fake = fakeIpc((channel, args) => (channel === VOICE_DICTATION_START_CHANNEL ? args[0] : undefined));
+        const bridge = createSourdawBridge(fake.ipc, 'bridge-test', voiceDocument);
+
+        click?.({
+            isTrusted: true,
+            // This is a real voice control, but specifically its stop half:
+            // it matched the old broad selector and must not arm a start.
+            target: {
+                closest: (selector: string) => (selector === '[data-voice-command-control="true"]' ? {} : null),
+            },
+        });
+
+        await expect(bridge.voiceDictation.start('new-session')).rejects.toThrow(/activation/u);
+        expect(fake.invoke).not.toHaveBeenCalledWith(VOICE_DICTATION_ARM_CHANNEL, expect.any(String));
+        expect(fake.invoke).not.toHaveBeenCalledWith(VOICE_DICTATION_START_CHANNEL, 'new-session', expect.anything());
+    });
+
+    it('invalidates an already armed preload and main-process activation on stop', async () => {
+        let click: ((event: { readonly isTrusted: boolean; readonly target: unknown }) => void) | undefined;
+        const voiceDocument = {
+            addEventListener: vi.fn((_type, listener) => {
+                click = listener;
+            }),
+        };
+        const fake = fakeIpc((channel, args) => (channel === VOICE_DICTATION_START_CHANNEL ? args[0] : undefined));
+        const bridge = createSourdawBridge(fake.ipc, 'bridge-test', voiceDocument);
+
+        click?.({
+            isTrusted: true,
+            target: { closest: (selector: string) => (selector.includes('start') ? {} : null) },
+        });
+        await bridge.voiceDictation.stop('active-session');
+
+        await expect(bridge.voiceDictation.start('new-session')).rejects.toThrow(/activation/u);
+        expect(fake.invoke).toHaveBeenCalledWith(VOICE_DICTATION_DISARM_CHANNEL);
+        expect(fake.invoke).toHaveBeenCalledWith(VOICE_DICTATION_STOP_CHANNEL, 'active-session');
     });
 });
 
@@ -195,6 +249,28 @@ describe('byte payloads', () => {
 });
 
 describe('pushed event subscriptions', () => {
+    it('keeps dictation terminals out of generic named-event listeners', () => {
+        const fake = fakeIpc();
+        const bridge = createSourdawBridge(fake.ipc);
+        const generic = vi.fn();
+        const terminal = vi.fn();
+
+        bridge.listen('dictation-result', generic);
+        bridge.voiceDictation.listenTerminal('session-1', terminal);
+        fake.push(VOICE_DICTATION_TERMINAL_CHANNEL, 'dictation-result', {
+            session_id: 'session-1',
+            text: 'private transcript',
+            duration_ms: 1,
+        });
+
+        expect(generic).not.toHaveBeenCalled();
+        expect(terminal).toHaveBeenCalledWith('dictation-result', {
+            session_id: 'session-1',
+            text: 'private transcript',
+            duration_ms: 1,
+        });
+    });
+
     it('delivers to every listener of the named event and to no other', () => {
         const fake = fakeIpc();
         const bridge = createSourdawBridge(fake.ipc);

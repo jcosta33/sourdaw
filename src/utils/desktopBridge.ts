@@ -14,8 +14,8 @@
  * call site never has to know the addon's parameter order.
  */
 
-import { SOURDAW_COMMAND_ARGUMENTS } from './sourdawCommandArguments';
 import { isDesktopRuntime, isSourdawRuntime } from './desktopRuntime';
+import { SOURDAW_COMMAND_ARGUMENTS } from './sourdawCommandArguments';
 
 export { isDesktopRuntime, isSourdawRuntime };
 
@@ -116,6 +116,31 @@ export async function desktopInvoke(cmd: string, args?: Record<string, unknown>)
 export async function desktopListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
     return sourdawBridge().listen(event, (payload) => {
         handler({ event, payload });
+    });
+}
+
+/** Start microphone capture through the preload's one-use voice-control capability. */
+export async function desktopStartVoiceDictation(sessionId: string): Promise<string> {
+    return sourdawBridge().voiceDictation.start(sessionId);
+}
+
+/** Stop capture for one acknowledged dictation session and begin local transcription. */
+export async function desktopStopVoiceDictation(sessionId: string): Promise<void> {
+    await sourdawBridge().voiceDictation.stop(sessionId);
+}
+
+/** Cancel one session, discard its capture, and suppress its transcript. */
+export async function desktopCancelVoiceDictation(sessionId: string): Promise<void> {
+    await sourdawBridge().voiceDictation.cancel(sessionId);
+}
+
+/** Subscribe to one opaque dictation session's terminal payload outside the generic event bus. */
+export function desktopListenVoiceDictationTerminal(
+    sessionId: string,
+    handler: (event: string, payload: unknown) => void
+): () => void {
+    return sourdawBridge().voiceDictation.listenTerminal(sessionId, (event, payload) => {
+        handler(event, { event, payload });
     });
 }
 

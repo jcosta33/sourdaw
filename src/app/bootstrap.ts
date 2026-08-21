@@ -6,6 +6,7 @@ import {
     beginMixAnalysis,
     completeMixAnalysis,
     failMixAnalysis,
+    initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
@@ -244,6 +245,7 @@ setWorkspaceEventBus(eventBus);
 setCommandEventBus(eventBus);
 setSetlistEventBus(eventBus);
 setVoiceToggleEventBus(eventBus);
+void initializeVoiceInputAvailability();
 setMixAnalysisDisplayLifecycle({
     begin: beginMixAnalysis,
     complete: completeMixAnalysis,

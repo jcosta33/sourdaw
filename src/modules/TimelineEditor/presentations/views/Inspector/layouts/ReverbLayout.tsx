@@ -4,7 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
@@ -43,21 +43,21 @@ const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
                 />
             </Row>
             <SectionHeader title="Controls" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['rev-size', 'rev-decay']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            </Grid>
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['rev-damping', 'rev-predelay']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            </Grid>
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['rev-lowcut', 'rev-mix']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
         </Stack>
     );
 };

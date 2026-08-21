@@ -5,6 +5,7 @@
 import { type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type PadState } from '../../models/ToasterKit';
 
@@ -108,26 +109,30 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
 
                 {/* Mute / Solo */}
                 <Row align="stretch" className="gap-px mb-0.5">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.muted ? 'bg-red-500/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
                         onClick={() => onPadParam(index, 'muted', pad.muted ? 0 : 1)}
                     >
                         M
-                    </button>
+                    </Button>
                     {/* Live again: `Pad::set_param` carries a "soloed" arm and
                         `ToasterEngine::note_on` silences every pad that is not
                         soloed while any pad is. It was disabled while that DSP
                         was missing rather than removed, per the standing rule
                         that dead controls get implemented. */}
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         title="Solo this pad"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.soloed ? 'bg-yellow-400/80 text-black' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
                         onClick={() => onPadParam(index, 'soloed', pad.soloed ? 0 : 1)}
                     >
                         S
-                    </button>
+                    </Button>
                 </Row>
 
                 {/* Name */}

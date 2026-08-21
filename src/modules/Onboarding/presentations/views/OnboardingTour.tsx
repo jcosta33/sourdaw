@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
 import { defaultOnboardingState, onboardingStore } from '../../stores/onboardingStore';
@@ -270,13 +271,15 @@ export const OnboardingTour = (): ReactElement | null => {
                     <p className="text-[10px] uppercase tracking-wider text-white/40">
                         Step {stepIndex + 1} of {TOUR_STEPS.length}
                     </p>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         onClick={dismissOnboardingTour}
                         className="text-[10px] text-white/40 hover:text-white/80 transition-colors cursor-pointer"
                     >
                         Skip tour
-                    </button>
+                    </Button>
                 </Row>
                 <div className="px-4 py-3">
                     <h2 className="text-sm font-semibold text-white/90">{step.title}</h2>
@@ -285,15 +288,19 @@ export const OnboardingTour = (): ReactElement | null => {
                     </p>
                 </div>
                 <Row gap={2} justify="between" className="px-4 py-3 border-t border-white/[0.06]">
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         onClick={regressOnboardingStep}
                         disabled={stepIndex === 0}
                         className="text-xs text-white/50 hover:text-white/90 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                         Back
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         onClick={() => {
                             if (isLastStep) {
@@ -305,7 +312,7 @@ export const OnboardingTour = (): ReactElement | null => {
                         className="rounded-md bg-[var(--color-accent-orange)]/90 px-3 py-1.5 text-xs font-semibold text-black hover:bg-[var(--color-accent-orange)] transition-colors cursor-pointer"
                     >
                         {nextLabel}
-                    </button>
+                    </Button>
                 </Row>
             </div>
         </div>

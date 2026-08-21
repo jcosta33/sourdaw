@@ -16,8 +16,8 @@ export type { NotifyPayload, ConfirmPayload, PromptPayload } from '#/utils/Notif
 /** Payload for the zoom-to-selection event. */
 export type ZoomToSelectionPayload = { startBeat: number; endBeat: number };
 
-/** Payload for toggle-voice-command event. */
-export type ToggleVoiceCommandPayload = { active?: boolean };
+/** A one-use, AiRuntime-issued admission token for a voice-command start. */
+export type ToggleVoiceCommandPayload = { gesture?: unknown };
 
 /** Payload for MIDI import event. */
 export type ImportMidiPayload = { file: File };

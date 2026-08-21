@@ -172,30 +172,36 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                                     }}
                                                 />
                                             ) : (
-                                                <button
+                                                <Button
+                                                    variant="bare"
+                                                    size="bare"
                                                     type="button"
                                                     className="flex-1 rounded px-2 py-1 text-left text-[10px] hover:bg-accent"
                                                     onClick={() => handleRecallSnapshot(snap.id)}
                                                 >
                                                     {snap.name}
-                                                </button>
+                                                </Button>
                                             )}
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 className="rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-accent hover:text-foreground"
                                                 onClick={() => setEditingSnapshotId(snap.id)}
                                                 aria-label={`Rename ${snap.name}`}
                                             >
                                                 <Pencil className="size-2.5" />
-                                            </button>
-                                            <button
+                                            </Button>
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 className="rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                                 onClick={() => handleDeleteSnapshot(snap.id)}
                                                 aria-label={`Delete ${snap.name}`}
                                             >
                                                 ×
-                                            </button>
+                                            </Button>
                                         </Row>
                                     ))}
                                 </div>

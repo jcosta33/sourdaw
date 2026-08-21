@@ -13,21 +13,14 @@ describe('isVoiceInputAvailable', () => {
         vi.mocked(resolveVoiceInputMode).mockReturnValue(null);
     });
 
-    it('should return true when browser speech recognition is available', () => {
-        vi.mocked(resolveVoiceInputMode).mockReturnValue('browser');
-
-        expect(isVoiceInputAvailable()).toBe(true);
-        expect(resolveVoiceInputMode).toHaveBeenCalledWith();
-    });
-
-    it('should return true when native desktop voice input is available', () => {
+    it('returns true only when local native voice input is verified', () => {
         vi.mocked(resolveVoiceInputMode).mockReturnValue('whisper');
 
         expect(isVoiceInputAvailable()).toBe(true);
         expect(resolveVoiceInputMode).toHaveBeenCalledWith();
     });
 
-    it('should return false when neither browser speech nor native desktop voice input is available', () => {
+    it('returns false when local native voice input is unavailable', () => {
         expect(isVoiceInputAvailable()).toBe(false);
         expect(resolveVoiceInputMode).toHaveBeenCalledWith();
     });

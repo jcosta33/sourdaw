@@ -50,30 +50,12 @@ function restore_property_descriptor(
 vi.mock('#/components/ui/button', () => ({
     Button: ({
         children,
-        onClick,
         variant,
         size,
-        className,
-        'aria-pressed': ariaPressed,
-        'aria-label': ariaLabel,
-    }: {
-        children: React.ReactNode;
-        onClick?: () => void;
-        variant?: string;
-        size?: string;
-        className?: string;
-        'aria-pressed'?: boolean;
-        'aria-label'?: string;
-    }) => (
-        <button
-            type="button"
-            onClick={onClick}
-            data-variant={variant}
-            data-size={size}
-            className={className}
-            aria-pressed={ariaPressed}
-            aria-label={ariaLabel}
-        >
+        asChild: _asChild,
+        ...props
+    }: React.ComponentProps<'button'> & { variant?: string; size?: string; asChild?: boolean }) => (
+        <button type="button" data-variant={variant} data-size={size} {...props}>
             {children}
         </button>
     ),

@@ -1,5 +1,7 @@
 import { Component, type ReactNode } from 'react';
 
+import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 
 /**
@@ -38,29 +40,36 @@ export class ErrorBoundary extends Component<Props, State> {
         if (this.state.hasError) {
             const variant = this.props.variant ?? 'page';
             return (
-                <div
-                    className="flex min-h-0 flex-col items-center justify-center gap-4 overflow-auto bg-background text-foreground"
+                <Stack
+                    align="center"
+                    justify="center"
+                    gap={4}
+                    className="overflow-auto bg-background text-foreground"
                     style={{ height: FALLBACK_HEIGHT[variant] }}
                 >
                     <h1 className="text-xl font-bold">Something went wrong</h1>
                     <p className="text-sm text-muted-foreground max-w-md text-center">
                         {this.state.error?.message ?? 'An unexpected error occurred.'}
                     </p>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
                         onClick={() => this.setState({ hasError: false, error: null })}
                     >
                         Try Again
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="text-xs text-muted-foreground underline"
                         onClick={() => window.location.reload()}
                     >
                         Reload App
-                    </button>
-                </div>
+                    </Button>
+                </Stack>
             );
         }
         return this.props.children;

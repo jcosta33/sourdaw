@@ -1,6 +1,8 @@
 import { type ReactElement, type PointerEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
@@ -170,14 +172,14 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     if (clipId === null || !isAudioClip) {
         return (
-            <div className="flex h-full items-center justify-center p-6 text-center">
+            <Row justify="center" className="h-full p-6 text-center">
                 <div>
                     <div className="text-sm text-muted-foreground">Select an audio clip to open the Elastic editor</div>
                     <div className="mt-2 text-[11px] text-muted-foreground/70">
                         Detect transients, correct them manually, then quantize to the grid.
                     </div>
                 </div>
-            </div>
+            </Row>
         );
     }
 
@@ -320,10 +322,11 @@ export const ElasticEditorPanel = (): ReactElement => {
     const quantizeDisabled = !elasticState.detected || warpState.markers.length === 0;
 
     return (
-        <div className="flex h-full flex-col overflow-hidden" data-testid="elastic-editor-panel">
+        <Stack className="h-full overflow-hidden" data-testid="elastic-editor-panel">
             <DawControlStrip className="px-3 py-1.5 gap-2">
-                <div
-                    className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5"
+                <Row
+                    gap={0.5}
+                    className="rounded-md border border-border/40 p-0.5"
                     role="radiogroup"
                     aria-label="Elastic tool"
                 >
@@ -340,9 +343,9 @@ export const ElasticEditorPanel = (): ReactElement => {
                             {tool.label}
                         </Button>
                     ))}
-                </div>
+                </Row>
 
-                <div className="flex items-center gap-2">
+                <Row gap={2}>
                     <span className="text-[10px] text-muted-foreground">Sensitivity</span>
                     <Slider
                         value={[elasticState.sensitivity * 100]}
@@ -360,7 +363,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                     <span className="w-8 text-right text-[10px] tabular-nums text-muted-foreground">
                         {(elasticState.sensitivity * 100).toFixed(0)}
                     </span>
-                </div>
+                </Row>
 
                 <Button
                     variant="secondary"
@@ -383,9 +386,9 @@ export const ElasticEditorPanel = (): ReactElement => {
                 </Button>
 
                 {AVAILABLE_STRETCH_MODES.length > 1 ? (
-                    <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Row as="label" gap={1} className="text-[10px] text-muted-foreground">
                         Stretch
-                        <select
+                        <DawCompactSelect
                             className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
                             value={warpState.stretchMode}
                             onChange={(e) => handleStretchMode(e.target.value as StretchMode)}
@@ -396,14 +399,14 @@ export const ElasticEditorPanel = (): ReactElement => {
                                     {getStretchModeInfo(mode).name}
                                 </option>
                             ))}
-                        </select>
-                    </label>
+                        </DawCompactSelect>
+                    </Row>
                 ) : null}
 
                 {AVAILABLE_ALGORITHMS.length > 1 ? (
-                    <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Row as="label" gap={1} className="text-[10px] text-muted-foreground">
                         Algorithm
-                        <select
+                        <DawCompactSelect
                             className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
                             value={warpSnapshot.defaultAlgorithm}
                             onChange={(e) => handleAlgorithm(e.target.value as WarpAlgorithm)}
@@ -414,11 +417,11 @@ export const ElasticEditorPanel = (): ReactElement => {
                                     {getAlgorithmInfo(algo).name}
                                 </option>
                             ))}
-                        </select>
-                    </label>
+                        </DawCompactSelect>
+                    </Row>
                 ) : null}
 
-                <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
+                <Row gap={2} className="ml-auto text-[10px] text-muted-foreground">
                     <span>Zoom</span>
                     <Slider
                         value={[zoom * 100]}
@@ -433,7 +436,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                         className="w-20"
                         aria-label="Waveform zoom"
                     />
-                </div>
+                </Row>
             </DawControlStrip>
 
             <div
@@ -455,16 +458,18 @@ export const ElasticEditorPanel = (): ReactElement => {
                 />
             </div>
 
-            <div
-                className="flex items-center justify-between gap-3 border-t border-border/40 px-3 py-1 text-[10px] text-muted-foreground"
+            <Row
+                justify="between"
+                gap={3}
+                className="border-t border-border/40 px-3 py-1 text-[10px] text-muted-foreground"
                 data-testid="elastic-detail-strip"
             >
                 <span>
                     {counts.transient} transient{plural(counts.transient)}, {counts.user} user, {counts.locked} locked
                 </span>
                 <span className="text-[9px] opacity-70">T: transient tool · G: quantize · Delete: remove selected</span>
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
 

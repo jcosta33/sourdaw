@@ -2,12 +2,15 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import { Cpu, Play, Send, Square } from 'lucide-react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
@@ -297,7 +300,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             {visiblePresets.map((preset) => {
                                 const active = preset.name === kit.name;
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={preset.id}
                                         type="button"
                                         aria-pressed={active}
@@ -320,7 +325,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         <span className="text-[9px] leading-4 text-muted-foreground">
                                             {preset.description}
                                         </span>
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Stack>
@@ -360,7 +365,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             </div>
                         </Row>
 
-                        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 value={selectedPad.decay}
                                 onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)}
@@ -427,7 +432,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         : `${selectedPad.filterCutoff.toFixed(0)}`
                                 }
                             />
-                        </div>
+                        </Grid>
                     </SectionCard>
                 </Stack>
 
@@ -560,14 +565,14 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         detail="Euclid stays playful instead of turning into a spreadsheet."
                     >
                         <Row gap={2}>
-                            <input
+                            <Input
                                 type="number"
                                 value={eucHits}
                                 onChange={(event) => setEucHits(Math.max(0, Math.min(32, Number(event.target.value))))}
                                 className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
                             />
                             <span className="text-[10px] text-muted-foreground">of</span>
-                            <input
+                            <Input
                                 type="number"
                                 value={eucSteps}
                                 onChange={(event) => setEucSteps(Math.max(1, Math.min(64, Number(event.target.value))))}
@@ -591,7 +596,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
                         >
                             Template
-                            <select
+                            <DawCompactSelect
                                 aria-label="Pattern groove template"
                                 value={assignedGrooveTemplateId}
                                 disabled={!canAssignGroove}
@@ -606,7 +611,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         {template.name}
                                     </option>
                                 ))}
-                            </select>
+                            </DawCompactSelect>
                         </Stack>
                         <Stack
                             as="label"
@@ -629,7 +634,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 onBlur={commitGrooveAmount}
                             />
                         </Stack>
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+                        <Grid cols={2} gapX={2} gapY={3}>
                             <Knob
                                 value={kit.swing}
                                 onChange={(value) => setToasterKitParam(deviceId, 'swing', value)}
@@ -690,7 +695,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 defaultValue={0}
                                 readout={`${Math.round(kit.lofiMix * 100)}%`}
                             />
-                        </div>
+                        </Grid>
                     </SectionCard>
                 </Stack>
             </div>

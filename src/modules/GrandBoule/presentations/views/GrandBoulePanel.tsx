@@ -3,12 +3,14 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Power } from 'lucide-react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
@@ -320,7 +322,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             {presets.map((preset) => {
                                 const active = config.activePresetId === preset.id;
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={preset.id}
                                         type="button"
                                         onClick={() => loadGrandBoulePreset({ engine, store, presetId: preset.id })}
@@ -334,7 +338,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         <span className="text-[9px] leading-tight text-muted-foreground">
                                             {preset.description}
                                         </span>
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Stack>
@@ -376,7 +380,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     </SectionCard>
 
                     <SectionCard title="Mix" detail="Master, soundboard, sympathetic.">
-                        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 value={config.masterGain}
                                 onChange={(value, isTransient) =>
@@ -425,10 +429,10 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 defaultValue={0.25}
                                 readout={`${Math.round(config.sympatheticSend * 100)}%`}
                             />
-                        </div>
+                        </Grid>
                     </SectionCard>
                     <SectionCard title="Radiation" detail="Audible lid transfer and microphone perspective.">
-                        <div className="grid grid-cols-2 items-end gap-3">
+                        <Grid cols={2} gap={3} className="items-end">
                             <Knob
                                 value={config.lidPosition}
                                 onChange={(value, isTransient) =>
@@ -454,7 +458,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60"
                             >
                                 Microphone
-                                <select
+                                <DawCompactSelect
                                     aria-label="Microphone position"
                                     className="grand-boule-window min-h-8 bg-black/20 px-2 font-mono text-[10px] text-foreground"
                                     value={config.micPosition}
@@ -473,12 +477,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                             {position.label}
                                         </option>
                                     ))}
-                                </select>
+                                </DawCompactSelect>
                             </Stack>
-                        </div>
+                        </Grid>
                     </SectionCard>
                     <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+                        <Grid cols={2} gapX={2} gapY={3}>
                             <Knob
                                 value={config.stretchAmount}
                                 onChange={(value) => setGrandBouleStretchAmount({ engine, store, amount: value })}
@@ -499,7 +503,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 defaultValue={1.0}
                                 readout={`${Math.round(config.attackBite * 100)}%`}
                             />
-                        </div>
+                        </Grid>
                     </SectionCard>
                     <SectionCard title="Per-Note" detail="Key-specific parameter editing (§3.1).">
                         {GRAND_BOULE_PER_NOTE_AVAILABLE ? (
@@ -656,7 +660,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             {TEMPERAMENT_OPTIONS.map((option) => {
                                 const active = temperament === option.value;
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={option.value}
                                         type="button"
                                         onClick={() =>
@@ -673,7 +679,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         }`}
                                     >
                                         {option.label}
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Stack>
