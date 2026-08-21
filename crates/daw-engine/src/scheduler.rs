@@ -345,6 +345,25 @@ impl GraphCommand {
     /// or retires an effect does not compile until its effect on the table is
     /// stated here, which is what keeps the ledger complete rather than a
     /// count of whichever producers someone remembered.
+    ///
+    /// Every retirement is classified `-1`, and every retirement is
+    /// conditional on the callback finding its target:
+    /// `RemovePluginWithBridge` frees nothing for an id the table does not
+    /// hold, and the two `*Retired` variants free nothing when the strip they
+    /// name does not hold the effect they name. The classification is exact
+    /// under one control-side precondition — a retirement is only ever sent
+    /// for a target the sender has already resolved against the project it
+    /// holds — and a violated precondition drifts in the dangerous direction:
+    /// the ledger drops to N-1 while the table stays at N, so it *grants*
+    /// headroom that does not exist and the next registration is admitted
+    /// control-side and then refused silently on the callback, which is the
+    /// failure this ledger exists to remove.
+    ///
+    /// Exhaustiveness forces an author to write an arm, not to write the right
+    /// one, so it is not what keeps this classification honest. That is
+    /// `crate::tests::the_ledger_matches_the_scheduler_effect_table_it_counts`,
+    /// which drives a mixed stream through a real scheduler and asserts the
+    /// table's length against the ledger.
     pub(crate) fn effect_table_delta(&self) -> isize {
         match self {
             Self::AddEffect(..)
@@ -765,6 +784,16 @@ impl AudioScheduler {
     /// The routed graph, for callers proving what a command did to it.
     pub fn timeline(&self) -> &TimelineGraph {
         &self.timeline
+    }
+
+    /// How many slots the shared effect table actually holds.
+    ///
+    /// The control side's ledger claims to be a count of exactly this
+    /// ([`crate::EngineHandle::registered_effect_count`]), and a test that
+    /// never compares the two watches the model agree with itself.
+    #[cfg(test)]
+    pub(crate) fn effect_table_len(&self) -> usize {
+        self.effects.len()
     }
 
     /// Absolute frame of the next block's first sample.

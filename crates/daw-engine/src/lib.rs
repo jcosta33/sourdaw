@@ -586,8 +586,17 @@ impl EngineHandle {
     /// dies on the callback. [`EngineHandle::push`] enforces the same ceiling
     /// unconditionally, so skipping this call cannot let a registration past;
     /// it only costs the caller the cleanup it now has to unwind.
+    ///
+    /// `additional` comes from the caller, so the sum is checked rather than
+    /// added: a release build wraps a large request back under the ceiling and
+    /// admits it. An overflowing request is a request the table can never hold,
+    /// so it reads as the refusal it is.
     pub fn ensure_effect_table_headroom(&self, additional: usize) -> Result<(), String> {
-        if self.effect_registrations + additional > EFFECT_TABLE_CAPACITY {
+        let requested = self
+            .effect_registrations
+            .checked_add(additional)
+            .ok_or_else(effect_table_full_error)?;
+        if requested > EFFECT_TABLE_CAPACITY {
             return Err(effect_table_full_error());
         }
         Ok(())
@@ -636,8 +645,16 @@ impl EngineHandle {
         if delta >= 0 {
             self.effect_registrations += delta as usize;
         } else {
-            // Saturating, so a retirement the callback finds nothing to apply
-            // to can only cost headroom rather than underflow the ledger.
+            // Saturating for the floor alone, and the floor is not where the
+            // risk is. Every retirement is conditional on the callback finding
+            // its target (see [`GraphCommand::effect_table_delta`]), and one
+            // that finds nothing leaves the ledger at N-1 while the table
+            // stays at N: the drift *grants* headroom that does not exist, so
+            // the next registration is admitted here and then refused silently
+            // on the callback — the exact failure this ledger removes. What
+            // keeps the two in step is the precondition on the sender, not
+            // this subtraction: a retirement is only ever sent for a target
+            // already resolved against the project the sender holds.
             self.effect_registrations = self
                 .effect_registrations
                 .saturating_sub(delta.unsigned_abs());
@@ -703,7 +720,7 @@ mod tests {
     use crate::audio_bridge::create_audio_bridge;
     use crate::plugin_slot::NativePlugin;
     use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand};
-    use crate::timeline::{DeviceParam, TimelineTrack};
+    use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
     use rtrb::{Consumer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
@@ -1056,7 +1073,23 @@ mod tests {
         for id in 0..EFFECT_TABLE_CAPACITY {
             engine.add_effect(id, "knead").expect("device registers");
         }
-        assert_eq!(drained(&mut command_rx), EFFECT_TABLE_CAPACITY);
+        // The retirement below has to be one the callback would really apply:
+        // `RemoveTrackDeviceRetired` frees a slot only when the strip it names
+        // holds the effect it names, so effect 0 is spliced onto a track
+        // first. Naming a track that was never added would leave the ordering
+        // assertion watching the ledger agree with itself.
+        engine.add_track(1).expect("the track registers");
+        engine
+            .insert_track_device(
+                1,
+                ChainEntry {
+                    effect_id: 0,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the splice registers");
+        assert_eq!(drained(&mut command_rx), EFFECT_TABLE_CAPACITY + 2);
 
         engine
             .send_graph_batch(vec![
@@ -1080,5 +1113,145 @@ mod tests {
             .expect("retiring first frees the slot the registration needs");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
         assert_eq!(drained(&mut command_rx), 3, "the fence and both commands");
+    }
+
+    /// `additional` is the caller's number and the ceiling check used to add
+    /// it unchecked, so a release build wrapped a large request back under the
+    /// ceiling and granted headroom for a table that could never hold it. A
+    /// request that cannot even be counted is a request to refuse, in the same
+    /// wording every other ceiling refusal uses so the caller has one message
+    /// to report.
+    #[test]
+    fn a_headroom_request_too_large_to_count_is_refused() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        // Any non-zero ledger makes `effect_registrations + usize::MAX`
+        // overflow rather than merely exceed the ceiling.
+        engine.add_effect(0, "knead").expect("device registers");
+        assert_eq!(engine.registered_effect_count(), 1);
+
+        let refused = engine
+            .ensure_effect_table_headroom(usize::MAX)
+            .expect_err("a request too large to count must be refused, not wrapped");
+        assert!(
+            refused.contains(&EFFECT_TABLE_CAPACITY.to_string()),
+            "the refusal must name the ceiling it hit, got: {refused}"
+        );
+        drained(&mut command_rx);
+    }
+
+    /// The ledger's whole claim is that it counts the callback's effect table.
+    /// Every other assertion in this module reads it against the capacity
+    /// constant or against itself, and the scheduler's own tests build their
+    /// rings by hand and never involve an `EngineHandle` — so a
+    /// [`GraphCommand::effect_table_delta`] arm that names the wrong sign
+    /// still compiles, still passes, and silently walks the ceiling away from
+    /// the table it bounds. Exhaustiveness makes an author write an arm; only
+    /// this comparison makes them write the right one.
+    ///
+    /// The stream carries one of everything the classification has to tell
+    /// apart: registrations, a placement that moves an effect without
+    /// registering one, chain removals that leave the effect registered, and
+    /// retirements that really free a slot because the strips they name really
+    /// hold the effects they name.
+    #[test]
+    fn the_ledger_matches_the_scheduler_effect_table_it_counts() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (retired_tx, _retired_rx) = RingBuffer::new(64);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+
+        engine.add_track(1).expect("the track registers");
+        engine.add_bus(50).expect("the bus registers");
+
+        // Five registrations: four built-in devices and one bridged plugin,
+        // which take their slots from the same table.
+        for id in 7..=10 {
+            engine.add_effect(id, "knead").expect("device registers");
+        }
+        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
+        engine
+            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .expect("the plugin registers");
+
+        // Placements. A splice moves an effect between chains; it registers
+        // nothing, so it must move neither count.
+        for (index, effect_id) in (7..=9usize).enumerate() {
+            engine
+                .insert_track_device(
+                    1,
+                    ChainEntry {
+                        effect_id,
+                        kind: DeviceKind::Effect,
+                    },
+                    index,
+                )
+                .expect("the track splice registers");
+        }
+        engine
+            .insert_bus_device(
+                50,
+                ChainEntry {
+                    effect_id: 10,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+
+        // Two chain removals that keep the effect registered: it returns to
+        // the master insert chain rather than leaving the table.
+        engine
+            .remove_track_device(1, 8)
+            .expect("the chain removal registers");
+        engine
+            .remove_track_device(1, 9)
+            .expect("the chain removal registers");
+
+        // Two retirements that really free their slots.
+        engine
+            .send_graph_batch(vec![
+                GraphCommand::RemoveTrackDeviceRetired {
+                    track_id: 1,
+                    effect_id: 7,
+                },
+                GraphCommand::RemoveBusDeviceRetired {
+                    bus_id: 50,
+                    effect_id: 10,
+                },
+            ])
+            .expect("two retirements against a table with room must be admitted");
+
+        scheduler.update_graph();
+
+        // The two retirements landed on strips that held them, so the table
+        // really did give two slots back — without which the equality below
+        // could hold on a stream the callback ignored.
+        assert_eq!(
+            scheduler.effect_table_len(),
+            3,
+            "the retirements must free exactly the two slots they named"
+        );
+        assert!(
+            scheduler
+                .timeline()
+                .track(1)
+                .expect("the track applied")
+                .device_chain()
+                .is_empty(),
+            "both chain removals and the track retirement must have applied"
+        );
+        assert!(scheduler
+            .timeline()
+            .bus(50)
+            .expect("the bus applied")
+            .device_chain()
+            .is_empty());
+
+        assert_eq!(
+            engine.registered_effect_count(),
+            scheduler.effect_table_len(),
+            "the control-side ledger must equal the table it claims to count"
+        );
     }
 }
