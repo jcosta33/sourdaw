@@ -129,6 +129,7 @@ export type ClipStateSnapshot = {
     readonly endBeat: number;
     readonly type: 'audio' | 'midi';
     readonly audioBufferId?: string;
+    readonly fileId?: string;
     readonly assetHash?: string;
     readonly audioOffsetBeats?: number;
     readonly midiOffsetBeats?: number;
