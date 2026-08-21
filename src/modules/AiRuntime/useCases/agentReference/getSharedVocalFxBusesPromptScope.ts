@@ -304,6 +304,17 @@ export function getSharedVocalFxBusesPromptScope(
             track.devices.at(-1)?.id !== source?.device.id ||
             track.pan !== 0 ||
             track.outputId !== 'master' ||
+            // Unity, deliberately — not the fader's ceiling. Every neighbouring
+            // condition in this conjunction is an eligibility gate of the same
+            // kind: one source, the tail effect last in the chain, centered,
+            // straight to master, no group, no sends. An automated refactor
+            // declines anything out of the ordinary, and a vocal pushed into
+            // headroom is out of the ordinary.
+            //
+            // Note plainly what this change does to it: the guard was dead while
+            // the fader itself stopped at `1`, and it is reachable now. A vocal
+            // above unity will be refused where the condition could previously
+            // never fire.
             track.gain > 1 ||
             (track.vcaGroupId !== null && track.vcaGroupId !== undefined) ||
             (track.sends?.length ?? 0) > 0

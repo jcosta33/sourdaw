@@ -132,11 +132,24 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// Headroom the fader allows above unity, in decibels — the mirror of
+/// `FADER_HEADROOM_DB` in `src/utils/audioLevelLaw.ts`, the definition of
+/// record. Ableton Live and Logic stop at +6 dB; change this only in
+/// lockstep with that constant.
+const FADER_HEADROOM_DB: f32 = 6.0;
+
 /// The fader ceiling, as a linear amplitude — the same product invariant as
-/// `FADER_MAX_GAIN` in `src/utils/audioLevelLaw.ts`: the track fader tops out
-/// at unity and there is no make-up gain above it, so a stored gain above
-/// unity must not render louder than it plays back.
-const FADER_MAX_GAIN: f32 = 1.0;
+/// `FADER_MAX_GAIN` in `src/utils/audioLevelLaw.ts`: `10^(FADER_HEADROOM_DB /
+/// 20)` ≈ 1.9953, `+6 dB` of headroom above unity, not unity itself — a
+/// track fader can produce make-up gain, the same as the reference DAWs
+/// above. A stored gain in that headroom band must render the same live and
+/// offline, or an export drifts quieter than what the fader played back
+/// (#789's class of bug, and the reason this native path exists at all).
+/// `f32::powf` is not a `const fn` on stable Rust, so this is a function
+/// rather than a `const`.
+fn fader_max_gain() -> f32 {
+    10f32.powf(FADER_HEADROOM_DB / 20.0)
+}
 
 /// This app's pan scale is −50…+50; the engine's pan law takes −1…+1.
 const PROJECT_PAN_SCALE: f32 = 50.0;
@@ -821,7 +834,8 @@ fn frames_u32(frames: u64, what: &str) -> Result<u32, String> {
 }
 
 /// The fader law: VCA folds in *before* the clamp (the composition order the
-/// live strip uses), the ceiling is unity, the floor a hard zero.
+/// live strip uses), the ceiling is `fader_max_gain()` (+6 dB headroom, not
+/// unity), the floor a hard zero.
 fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
     let stored = finite(stored_gain, "gain")?;
     if stored < 0.0 {
@@ -831,7 +845,7 @@ fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
     if !(folded > 0.0) {
         return Ok(0.0);
     }
-    Ok(folded.min(FADER_MAX_GAIN))
+    Ok(folded.min(fader_max_gain()))
 }
 
 /// −50…+50 project pan onto the engine's −1…+1.
@@ -2524,6 +2538,32 @@ mod tests {
                 }
             }
         ]))
+    }
+
+    /// The fader ceiling is +6 dB of headroom above unity, not unity itself:
+    /// a stored gain between 1.0 and the ceiling is real make-up gain and
+    /// must reach the engine unchanged, exactly like the live/web-offline
+    /// clamp in `clampFaderGain` (`src/utils/audioLevelLaw.ts`). Only a
+    /// value past the ceiling clamps.
+    #[test]
+    fn fader_gain_passes_make_up_gain_through_and_clamps_only_past_the_ceiling() {
+        let ceiling = fader_max_gain();
+        assert!(
+            (ceiling - 1.995_262_3).abs() < 0.000_01,
+            "the ceiling should be +6 dB (10^0.3 ≈ 1.9953), got {ceiling}"
+        );
+
+        let below_ceiling = fader_gain(1.5, 1.0).expect("1.5 is finite and non-negative");
+        assert_eq!(
+            below_ceiling, 1.5,
+            "a gain above unity but below the ceiling must pass through unchanged"
+        );
+
+        let above_ceiling = fader_gain(2.5, 1.0).expect("2.5 is finite and non-negative");
+        assert_eq!(
+            above_ceiling, ceiling,
+            "a gain past the ceiling must clamp to it, not to unity"
+        );
     }
 
     /// The wire vocabulary is 1:1 with the contract: every command kind the

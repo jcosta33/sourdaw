@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type ProjectContext } from '../../../models/ProjectContext';
 import {
     isComplexPrompt,
@@ -162,6 +164,18 @@ describe('promptParser parsing', () => {
         it('parses set volume with percentage', () => {
             const actions = tryParameterizedPath('set volume to 80%', context);
             expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: 0.8 } }]);
+        });
+
+        it('parses a make-up-gain volume above 100% without silently clamping it to unity', () => {
+            // 150% used to be pinned at gain: 1 (the old unity cap). It must
+            // now pass through as the fader can actually reach it.
+            const actions = tryParameterizedPath('set volume to 150%', context);
+            expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: 1.5 } }]);
+        });
+
+        it('still clamps a volume past the fader ceiling, at the real reachable maximum', () => {
+            const actions = tryParameterizedPath('set volume to 500%', context);
+            expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: FADER_MAX_GAIN } }]);
         });
 
         it('leaves quantize and transpose for the grounded provider path', () => {
