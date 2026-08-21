@@ -59,9 +59,11 @@ const productionBriefFixture = vi.hoisted(() => ({
     createdAt: 1,
     updatedAt: 2,
 }));
+const STORED_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
 vi.mock('../../../../stores/projectStore', () => ({
     projectStore: {
         value: {
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             name: 'P',
             createdAt: 1,
             keyRoot: 0,
@@ -90,6 +92,7 @@ describe('buildProjectData', () => {
     beforeEach(() => {
         exportCachedAudioBuffersMock.mockReset();
         exportCachedAudioBuffersMock.mockResolvedValue({});
+        Object.assign(productionBriefFixture, { id: 'production-brief', supersedesBriefId: null });
     });
 
     // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the
@@ -110,6 +113,21 @@ describe('buildProjectData', () => {
         expect(built?.missingBufferCount).toBe(0);
         expect(built?.data.meta.productionBrief).toEqual(productionBriefFixture);
         expect(built?.data.meta.productionBrief).not.toBe(productionBriefFixture);
+    });
+
+    it('reuses the stored project identity when the production brief identity changes', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        Object.assign(productionBriefFixture, {
+            id: 'replacement-production-brief',
+            supersedesBriefId: 'production-brief',
+        });
+
+        const built = await buildProjectData({ includeAudioBuffers: false });
+
+        expect(built?.data.meta.projectId).toBe(STORED_PROJECT_ID);
     });
 
     // Presence pin for the assertion above (ADR 0015 rule 4): the opt-in shape

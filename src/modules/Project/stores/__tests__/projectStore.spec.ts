@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
+import { deriveProjectIdFromMeta } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '../projectStore';
 
 type TestDoc = {
@@ -12,7 +13,7 @@ type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>
 
 type DurableProjectMeta = Pick<
     ProjectStoreState,
-    'name' | 'createdAt' | 'updatedAt' | 'keyRoot' | 'scaleName' | 'tuning' | 'productionBrief'
+    'projectId' | 'name' | 'createdAt' | 'updatedAt' | 'keyRoot' | 'scaleName' | 'tuning' | 'productionBrief'
 >;
 
 const fake_doc: TestDoc = {};
@@ -59,6 +60,7 @@ function create_valid_tuning(): ProjectStoreState['tuning'] {
 
 function create_valid_meta(): DurableProjectMeta {
     return {
+        projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
         name: 'Loaded Project',
         createdAt: 1_700_000_000_000,
         updatedAt: 1_700_000_001_000,
@@ -102,6 +104,21 @@ describe('projectStore', () => {
 
         expect(projectStore.value).toEqual({
             ...create_valid_meta(),
+            dirty: false,
+            loading: true,
+            initialized: false,
+        });
+    });
+
+    it('derives a deterministic identity when hydrating legacy metadata without one', () => {
+        const { projectId: _projectId, ...legacyMeta } = create_valid_meta();
+        fake_doc.projectMeta = legacyMeta;
+
+        projectStore.hydrate();
+
+        expect(projectStore.value).toEqual({
+            ...legacyMeta,
+            projectId: deriveProjectIdFromMeta(legacyMeta),
             dirty: false,
             loading: true,
             initialized: false,
@@ -152,6 +169,7 @@ describe('projectStore', () => {
     it('should default malformed durable fields independently while preserving valid neighboring durable fields', () => {
         const valid_meta = create_valid_meta();
         fake_doc.projectMeta = {
+            projectId: valid_meta.projectId,
             name: valid_meta.name,
             createdAt: 'bad-date',
             updatedAt: valid_meta.updatedAt,
@@ -164,6 +182,7 @@ describe('projectStore', () => {
         projectStore.hydrate();
 
         expect(projectStore.value).toEqual({
+            projectId: valid_meta.projectId,
             name: valid_meta.name,
             createdAt: defaultProjectStoreState.createdAt,
             updatedAt: valid_meta.updatedAt,
@@ -248,6 +267,7 @@ describe('projectStore', () => {
         await flush_pending_frame();
 
         expect(fake_doc.projectMeta).toEqual(expect.objectContaining({ productionBrief }));
+        expect(fake_doc.projectMeta).toEqual(expect.objectContaining({ projectId: state.projectId }));
         expect(mutation_count).toBe(1);
     });
 });

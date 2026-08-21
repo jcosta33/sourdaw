@@ -264,6 +264,23 @@ describe('replaceProjectData', () => {
         expect(mockProjectStore.set).toHaveBeenCalledWith(expect.objectContaining({ productionBrief }));
     });
 
+    it('hydrates the canonical project identity from the saved envelope', async () => {
+        const data = makeData();
+        data.version = 2;
+        data.meta.projectId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data,
+            transaction: makeTransaction(),
+        });
+
+        expect(result.status).toBe('committed');
+        expect(mockProjectStore.set).toHaveBeenCalledWith(
+            expect.objectContaining({ projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' })
+        );
+    });
+
     it('does not replace authority when superseded during native teardown', async () => {
         const unloading = Promise.withResolvers<void>();
         let isCurrent = true;

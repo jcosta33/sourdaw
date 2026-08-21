@@ -23,6 +23,8 @@ import { yeastStore } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
+    deriveProjectIdFromMeta,
+    isCanonicalProjectId,
     type ProjectData,
     type ProjectExportedAudioBuffer,
 } from '../../../models/ProjectData';
@@ -185,6 +187,7 @@ export async function buildProjectData({
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
         meta: {
+            projectId: isCanonicalProjectId(project.projectId) ? project.projectId : deriveProjectIdFromMeta(project),
             name: project.name,
             createdAt: project.createdAt,
             updatedAt: Date.now(),

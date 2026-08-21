@@ -16,6 +16,7 @@ import {
 } from '#/modules/Transport/stores';
 
 import { createDefaultProductionBrief } from '../../models/ProductionBrief';
+import { CURRENT_PROJECT_VERSION } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
 import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
 import { querySemanticProject } from '../semanticProjectQueries';
@@ -195,7 +196,7 @@ describe('semantic project queries', () => {
             schema: 'sourdaw.semantic-project-query',
             schemaVersion: 1,
             projectId: '42',
-            projectSchemaVersion: 1,
+            projectSchemaVersion: CURRENT_PROJECT_VERSION,
             queryType: 'object',
             page: { limit: 1, total: 3 },
         });

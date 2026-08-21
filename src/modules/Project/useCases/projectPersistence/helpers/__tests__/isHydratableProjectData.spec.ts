@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultGrooveTemplateState, isGrooveTemplateState, sanitizeGrooveTemplateState } from '#/modules/MIDI/stores';
 
-import { CURRENT_PROJECT_VERSION, type ProjectClip, type ProjectMeta } from '../../../../models/ProjectData';
+import {
+    CURRENT_PROJECT_VERSION,
+    deriveProjectIdFromMeta,
+    type ProjectClip,
+    type ProjectMeta,
+} from '../../../../models/ProjectData';
 import {
     isHydratableProjectData,
     type HydratableProjectData,
@@ -90,7 +95,7 @@ describe('isHydratableProjectData groove invariants', () => {
     it('does not coerce malformed current-schema groove data into validity', () => {
         const grooves = createValidGrooves();
         grooves.templates.at(-1)!.slots[0]!.timingOffset = Number.NaN;
-        const currentProject = createProject(grooves);
+        const currentProject = normalizeLegacyProjectData(createProject(grooves));
 
         const normalized = normalizeLegacyProjectData(currentProject);
 
@@ -124,13 +129,17 @@ describe('isHydratableProjectData groove invariants', () => {
     });
 });
 
-const validMeta: ProjectMeta = {
+const validMetaWithoutProjectId: ProjectMeta = {
     name: 'My Project',
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_001_000,
     keyRoot: 0,
     scaleName: 'major',
     tuning: { name: '12-TET', frequencies: [261.63, 293.66] },
+};
+const validMeta: ProjectMeta = {
+    ...validMetaWithoutProjectId,
+    projectId: deriveProjectIdFromMeta(validMetaWithoutProjectId),
 };
 
 const validClip: ProjectClip = {
@@ -158,7 +167,7 @@ const validTrack: HydratableProjectTrack = {
 function buildValidProjectData(): HydratableProjectData {
     return {
         version: CURRENT_PROJECT_VERSION,
-        meta: validMeta,
+        meta: structuredClone(validMeta),
         arrangement: { tracks: [validTrack] },
     };
 }
@@ -327,7 +336,11 @@ describe('isHydratableProjectData', () => {
     });
 
     it('keeps the optional chord-track field backward compatible with version-1 snapshots', () => {
-        expect(isHydratableProjectData(buildValidProjectData())).toBe(true);
+        const project = buildValidProjectData();
+        project.version = 1;
+        delete project.meta.projectId;
+
+        expect(isHydratableProjectData(project)).toBe(true);
     });
 
     it.each([

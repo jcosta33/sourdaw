@@ -3,11 +3,14 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
 
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../models/ProductionBrief';
+import { deriveDeterministicProjectId, deriveProjectIdFromMeta, isCanonicalProjectId } from '../models/ProjectData';
 
 const DOC_PREFIX_ROOT = 'root';
 const TUNING_FREQUENCY_COUNT = 128;
 
 export type ProjectStoreState = {
+    /** Present on every sanitized state; optional here so legacy-shaped project activators migrate on set. */
+    projectId?: string;
     name: string;
     createdAt: number;
     updatedAt: number;
@@ -28,10 +31,13 @@ export type ProjectStoreState = {
     initialized: boolean;
 };
 
+const DEFAULT_PROJECT_CREATED_AT = Date.now();
+
 export const defaultProjectStoreState: ProjectStoreState = {
+    projectId: deriveDeterministicProjectId(String(DEFAULT_PROJECT_CREATED_AT)),
     name: 'Untitled Project',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: DEFAULT_PROJECT_CREATED_AT,
+    updatedAt: DEFAULT_PROJECT_CREATED_AT,
     dirty: false,
     loading: true,
     keyRoot: 0,
@@ -40,11 +46,12 @@ export const defaultProjectStoreState: ProjectStoreState = {
         name: 'Equal Temperament',
         frequencies: Array.from({ length: TUNING_FREQUENCY_COUNT }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
     },
-    productionBrief: createDefaultProductionBrief(),
+    productionBrief: createDefaultProductionBrief(DEFAULT_PROJECT_CREATED_AT),
     initialized: false,
 };
 
 const DURABLE_PROJECT_META_KEYS = [
+    'projectId',
     'name',
     'createdAt',
     'updatedAt',
@@ -224,6 +231,15 @@ function apply_production_brief(source: object, next_state: ProjectStoreState): 
     }
 }
 
+function apply_project_id(source: object, next_state: ProjectStoreState): void {
+    const property = get_own_value({ value: source, key: 'projectId' });
+    if (property.found && isCanonicalProjectId(property.value)) {
+        next_state.projectId = property.value;
+        return;
+    }
+    next_state.projectId = deriveProjectIdFromMeta(next_state);
+}
+
 function get_valid_transient_state(value: unknown): ProjectTransientState | null {
     if (!is_plain_object(value)) {
         return null;
@@ -261,6 +277,7 @@ function normalize_project_store_state(
     apply_scale_name(value, next_state);
     apply_tuning(value, next_state);
     apply_production_brief(value, next_state);
+    apply_project_id(value, next_state);
 
     return next_state;
 }
@@ -312,15 +329,19 @@ function sanitize_project_store_state(value: unknown): ProjectStoreState {
 
 export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
-        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning, productionBrief }) => ({
-            name,
-            createdAt,
-            updatedAt,
-            keyRoot,
-            scaleName,
-            tuning,
-            productionBrief,
-        }),
+        toCrdt: (state) => {
+            const { projectId, name, createdAt, updatedAt, keyRoot, scaleName, tuning, productionBrief } = state;
+            return {
+                projectId: isCanonicalProjectId(projectId) ? projectId : deriveProjectIdFromMeta(state),
+                name,
+                createdAt,
+                updatedAt,
+                keyRoot,
+                scaleName,
+                tuning,
+                productionBrief,
+            };
+        },
         fromCrdt: normalize_project_meta_from_crdt,
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.

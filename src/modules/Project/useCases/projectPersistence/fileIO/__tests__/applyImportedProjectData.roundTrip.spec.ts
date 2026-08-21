@@ -4,7 +4,12 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
-import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
+import {
+    CURRENT_PROJECT_VERSION,
+    deriveDeterministicProjectId,
+    type ProjectData,
+    type ProjectTrack,
+} from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
@@ -212,6 +217,7 @@ function makeProject(): ProjectData {
     return {
         version: CURRENT_PROJECT_VERSION,
         meta: {
+            projectId: deriveDeterministicProjectId('1'),
             name: 'Round Trip',
             createdAt: 1,
             updatedAt: 2,
@@ -862,6 +868,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
     it('normalizes missing version-1 automation fields before strict validation', async () => {
         const project = makeProject();
+        project.version = 1;
         Reflect.set(project, 'automation', {
             lanes: [
                 {
@@ -898,6 +905,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         // must ignore it instead of rejecting the file — and it must not survive
         // into the hydrated store, or a re-save would write it back out.
         const project = makeProject();
+        project.version = 1;
         Reflect.set(project, 'automation', {
             lanes: [
                 {
