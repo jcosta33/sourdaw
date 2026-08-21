@@ -42,6 +42,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
     ['detect_smart_loop_points', ['instance_id', 'sample_id']],
     ['engine_rt_diagnostics', []],
+    ['feed_crumbs_record_input', ['audio_bytes']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],

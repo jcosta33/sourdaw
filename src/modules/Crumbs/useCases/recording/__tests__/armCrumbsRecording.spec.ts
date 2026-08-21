@@ -3,9 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const armRecording = vi.hoisted(() =>
     vi.fn<typeof import('../../../repositories/crumbsBridge/armRecording').armRecording>(() => Promise.resolve())
 );
+const startCrumbsRecordFeed = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../repositories/crumbsBridge/armRecording', () => ({
     armRecording,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startCrumbsRecordFeed,
 }));
 
 import { padStore, ensurePadInstance } from '../../../stores/padStore';
@@ -16,6 +21,7 @@ const INSTANCE = 'inst-A';
 describe('armCrumbsRecording parameter validation', () => {
     beforeEach(() => {
         armRecording.mockClear();
+        startCrumbsRecordFeed.mockClear();
         padStore.set({});
         ensurePadInstance(INSTANCE);
     });
@@ -74,6 +80,29 @@ describe('armCrumbsRecording parameter validation', () => {
 
     it('reports an armed recorder only once the bridge accepted the arm', async () => {
         await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).resolves.toBe(true);
+    });
+
+    it('engages the monitored-input record feed once the native arm is accepted', async () => {
+        // The native bridges have no other producer: an arm that does not
+        // engage the feed records silence (#2231).
+        await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).resolves.toBe(true);
+        expect(startCrumbsRecordFeed).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not engage the record feed for a refused arm', async () => {
+        armRecording.mockRejectedValueOnce(new Error('Crumbs instance not found'));
+
+        await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).rejects.toThrow('Crumbs instance not found');
+
+        expect(startCrumbsRecordFeed).not.toHaveBeenCalled();
+    });
+
+    it('does not engage the record feed when there is nothing to arm', async () => {
+        padStore.set({});
+
+        await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).resolves.toBe(false);
+
+        expect(startCrumbsRecordFeed).not.toHaveBeenCalled();
     });
 
     it('propagates a backend refusal instead of reporting an armed recorder', async () => {
