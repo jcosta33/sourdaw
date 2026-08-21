@@ -259,6 +259,11 @@ the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
 
+`deliver` and `issue:reconcile` enforce that by construction: they read their whole script closure
+from `origin/main`, execute it from a snapshot, and never read the lane's copy. A lane that is
+merely behind `main` therefore delivers without merging first — the code that runs is main's either
+way, and forcing a merge to prove it only risks staling generated artifacts.
+
 Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
 account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually
 does: it blocks deletion and non-fast-forward, forces a squashed pull request, and demands resolved

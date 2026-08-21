@@ -87,33 +87,33 @@ describe('package scripts and gitignore', () => {
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
-        for (const changedPath of paths) {
-            let executed = false;
-            await expect(
-                runTrustedGithubWriteCommand('deliver', ['42'], {
-                    resolveOriginMain: () => 'trusted-sha',
-                    readLocalSource: (candidate) => (candidate === changedPath ? 'mutated' : 'trusted'),
-                    readOriginSource: (commit) => {
-                        expect(commit).toBe('trusted-sha');
-                        return 'trusted';
-                    },
-                    executeSnapshot: async () => {
-                        executed = true;
-                        return 0;
-                    },
-                })
-            ).rejects.toThrow(new RegExp(changedPath.replaceAll('.', '\\.')));
-            expect(executed).toBe(false);
-        }
+        // A lane holding a different copy of any trusted script — mutated, or
+        // simply older than main — still delivers, and still runs main's code.
+        // Every source handed to the snapshot comes from the pinned origin
+        // commit, and the port exposes no way to read the lane's copy at all,
+        // so no lane state can reach the GitHub write.
+        let executedSources: ReadonlyMap<string, string> | undefined;
+        const exitCode = await runTrustedGithubWriteCommand('deliver', ['42'], {
+            resolveOriginMain: () => 'trusted-sha',
+            readOriginSource: (commit, candidate) => {
+                expect(commit).toBe('trusted-sha');
+                return `origin:${candidate}`;
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                executedSources = snapshot.sources;
+                return 0;
+            },
+        });
+
+        expect(exitCode).toBe(0);
+        expect([...(executedSources ?? new Map())]).toEqual(paths.map((path) => [path, `origin:${path}`]));
 
         let executedUncheckedDependency = false;
-        const sourceFor = (candidate: string) =>
-            candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted';
         await expect(
             runTrustedGithubWriteCommand('deliver', ['42'], {
                 resolveOriginMain: () => 'trusted-sha',
-                readLocalSource: sourceFor,
-                readOriginSource: (_commit, candidate) => sourceFor(candidate),
+                readOriginSource: (_commit, candidate) =>
+                    candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted',
                 executeSnapshot: async () => {
                     executedUncheckedDependency = true;
                     return 0;
@@ -123,10 +123,9 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
-    it('pins one origin commit and executes only the verified snapshot after local mutation', async () => {
+    it('pins one origin commit and executes only that snapshot while origin advances', async () => {
         const paths = trustedDependencyPaths('deliver');
         const trusted = new Map(paths.map((path) => [path, `trusted:${path}`]));
-        const local = new Map(trusted);
         const originReads: string[] = [];
         let resolves = 0;
         let liveOrigin = 'pinned-sha';
@@ -138,14 +137,12 @@ describe('package scripts and gitignore', () => {
                 liveOrigin = 'advanced-sha';
                 return resolved;
             },
-            readLocalSource: (path) => local.get(path) ?? '',
             readOriginSource: (commit, path) => {
                 expect(liveOrigin).toBe('advanced-sha');
                 originReads.push(`${commit}:${path}`);
                 return trusted.get(path) ?? '';
             },
             executeSnapshot: async (command, args, snapshot) => {
-                local.set('scripts/deliverPullRequest.ts', 'mutated-after-verification');
                 expect(command).toBe('deliver');
                 expect(args).toEqual(['2495']);
                 expect(snapshot.commit).toBe('pinned-sha');

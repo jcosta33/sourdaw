@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,6 @@ export type TrustedSourceSnapshot = {
 
 type TrustedSourcePort = {
     resolveOriginMain: () => string;
-    readLocalSource: (path: string) => string;
     readOriginSource: (commit: string, path: string) => string;
     executeSnapshot: (
         command: TrustedGithubWriteCommand,
@@ -105,13 +104,17 @@ export async function runTrustedGithubWriteCommand(
     if (commit.trim() === '') {
         throw new Error('origin/main did not resolve to a commit');
     }
+    // The lane's own copy of these scripts is never read, and never compared.
+    // Integrity comes from executing the `origin/main` snapshot below: whatever
+    // a lane holds — mutated, or merely older than main — cannot reach the
+    // GitHub write, because it is not the code that runs. Comparing the two and
+    // refusing on a difference protected nothing the snapshot does not already
+    // protect, and it forced a lane that had merely fallen behind to merge main
+    // before it could deliver. A merge can leave generated artifacts stale, so
+    // that requirement cost real safety to buy none.
     const sources = new Map<string, string>();
     for (const path of trustedDependencyPaths(command)) {
-        const trustedSource = port.readOriginSource(commit, path);
-        if (port.readLocalSource(path) !== trustedSource) {
-            throw new Error(`${path} does not match origin/main at ${commit}; refusing to run a mutated copy`);
-        }
-        sources.set(path, trustedSource);
+        sources.set(path, port.readOriginSource(commit, path));
     }
     assertTrustedSourceGraph(command, sources);
     return port.executeSnapshot(command, args, { commit, sources });
@@ -187,7 +190,6 @@ function defaultPort(repositoryRoot: string): TrustedSourcePort {
     return {
         resolveOriginMain: () =>
             captureGit(repositoryRoot, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']).trim(),
-        readLocalSource: (path) => readFileSync(resolve(repositoryRoot, path), 'utf8'),
         readOriginSource: (commit, path) => captureGit(repositoryRoot, ['show', `${commit}:${path}`]),
         executeSnapshot: executeTrustedSnapshot,
     };
