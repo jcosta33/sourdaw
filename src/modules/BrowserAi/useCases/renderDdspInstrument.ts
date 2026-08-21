@@ -46,6 +46,7 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
             });
             const cached = await readRenderCache({ cacheKey });
             if (cached) {
+                markRenderComplete(phraseId, cacheKey);
                 return {
                     audio: cached,
                     sampleRate: 44_100,

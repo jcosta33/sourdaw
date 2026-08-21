@@ -334,7 +334,10 @@ export const inferenceWorkerBridge = {
         const worker = await getTfjsWorker();
         const response = await sendRequest(worker, workerState.tfjs, input);
         scheduleTfjsDestroy();
-        return response as Extract<WorkerResponse, { type: 'ddsp-result' }>;
+        if (response.type !== 'ddsp-result' || response.backend !== 'webgpu') {
+            throw new Error(`DDSP inference did not return required WebGPU PCM: ${response.type}`);
+        }
+        return response;
     },
 
     // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API

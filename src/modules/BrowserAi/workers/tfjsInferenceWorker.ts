@@ -86,6 +86,9 @@ async function createSession(
     request: Extract<WorkerRequest, { type: 'create-session-from-model-storage' }>
 ): Promise<void> {
     if (sessions.has(request.modelId)) {
+        for (const artifact of request.artifacts) {
+            artifact.modelDataPort.close();
+        }
         const tf = await loadTfjs();
         post({
             type: 'session-created',

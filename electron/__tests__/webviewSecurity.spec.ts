@@ -101,11 +101,13 @@ describe('the production Content-Security-Policy', () => {
             'https://*.huggingface.co',
             'https://*.hf.co',
             'https://raw.githubusercontent.com',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/',
         ]);
         expect(directives.get('connect-src')).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('http:');
         expect([...directives.values()].flat()).not.toContain('ws:');
+        expect(directives.get('connect-src')).not.toContain('https://storage.googleapis.com');
         // `worker-src 'self'` refuses a blob: worker at runtime, on a machine
         // in front of a musician. This scan fails the same mistake at test
         // time instead.

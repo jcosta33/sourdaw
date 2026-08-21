@@ -384,7 +384,13 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         const promise = inferenceWorkerBridge.runDdspInference(ddspRequest('req-1'));
         await flush();
         const worker = tfjsWorker();
-        reply(worker, { type: 'ddsp-result', requestId: 'req-1', audio: new Float32Array(4), nativeSampleRate: 16000 });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'req-1',
+            audio: new Float32Array(4),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
         await promise;
 
         await vi.advanceTimersByTimeAsync(60_000);
@@ -399,13 +405,25 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         await flush();
         const worker = tfjsWorker();
 
-        reply(worker, { type: 'ddsp-result', requestId: 'a', audio: new Float32Array(2), nativeSampleRate: 16000 });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'a',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
         await a;
 
         await vi.advanceTimersByTimeAsync(60_000);
         expect(worker.terminate).not.toHaveBeenCalled();
 
-        reply(worker, { type: 'ddsp-result', requestId: 'b', audio: new Float32Array(2), nativeSampleRate: 16000 });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'b',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
         await expect(b).resolves.toMatchObject({ type: 'ddsp-result', requestId: 'b' });
     });
 
@@ -414,7 +432,13 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         const first = inferenceWorkerBridge.runDdspInference(ddspRequest('first'));
         await flush();
         const worker = tfjsWorker();
-        reply(worker, { type: 'ddsp-result', requestId: 'first', audio: new Float32Array(2), nativeSampleRate: 16000 });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'first',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
         await first;
         expect(vi.getTimerCount()).toBe(1);
 
@@ -432,6 +456,7 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
             requestId: 'second',
             audio: new Float32Array(2),
             nativeSampleRate: 16000,
+            backend: 'webgpu',
         });
         await expect(second).resolves.toMatchObject({ requestId: 'second' });
     });
@@ -606,7 +631,13 @@ describe('inferenceWorkerBridge — TF.js cancellation', () => {
 
         // 'a' finishes first — with 'b' still pending, this arms the idle-destroy
         // timer (it arms unconditionally; the pending-count check happens on fire).
-        reply(worker, { type: 'ddsp-result', requestId: 'a', audio: new Float32Array(2), nativeSampleRate: 16000 });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'a',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
         await a;
         expect(vi.getTimerCount()).toBe(1);
 
