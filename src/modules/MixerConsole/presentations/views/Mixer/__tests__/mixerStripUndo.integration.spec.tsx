@@ -62,6 +62,13 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.f
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
+    getRuntimeGraphRevision: vi.fn(() => 0),
+    initializeTrackStripFromSnapshot: vi.fn(() => ({
+        acceptance: 'accepted' as const,
+        application: 'applied' as const,
+        correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+        runtimeRevision: 1,
+    })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getTrackAnalyser: vi.fn(() => null),
     getMasterAnalyser: vi.fn(() => null),
