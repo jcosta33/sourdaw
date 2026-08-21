@@ -1,0 +1,45 @@
+src/modules/BrowserAi/useCases/downloadModel.ts
+  s_27578aec2aab3b::t_0c385f99026275 35-37
+src/modules/BrowserAi/useCases/removeModel.ts
+  s_27578aec2aab3b::t_0c385f99026275 22-24
+src/modules/BrowserAi/useCases/__tests__/downloadModel.spec.ts
+  s_27578aec2aab3b::t_6f01c2ec2a820e 96-98,104-106,114-138
+  s_27578aec2aab3b::t_a239f5b4ee1de3 139-140
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_0c385f99026275 3,118-120
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_39c92bb073cf55 14-17,55,131-143
+  s_27578aec2aab3b::t_14399ebf56f0d8 144-145
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_27578aec2aab3b::t_7958a3f643ed31 14-16,78-79,87-96
+  s_27578aec2aab3b::t_794242ac2a2f06 97-100
+tests/e2e/modelManagerAdmission.spec.ts
+  s_27578aec2aab3b::t_7958a3f643ed31 30
+  s_27578aec2aab3b::t_084fb63ec46fd6 32
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_a3af1843771091 10,16-17,19,315-364
+  s_27578aec2aab3b::t_cb4d7d1c5f0713 365
+src/modules/BrowserAi/useCases/__tests__/removeModel.spec.ts
+  s_27578aec2aab3b::t_6f01c2ec2a820e 52-64,82,85,87-88,104,106-128,142,144
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_ba8c968066fa8b 410-413
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_ba8c968066fa8b 117,119-120,688-691
+  s_27578aec2aab3b::t_3775cba9abc710 1185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "39df9fe6186eed211cf7f274b929cb69f1d5a5ae",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
