@@ -8,6 +8,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
@@ -386,7 +387,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     return (() => {
                         if (kokoroStatus === 'downloading') {
                             return (
-                                <div className="space-y-1.5">
+                                <Stack gap={1.5}>
                                     <p className="text-[9px] text-muted-foreground">Downloading voice model…</p>
                                     <div
                                         className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
@@ -405,7 +406,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     <p className="text-[9px] text-muted-foreground/60 tabular-nums">
                                         {Math.round(kokoroProgress * 100)}%
                                     </p>
-                                </div>
+                                </Stack>
                             );
                         } else {
                             if (kokoroStatus !== 'ready') {
@@ -432,8 +433,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                 );
                             } else {
                                 return (
-                                    <div className="space-y-2">
-                                        <div className="space-y-1">
+                                    <Stack gap={2}>
+                                        <Stack gap={1}>
                                             <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
                                                 Text
                                             </label>
@@ -444,8 +445,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                 rows={2}
                                                 aria-label="TTS text"
                                             />
-                                        </div>
-                                        <div className="space-y-1">
+                                        </Stack>
+                                        <Stack gap={1}>
                                             <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
                                                 Voice
                                             </label>
@@ -454,8 +455,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                 onChange={setTtsVoiceId}
                                                 disabled={isRenderingTts}
                                             />
-                                        </div>
-                                        <div className="space-y-1">
+                                        </Stack>
+                                        <Stack gap={1}>
                                             <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
                                                 Speed
                                             </label>
@@ -472,7 +473,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                 <option value="1.5">1.5× Fast</option>
                                                 <option value="2.0">2.0× Very fast</option>
                                             </DawCompactSelect>
-                                        </div>
+                                        </Stack>
                                         <Button
                                             variant="secondary"
                                             size="xs"
@@ -493,7 +494,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                             )}
                                         </Button>
                                         {ttsResults.length > 0 ? (
-                                            <div className="space-y-1 pt-1">
+                                            <Stack gap={1} className="pt-1">
                                                 <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
                                                     Drag onto an audio track
                                                 </p>
@@ -506,9 +507,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                         name={r.name}
                                                     />
                                                 ))}
-                                            </div>
+                                            </Stack>
                                         ) : null}
-                                    </div>
+                                    </Stack>
                                 );
                             }
                         }
@@ -540,7 +541,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         const renderIife_14 = () => {
                             if (vocoderStatus === 'downloading') {
                                 return (
-                                    <div className="space-y-1.5">
+                                    <Stack gap={1.5}>
                                         <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
                                         <div
                                             className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
@@ -559,19 +560,19 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         <p className="text-[9px] text-muted-foreground/60 tabular-nums">
                                             {Math.round(vocoderProgress * 100)}%
                                         </p>
-                                    </div>
+                                    </Stack>
                                 );
                             } else {
                                 if (vocoderStatus !== 'ready') {
                                     return (
-                                        <div className="space-y-1.5">
+                                        <Stack gap={1.5}>
                                             <p className="text-[9px] text-muted-foreground/70">
                                                 {vocoderStatus === 'error'
                                                     ? 'Download failed — check your connection and try again.'
                                                     : 'A singing engine is also required to render audio.'}
                                             </p>
                                             <DawMicroBadge tone="muted">Unavailable</DawMicroBadge>
-                                        </div>
+                                        </Stack>
                                     );
                                 } else {
                                     return (
@@ -599,7 +600,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                 )}
                                             </Button>
                                             {svsResults.length > 0 ? (
-                                                <div className="space-y-1 pt-1">
+                                                <Stack gap={1} className="pt-1">
                                                     <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
                                                         Drag onto an audio track
                                                     </p>
@@ -612,7 +613,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                             name={r.name}
                                                         />
                                                     ))}
-                                                </div>
+                                                </Stack>
                                             ) : null}
                                         </>
                                     );
@@ -621,8 +622,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         };
 
                         return (
-                            <div className="space-y-2">
-                                <div className="space-y-1">
+                            <Stack gap={2}>
+                                <Stack gap={1}>
                                     <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
                                         Voice
                                     </label>
@@ -638,8 +639,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                             </option>
                                         ))}
                                     </DawCompactSelect>
-                                </div>
-                                <div className="space-y-1">
+                                </Stack>
+                                <Stack gap={1}>
                                     <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
                                         Lyrics
                                     </label>
@@ -650,8 +651,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         rows={2}
                                         aria-label="Singing lyrics"
                                     />
-                                </div>
-                                <div className="space-y-1">
+                                </Stack>
+                                <Stack gap={1}>
                                     <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
                                         Quality
                                     </label>
@@ -674,9 +675,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                             </option>
                                         ))}
                                     </DawCompactSelect>
-                                </div>
+                                </Stack>
                                 {renderIife_14()}
-                            </div>
+                            </Stack>
                         );
                     }
                 }
@@ -689,7 +690,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     detailMode="badge"
                 >
                     {/* Mode toggle */}
-                    <div className="flex gap-1 mb-2">
+                    <Row align="stretch" gap={1} className="mb-2">
                         <button
                             type="button"
                             onClick={() => setVocalMode('spoken')}
@@ -709,7 +710,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         >
                             Sung unavailable
                         </button>
-                    </div>
+                    </Row>
                     {/* ── Spoken mode (Kokoro TTS) ── */}
                     {renderIife_13()}
                 </DawPluginSectionCard>
@@ -725,7 +726,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 title="AI Actions"
                 startSlot={<Sparkles className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />}
             />
-            <div className="space-y-2">
+            <Stack gap={2}>
                 {/* AI Variations */}
                 <DawPluginSectionCard
                     title="AI Variations"
@@ -758,7 +759,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
                 {/* Vocals — unified section for Spoken (Kokoro TTS) and Sung (DiffSinger SVS) */}
                 {renderIife_12()}
-            </div>
+            </Stack>
         </section>
     );
 };

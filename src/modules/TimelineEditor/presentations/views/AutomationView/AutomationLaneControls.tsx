@@ -5,6 +5,8 @@ import { type ReactElement } from 'react';
 
 import { Eye, EyeOff, X, Maximize2 } from 'lucide-react';
 
+import { Row } from '#/components/layout';
+
 type AutomationLaneControlsProps = {
     isVisible: boolean;
     selectedCount: number;
@@ -20,7 +22,7 @@ export const AutomationLaneControls = ({
     onToggleVisibility,
     onClose,
 }: AutomationLaneControlsProps): ReactElement => (
-    <div className="absolute top-1 right-2 z-10 flex items-center gap-0.5">
+    <Row gap={0.5} className="absolute top-1 right-2 z-10">
         {selectedCount > 0 ? <span className="text-[8px] text-muted-foreground mr-1">{selectedCount} sel</span> : null}
         <button
             type="button"
@@ -47,5 +49,5 @@ export const AutomationLaneControls = ({
         >
             <X className="size-3" />
         </button>
-    </div>
+    </Row>
 );

@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
+import { Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -33,9 +34,9 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
     };
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <SectionHeader title="Transfer Curve" />
-            <div className="flex justify-center">
+            <Row align="stretch" justify="center">
                 <CompressorCurve
                     threshold={pv['comp-threshold'] ?? -20}
                     ratio={pv['comp-ratio'] ?? 4}
@@ -45,7 +46,7 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                     height={140}
                     onParamChange={change}
                 />
-            </div>
+            </Row>
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
                 {filterParams(parameters, ['comp-threshold', 'comp-ratio']).map((param) => (
@@ -62,7 +63,7 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-        </div>
+        </Stack>
     );
 };
 

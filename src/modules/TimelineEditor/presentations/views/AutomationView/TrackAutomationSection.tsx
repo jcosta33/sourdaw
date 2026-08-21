@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react';
 
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { setAutomationMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -67,10 +68,10 @@ const LaneSparkline = ({
             className="relative bg-surface-base/20 cursor-pointer border-b border-border/10"
             onClick={() => toggleLaneCollapsed(lane.id)}
         >
-            <div className="absolute top-0.5 left-1 flex items-center gap-1 z-10">
+            <Row gap={1} className="absolute top-0.5 left-1 z-10">
                 <ChevronRight className="size-2.5 text-muted-foreground/50" />
                 <span className="text-[8px] text-muted-foreground/60 truncate max-w-[80px]">{lane.parameterName}</span>
-            </div>
+            </Row>
             <svg width={width} height={SPARKLINE_HEIGHT} className="absolute inset-0">
                 <path d={pathData} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.5} />
             </svg>
@@ -102,8 +103,9 @@ export const TrackAutomationSection = ({
 
     return (
         <div className="border-b border-border/30">
-            <div
-                className="flex items-center gap-2 px-2 h-8 bg-surface-raised/50 border-b border-border/20 cursor-pointer select-none"
+            <Row
+                gap={2}
+                className="px-2 h-8 bg-surface-raised/50 border-b border-border/20 cursor-pointer select-none"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 <div className="size-2.5 rounded-sm" style={{ backgroundColor: trackColor }} />
@@ -120,7 +122,7 @@ export const TrackAutomationSection = ({
                     className="ml-auto"
                     onModeChange={(mode) => setAutomationMode(trackId, mode)}
                 />
-            </div>
+            </Row>
 
             {isExpanded ? (
                 <div>

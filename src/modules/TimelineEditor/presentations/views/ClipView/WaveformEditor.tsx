@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { Slider } from '#/components/ui/slider';
@@ -36,9 +37,9 @@ import {
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
-import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -424,7 +425,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     };
 
     return (
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <Stack grow className="overflow-hidden">
             <DawControlStrip>
                 <span className="text-[10px] text-muted-foreground">Zoom:</span>
                 <Slider
@@ -466,7 +467,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                 {warpState.enabled ? (
                     <>
                         {AVAILABLE_STRETCH_MODES.length > 1 ? (
-                            <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
+                            <Row gap={0.5} className="rounded-md border border-border/40 p-0.5">
                                 {AVAILABLE_STRETCH_MODES.map((mode) => (
                                     <Button
                                         key={mode}
@@ -479,7 +480,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                                         {mode}
                                     </Button>
                                 ))}
-                            </div>
+                            </Row>
                         ) : null}
 
                         <span className="text-[10px] text-[var(--color-accent-peach)]/70">
@@ -511,9 +512,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                     onContextMenu={handleWaveContextMenu}
                 />
                 {isDragging ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-primary/10 pointer-events-none">
+                    <Row justify="center" className="absolute inset-0 bg-primary/10 pointer-events-none">
                         <span className="text-sm font-medium text-primary">Drop audio file here</span>
-                    </div>
+                    </Row>
                 ) : null}
             </div>
             {waveCtxMenu ? (
@@ -602,6 +603,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                     </button>
                 </div>
             ) : null}
-        </div>
+        </Stack>
     );
 };

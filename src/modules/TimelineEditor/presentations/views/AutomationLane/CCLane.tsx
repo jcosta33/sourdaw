@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, type PointerEvent, useState, useRef } from 'react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -140,7 +141,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
 
     if (!clipId) {
         return (
-            <div className="flex h-full items-center justify-center">
+            <Row justify="center" className="h-full">
                 <DawBlockedState
                     compact
                     eyebrow="Clip Automation"
@@ -149,7 +150,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                     description="Choose a MIDI clip to edit this CC lane."
                     summary="Controller curves are stored per clip, so this lane activates once a clip is focused."
                 />
-            </div>
+            </Row>
         );
     }
 
@@ -209,9 +210,9 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 );
             })}
             {points.length === 0 ? (
-                <div className="flex h-full items-center justify-center pointer-events-none">
+                <Row justify="center" className="h-full pointer-events-none">
                     <p className="text-[10px] text-muted-foreground">Click to add CC points</p>
-                </div>
+                </Row>
             ) : null}
         </div>
     );

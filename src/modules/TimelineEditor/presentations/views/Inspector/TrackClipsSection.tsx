@@ -5,6 +5,7 @@ import { Check, GripVertical, X, Sparkles } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement/useCases';
 import { MIDI_CLIP_DRAG_MIME_TYPE } from '#/utils/midiClipDrag';
@@ -36,7 +37,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                 onSelectClip(clip.id);
                             }}
                         >
-                            <div className="flex items-center gap-1.5">
+                            <Row gap={1.5}>
                                 {clip.isGhost ? (
                                     <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" />
                                 ) : null}
@@ -62,12 +63,12 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                         <GripVertical aria-hidden="true" className="size-3" />
                                     </button>
                                 ) : null}
-                            </div>
+                            </Row>
                             <MetaText>
                                 bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
                             </MetaText>
                             {clip.isGhost ? (
-                                <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/30">
+                                <Row gap={1} className="mt-1.5 pt-1.5 border-t border-border/30">
                                     <Button
                                         variant="secondary"
                                         size="xs"
@@ -90,7 +91,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                     >
                                         <X className="size-3 mr-1" /> Dismiss
                                     </Button>
-                                </div>
+                                </Row>
                             ) : null}
                         </ChoiceCard>
                     ))}

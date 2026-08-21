@@ -8,6 +8,7 @@ import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
+import { Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -112,12 +113,12 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
     }
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             {/* Interactive visualizations based on available parameters */}
             {hasEnvelope ? (
                 <div>
                     <SectionHeader title="Envelope" />
-                    <div className="flex justify-center mb-2">
+                    <Row align="stretch" justify="center" className="mb-2">
                         <ADSREnvelope
                             attack={pv.attack ?? pv.Attack ?? 0.01}
                             decay={pv.decay ?? pv.Decay ?? 0.2}
@@ -127,13 +128,13 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                             height={70}
                             onParamChange={change}
                         />
-                    </div>
+                    </Row>
                 </div>
             ) : null}
             {hasFilter ? (
                 <div>
                     <SectionHeader title="Filter" />
-                    <div className="flex justify-center mb-2">
+                    <Row align="stretch" justify="center" className="mb-2">
                         <FilterResponse
                             cutoff={pv.cutoff ?? pv.Cutoff ?? pv.frequency ?? 5000}
                             resonance={pv.resonance ?? pv.Resonance ?? pv.q ?? 1}
@@ -142,13 +143,13 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                             height={60}
                             onParamChange={change}
                         />
-                    </div>
+                    </Row>
                 </div>
             ) : null}
             {hasCompressor ? (
                 <div>
                     <SectionHeader title="Compression" />
-                    <div className="flex justify-center mb-2">
+                    <Row align="stretch" justify="center" className="mb-2">
                         <CompressorCurve
                             threshold={pv.threshold ?? pv.Threshold ?? -20}
                             ratio={pv.ratio ?? pv.Ratio ?? 4}
@@ -158,13 +159,13 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                             height={120}
                             onParamChange={change}
                         />
-                    </div>
+                    </Row>
                 </div>
             ) : null}
             {hasOscillator ? (
                 <div>
                     <SectionHeader title="Oscillator" />
-                    <div className="flex justify-center mb-2">
+                    <Row align="stretch" justify="center" className="mb-2">
                         <OscillatorWaveform
                             waveform="sawtooth"
                             osc2Waveform="sawtooth"
@@ -173,7 +174,7 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                             width={200}
                             height={50}
                         />
-                    </div>
+                    </Row>
                 </div>
             ) : null}
             {/* Parameter sections — all fully visible */}
@@ -189,7 +190,7 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     </div>
                 );
             })}
-        </div>
+        </Stack>
     );
 };
 

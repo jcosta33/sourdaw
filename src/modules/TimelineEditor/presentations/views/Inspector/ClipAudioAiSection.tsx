@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -112,12 +113,12 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                 title="AI Actions"
                 startSlot={<Sparkles className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />}
             />
-            <div className="space-y-3">
-                <div className="bg-surface-raised/50 rounded-md p-2 space-y-2 border border-border/30">
-                    <div className="flex items-center justify-between">
+            <Stack gap={3}>
+                <Stack gap={2} className="bg-surface-raised/50 rounded-md p-2 border border-border/30">
+                    <Row justify="between">
                         <span className="text-[10px] font-medium text-foreground/90">Denoise</span>
                         {hasDenoised ? (
-                            <div className="flex items-center gap-0.5 bg-surface-base rounded-md p-0.5">
+                            <Row gap={0.5} className="bg-surface-base rounded-md p-0.5">
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Button
@@ -146,10 +147,10 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                                     </TooltipTrigger>
                                     <TooltipContent>Denoised (B)</TooltipContent>
                                 </Tooltip>
-                            </div>
+                            </Row>
                         ) : null}
-                    </div>
-                    <div className="space-y-1">
+                    </Row>
+                    <Stack gap={1}>
                         <ControlHeader label="Strength" value={`${denoiseStrength}%`} valueClassName="font-normal" />
                         <Slider
                             value={[denoiseStrength]}
@@ -159,7 +160,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                             step={5}
                             aria-label="Denoise strength"
                         />
-                    </div>
+                    </Stack>
                     <Button
                         variant="secondary"
                         size="xs"
@@ -177,9 +178,9 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                             </>
                         )}
                     </Button>
-                </div>
+                </Stack>
 
-                <div className="flex gap-1">
+                <Row align="stretch" gap={1}>
                     <Button
                         variant="ghost"
                         size="xs"
@@ -202,13 +203,13 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                     >
                         MIDI (Basic)
                     </Button>
-                </div>
+                </Row>
 
-                <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
-                    <div className="flex items-center gap-1.5">
+                <Stack gap={1.5} className="bg-surface-raised/50 rounded-md p-2 border border-border/30">
+                    <Row gap={1.5}>
                         <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                         <span className="text-[10px] font-medium text-foreground/90">Polyphonic MIDI (AI)</span>
-                    </div>
+                    </Row>
                     <p className="text-[9px] text-muted-foreground leading-relaxed">
                         Neural network detects chords, melodies, and pitch bends.
                     </p>
@@ -229,13 +230,13 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                             </>
                         )}
                     </Button>
-                </div>
+                </Stack>
 
-                <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
-                    <div className="flex items-center gap-1.5">
+                <Stack gap={1.5} className="bg-surface-raised/50 rounded-md p-2 border border-border/30">
+                    <Row gap={1.5}>
                         <BarChart3 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                         <span className="text-[10px] font-medium text-foreground/90">Audio Analysis</span>
-                    </div>
+                    </Row>
                     <Button
                         variant="secondary"
                         size="xs"
@@ -259,8 +260,8 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                     {pitchResult ? (
                         <p className="text-[9px] text-[var(--color-state-success)]/80 font-mono">{pitchResult}</p>
                     ) : null}
-                </div>
-            </div>
+                </Stack>
+            </Stack>
         </section>
     );
 };

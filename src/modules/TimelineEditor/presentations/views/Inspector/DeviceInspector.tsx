@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
+import { Stack } from '#/components/layout';
 import { getBuiltinPlugins, bypassDevice } from '#/modules/Arrangement/useCases';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
@@ -108,7 +109,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     };
 
     return (
-        <div className="space-y-4 p-3">
+        <Stack gap={4} className="p-3">
             <InspectorDetailHeader
                 title={<h3 className="truncate text-xs font-medium text-foreground">{device.name}</h3>}
                 onBack={onBack}
@@ -123,6 +124,6 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
             />
             {/* ── Registry-based layout ── */}
             {renderIife_15()}
-        </div>
+        </Stack>
     );
 };

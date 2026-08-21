@@ -4,6 +4,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { Row, Stack } from '#/components/layout';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import {
@@ -48,7 +49,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     };
 
     return (
-        <div className="space-y-4 p-3">
+        <Stack gap={4} className="p-3">
             <InspectorDetailHeader
                 title={
                     editingName ? (
@@ -109,7 +110,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Trim" />
-                <div className="space-y-2">
+                <Stack gap={2}>
                     <div>
                         <ControlHeader className="mb-1" label="Trim Start" />
                         <Slider
@@ -139,12 +140,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             aria-label="Trim clip end"
                         />
                     </div>
-                </div>
+                </Stack>
             </section>
             <Separator />
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Fades" />
-                <div className="space-y-2">
+                <Stack gap={2}>
                     <div>
                         <ControlHeader
                             className="mb-1"
@@ -183,7 +184,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             aria-label="Fade out duration"
                         />
                     </div>
-                </div>
+                </Stack>
             </section>
             <Separator />
             <section>
@@ -208,7 +209,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Color" />
-                <div className="flex gap-1">
+                <Row align="stretch" gap={1}>
                     {CLIP_COLOR_PRESETS.map((context) => (
                         <button
                             type="button"
@@ -223,7 +224,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             aria-label={context || 'Default color'}
                         />
                     ))}
-                </div>
+                </Row>
             </section>
             <Separator />
             <section>
@@ -231,7 +232,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <InsetPanel className="space-y-1.5">
                     <DawReadoutRow label="Type" value={clip.type} valueClassName="text-foreground capitalize" />
                     <DawReadoutRow label="Track" value={clip.trackId} valueClassName="text-foreground" />
-                    <div className="flex items-center justify-between">
+                    <Row justify="between">
                         <label className="text-[10px] text-muted-foreground" htmlFor="follow-action-select">
                             Follow Action
                         </label>
@@ -269,7 +270,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 Play Random
                             </option>
                         </DawCompactSelect>
-                    </div>
+                    </Row>
                     {clip.type === 'audio' ? (
                         <DawReadoutRow
                             label="Audio Source"
@@ -291,6 +292,6 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <ClipMidiAiSection clip={clip} />
                 </>
             ) : null}
-        </div>
+        </Stack>
     );
 };

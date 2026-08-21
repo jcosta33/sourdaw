@@ -5,6 +5,7 @@ import { Lock, Map, Plus, Trash2 } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { ValueField } from '#/components/daw/ValueField';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/utils/Styles/cn';
@@ -52,7 +53,7 @@ export const TempoEditor = (): ReactElement => {
     const tempoFieldDescription = tempoField.governedByMap || tempoField.lockReason !== null ? tempoFieldHint : '';
 
     return (
-        <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
+        <Row gap={2} className="daw-readout-well relative h-8 rounded-sm px-2">
             {/*
              * The lock arriving is a status message, and it was not one. The badge
              * below names the reason but is referenced by nothing, and
@@ -94,13 +95,15 @@ export const TempoEditor = (): ReactElement => {
                 <TooltipContent>{tempoFieldHint}</TooltipContent>
             </Tooltip>
             {tempoLockBadge === null ? null : (
-                <span
+                <Row
+                    as="span"
+                    gap={0.5}
+                    className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground"
                     data-testid="tempo-lock-reason"
-                    className="flex items-center gap-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground"
                 >
                     <Lock className="size-2.5" aria-hidden="true" />
                     {tempoLockBadge}
-                </span>
+                </Row>
             )}
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -144,7 +147,7 @@ export const TempoEditor = (): ReactElement => {
                 <TooltipContent>{tempoField.editable ? 'Tap to set tempo' : tempoFieldHint}</TooltipContent>
             </Tooltip>
             {time.editingTimeSig ? (
-                <div className="flex items-center gap-0.5">
+                <Row gap={0.5}>
                     <DawCompactInput
                         type="number"
                         value={time.numValue}
@@ -180,7 +183,7 @@ export const TempoEditor = (): ReactElement => {
                         <option value="8">8</option>
                         <option value="16">16</option>
                     </DawCompactSelect>
-                </div>
+                </Row>
             ) : (
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -212,11 +215,12 @@ export const TempoEditor = (): ReactElement => {
                     {time.tempoMap.changes.length === 0 ? (
                         <p className="py-2 text-center text-xs text-muted-foreground">No tempo changes</p>
                     ) : (
-                        <div className="max-h-40 space-y-0.5 overflow-y-auto">
+                        <Stack gap={0.5} className="max-h-40 overflow-y-auto">
                             {time.tempoMap.changes.map((change) => (
-                                <div
+                                <Row
+                                    gap={1.5}
+                                    className="rounded px-1.5 py-1 text-xs hover:bg-accent/30"
                                     key={change.id}
-                                    className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-accent/30"
                                 >
                                     <span className="w-12 shrink-0 font-mono tabular-nums text-muted-foreground">
                                         Beat {change.beat}
@@ -280,12 +284,12 @@ export const TempoEditor = (): ReactElement => {
                                     >
                                         <Trash2 className="size-3" />
                                     </Button>
-                                </div>
+                                </Row>
                             ))}
-                        </div>
+                        </Stack>
                     )}
 
-                    <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+                    <Row gap={1} className="mt-2 border-t border-border pt-2">
                         <DawCompactInput
                             type="number"
                             value={time.newBeat}
@@ -331,9 +335,9 @@ export const TempoEditor = (): ReactElement => {
                         >
                             <Plus className="size-3" />
                         </Button>
-                    </div>
+                    </Row>
                 </div>
             ) : null}
-        </div>
+        </Row>
     );
 };

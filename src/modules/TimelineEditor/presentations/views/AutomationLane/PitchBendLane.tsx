@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, type PointerEvent, useState, useRef } from 'react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -141,7 +142,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
 
     if (!clipId) {
         return (
-            <div className="flex h-full items-center justify-center">
+            <Row justify="center" className="h-full">
                 <DawBlockedState
                     compact
                     eyebrow="Clip Automation"
@@ -150,7 +151,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                     description="Choose a MIDI clip to edit its pitch bend lane."
                     summary="Pitch bend is edited per clip, with the center line and gesture curve appearing once a clip is focused."
                 />
-            </div>
+            </Row>
         );
     }
 
@@ -219,11 +220,11 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                 );
             })}
             {points.length === 0 ? (
-                <div className="flex h-full items-center justify-center pointer-events-none">
+                <Row justify="center" className="h-full pointer-events-none">
                     <p className="text-[10px] text-muted-foreground">
                         Click to add pitch bend points (center = no bend)
                     </p>
-                </div>
+                </Row>
             ) : null}
         </div>
     );

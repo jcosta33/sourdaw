@@ -5,6 +5,7 @@ import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
@@ -161,7 +162,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                             >
                                 {lane.parameterName}
                             </span>
-                            <div className="flex gap-0.5 shrink-0">
+                            <Row align="stretch" gap={0.5} shrink={false}>
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
@@ -188,7 +189,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 >
                                     <Trash2 className="size-3 text-muted-foreground" />
                                 </Button>
-                            </div>
+                            </Row>
                         </SurfaceCard>
                     ))}
                 </div>

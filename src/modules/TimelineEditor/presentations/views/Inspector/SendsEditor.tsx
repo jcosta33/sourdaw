@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement/useCases';
@@ -46,13 +47,13 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                         const isPreFader = send?.preFader ?? false;
                         return (
                             <SurfaceCard key={bus.id} className="w-full p-3">
-                                <div className="flex flex-col w-full gap-2">
+                                <Stack gap={2} className="w-full">
                                     <ControlHeader
                                         className="w-full"
                                         label={bus.name}
                                         labelClassName="max-w-[50%] truncate font-medium text-foreground"
                                         value={
-                                            <div className="flex items-center gap-1.5">
+                                            <Row gap={1.5}>
                                                 <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
                                                     {formatSendLevel(level)}
                                                 </span>
@@ -77,12 +78,12 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                                         {isPreFader ? 'PRE' : 'POST'}
                                                     </DawMicroBadge>
                                                 </button>
-                                            </div>
+                                            </Row>
                                         }
                                         valueClassName="font-normal"
                                         title={bus.name}
                                     />
-                                    <div className="w-full px-1 flex items-center justify-center">
+                                    <Row justify="center" className="w-full px-1">
                                         <Slider
                                             value={[Math.round(levelToSendPosition(level))]}
                                             onValueChange={([value]) => {
@@ -95,8 +96,8 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                             aria-label={`Send to ${bus.name}`}
                                             className="w-full"
                                         />
-                                    </div>
-                                </div>
+                                    </Row>
+                                </Stack>
                             </SurfaceCard>
                         );
                     })}

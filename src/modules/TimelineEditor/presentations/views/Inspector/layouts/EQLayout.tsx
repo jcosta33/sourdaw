@@ -5,6 +5,7 @@
 import { type ReactElement } from 'react';
 
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
+import { Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -34,9 +35,9 @@ const EQLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElem
     };
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             <SectionHeader title="Frequency Response" />
-            <div className="flex justify-center">
+            <Row align="stretch" justify="center">
                 <EQCurve
                     lowGain={pv['eq-low-gain'] ?? 0}
                     lowFreq={pv['eq-low-freq'] ?? 100}
@@ -51,7 +52,7 @@ const EQLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElem
                     height={100}
                     onParamChange={change}
                 />
-            </div>
+            </Row>
             <SectionHeader title="Low Band" />
             <div className="grid grid-cols-2 gap-2">
                 {filterParams(parameters, ['eq-low-gain', 'eq-low-freq']).map((param) => (
@@ -79,7 +80,7 @@ const EQLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElem
             {filterParams(parameters, ['eq-high-q']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
-        </div>
+        </Stack>
     );
 };
 

@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores';
@@ -70,7 +71,7 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                         selected={take.selected}
                         interactive={false}
                     >
-                        <div className="flex items-center justify-between w-full">
+                        <Row justify="between" className="w-full">
                             <div className="min-w-0 flex-1">
                                 <span className="text-xs text-foreground font-medium truncate block">{take.name}</span>
                                 <MetaText>
@@ -82,7 +83,7 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                                     Active
                                 </DawMicroBadge>
                             ) : null}
-                        </div>
+                        </Row>
                         {!take.selected ? (
                             <Button
                                 variant="secondary"

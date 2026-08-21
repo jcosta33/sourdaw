@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Row } from '#/components/layout';
 import { toggleChordTrackFollow, updateTrack } from '#/modules/Arrangement/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -48,14 +49,14 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                 </SurfaceCard>
 
                 <SurfaceCard>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <Row as="label" gap={2} className="cursor-pointer">
                         <DawCompactCheckbox
                             checked={track.followChordTrack}
                             onChange={() => toggleChordTrackFollow(track.id)}
                             aria-label="Follow chord track"
                         />
                         <span className="text-[10px] text-foreground/80">Follow Chord Track</span>
-                    </label>
+                    </Row>
                     <p className="mt-1.5 text-[9px] text-muted-foreground leading-tight">
                         Transpose MIDI notes in real-time based on the chord track. Notes are mapped relative to the
                         chord at each clip's start position.

@@ -6,6 +6,7 @@ import { type ReactElement, useRef, useState } from 'react';
 
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { Row } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
@@ -139,7 +140,7 @@ export const PianoRollContextMenu = ({
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
                 Quantize
             </DawMenuSectionLabel>
-            <div className="flex gap-1 px-3 py-0.5">
+            <Row align="stretch" gap={1} className="px-3 py-0.5">
                 {([1, 0.5, 0.25, 0.125] as const).map((g) => (
                     <button
                         type="button"
@@ -155,13 +156,13 @@ export const PianoRollContextMenu = ({
                         {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
                     </button>
                 ))}
-            </div>
+            </Row>
             {/* Transpose */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
                 Transpose
             </DawMenuSectionLabel>
-            <div className="flex gap-1 px-3 py-0.5">
+            <Row align="stretch" gap={1} className="px-3 py-0.5">
                 {([-12, -1, 1, 12] as const).map((semi) => (
                     <button
                         type="button"
@@ -177,7 +178,7 @@ export const PianoRollContextMenu = ({
                         {{ '-12': '-Oct', '-1': '-1', '1': '+1', '12': '+Oct' }[semi]}
                     </button>
                 ))}
-            </div>
+            </Row>
             {/* Scale */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -264,7 +265,7 @@ export const PianoRollContextMenu = ({
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
                 Strum
             </DawMenuSectionLabel>
-            <div className="flex gap-1 px-3 py-0.5">
+            <Row align="stretch" gap={1} className="px-3 py-0.5">
                 {(['up', 'down'] as const).map((dir) => (
                     <button
                         type="button"
@@ -291,7 +292,7 @@ export const PianoRollContextMenu = ({
                         {dir === 'up' ? '↑ Up' : '↓ Down'}
                     </button>
                 ))}
-            </div>
+            </Row>
             {/* AI */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuButton

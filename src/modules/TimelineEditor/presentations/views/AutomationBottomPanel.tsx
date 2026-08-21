@@ -6,6 +6,7 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';
 import { trackStore, timelineViewStore } from '#/modules/Arrangement/stores';
@@ -107,10 +108,10 @@ const LaneSparkline = ({
             className="relative bg-surface-base/20 cursor-pointer border-b border-border/10"
             onClick={() => toggleLaneCollapsed(lane.id)}
         >
-            <div className="absolute top-0.5 left-1 flex items-center gap-1 z-10">
+            <Row gap={1} className="absolute top-0.5 left-1 z-10">
                 <ChevronRight className="size-2.5 text-muted-foreground/50" />
                 <span className="text-[8px] text-muted-foreground/60 truncate max-w-[80px]">{lane.parameterName}</span>
-            </div>
+            </Row>
             <svg width={width} height={SPARKLINE_HEIGHT} className="absolute inset-0">
                 <path d={pathData} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.5} />
             </svg>
@@ -180,7 +181,7 @@ export const AutomationBottomPanel = (): ReactElement => {
 
     if (!selectedTrack) {
         return (
-            <div className="flex h-full items-center justify-center bg-surface-base/60">
+            <Row justify="center" className="h-full bg-surface-base/60">
                 <DawBlockedState
                     compact
                     eyebrow="Automation"
@@ -189,21 +190,21 @@ export const AutomationBottomPanel = (): ReactElement => {
                     description="Select a track to shape its automation curves."
                     summary="Automation lanes attach to a track and expose its volume, pan, and device parameters."
                 />
-            </div>
+            </Row>
         );
     }
 
     const laneRows = (() => {
         if (containerWidth > 0 && trackLanes.length === 0) {
             return (
-                <div className="flex h-full items-center justify-center p-4">
+                <Row justify="center" className="h-full p-4">
                     <DawEmptyState
                         compact
                         className="w-full max-w-sm"
                         title="No automation lanes yet"
                         description='Click "Add Lane" to shape volume, pan, or device parameters over time.'
                     />
-                </div>
+                </Row>
             );
         } else {
             if (containerWidth > 0) {
@@ -257,19 +258,21 @@ export const AutomationBottomPanel = (): ReactElement => {
                         />
                     </AutomationSidebarCell>
                     {/* Beat ruler for alignment — flex filler below matches mode row height */}
-                    <div className="flex h-full min-h-0 min-w-0 flex-col border-b border-border/20">
+                    <Stack className="h-full min-w-0 border-b border-border/20">
                         <BeatRulerBar />
                         <div className="min-h-0 flex-1" aria-hidden />
-                    </div>
+                    </Stack>
                     {/* Lane labels with collapse toggle and delete */}
                     <AutomationSidebarCell className="min-h-0 overflow-y-auto">
                         {trackLanes.map((lane) => (
-                            <div
+                            <Row
+                                gap={1}
+                                shrink={false}
+                                className="px-1.5 border-b border-border/10 group"
                                 key={lane.id}
-                                className="flex items-center gap-1 px-1.5 border-b border-border/10 shrink-0 group"
                                 style={{ height: lane.collapsed ? SPARKLINE_HEIGHT : LANE_HEIGHT }}
                             >
-                                <div className="flex min-w-0 flex-1 items-center gap-1 self-start">
+                                <Row grow gap={1} className="self-start">
                                     <button
                                         type="button"
                                         className="size-3.5 flex items-center justify-center text-muted-foreground/50 hover:text-foreground transition-colors shrink-0"
@@ -297,8 +300,8 @@ export const AutomationBottomPanel = (): ReactElement => {
                                     >
                                         <Trash2 className="size-2.5" />
                                     </button>
-                                </div>
-                            </div>
+                                </Row>
+                            </Row>
                         ))}
 
                         {/* Add lane — inline or picker */}
@@ -307,17 +310,17 @@ export const AutomationBottomPanel = (): ReactElement => {
                         </div>
                     </AutomationSidebarCell>
                     {/* Right panel — automation lanes aligned with timeline */}
-                    <div className="flex min-h-0 min-w-0 flex-col overflow-hidden" ref={containerRef}>
+                    <Stack className="min-w-0 overflow-hidden" ref={containerRef}>
                         {/* Lanes area */}
                         <div className="min-h-0 flex-1 overflow-y-auto" onWheel={handleWheel}>
                             {laneRows}
                         </div>
-                    </div>
+                    </Stack>
                 </div>
             );
         } else {
             return (
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" ref={containerRef}>
+                <Stack grow className="min-w-0 overflow-hidden" ref={containerRef}>
                     {/* Right panel — automation lanes aligned with timeline */}
                     {/* Beat ruler for alignment */}
                     <BeatRulerBar />
@@ -325,7 +328,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                     <div className="min-h-0 flex-1 overflow-y-auto" onWheel={handleWheel}>
                         {laneRows}
                     </div>
-                </div>
+                </Stack>
             );
         }
     };
