@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 import { executePromptActionGroup } from '../executePromptActionGroup';
+import * as receiptSaga from '../recordAgentRunReceiptSaga';
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-2' },
@@ -260,6 +262,61 @@ describe('executePromptActionGroup', () => {
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledWith('Command not executed: Executor crashed', []);
     });
+
+    it.each(['lease-settlement', 'receipt-persistence'] as const)(
+        'keeps a verified committed receipt authoritative when %s throws',
+        async (failurePoint) => {
+            seedRun();
+            mocks.executePlannedActions.mockResolvedValue({
+                status: 'committed',
+                actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+                receipt: verifiedReceipt(),
+            });
+            if (failurePoint === 'lease-settlement') {
+                vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
+                    throw new Error('Lease persistence unavailable');
+                });
+            } else {
+                vi.spyOn(receiptSaga, 'recordAgentRunReceiptSaga').mockImplementationOnce(() => {
+                    throw new Error('Receipt persistence unavailable');
+                });
+            }
+
+            await expect(
+                executePromptActionGroup({
+                    actions: [action],
+                    prompt: 'Play',
+                    projectRevision: 'revision-1',
+                    ...admitted(),
+                })
+            ).resolves.toBeUndefined();
+
+            expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+                expect.stringMatching(/project change committed.*do not retry automatically/i),
+                ['togglePlayback']
+            );
+            expect(mocks.notifyAiChange).not.toHaveBeenCalledWith(
+                expect.stringMatching(/command not executed/i),
+                expect.anything()
+            );
+            expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+                phase: failurePoint === 'lease-settlement' ? 'partially-completed' : 'completed',
+                batches: [
+                    {
+                        batchId: BATCH_ID,
+                        status: 'committed',
+                        receiptIdentity: '1:prompt-run-1:batch-1:committed',
+                    },
+                ],
+                workLeases: [
+                    {
+                        workId: BATCH_ID,
+                        terminalState: failurePoint === 'lease-settlement' ? null : 'completed',
+                    },
+                ],
+            });
+        }
+    );
 
     it('rejects a prepared batch whose persisted run identity differs from the admitted run', async () => {
         seedRun();

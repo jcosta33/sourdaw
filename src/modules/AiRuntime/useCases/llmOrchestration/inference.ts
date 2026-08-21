@@ -16,6 +16,7 @@ import {
 } from '../../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderName,
+    type ModelProviderFailure,
     type ModelProviderRequest,
     type ModelProviderResult,
     type ModelProviderSession,
@@ -115,6 +116,81 @@ function isProviderAttemptAdmissionError(error: unknown): error is Error {
     return error instanceof Error && error.name === 'ProviderAttemptAdmissionError';
 }
 
+type AdmittedProviderAttempt = {
+    provider: ModelProviderName;
+    model: string | null;
+    request: ModelProviderRequest;
+    disclosurePublished: boolean;
+};
+
+function preSessionProviderResult(input: {
+    attempt: AdmittedProviderAttempt;
+    error: unknown;
+    cancelled: boolean;
+}): ModelProviderResult {
+    const normalizedFailure = isModelProviderFailureError(input.error) ? input.error : null;
+    const cancelled = input.cancelled || isAiRuntimeConfigurationChangedError(input.error);
+    let failure: Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'>;
+    if (cancelled) {
+        failure = {
+            code: 'cancelled',
+            retryable: true,
+            safeMessage: 'The model provider request was cancelled.',
+        };
+    } else if (normalizedFailure === null) {
+        failure = {
+            code: 'provider-attempt-failed',
+            retryable: true,
+            safeMessage: 'The model provider request failed before its session started.',
+        };
+    } else {
+        failure = {
+            code: normalizedFailure.code,
+            retryable: normalizedFailure.retryable,
+            safeMessage: normalizedFailure.message,
+        };
+    }
+    const dataCategories = input.attempt.request.dataCategories;
+    return {
+        schemaVersion: input.attempt.request.schemaVersion,
+        provider: input.attempt.provider,
+        model: input.attempt.model,
+        correlationId: input.attempt.request.correlationId,
+        status: cancelled ? 'cancelled' : 'failed',
+        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+        usage: {
+            inputTokens: null,
+            outputTokens: null,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+            provenance: 'unavailable',
+        },
+        finishReason: cancelled ? 'cancelled' : 'error',
+        partialOutputDisposition: 'none',
+        failure: {
+            ...failure,
+            correlationId: input.attempt.request.correlationId,
+            partialOutputDisposition: 'none',
+        },
+        ignoredProviderEvents: [],
+        ...(input.attempt.disclosurePublished && dataCategories !== undefined
+            ? {
+                  remoteDisclosure: {
+                      requestId: input.attempt.request.requestId,
+                      categories: [...dataCategories],
+                      retention: {
+                          applicationState: 'unknown' as const,
+                          abuseMonitoring: 'unknown' as const,
+                          promptCache: 'unknown' as const,
+                          safetyLegalException: 'unknown' as const,
+                          unknown: 'unknown' as const,
+                      },
+                  },
+              }
+            : {}),
+    };
+}
+
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
     if (!signal) {
         return inference;
@@ -209,6 +285,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            let admittedAttempt: AdmittedProviderAttempt | null = null;
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
             let providerSessionSettled = false;
@@ -313,6 +390,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (admission?.status === 'rejected') {
                     throw createProviderAttemptAdmissionError(admission.reason);
                 }
+                admittedAttempt = {
+                    provider: providerName,
+                    model: getBackendModelId(backend),
+                    request: providerRequest,
+                    disclosurePublished: false,
+                };
                 if (
                     remoteDisclosure !== undefined &&
                     !remoteTransmissionDisclosure.publish({
@@ -322,6 +405,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     })
                 ) {
                     throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+                }
+                if (remoteDisclosure !== undefined) {
+                    admittedAttempt.disclosurePublished = true;
                 }
                 providerSession = providerProtocol.start(providerRequest);
                 providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
@@ -473,6 +559,16 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     }
+                    reportProviderResult(failedResult);
+                    if (failedResult.failure !== null) {
+                        normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
+                    }
+                } else if (admittedAttempt !== null) {
+                    const failedResult = preSessionProviderResult({
+                        attempt: admittedAttempt,
+                        error,
+                        cancelled: isExplicitAbort || signal?.aborted === true,
+                    });
                     reportProviderResult(failedResult);
                     if (failedResult.failure !== null) {
                         normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);

@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     generateGroupId,
     isExecutableAppActionType,
@@ -32,15 +33,103 @@ type ExecutePromptActionGroupInput = {
 };
 
 const TERMINAL_RUN_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
+const AGENT_RUN_PERSISTENCE_WARNING =
+    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative.';
+const AGENT_RUN_STALE_COMPLETION_WARNING =
+    'Agent work completed after its run lease was cancelled or replaced. The verified command receipt remains authoritative.';
 
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function transitionRunIfLive(runId: string, phase: Extract<AgentRunPhase, 'failed' | 'partially-completed'>): void {
+function transitionRunIfLive(
+    runId: string,
+    phase: Extract<AgentRunPhase, 'completed' | 'failed' | 'partially-completed'>
+): void {
     const run = agentRunLifecycle.get(runId);
     if (run && !TERMINAL_RUN_PHASES.has(run.phase)) {
         agentRunLifecycle.transitionPhase({ runId, phase });
+    }
+}
+
+function getReceiptIdentity(receipt: Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt']): string {
+    return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+}
+
+type WarningSafeLeaseSettlement = { accepted: boolean; warning: string | null };
+
+function settleCommittedCommandLease(
+    lease: Extract<ReturnType<typeof agentRunWorkLease.claim>, { status: 'claimed' }>['lease']
+): WarningSafeLeaseSettlement {
+    try {
+        const settlement = agentRunWorkLease.settle({
+            runId: lease.runId,
+            workId: lease.workId,
+            leaseId: lease.leaseId,
+            cancellationGeneration: lease.cancellationGeneration,
+            idempotencyKey: lease.idempotencyKey,
+            receiptIdentity: lease.receiptIdentity,
+            terminalState: 'completed',
+        });
+        return {
+            accepted: settlement.status === 'settled',
+            warning: settlement.status === 'settled' ? null : AGENT_RUN_STALE_COMPLETION_WARNING,
+        };
+    } catch (error) {
+        logger.error(new Error('Prompt command lease settlement failed after verified execution', { cause: error }));
+        return { accepted: false, warning: AGENT_RUN_PERSISTENCE_WARNING };
+    }
+}
+
+function recordCommittedCommandWarningSafe(input: {
+    runId: string;
+    receipt: Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
+    actions: readonly AppAction[];
+    committedRevision: string;
+    completesRun: boolean;
+}): string | null {
+    try {
+        recordAgentRunReceiptSaga(input);
+        return null;
+    } catch (error) {
+        logger.error(new Error('Prompt command receipt persistence failed after verified execution', { cause: error }));
+        const receiptIdentity = getReceiptIdentity(input.receipt);
+        try {
+            agentRunLifecycle.updateBatchStatus({
+                runId: input.runId,
+                batchId: input.receipt.batchId,
+                status: 'committed',
+                receiptIdentity,
+            });
+            transitionRunIfLive(input.runId, input.completesRun ? 'completed' : 'partially-completed');
+        } catch (fallbackError) {
+            logger.error(
+                new Error('Prompt command receipt fallback evidence could not be persisted', { cause: fallbackError })
+            );
+        }
+        return AGENT_RUN_PERSISTENCE_WARNING;
+    }
+}
+
+function reportCommittedWarning(input: {
+    executionKind: 'project' | 'runtime';
+    receiptIdentity: string;
+    warnings: readonly string[];
+    actionTypes: string[];
+}): void {
+    if (input.warnings.length === 0) {
+        return;
+    }
+    const outcome = input.executionKind === 'project' ? 'Project change committed' : 'Runtime command executed';
+    try {
+        notifyAiChange(
+            `${outcome} with follow-up warning: ${input.warnings.join(' ')} Verified receipt ${input.receiptIdentity} is authoritative. Do not retry automatically; inspect the current ${input.executionKind === 'project' ? 'project' : 'runtime'} state.`,
+            input.actionTypes
+        );
+    } catch (error) {
+        logger.error(
+            new Error('Prompt command warning notification failed after verified execution', { cause: error })
+        );
     }
 }
 
@@ -202,13 +291,33 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return;
         }
-        const settlementAccepted = settleCommand('completed');
-        recordAgentRunReceiptSaga({
+        const leaseSettlement = settleCommittedCommandLease(commandLease);
+        const receiptIdentity = getReceiptIdentity(execution.receipt);
+        const receiptPersistenceWarning = recordCommittedCommandWarningSafe({
             runId: input.runId,
             receipt: execution.receipt,
             actions: input.actions,
             committedRevision: captureProjectRevision(),
-            completesRun: settlementAccepted,
+            completesRun: leaseSettlement.accepted,
+        });
+        if (!leaseSettlement.accepted && receiptPersistenceWarning === null) {
+            try {
+                transitionRunIfLive(input.runId, 'partially-completed');
+            } catch (error) {
+                logger.error(
+                    new Error('Prompt command warning phase could not be persisted after verified execution', {
+                        cause: error,
+                    })
+                );
+            }
+        }
+        reportCommittedWarning({
+            executionKind: execution.status === 'committed' ? 'project' : 'runtime',
+            receiptIdentity,
+            warnings: [leaseSettlement.warning, receiptPersistenceWarning].filter(
+                (warning): warning is string => warning !== null
+            ),
+            actionTypes: execution.actions.map((entry) => entry.actionType),
         });
         return;
     }

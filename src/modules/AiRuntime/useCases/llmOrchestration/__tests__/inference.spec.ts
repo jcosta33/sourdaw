@@ -5,6 +5,7 @@ import { generateToolPlanningOutcome } from '../inference';
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
+    failRemoteDisclosure: { value: false },
     generateCloudToolCalls: vi.fn(),
     generateWebLlmToolCalls: vi.fn(),
     getCloudProviderInfo: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     llmStatus: { value: { state: 'idle' } },
     llmStatusSet: vi.fn(),
     logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    providerStartFailure: { value: null as 'openai' | 'webllm' | null },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -50,6 +52,36 @@ vi.mock('../../../stores/llmStatusStore', () => ({
     },
 }));
 
+vi.mock('../../discloseRemoteTransmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../discloseRemoteTransmission')>();
+    return {
+        remoteTransmissionDisclosure: {
+            ...actual.remoteTransmissionDisclosure,
+            publish: (input: Parameters<typeof actual.remoteTransmissionDisclosure.publish>[0]) =>
+                mocks.failRemoteDisclosure.value ? false : actual.remoteTransmissionDisclosure.publish(input),
+        },
+    };
+});
+
+vi.mock('../../modelProviderProtocol', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../modelProviderProtocol')>();
+    return {
+        createModelProviderProtocol: (input: Parameters<typeof actual.createModelProviderProtocol>[0]) => {
+            const protocol = actual.createModelProviderProtocol(input);
+            return {
+                ...protocol,
+                start: (request: Parameters<typeof protocol.start>[0]) => {
+                    if (mocks.providerStartFailure.value === input.provider) {
+                        mocks.providerStartFailure.value = null;
+                        throw new Error('Provider session could not start.');
+                    }
+                    return protocol.start(request);
+                },
+            };
+        },
+    };
+});
+
 const toolSchemas: ToolSchema[] = [
     {
         type: 'function',
@@ -73,8 +105,10 @@ describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.backendChain.value = [];
+        mocks.failRemoteDisclosure.value = false;
         mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
         mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.providerStartFailure.value = null;
     });
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
@@ -120,4 +154,45 @@ describe('generateToolPlanningOutcome', () => {
             modelId: 'Qwen3-4B-q4f16_1-MLC',
         });
     });
+
+    it.each(['disclosure-publication', 'provider-start'] as const)(
+        'terminalizes an admitted pre-session %s failure before falling back',
+        async (failurePoint) => {
+            mocks.backendChain.value = ['cloud', 'webllm'];
+            mocks.failRemoteDisclosure.value = failurePoint === 'disclosure-publication';
+            mocks.providerStartFailure.value = failurePoint === 'provider-start' ? 'openai' : null;
+            mocks.generateWebLlmToolCalls.mockResolvedValue({
+                status: 'complete',
+                toolCalls: [{ id: 'browser-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            });
+            const onProviderAttempt = vi.fn(() => ({ status: 'admitted' as const }));
+            const onProviderResult = vi.fn();
+
+            await expect(
+                generateToolPlanningOutcome(
+                    'system',
+                    'mute the first track',
+                    toolSchemas,
+                    undefined,
+                    'mute the first track',
+                    onProviderResult,
+                    { runId: 'run-1', requestId: 'request-1', cancellationGeneration: 0 },
+                    onProviderAttempt
+                )
+            ).resolves.toMatchObject({ status: 'complete' });
+
+            expect(onProviderAttempt).toHaveBeenCalledTimes(2);
+            expect(onProviderResult).toHaveBeenCalledTimes(2);
+            expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+                provider: 'openai',
+                status: 'failed',
+                usage: { provenance: 'unavailable' },
+                failure: { code: 'provider-attempt-failed', retryable: true },
+            });
+            expect(onProviderResult.mock.calls[1]?.[0]).toMatchObject({
+                provider: 'webllm',
+                status: 'complete',
+            });
+        }
+    );
 });
