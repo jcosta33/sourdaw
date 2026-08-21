@@ -247,6 +247,16 @@ describe('release inventory', () => {
             wasmWithFunctionExport('grandbouleinstance_new'),
             'distributed AudioEngine WASM mirror',
         ],
+        [
+            'src/modules/AudioEngine/wasm/__tests__/hostile-extra.js',
+            'export class GrandBouleInstance {}',
+            'distributed AudioEngine WASM mirror',
+        ],
+        [
+            'src/modules/AudioEngine/wasm/__tests__/hostile-extra.wasm',
+            wasmWithFunctionExport('grandbouleinstance_new'),
+            'distributed AudioEngine WASM mirror',
+        ],
     ])('rejects unmanifested distributed sidecar %s', (path, contents, label) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-'));
 

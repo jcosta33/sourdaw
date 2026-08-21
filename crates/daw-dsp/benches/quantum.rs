@@ -151,14 +151,15 @@
 //! deadline claim comes from. Keep the two claims apart: cost lives here,
 //! deadline misses live there.
 //!
-//! # 64 voices is the common case, not the worst case
+//! # The retained native workload uses 64 voices
 //!
 //! `GrandBouleEngine::note_off` skips `voice.note_off()` entirely while
 //! `pedals.sustain_position() > 0.5`. With the sustain pedal down, released
 //! notes stay `VoiceStage::Active` at `amplitude == 1.0` and keep paying the
-//! full `Standard`-tier cost, so ordinary pedalled playing walks the pool up to
-//! 64 within a few bars and holds it there. The 64-voice row is what pedalled
-//! piano costs, not an artificial ceiling.
+//! full `Standard`-tier cost, so the retained native benchmark walks the pool
+//! up to 64 and holds it there. This characterizes the preserved engine under a
+//! representative pedalled-piano workload; it is not a released browser
+//! configuration.
 //!
 //! # Sounding voices, not allocated ones — and still sounding at the end
 //!
@@ -208,7 +209,7 @@ const QUANTUM: usize = 128;
 /// measured against.
 const BUDGET_NS: f64 = 2_666_667.0;
 
-/// The 64-voice pool exercised by the retained Grand Boule native host sources.
+/// The 64-voice pool exercised by the retained native Grand Boule benchmark.
 const GRAND_BOULE_POOL: usize = 64;
 
 /// What `fermenterProcessor.ts:170` asks for: `new FermenterInstance(sampleRate, 32)`.
@@ -228,8 +229,8 @@ const PRODUCTION_FERMENTER_VOICE_CEILING: usize = FERMENTER_POOL as usize;
 /// in. 128 blocks is ~341 ms of audio.
 const WARMUP_BLOCKS: usize = 128;
 
-/// Voice counts benchmarked. 64 is the retained Grand Boule host ceiling; 32
-/// is both the crate default and Fermenter's whole pool; 0 isolates the
+/// Voice counts benchmarked. 64 is the retained native Grand Boule workload;
+/// 32 is both the crate default and Fermenter's whole pool; 0 isolates the
 /// always-on shared blocks (soundboard, sympathetic bank, mechanical noise)
 /// from per-voice cost.
 const GRAND_BOULE_VOICE_COUNTS: [usize; 5] = [0, 1, 16, 32, 64];
@@ -269,8 +270,8 @@ fn rms(left: &[f32], right: &[f32]) -> f32 {
 // Grand Boule
 // ---------------------------------------------------------------------------
 
-/// A Grand Boule engine with the retained host pool size and `sounding` notes
-/// struck and still held, warmed past the attack transient.
+/// A Grand Boule engine with the retained native benchmark pool size and
+/// `sounding` notes struck and still held, warmed past the attack transient.
 fn grand_boule_engine(sounding: usize) -> (GrandBouleEngine, Vec<f32>, Vec<f32>) {
     let mut engine = GrandBouleEngine::new(SAMPLE_RATE, GRAND_BOULE_POOL);
     for note in spread_notes(sounding) {
@@ -286,10 +287,11 @@ fn grand_boule_engine(sounding: usize) -> (GrandBouleEngine, Vec<f32>, Vec<f32>)
     (engine, left, right)
 }
 
-/// The `#[wasm_bindgen]` wrapper the browser actually calls, in the same state.
+/// The retained native instance wrapper in the same state as the raw engine row.
 /// `process` adds the two buffer clears and the two `sanitize_block` passes
-/// that the raw `process_block` figure leaves out, so this is the number the
-/// headless-Chromium harness is comparable with.
+/// that the raw `process_block` figure leaves out. The complete Grand Boule
+/// module is absent from wasm32, so this measures native wrapper overhead only
+/// and has no browser-WASM comparison.
 fn grand_boule_instance(sounding: usize) -> GrandBouleInstance {
     let mut instance = GrandBouleInstance::new(SAMPLE_RATE, GRAND_BOULE_POOL as u32);
     for note in spread_notes(sounding) {
@@ -401,8 +403,8 @@ fn bench_grand_boule_instance(criterion: &mut Criterion) {
     group.finish();
 }
 
-/// Build the maximum transient workload: 64 sounding production voices plus
-/// 64 preallocated one-millisecond steal tails. Distinct channels preserve the
+/// Build the maximum retained native workload: 64 sounding voices plus 64
+/// preallocated one-millisecond steal tails. Distinct channels preserve the
 /// same-pitch identities while forcing every tail slot active.
 fn saturated_grand_boule_engine() -> (GrandBouleEngine, [f32; QUANTUM], [f32; QUANTUM]) {
     let mut engine = GrandBouleEngine::new(SAMPLE_RATE, GRAND_BOULE_POOL);
@@ -604,11 +606,12 @@ fn bench_grinder_instance(criterion: &mut Criterion) {
 ///
 /// Longer than `WARMUP_BLOCKS`, which exists only to clear a note-on transient.
 /// This one also has to get the *branch predictors and caches* into the state a
-/// device spends its life in, and it is chosen to match the wasm leg exactly so
-/// the two columns are comparable. The harness does not take it on trust: every
-/// row reports the mean of its first and last 500 timed samples, so a run that
-/// was still settling shows up as a drifting mean rather than hiding in the
-/// average.
+/// device spends its life in. For release-admitted devices it matches the wasm
+/// leg; Grand Boule uses the same sample count only for consistency within its
+/// retained native evidence. The harness does not take stationarity on trust:
+/// every row reports the mean of its first and last 500 timed samples, so a run
+/// that was still settling shows up as a drifting mean rather than hiding in
+/// the average.
 const TABLE_WARMUP_QUANTA: usize = 4_000;
 
 /// Timed quanta per row. 20 000 x 128 frames is 53 s of rendered audio.
@@ -754,10 +757,12 @@ fn timer_floor() -> Distribution {
 /// Time `render` for `TABLE_SAMPLE_QUANTA` quanta after `TABLE_WARMUP_QUANTA`
 /// discarded ones, feeding the device each block *outside* the timed region.
 ///
-/// `feed` is untimed on purpose and the wasm leg does the same: a worklet pays
-/// the input marshalling against `inputs[0]` whichever device consumes it, so
-/// including it would attribute a host cost to a device. `feed` is also where a
-/// one-shot instrument re-strikes — see `row_toaster` and `row_grand_boule`.
+/// `feed` is untimed on purpose. The wasm leg does the same for release-admitted
+/// devices because a worklet pays input marshalling against `inputs[0]`
+/// whichever device consumes it. Grand Boule has no wasm leg; excluding its
+/// feed isolates the retained native wrapper render in the same way. `feed` is
+/// also where a one-shot instrument re-strikes — see `row_toaster` and
+/// `row_grand_boule`.
 ///
 /// **The warm-up is the timed loop, run twice and the first pass thrown away.**
 /// An earlier version warmed up through a *different*, untimed loop body, and
@@ -1092,8 +1097,7 @@ fn row_grand_boule() -> Row {
     Row {
         id: "grand_boule",
         label: "Grand Boule native-only (64 voices, re-struck 1/s)",
-        load:
-            "retained native host ceiling is 64; this row is not browser/WASM production evidence",
+        load: "retained native benchmark workload; no browser/WASM production equivalence",
         distribution: summarise(samples),
         occupancy: format!("64 voices (no active-voice export), output RMS {level:.3e}"),
         occupancy_ok: level > 1.0e-5,
@@ -1537,8 +1541,9 @@ fn cost_table(_criterion: &mut Criterion) {
          \n  reports period, tick cost and amortised mean instead."
     );
     eprintln!(
-        "\n  Read against the wasm column, not this one. Native is a lower bound; production runs \
-         wasm in a worklet."
+        "\n  For release-admitted devices, read against the wasm column: native is a lower bound \
+         and production runs wasm in a worklet. Grand Boule is retained native-only evidence and \
+         has no browser-WASM DSP comparison."
     );
 }
 

@@ -239,6 +239,14 @@ export const AUDIO_WORKLET_SOURCES = [
 const PUBLIC_WASM_ROOT = 'public/wasm';
 const WASM_MANIFEST_PATH = `${PUBLIC_WASM_ROOT}/manifest.json`;
 const AUDIO_ENGINE_WASM_MIRROR_ROOT = 'src/modules/AudioEngine/wasm';
+const AUDIO_ENGINE_WASM_MIRROR_TEST_SOURCES = new Set([
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspCrustGates.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspCrustOversampling.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspGrinderAutomationLayout.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspKneadPitchControls.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspToasterAutomation.spec.ts`,
+]);
 
 export type DistributedWasmArtifactCensus = {
     textArtifacts: string[];
@@ -289,7 +297,7 @@ function readWasmManifest(root: string): WasmManifest {
 }
 
 function isMirrorSourceOnly(path: string): boolean {
-    return path === `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/.gitignore` || path.includes('/__tests__/');
+    return path === `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/.gitignore` || AUDIO_ENGINE_WASM_MIRROR_TEST_SOURCES.has(path);
 }
 
 function assertManifestDistributionContract(manifest: WasmManifest): void {
