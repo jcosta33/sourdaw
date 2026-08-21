@@ -2,7 +2,7 @@ import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
 
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 
@@ -416,7 +416,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                         </Row>
 
                         {/* Template grid */}
-                        <div className="grid grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 py-1">
+                        <Grid cols={2} gap={2.5} className="max-h-[420px] overflow-y-auto pr-1 py-1">
                             {filtered.map((template) => (
                                 <TemplateCard
                                     key={template.id}
@@ -425,7 +425,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                                     disabled={isLoading}
                                 />
                             ))}
-                        </div>
+                        </Grid>
 
                         {/* Footer hint */}
                         <p className="text-[9px] text-muted-foreground/40 text-center pt-1">

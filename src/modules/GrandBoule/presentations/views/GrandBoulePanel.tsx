@@ -8,7 +8,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
@@ -376,7 +376,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     </SectionCard>
 
                     <SectionCard title="Mix" detail="Master, soundboard, sympathetic.">
-                        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 value={config.masterGain}
                                 onChange={(value, isTransient) =>
@@ -425,10 +425,10 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 defaultValue={0.25}
                                 readout={`${Math.round(config.sympatheticSend * 100)}%`}
                             />
-                        </div>
+                        </Grid>
                     </SectionCard>
                     <SectionCard title="Radiation" detail="Audible lid transfer and microphone perspective.">
-                        <div className="grid grid-cols-2 items-end gap-3">
+                        <Grid cols={2} gap={3} className="items-end">
                             <Knob
                                 value={config.lidPosition}
                                 onChange={(value, isTransient) =>
@@ -475,10 +475,10 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     ))}
                                 </select>
                             </Stack>
-                        </div>
+                        </Grid>
                     </SectionCard>
                     <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+                        <Grid cols={2} gapX={2} gapY={3}>
                             <Knob
                                 value={config.stretchAmount}
                                 onChange={(value) => setGrandBouleStretchAmount({ engine, store, amount: value })}
@@ -499,7 +499,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 defaultValue={1.0}
                                 readout={`${Math.round(config.attackBite * 100)}%`}
                             />
-                        </div>
+                        </Grid>
                     </SectionCard>
                     <SectionCard title="Per-Note" detail="Key-specific parameter editing (§3.1).">
                         {GRAND_BOULE_PER_NOTE_AVAILABLE ? (

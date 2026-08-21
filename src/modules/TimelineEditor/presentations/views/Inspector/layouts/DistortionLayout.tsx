@@ -4,7 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -47,16 +47,16 @@ const DistortionLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                 />
             </Row>
             <SectionHeader title="Controls" />
-            <div className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['dist-drive', 'dist-tone']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            </Grid>
+            <Grid cols={2} gap={2}>
                 {filterParams(parameters, ['dist-output', 'dist-mix']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
         </Stack>
     );
 };

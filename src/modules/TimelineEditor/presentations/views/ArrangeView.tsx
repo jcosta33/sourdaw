@@ -9,7 +9,7 @@ import {
 
 import { Piano, Upload, Headphones } from 'lucide-react';
 
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import {
     AdjustmentLayerStrip,
@@ -470,7 +470,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 <p className="text-xs font-medium text-muted-foreground/60">Add your first track</p>
 
                 {/* Track type buttons */}
-                <div className="grid grid-cols-2 gap-2 w-full">
+                <Grid cols={2} gap={2} className="w-full">
                     <button
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-cyan)]/10 hover:border-[var(--color-accent-cyan)]/30 transition-all cursor-pointer"
@@ -504,7 +504,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                             <span className="text-[9px] text-muted-foreground/40">Keys &amp; synths</span>
                         </div>
                     </button>
-                </div>
+                </Grid>
 
                 {/* Drop hint */}
                 <div

@@ -196,6 +196,70 @@ export const Notes = () => <span>{hint}</span>;
         expect(scanUiRestatements(root)[0]?.disposition).toBe('renderer');
     });
 
+    it('marks DawCompact control definitions as semantic wrappers', () => {
+        const root = tree({
+            'src/components/daw/DawCompactCheckbox.tsx': `export const DawCompactCheckbox = () => <input type="checkbox" />;
+`,
+            'src/components/daw/DawCompactInput.tsx': `export const DawCompactInput = () => <input />;
+`,
+            'src/components/daw/DawCompactSelect.tsx': `export const DawCompactSelect = () => <select />;
+`,
+            'src/components/daw/DawCompactTextarea.tsx': `export const DawCompactTextarea = () => <textarea />;
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/components/daw/DawCompactCheckbox.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Input', disposition: 'semantic-wrapper' })
+        );
+        expect(byFile['src/components/daw/DawCompactInput.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Input', disposition: 'semantic-wrapper' })
+        );
+        expect(byFile['src/components/daw/DawCompactSelect.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Select', disposition: 'semantic-wrapper' })
+        );
+        expect(byFile['src/components/daw/DawCompactTextarea.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Textarea', disposition: 'semantic-wrapper' })
+        );
+    });
+
+    it('marks transparent chrome-embedded inputs as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/ChromeSearch.tsx': `export const ChromeSearch = () => (
+  <input className="min-w-0 flex-1 bg-transparent text-[11px] outline-none" />
+);
+`,
+            'src/modules/Demo/presentations/views/CompactField.tsx': `export const CompactField = () => (
+  <input className="h-6 w-full bg-transparent text-xs" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/ChromeSearch.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/CompactField.tsx']?.disposition).toBe('eligible');
+    });
+
+    it('marks file and range inputs as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/Import.tsx': `export const Import = () => <input type="file" className="hidden" />;
+`,
+            'src/modules/Demo/presentations/views/Amount.tsx': `export const Amount = () => <input type="range" min={0} max={1} />;
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/modules/Demo/presentations/views/Import.tsx']?.disposition).toBe('one-off');
+        expect(byFile['src/modules/Demo/presentations/views/Amount.tsx']?.disposition).toBe('one-off');
+    });
+
+    it('marks implicit grids without numeric columns as one-off', () => {
+        const root = tree({
+            'src/modules/Demo/presentations/views/StackGrid.tsx': `export const StackGrid = () => <div className="grid gap-2" />;
+`,
+        });
+        expect(scanUiRestatements(root)[0]).toEqual(
+            expect.objectContaining({ mapping: 'Grid', disposition: 'one-off' })
+        );
+    });
+
     it('marks daw hardware drawing shells as one-off', () => {
         const root = tree({
             'src/components/daw/Fader.tsx': `export const Fader = () => <div className="flex flex-col justify-between" />;

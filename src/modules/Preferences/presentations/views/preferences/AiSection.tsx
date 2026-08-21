@@ -3,7 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
-import { Row } from '#/components/layout';
+import { Grid, Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Separator } from '#/components/ui/separator';
@@ -207,7 +207,7 @@ export const AiSection = (): ReactElement => {
                         Set the provider credential in the matching SOURDAW_*_API_KEY environment variable before
                         launch. The renderer receives only an opaque session ID.
                     </p>
-                    <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+                    <Grid cols={2} gap={1.5} className="mb-1.5">
                         <select
                             value={provider}
                             onChange={(event) => {
@@ -261,7 +261,7 @@ export const AiSection = (): ReactElement => {
                                 <option value={CUSTOM_MODEL_VALUE}>Custom model ID…</option>
                             </select>
                         )}
-                    </div>
+                    </Grid>
                     {customFirstPartyModel ? (
                         <Input
                             value={model}
@@ -366,14 +366,14 @@ export const AiSection = (): ReactElement => {
                     Audio analysis features (pitch detection, spectral analysis, polyphonic audio-to-MIDI) run entirely
                     in the browser. No API key required.
                 </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1.5 text-[10px]">
+                <Grid cols={2} gapX={4} gapY={0.5} className="mt-1.5 text-[10px]">
                     <span className="text-muted-foreground">Polyphonic MIDI</span>
                     <span className="text-right text-foreground">@spotify/basic-pitch</span>
                     <span className="text-muted-foreground">Pitch Detection</span>
                     <span className="text-right text-foreground">pitchy (McLeod)</span>
                     <span className="text-muted-foreground">Feature Extraction</span>
                     <span className="text-right text-foreground">meyda</span>
-                </div>
+                </Grid>
             </FieldGroup>
         </>
     );

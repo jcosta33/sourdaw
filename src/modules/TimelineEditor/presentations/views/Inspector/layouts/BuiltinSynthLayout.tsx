@@ -12,7 +12,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
@@ -49,11 +49,11 @@ const Row2 = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
-    <div className="grid grid-cols-2 gap-2">
+    <Grid cols={2} gap={2}>
         {filterParams(params, ids).map((param) => (
             <Param key={param.id} param={param} device={device} trackId={trackId} />
         ))}
-    </div>
+    </Grid>
 );
 
 const Collapsible = ({

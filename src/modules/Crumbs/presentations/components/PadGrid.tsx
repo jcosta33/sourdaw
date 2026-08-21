@@ -7,6 +7,8 @@
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { Grid } from '#/components/layout';
+
 import type { PadConfig } from '../../models/CrumbsTypes';
 
 type PadGridProps = {
@@ -104,7 +106,7 @@ export const PadGrid = ({
     }
 
     return (
-        <div className="grid grid-cols-4 gap-1.5">
+        <Grid cols={4} gap={1.5}>
             {pads.map((pad, index) => {
                 const isSelected = index === selectedIndex;
                 const hasSample = pad.sampleId !== null;
@@ -200,7 +202,7 @@ export const PadGrid = ({
                     </button>
                 );
             })}
-        </div>
+        </Grid>
     );
 };
 

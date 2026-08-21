@@ -3,7 +3,7 @@
  */
 import { type ReactElement } from 'react';
 
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { ModulationLFO } from '../../../components/ModulationLFO';
@@ -37,11 +37,11 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
             pairs.push(all.slice(index, index + 2));
         }
         return pairs.map((pair, idx) => (
-            <div key={idx} className="grid grid-cols-2 gap-2">
+            <Grid cols={2} gap={2} key={idx}>
                 {pair.map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </div>
+            </Grid>
         ));
     };
 

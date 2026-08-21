@@ -18,7 +18,7 @@ import {
     Clock,
 } from 'lucide-react';
 
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import {
@@ -436,7 +436,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             </Stack>
                         ) : null}
 
-                        <div className="grid grid-cols-3 gap-3 w-full">
+                        <Grid cols={3} gap={3} className="w-full">
                             <ActionCard
                                 id="launch-new-project"
                                 label="New Project"
@@ -461,7 +461,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 colorVar="--color-accent-mint"
                                 onClick={() => handleOpenGrid('demo')}
                             />
-                        </div>
+                        </Grid>
 
                         <div
                             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
@@ -554,7 +554,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                         </Row>
 
                         {/* Template grid */}
-                        <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
+                        <Grid cols={2} gap={2.5} className="max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
                             {filteredTemplates.map((template) => {
                                 const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
                                 const icon = TEMPLATE_ICONS[template.id] ?? (
@@ -589,7 +589,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                     </button>
                                 );
                             })}
-                        </div>
+                        </Grid>
 
                         <p className="text-[9px] text-white/15 text-center">
                             Or drop audio / MIDI files on the home screen to import instantly

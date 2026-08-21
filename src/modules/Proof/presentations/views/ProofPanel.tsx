@@ -10,7 +10,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
@@ -1394,14 +1394,14 @@ const Level5MeterGrid = ({ deviceId }: { deviceId: string }): ReactElement => {
     const correlation = useProofMeter(deviceId, (state) => state.correlation);
 
     return (
-        <div className="grid grid-cols-3 gap-3">
+        <Grid cols={3} gap={3}>
             <MeterCard label="Momentary LUFS" value={formatLufs(outputLufs)} unit="LUFS" />
             <MeterCard label="Short-term LUFS" value={formatLufs(outputStLufs)} unit="LUFS" />
             <MeterCard label="Integrated LUFS" value={formatLufs(integratedLufs)} unit="LUFS" />
             <MeterCard label="True Peak" value={formatDb(truePeakDb)} unit="dBTP" alert={truePeakDb > -1} />
             <MeterCard label="LRA" value={lra.toFixed(1)} unit="LU" />
             <MeterCard label="Correlation" value={correlation.toFixed(2)} unit="" alert={correlation < 0.3} />
-        </div>
+        </Grid>
     );
 };
 

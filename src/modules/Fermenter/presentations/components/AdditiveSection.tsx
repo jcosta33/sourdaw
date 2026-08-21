@@ -5,7 +5,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Stack } from '#/components/layout';
+import { Grid, Stack } from '#/components/layout';
 
 type AdditiveSectionProps = {
     partials: number;
@@ -27,7 +27,7 @@ export const AdditiveSection = ({
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Sum of sine partials — shape the harmonic spectrum directly.
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <Grid cols={2} gap={2}>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={partials}
@@ -86,6 +86,6 @@ export const AdditiveSection = ({
                     {(inharmonicity * 1000).toFixed(1)}
                 </span>
             </Stack>
-        </div>
+        </Grid>
     </Stack>
 );

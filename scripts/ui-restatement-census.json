@@ -135,6 +135,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-01514a5cbd5edbcc",
+    "file": "src/modules/TimelineEditor/presentations/views/ArrangeView.tsx",
+    "line": 473,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-015a1b057d64a421",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 182,
@@ -142,24 +151,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-016033535dd324ff",
-    "file": "src/modules/Levain/presentations/components/ArticulationList.tsx",
-    "line": 32,
-    "fingerprint": "div\tgrid grid-cols-3 gap-1.5 p-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-01619aa95fdc02f8",
-    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 419,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 py-1",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0162a687a45be8de",
@@ -441,15 +432,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-03c322c5ee3c6b48",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 983,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-03ed67895eb7b3bc",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 761,
@@ -657,15 +639,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-05b52c034698d936",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 379,
-    "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-05bac782cf296705",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
     "line": 278,
@@ -684,12 +657,30 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-05d602c075b1e4a7",
+    "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
+    "line": 88,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-05f81ccfa3a22e3c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 1350,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-062a2fe4ed82998f",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 1437,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -726,7 +717,7 @@
     "fingerprint": "textarea\t",
     "kind": "generic-control",
     "mapping": "Textarea",
-    "disposition": "eligible"
+    "disposition": "semantic-wrapper"
   },
   {
     "id": "ui-06d147189aa8de2d",
@@ -819,15 +810,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0752ec1304dc1a6c",
-    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 326,
-    "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0755f4e3bdc04c70",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
     "line": 643,
@@ -843,6 +825,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-077579c12ae4444f",
+    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
+    "line": 30,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -942,6 +933,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-084d11160416789f",
+    "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
+    "line": 1397,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -1051,15 +1051,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-08d5709393d8e433",
-    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 30,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-08d80038182c1598",
@@ -1185,6 +1176,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-0a66072dc129add7",
+    "file": "src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx",
+    "line": 43,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -1338,7 +1338,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-0c320cde359471da",
@@ -1437,7 +1437,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-0d3d0dd2a1a702be",
@@ -1593,15 +1593,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-0e09c06e781831ea",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
-    "line": 51,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0e0a6806d6c8009a",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 981,
@@ -1626,6 +1617,15 @@
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-0e3b742e1e8ce99c",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
+    "line": 51,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -1680,15 +1680,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-0f068359c0a16af6",
-    "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
-    "line": 210,
-    "fingerprint": "div\tgrid grid-cols-2 gap-1.5 mb-1.5",
-    "kind": "layout",
-    "mapping": "Grid",
     "disposition": "eligible"
   },
   {
@@ -2007,6 +1998,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-11f67cc0af7d6f4f",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 1632,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1211f064f67a58a3",
     "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
     "line": 99,
@@ -2139,7 +2139,7 @@
     "fingerprint": "div\tgrid gap-2 md:grid-cols-4 xl:grid-cols-8",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-137cc70c46a86932",
@@ -2202,7 +2202,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-13d0968507758c93",
@@ -2232,6 +2232,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-140a9d9078aa3d2e",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
+    "line": 56,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-140b27e50bcbef05",
     "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
     "line": 489,
@@ -2248,15 +2257,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-14140cc514f51e3d",
-    "file": "src/modules/Crumbs/presentations/components/PadGrid.tsx",
-    "line": 107,
-    "fingerprint": "div\tgrid grid-cols-4 gap-1.5",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1419749e049c40f2",
@@ -2347,6 +2347,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-14d0fc53822fb9a8",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 431,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-14ffd047006cbd79",
@@ -2943,6 +2952,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-1b1fe5afdbd027ca",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 619,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1b4063d1ba2f3b57",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1804,
@@ -3312,15 +3330,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-1e68be9f0ff5fbf0",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 372,
-    "fingerprint": "div\tgrid grid-cols-2 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-1e8e9d72bb389045",
     "file": "src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx",
     "line": 118,
@@ -3552,7 +3561,16 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
+  },
+  {
+    "id": "ui-20518b89a184bf31",
+    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
+    "line": 57,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-2056880f57b97489",
@@ -3663,6 +3681,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-21690a056f1f4c7e",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ChorusLayout.tsx",
+    "line": 40,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-21a1f6c213dba1d9",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 735,
@@ -3741,7 +3768,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-22f212d7785d23c6",
@@ -3804,6 +3831,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-240b8c4fa74a4d92",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 930,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -3903,6 +3939,15 @@
     "fingerprint": "Separator\t",
     "kind": "generic-control",
     "mapping": "Separator",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-257102ea21749a8b",
+    "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
+    "line": 363,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -4608,15 +4653,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2be541ccdb9bedb6",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 481,
-    "fingerprint": "div\tgrid grid-cols-2 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2bf1f4bc3f14b34a",
     "file": "src/modules/AiRuntime/presentations/views/AiChangeToast.tsx",
     "line": 73,
@@ -4714,15 +4750,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-2c94d82af4d919fa",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 179,
-    "fingerprint": "div\tmt-2 grid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-2cd1fc57d0a2b42d",
@@ -5085,13 +5112,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-30a503b8fde8dd6f",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 1437,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
+    "id": "ui-30cefcada8ededec",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 983,
+    "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-30e54fd26883be67",
@@ -5119,15 +5146,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-31388d1750e14754",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx",
-    "line": 50,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-315a1e67d4ada510",
@@ -5217,6 +5235,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-3291bb533a5b39fd",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 928,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -5343,15 +5370,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-33f8295feb2610d4",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 928,
-    "fingerprint": "div\tgrid grid-cols-2 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
     "disposition": "eligible"
   },
   {
@@ -5553,15 +5571,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3646b872cbef1b41",
-    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 189,
-    "fingerprint": "div\tgrid grid-cols-5 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-36807f23665f0009",
     "file": "src/modules/Proof/presentations/components/ProofDynSection.tsx",
     "line": 91,
@@ -5688,15 +5697,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-37da6c79de92942a",
-    "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
-    "line": 248,
-    "fingerprint": "div\tgrid grid-cols-2 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-37dcf6ef35eaa4ac",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
     "line": 164,
@@ -5704,15 +5704,6 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-37e0d14fdb82a300",
-    "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
-    "line": 363,
-    "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-37fbc5dffcb2242d",
@@ -5740,15 +5731,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-3864eccb1a524921",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
-    "line": 66,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-38a488cbaef12203",
@@ -5946,6 +5928,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-3aa9295c6158158a",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
+    "line": 57,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -6147,6 +6138,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3c7f006e1f2d9442",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
+    "line": 61,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3c9d1371953bffcd",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
     "line": 270,
@@ -6162,15 +6162,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-3ca94662adb66ffd",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
-    "line": 185,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2 mt-1",
-    "kind": "layout",
-    "mapping": "Grid",
     "disposition": "eligible"
   },
   {
@@ -6336,6 +6327,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3e1d3da74fe95a63",
+    "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
+    "line": 64,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3e2bcec3328b6ce0",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
     "line": 563,
@@ -6356,7 +6356,7 @@
   {
     "id": "ui-3e981904009a25cb",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 620,
+    "line": 623,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6597,6 +6597,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-40a5950c630e91b0",
+    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
+    "line": 251,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-40ab129de66e86dc",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 294,
@@ -6784,15 +6793,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-4272020fbe7d3ef3",
-    "file": "src/modules/TimelineEditor/presentations/views/ArrangeView.tsx",
-    "line": 473,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2 w-full",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-427bb0c8418912a8",
@@ -6995,7 +6995,7 @@
   {
     "id": "ui-445b40b9da76a7ec",
     "file": "src/modules/Crumbs/presentations/components/PadGrid.tsx",
-    "line": 130,
+    "line": 132,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7107,7 +7107,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-45967cb08625a049",
@@ -7152,7 +7152,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "semantic-wrapper"
   },
   {
     "id": "ui-45bb3aef39837b99",
@@ -7218,15 +7218,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-462b503f2e4d4e1e",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
-    "line": 52,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-463ac09a42699271",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
     "line": 204,
@@ -7242,6 +7233,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-46a830308fad677d",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
+    "line": 51,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -7287,6 +7287,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4739645c634bc67b",
+    "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
+    "line": 248,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -7472,11 +7481,11 @@
   {
     "id": "ui-4896b548fa32339e",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
-    "line": 304,
+    "line": 305,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-489c9d88005b2c60",
@@ -7504,15 +7513,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-48fbcf455e76d67d",
-    "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
-    "line": 369,
-    "fingerprint": "div\tgrid grid-cols-2 gap-x-4 gap-y-0.5 mt-1.5 text-[10px]",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-4900de1098ac38cb",
@@ -7602,6 +7602,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4aeaa868098609b2",
+    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
+    "line": 419,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -7704,15 +7713,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-4bdc0dd8eab85263",
-    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 126,
-    "fingerprint": "div\tgrid grid-cols-5 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4bf1f97acdd56199",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
     "line": 306,
@@ -7746,6 +7746,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4c61ce8b648a5f27",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 586,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -7819,15 +7828,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-4d1a59876fa3018d",
-    "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
-    "line": 228,
-    "fingerprint": "div\tgrid grid-cols-5 gap-1",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-4d326f24d5393b40",
@@ -8118,6 +8118,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-5010afc7a08b529f",
+    "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
+    "line": 210,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-505fec1c483bed9a",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1121,
@@ -8160,15 +8169,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-50b0410a741b0d54",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 763,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
     "disposition": "eligible"
   },
   {
@@ -8296,6 +8296,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-52027bf635045f86",
+    "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
+    "line": 229,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-5208ecc732dfdb75",
@@ -8442,15 +8451,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-537fda7aaf334753",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 651,
-    "fingerprint": "div\tgrid shrink-0 grid-cols-4 gap-2.5",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-53800d0aa2230d20",
     "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
     "line": 77,
@@ -8556,6 +8556,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5452eedfe72ba6f9",
+    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
+    "line": 578,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -8829,15 +8838,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-57dc80f4b073aa66",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
-    "line": 51,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-57e0bfdc8a5b94bb",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 277,
@@ -9000,15 +9000,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-5943588dec6b3631",
-    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 57,
-    "fingerprint": "div\tgrid grid-cols-4 gap-1 px-1",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5946abc4fbe333c0",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
     "line": 216,
@@ -9081,6 +9072,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-59ccd4410a3ff43e",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 379,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-59d40af8faf671cd",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 322,
@@ -9114,6 +9114,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5a38620ae6f96204",
+    "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
+    "line": 369,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -9360,13 +9369,13 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-5cf51f663ad106dd",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1036,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
+    "id": "ui-5cea21e2daf01372",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 651,
+    "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-5cf8d8daa22f457e",
@@ -9576,15 +9585,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-5ec13bc9da43df4c",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
-    "line": 46,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5ec78b82e8a92b5e",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 691,
@@ -9783,15 +9783,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-609158e66a261032",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 557,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-609a05de351f3e36",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 159,
@@ -9918,15 +9909,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-61e7e0a7b9676f52",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx",
-    "line": 55,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-621167ed8f686c8c",
     "file": "src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx",
     "line": 213,
@@ -9981,6 +9963,24 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-626fb46a9d4087ee",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 763,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-6296a4c561bac8fe",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx",
+    "line": 50,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-62a7b2e9475288fb",
     "file": "src/modules/SessionLauncher/presentations/views/SessionView.tsx",
     "line": 59,
@@ -10014,7 +10014,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-6315532570eb73ba",
@@ -10116,13 +10116,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-641fd810bff793bb",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
-    "line": 61,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
+    "id": "ui-64228b64e2825904",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx",
+    "line": 55,
+    "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-645c7125892ffb32",
@@ -10275,7 +10275,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-662df46b17b73175",
@@ -10352,7 +10352,7 @@
   {
     "id": "ui-66b4602d139109e3",
     "file": "src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx",
-    "line": 46,
+    "line": 47,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10411,15 +10411,6 @@
     "kind": "generic-control",
     "mapping": "Separator",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-67bc928066fd1b74",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 680,
-    "fingerprint": "div\tgrid grid-cols-3 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-67bfd94bd6af0e94",
@@ -10482,7 +10473,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-688a2437a07e6b95",
@@ -10545,7 +10536,7 @@
     "fingerprint": "div\tgrid gap-3 xl:grid-cols-5 md:grid-cols-3",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-6909ec9a1f30513a",
@@ -10845,6 +10836,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-6cecac43f60581e6",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
+    "line": 56,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6ced4feca3e0b847",
     "file": "src/components/daw/DawUtilityMetric.tsx",
     "line": 34,
@@ -10872,15 +10872,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6d0d23a13843d199",
-    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 892,
-    "fingerprint": "div\tgrid grid-cols-3 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6d806cd3e606317f",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
     "line": 150,
@@ -10905,6 +10896,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-6dc0f82bfa04abdd",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
+    "line": 185,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -11031,7 +11031,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-6f00c7c68e014787",
@@ -11187,15 +11187,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-710cf4d6de975504",
-    "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
-    "line": 64,
-    "fingerprint": "div\tgrid grid-cols-4 gap-1.5",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-71340f15d600e8d1",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 103,
@@ -11256,7 +11247,7 @@
     "fingerprint": "div\tgrid gap-2 md:grid-cols-2 xl:grid-cols-4",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-71de7282b9076b0e",
@@ -11700,6 +11691,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-75fc6b05bfd93d16",
+    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
+    "line": 220,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-75fe2122380bb3b9",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TakesSection.tsx",
     "line": 82,
@@ -11868,6 +11868,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7786ae9a24825481",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 184,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -12040,6 +12049,15 @@
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-78b4ae4c96b702ee",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx",
+    "line": 50,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-78c4edd1094af245",
@@ -12318,7 +12336,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-7b1b26024f2233ae",
@@ -12390,6 +12408,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7b8e204c07e4702f",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 372,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -12465,6 +12492,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7be732067d332056",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 822,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7bf42d3156a4e086",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/MacrosPanel.tsx",
     "line": 132,
@@ -12490,15 +12526,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-7c6656cfa1ddba7f",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx",
-    "line": 50,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7c68a175ea8f6d3b",
@@ -12562,6 +12589,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7cc9e26cbadf8229",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
+    "line": 75,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7d07d9d306ec18a7",
@@ -12687,6 +12723,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7e2473e0a04c96ac",
+    "file": "src/modules/Crumbs/presentations/components/PadGrid.tsx",
+    "line": 109,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -12906,6 +12951,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-802ce460b0a26d88",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 808,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8035ecde3459f5dc",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 209,
@@ -12993,7 +13047,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-813606442eafb621",
@@ -13030,15 +13084,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-815144e1cf88f8b5",
-    "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
-    "line": 1397,
-    "fingerprint": "div\tgrid grid-cols-3 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-81647ea337fed4c4",
@@ -13275,15 +13320,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-83e43407e04584d3",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 1632,
-    "fingerprint": "div\tgrid grid-cols-3 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-83e61d3cc4f58036",
     "file": "src/modules/Levain/presentations/components/ExpressionPanel.tsx",
     "line": 236,
@@ -13299,15 +13335,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-83f32aec1a309113",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 30,
-    "fingerprint": "div\tgrid grid-cols-3 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
     "disposition": "eligible"
   },
   {
@@ -13430,7 +13457,7 @@
   {
     "id": "ui-854c49f1bf84afed",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
-    "line": 216,
+    "line": 217,
     "fingerprint": "DawMenuInlineEditor\t",
     "kind": "daw-chrome",
     "mapping": "DawMenuInlineEditor",
@@ -13588,24 +13615,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-8752983ddccde295",
-    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
-    "line": 251,
-    "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-87612c1c216b6b16",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx",
-    "line": 55,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-87985ad5b70d8cfc",
@@ -13947,7 +13956,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-8a9d53e056fbea49",
@@ -14040,6 +14049,15 @@
     "disposition": "one-off"
   },
   {
+    "id": "ui-8b674d9005e9b631",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 179,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8b935cf44eb84168",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/ProjectTab.tsx",
     "line": 28,
@@ -14127,6 +14145,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-8c65aab99563dd14",
+    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
+    "line": 126,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -14283,6 +14310,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-8de737bfed3d8677",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 1975,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8e18245ffe974cc1",
     "file": "src/components/daw/DawHeaderBand.tsx",
     "line": 42,
@@ -14362,6 +14398,15 @@
     "kind": "daw-chrome",
     "mapping": "DawContextMenuSurface",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-8ee0c3921465b967",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 892,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-8ef2300e1e2ff139",
@@ -14652,6 +14697,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-92588dcd4cc5da35",
+    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
+    "line": 266,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-926c94528eb0cc61",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView.tsx",
     "line": 156,
@@ -14676,7 +14730,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-92d2d25cac5621fd",
@@ -14695,15 +14749,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-930ee1ac9b159e04",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 586,
-    "fingerprint": "div\tgrid grid-cols-3 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-931c09cbc3f1680d",
@@ -14805,15 +14850,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-943a7aa1cefbfd9b",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ChorusLayout.tsx",
-    "line": 40,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-949eeb6083d7baa0",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 678,
@@ -14847,6 +14883,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-95672e59b1eaac2f",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
+    "line": 52,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -15048,6 +15093,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-972a88b36c79fdce",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 30,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-974c630678bb13f8",
     "file": "src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx",
     "line": 203,
@@ -15109,6 +15163,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-97ed26220a132d0c",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
+    "line": 46,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-97f1f6b3d0368f85",
@@ -15181,15 +15244,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-98ef90bdc342b139",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
-    "line": 79,
-    "fingerprint": "div\tgrid grid-cols-2 gap-4",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-98fb66766c49ab69",
@@ -15300,6 +15354,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-9a58a312d4ca09ca",
+    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+    "line": 680,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9a66e2ec9127031e",
     "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
     "line": 48,
@@ -15342,6 +15405,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9ad96a613d4114a5",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 557,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -15450,6 +15522,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9c4702b509c1730f",
+    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
+    "line": 362,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -15813,15 +15894,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-9fe4e64c594d9e6f",
-    "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
-    "line": 632,
-    "fingerprint": "div\tgrid grid-cols-2 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9ff9a1366729c7b4",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1487,
@@ -15921,15 +15993,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-a1001768b77d9617",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 619,
-    "fingerprint": "div\tgrid grid-cols-2 gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a105a97559a9b48a",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackLatencySection.tsx",
     "line": 25,
@@ -15964,15 +16027,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-a1a4fcdd0fe1a676",
-    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 220,
-    "fingerprint": "div\tgrid grid-cols-2 gap-6 overflow-y-auto px-4 py-4",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a1a6e15420bd79a4",
@@ -16045,15 +16099,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-a201365963ba1ac5",
-    "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
-    "line": 88,
-    "fingerprint": "div\tmt-2 grid grid-cols-4 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a2152770c60ddf43",
@@ -16413,7 +16458,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-a64da8b7481aca3f",
@@ -16422,6 +16467,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a65cb7fd933b89f5",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 350,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -16728,7 +16782,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-a9c7e4ce2442f34e",
@@ -17233,6 +17287,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-aeaa6ec39ae829c0",
+    "file": "src/modules/Levain/presentations/components/ArticulationList.tsx",
+    "line": 32,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-aeb34c8e614b6bdb",
@@ -17773,15 +17836,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-b33bd1bb37a9e57f",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx",
-    "line": 56,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b36ad14d23605b15",
@@ -18360,15 +18414,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b90216da6071d583",
-    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1046,
-    "fingerprint": "div\tgrid grid-cols-3 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
     "line": 266,
@@ -18456,6 +18501,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ba431f1c283edf8c",
+    "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
+    "line": 632,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -18666,24 +18720,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-bc49cf17a171bae5",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 431,
-    "fingerprint": "div\tgrid grid-cols-2 items-end gap-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-bc60f44b4cdac40d",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 876,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-bc73e9213a6b9d68",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
     "line": 156,
@@ -18801,15 +18837,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-bdbf207ef7868466",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
-    "line": 57,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-bde84d76d0b7cc62",
     "file": "src/modules/TimelineEditor/presentations/components/Inspector/ControlHeader.tsx",
     "line": 20,
@@ -18911,11 +18938,20 @@
   {
     "id": "ui-bef1be18e168b8e3",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
-    "line": 317,
+    "line": 318,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
+  },
+  {
+    "id": "ui-bf21bbd36fab7e10",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 481,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-bf4556ec7b34cb6b",
@@ -18997,15 +19033,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c07c59394bd77c4d",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 1975,
-    "fingerprint": "div\tgrid grid-cols-3 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c090f20203355984",
@@ -19168,15 +19195,6 @@
     "kind": "generic-control",
     "mapping": "Input",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c1c28768eb4dd8d6",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 418,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c1db66a417a9534b",
@@ -19467,15 +19485,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c52a99a4eab4aae1",
-    "file": "src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx",
-    "line": 42,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c54694fd048c9e60",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 59,
@@ -19719,6 +19728,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-c8875d8e4541aabf",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx",
+    "line": 55,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c89373f3b757e4e9",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
     "line": 604,
@@ -19726,6 +19744,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-c8b47017dac3a5b8",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 1036,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c8ca3d5dd7367725",
@@ -19977,7 +20004,7 @@
     "fingerprint": "div\tgrid gap-3 md:grid-cols-2 xl:grid-cols-4",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "responsive-or-dynamic"
+    "disposition": "one-off"
   },
   {
     "id": "ui-cb22152cb4a016fa",
@@ -20081,7 +20108,7 @@
   {
     "id": "ui-cbc06de41ecc997c",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
-    "line": 230,
+    "line": 231,
     "fingerprint": "DawSwatchButton\t",
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
@@ -20430,15 +20457,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-cebf6d10d593b08a",
-    "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
-    "line": 808,
-    "fingerprint": "div\tmt-4 grid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ced0daa8bcedee05",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 334,
@@ -20526,7 +20544,7 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-cfda9e5e3bbdee10",
@@ -20823,7 +20841,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-d312ae2647d20fbb",
@@ -20859,7 +20877,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-d3477f537e2af3bb",
@@ -21060,22 +21078,13 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-d55f4d326e8667a9",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 184,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d574408b0878890f",
     "file": "src/components/daw/DawCompactSelect.tsx",
     "line": 35,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
-    "disposition": "eligible"
+    "disposition": "semantic-wrapper"
   },
   {
     "id": "ui-d594f328d198476a",
@@ -21130,15 +21139,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-d660710866a4b7ad",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
-    "line": 75,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d69512d95e56f8cc",
@@ -21287,7 +21287,7 @@
   {
     "id": "ui-d78e933bfabccc1f",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
-    "line": 286,
+    "line": 287,
     "fingerprint": "DawContextMenuSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawContextMenuSurface",
@@ -21301,15 +21301,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-d7befdd81345a763",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 439,
-    "fingerprint": "div\tgrid grid-cols-3 gap-3 w-full",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d7d75ba8b5cd566a",
@@ -21519,24 +21510,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d9e6180b56fc398e",
-    "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
-    "line": 266,
-    "fingerprint": "div\tgrid shrink-0 grid-cols-4 gap-2.5",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-d9fea46c261f9a12",
-    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
-    "line": 56,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-da1a48945e986cde",
     "file": "src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx",
     "line": 79,
@@ -21696,6 +21669,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-dbdc83556e1aeb57",
+    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
+    "line": 326,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -22545,15 +22527,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-e4b60e0b98381af1",
-    "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 578,
-    "fingerprint": "div\tgrid grid-cols-2 gap-x-3 gap-y-0.5 mt-1 pt-1 border-t border-border/10",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e4e9fc19eadea53e",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
     "line": 162,
@@ -22785,6 +22758,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-e7895c7c0335e5eb",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 439,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {
@@ -23040,15 +23022,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-e9ff417972ad685b",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 822,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ea020ae829ba6f68",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 302,
@@ -23265,15 +23238,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-ebdddcc62ecaec71",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 350,
-    "fingerprint": "div\tgrid grid-cols-3 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ebdde52043705e3e",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1542,
@@ -23308,6 +23272,15 @@
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-ec3051a286040b81",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx",
+    "line": 66,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ec441828684bc282",
@@ -23553,6 +23526,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-eebdc8e921fac1cb",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 418,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-eecabece376ed5e8",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
     "line": 654,
@@ -23661,6 +23643,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-ef72af3cce891697",
+    "file": "src/modules/Crumbs/presentations/components/CrumbsControls.tsx",
+    "line": 189,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ef88e958f4f292bc",
     "file": "src/modules/Arrangement/presentations/views/BounceOptionsDialog.tsx",
     "line": 159,
@@ -23686,15 +23677,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-efa1092e6c2be34a",
-    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 362,
-    "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-efaf6f9620188e25",
@@ -24390,6 +24372,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f6f7e909ae42b444",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 876,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f720af3f0b77d6ae",
     "file": "src/components/daw/DawReadoutRow.tsx",
     "line": 21,
@@ -24603,7 +24594,7 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-f901b4c39339ca3f",
@@ -24640,15 +24631,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f9492435db159ed8",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 930,
-    "fingerprint": "div\tgrid grid-cols-2 gap-2",
-    "kind": "layout",
-    "mapping": "Grid",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f94fcf077d96946e",
@@ -24786,6 +24768,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-fa3164216c558cc2",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1046,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fa5977bc451365b3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
     "line": 282,
@@ -24882,7 +24873,7 @@
     "fingerprint": "div\tgrid min-h-0 min-w-0 flex-1 overflow-hidden",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
+    "disposition": "one-off"
   },
   {
     "id": "ui-fb8fc8a0bb306161",
@@ -25202,7 +25193,7 @@
   {
     "id": "ui-feabf997477de6c7",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
-    "line": 584,
+    "line": 587,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -25260,6 +25251,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ff61ad5ab225d1ef",
+    "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
+    "line": 79,
+    "fingerprint": "Grid\t",
+    "kind": "layout",
+    "mapping": "Grid",
     "disposition": "already-migrated"
   },
   {

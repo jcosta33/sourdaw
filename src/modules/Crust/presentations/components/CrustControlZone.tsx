@@ -15,7 +15,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 
@@ -575,8 +575,11 @@ const Level5Stats = ({
         ['GR Max', `${grDb.toFixed(1)} dB`],
     ];
     return (
-        <div
-            className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1 pt-1 border-t border-border/10"
+        <Grid
+            cols={2}
+            gapX={3}
+            gapY={0.5}
+            className="mt-1 pt-1 border-t border-border/10"
             aria-label="Loudness statistics"
             role="group"
         >
@@ -590,7 +593,7 @@ const Level5Stats = ({
                     valueClassName="text-[8px] text-foreground/70"
                 />
             ))}
-        </div>
+        </Grid>
     );
 };
 

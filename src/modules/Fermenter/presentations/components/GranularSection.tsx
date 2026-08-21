@@ -4,7 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Stack } from '#/components/layout';
+import { Grid, Stack } from '#/components/layout';
 
 type GranularSectionProps = {
     density: number;
@@ -27,7 +27,7 @@ export const GranularSection = ({
 }: GranularSectionProps): ReactElement => (
     <Stack gap={2}>
         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Grain Cloud</div>
-        <div className="grid grid-cols-3 gap-2">
+        <Grid cols={3} gap={2}>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={density}
@@ -109,6 +109,6 @@ export const GranularSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Spread</span>
             </Stack>
-        </div>
+        </Grid>
     </Stack>
 );
