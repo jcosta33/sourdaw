@@ -1,0 +1,26 @@
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  s_2175fca1f07426::t_bb3f4a1113fe25 20
+  s_2175fca1f07426::t_9ab078595e1c9a 19,44,50,56-58,80,83,87,92,109,112,114
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_5134ed5b6ec079 617,869,2327,2387-2395,2729-2737,5927,6986-6994,7853,8942,9221,9536,9797,10406-10414,10829-10837,11264,11741,12821,12848,14288,14342,15647,15800,15872,15980,16490-16498,16574,16907,17321,17399-17407,17678-17686,18941,18968,19316-19324,20531-20539,21281,22010,22316,22325,22622,22775,24395,24890,25259
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_2175fca1f07426::t_a44d6e44af23c7 7,39,43,68-69,72,83,86,102
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_2175fca1f07426::t_d05a4ce4fd2a28 8,1402,1446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dc5b395d751d376f2bd61991f132946bc462e64a",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
