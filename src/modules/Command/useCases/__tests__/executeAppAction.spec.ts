@@ -24,6 +24,7 @@ import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 import { redo } from '../redo';
+import { undo } from '../undo';
 
 import type { ActionHandler, AppAction, HandlerDescribeResult, HandlerExecutionResult } from '#/utils/handlerContract';
 import type { ActionUndoEntry } from '../../models/UndoEntry';
@@ -94,6 +95,7 @@ const mocks = vi.hoisted(() => ({
     clearActionHistoryMetadata: vi.fn<() => void>(),
     commitUndoEntry: vi.fn<(entry: CommitUndoEntryInput) => void>(),
     recordAction: vi.fn<(action: AppAction) => void>(),
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -116,6 +118,8 @@ vi.mock('../actionHistoryMetadataPort', async (importOriginal) => ({
 vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
 
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 describe('executeAppAction', () => {
     beforeEach(() => {
@@ -348,6 +352,131 @@ describe('executeAppAction', () => {
             expect(document.trackGain).toEqual({ value: 1 });
             expect(storage.get()).toEqual({ value: 1 });
             expect(undoStore.value).toEqual({ past: [], future: [replayEntry] });
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+        } finally {
+            releaseHandler?.();
+            if (previousProject) {
+                projectStore.set(previousProject);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
+            }
+        }
+    });
+
+    it.each([
+        { stackShape: 'singleton', grouped: false },
+        { stackShape: 'grouped', grouped: true },
+    ])('keeps a $stackShape undo pending when production intent changes before commit', async ({ grouped }) => {
+        const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const document: Record<string, unknown> = { trackGain: { value: 1 } };
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
+        const storage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(storage.hydrate?.()).toBe(true);
+        let executionCount = 0;
+        registerHandlerMap({
+            setTrackGain: create_mock_handler<SetTrackGainAction>({
+                execute: async (action) => {
+                    storage.set({ value: action.payload.gain });
+                    executionCount++;
+                    if (executionCount === 1) {
+                        markHandlerStarted?.();
+                        await handlerRelease;
+                    }
+                    return { status: 'written' };
+                },
+                describe: (action) => ({
+                    label: 'Set vocal gain',
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: {
+                            trackId: action.payload.trackId,
+                            gain: action.payload.expectedGain,
+                            expectedGain: action.payload.gain,
+                        },
+                    },
+                }),
+            }),
+        });
+        const inverseAction: SetTrackGainAction = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.7 },
+        };
+        const firstEntry: ActionUndoEntry = {
+            kind: 'action',
+            id: 'production-brief-undo-first',
+            label: 'Set vocal gain',
+            timestamp: 1,
+            source: 'manual',
+            action: { type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 1 } },
+            inverseAction,
+            ...(grouped ? { groupId: 'vocal-edits', groupLabel: 'Grouped vocal edits' } : {}),
+        };
+        const secondEntry: ActionUndoEntry = {
+            ...firstEntry,
+            id: 'production-brief-undo-second',
+            timestamp: 2,
+            action: { type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.6, expectedGain: 0.7 } },
+            inverseAction: {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 0.6 },
+            },
+        };
+        const past = grouped ? [firstEntry, secondEntry] : [firstEntry];
+        undoStore.set({ past, future: [] });
+
+        try {
+            const replay = undo();
+            await handlerStarted;
+            const currentProject = projectStore.value;
+            if (!currentProject) {
+                throw new Error('Expected a current project');
+            }
+            projectStore.set({
+                ...currentProject,
+                productionBrief: {
+                    ...currentProject.productionBrief,
+                    revision: currentProject.productionBrief.revision + 1,
+                    locks: [
+                        {
+                            id: 'collaborator-track-lock',
+                            scope: { kind: 'track', trackId: 'track-vocal' },
+                            statement: 'Keep the vocal gain fixed',
+                            createdAt: currentProject.productionBrief.updatedAt + 1,
+                        },
+                    ],
+                    updatedAt: currentProject.productionBrief.updatedAt + 1,
+                },
+            });
+            releaseHandler?.();
+
+            await expect(replay).resolves.toBeUndefined();
+            expect(document.trackGain).toEqual({ value: 1 });
+            expect(storage.get()).toEqual({ value: 1 });
+            expect(undoStore.value).toEqual({ past, future: [] });
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                grouped
+                    ? 'Cannot undo "Grouped vocal edits": project state has changed'
+                    : 'Cannot undo "Set vocal gain": project state has changed',
+                'warning'
+            );
             expect(mocks.recordAction).not.toHaveBeenCalled();
         } finally {
             releaseHandler?.();
