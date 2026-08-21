@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_24b1bdbc3c31ad::t_cb7ebc990554ba 159
+tests/e2e/midiToolbarAllToggles.spec.ts
+  s_24b1bdbc3c31ad::t_35e93e18b1578d 1,3-23,25-30,33,37-39,42-63,66-68,70-71,73-76,78-79,81-84,86-87,91-97,99-101,103-107
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx
+  s_24b1bdbc3c31ad::t_1ae19ffb0797f5 172-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "bac945f628c08d61f3bb8c91eab4da21094f6e33",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
