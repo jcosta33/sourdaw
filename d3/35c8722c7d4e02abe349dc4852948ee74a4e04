@@ -1,0 +1,25 @@
+electron/commands.ts
+  s_487e9aa1e46063::t_77f55c502a3e54 113-125
+electron/__tests__/commands.spec.ts
+  s_487e9aa1e46063::t_b1b4c87468e3d5 165-169,175-194
+  s_487e9aa1e46063::t_419818a7062655 19-20
+  s_487e9aa1e46063::t_bb6c2913403b78 64-66,71-77,79,85,90-93
+  s_487e9aa1e46063::t_53a258242b31f7 120,124
+  s_487e9aa1e46063::t_67743d5b918311 195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d335c8722c7d4e02abe349dc4852948ee74a4e04",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
