@@ -1,0 +1,20 @@
+crates/sourdaw-native/src/commands/speech.rs
+  s_a40848e8f8cca9::t_e518842bbb8f9e 692-693
+  s_a40848e8f8cca9::t_2e6698e799504f 688-691,694-696,724,1055-1062
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2092600665f02655b9c2f44a61cb83ca39b3171d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
