@@ -72,6 +72,42 @@ describe('renderDdspInstrument request ownership', () => {
         injectDependencies(renderDdspInstrument, { logger, readRenderCache, writeRenderCache });
     });
 
+    it('returns the confirmed runtime backend and uses the versioned model key end to end', async () => {
+        inferenceWorkerBridge.runDdspInference.mockResolvedValue(result());
+
+        const rendered = await launch(60);
+
+        const modelId = 'ddsp-violin:magenta-js-ddsp-2020-01-05';
+        expect(rendered.backend).toBe('webgpu');
+        expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledWith(
+            expect.objectContaining({ modelId }),
+            undefined
+        );
+        expect(inferenceWorkerBridge.runDdspInference).toHaveBeenCalledWith(
+            expect.objectContaining({ modelId }),
+            undefined
+        );
+    });
+
+    it('confirms the runtime backend before returning cached audio', async () => {
+        const cached = new Float32Array([0.1, 0.2]);
+        readRenderCache.mockResolvedValueOnce(cached);
+
+        const rendered = await launch(60);
+
+        expect(rendered).toMatchObject({ audio: cached, backend: 'webgpu', sampleRate: 44_100 });
+        expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledOnce();
+        expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
+    });
+
+    it('refuses a render if the runtime backend changes after session creation', async () => {
+        inferenceWorkerBridge.runDdspInference.mockResolvedValue({ ...result(), backend: 'wasm' });
+
+        await expect(launch(60)).rejects.toThrow('webgpu -> wasm');
+
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
+    });
+
     it('keeps the newer request current when the older request completes first', async () => {
         const older = deferred<ReturnType<typeof result>>();
         const newer = deferred<ReturnType<typeof result>>();

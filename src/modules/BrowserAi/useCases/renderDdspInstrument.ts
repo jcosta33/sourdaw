@@ -22,7 +22,12 @@ type RenderDdspInstrumentInput = {
     durationSec: number;
     signal?: AbortSignal;
 };
-type RenderDdspInstrumentOutput = Promise<{ audio: Float32Array; sampleRate: number; provenance: RenderProvenance }>;
+type RenderDdspInstrumentOutput = Promise<{
+    audio: Float32Array;
+    backend: string;
+    sampleRate: number;
+    provenance: RenderProvenance;
+}>;
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
     if (signal?.aborted) {
@@ -49,6 +54,7 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
             }
             throwIfAborted(signal);
             const requestId = crypto.randomUUID();
+            const modelId = `${instrument.id}:${instrument.artifactVersion}`;
             const { pitchHz, loudnessDb, nFrames } = midiToDdspInput({ notes, durationSec });
             const inputData = new ArrayBuffer(pitchHz.byteLength + loudnessDb.byteLength);
             new Float32Array(inputData).set(pitchHz);
@@ -56,26 +62,13 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
             enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
             try {
                 const cacheKey = await computeRenderCacheKey({
-                    modelId: `${instrument.id}:${instrument.artifactVersion}`,
+                    modelId,
                     inputData,
                     qualityParams: `ddsp-${String(nFrames)}`,
                 });
                 throwIfAborted(signal);
                 const cached = await readRenderCache({ cacheKey });
                 throwIfAborted(signal);
-                if (cached) {
-                    markRenderComplete(phraseId, requestId, cacheKey);
-                    return {
-                        audio: cached,
-                        sampleRate: 44_100,
-                        provenance: {
-                            modelId: instrument.id,
-                            renderQuality: 'standard',
-                            renderedAt: Date.now(),
-                            tier: 'browser-preview',
-                        },
-                    };
-                }
                 startActiveRender({
                     requestId,
                     phraseId,
@@ -86,9 +79,9 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
                     startedAt: Date.now(),
                 });
                 updateRenderStatus(phraseId, requestId, 'rendering-browser');
-                await inferenceWorkerBridge.loadDdspSession(
+                const backend = await inferenceWorkerBridge.loadDdspSession(
                     {
-                        modelId: instrument.id,
+                        modelId,
                         artifacts: instrument.artifacts.map((artifact) => ({
                             modelId: `${instrument.id}/${instrument.artifactVersion}/${artifact.path}`,
                             path: artifact.path,
@@ -99,11 +92,25 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
                     signal
                 );
                 throwIfAborted(signal);
+                if (cached) {
+                    markRenderComplete(phraseId, requestId, cacheKey);
+                    return {
+                        audio: cached,
+                        backend,
+                        sampleRate: 44_100,
+                        provenance: {
+                            modelId: instrument.id,
+                            renderQuality: 'standard',
+                            renderedAt: Date.now(),
+                            tier: 'browser-preview',
+                        },
+                    };
+                }
                 const result = await inferenceWorkerBridge.runDdspInference(
                     {
                         type: 'run-ddsp-inference',
                         requestId,
-                        modelId: instrument.id,
+                        modelId,
                         pitchHz,
                         loudnessDb,
                         frameRate: instrument.frameRate,
@@ -111,6 +118,9 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
                     signal
                 );
                 throwIfAborted(signal);
+                if (result.backend !== backend) {
+                    throw new Error(`DDSP backend changed during render: ${backend} -> ${result.backend}`);
+                }
                 if (result.audio.length === 0) {
                     throw new Error('DDSP inference produced no audio');
                 }
@@ -123,6 +133,7 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
                 markRenderComplete(phraseId, requestId, cacheKey);
                 return {
                     audio,
+                    backend: result.backend,
                     sampleRate: 44_100,
                     provenance: {
                         modelId: instrument.id,

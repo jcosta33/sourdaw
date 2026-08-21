@@ -1,8 +1,12 @@
-import { DDSP_INSTRUMENT_CATALOG } from '../../src/modules/BrowserAi/models/DdspInstrumentCatalog';
+import {
+    DDSP_INSTRUMENT_CATALOG,
+    type DdspInstrumentId,
+} from '../../src/modules/BrowserAi/models/DdspInstrumentCatalog';
 import { ddspModelStorage } from '../../src/modules/BrowserAi/repositories/ddspModelStorage';
 import { inferenceWorkerBridge } from '../../src/modules/BrowserAi/repositories/inferenceWorkerBridge';
 import {
     downloadDdspInstrument,
+    isDdspInstrumentId,
     removeDdspInstrument,
     renderDdspInstrument,
 } from '../../src/modules/BrowserAi/useCases';
@@ -18,6 +22,12 @@ const admittedInstrument = instrument as typeof instrument & {
 
 const downloadInstrument = downloadDdspInstrument as (input: typeof admittedInstrument) => Promise<void>;
 const removeInstrument = removeDdspInstrument as (input: typeof admittedInstrument) => Promise<void>;
+const renderInstrument = renderDdspInstrument as (input: {
+    durationSec: number;
+    instrumentId: DdspInstrumentId;
+    notes: Array<{ durationSec: number; pitch: number; startSec: number; velocity: number }>;
+    phraseId: string;
+}) => Promise<{ audio: Float32Array; backend: string }>;
 const storage = ddspModelStorage as {
     checkDdspInstrumentReady: (input: {
         id: string;
@@ -47,9 +57,12 @@ async function prepare(): Promise<{ ready: boolean; artifactCount: number }> {
 
 async function renderOffline(): Promise<{ backend: string; pcmLength: number; finite: boolean }> {
     inferenceWorkerBridge.terminateAll();
-    const result = await renderDdspInstrument({
+    if (!isDdspInstrumentId(admittedInstrument.id)) {
+        throw new Error(`DDSP probe instrument is not callable: ${admittedInstrument.id}`);
+    }
+    const result = await renderInstrument({
         phraseId: `ddsp-probe-${crypto.randomUUID()}`,
-        instrument: admittedInstrument,
+        instrumentId: admittedInstrument.id,
         notes: [{ pitch: 69, velocity: 100, startSec: 0, durationSec: 0.4 }],
         durationSec: 0.5,
     });
@@ -57,7 +70,7 @@ async function renderOffline(): Promise<{ backend: string; pcmLength: number; fi
     if (!finite) {
         throw new Error(`Invalid DDSP render: samples=${String(result.audio.length)}`);
     }
-    return { backend: 'webgpu', pcmLength: result.audio.length, finite };
+    return { backend: result.backend, pcmLength: result.audio.length, finite };
 }
 
 Reflect.set(window, '__SOURDAW_DDSP_PROBE__', { prepare, renderOffline } satisfies DdspProbe);

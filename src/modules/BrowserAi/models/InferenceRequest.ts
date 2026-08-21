@@ -30,6 +30,15 @@ export type DdspStoredArtifact = {
 // Main thread → Worker
 export type WorkerRequest =
     | {
+          /** Abort one in-flight worker request without disturbing newer siblings. */
+          type: 'cancel-request';
+          requestId: string;
+      }
+    | {
+          /** Release every session and pending resource before worker termination. */
+          type: 'dispose-worker';
+      }
+    | {
           type: 'create-session';
           /** UUID used to correlate with the session-created response */
           requestId: string;

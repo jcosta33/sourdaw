@@ -118,9 +118,26 @@ function resetWorkerAfterFailure(state: WorkerState, failedWorker: Worker, reaso
         reject(reason);
     }
     state.pendingRequests.clear();
-    failedWorker.terminate();
-    state.worker = null;
-    state.initialized = false;
+    stopWorker(state, failedWorker);
+}
+
+function stopWorker(state: WorkerState, worker: Worker): void {
+    if (state === workerState.tfjs) {
+        try {
+            const request: WorkerRequest = { type: 'dispose-worker' };
+            worker.postMessage(request);
+        } catch {
+            // A failed worker may reject further messages; termination still clears it.
+        }
+    }
+    worker.onmessage = null;
+    worker.onerror = null;
+    worker.onmessageerror = null;
+    worker.terminate();
+    if (state.worker === worker) {
+        state.worker = null;
+        state.initialized = false;
+    }
     if (state === workerState.tfjs && workerState.tfjsIdleTimer !== null) {
         clearTimeout(workerState.tfjsIdleTimer);
         workerState.tfjsIdleTimer = null;
@@ -171,15 +188,13 @@ async function getTfjsWorker(): Promise<Worker> {
 }
 
 function scheduleTfjsDestroy(): void {
-    if (workerState.tfjsIdleTimer !== null) {
+    if (workerState.tfjsIdleTimer !== null || workerState.tfjs.worker === null) {
         return;
     }
     workerState.tfjsIdleTimer = setTimeout(() => {
+        workerState.tfjsIdleTimer = null;
         if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
-            workerState.tfjs.worker.terminate();
-            workerState.tfjs.worker = null;
-            workerState.tfjs.initialized = false;
-            workerState.tfjsIdleTimer = null;
+            stopWorker(workerState.tfjs, workerState.tfjs.worker);
         }
     }, TFJS_IDLE_TIMEOUT_MS);
 }
@@ -305,10 +320,10 @@ export const inferenceWorkerBridge = {
         throwIfAborted(signal);
         logger.info(`[WorkerBridge] Loading DDSP (TF.js) session from verified OPFS: ${modelId}`);
         const worker = await getTfjsWorker();
-        throwIfAborted(signal);
         const requestId = crypto.randomUUID();
         const streamedArtifacts: DdspStoredArtifact[] = [];
         try {
+            throwIfAborted(signal);
             for (const artifact of artifacts) {
                 throwIfAborted(signal);
                 const modelDataPort = await modelStorageWorkerBridge.readModel({
@@ -349,6 +364,8 @@ export const inferenceWorkerBridge = {
                 artifact.modelDataPort.close();
             }
             throw error;
+        } finally {
+            scheduleTfjsDestroy();
         }
     },
 
@@ -377,18 +394,21 @@ export const inferenceWorkerBridge = {
     ): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
         throwIfAborted(signal);
         const worker = await getTfjsWorker();
-        throwIfAborted(signal);
-        const response = await waitForAbortableTfjsRequest(
-            sendRequest(worker, workerState.tfjs, input),
-            input.requestId,
-            signal
-        );
-        throwIfAborted(signal);
-        scheduleTfjsDestroy();
-        if (response.type !== 'ddsp-result' || response.backend !== 'webgpu') {
-            throw new Error(`DDSP inference did not return required WebGPU PCM: ${response.type}`);
+        try {
+            throwIfAborted(signal);
+            const response = await waitForAbortableTfjsRequest(
+                sendRequest(worker, workerState.tfjs, input),
+                input.requestId,
+                signal
+            );
+            throwIfAborted(signal);
+            if (response.type !== 'ddsp-result' || response.backend !== 'webgpu') {
+                throw new Error(`DDSP inference did not return required WebGPU PCM: ${response.type}`);
+            }
+            return response;
+        } finally {
+            scheduleTfjsDestroy();
         }
-        return response;
     },
 
     // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API
@@ -431,9 +451,7 @@ export const inferenceWorkerBridge = {
         // Only tear down the shared worker if this was the last in-flight render —
         // otherwise we'd kill compute (and reject promises) for sibling renders.
         if (workerState.onnx.pendingRequests.size === 0 && workerState.onnx.worker) {
-            workerState.onnx.worker.terminate();
-            workerState.onnx.worker = null;
-            workerState.onnx.initialized = false;
+            stopWorker(workerState.onnx, workerState.onnx.worker);
         }
     },
 
@@ -448,9 +466,7 @@ export const inferenceWorkerBridge = {
         }
         workerState.onnx.pendingRequests.clear();
         if (workerState.onnx.worker) {
-            workerState.onnx.worker.terminate();
-            workerState.onnx.worker = null;
-            workerState.onnx.initialized = false;
+            stopWorker(workerState.onnx, workerState.onnx.worker);
         }
     },
 
@@ -463,15 +479,19 @@ export const inferenceWorkerBridge = {
         if (pending) {
             workerState.tfjs.pendingRequests.delete(requestId);
             pending.reject(createAbortError());
-        }
-        if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
-            workerState.tfjs.worker.terminate();
-            workerState.tfjs.worker = null;
-            workerState.tfjs.initialized = false;
-            if (workerState.tfjsIdleTimer !== null) {
-                clearTimeout(workerState.tfjsIdleTimer);
-                workerState.tfjsIdleTimer = null;
+            const worker = workerState.tfjs.worker;
+            if (worker) {
+                try {
+                    worker.postMessage({ type: 'cancel-request', requestId });
+                } catch (error) {
+                    resetWorkerAfterFailure(
+                        workerState.tfjs,
+                        worker,
+                        toError(error, 'TF.js worker cancellation failed')
+                    );
+                }
             }
+            scheduleTfjsDestroy();
         }
     },
 
@@ -485,9 +505,7 @@ export const inferenceWorkerBridge = {
         }
         workerState.tfjs.pendingRequests.clear();
         if (workerState.tfjs.worker) {
-            workerState.tfjs.worker.terminate();
-            workerState.tfjs.worker = null;
-            workerState.tfjs.initialized = false;
+            stopWorker(workerState.tfjs, workerState.tfjs.worker);
         }
         if (workerState.tfjsIdleTimer !== null) {
             clearTimeout(workerState.tfjsIdleTimer);
