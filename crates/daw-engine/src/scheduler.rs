@@ -329,6 +329,73 @@ pub enum GraphCommand {
     RegisterAudioBridge(PluginAudioBridge),
 }
 
+impl GraphCommand {
+    /// How this command changes the population of the scheduler's one effect
+    /// table, `AudioScheduler::effects`.
+    ///
+    /// That table is shared. Graph devices, engine-owned CLAP instances and
+    /// the crumbs capture slot all take their slots from it — the id space is
+    /// partitioned precisely because they do — so no single producer's own
+    /// bookkeeping is a count of it, and a ceiling built on one of them bounds
+    /// a strict subset of what the callback holds. This is the one
+    /// classification the control side's ledger reads
+    /// ([`crate::EngineHandle::registered_effect_count`]).
+    ///
+    /// The match carries no wildcard arm on purpose. A command that registers
+    /// or retires an effect does not compile until its effect on the table is
+    /// stated here, which is what keeps the ledger complete rather than a
+    /// count of whichever producers someone remembered.
+    pub(crate) fn effect_table_delta(&self) -> isize {
+        match self {
+            Self::AddEffect(..)
+            | Self::AddDetachedEffect(..)
+            | Self::AddPlugin(..)
+            | Self::AddPluginWithBridge(..) => 1,
+            #[cfg(test)]
+            Self::RemovePlugin(..) => -1,
+            Self::RemovePluginWithBridge(..)
+            | Self::RemoveTrackDeviceRetired { .. }
+            | Self::RemoveBusDeviceRetired { .. } => -1,
+            // `RemoveTrack`, `RemoveBus`, `RemoveTrackDevice` and
+            // `RemoveBusDevice` leave the effect registered — detached, or
+            // back on the master chain — so none of them frees a slot.
+            Self::SetParam(..)
+            | Self::SetBypass(..)
+            | Self::SendMidiNote(..)
+            | Self::AddMidiFx(..)
+            | Self::RemoveMidiFx(..)
+            | Self::SetMidiFxParam(..)
+            | Self::SetTransport(..)
+            | Self::SetTransportPlayback { .. }
+            | Self::BeginBatch { .. }
+            | Self::SwapCommandChannel { .. }
+            | Self::AddTrack(..)
+            | Self::RemoveTrack(..)
+            | Self::SetTrackOutput(..)
+            | Self::SetTrackMute(..)
+            | Self::SetTrackSoloGate(..)
+            | Self::InsertTrackDevice { .. }
+            | Self::RemoveTrackDevice { .. }
+            | Self::InsertBusDevice { .. }
+            | Self::RemoveBusDevice { .. }
+            | Self::AddSend { .. }
+            | Self::RemoveSend { .. }
+            | Self::AddBus(..)
+            | Self::RemoveBus(..)
+            | Self::SetBusOutput(..)
+            | Self::AddClip(..)
+            | Self::RemoveClip(..)
+            | Self::SetClipPlacement(..)
+            | Self::SetClipPlayback(..)
+            | Self::SeekFrames(..)
+            | Self::AutomateParam { .. }
+            | Self::AutomateDeviceParam { .. } => 0,
+            #[cfg(test)]
+            Self::RegisterAudioBridge(..) => 0,
+        }
+    }
+}
+
 enum PluginCore {
     Knead(KneadEngine),
     Native(Box<dyn NativePlugin>),
@@ -2397,13 +2464,22 @@ mod tests {
         );
     }
 
-    /// The command vocabulary may not carry an owning payload onto the audio
-    /// thread: consuming the command there frees it (ADR 0020). Reading each
-    /// payload *out of a shared reference to the command* is what pins that —
-    /// moving out of a `&` compiles only while the payload is `Copy`, so
-    /// reverting `AddEffect`/`AddDetachedEffect`'s type or `SetParam`'s
-    /// parameter to a `String` fails this test at compile time rather than
-    /// leaving a `Copy` bound on some other type still satisfied.
+    /// `AddEffect`, `AddDetachedEffect` and `SetParam` carry no owning payload
+    /// onto the audio thread: consuming one of them there would free it inside
+    /// the deadline (ADR 0020). Reading each payload *out of a shared
+    /// reference to the command* is what pins that — moving out of a `&`
+    /// compiles only while the payload is `Copy`, so reverting either add's
+    /// type or `SetParam`'s parameter to a `String` fails this test at compile
+    /// time rather than leaving a `Copy` bound on some other type still
+    /// satisfied.
+    ///
+    /// This is a property of these three commands, not of the whole
+    /// vocabulary. `SetMidiFxParam` still carries a `String` its arm consumes
+    /// by value, and `AddMidiFx` still boxes an arpeggiator and pushes it into
+    /// a `Vec::new()` on the callback. Both are dormant — no `EngineHandle`
+    /// method sends either and no native caller exists, so only in-crate tests
+    /// reach them — and they are tracked in #2548. Widening this test to the
+    /// vocabulary is that issue's work, not this test's claim.
     #[test]
     fn the_effect_type_and_parameter_payloads_are_copy_addresses() {
         fn copied_effect_type(command: &GraphCommand) -> Option<BuiltinEffectType> {

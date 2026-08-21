@@ -189,6 +189,14 @@ pub async fn create_crumbs(
         // engine — the slot feeds incoming bridge blocks to the engine's
         // record input before rendering, so without it armed recording can
         // only ever capture silence.
+        //
+        // The capture slot takes a slot of the same shared effect table the
+        // project's devices and its plugins fill, so refuse before the id is
+        // reserved and the bridge is published. The audio thread's refusal is
+        // a counter nothing here can read, and a capture slot refused there
+        // leaves armed recording capturing silence with nothing saying why.
+        engine_handle.ensure_effect_table_headroom(1)?;
+
         let id = engine_handle.reserve_plugin_id();
         let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
         let mut engine = engine;

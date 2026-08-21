@@ -916,13 +916,17 @@ fn map_device(
     // The scheduler's effect table is fixed at `EFFECT_TABLE_CAPACITY` and
     // every native device in the project — track chain or bus chain — holds
     // one of its slots, while the timeline admits far more chain slots than
-    // that. Past the ceiling the engine refuses the registration with a
-    // counter on the callback, the chain splice that follows lands with no
-    // instance behind it, and the batch reports a device the user cannot
-    // hear. Refusing here instead is the whole difference between a device
-    // that reports it could not be added and one that silently vanishes: the
-    // batch fails, its working registry clone is discarded, and no chain
-    // entry is written.
+    // that. Refusing at map time is what turns a device that would silently
+    // vanish into one that reports it could not be added: the batch fails,
+    // its working registry clone is discarded, and no chain entry is written.
+    //
+    // This bound covers the project's *devices* only, and it names the device
+    // that hit it. The table is shared with engine-owned plugins and the
+    // crumbs capture slot, so the complete ceiling is the engine's own ledger
+    // — `EngineHandle::send_graph_batch` admits the whole batch against the
+    // whole population before it publishes anything, and refuses it whole
+    // otherwise. Whichever bound is tighter fires first; neither is the only
+    // one, and neither may be widened into a second partial count.
     if registry.devices.len() == EFFECT_TABLE_CAPACITY {
         return Err(format!(
             "device '{}': the project holds its maximum of {EFFECT_TABLE_CAPACITY} native devices",
