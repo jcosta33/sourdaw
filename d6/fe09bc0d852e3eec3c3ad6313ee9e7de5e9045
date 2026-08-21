@@ -1,0 +1,74 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationLaneGating.spec.ts
+  s_487e9aa1e46063::t_9fbe230738298f 3
+  s_487e9aa1e46063::t_967b1a6e00133a 88,95,100-105,107-130
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_487e9aa1e46063::t_5f93a9c3fb09e1 239-248
+  s_487e9aa1e46063::t_1b25515b2c69f0 172
+  s_487e9aa1e46063::t_4dd2ee70bf7e6d 99-112,115-152
+  s_487e9aa1e46063::t_b1be54872fd43b 153,260
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/fermenterOscWaveformOfflineParity.spec.ts
+  s_487e9aa1e46063::t_6561a26e263fa1 122-125
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_487e9aa1e46063::t_1d584bd0babad0 14-19
+  s_487e9aa1e46063::t_bbdd616e4074e3 86,91-95
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_487e9aa1e46063::t_d859e52ca14b0d 36-40
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_487e9aa1e46063::t_c9c0a955a070d4 3
+  s_487e9aa1e46063::t_22ce18763739ab 324-326
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_487e9aa1e46063::t_b55e6accb3b4c6 44-48
+src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts
+  s_487e9aa1e46063::t_1eb981d650729d 307-317
+src/modules/AudioEngine/useCases/offlineRender/__tests__/legacyGainLaneRenderParity.spec.ts
+  s_487e9aa1e46063::t_4d6f4239cd7cbc 1-167
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_487e9aa1e46063::t_5a182668ed6d6f 3
+  s_487e9aa1e46063::t_ae8b4e328352c0 51-69,72,74,76,81
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackGainToasterPadUndo.spec.ts
+  s_487e9aa1e46063::t_56b58b2cacd09e 114-143
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_487e9aa1e46063::t_77ccada661d1f6 51-60,67,76
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_487e9aa1e46063::t_2e14a7ba6cbb1b 3-4
+  s_487e9aa1e46063::t_a0939817468b42 43,51,63
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_487e9aa1e46063::t_2911e2f25ea84b 71-75
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_487e9aa1e46063::t_8ea4a68ea335f5 80-84
+  s_487e9aa1e46063::t_230a59407af5d5 370,374,376-378
+  s_487e9aa1e46063::t_d45dd5aae20e41 49-68
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_487e9aa1e46063::t_79e2c273016b7e 49
+  s_487e9aa1e46063::t_602e76122c971b 295-297
+src/app/__tests__/bootstrap.spec.ts
+  s_487e9aa1e46063::t_0fbd73bfcc720e 242
+  s_487e9aa1e46063::t_7bd6a1b08db52f 139
+  s_487e9aa1e46063::t_160388e987acd6 96-100
+  s_487e9aa1e46063::t_e4d09b3ab79cce 62-63
+  s_487e9aa1e46063::t_a26225c1fa9f5e 523-539
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_487e9aa1e46063::t_6a06d0bc2221cb 4
+  s_487e9aa1e46063::t_96409c1f1fe958 21-26
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_487e9aa1e46063::t_95ec81454d7da5 72-76
+src/modules/TimelineEditor/presentations/views/AutomationView/TrackAutomationSection.tsx
+  s_487e9aa1e46063::t_6402ae039ea9ba 46,51-55
+  s_487e9aa1e46063::t_adf3eb4843de7f 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d6fe09bc0d852e3eec3c3ad6313ee9e7de5e9045",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
