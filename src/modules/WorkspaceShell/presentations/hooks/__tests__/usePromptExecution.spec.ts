@@ -6,10 +6,7 @@ import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     describePlannedAction,
-    executePlannedActions,
     getProjectContext,
-    parsePromptToActions,
-    planPromptActions,
     isComplexPrompt,
     searchPresets,
     getAvailablePresets,
@@ -28,6 +25,8 @@ import { usePromptExecution } from '../usePromptExecution';
 const executionUseCaseMocks = vi.hoisted(() => ({
     executePlannedActions: vi.fn(),
     executePromptActionGroup: vi.fn(),
+    parsePromptToActions: vi.fn(),
+    planPromptActions: vi.fn(),
     submitAdmittedPromptRequest: vi.fn(),
     notifyAiChange: vi.fn(),
     promptDraftListeners: new Set<(text: string) => void>(),
@@ -49,8 +48,6 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn() }));
 vi.mock('#/modules/AiRuntime/stores', () => ({ llmStatusStore: { value: { state: 'idle' } } }));
 vi.mock('#/modules/AiRuntime/useCases', () => ({
-    executePlannedActions: executionUseCaseMocks.executePlannedActions,
-    executePromptActionGroup: executionUseCaseMocks.executePromptActionGroup,
     submitAdmittedPromptRequest: executionUseCaseMocks.submitAdmittedPromptRequest,
     describePlannedAction: vi.fn((input: Parameters<typeof describePlannedAction>[0]) => {
         const action = input.action;
@@ -63,8 +60,6 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
         }
         return action.type;
     }),
-    planPromptActions: vi.fn(),
-    parsePromptToActions: vi.fn().mockResolvedValue({ actions: [], rawText: '', requiresConfirmation: false }),
     isComplexPrompt: vi.fn(() => false),
     getProjectContext: vi.fn(() => ({})),
     searchPresets: vi.fn(() => []),
@@ -146,20 +141,27 @@ describe('usePromptExecution', () => {
         // clearAllMocks resets call history but not implementations, so tests
         // that persist a custom mockReturnValue/mockResolvedValue must be
         // re-defaulted here rather than leaking into the next test.
-        vi.mocked(parsePromptToActions).mockResolvedValue({ actions: [], rawText: '', requiresConfirmation: false });
-        vi.mocked(planPromptActions).mockImplementation(async (input) => {
+        executionUseCaseMocks.parsePromptToActions.mockResolvedValue({
+            actions: [],
+            rawText: '',
+            requiresConfirmation: false,
+        });
+        executionUseCaseMocks.planPromptActions.mockImplementation(async (input) => {
             const context = getProjectContext();
             return {
                 context,
-                result: await parsePromptToActions(input.prompt, context, input.signal),
+                result: await executionUseCaseMocks.parsePromptToActions(input.prompt, context, input.signal),
                 projectRevision: 'revision-1',
             };
         });
-        vi.mocked(executePlannedActions).mockImplementation((input) => {
-            const actions = input.actions.map((action) => ({ actionType: action.type, label: action.type }));
+        executionUseCaseMocks.executePlannedActions.mockImplementation((input) => {
+            const actions = input.actions.map((action: AppAction) => ({
+                actionType: action.type,
+                label: action.type,
+            }));
             notifyAiChange(
                 `${input.successVerb ?? 'Executed'}: ${input.prompt}`,
-                actions.map((action) => action.actionType)
+                actions.map((entry: { actionType: AppAction['type'] }) => entry.actionType)
             );
             return Promise.resolve({ status: 'committed', actions });
         });
@@ -171,7 +173,7 @@ describe('usePromptExecution', () => {
                 );
                 return;
             }
-            const execution = await vi.mocked(executePlannedActions)(input);
+            const execution = await executionUseCaseMocks.executePlannedActions(input);
             if (execution.status === 'committed' || execution.status === 'executed') {
                 return;
             }
@@ -196,7 +198,7 @@ describe('usePromptExecution', () => {
         executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementation(async (input) => {
             const planned =
                 input.actions === undefined
-                    ? await vi.mocked(planPromptActions)({ prompt: input.prompt, signal: input.signal })
+                    ? await executionUseCaseMocks.planPromptActions({ prompt: input.prompt, signal: input.signal })
                     : {
                           context: getProjectContext(),
                           result: {
@@ -284,7 +286,7 @@ describe('usePromptExecution', () => {
         expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledWith(
             expect.objectContaining({ prompt: 'Create a new drum groove', source: 'prompt-bar' })
         );
-        expect(vi.mocked(planPromptActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.planPromptActions).not.toHaveBeenCalled();
     });
 
     it('derives selection tags for the current track/clip selection, drops dismissed ones, and restores them when the selection changes', () => {
@@ -358,7 +360,7 @@ describe('usePromptExecution', () => {
             requiresConfirmation: true,
             projectRevision: 'revision-1',
         });
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
 
         act(() => result.current.cancelPreview());
 
@@ -366,14 +368,14 @@ describe('usePromptExecution', () => {
         await act(async () => {
             await result.current.executePreset(fuzzy(preset({ id: 'no-op' })));
         });
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
 
         const playAction: AppAction = { type: 'togglePlayback' };
         vi.mocked(resolvePresetActions).mockReturnValue([playAction]);
         await act(async () => {
             await result.current.executePreset(fuzzy(preset()));
         });
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [playAction],
                 prompt: 'Play',
@@ -405,12 +407,12 @@ describe('usePromptExecution', () => {
         expect(result.current.preview).toEqual(
             expect.objectContaining({ actions: [routingAction], requiresConfirmation: true })
         );
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
     it('keeps a direct preset locked until Stop cancellation settles', async () => {
         vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        vi.mocked(executePlannedActions).mockImplementationOnce((input) => {
+        executionUseCaseMocks.executePlannedActions.mockImplementationOnce((input) => {
             return new Promise((resolve) => {
                 input.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true });
             });
@@ -424,8 +426,8 @@ describe('usePromptExecution', () => {
             void result.current.executePreset(fuzzy(preset()));
         });
 
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledTimes(1);
-        const executionSignal = vi.mocked(executePlannedActions).mock.calls[0]?.[0].signal;
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
+        const executionSignal = executionUseCaseMocks.executePlannedActions.mock.calls[0]?.[0].signal;
         expect(result.current.isProcessing).toBe(true);
         expect(executionSignal?.aborted).toBe(false);
 
@@ -439,7 +441,7 @@ describe('usePromptExecution', () => {
 
     it('does not retry a failed post-commit notification or report the committed command as failed', async () => {
         vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        vi.mocked(executePlannedActions).mockResolvedValueOnce({
+        executionUseCaseMocks.executePlannedActions.mockResolvedValueOnce({
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
             reportingWarning: 'notification: toast unavailable',
@@ -460,7 +462,7 @@ describe('usePromptExecution', () => {
         async (executionWarning) => {
             const action: AppAction = { type: 'setPlayback', payload: { playing: true } };
             vi.mocked(resolvePresetActions).mockReturnValue([action]);
-            vi.mocked(executePlannedActions).mockResolvedValueOnce({
+            executionUseCaseMocks.executePlannedActions.mockResolvedValueOnce({
                 status: 'executed',
                 actions: [{ actionType: action.type, label: 'Start playback' }],
                 ...(executionWarning ? { executionWarning } : {}),
@@ -479,7 +481,7 @@ describe('usePromptExecution', () => {
 
     it('submits a prompt and executes it directly, or previews it first when confirmation is required', async () => {
         const stopAction: AppAction = { type: 'stopPlayback' };
-        vi.mocked(parsePromptToActions).mockResolvedValue({
+        executionUseCaseMocks.parsePromptToActions.mockResolvedValue({
             actions: [stopAction],
             rawText: 'stop playback',
             requiresConfirmation: false,
@@ -490,7 +492,7 @@ describe('usePromptExecution', () => {
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
         });
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [stopAction],
                 prompt: 'stop playback',
@@ -541,7 +543,7 @@ describe('usePromptExecution', () => {
             activeView: 'arrange',
             playheadPosition: 0,
         });
-        vi.mocked(parsePromptToActions).mockResolvedValue({
+        executionUseCaseMocks.parsePromptToActions.mockResolvedValue({
             actions: [deleteAction],
             rawText: 'delete Drums',
             requiresConfirmation: true,
@@ -558,7 +560,7 @@ describe('usePromptExecution', () => {
             projectRevision: 'revision-1',
         });
         expect(result.current.value).toBe('delete Drums');
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledTimes(1);
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
     });
 
     it('notifies when no executable action matches', async () => {
@@ -575,7 +577,7 @@ describe('usePromptExecution', () => {
     });
 
     it('surfaces a rejected prompt receipt without executing or showing a no-match notice', async () => {
-        vi.mocked(parsePromptToActions).mockResolvedValue({
+        executionUseCaseMocks.parsePromptToActions.mockResolvedValue({
             actions: [],
             rawText: 'save project',
             requiresConfirmation: false,
@@ -588,7 +590,7 @@ describe('usePromptExecution', () => {
             await result.current.handleSubmit(formEvent as never);
         });
 
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
             'Command not executed: Action saveProject cannot be executed by AI because it does not report completion.',
             []
@@ -605,9 +607,9 @@ describe('usePromptExecution', () => {
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
         });
-        expect(vi.mocked(parsePromptToActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.parsePromptToActions).not.toHaveBeenCalled();
 
-        vi.mocked(parsePromptToActions).mockRejectedValueOnce(new Error('parse failed'));
+        executionUseCaseMocks.parsePromptToActions.mockRejectedValueOnce(new Error('parse failed'));
         act(() => result.current.setValue('break things'));
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
@@ -623,7 +625,7 @@ describe('usePromptExecution', () => {
             'The project changed after this proposal was created. Review and submit the command again.'
         );
         invalidated.name = 'AiProposalInvalidatedError';
-        vi.mocked(planPromptActions).mockRejectedValueOnce(invalidated);
+        executionUseCaseMocks.planPromptActions.mockRejectedValueOnce(invalidated);
         const { result } = renderHook(() => usePromptExecution());
 
         act(() => result.current.setValue('rename drums'));
@@ -638,7 +640,7 @@ describe('usePromptExecution', () => {
 
     it('confirms an immutable preview once, exposes Stop while committing, and still cancels an idle preview', async () => {
         const action: AppAction = { type: 'togglePlayback' };
-        vi.mocked(executePlannedActions).mockImplementationOnce((input) => {
+        executionUseCaseMocks.executePlannedActions.mockImplementationOnce((input) => {
             return new Promise((resolve) => {
                 input.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true });
             });
@@ -648,7 +650,7 @@ describe('usePromptExecution', () => {
         await act(async () => {
             await result.current.confirmPreview();
         });
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
 
         vi.mocked(resolvePresetActions).mockReturnValue([action]);
         await act(async () => {
@@ -664,8 +666,8 @@ describe('usePromptExecution', () => {
             void result.current.confirmPreview();
         });
 
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [action],
                 prompt: 'Delete track',
@@ -676,7 +678,7 @@ describe('usePromptExecution', () => {
         expect(result.current.preview).toBeNull();
         expect(result.current.isProcessing).toBe(true);
 
-        const executionSignal = vi.mocked(executePlannedActions).mock.calls[0]?.[0].signal;
+        const executionSignal = executionUseCaseMocks.executePlannedActions.mock.calls[0]?.[0].signal;
         expect(executionSignal?.aborted).toBe(false);
         act(() => result.current.cancelProcessing());
         expect(executionSignal?.aborted).toBe(true);
@@ -713,7 +715,7 @@ describe('usePromptExecution', () => {
             await result.current.confirmPreview();
         });
 
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
             'Command not executed: one or more actions are not available through the approved command boundary.',
             []
@@ -731,7 +733,10 @@ describe('usePromptExecution', () => {
         });
         expect(result.current.preview).not.toBeNull();
 
-        vi.mocked(executePlannedActions).mockResolvedValueOnce({ status: 'failed', reason: 'transaction rejected' });
+        executionUseCaseMocks.executePlannedActions.mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'transaction rejected',
+        });
         await act(async () => {
             await result.current.confirmPreview();
         });
@@ -752,7 +757,9 @@ describe('usePromptExecution', () => {
         });
         expect(result.current.preview).not.toBeNull();
 
-        vi.mocked(executePlannedActions).mockRejectedValueOnce(new Error('snapshot transaction never settled'));
+        executionUseCaseMocks.executePlannedActions.mockRejectedValueOnce(
+            new Error('snapshot transaction never settled')
+        );
         await act(async () => {
             // Awaited directly: without the catch inside confirmPreview this rejects,
             // which is the unhandled rejection the app would ship.
@@ -789,8 +796,8 @@ describe('usePromptExecution', () => {
         expect(vi.mocked(onPromptDraft)).toHaveBeenCalledOnce();
         expect(result.current.value).toBe('delete every track');
         expect(requestSubmit).not.toHaveBeenCalled();
-        expect(vi.mocked(planPromptActions)).not.toHaveBeenCalled();
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.planPromptActions).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
     it('rejects voice draft text while a confirmation is pending', async () => {
@@ -920,7 +927,7 @@ describe('usePromptExecution', () => {
         await act(async () => {
             result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
         });
-        expect(vi.mocked(executePlannedActions)).toHaveBeenCalledWith(
+        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [playAction],
                 prompt: 'Play',
@@ -964,7 +971,7 @@ describe('usePromptExecution', () => {
         const stopAction: AppAction = { type: 'stopPlayback' };
         // Resolve after a microtask so the abort can race it
         let resolveParse: (value: { actions: AppAction[]; rawText: string; requiresConfirmation: boolean }) => void;
-        vi.mocked(parsePromptToActions).mockImplementation(
+        executionUseCaseMocks.parsePromptToActions.mockImplementation(
             () =>
                 new Promise((resolve) => {
                     resolveParse = resolve;
@@ -984,7 +991,7 @@ describe('usePromptExecution', () => {
             await pending;
         });
         // Aborted before the action branch ran
-        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
     it('loads a model through initEngine only when the LLM is available', () => {
@@ -1002,7 +1009,7 @@ describe('usePromptExecution', () => {
 
     it('swallows errors thrown by executePreset and clears processing', async () => {
         vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        vi.mocked(executePlannedActions).mockRejectedValueOnce(new Error('boom'));
+        executionUseCaseMocks.executePlannedActions.mockRejectedValueOnce(new Error('boom'));
         const { result } = renderHook(() => usePromptExecution());
 
         await act(async () => {

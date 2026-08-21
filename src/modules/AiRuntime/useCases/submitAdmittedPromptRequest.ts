@@ -3,6 +3,7 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
+import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
@@ -72,38 +73,60 @@ export async function submitAdmittedPromptRequest(
     };
     const onAbort = () => void cancel();
     input.signal?.addEventListener('abort', onAbort, { once: true });
-    const providerLease = input.actions
-        ? null
-        : agentRunWorkLease.claim({
-              runId,
-              workId: 'provider-planning',
-              ownerKind: 'provider',
-              cleanupOwner: 'provider-adapter',
-              idempotencyKey: `provider:prompt:${runId}`,
-              receiptIdentity: `provider:prompt:${runId}`,
-              idempotent: false,
-              retriable: true,
-              operation: 'read',
-          });
-    if (providerLease && providerLease.status !== 'claimed') {
-        throw new Error(`Prompt provider work could not be claimed: ${providerLease.status}`);
-    }
-    const settleProvider = (terminalState: 'completed' | 'failed' | 'cancelled'): void => {
-        if (!providerLease || providerLease.status !== 'claimed') {
+    let providerLease: Extract<ReturnType<typeof agentRunWorkLease.claim>, { status: 'claimed' }>['lease'] | null =
+        null;
+    let providerSettled = false;
+    let pendingProviderResult: ModelProviderResult | null = null;
+    const recordPendingProviderResult = (terminal: boolean): void => {
+        if (!pendingProviderResult) {
             return;
         }
-        agentRunWorkLease.settle({
+        recordAgentProviderUsage(runId, pendingProviderResult, pendingProviderResult.correlationId, { terminal });
+        pendingProviderResult = null;
+    };
+    const settleProvider = (
+        terminalState: 'completed' | 'failed' | 'cancelled'
+    ): ReturnType<typeof agentRunWorkLease.settle> | null => {
+        if (!providerLease || providerSettled) {
+            return null;
+        }
+        const settlement = agentRunWorkLease.settle({
             runId,
-            workId: providerLease.lease.workId,
-            leaseId: providerLease.lease.leaseId,
-            cancellationGeneration: providerLease.lease.cancellationGeneration,
-            idempotencyKey: providerLease.lease.idempotencyKey,
-            receiptIdentity: providerLease.lease.receiptIdentity,
+            workId: providerLease.workId,
+            leaseId: providerLease.leaseId,
+            cancellationGeneration: providerLease.cancellationGeneration,
+            idempotencyKey: providerLease.idempotencyKey,
+            receiptIdentity: providerLease.receiptIdentity,
             terminalState,
         });
+        providerSettled = true;
+        return settlement;
     };
 
     try {
+        if (input.actions === undefined) {
+            const claim = agentRunWorkLease.claim({
+                runId,
+                workId: 'provider-planning',
+                ownerKind: 'provider',
+                cleanupOwner: 'provider-adapter',
+                idempotencyKey: `provider:prompt:${runId}`,
+                receiptIdentity: `provider:prompt:${runId}`,
+                idempotent: false,
+                retriable: true,
+                operation: 'read',
+            });
+            if (claim.status !== 'claimed') {
+                transitionTerminalRun(runId, 'failed');
+                notifyAiChange(
+                    `Command not executed: prompt provider work could not be claimed (${claim.status}).`,
+                    []
+                );
+                return { status: 'rejected', runId };
+            }
+            providerLease = claim.lease;
+        }
+
         if (input.signal?.aborted) {
             await cancel();
             settleProvider('cancelled');
@@ -133,8 +156,10 @@ export async function submitAdmittedPromptRequest(
                                     reason: reservation.reason ?? 'agent budget limit',
                                 };
                       },
-                      onProviderResult: (result) =>
-                          recordAgentProviderUsage(runId, result, result.correlationId, { terminal: true }),
+                      onProviderResult: (result) => {
+                          recordPendingProviderResult(false);
+                          pendingProviderResult = result;
+                      },
                   })
                 : {
                       context: getProjectContext(),
@@ -146,7 +171,20 @@ export async function submitAdmittedPromptRequest(
                       projectRevision: createdRevision,
                   };
 
-        settleProvider('completed');
+        recordPendingProviderResult(true);
+        const providerSettlement = settleProvider('completed');
+        const currentRun = agentRunLifecycle.get(runId);
+        if (
+            input.signal?.aborted ||
+            currentRun?.phase === 'cancelled' ||
+            currentRun?.phase === 'partially-completed' ||
+            (providerSettlement !== null && providerSettlement.status !== 'settled')
+        ) {
+            if (input.signal?.aborted && currentRun && currentRun.phase !== 'cancelled') {
+                await cancel();
+            }
+            return { status: 'rejected', runId };
+        }
 
         if (planned.result.rejectionReason) {
             transitionTerminalRun(runId, 'failed');
@@ -250,6 +288,7 @@ export async function submitAdmittedPromptRequest(
         await execute();
         return { status: 'completed', runId };
     } catch (error) {
+        recordPendingProviderResult(true);
         if (input.signal?.aborted) {
             await cancel();
             settleProvider('cancelled');

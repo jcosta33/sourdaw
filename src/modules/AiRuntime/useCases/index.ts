@@ -44,12 +44,7 @@ export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';
 export { notifyAiChange } from './notifyAiChange';
 export { describePlannedAction } from './describePlannedAction';
 
-export { parsePromptToActions } from './parsePromptToActions';
-export { planPromptActions } from './planPromptActions';
-export { executePlannedActions } from './executePlannedActions';
-export { executePromptActionGroup } from './executePromptActionGroup';
 export { submitAdmittedPromptRequest } from './submitAdmittedPromptRequest';
-export { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 
 export { injectVoicePromptDraft } from './injectVoicePromptDraft';
 export { injectPromptDraft } from './injectPromptDraft';
@@ -66,11 +61,7 @@ export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';
 export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority';
 export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
 export { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
-export { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
-export { agentRunCancellation } from './cancelAgentRun';
-export { agentRunLifecycle } from './agentRunLifecycle';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
-export { agentRunWorkLease } from './agentRunWorkLease';
 export { normalizeAgentFailure } from './agentErrorAndSaga';
 export { admitAgentRetry } from './admitAgentRetry';
 export { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';

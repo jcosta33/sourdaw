@@ -260,25 +260,30 @@ function recordAgentRunPlan(input: {
     plan?: AgentRunPlan;
     recordedAt?: number;
 }): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
-        ...run,
-        phase: 'planning',
-        revisions: { ...run.revisions, planned: input.revision },
-        scope: structuredClone(input.scope),
-        grants: structuredClone(input.grants),
-        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-        plan: structuredClone(
-            input.plan ??
-                createLegacyAgentRunPlan({
-                    summary: input.summary,
-                    commandIds: input.commandIds,
-                    serializedBatchIdentity: input.serializedBatchIdentity,
-                    applicationToolReceipts: input.applicationToolReceipts ?? [],
-                    revision: input.revision,
-                    scope: input.scope,
-                })
-        ),
-    }));
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        if (TERMINAL_PHASES.has(run.phase)) {
+            throw new Error(`Terminal agent run cannot record a plan: ${run.runId}`);
+        }
+        return {
+            ...run,
+            phase: 'planning',
+            revisions: { ...run.revisions, planned: input.revision },
+            scope: structuredClone(input.scope),
+            grants: structuredClone(input.grants),
+            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
+            plan: structuredClone(
+                input.plan ??
+                    createLegacyAgentRunPlan({
+                        summary: input.summary,
+                        commandIds: input.commandIds,
+                        serializedBatchIdentity: input.serializedBatchIdentity,
+                        applicationToolReceipts: input.applicationToolReceipts ?? [],
+                        revision: input.revision,
+                        scope: input.scope,
+                    })
+            ),
+        };
+    });
 }
 
 function recordAgentRunDecision(input: { runId: string; decision: AgentRunDecision; recordedAt?: number }): AgentRun {
