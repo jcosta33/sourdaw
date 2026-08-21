@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Stack } from '#/components/layout';
 
 type GranularSectionProps = {
     density: number;
@@ -24,10 +25,10 @@ export const GranularSection = ({
     panSpread,
     onParam,
 }: GranularSectionProps): ReactElement => (
-    <div className="space-y-2">
+    <Stack gap={2}>
         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Grain Cloud</div>
         <div className="grid grid-cols-3 gap-2">
-            <div className="flex flex-col items-center gap-0.5">
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={density}
                     onChange={(v) => onParam('grainDensity', v)}
@@ -40,8 +41,8 @@ export const GranularSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Density</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{Math.round(density)}g/s</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={size}
                     onChange={(v) => onParam('grainSize', v)}
@@ -54,8 +55,8 @@ export const GranularSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Size</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{Math.round(size)}ms</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={position}
                     onChange={(v) => onParam('grainPosition', v)}
@@ -67,8 +68,8 @@ export const GranularSection = ({
                     tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Position</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={spray}
                     onChange={(v) => onParam('grainSpray', v)}
@@ -80,8 +81,8 @@ export const GranularSection = ({
                     tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Spray</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={pitchVar}
                     onChange={(v) => onParam('grainPitchVar', v)}
@@ -94,8 +95,8 @@ export const GranularSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Pitch ±</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{pitchVar.toFixed(1)}st</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={panSpread}
                     onChange={(v) => onParam('grainPanSpread', v)}
@@ -107,7 +108,7 @@ export const GranularSection = ({
                     tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Spread</span>
-            </div>
+            </Stack>
         </div>
-    </div>
+    </Stack>
 );

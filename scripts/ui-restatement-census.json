@@ -2,7 +2,7 @@
   {
     "id": "ui-0013bbc2a41cad76",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 550,
+    "line": 556,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -123,15 +123,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-00f6d704340862b5",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 683,
-    "fingerprint": "div\tfermenter-window flex flex-col justify-between p-3",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -299,7 +290,7 @@
   {
     "id": "ui-029a018290b0a0f2",
     "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 72,
+    "line": 73,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -411,15 +402,6 @@
     "fingerprint": "div\tflex items-center justify-between",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-0356a63ddbef37f9",
-    "file": "src/modules/Fermenter/presentations/views/TransformPad.tsx",
-    "line": 129,
-    "fingerprint": "div\tspace-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -567,6 +549,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-04bfcb070ed9a5f2",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 554,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-04c054e75829ce76",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 649,
@@ -592,15 +583,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0507733b40d144be",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 98,
-    "fingerprint": "div\tflex items-end gap-2 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-052ac649059a8c21",
@@ -663,15 +645,6 @@
     "fingerprint": "div\tflex items-start gap-2",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-057d9ed456fb1e78",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 135,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -835,6 +808,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-0755f4e3bdc04c70",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 643,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-075ef58106b9e5cb",
@@ -1055,7 +1037,7 @@
   {
     "id": "ui-08d5709393d8e433",
     "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 29,
+    "line": 30,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -1082,7 +1064,7 @@
   {
     "id": "ui-09235794f4db8397",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 133,
+    "line": 135,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -1332,15 +1314,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-0bbe86f78507fd37",
-    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
-    "line": 54,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0bd23d23675b9732",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
     "line": 113,
@@ -1397,7 +1370,7 @@
   {
     "id": "ui-0c8c60bcdbf3b0cd",
     "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 121,
+    "line": 122,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -1449,15 +1422,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-0d27a710945daaa2",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 40,
-    "fingerprint": "div\tflex items-end gap-2 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0d283a60b338b36c",
     "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadingOverlay.tsx",
     "line": 42,
@@ -1476,9 +1440,18 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-0d68e282c0642c4b",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 729,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0d763e7308f0b0cb",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 222,
+    "line": 224,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1683,6 +1656,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-0e9f52628a18b735",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 575,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0ed0e1eb328d3fd7",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx",
     "line": 196,
@@ -1752,6 +1734,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-0f4241dd82b2173c",
+    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
+    "line": 95,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -1856,7 +1847,7 @@
   {
     "id": "ui-1043d26e7c150ce6",
     "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 161,
+    "line": 164,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2034,13 +2025,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-120dfe85b3ab8339",
-    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
-    "line": 40,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
+    "id": "ui-1211f064f67a58a3",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 99,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-12176c8cb87f12ce",
@@ -2112,6 +2103,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-12f2946f8dd26e65",
+    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+    "line": 68,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -2221,15 +2221,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-13bdeacf07e75144",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 28,
-    "fingerprint": "div\tflex items-end gap-2 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-13c4e5b3fc6b127c",
@@ -2349,15 +2340,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-1479b246feee3cba",
-    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
-    "line": 63,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-147ebc24657e2731",
     "file": "src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx",
     "line": 133,
@@ -2378,7 +2360,7 @@
   {
     "id": "ui-14990855468d1a97",
     "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
-    "line": 104,
+    "line": 105,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -2493,15 +2475,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-16109985424c876c",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 147,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-16128e942ac45ef0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
     "line": 325,
@@ -2601,15 +2574,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-17646a95c48309fd",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 165,
-    "fingerprint": "div\tflex items-start gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-176493936770791f",
     "file": "src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx",
     "line": 279,
@@ -2643,6 +2607,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-1800c2cb89e024cd",
+    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
+    "line": 103,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -2862,6 +2835,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-1a46fa5e20ec80e5",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 45,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1a595e1b2d13f262",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1199,
@@ -2949,6 +2931,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-1b4c979adf811894",
+    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
+    "line": 73,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -3123,15 +3114,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-1d7ce892125bc61a",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 76,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-1d82ab98c4db7c8b",
     "file": "src/modules/Crust/presentations/components/CrustMeteringStrip.tsx",
     "line": 84,
@@ -3166,6 +3148,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-1dc0b5760e641b59",
+    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
+    "line": 25,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1dce4838d485d0e4",
@@ -3231,6 +3222,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-1e3de37ef9c097af",
+    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
+    "line": 126,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1e3f0b4b4a8e1b60",
     "file": "src/components/daw/DawUtilityNotice.tsx",
     "line": 23,
@@ -3283,15 +3283,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-1ea0c560ef511ed3",
-    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 44,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1ed4c63da295ef18",
@@ -3773,7 +3764,7 @@
   {
     "id": "ui-23762306c7543853",
     "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 96,
+    "line": 97,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -3837,6 +3828,15 @@
     "id": "ui-2477b8940f7ea6f3",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 481,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-24ac1f4468056dde",
+    "file": "src/modules/Fermenter/presentations/views/TransformPad.tsx",
+    "line": 131,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -4068,6 +4068,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-2708102ecfe21c46",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 351,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-270e271734a2561c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 684,
@@ -4187,7 +4196,7 @@
   {
     "id": "ui-27c7144a163c5301",
     "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 86,
+    "line": 87,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -4201,15 +4210,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-27d4eaf568de624b",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 63,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-27e600f663579941",
@@ -4374,6 +4374,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-29a00202076fd046",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 28,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-29a2ed63aa525d85",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
     "line": 128,
@@ -4443,15 +4452,6 @@
     "fingerprint": "div\tspace-y-4 px-4 py-4",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-2a197d3d859fb737",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 126,
-    "fingerprint": "div\tflex gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -4543,6 +4543,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-2b7abd0fc7d67878",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 29,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-2b7b5a9c596517d0",
@@ -4709,7 +4718,7 @@
   {
     "id": "ui-2c94d82af4d919fa",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 177,
+    "line": 179,
     "fingerprint": "div\tmt-2 grid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -4813,6 +4822,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-2d60da9de225eaf5",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 765,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-2d8c67f8436dc431",
@@ -4950,6 +4968,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-2f07b6ceefae3a1d",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 42,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-2f612f0d5c4bc713",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 269,
@@ -5046,6 +5073,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-303ab055d9825b9e",
+    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
+    "line": 29,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -5265,15 +5301,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3336ca063f49ca48",
-    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 96,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-336474f2a7266f9d",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
     "line": 166,
@@ -5445,6 +5472,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-3529137e91457a86",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 393,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-35359b18240c037f",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 242,
@@ -5481,9 +5517,18 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-3580bf767785b351",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 59,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3592cc2745d92652",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 572,
+    "line": 578,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -5496,15 +5541,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-35fddcd02e8b4501",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 125,
-    "fingerprint": "div\tspace-y-3 border-t border-border/15 pt-3",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -5622,15 +5658,6 @@
     "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-black/40",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-3729be11f10e53ac",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 73,
-    "fingerprint": "label\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -5913,39 +5940,12 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-39dc859b601706f2",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 27,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-39df87e7453e6ee8",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 44,
-    "fingerprint": "div\tspace-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-39e7e45b792c034e",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
     "line": 428,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-3a210926b5f9060c",
-    "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 90,
-    "fingerprint": "div\tflex flex-col h-full",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -5956,15 +5956,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-3a94cd91ecdb8ba2",
-    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 148,
-    "fingerprint": "div\tflex flex-col items-center gap-0",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-3a9dfef9c5c75746",
@@ -6183,6 +6174,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3c9d1371953bffcd",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 269,
+    "fingerprint": "Button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3ca469058b76bfd6",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 153,
@@ -6289,6 +6289,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-3daa05b7f2f7ef70",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 102,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3ddbbf92bc640210",
@@ -6516,6 +6525,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3fe6997d2755d389",
+    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
+    "line": 66,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3fff6663b903bc3a",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 165,
@@ -6597,15 +6615,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-40c1d770a359aaa2",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 548,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-40cddbe71fe03bae",
     "file": "src/components/ui/bipolar-slider.tsx",
     "line": 58,
@@ -6630,6 +6639,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4118b96b04b0d746",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 127,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -6786,15 +6804,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-425bc488084c925a",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 153,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4272020fbe7d3ef3",
     "file": "src/modules/TimelineEditor/presentations/views/ArrangeView.tsx",
     "line": 474,
@@ -6811,6 +6820,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-427cac92fb31dbd4",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 541,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4292a50dcaf5931a",
@@ -7002,15 +7020,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-442f573df8743023",
-    "file": "src/modules/Fermenter/presentations/components/OutputMeter.tsx",
-    "line": 60,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-445b40b9da76a7ec",
     "file": "src/modules/Crumbs/presentations/components/PadGrid.tsx",
     "line": 130,
@@ -7065,6 +7074,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-44b926aa174d8f37",
+    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
+    "line": 26,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-44ee1b72d21f0ea7",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx",
     "line": 116,
@@ -7090,6 +7108,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-44fae4728df0227d",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 338,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-45052481f5f7c71f",
@@ -7290,15 +7317,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-4654d64d41ecbb2f",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 378,
-    "fingerprint": "div\tflex gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-46721703c00388b0",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx",
     "line": 681,
@@ -7398,15 +7416,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-47760475a9156e30",
-    "file": "src/modules/Fermenter/presentations/views/TransformPad.tsx",
-    "line": 130,
-    "fingerprint": "div\tflex items-center justify-between px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-47827ebcacba14f3",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
     "line": 220,
@@ -7461,9 +7470,18 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-47e1f164adbc2c04",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 135,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-47f3f6476427dc56",
     "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
-    "line": 27,
+    "line": 28,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -7486,6 +7504,24 @@
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-4858e23802a520bc",
+    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
+    "line": 60,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4876e27ef509da82",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 100,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4881503d2b64c1d4",
@@ -7513,6 +7549,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChoiceRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-48b40666221a3025",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 243,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-48e1160da0c82041",
@@ -7605,15 +7650,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-4a1bde342d6b1e5e",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 265,
-    "fingerprint": "div\tflex gap-0.5 items-end pb-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4a6940d9d6fa617c",
     "file": "src/modules/AiRuntime/presentations/views/ChatPanel.tsx",
     "line": 342,
@@ -7623,13 +7659,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-4a91820b538277a9",
-    "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 133,
-    "fingerprint": "div\tflex flex-wrap gap-0.5 px-2 py-0.5 shrink-0",
+    "id": "ui-4a6b486a78be2aad",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 632,
+    "fingerprint": "Stack\t",
     "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4a9446d6bbad6e28",
@@ -7839,6 +7875,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-4cd87fbf2d1b82af",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 85,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-4ce566ec6df67a9e",
     "file": "src/modules/TimelineEditor/presentations/views/InspectorPanel.tsx",
     "line": 100,
@@ -7965,15 +8010,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-4e698d2e8338edc1",
-    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 75,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4e7c7585a73bf125",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
     "line": 440,
@@ -8010,15 +8046,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-4ebb8fd31da21aa7",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 22,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4ec154d65662910e",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx",
     "line": 804,
@@ -8048,7 +8075,7 @@
   {
     "id": "ui-4ef1451150061bf7",
     "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 113,
+    "line": 116,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8091,24 +8118,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-4f38740c2b3fdaab",
-    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 111,
-    "fingerprint": "div\tflex items-end gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-4f457ed58b8d63c8",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 119,
-    "fingerprint": "div\tflex gap-0.5 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4f6b44968b981d9b",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TakesSection.tsx",
     "line": 65,
@@ -8147,7 +8156,7 @@
   {
     "id": "ui-500594d6f54a7537",
     "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 25,
+    "line": 26,
     "fingerprint": "DawPluginSectionHeader\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
@@ -8158,15 +8167,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/AutomationLane.tsx",
     "line": 156,
     "fingerprint": "div\tflex flex-1 min-h-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-50469de465f2dc4c",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 134,
-    "fingerprint": "div\tflex items-start justify-between gap-3",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -8208,13 +8208,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-50d11d8cfb4b29c8",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 44,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
+    "id": "ui-50b7311d51d840a6",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 101,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-50dfd7d648e9bf55",
@@ -8255,20 +8255,11 @@
   {
     "id": "ui-512bd8e3002dfb95",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 679,
+    "line": 685,
     "fingerprint": "div\tgrid grid-cols-[minmax(0,1fr)_180px] gap-3",
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
-  },
-  {
-    "id": "ui-514939b9e40c8650",
-    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
-    "line": 19,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-514d4908cdbde549",
@@ -8370,6 +8361,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-52487c81c29fb2ff",
+    "file": "src/modules/Fermenter/presentations/components/SectionNav.tsx",
+    "line": 26,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5268bffd2962dffc",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 189,
@@ -8424,27 +8424,9 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-52ec4cd4ea39c4eb",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 117,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-52fb14b4fdaf7357",
-    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
-    "line": 26,
-    "fingerprint": "div\tflex items-end gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5314900b4b17695b",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 241,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8471,7 +8453,7 @@
   {
     "id": "ui-534c2c0f1d0b55ba",
     "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 69,
+    "line": 70,
     "fingerprint": "DawPluginSectionHeader\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
@@ -8487,9 +8469,18 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-5377161a606cef42",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 379,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-537fda7aaf334753",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 645,
+    "line": 651,
     "fingerprint": "div\tgrid shrink-0 grid-cols-4 gap-2.5",
     "kind": "layout",
     "mapping": "Grid",
@@ -8521,15 +8512,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-53d9c365b08481ca",
-    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 165,
-    "fingerprint": "div\tflex items-end gap-2 pt-1 border-t border-border/15",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-53eb12764768b48f",
@@ -8568,6 +8550,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-5422a26c4501cc0f",
+    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
+    "line": 28,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5426a25006cb4294",
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
     "line": 49,
@@ -8593,6 +8584,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-5456833d209bc539",
+    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
+    "line": 111,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-549d0b0d71d0bf72",
@@ -8649,18 +8649,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-554911113a0e02cc",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 350,
-    "fingerprint": "div\tflex flex-wrap items-start gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-557671946dfa4fd7",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 588,
+    "line": 594,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8721,15 +8712,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-55e639ebbeff297a",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 49,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-560507d8c45cee4c",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 675,
@@ -8773,15 +8755,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-569dc0276c2a33bf",
-    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 58,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-56cbdf8d58684e8d",
@@ -8838,6 +8811,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-573fca7cfd8205cf",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 83,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-574c8ed5564fd450",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 282,
@@ -8862,15 +8844,6 @@
     "fingerprint": "div\tspace-y-3",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-5765ac33bf8e9dc9",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 337,
-    "fingerprint": "div\tflex gap-6",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -9072,9 +9045,18 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-5937586f7c8fcf40",
+    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
+    "line": 40,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5943588dec6b3631",
     "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 56,
+    "line": 57,
     "fingerprint": "div\tgrid grid-cols-4 gap-1 px-1",
     "kind": "layout",
     "mapping": "Grid",
@@ -9513,15 +9495,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-5d4e76b64619b738",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 569,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5d7664bf16485016",
     "file": "src/modules/Levain/presentations/components/MicBlendSlider.tsx",
     "line": 38,
@@ -9535,15 +9508,6 @@
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 333,
     "fingerprint": "div\tflex items-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-5d9c02dd0f34e9f0",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 692,
-    "fingerprint": "div\tflex items-center justify-between gap-2 text-[9px] text-muted-foreground",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -9731,7 +9695,7 @@
   {
     "id": "ui-5f08e28534e84d24",
     "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 48,
+    "line": 49,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9846,6 +9810,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-6024f0145441f2ec",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 27,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-60269837e7302f15",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
     "line": 252,
@@ -9882,15 +9855,6 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-605f1b54f1381e7c",
-    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
-    "line": 39,
-    "fingerprint": "div\tflex items-end gap-3 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-609158e66a261032",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
     "line": 553,
@@ -9907,15 +9871,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-60fab8c824c717b8",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 453,
-    "fingerprint": "div\tflex items-end gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6108ef66b22b7bbf",
@@ -9945,15 +9900,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-614ef1b4908fca48",
-    "file": "src/modules/Fermenter/presentations/components/OutputMeter.tsx",
-    "line": 46,
-    "fingerprint": "div\tflex items-end gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-614f9f56620ccc23",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
     "line": 181,
@@ -9970,6 +9916,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-6158dc0f8eb2fcee",
+    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+    "line": 130,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-615f8a1cbdefa259",
@@ -10062,15 +10017,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-62084b3746af111e",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 637,
-    "fingerprint": "div\tflex items-center gap-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-620c4333f933423c",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
     "line": 287,
@@ -10078,6 +10024,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-62163d3b90db0c78",
+    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
+    "line": 41,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-62217be054be2df6",
@@ -10161,15 +10116,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-633ac1812d655bd2",
-    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 59,
-    "fingerprint": "div\tspace-y-2 w-full max-w-[300px]",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-636bf34c87336938",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 762,
@@ -10190,7 +10136,7 @@
   {
     "id": "ui-6373e1b2070a79d7",
     "file": "src/modules/Fermenter/presentations/components/SectionNav.tsx",
-    "line": 26,
+    "line": 28,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10260,6 +10206,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-641f5fb3cf0e1c1c",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 46,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-641fd810bff793bb",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
     "line": 60,
@@ -10320,6 +10275,15 @@
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-6557480566341470",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 698,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -10419,6 +10383,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-664cd8c4ab1e0011",
+    "file": "src/modules/Fermenter/presentations/components/OutputMeter.tsx",
+    "line": 50,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -10701,6 +10674,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-69140ddc05c0e3aa",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 110,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-691ee2a869201f2b",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 482,
@@ -10710,13 +10692,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-691f94053de6a3a5",
-    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
-    "line": 21,
-    "fingerprint": "div\tspace-y-2",
+    "id": "ui-692015511667b133",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 689,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-69564614cebb6de5",
@@ -10766,7 +10748,7 @@
   {
     "id": "ui-69f96e732cd81ded",
     "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 77,
+    "line": 78,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -11108,7 +11090,7 @@
   {
     "id": "ui-6e3fa3a795181343",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 608,
+    "line": 614,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11196,6 +11178,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-6f00c7c68e014787",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 50,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6f10ed6057d93e4b",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 800,
@@ -11250,6 +11241,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-6f96f2f6f96f17f8",
+    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
+    "line": 62,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6fa29a81e46295b5",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
     "line": 318,
@@ -11268,15 +11268,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-6ff87ea11298836c",
-    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
-    "line": 31,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-700e8f6dd8bf7a53",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx",
     "line": 36,
@@ -11293,15 +11284,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-705d353ec3a56ff6",
-    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 178,
-    "fingerprint": "div\tflex gap-0.5 pb-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-70658665e640d0bc",
@@ -11369,7 +11351,7 @@
   {
     "id": "ui-7142caecfa4194cc",
     "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
-    "line": 98,
+    "line": 99,
     "fingerprint": "DawPluginSectionHeader\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
@@ -11529,6 +11511,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-722b77a4b59586d9",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 497,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-724a2b6d82910581",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
     "line": 618,
@@ -11572,6 +11563,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-72f1872b95a4d179",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 419,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-72f495ad0be7ab53",
@@ -11682,15 +11682,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-7455d35824081016",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 383,
-    "fingerprint": "div\tflex flex-wrap items-start gap-6",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7462bf1aa7482138",
     "file": "src/modules/SessionLauncher/presentations/views/SessionView.tsx",
     "line": 95,
@@ -11706,24 +11697,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-7498f310c7bb7d5f",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 126,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-74aa1a55ff45108b",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 418,
-    "fingerprint": "div\tflex items-start gap-4",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -11880,6 +11853,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-763b39a716c156af",
+    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
+    "line": 31,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-76468a060be61535",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1402,
@@ -11907,15 +11889,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-767d9bd5d46c868c",
-    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
-    "line": 30,
-    "fingerprint": "div\tflex items-end gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-76ac2045e6d8581e",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
     "line": 128,
@@ -11936,7 +11909,7 @@
   {
     "id": "ui-76e40b418297d447",
     "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 267,
+    "line": 268,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11986,6 +11959,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7720603398652d75",
+    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+    "line": 76,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-77541e67ef655b20",
@@ -12132,6 +12114,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-7885b5e48fa6e936",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 64,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7895d285667f6c37",
     "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
     "line": 397,
@@ -12166,15 +12157,6 @@
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-78b5637b5746ff25",
-    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
-    "line": 102,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-78c4edd1094af245",
@@ -12258,6 +12240,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-7979085f64ee6287",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 455,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7987ae9f40ae6a17",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 329,
@@ -12312,15 +12303,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-7a066a7f081ec371",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 390,
-    "fingerprint": "div\tspace-y-2 border-l border-border/20 pl-4",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7a0e8d28a9d914ef",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 890,
@@ -12337,6 +12319,24 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7a2ce6540658ea70",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 136,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7a6ca09cc34124fa",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 120,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7a770f2d80c38c54",
@@ -12391,6 +12391,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7ae2148b30d353e8",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 99,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7ae5d35af8ad6e3e",
@@ -12474,15 +12483,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-7b3c26523c408de6",
-    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 65,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7b7830bcc314c4c3",
     "file": "src/components/ui/dialog.tsx",
     "line": 74,
@@ -12528,6 +12528,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7bb2fc00987124d3",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 454,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7bbc9a44c51cb6d4",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
     "line": 498,
@@ -12552,15 +12561,6 @@
     "fingerprint": "div\tflex flex-1 overflow-auto",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-7bd96a158ad6c71b",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 58,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -12607,15 +12607,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-7c4e71cf5ce9c920",
-    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 89,
-    "fingerprint": "div\tml-auto flex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7c6656cfa1ddba7f",
@@ -12672,6 +12663,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-7cb114b4c3cb25d9",
+    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
+    "line": 55,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7cbaa08f65e17eef",
     "file": "src/modules/Proof/presentations/components/ProofExciterSection.tsx",
     "line": 41,
@@ -12699,6 +12699,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-7d130366103383b5",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 75,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7d77d016383a9823",
     "file": "src/modules/TimelineEditor/presentations/views/TempoEditor.tsx",
     "line": 226,
@@ -12706,15 +12715,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-7dc1f7c497adca24",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 26,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7dc6d325eaec4fd1",
@@ -12852,15 +12852,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-7ec97648dadf2210",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 376,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7eeeed08caf0d032",
     "file": "src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx",
     "line": 229,
@@ -12931,15 +12922,6 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityListRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-7fafe7da43526bcf",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 677,
-    "fingerprint": "div\tfermenter-window flex shrink-0 flex-col gap-2 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7fbf153e5ad83097",
@@ -13122,6 +13104,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-81430e429b3e9c06",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 641,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-81481aeda3b77e88",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
     "line": 255,
@@ -13147,6 +13138,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-817f4cb3861e4ad5",
+    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
+    "line": 59,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-8185545e682c7233",
@@ -13374,15 +13374,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-83c825112b61bcb1",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 71,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-83e43407e04584d3",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1632,
@@ -13403,7 +13394,7 @@
   {
     "id": "ui-83ea2c5fc9d83582",
     "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 140,
+    "line": 143,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13412,7 +13403,7 @@
   {
     "id": "ui-83f32aec1a309113",
     "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 29,
+    "line": 30,
     "fingerprint": "div\tgrid grid-cols-3 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -13482,6 +13473,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-8486d3171f33aa4d",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 72,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-848e76f45dfcbeb5",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 454,
@@ -13518,15 +13518,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-84c86e48668605c2",
-    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
-    "line": 27,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-84d246cc1dea25a4",
     "file": "src/modules/Proof/presentations/components/ProofDynSection.tsx",
     "line": 125,
@@ -13545,13 +13536,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-853509ad95c90997",
-    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 110,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
+    "id": "ui-8536218440100f98",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 633,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-8549c57430572277",
@@ -13579,15 +13570,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-855163b81a4b9e7c",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 298,
-    "fingerprint": "div\tflex gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8575f4f2197f6718",
@@ -13707,33 +13689,6 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-86b860bacdc293b1",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 181,
-    "fingerprint": "div\tflex flex-wrap gap-2 max-w-[200px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-86df151a5311f000",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 680,
-    "fingerprint": "div\tfermenter-window flex h-[136px] items-center justify-center p-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-86f02c6b49d39549",
-    "file": "src/modules/Fermenter/presentations/components/OutputMeter.tsx",
-    "line": 48,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-86f6705455b9c021",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 686,
@@ -13752,15 +13707,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-870c3afacb6c5069",
-    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 61,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-871237b0f33f6f6e",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
     "line": 210,
@@ -13768,15 +13714,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-871c9bd5bf36f6cd",
-    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 129,
-    "fingerprint": "div\tflex items-end gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8752983ddccde295",
@@ -13815,6 +13752,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-87985ad5b70d8cfc",
+    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
+    "line": 32,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-87a810559d61576c",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 497,
@@ -13830,6 +13776,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-87e2451275295202",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 155,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -13905,15 +13860,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-8899a71a06f34c4b",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 98,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-88ab1dbeb2a0081b",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
     "line": 965,
@@ -13977,6 +13923,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-88f4fef3baf941ba",
+    "file": "src/modules/Fermenter/presentations/views/TransformPad.tsx",
+    "line": 132,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-890ccbfc1b02d0b3",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
     "line": 208,
@@ -14029,15 +13984,6 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
-  },
-  {
-    "id": "ui-89a37db1a4b90293",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 281,
-    "fingerprint": "div\tflex items-start gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-89b1264904f3aa6a",
@@ -14119,15 +14065,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-8a8332779a45954f",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 84,
-    "fingerprint": "div\tflex flex-wrap gap-0.5 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8a89092b8eea06b8",
@@ -14436,24 +14373,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-8d8cc6b1bcb0bfda",
-    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
-    "line": 25,
-    "fingerprint": "div\tflex gap-0.5 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-8d8d834cfbe8c889",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 48,
-    "fingerprint": "div\tflex items-end gap-2 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-8d9d2393fa7e9995",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TakesSection.tsx",
     "line": 55,
@@ -14474,7 +14393,7 @@
   {
     "id": "ui-8db7096f3a509f1a",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 204,
+    "line": 206,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -14636,7 +14555,7 @@
   {
     "id": "ui-8f31ac2609bfc424",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 168,
+    "line": 170,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14679,6 +14598,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-8f6c6e2bbdf06ad1",
+    "file": "src/modules/Fermenter/presentations/components/OutputMeter.tsx",
+    "line": 62,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8fa145d196f8b31a",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
     "line": 402,
@@ -14697,13 +14625,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-8fe1742bddaf0cdb",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 46,
-    "fingerprint": "div\tspace-y-0.5",
+    "id": "ui-90261785dd12112a",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 166,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-9035575cd4da185f",
@@ -14712,24 +14640,6 @@
     "fingerprint": "div\tflex justify-center mb-2",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-904708cf9356de2b",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 100,
-    "fingerprint": "div\tflex items-end gap-2 px-1 pt-1 border-t border-border/20",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-904bb0c855a72eaf",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 454,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -15030,15 +14940,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-9466846bd754d39f",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 393,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-949cd1354f14c53d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
     "line": 120,
@@ -15072,6 +14973,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-956824f43ee78209",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 675,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -15117,6 +15027,15 @@
     "fingerprint": "DawCompactTextarea\t",
     "kind": "generic-control",
     "mapping": "DawCompactTextarea",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-95cbfe5eae8f02f3",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 31,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -15198,15 +15117,6 @@
     "fingerprint": "aside\tflex min-h-0 flex-col gap-3 overflow-y-auto pr-1",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-966d5fae777bc038",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 723,
-    "fingerprint": "div\tflex items-center justify-center",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -15372,15 +15282,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-97e5edd8670c6235",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 635,
-    "fingerprint": "div\tml-auto flex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-97f718f365c81b0e",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
     "line": 426,
@@ -15426,13 +15327,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-986ff512ba4a3ccf",
-    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
-    "line": 97,
-    "fingerprint": "div\tspace-y-2 w-full max-w-[260px]",
+    "id": "ui-98725f80b2d9c96e",
+    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
+    "line": 166,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-98893abcf67d603e",
@@ -15525,15 +15426,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-99a2c76c18aeeb81",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 101,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-99ab44c08dfea8d8",
     "file": "src/modules/Command/presentations/views/UndoHistoryPanel.tsx",
     "line": 40,
@@ -15579,21 +15471,21 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-99fe8eb34364e317",
-    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 24,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9a073b31a4bcbc75",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 273,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9a1080aac01aa34f",
+    "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
+    "line": 136,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -15631,6 +15523,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-9a66e2ec9127031e",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 48,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-9a6c04fd31a274e9",
@@ -15720,6 +15621,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9b50d44cf19373b4",
+    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
+    "line": 22,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -15930,13 +15840,13 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-9e6c3e871ed48c11",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 84,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
+    "id": "ui-9e060d345702cea5",
+    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
+    "line": 42,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-9e89133f76e8caf1",
@@ -16038,6 +15948,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-9f1e4550c3fea55b",
+    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
+    "line": 125,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9f3a93cfdd05445a",
     "file": "src/modules/Levain/presentations/components/ExpressionPanel.tsx",
     "line": 132,
@@ -16071,6 +15990,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9f8ee9693625c676",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 377,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -16182,6 +16110,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-a0900c01938c543f",
+    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
+    "line": 179,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a0d428b4184e7314",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
     "line": 215,
@@ -16252,6 +16189,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-a18116a9e5998fa8",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 472,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a1a4fcdd0fe1a676",
@@ -16351,6 +16297,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-a216393764604223",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 384,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a22833f547600262",
@@ -16535,7 +16490,7 @@
   {
     "id": "ui-a45049f1ecfa6545",
     "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 57,
+    "line": 58,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16641,6 +16596,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-a531445ab6a9c172",
+    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+    "line": 90,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a587a6f62f5043b0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
     "line": 322,
@@ -16729,6 +16693,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-a6ebde155dc70478",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 49,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a7105a6fd53f72a4",
@@ -16841,7 +16814,7 @@
   {
     "id": "ui-a80367a44e5fe732",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 254,
+    "line": 256,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16956,13 +16929,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a95499450509cdcd",
-    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
-    "line": 30,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
+    "id": "ui-a95c6a2ed0c22fba",
+    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
+    "line": 98,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a983d24c721149dd",
@@ -17037,6 +17010,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-aa218dfd09eafe81",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 341,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-aa236afe0334d224",
     "file": "src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx",
     "line": 162,
@@ -17089,15 +17071,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-aa7d3b7d31cfae35",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 669,
-    "fingerprint": "section\tfermenter-window flex min-h-0 flex-col gap-2.5 overflow-hidden p-2.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-aa96ddb7725e1739",
@@ -17181,15 +17154,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-abe3acaf28889b57",
-    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
-    "line": 28,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-abe9c02a0955f893",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 448,
@@ -17197,15 +17161,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-abea33ec598dc959",
-    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 94,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-abedc6f9f71a1690",
@@ -17264,7 +17219,7 @@
   {
     "id": "ui-ac517fb68d31a8a2",
     "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 42,
+    "line": 43,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -17287,15 +17242,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ac6f0c2aa57b2009",
-    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 30,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ac6f112c05bacc02",
@@ -17370,19 +17316,19 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-ad186f307370386f",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 117,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ad23f2e99c32a615",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
     "line": 173,
     "fingerprint": "div\tflex h-full items-center justify-center p-6 text-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ad37162440d90ed7",
-    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
-    "line": 124,
-    "fingerprint": "div\tflex items-end gap-2",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -17413,6 +17359,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-add156f04d753d99",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 118,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ade9924c7c04f8b0",
@@ -17586,15 +17541,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-afa81de04d6b2450",
-    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
-    "line": 72,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-afb28d3f636b7276",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 272,
@@ -17655,6 +17601,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b0406603e6a09c5d",
+    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+    "line": 131,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -17748,15 +17703,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b0e0832cd1fa025f",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 627,
-    "fingerprint": "header\tfermenter-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b0feba613994bf49",
     "file": "src/modules/Command/presentations/views/UndoHistoryPanel.tsx",
     "line": 91,
@@ -17768,7 +17714,7 @@
   {
     "id": "ui-b10923c3adc49a32",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 605,
+    "line": 611,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17799,6 +17745,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b134d43b3eddc44a",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 56,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -17957,20 +17912,11 @@
   {
     "id": "ui-b2c979faf6230668",
     "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 61,
+    "line": 62,
     "fingerprint": "DawPluginSectionHeader\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-b2e25014e626b277",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 539,
-    "fingerprint": "div\tfermenter-faceplate flex h-full min-h-0 gap-2.5 overflow-hidden p-2.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b302f37581f50f3b",
@@ -18075,6 +18021,15 @@
     "id": "ui-b3f6566e816ce86d",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 2099,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b414160648a0dbdf",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 77,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18207,15 +18162,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b513f705a7d7da2b",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 82,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b5147b5f0bef42c5",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 1132,
@@ -18223,15 +18169,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-b517417886118c03",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 498,
-    "fingerprint": "div\tflex gap-0.5 flex-wrap",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b523ae08bb717d79",
@@ -18443,7 +18380,7 @@
   {
     "id": "ui-b76eebedeb7df152",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 636,
+    "line": 642,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -18488,7 +18425,7 @@
   {
     "id": "ui-b84d0203d9138315",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 668,
+    "line": 674,
     "fingerprint": "div\tgrid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden",
     "kind": "layout",
     "mapping": "Grid",
@@ -18596,7 +18533,7 @@
   {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 250,
+    "line": 265,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -18675,6 +18612,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-ba4b5bd48bd6dc7a",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 722,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ba4de0dd94d8e93f",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
     "line": 416,
@@ -18738,6 +18684,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-ba97942cc0c6e524",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 85,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-baabf7c03a9dc862",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1110,
@@ -18763,15 +18718,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-baf44c64e691610e",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 242,
-    "fingerprint": "div\tflex gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-bb1a8d6a75d2da45",
@@ -18822,6 +18768,15 @@
     "id": "ui-bbbe8d4fb942db97",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 751,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-bbc6669feeaa2dd7",
+    "file": "src/modules/Fermenter/presentations/components/OutputMeter.tsx",
+    "line": 48,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -18902,7 +18857,7 @@
   {
     "id": "ui-bc73e9213a6b9d68",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 154,
+    "line": 156,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -18916,6 +18871,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-bc8aed340b5f7338",
+    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
+    "line": 97,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-bcdbb4114691a750",
@@ -19026,15 +18990,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-bdcacca69383b681",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 45,
-    "fingerprint": "div\tflex items-center justify-between px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-bddf87b8e5b79924",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 246,
@@ -19051,6 +19006,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-bde9c7e1e390291a",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 115,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-be0c93bd901e38fe",
@@ -19077,6 +19041,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-be35113a9b6e4730",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 30,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -19154,7 +19127,7 @@
   {
     "id": "ui-bf8cc3bfbda13833",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 594,
+    "line": 600,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19170,13 +19143,13 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-bfe8abc643cc047c",
-    "file": "src/modules/Fermenter/presentations/components/LfoSection.tsx",
-    "line": 125,
-    "fingerprint": "div\tflex flex-col items-center gap-0",
+    "id": "ui-bfe4df9c5b9eaf7a",
+    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
+    "line": 64,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-bfeb3c0eee4cf624",
@@ -19194,15 +19167,6 @@
     "fingerprint": "div\tflex items-center justify-between text-[8px] text-muted-foreground/50",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c00eda61a15ab779",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 715,
-    "fingerprint": "aside\tfermenter-window flex min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -19395,6 +19359,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-c19f7465c83c9479",
+    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
+    "line": 41,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c1af99a87304a812",
     "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
     "line": 232,
@@ -19438,15 +19411,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c220372f108f3e30",
-    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
-    "line": 41,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c2425da456b28692",
@@ -19629,6 +19593,15 @@
     "disposition": "responsive-or-dynamic"
   },
   {
+    "id": "ui-c465aaf4af84f3eb",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 266,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c46adddace2aa63d",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/ProjectTab.tsx",
     "line": 24,
@@ -19746,13 +19719,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-c6071af2d5540530",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 626,
-    "fingerprint": "div\tflex min-w-0 flex-1 flex-col gap-2.5",
+    "id": "ui-c609688383c6f137",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 149,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c623ef262ff16764",
@@ -19881,6 +19854,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-c7e99e0421f4bcad",
+    "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
+    "line": 112,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c8189e2fb249d860",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackLatencySection.tsx",
     "line": 38,
@@ -19923,6 +19905,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-c88093451c0e9b5e",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 686,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -19971,15 +19962,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-c92fcd9fa6f811de",
-    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 67,
-    "fingerprint": "div\tspace-y-2 w-full",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c93998d5854da2ec",
     "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
     "line": 93,
@@ -19998,15 +19980,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c958754295bc2d1d",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 109,
-    "fingerprint": "div\tflex items-start gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c96009eaff47c76f",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
     "line": 37,
@@ -20014,6 +19987,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-c9719b70cd6e1bc0",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 339,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c993120c2faa369a",
@@ -20124,15 +20106,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-cabadd41090e4510",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 562,
-    "fingerprint": "div\tfermenter-window flex items-center justify-between gap-2 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-cae869d2ec8f1c14",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
     "line": 209,
@@ -20207,7 +20180,7 @@
   {
     "id": "ui-cb7fb7706c756310",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 75,
+    "line": 77,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -20248,6 +20221,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-cbb400e31707762c",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 568,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-cbc06de41ecc997c",
@@ -20547,15 +20529,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-ce1aaa4619a28d67",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 70,
-    "fingerprint": "div\tflex flex-col gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ce8e7dfc2b8f7239",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 173,
@@ -20702,7 +20675,7 @@
   {
     "id": "ui-d01be302f50f4c64",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 143,
+    "line": 144,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -20711,7 +20684,7 @@
   {
     "id": "ui-d02cdf5182109ecf",
     "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 91,
+    "line": 92,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -20725,15 +20698,6 @@
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-d03d9c2a4a8c6e92",
-    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-    "line": 130,
-    "fingerprint": "div\tflex flex-col items-center gap-0",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d05219e4002da408",
@@ -20770,6 +20734,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-d10f79b381038452",
+    "file": "src/modules/Fermenter/presentations/components/GranularSection.tsx",
+    "line": 45,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d122d7ddbe5dba16",
@@ -20934,6 +20907,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-d2d1d335ed667ede",
+    "file": "src/modules/Fermenter/presentations/components/KarplusSection.tsx",
+    "line": 27,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d2d85e0524043b27",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1844,
@@ -21060,15 +21042,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d3c925d9e12b6714",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 41,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d3ef0ee1dcae2f8c",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
     "line": 252,
@@ -21123,6 +21096,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-d43c6f23cff36b51",
+    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
+    "line": 96,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d4416549d2ca0023",
     "file": "src/modules/AiRuntime/presentations/views/ChatPanel.tsx",
     "line": 91,
@@ -21139,6 +21121,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-d457795a2d0424f9",
+    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
+    "line": 38,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d4a3e9b5bda19162",
@@ -21213,15 +21204,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-d5a7e82ff2e012b9",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 340,
-    "fingerprint": "div\tflex gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d5ab3b0de1d1d424",
     "file": "src/modules/Proof/presentations/components/ProofLimiterSection.tsx",
     "line": 189,
@@ -21240,15 +21222,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-d5e110b47d4a1c08",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 540,
-    "fingerprint": "aside\tfermenter-window flex h-full w-[228px] shrink-0 flex-col gap-2.5 overflow-hidden p-2.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d5f32b0ec709c691",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 451,
@@ -21256,15 +21229,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-d60724350afc3b72",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 628,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d61593e41773cc00",
@@ -21402,6 +21366,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-d77da7061deb1947",
+    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
+    "line": 31,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d78a0dc61b7adec4",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 240,
@@ -21492,15 +21465,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-d81b28211cbd9ba0",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 716,
-    "fingerprint": "div\tfermenter-window flex flex-col gap-3 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d859a154b634dc9a",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
     "line": 256,
@@ -21513,6 +21477,15 @@
     "id": "ui-d8968605b5a6c526",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 480,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-d8a3305983937bff",
+    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
+    "line": 71,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21580,15 +21553,6 @@
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-d99859f7fb1a97ed",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 114,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d9aaa7c8ceaf2162",
@@ -21690,6 +21654,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-daae3e4c70cfa587",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 182,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-daf47e245a5f4c6a",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
     "line": 41,
@@ -21701,7 +21674,7 @@
   {
     "id": "ui-db2b4e7325e21bcf",
     "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 94,
+    "line": 97,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -21715,15 +21688,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-db3b8c7c0d09e7fa",
-    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 95,
-    "fingerprint": "div\tflex items-end gap-2 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-db402f4e83705375",
@@ -22041,15 +22005,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-de0948e43f285070",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 116,
-    "fingerprint": "div\tfermenter-window flex min-w-[92px] flex-col gap-1 px-3 py-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-de780226069c7ece",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
     "line": 72,
@@ -22070,7 +22025,7 @@
   {
     "id": "ui-de9bbe0edead4d1a",
     "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 180,
+    "line": 181,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -22329,6 +22284,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-e1c1fda703a45649",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 128,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e1c538ab7702ece7",
     "file": "src/modules/TimelineEditor/presentations/components/Inspector/InspectorDetailHeader.tsx",
     "line": 21,
@@ -22399,15 +22363,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-e2d3d96f345a7ca0",
-    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
-    "line": 47,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-e2d4ec64dc119339",
@@ -22509,6 +22464,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-e3c5805b7d52025a",
+    "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
+    "line": 106,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e3d9ece2b142fe78",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 618,
@@ -22520,7 +22484,7 @@
   {
     "id": "ui-e3e0c553d62da093",
     "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 514,
+    "line": 515,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -22545,9 +22509,27 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e417b1b9e6afa89f",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 634,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-e41d5317bcbdf17f",
+    "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
+    "line": 93,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e42170ff289f6309",
     "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
-    "line": 67,
+    "line": 68,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -22698,6 +22680,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-e5403e97bfe218c6",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 127,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e55719fe0d5f1c6c",
     "file": "src/modules/Proof/presentations/components/ProofImagerSection.tsx",
     "line": 58,
@@ -22722,24 +22713,6 @@
     "fingerprint": "div\tabsolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-e5831459edef112e",
-    "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
-    "line": 103,
-    "fingerprint": "div\tflex flex-wrap gap-0.5 px-2 py-1 shrink-0 border-b border-border/20",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-e5e43bb104840ae3",
-    "file": "src/modules/Fermenter/presentations/components/LayerStack.tsx",
-    "line": 47,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -22770,13 +22743,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-e64c38ca70835c56",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 99,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
+    "id": "ui-e657fb3630b99654",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 47,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e66a16906021f89c",
@@ -22795,6 +22768,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e6c7dc981c307870",
+    "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
+    "line": 45,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e6d189b213b56906",
@@ -22833,15 +22815,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-e7a4f060fded5f52",
-    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
-    "line": 200,
-    "fingerprint": "label\tmt-2 flex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e7b3288de7b11d47",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
     "line": 196,
@@ -22867,6 +22840,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e7f287be3180706f",
+    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
+    "line": 23,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e84c4f28bee5f7ea",
@@ -22948,6 +22930,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-e983084119d3599b",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 683,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e99451e26299e185",
@@ -23076,6 +23067,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-ea746c6c76252b3b",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 499,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ea961ca9e760f0bb",
     "file": "src/modules/Proof/presentations/components/ProofImagerSection.tsx",
     "line": 77,
@@ -23157,13 +23157,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-eaeb22903842d657",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 392,
-    "fingerprint": "div\tfermenter-window flex items-center gap-3 px-3 py-2",
+    "id": "ui-eb1bf7c40032d539",
+    "file": "src/modules/Fermenter/presentations/components/CrumbsSection.tsx",
+    "line": 20,
+    "fingerprint": "Stack\t",
     "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-eb401a47c7389191",
@@ -23172,6 +23172,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-eb48d67db7de98e1",
+    "file": "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+    "line": 149,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -23281,15 +23290,6 @@
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-ec298c2c8cc7413b",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 496,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ec441828684bc282",
@@ -23436,15 +23436,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-edbf9d8a8944dd39",
-    "file": "src/modules/Fermenter/presentations/components/SectionNav.tsx",
-    "line": 24,
-    "fingerprint": "div\tflex gap-0.5 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-edf6760bd0ab3cc8",
     "file": "src/modules/Metering/presentations/views/Goniometer.tsx",
     "line": 150,
@@ -23496,15 +23487,6 @@
     "fingerprint": "div\tflex gap-1 px-2 pb-1",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ee53d0bc191cf341",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 338,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -23742,15 +23724,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-f03547b13c81fbaa",
-    "file": "src/modules/Fermenter/presentations/components/WarpSection.tsx",
-    "line": 55,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f058f0086d0390f6",
     "file": "src/modules/AiRuntime/presentations/views/MixAnalysisPanel.tsx",
     "line": 70,
@@ -23839,6 +23812,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-f1ad7fa50c48f6b3",
+    "file": "src/modules/Fermenter/presentations/components/UnisonSection.tsx",
+    "line": 48,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f1c31d024e63403d",
@@ -24138,15 +24120,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-f443aea6c20fb44a",
-    "file": "src/modules/Fermenter/presentations/components/FmSection.tsx",
-    "line": 37,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f44ca6c5fb4bfb09",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 609,
@@ -24253,6 +24226,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-f55699062c08fb77",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 540,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f57ce9efc254c53d",
@@ -24516,6 +24498,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-f8074e2be728839e",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 282,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f828fcbc6cc1abce",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 59,
@@ -24549,6 +24540,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f8506160d9536c22",
+    "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
+    "line": 202,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -24606,6 +24606,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f8b60faa2b480228",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 721,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f8ecdf808d9f73c4",
     "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
     "line": 617,
@@ -24622,6 +24631,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-f92525f1434b99c0",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 394,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f925320db506438f",
@@ -24732,6 +24750,24 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-fa1bda0299dcbd90",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 391,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-fa219a124d15c50c",
+    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
+    "line": 299,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fa232d59ab4a91bb",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1708,
@@ -24756,15 +24792,6 @@
     "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-fa8313607c7482e3",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 759,
-    "fingerprint": "div\tfermenter-window flex flex-col gap-2 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -24802,15 +24829,6 @@
     "kind": "daw-chrome",
     "mapping": "DawControlStrip",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-facd1d7e2dfd00fa",
-    "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
-    "line": 29,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fadc9f64d46cd29d",
@@ -25018,15 +25036,6 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-fd183c2d8c197e90",
-    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
-    "line": 291,
-    "fingerprint": "div\tflex flex-wrap items-start gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fd7e8f538cebf82b",
@@ -25254,6 +25263,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-ff5b3ae1ed8de772",
+    "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
+    "line": 292,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ff92cf3b7d042757",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 210,
@@ -25261,15 +25279,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ffc564ba15212696",
-    "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
-    "line": 471,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ffcef303d8e63849",
