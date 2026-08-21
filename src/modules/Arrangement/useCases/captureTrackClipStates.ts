@@ -16,8 +16,10 @@ import { getTrackStoreState } from './getTrackStoreState';
  * Snapshot named tracks' clip collections and everything a collection rewrite
  * destroys alongside them — the general primitive `cutClip`, `pasteClip`,
  * `flattenTrack` and `consolidateAllTracks` build their guarded restore on. A pure
- * read: callers snapshot before a write for `expected`, and again after for
- * `replacement`, via two separate calls.
+ * read, taken via two separate calls: `expected` is what the store is expected to
+ * hold at the moment the restore runs, and `replacement` is what it should hold
+ * afterwards. For an inverse action that is the post-write state and the pre-write
+ * state respectively; for a redo it is the other way round.
  *
  * "Everything" is load-bearing, and each part is here because a forward path
  * removes it:

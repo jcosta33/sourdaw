@@ -568,11 +568,10 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
 /**
  * General guarded restore for whole-track clip-collection rewrites (cut, paste,
  * flatten, consolidate). Every named track must still match `expected` on
- * everything the write replaces — every key of the snapshot, down to the contents of
- * each clip — before anything is written. `SNAPSHOT_ENTRY_GUARDS` is where that
- * "everything" is enforced rather than asserted. A single divergent track refuses the
- * entire batch, because a partial restore is exactly the lost update this handler
- * exists to prevent.
+ * everything `everyEntryMatchesLiveState` compares, down to the contents of each
+ * clip, before any track write lands. `SNAPSHOT_ENTRY_GUARDS` is where that
+ * comparison is enforced rather than asserted — except for `clipAutomationLanes`,
+ * which it deliberately leaves `notCompared`: that key has its own guard below.
  *
  * The guard is two halves and needs both: every `expected` entry matches live state,
  * and every `replacement` entry is named by `expected`. The second is what makes an
@@ -580,10 +579,22 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
  * vacuously true on `[]`, and a `replacement` track nobody checked is an unguarded
  * overwrite of whatever is live there now.
  *
- * Clip-scoped automation lanes go first and through `applyClipAutomationLaneTransition`,
- * which is atomic and verifies its own writes by re-reading the store. Ordering it
- * ahead of the track writes means a refusal there has written nothing at all; doing
- * the track writes first would leave clips restored and their automation gone.
+ * Clip-scoped automation lanes are the second guard, applied per replacement entry
+ * in one pass with `applyClipAutomationLaneTransition`, which both validates and
+ * writes each entry's lanes before moving to the next. With two or more replacement
+ * entries — `consolidateAllTracks` is multi-track by construction — an earlier
+ * entry's automation writes can already be live when a later entry refuses,
+ * returning `conflict` after this loop has mutated the store. That is not a defect
+ * in this loop: `executeAppAction` runs `execute` inside an ambient storage
+ * transaction and calls `storage_transaction.abort()` on a `conflict` result before
+ * throwing, which walks back every pending write this synchronous call made,
+ * including the earlier entries' automation. The all-or-nothing guarantee is real
+ * but inherited from the caller, not produced locally by this loop's ordering —
+ * reordering the loop, adding an early return, or introducing an `await` would
+ * silently remove it while leaving this comment's claim intact. If this handler
+ * ever needs the guarantee to hold locally instead, `restoreStripSilenceState` and
+ * `restoreClipGlueState` show the route: pre-flight every entry with
+ * `clipAutomationLaneTransitionMatchesStore` before applying any of them.
  *
  * `undoable: false` — invoked only by undo/redo machinery; must not itself
  * create a new undo entry.
