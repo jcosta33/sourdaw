@@ -1,3 +1,4 @@
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -45,12 +46,19 @@ function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortControl
     }
 }
 
-export async function freezeTrack(trackId: string): Promise<boolean> {
+export async function freezeTrack(trackId: string, freezeIdOverride?: string): Promise<boolean> {
     const state = trackStore.value;
     const project = projectStore.value;
     if (!state || !project) {
         return false;
     }
+
+    // Every write below the first `await` lands after the action's storage transaction
+    // has stopped being ambient, so without this they commit on their own frame — a
+    // rolled-back freeze still left the track pointing at the rendered take, and the
+    // final freeze state could land separately from the undo stack advancing. Captured
+    // here, while the transaction is still ambient; `await` outside, write inside.
+    const scope = captureAutomergeStorageTransactionScope();
 
     const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.freezeState.status === 'frozen') {
@@ -123,10 +131,12 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
                 if (!isCurrentFreezeTask(taskIdentity)) {
                     return;
                 }
-                updateTrack(trackId, (time) => ({
-                    ...time,
-                    freezeState: { ...time.freezeState, renderProgress: param },
-                }));
+                scope(() => {
+                    updateTrack(trackId, (time) => ({
+                        ...time,
+                        freezeState: { ...time.freezeState, renderProgress: param },
+                    }));
+                });
             },
         });
 
@@ -168,15 +178,19 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             // `handleFreezeTrack` maps a `true` here to `{status: 'written'}`,
             // which would file a refusal as an undoable edit.
             notifyUser(silentBake.message, 'error');
-            updateTrack(trackId, (time) => ({
-                ...time,
-                freezeState: { status: 'error', errorMessage: silentBake.message },
-            }));
+            scope(() => {
+                updateTrack(trackId, (time) => ({
+                    ...time,
+                    freezeState: { status: 'error', errorMessage: silentBake.message },
+                }));
+            });
             return false;
         }
 
         const renderedAt = Date.now();
-        const freezeId = `freeze-${trackId}-${String(renderedAt)}`;
+        // Resolved by the command layer when this runs as an action, so the handler's
+        // `describe()` can guard its inverse on the exact take this run produces.
+        const freezeId = freezeIdOverride ?? `freeze-${trackId}-${String(renderedAt)}`;
         cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId, freezeProjectId: project.createdAt });
 
         // FX-4 residual — pin the compensation the chain carried while the
@@ -185,31 +199,33 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
         // (nothing marks a frozen track stale on a latency change).
         const compensationSeconds = getCompensationDelay(trackId);
 
-        updateTrack(trackId, (time) => ({
-            ...time,
-            frozen: true,
-            frozenBufferId: freezeId,
-            freezeState: {
-                status: 'frozen',
-                freezeId,
+        scope(() => {
+            updateTrack(trackId, (time) => ({
+                ...time,
+                frozen: true,
                 frozenBufferId: freezeId,
-                sourceContentHash: hash,
-                compensationSeconds,
-                renderSettings: {
-                    sampleRate: renderedBuffer.sampleRate,
-                    bitDepth: 32,
-                    channelCount: renderedBuffer.numberOfChannels,
-                    // Recorded as the seconds actually rendered, not re-derived
-                    // from a beat count and the tempo. The buffer's decay is a
-                    // duration; converting it through tempo twice was what let
-                    // the recorded number describe a different length than the
-                    // one on disk.
-                    tailLengthSeconds: tailSeconds,
-                    bakeVersion: FREEZE_BAKE_VERSION,
+                freezeState: {
+                    status: 'frozen',
+                    freezeId,
+                    frozenBufferId: freezeId,
+                    sourceContentHash: hash,
+                    compensationSeconds,
+                    renderSettings: {
+                        sampleRate: renderedBuffer.sampleRate,
+                        bitDepth: 32,
+                        channelCount: renderedBuffer.numberOfChannels,
+                        // Recorded as the seconds actually rendered, not re-derived
+                        // from a beat count and the tempo. The buffer's decay is a
+                        // duration; converting it through tempo twice was what let
+                        // the recorded number describe a different length than the
+                        // one on disk.
+                        tailLengthSeconds: tailSeconds,
+                        bakeVersion: FREEZE_BAKE_VERSION,
+                    },
+                    renderedAt,
                 },
-                renderedAt,
-            },
-        }));
+            }));
+        });
     } catch (error) {
         const currentTask = activeFreezeTasks.get(trackId);
         clearFreezeTaskIfCurrent(trackId, abortController);
@@ -222,20 +238,24 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
 
         if (abortController.signal.aborted) {
             // User cancelled
-            updateTrack(trackId, (time) => ({
-                ...time,
-                freezeState: { status: 'unfrozen' },
-            }));
+            scope(() => {
+                updateTrack(trackId, (time) => ({
+                    ...time,
+                    freezeState: { status: 'unfrozen' },
+                }));
+            });
             return true;
         }
 
-        updateTrack(trackId, (time) => ({
-            ...time,
-            freezeState: {
-                status: 'error',
-                errorMessage: error instanceof Error ? error.message : String(error),
-            },
-        }));
+        scope(() => {
+            updateTrack(trackId, (time) => ({
+                ...time,
+                freezeState: {
+                    status: 'error',
+                    errorMessage: error instanceof Error ? error.message : String(error),
+                },
+            }));
+        });
     }
 
     return true;

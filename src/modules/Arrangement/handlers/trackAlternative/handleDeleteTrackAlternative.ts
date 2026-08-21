@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+import { type TrackAlternativeStateSnapshot } from '#/utils/handlerContract';
 
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -10,6 +11,19 @@ import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipColl
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
 type TrackAlternative = Track['alternatives'][number];
+
+type MutableTrackAlternativeStateSnapshot = {
+    alternatives: TrackAlternativeStateSnapshot['alternatives'];
+    activeAlternativeId: TrackAlternativeStateSnapshot['activeAlternativeId'];
+    clips: TrackAlternativeStateSnapshot['clips'];
+};
+
+// `describe()` runs before `execute()` and cannot know which alternative execute will
+// promote, so it only seeds the shape the inverse guard needs. `execute()` fills the
+// real post-delete state in after it writes — the same describe-then-finalize pattern
+// `handleFreezeTrack` uses, so `executeAppAction`'s undo entry (built from the object
+// `describe` returned, read again after `execute` runs) picks up the settled values.
+const pendingDeletionSnapshots = new WeakMap<object, MutableTrackAlternativeStateSnapshot>();
 
 function isValidAlternativeCollection(value: unknown): value is TrackAlternative[] {
     if (!Array.isArray(value)) {
@@ -37,41 +51,61 @@ function isValidAlternativeCollection(value: unknown): value is TrackAlternative
     return true;
 }
 
+type EligibleDeletionTarget = {
+    state: TrackState;
+    targetTrack: Track;
+    filteredAlternatives: TrackAlternative[];
+};
+
+// Shared by `describe()` and `execute()`: the checks that decide whether a delete is
+// even possible, before either one decides what (if anything) gets promoted. Keeping
+// this in one place is what lets `describe()` safely pre-check eligibility without
+// re-deriving the promotion decision, which stays exclusively in `execute()`.
+function resolveEligibleDeletionTarget(trackId: string, alternativeId: unknown): EligibleDeletionTarget | null {
+    const resolution = resolveEligibleClipWriteTarget({ trackId });
+    if (resolution.status !== 'eligible') {
+        return null;
+    }
+
+    const state = getTrackStoreState();
+    if (!state) {
+        return null;
+    }
+
+    const targetTrack = state.tracks.find((track) => track.id === resolution.trackId);
+    if (
+        !targetTrack ||
+        typeof alternativeId !== 'string' ||
+        alternativeId.length === 0 ||
+        !isValidAlternativeCollection(targetTrack.alternatives) ||
+        targetTrack.alternatives.length <= 1 ||
+        typeof targetTrack.activeAlternativeId !== 'string' ||
+        targetTrack.activeAlternativeId.length === 0
+    ) {
+        return null;
+    }
+
+    const activeAlternatives = targetTrack.alternatives.filter(
+        (alternative) => alternative.id === targetTrack.activeAlternativeId
+    );
+    const alternativesToDelete = targetTrack.alternatives.filter((alternative) => alternative.id === alternativeId);
+    if (activeAlternatives.length !== 1 || alternativesToDelete.length !== 1) {
+        return null;
+    }
+
+    const filteredAlternatives = targetTrack.alternatives.filter((alternative) => alternative.id !== alternativeId);
+    return { state, targetTrack, filteredAlternatives };
+}
+
 export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternative'>({
     execute: (action) => {
         const { trackId, alternativeId } = action.payload;
-        const resolution = resolveEligibleClipWriteTarget({ trackId });
-        if (resolution.status !== 'eligible') {
+        const target = resolveEligibleDeletionTarget(trackId, alternativeId);
+        if (!target) {
             return toHandlerExecutionResult(false);
         }
+        const { state, targetTrack, filteredAlternatives } = target;
 
-        const state = getTrackStoreState();
-        if (!state) {
-            return toHandlerExecutionResult(false);
-        }
-
-        const targetTrack = state.tracks.find((track) => track.id === resolution.trackId);
-        if (
-            !targetTrack ||
-            typeof alternativeId !== 'string' ||
-            alternativeId.length === 0 ||
-            !isValidAlternativeCollection(targetTrack.alternatives) ||
-            targetTrack.alternatives.length <= 1 ||
-            typeof targetTrack.activeAlternativeId !== 'string' ||
-            targetTrack.activeAlternativeId.length === 0
-        ) {
-            return toHandlerExecutionResult(false);
-        }
-
-        const activeAlternatives = targetTrack.alternatives.filter(
-            (alternative) => alternative.id === targetTrack.activeAlternativeId
-        );
-        const alternativesToDelete = targetTrack.alternatives.filter((alternative) => alternative.id === alternativeId);
-        if (activeAlternatives.length !== 1 || alternativesToDelete.length !== 1) {
-            return toHandlerExecutionResult(false);
-        }
-
-        const filteredAlternatives = targetTrack.alternatives.filter((alternative) => alternative.id !== alternativeId);
         let updatedTrack: Track = {
             ...targetTrack,
             alternatives: filteredAlternatives,
@@ -107,8 +141,50 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
             tracks: state.tracks.map((track) => (track.id === targetTrack.id ? updatedTrack : track)),
         });
 
+        const pending = pendingDeletionSnapshots.get(action);
+        if (pending) {
+            pending.alternatives = structuredClone(updatedTrack.alternatives);
+            pending.activeAlternativeId = updatedTrack.activeAlternativeId;
+            pending.clips = structuredClone(updatedTrack.clips);
+        }
+
         return toHandlerExecutionResult(true);
     },
-    describe: () => ({ label: 'Delete Alternative' }),
-    undoable: false,
+    describe: (action) => {
+        const { trackId, alternativeId } = action.payload;
+        const target = resolveEligibleDeletionTarget(trackId, alternativeId);
+        if (!target) {
+            return { label: 'Delete Alternative', inverseAction: null };
+        }
+
+        const previous: TrackAlternativeStateSnapshot = structuredClone({
+            alternatives: target.targetTrack.alternatives,
+            activeAlternativeId: target.targetTrack.activeAlternativeId,
+            clips: target.targetTrack.clips,
+        });
+        // Seeded empty; `execute()` overwrites these once it knows which alternative
+        // (if any) actually got promoted and which clips actually got installed.
+        const settled: MutableTrackAlternativeStateSnapshot = {
+            alternatives: [],
+            activeAlternativeId: null,
+            clips: [],
+        };
+        pendingDeletionSnapshots.set(action, settled);
+
+        return {
+            label: 'Delete Alternative',
+            inverseAction: {
+                type: 'restoreTrackAlternativeState',
+                payload: { trackId, expected: settled, replacement: previous },
+            },
+            // Redo re-applies the exact promotion this run made rather than re-running
+            // the delete: replaying `deleteTrackAlternative` after an intervening edit
+            // could promote a different alternative than the one the user actually undid.
+            redoAction: {
+                type: 'restoreTrackAlternativeState',
+                payload: { trackId, expected: previous, replacement: settled },
+            },
+        };
+    },
+    undoable: true,
 });

@@ -1,7 +1,10 @@
 import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLayerHandlers';
+import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardCreatedCompGroup';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
+import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
+import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
@@ -32,6 +35,7 @@ import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
 import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
 import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';
+import { handleRestoreScratchPadState } from '../handlers/scratchPad/handleRestoreScratchPadState';
 import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
 import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
 import { handleSaveTrackTemplate } from '../handlers/template/handleSaveTrackTemplate';
@@ -42,6 +46,7 @@ import { handleClearSolos } from '../handlers/track/clearSolos';
 import { handleCreateFolder } from '../handlers/track/createFolder';
 import { handleDisableTrack } from '../handlers/track/disableTrack';
 import { handleDiscardCreatedTrack } from '../handlers/track/discardCreatedTrack';
+import { handleDiscardCreatedTracks } from '../handlers/track/discardCreatedTracks';
 import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
 import { handleFlattenTrack } from '../handlers/track/flattenTrack';
 import { handleFoldTrack } from '../handlers/track/foldTrack';
@@ -63,7 +68,14 @@ import { handleHideTrack } from '../handlers/track/hideTrack';
 import { handleMuteTrack } from '../handlers/track/muteTrack';
 import { handleRenameTrack } from '../handlers/track/renameTrack';
 import { handleReorderTrack } from '../handlers/track/reorderTrack';
+import { handleRestoreFreezeState } from '../handlers/track/restoreFreezeState';
+import { handleRestoreMidiOutput } from '../handlers/track/restoreMidiOutput';
 import { handleRestoreSoloSafe } from '../handlers/track/restoreSoloSafe';
+import { handleRestoreTrackDisabled } from '../handlers/track/restoreTrackDisabled';
+import { handleRestoreTrackGroupMemberships } from '../handlers/track/restoreTrackGroupMemberships';
+import { handleRestoreTrackHeights } from '../handlers/track/restoreTrackHeights';
+import { handleRestoreTrackInput } from '../handlers/track/restoreTrackInput';
+import { handleRestoreTracks } from '../handlers/track/restoreTracks';
 import { handleRestoreTrackSoloStates } from '../handlers/track/restoreTrackSoloStates';
 import { handleSelectTrack } from '../handlers/track/selectTrack';
 import { handleSetAutomationMode } from '../handlers/track/setAutomationMode';
@@ -79,6 +91,7 @@ import { handleZoomTracksVertical } from '../handlers/track/zoomTracksVertical';
 import { handleCreateTrackAlternative } from '../handlers/trackAlternative/handleCreateTrackAlternative';
 import { handleDeleteTrackAlternative } from '../handlers/trackAlternative/handleDeleteTrackAlternative';
 import { handleRenameTrackAlternative } from '../handlers/trackAlternative/handleRenameTrackAlternative';
+import { handleRestoreTrackAlternativeState } from '../handlers/trackAlternative/handleRestoreTrackAlternativeState';
 import { handleSwitchTrackAlternative } from '../handlers/trackAlternative/handleSwitchTrackAlternative';
 import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
 import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
@@ -133,6 +146,19 @@ export function getArrangementHandlers() {
         clearSolos: handleClearSolos,
         restoreSoloSafe: handleRestoreSoloSafe,
         restoreTrackSoloStates: handleRestoreTrackSoloStates,
+        restoreTrackDisabled: handleRestoreTrackDisabled,
+        restoreMidiOutput: handleRestoreMidiOutput,
+        restoreTrackInput: handleRestoreTrackInput,
+        restoreFreezeState: handleRestoreFreezeState,
+        restoreTrackGroupMemberships: handleRestoreTrackGroupMemberships,
+        restoreTrackHeights: handleRestoreTrackHeights,
+        restoreTracks: handleRestoreTracks,
+        discardCreatedTracks: handleDiscardCreatedTracks,
+        restoreTimeOperationState: handleRestoreTimeOperationState,
+        restoreTrackClipStates: handleRestoreTrackClipStates,
+        restoreScratchPadState: handleRestoreScratchPadState,
+        discardCreatedCompGroup: handleDiscardCreatedCompGroup,
+        restoreTrackAlternativeState: handleRestoreTrackAlternativeState,
         zoomTracksVertical: handleZoomTracksVertical,
         addMarker: handleAddMarker,
         removeMarker: handleRemoveMarker,

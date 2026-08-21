@@ -9,20 +9,33 @@ export const handleSetTrackInput = createHandler<'setTrackInput'>({
         return toHandlerExecutionResult(setTrackInput(action.payload.trackId, action.payload.inputId));
     },
     describe: (action) => {
-        const prev = getTrackStoreState()?.tracks.find((t) => t.id === action.payload.trackId);
+        const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         return {
             label: 'Set track input',
-            inverseAction: prev
+            inverseAction: track
                 ? {
-                      type: 'setTrackInput',
+                      type: 'restoreTrackInput',
                       payload: {
-                          trackId: action.payload.trackId,
-                          inputId: prev.inputId ?? null,
+                          trackId: track.id,
+                          expected: action.payload.inputId,
+                          replacement: track.inputId,
                       },
                   }
                 : null,
-            redoAction: action,
+            redoAction: track
+                ? {
+                      type: 'restoreTrackInput',
+                      payload: {
+                          trackId: track.id,
+                          expected: track.inputId,
+                          replacement: action.payload.inputId,
+                      },
+                  }
+                : action,
         };
     },
+    isNoop: (action) =>
+        getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.inputId ===
+        action.payload.inputId,
     undoable: true,
 });

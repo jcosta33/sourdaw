@@ -45,6 +45,7 @@ describe('clipHandlers', () => {
             'pasteClip',
             'normalizeClip',
             'reverseClip',
+            'restoreReversedClip',
             'glueClips',
             'restoreClipGlueState',
             'nudgeClip',

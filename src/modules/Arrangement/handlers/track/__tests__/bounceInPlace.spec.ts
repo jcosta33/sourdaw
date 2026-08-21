@@ -45,7 +45,10 @@ describe('handleBounceInPlace', () => {
         expect(desc.label).toBe('Bounce in place');
     });
 
-    it('is undoable', () => {
-        expect(handleBounceInPlace.undoable).toBe(true);
+    // Undo for a bounce is filed by `bounceTrack` itself, as a callback entry carrying the
+    // before/after track snapshots. Marking the handler undoable as well would put a second
+    // entry on the stack for one command, and that one has no inverse action to run.
+    it('is not command-undoable, because the use case files its own undo entry', () => {
+        expect(handleBounceInPlace.undoable).toBe(false);
     });
 });

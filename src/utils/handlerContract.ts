@@ -215,6 +215,55 @@ export type MidiClipNoteSnapshot = {
 };
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
+/**
+ * A global time operation's restore plan, as produced by `executeGlobalTimeOperation`.
+ * Opaque here on purpose: the owning module encodes plans through its own codec, and
+ * the only operations the command layer performs on one are transport and application.
+ */
+export type TimeOperationRestorePlanSnapshot = { readonly version: unknown };
+export type TrackGroupMembershipSnapshot = { readonly trackId: string; readonly groupId: string | null };
+export type TrackHeightSnapshot = { readonly trackId: string; readonly height: number };
+/**
+ * One track's clip collection plus the MIDI satellite state those clips own. Clip
+ * edits that rewrite a whole track — cut, paste, strip silence, flatten, bounce —
+ * cannot be inverted by replaying a counter-edit, so they carry this instead.
+ */
+export type TrackClipStateSnapshot = {
+    readonly trackId: string;
+    readonly clips: readonly ClipSnapshot[];
+    readonly midiNotesByClipId: Record<string, MidiNotesSnapshot>;
+    readonly midiCcByClipId: Record<string, MidiCcSnapshot>;
+    readonly midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
+};
+export type TrackAlternativeStateSnapshot = {
+    readonly alternatives: readonly { readonly id: string }[];
+    readonly activeAlternativeId: string | null;
+    readonly clips: readonly ClipSnapshot[];
+};
+export type ScratchPadSectionSnapshot = { readonly id: string };
+export type MarkerSectionSnapshot = { readonly id: string };
+/** Everything `removeTrack` deletes, so one track can be put back exactly as it was. */
+export type RestoreTrackPayloadSnapshot = {
+    trackId: string;
+    trackSnapshot: TrackSnapshot;
+    trackName: string;
+    trackKind: TrackKind;
+    trackGain: number;
+    trackParentId: string | null;
+    trackIndex: number;
+    /** Internal context compiled only for sibling restores captured by one atomic batch. */
+    batchRestoreTracks?: readonly BatchRestoreTrackSnapshot[];
+    wasSelected: boolean;
+    routingPatches: readonly TrackRoutingPatchSnapshot[];
+    automationLaneSnapshots: readonly AutomationLaneSnapshot[];
+    midiNotesByClipId: Record<string, MidiNotesSnapshot>;
+    midiCcByClipId: Record<string, MidiCcSnapshot>;
+    midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
+    takeLaneSnapshots: readonly TakeLaneSnapshot[];
+    sidechainRouteSnapshots: readonly SidechainRouteSnapshot[];
+    ownedModulatorSnapshots: readonly ModulatorSnapshot[];
+    incomingModulationMappingSnapshots: readonly IncomingModulationMappingSnapshot[];
+};
 export type MidiClipCcSnapshot = {
     readonly id: string;
     readonly controller: number;
@@ -340,6 +389,38 @@ export type KneadPitchBlobSnapshot = {
     formantShiftCents: number;
     gainDb: number;
     muted: boolean;
+};
+
+/** Structural mirror of a track's whole freeze aggregate — the two denormalized fields
+ *  plus `freezeState` itself. Kept structural, like every other snapshot here, so this
+ *  neutral contract does not depend on a model owned by the Arrangement module.
+ *
+ *  Captured and restored as one unit because the three drift apart if they are not:
+ *  `frozen` and `frozenBufferId` are what playback and export read, `freezeState` is what
+ *  staleness detection and the freeze UI read, and a restore that collapsed the aggregate
+ *  to `unfrozen` would discard a `stale` or `error` state the forward action found. */
+export type FreezeStateSnapshot = {
+    readonly frozen: boolean;
+    readonly frozenBufferId?: string;
+    readonly freezeState: {
+        readonly status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
+        readonly freezeId?: string;
+        readonly frozenBufferId?: string;
+        readonly frozenAudioHash?: string;
+        readonly sourceContentHash?: string;
+        readonly deviceChainHash?: string;
+        readonly renderSettings?: {
+            readonly sampleRate: number;
+            readonly bitDepth: number;
+            readonly channelCount: number;
+            readonly tailLengthSeconds: number;
+            readonly bakeVersion?: number;
+        };
+        readonly compensationSeconds?: number;
+        readonly renderProgress?: number;
+        readonly errorMessage?: string;
+        readonly renderedAt?: number;
+    };
 };
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
@@ -677,27 +758,7 @@ export type AppAction =
            *  rewritten by removal, and its satellite state. Emitted only by the
            *  `removeTrack` handler's `describe()` — not invoked directly. */
           type: 'restoreTrack';
-          payload: {
-              trackId: string;
-              trackSnapshot: TrackSnapshot;
-              trackName: string;
-              trackKind: TrackKind;
-              trackGain: number;
-              trackParentId: string | null;
-              trackIndex: number;
-              /** Internal context compiled only for sibling restores captured by one atomic batch. */
-              batchRestoreTracks?: readonly BatchRestoreTrackSnapshot[];
-              wasSelected: boolean;
-              routingPatches: readonly TrackRoutingPatchSnapshot[];
-              automationLaneSnapshots: readonly AutomationLaneSnapshot[];
-              midiNotesByClipId: Record<string, MidiNotesSnapshot>;
-              midiCcByClipId: Record<string, MidiCcSnapshot>;
-              midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
-              takeLaneSnapshots: readonly TakeLaneSnapshot[];
-              sidechainRouteSnapshots: readonly SidechainRouteSnapshot[];
-              ownedModulatorSnapshots: readonly ModulatorSnapshot[];
-              incomingModulationMappingSnapshots: readonly IncomingModulationMappingSnapshot[];
-          };
+          payload: RestoreTrackPayloadSnapshot;
       }
     | {
           /** Inverse of `removeClip`. Carries the removed clip and any ripple-shift plan
@@ -754,8 +815,39 @@ export type AppAction =
               expectedMidiInputOwnerId?: string | null;
           };
       }
-    | { type: 'freezeTrack'; payload: { trackId: string } }
+    | {
+          type: 'freezeTrack';
+          payload: {
+              trackId: string;
+              /**
+               * Application-owned id for the freeze this action mints, resolved before
+               * dispatch so `describe()` can name the exact post-state its inverse guards
+               * against. The rest of the resulting freeze metadata — content hash,
+               * compensation, render settings — is only knowable after the offline render,
+               * so the guard is this id: while the track still carries it, nothing has
+               * re-frozen it since. AiRuntime payload validation rejects this field.
+               */
+              freezeId?: string;
+          };
+      }
     | { type: 'unfreezeTrack'; payload: { trackId: string } }
+    | {
+          /** Guarded inverse and redo of `freezeTrack` and `unfreezeTrack`, in both
+           *  directions. Re-freezing is not an inverse of unfreeze: it re-renders the
+           *  current source and mints a new take rather than restoring the prior one. And
+           *  `unfreezeTrack` is not a complete inverse of freeze: `freezeTrack` also
+           *  accepts `stale` and `error` states that may already reference a buffer, which
+           *  a bare unfreeze would clear. This carries the whole freeze aggregate on both
+           *  sides so either direction restores exactly what was there, and conflicts when
+           *  the live track no longer matches `expected`. Emitted only by those two
+           *  handlers' `describe()`. */
+          type: 'restoreFreezeState';
+          payload: {
+              trackId: string;
+              expected: FreezeStateSnapshot;
+              replacement: FreezeStateSnapshot;
+          };
+      }
     | { type: 'flattenTrack'; payload: { trackId: string } }
     | { type: 'bounceInPlace'; payload: { trackId: string } }
     | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
@@ -957,7 +1049,12 @@ export type AppAction =
               expectedTrackOutputs?: readonly { trackId: string; outputId: string }[];
           };
       }
-    | { type: 'createFolder'; payload: { name: string } }
+    | {
+          type: 'createFolder';
+          /** `folderTrackId` is application-owned: it is materialized before `describe` so the
+           *  inverse can name the exact track this command appends. Providers cannot set it. */
+          payload: { name: string; folderTrackId?: string };
+      }
     | {
           type: 'setSend';
           payload: {
@@ -976,6 +1073,16 @@ export type AppAction =
     | { type: 'toggleInspector'; payload?: undefined }
     | { type: 'toggleChatPanel'; payload?: undefined }
     | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
+    | {
+          /** Guarded inverse and redo of `setTrackInput`. Replaying the captured prior
+           *  input unconditionally overwrites any routing change made between the forward
+           *  action and the undo — locally or through collaboration. This carries the
+           *  input the forward action left behind (`expected`) and the one to put back
+           *  (`replacement`), and conflicts when the live track no longer matches.
+           *  Emitted only by the `setTrackInput` handler's `describe()`. */
+          type: 'restoreTrackInput';
+          payload: { trackId: string; expected: string | null; replacement: string | null };
+      }
     | { type: 'setEditingTool'; payload: { tool: string } }
     | {
           type: 'setMarqueeSelection';
@@ -1244,7 +1351,39 @@ export type AppAction =
       }
     | { type: 'importMidiFile'; payload?: undefined }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
-    | { type: 'reverseClip'; payload: { clipId: string } }
+    | {
+          type: 'reverseClip';
+          payload: {
+              clipId: string;
+              /**
+               * Application-owned id for the reversed buffer this action mints, resolved
+               * before dispatch so `describe()` can name the exact post-state its inverse
+               * has to guard against. Minting it inside `execute` left the id unknowable
+               * until after the undo entry was written. AiRuntime payload validation
+               * rejects this field.
+               */
+              reversedBufferId?: string;
+          };
+      }
+    | {
+          /** Inverse and redo of `reverseClip`, in both directions. Reversing again is not
+           *  self-inverse: each run mints a new buffer id, appends another name suffix and
+           *  drops the clip's persisted pitch analysis, so undoing that way leaves changed
+           *  metadata behind and destroys the user's Knead edits for good. This restores
+           *  the buffer pointer, the name and the pitch analysis together, guarded on the
+           *  buffer the forward action left behind (`expectedAudioBufferId`) so a newer
+           *  edit conflicts instead of being overwritten. Emitted only by the
+           *  `reverseClip` handler's `describe()`. */
+          type: 'restoreReversedClip';
+          payload: {
+              clipId: string;
+              expectedAudioBufferId: string;
+              audioBufferId: string;
+              name: string;
+              blobs?: KneadPitchBlobSnapshot[];
+              contour?: PitchContourSnapshot;
+          };
+      }
     | {
           type: 'glueClips';
           payload: {
@@ -1342,6 +1481,18 @@ export type AppAction =
       }
     | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
     | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
+    | {
+          /** Guarded inverse and redo of `disableTrack`. Negating the requested value is
+           *  not an inverse: dispatching `disabled: true` at an already-disabled track
+           *  changes nothing, so replaying `disabled: false` on undo would write state the
+           *  forward action never wrote. This carries the value the forward action left
+           *  behind (`expected`) and the value to put back (`replacement`), and refuses
+           *  when the live track no longer matches — so a newer edit is reported as a
+           *  conflict instead of being silently overwritten. Emitted only by the
+           *  `disableTrack` handler's `describe()`. */
+          type: 'restoreTrackDisabled';
+          payload: { trackId: string; expected: boolean; replacement: boolean };
+      }
     | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
     | { type: 'setSnapValue'; payload: { value: number } }
     | { type: 'zoomToFit'; payload?: undefined }
@@ -1557,6 +1708,85 @@ export type AppAction =
     | { type: 'deleteTime'; payload: { startBeat: number; endBeat: number } }
     | { type: 'insertTime'; payload: { atBeat: number; durationBeats: number } }
     | { type: 'duplicateTimeRange'; payload: { startBeat: number; endBeat: number } }
+    | {
+          /** Inverse of a global time operation. The operation is not self-inverse —
+           *  deleting time discards what it shifted over — so the forward handler hands
+           *  its own restore plan here rather than replaying a counter-operation. The
+           *  plan carries expected-and-replacement state and conflicts on divergence. */
+          type: 'restoreTimeOperationState';
+          payload: { plan: TimeOperationRestorePlanSnapshot };
+      }
+    | {
+          /** Inverse of `zoomTracksVertical`. Zooming clamps every track's height into a
+           *  fixed range, so the opposite delta does not return a track that hit a bound
+           *  to the height it had. The prior heights are carried instead. */
+          type: 'restoreTrackHeights';
+          payload: { expected: readonly TrackHeightSnapshot[]; replacement: readonly TrackHeightSnapshot[] };
+      }
+    | {
+          /** Inverse of `groupTracks` / `ungroupTracks`. Grouping rewrites `groupId` on
+           *  every named track, and the tracks were not necessarily ungrouped before, so
+           *  the inverse restores the prior membership map instead of ungrouping. */
+          type: 'restoreTrackGroupMemberships';
+          payload: {
+              expected: readonly TrackGroupMembershipSnapshot[];
+              replacement: readonly TrackGroupMembershipSnapshot[];
+          };
+      }
+    | {
+          /** Inverse of `removeAllTracks`. Carries one `restoreTrack` payload per removed
+           *  track so the whole arrangement returns as a single undo unit, in the track
+           *  order it had before removal. */
+          type: 'restoreTracks';
+          payload: { restores: readonly RestoreTrackPayloadSnapshot[] };
+      }
+    | {
+          /** Inverse of clip-collection rewrites (cut, paste, strip silence, flatten,
+           *  consolidate). Replaying the forward edit cannot restore what it discarded,
+           *  so each affected track's clips and MIDI satellites are carried whole and
+           *  restored only while the live state still matches `expected`. */
+          type: 'restoreTrackClipStates';
+          payload: {
+              expected: readonly TrackClipStateSnapshot[];
+              replacement: readonly TrackClipStateSnapshot[];
+          };
+      }
+    | {
+          /** Inverse of track-creating commands (`createFolder`, `loadTrackTemplate`).
+           *  The created ids are materialized before `describe`, so the inverse names
+           *  exactly the tracks the command appended and no later sibling. */
+          type: 'discardCreatedTracks';
+          payload: { trackIds: readonly string[] };
+      }
+    | {
+          /** Inverse of `createCompGroup`. Removes exactly the materialized group and
+           *  restores the previously active group id, which creation overwrote. */
+          type: 'discardCreatedCompGroup';
+          payload: { groupId: string; expectedActiveGroupId: string | null; replacementActiveGroupId: string | null };
+      }
+    | {
+          /** Inverse of `deleteTrackAlternative`. Deletion drops the alternative, may
+           *  promote a different one and rewrites the track's live clips, so all three
+           *  are restored together under a guard on the current alternative set. */
+          type: 'restoreTrackAlternativeState';
+          payload: {
+              trackId: string;
+              expected: TrackAlternativeStateSnapshot;
+              replacement: TrackAlternativeStateSnapshot;
+          };
+      }
+    | {
+          /** Inverse of `clearScratchPad` / `commitScratchPad`. Both discard authored
+           *  state — the pad's sections, or the arrangement's existing marker sections —
+           *  and neither is replayable, so both collections are carried and guarded. */
+          type: 'restoreScratchPadState';
+          payload: {
+              expectedSections: readonly ScratchPadSectionSnapshot[];
+              replacementSections: readonly ScratchPadSectionSnapshot[];
+              expectedMarkerSections: readonly MarkerSectionSnapshot[];
+              replacementMarkerSections: readonly MarkerSectionSnapshot[];
+          };
+      }
     | { type: 'stripSilence'; payload: { clipId: string; threshold?: number; minDuration?: number } }
     | { type: 'detectTempo'; payload: { clipId: string } }
     | { type: 'detectKey'; payload: { clipId: string } }
@@ -1641,6 +1871,17 @@ export type AppAction =
       }
     | { type: 'setMidiOutput'; payload: { trackId: string; destinationTrackId: string } }
     | { type: 'clearMidiOutput'; payload: { trackId: string } }
+    | {
+          /** Guarded inverse and redo of `setMidiOutput` and `clearMidiOutput`, in both
+           *  directions. Replaying the captured prior destination through a bare set or
+           *  clear overwrites any routing change made between the forward action and the
+           *  undo. This carries the destination the forward action left behind
+           *  (`expected`) and the one to put back (`replacement`) — `null` meaning no
+           *  route — and conflicts when the live track no longer matches. Emitted only by
+           *  those two handlers' `describe()`. */
+          type: 'restoreMidiOutput';
+          payload: { trackId: string; expected: string | null; replacement: string | null };
+      }
     | {
           type: 'addNotes';
           payload: {
@@ -1732,7 +1973,12 @@ export type AppAction =
     | { type: 'switchMonitor'; payload: { monitorId: string } }
     | { type: 'getMentorTips'; payload?: undefined }
     | { type: 'searchSamples'; payload: { query: string } }
-    | { type: 'createCompGroup'; payload: { name: string; trackIds: string[] } }
+    | {
+          type: 'createCompGroup';
+          /** `groupId` is application-owned and materialized before `describe`, so the
+           *  inverse names the created group rather than guessing the newest one. */
+          payload: { name: string; trackIds: string[]; groupId?: string };
+      }
     | { type: 'togglePunchRecording'; payload?: undefined }
     | { type: 'toggleLoopRecord'; payload: { slotId: string } }
     | { type: 'triggerScene'; payload: { column: number } }
