@@ -1,11 +1,13 @@
-import { stopCrumbsRecordFeed as stopCrumbsRecordFeedRepo } from '../../repositories/audioRecorder/crumbsRecordFeed';
+import { stopCrumbsRecordFeed as stopCrumbsRecordFeedRepo } from '../../repositories/audioRecorder/stopCrumbsRecordFeed';
 
 /**
- * Disarm the monitored-input record feed.
+ * Disarm the monitored-input record feed for one crumbs instance.
  *
- * Called by the crumbs stop use case before the native stop, so no straggler
- * block lands on the bridge after the take closes. Idempotent.
+ * The shared tap stays up while any other instance is still armed, and comes
+ * down when the last one stops — so ending one take never silences another.
+ * Called before the native stop, so no straggler block lands on the bridge
+ * after the take closes. Idempotent.
  */
-export function stopCrumbsRecordFeed(): void {
-    stopCrumbsRecordFeedRepo();
+export function stopCrumbsRecordFeed(instanceId: string): void {
+    stopCrumbsRecordFeedRepo(instanceId);
 }

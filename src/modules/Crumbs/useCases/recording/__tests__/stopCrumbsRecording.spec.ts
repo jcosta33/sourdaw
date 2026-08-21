@@ -21,10 +21,11 @@ describe('stopCrumbsRecording', () => {
         stopCrumbsRecordFeed.mockClear();
     });
 
-    it('disarms the record feed before closing the take', async () => {
+    it('disarms this instance\u2019s record feed before closing the take', async () => {
         await stopCrumbsRecording('inst-A');
 
         expect(stopCrumbsRecordFeed).toHaveBeenCalledTimes(1);
+        expect(stopCrumbsRecordFeed).toHaveBeenCalledWith('inst-A');
         expect(stopRecording).toHaveBeenCalledWith('inst-A');
         // Producer first: a straggler monitored block after the native stop
         // would land on a closed take's bridge.

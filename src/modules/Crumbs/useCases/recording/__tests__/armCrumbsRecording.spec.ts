@@ -87,6 +87,7 @@ describe('armCrumbsRecording parameter validation', () => {
         // engage the feed records silence (#2231).
         await expect(armCrumbsRecording(INSTANCE, 0.5, 0, 60)).resolves.toBe(true);
         expect(startCrumbsRecordFeed).toHaveBeenCalledTimes(1);
+        expect(startCrumbsRecordFeed).toHaveBeenCalledWith(INSTANCE);
     });
 
     it('does not engage the record feed for a refused arm', async () => {

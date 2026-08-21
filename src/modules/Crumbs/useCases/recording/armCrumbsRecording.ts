@@ -42,9 +42,10 @@ export async function armCrumbsRecording(
     const safeMaxDuration = Number.isFinite(maxDurationSecs) && maxDurationSecs > 0 ? maxDurationSecs : 1;
 
     await armRecording(instanceId, safeThreshold, safeTargetPad, safeMaxDuration);
-    // The native arm is accepted: engage the record feed's producer. The
-    // native bridges it fills have no other producer — an arm without this
-    // tap captures silence (#2231). Idempotent, and inert outside desktop.
-    startCrumbsRecordFeed();
+    // The native arm is accepted: engage the record feed's producer for this
+    // instance. The native bridges it fills have no other producer — an arm
+    // without this tap captures silence (#2231). Idempotent, and inert
+    // outside desktop.
+    startCrumbsRecordFeed(instanceId);
     return true;
 }

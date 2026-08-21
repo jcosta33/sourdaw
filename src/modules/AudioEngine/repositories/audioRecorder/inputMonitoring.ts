@@ -1,6 +1,6 @@
 import { audioEngine } from '../createWebAudioEngine';
 
-import { attachCrumbsRecordFeedToMonitorSource } from './crumbsRecordFeed';
+import { attachCrumbsRecordFeedToMonitorSource } from './attachCrumbsRecordFeedToMonitorSource';
 import { inputMonitoringSession } from './inputMonitoringSession';
 
 export async function startInputMonitoring(trackId: string, inputId: string | null = null): Promise<boolean> {
