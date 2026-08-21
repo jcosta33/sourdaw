@@ -136,6 +136,18 @@ describe('guarded track restores', () => {
             expect(mocks.updateTrack).not.toHaveBeenCalled();
         });
 
+        it('refuses when the track is gone rather than treating its absence as a match', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+            expect(
+                handleRestoreMidiOutput.execute({
+                    type: 'restoreMidiOutput',
+                    payload: { trackId: 't1', expected: null, replacement: 't2' },
+                })
+            ).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
         it('reports no-write, and is a noop, when the routing already matches the replacement', () => {
             withTrack({ id: 't1', midiOutputTrackId: 't2' });
             const action = {
@@ -193,6 +205,18 @@ describe('guarded track restores', () => {
                     payload: { trackId: 't1', expected: 'in-1', replacement: 'in-2' },
                 })
             ).toEqual({ status: 'no-write' });
+        });
+
+        it('refuses when the track is gone rather than treating its absence as a match', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+            expect(
+                handleRestoreTrackInput.execute({
+                    type: 'restoreTrackInput',
+                    payload: { trackId: 't1', expected: 'in-1', replacement: 'in-2' },
+                })
+            ).toEqual({ status: 'conflict' });
+            expect(mocks.setTrackInput).not.toHaveBeenCalled();
         });
 
         it('reports no-write, and is a noop, when the input already matches the replacement', () => {

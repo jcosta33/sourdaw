@@ -23,6 +23,7 @@ import {
     isNonNullExpression,
     isObjectLiteralExpression,
     isParenthesizedExpression,
+    isPropertyAccessExpression,
     isPropertyAssignment,
     isReturnStatement,
     isSatisfiesExpression,
@@ -66,11 +67,21 @@ const UNCOVERED_INVERSE_ACTIONS = ['discardImportedStemSet'];
  * device, add and remove send, and the marker and section removals are all written the
  * same way. Every one of them was invisible to it.
  *
- * WHAT THIS READS. From an `inverseAction:`/`redoAction:` property — longhand or
- * shorthand — it follows the value through conditionals, `??`, `||` and `&&`,
- * parentheses, `as`/`satisfies`/`!`, a reference to a file-local `const`, and a call to a
- * file-local function, and takes the **own** `type` property of every object literal it
- * reaches.
+ * WHAT THIS READS. Three ways an inverse gets named: an `inverseAction:`/`redoAction:`
+ * property, its shorthand, and an assignment to a property of either name. That last one
+ * is not a variant but the whole of how the describe-then-finalize handlers work —
+ * `handleLoadTrackTemplate`, `handleDeleteTime`, `handleInsertTime` and
+ * `handleDuplicateTimeRange` all return `inverseAction: null` from `describe` as a
+ * placeholder and assign the real action in `execute`, because none of them can name their
+ * inverse before the write happens. From any of the three it follows the value through
+ * conditionals, `??`, `||` and `&&`, parentheses, `as`/`satisfies`/`!`, a reference to a
+ * file-local `const`, and a call to a file-local function, and takes the **own** `type`
+ * property of every object literal it reaches.
+ *
+ * The assignment match does not look at what is on the left of the dot. A holder called
+ * `pending` is no less an inverse than a describe result, and narrowing on the receiver
+ * would re-create the shape blindness in a subtler place. `pending.inverseAction = null`
+ * and `= undefined` name nothing and reach no literal, so they contribute nothing.
  *
  * WHAT IT STILL CANNOT SEE, named here rather than papered over:
  *  - a `type` arriving through a spread instead of an own property, as in `handleCreateBus`'s
@@ -236,6 +247,14 @@ function readInverseActionTypesInSource(path: string, text: string): string[] {
         if (isShorthandPropertyAssignment(node) && INVERSE_ACTION_KEYS.has(node.name.text)) {
             collectActionTypes(node.name, scope, types, seen);
         }
+        if (
+            isBinaryExpression(node) &&
+            node.operatorToken.kind === SyntaxKind.EqualsToken &&
+            isPropertyAccessExpression(node.left) &&
+            INVERSE_ACTION_KEYS.has(node.left.name.text)
+        ) {
+            collectActionTypes(node.right, scope, types, seen);
+        }
         forEachChild(node, visit);
     };
     visit(file);
@@ -333,6 +352,20 @@ describe('Arrangement undoable handlers audit', () => {
         const path = join(ARRANGEMENT_ROOT, 'handlers', 'track', 'setAutomationMode.ts');
         expect(readInverseActionTypesInSource(path, readFileSync(path, 'utf8'))).toContain('setAutomationMode');
         expect(readInverseActionTypes()).toContain('setAutomationMode');
+    });
+
+    it('reads an inverse assigned in execute, not only one named in a describe result', () => {
+        // `handleLoadTrackTemplate` cannot name its inverse in `describe`: a template
+        // appends any number of tracks and none of their ids exist yet. It returns
+        // `inverseAction: null` as a placeholder and assigns the real action in `execute`.
+        // The whole inverse lives in an assignment, a node kind object-literal matching
+        // never reaches, and three time-operation handlers use the same idiom.
+        //
+        // Read against this one file deliberately: `discardCreatedTracks` also appears as
+        // an ordinary literal in `createFolder.ts`, so the aggregate carries the name
+        // whether or not the assignment shape is read at all.
+        const path = join(ARRANGEMENT_ROOT, 'handlers', 'template', 'handleLoadTrackTemplate.ts');
+        expect(readInverseActionTypesInSource(path, readFileSync(path, 'utf8'))).toContain('discardCreatedTracks');
     });
 
     it('registers every action type named as an inverse or redo action', () => {
