@@ -2,6 +2,7 @@ import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 
@@ -232,7 +233,7 @@ const TemplateCard = ({
             className={`group relative flex flex-col items-start gap-2.5 rounded-xl border p-4 text-left transition-all hover:scale-[1.01] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none cursor-pointer ${colors.border} hover:${colors.border.replace('/20', '/40')} bg-surface-base/50 hover:bg-surface-raised/80`}
             onClick={() => onSelect(template.id)}
         >
-            <div className="flex w-full items-center gap-3">
+            <Row gap={3} className="w-full">
                 <div
                     className={`shrink-0 size-9 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors`}
                 >
@@ -253,7 +254,7 @@ const TemplateCard = ({
                         Demo
                     </span>
                 ) : null}
-            </div>
+            </Row>
             <p className="text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2">{template.description}</p>
         </button>
     );
@@ -271,7 +272,7 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
     }, []);
 
     return (
-        <div className="flex flex-col items-center justify-center py-14 gap-5">
+        <Stack align="center" justify="center" className="py-14 gap-5">
             {/* Animated bread icon */}
             <div className="relative">
                 <div
@@ -281,7 +282,7 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
                 <SourdawLogo className="relative h-20 drop-shadow-[0_4px_16px_rgba(217,119,6,0.3)]" />
             </div>
 
-            <div className="text-center space-y-1.5">
+            <Stack gap={1.5} className="text-center">
                 <p className="text-sm font-semibold text-foreground">
                     Baking{' '}
                     <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">
@@ -294,7 +295,7 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
                 >
                     {LOADING_MESSAGES[msgIndex]}
                 </p>
-            </div>
+            </Stack>
 
             {/* Progress shimmer */}
             <div className="w-48 h-1 rounded-full overflow-hidden bg-border/20">
@@ -314,7 +315,7 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
                     100% { transform: translateX(400%); }
                 }
             `}</style>
-        </div>
+        </Stack>
     );
 };
 
@@ -366,7 +367,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
         >
             <DialogContent className="sm:max-w-[640px] overflow-hidden">
                 <DialogHeader className="pb-0">
-                    <div className="flex items-center gap-3">
+                    <Row gap={3}>
                         <SourdawLogo className="h-7 opacity-80" paused />
                         <div>
                             <DialogTitle className="text-base">
@@ -378,7 +379,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                                     : 'Pick a recipe or start from scratch. Every great loaf begins here.'}
                             </DialogDescription>
                         </div>
-                    </div>
+                    </Row>
                 </DialogHeader>
 
                 {isLoading ? (
@@ -386,7 +387,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                 ) : (
                     <>
                         {/* Category filter pills */}
-                        <div className="flex gap-1.5 border-b border-border/50 pb-3">
+                        <Row align="stretch" gap={1.5} className="border-b border-border/50 pb-3">
                             <Button
                                 variant={activeFilter === 'all' ? 'secondary' : 'ghost'}
                                 size="xs"
@@ -412,7 +413,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                                     </Button>
                                 );
                             })}
-                        </div>
+                        </Row>
 
                         {/* Template grid */}
                         <div className="grid grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 py-1">

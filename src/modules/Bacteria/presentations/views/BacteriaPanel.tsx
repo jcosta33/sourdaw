@@ -5,7 +5,7 @@ import { Search } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Row, Stack, Grid } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
@@ -1399,7 +1399,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     title="Fast movers"
                     description="Enough motion control to shape the active mutation without going full bench mode."
                 />
-                <div className="flex flex-wrap gap-4">
+                <Row align="stretch" wrap gap={4}>
                     <K
                         deviceId={deviceId}
                         v={patch.lfo1Rate}
@@ -1443,7 +1443,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         def={200}
                         unit="ms"
                     />
-                </div>
+                </Row>
             </Stack>
         </Stack>
     );

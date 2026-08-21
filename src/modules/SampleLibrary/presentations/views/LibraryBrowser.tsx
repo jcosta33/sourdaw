@@ -14,6 +14,7 @@ import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react'
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
@@ -271,9 +272,9 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     };
 
     return (
-        <div className="flex flex-col h-full">
+        <Stack className="h-full">
             {/* ── Header ── */}
-            <div className="flex items-center gap-1 px-2 pb-1 shrink-0">
+            <Row gap={1} shrink={false} className="px-2 pb-1">
                 <button
                     type="button"
                     className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-foreground/70 hover:text-foreground hover:bg-white/[0.06] transition-colors"
@@ -325,11 +326,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                 >
                     <Star className="size-3" />
                 </button>
-            </div>
+            </Row>
 
             {/* ── Search bar ── */}
             {showSearch ? (
-                <div className="flex items-center gap-1 px-2 pb-1 shrink-0">
+                <Row gap={1} shrink={false} className="px-2 pb-1">
                     <Search className="size-3 text-muted-foreground/40 shrink-0" />
                     <DawCompactInput
                         type="text"
@@ -349,7 +350,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             <X className="size-3" />
                         </button>
                     ) : null}
-                </div>
+                </Row>
             ) : null}
 
             {/* ── Scan progress ── */}
@@ -396,7 +397,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
             {/* ── Connected roots ── */}
             {roots.length > 0 ? (
-                <div className="px-1 pb-1 space-y-0.5 shrink-0">
+                <Stack gap={0.5} shrink={false} className="px-1 pb-1">
                     {roots.map((root) => (
                         <LibraryRootCard
                             key={root.id}
@@ -412,16 +413,16 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             }
                         />
                     ))}
-                </div>
+                </Stack>
             ) : null}
 
             {/* ── File explorer ── */}
             {activeRoot ? (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <Stack grow className="overflow-hidden">
                     {/* G3: Spatial Map View */}
                     {showMap ? (
                         <div className="p-2 shrink-0 border-b border-border/10">
-                            <div className="flex items-center justify-between mb-1">
+                            <Row justify="between" className="mb-1">
                                 <span className="text-[9px] font-medium text-muted-foreground">
                                     Timbral Proximity Map
                                 </span>
@@ -434,7 +435,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                 >
                                     Re-project UMAP
                                 </button>
-                            </div>
+                            </Row>
                             <SpatialMapRenderer
                                 width={240}
                                 height={180}
@@ -450,7 +451,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
                     {/* Breadcrumb — shown when navigated into a subfolder */}
                     {currentFolder ? (
-                        <div className="flex items-center gap-1 px-2 py-1 shrink-0 border-b border-border/10 flex-wrap">
+                        <Row wrap gap={1} shrink={false} className="px-2 py-1 border-b border-border/10">
                             <button
                                 type="button"
                                 className="text-[9px] text-muted-foreground/50 hover:text-foreground transition-colors"
@@ -461,7 +462,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             {currentFolder.split('/').map((part, i, arr) => {
                                 const partPath = arr.slice(0, i + 1).join('/');
                                 return (
-                                    <span key={partPath} className="flex items-center gap-1">
+                                    <Row as="span" gap={1} key={partPath}>
                                         <span className="text-[9px] text-muted-foreground/30">/</span>
                                         <button
                                             type="button"
@@ -474,10 +475,10 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                         >
                                             {part}
                                         </button>
-                                    </span>
+                                    </Row>
                                 );
                             })}
-                        </div>
+                        </Row>
                     ) : null}
 
                     {/* Status line */}
@@ -557,8 +558,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             </div>
                         ) : null}
                     </div>
-                </div>
+                </Stack>
             ) : null}
-        </div>
+        </Stack>
     );
 };
