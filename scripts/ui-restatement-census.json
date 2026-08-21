@@ -1100,7 +1100,7 @@
   {
     "id": "ui-092a872b69891d2f",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 239,
+    "line": 240,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -3814,15 +3814,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricStrip",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-24288e13ee03b954",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 264,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-243af7b7a8757114",
@@ -7549,15 +7540,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-48ee3267a6b93a00",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 238,
-    "fingerprint": "div\tflex h-full items-center justify-center p-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-48fbcf455e76d67d",
@@ -13104,15 +13086,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-81481aeda3b77e88",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 255,
-    "fingerprint": "div\tflex flex-wrap items-center gap-4 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-814d8ed9d1637ceb",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
     "line": 160,
@@ -16254,6 +16227,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-a2a274e18743c75e",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 257,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a2d9d2a073c404ea",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx",
     "line": 118,
@@ -17579,7 +17561,7 @@
   {
     "id": "ui-b0a712e2487d17a2",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 250,
+    "line": 251,
     "fingerprint": "DawDiagramFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawDiagramFrame",
@@ -18524,7 +18506,7 @@
   {
     "id": "ui-b9787b88dac994d2",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 237,
+    "line": 238,
     "fingerprint": "DawDiagramFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawDiagramFrame",
@@ -19584,6 +19566,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-c50dfd1a5899a43f",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 256,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c52a99a4eab4aae1",
     "file": "src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx",
     "line": 42,
@@ -19762,15 +19753,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c7e7ff01fa18513e",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 260,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c7e99e0421f4bcad",
@@ -22293,6 +22275,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e1ccf0a1f75f6643",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 239,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e1f4dabf76c236e2",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 320,
@@ -22552,6 +22543,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e44b4f05e2eade3c",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 265,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e45c4aa85eeefac8",
@@ -23958,15 +23958,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-f2446abf9badda8f",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 256,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f24a6878bb1c9e5f",
     "file": "src/components/daw/DawPluginSectionHeader.tsx",
     "line": 31,
@@ -24468,6 +24459,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f79751000cbc54f5",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 261,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
