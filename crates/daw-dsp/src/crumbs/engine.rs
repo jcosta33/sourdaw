@@ -672,6 +672,18 @@ impl CrumbsEngine {
     /// saturated pool stole by age instead of taking the group that was about
     /// to be cut anyway.
     ///
+    /// A *live* voice in that group stays on offer, and the tier takes it ahead
+    /// of any unrelated note. `note_on` reserves before it chokes, and
+    /// `choke_voices_in_group` then fades every active voice in the group — the
+    /// one this scan just looked at included — so that voice is spent either
+    /// way. Stealing it is not a second loss: `move_voice_to_steal_tail` starts
+    /// the same `FADE_STOLEN_SECS` de-click one call earlier and hands the slot
+    /// to the incoming note on the same sample. Refusing it does not spare it,
+    /// because the scan then falls through to `Oldest` and cuts an unrelated
+    /// sustaining note the choke was never going to touch — two voices gone
+    /// where one was free, which is not what a drum sampler does with a hi-hat
+    /// pair.
+    ///
     /// `claimed` are the slots the current `note_on` has already handed to this
     /// note's stack. They are live but not yet fading, and they play exactly
     /// `target_note`, so without excluding them a stacked note-on steals itself.
@@ -683,20 +695,6 @@ impl CrumbsEngine {
         target_choke: u8,
         claimed: &[usize],
     ) -> Option<usize> {
-        // A voice in the incoming note's own choke group is not on offer for
-        // the note's first voice — unless it already plays that note. The choke
-        // pass owns silencing the group and leaves the slots in place to come
-        // back on their own within the 3 ms fade, so a note that would have to
-        // begin by displacing one of its own group's fresh voices is dropped,
-        // the same bounded loss taking a voice that is already fading is, and
-        // the ordering this keeps: reservation first, so a rejected note never
-        // silences the group either. A same-note retrigger is the carve-out:
-        // recycling the pad's own voice is what the top tier exists for, and
-        // the choke pass fades the rest of the group either way. Completing a
-        // stack that has already reserved a slot is the other exception — the
-        // reservation is all-or-nothing, and the group the choke is about to
-        // fade anyway is its least audible victim.
-        let first_voice_of_note = claimed.is_empty();
         let mut best_idx: Option<usize> = None;
         let mut best_priority = StealPriority::None;
         let mut quietest_idx: Option<usize> = None;
@@ -724,17 +722,6 @@ impl CrumbsEngine {
             // same reason: they are sounding, they are not fading, and taking
             // one back would silence a note the caller asked for.
             if claimed.contains(&idx) {
-                continue;
-            }
-            // And skip the note's own choke group while that exclusion holds —
-            // not by demoting the tier, which would hand the voice to the
-            // quietest fallback below, but outright. Same-note voices pass
-            // through: the carve-out above keeps their tier reachable.
-            if first_voice_of_note
-                && target_choke > 0
-                && voice.choke_group == target_choke
-                && voice.note != target_note
-            {
                 continue;
             }
 

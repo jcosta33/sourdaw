@@ -820,10 +820,20 @@ fn bessel_i0(x: f64) -> f64 {
 }
 
 fn bandlimited_work_units(tap_count: usize) -> usize {
-    // Longer sinc kernels also raise the surrounding per-voice loop cost.
-    // Weight growth above the 49-tap baseline so the engine budget preserves
-    // 128 ordinary pitch-up voices without admitting a deadline-breaking
-    // number of 161-tap voices.
+    // Longer sinc kernels also raise the surrounding per-voice loop cost, so
+    // growth above the 49-tap baseline is weighted rather than charged tap for
+    // tap — enough that a pool of 161-tap voices cannot reach a
+    // deadline-breaking count.
+    //
+    // What `MAX_RESAMPLING_WORK_UNITS` then admits follows from this weight,
+    // and it is not a flat `MAX_VOICES` at every pitch-up. The budget is
+    // `49 · MAX_VOICES`, and 49 units is the baseline kernel, which the radius
+    // floor holds through exactly one octave up — so the full pool fits only
+    // while every voice sits at or below +12 st. Above that the weight rises
+    // and the pool that fits shrinks with it: a voice at +24 st weighs 73
+    // units, so 85 of them fit and the 86th is refused. Raising the ceiling to
+    // restore the full pool at wider ratios is a real-time tradeoff against
+    // worst-case render cost, not a constant to nudge.
     tap_count.saturating_add(tap_count.saturating_sub(MIN_BANDLIMITED_TAPS) / 2)
 }
 
