@@ -62,6 +62,38 @@ const SPLIT_HEADROOM_POINTS = [
 const PLATEAU_OVERSHOOT_BEAT = 3.58;
 const PLATEAU_OVERSHOOT_SECONDS = 1.79;
 
+/**
+ * A legacy gain lane riding *up* into the headroom, so the higher of the two
+ * points bracketing the segment under test is the second one.
+ *
+ * The bracket is a maximum over both points, and every other lane in this suite
+ * and in the live evaluator's suite leaves that unobserved: a bracket is either
+ * symmetric or carries its maximum on the first point, so a bound that read
+ * `segmentFirstValue` alone would satisfy all of them. It would also flatten
+ * this ride at the declared `1` — the mirror of the defect the segment-local
+ * bound exists to fix, quieter offline rather than louder, and on the same line.
+ */
+const RISING_INTO_HEADROOM_POINTS = [
+    { beat: 0, value: 0.5, curve: 'smooth' as const, tension: 0 },
+    { beat: 2, value: 1.5, curve: 'smooth' as const, tension: 0 },
+    { beat: 4, value: 0.5, curve: 'linear' as const, tension: 0 },
+];
+
+/**
+ * A beat inside the rising segment, late enough that the curve is well past the
+ * declared `1`, and on the offline compiler's 10 ms sample grid (beat 1.8 is
+ * 0.9 s at {@link TEMPO}, an exact multiple of the interval from the segment
+ * start at 0 s).
+ *
+ * The raw curve here is ~1.4765, measured against the unmodified evaluator, and
+ * it is under the `1.5` the bracket raises the ceiling to — so this beat
+ * observes an *unclamped* value carried by the raise, not a value pinned to the
+ * ceiling that a slightly lower ceiling would also produce.
+ */
+const RISING_BEAT = 1.8;
+const RISING_SECONDS = 0.9;
+const RISING_RAW_VALUE = 1.4765;
+
 function makeLane(overrides: Partial<AutomationLane> = {}): AutomationLane {
     return {
         id: LANE_ID,
@@ -239,6 +271,37 @@ describe('offline render bounds a legacy gain lane the way the monitor does', ()
         // indistinguishable from a lane the widening never touched.
         expect(offlineGainValueAt(lane, 0)).toBeCloseTo(1.995, 10);
         expect(getAutomationValueAtBeat(LANE_ID, 0)).toBeCloseTo(1.995, 10);
+    });
+
+    /**
+     * The other operand of that bracket.
+     *
+     * The segment-locality case above is bracketed by two equal points, and the
+     * lane's other observed bracket is its own self-bracketing seed, so between
+     * them they never ask which of the two points the raise reads. Here the
+     * raise lives entirely on the second one: a bound built from
+     * `segmentFirstValue` alone would hold this rising ride at the declared `1`
+     * while the monitor plays it at ~1.4765, exporting a fade-up into the
+     * headroom as a fade-up into a wall.
+     */
+    it('raises an offline segment ceiling from its second bracketing point too', () => {
+        const lane = makeLane({ points: RISING_INTO_HEADROOM_POINTS.map((point) => ({ ...point })) });
+        seedLiveLane(lane);
+
+        const live = getAutomationValueAtBeat(LANE_ID, RISING_BEAT);
+        const offline = offlineGainValueAt(lane, RISING_SECONDS);
+
+        // Pinned to the raw curve, so a live path that stopped raising here
+        // could not drag the parity assertion down with it. It sits strictly
+        // between the declared `1` and the `1.5` the bracket raises to, which is
+        // what makes it a value the raise carried rather than one the ceiling
+        // pinned.
+        expect(live).toBeCloseTo(RISING_RAW_VALUE, 10);
+        // The offline compiler resolves a sample's beat by bisecting the time
+        // projection, so it lands within ~1e-12 of the beat the monitor is asked
+        // for outright — hence a tolerance rather than `toBe`. The gap a
+        // first-only bound opens here is ~0.48, eleven orders of magnitude wider.
+        expect(offline).toBeCloseTo(live!, 10);
     });
 
     /**

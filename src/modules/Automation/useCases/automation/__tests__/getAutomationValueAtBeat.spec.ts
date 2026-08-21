@@ -331,6 +331,13 @@ describe('getAutomationValueAtBeat — declared-range clamp', () => {
      * The overshoot bound rises with the segment's own points and no further:
      * a stored `1.5` is played, but the spline is not allowed to sail past it
      * to the derived ceiling on the strength of that point existing.
+     *
+     * Pinned to the one value the bound can produce rather than bracketed by an
+     * inequality. The raw curve here is ~1.6348 and the derived ceiling is
+     * `FADER_MAX_GAIN`, so `> 1` and `<= 1.5` together admit `1.45` as well —
+     * which is exactly what a bound that read only the segment's *first*
+     * bracketing point would return, and the segment's raise lives on its
+     * second one.
      */
     it('bounds overshoot at the segment its points describe, not at the derived ceiling', () => {
         automationStore.set({
@@ -345,8 +352,7 @@ describe('getAutomationValueAtBeat — declared-range clamp', () => {
         const value = getAutomationValueAtBeat('gain-lane', 3.2);
 
         expect(value).not.toBeNull();
-        expect(value!).toBeGreaterThan(1);
-        expect(value!).toBeLessThanOrEqual(1.5);
+        expect(value!).toBe(1.5);
     });
 
     /**
