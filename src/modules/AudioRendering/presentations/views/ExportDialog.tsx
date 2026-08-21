@@ -7,6 +7,7 @@ import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
@@ -759,13 +760,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const renderOvenStatus = (): ReactElement => {
         if (exporting || progress === 100) {
             return (
-                <div className="space-y-1.5 animate-in fade-in duration-300">
-                    <div className="flex items-end justify-between text-xs">
+                <Stack gap={1.5} className="animate-in fade-in duration-300">
+                    <Row align="end" justify="between" className="text-xs">
                         <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
                             {statusText}
                         </span>
                         <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
-                    </div>
+                    </Row>
                     <div
                         className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
                         role="progressbar"
@@ -786,20 +787,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             ) : null}
                         </div>
                     </div>
-                </div>
+                </Stack>
             );
         }
         if (errorText) {
             return (
-                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                <Row className="h-full rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
                     {errorText}
-                </div>
+                </Row>
             );
         }
         return (
-            <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+            <Stack justify="center" className="h-full text-center text-[10px] uppercase tracking-widest text-stone-500">
                 {isNativeProjectRuntimeAvailable() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
-            </div>
+            </Stack>
         );
     };
 
@@ -832,7 +833,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         }
         return (
             <>
-                <Button variant="ghost" size="sm" onClick={onClose} data-testid="export-cancel" className="text-stone-400 hover:text-stone-200">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onClose}
+                    data-testid="export-cancel"
+                    className="text-stone-400 hover:text-stone-200"
+                >
                     Cancel
                 </Button>
                 <Button
@@ -935,7 +942,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     </DawDialogSection>
 
                     <DawDialogSection tone="warm" title="Render Range">
-                        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Render range">
+                        <Stack gap={1.5} role="radiogroup" aria-label="Render range">
                             <RangeRadio
                                 label="Whole project"
                                 value="project"
@@ -965,12 +972,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 onChange={setRange}
                                 disabled={exporting || !marqueeAvailable}
                             />
-                        </div>
+                        </Stack>
                     </DawDialogSection>
 
                     <DawDialogSection tone="warm" title="Tail" detail="Extra seconds so reverb/delay can ring out.">
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2">
+                        <Row gap={3}>
+                            <Row gap={2}>
                                 <input
                                     type="number"
                                     min={0}
@@ -988,8 +995,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     className="w-20 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1 text-xs text-stone-200 disabled:opacity-40"
                                 />
                                 <span className="text-[10px] text-stone-500">seconds</span>
-                            </div>
-                            <label className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                            </Row>
+                            <Row as="label" gap={1.5} className="text-[11px] text-stone-400">
                                 <input
                                     type="checkbox"
                                     checked={autoTail}
@@ -998,7 +1005,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     className="accent-orange-500"
                                 />
                                 Auto-detect
-                            </label>
+                            </Row>
                             {autoTail ? (
                                 <AutoDetectedTailLabel
                                     honorMuted={mode !== 'stems'}
@@ -1007,7 +1014,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     automationLanes={automation.lanes}
                                 />
                             ) : null}
-                        </div>
+                        </Row>
                     </DawDialogSection>
 
                     {mode === 'render-to-clip' ? (
@@ -1084,7 +1091,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     >
                                         Sample Rate
                                     </DawEyebrowLabel>
-                                    <div className="flex flex-wrap gap-1">
+                                    <Row align="stretch" wrap gap={1}>
                                         {sampleRates.map((sr) => (
                                             <Button
                                                 key={sr}
@@ -1101,7 +1108,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 {(sr / 1000).toFixed(1)}k
                                             </Button>
                                         ))}
-                                    </div>
+                                    </Row>
                                 </div>
 
                                 <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
@@ -1111,7 +1118,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     >
                                         Bit Depth
                                     </DawEyebrowLabel>
-                                    <div className="flex flex-wrap gap-1">
+                                    <Row align="stretch" wrap gap={1}>
                                         {availableBitDepths.map((bd) => (
                                             <Button
                                                 key={bd}
@@ -1128,7 +1135,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 {bd}-bit
                                             </Button>
                                         ))}
-                                    </div>
+                                    </Row>
                                 </div>
 
                                 <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
@@ -1138,7 +1145,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     >
                                         Loudness
                                     </DawEyebrowLabel>
-                                    <div className="flex flex-wrap gap-1">
+                                    <Row align="stretch" wrap gap={1}>
                                         {(
                                             [
                                                 { value: 'off', label: 'As mixed' },
@@ -1160,7 +1167,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 {option.label}
                                             </Button>
                                         ))}
-                                    </div>
+                                    </Row>
                                     <p className="mt-1.5 text-[10px] text-stone-600">
                                         Measures programme loudness and inter-sample peaks, then applies one gain to
                                         reach the target without exceeding {R128_CEILING_DB_TP} dBTP.
@@ -1174,7 +1181,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     >
                                         Dither
                                     </DawEyebrowLabel>
-                                    <div className="flex flex-wrap gap-1">
+                                    <Row align="stretch" wrap gap={1}>
                                         {(
                                             [
                                                 { value: 'random', label: 'Random' },
@@ -1197,7 +1204,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 {option.label}
                                             </Button>
                                         ))}
-                                    </div>
+                                    </Row>
                                     <p className="mt-1.5 text-[10px] text-stone-600">
                                         Repeatable re-exports the same project to identical bytes. Off skips dither
                                         entirely for a bit-exact bounce.
@@ -1212,7 +1219,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         >
                                             MP3 Quality
                                         </DawEyebrowLabel>
-                                        <div className="flex flex-wrap gap-1">
+                                        <Row align="stretch" wrap gap={1}>
                                             {([96, 128, 192, 320] as Mp3BitRate[]).map((br) => (
                                                 <Button
                                                     key={br}
@@ -1229,7 +1236,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                     {br}k
                                                 </Button>
                                             ))}
-                                        </div>
+                                        </Row>
                                     </div>
                                 ) : null}
                             </DawDialogSection>
