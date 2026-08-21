@@ -17,6 +17,40 @@ function injectStorage(bridge: ReturnType<typeof createDdspStorageTestHarness>['
 }
 
 describe('checkDdspInstrumentReady', () => {
+    it.each([
+        [
+            'invalid JSON',
+            (_harness: ReturnType<typeof createDdspStorageTestHarness>) => new TextEncoder().encode('{').buffer,
+        ],
+        [
+            'a current version absent from generations',
+            (harness: ReturnType<typeof createDdspStorageTestHarness>) =>
+                harness.bytes({ schemaVersion: 1, currentVersion: harness.storage.version, generations: {} }),
+        ],
+        [
+            'an unsafe indexed artifact id',
+            (harness: ReturnType<typeof createDdspStorageTestHarness>) =>
+                harness.bytes({
+                    schemaVersion: 1,
+                    currentVersion: harness.storage.version,
+                    generations: {
+                        [harness.storage.version]: {
+                            artifactIds: [`${harness.instrument.id}/${harness.storage.version}/../outside.bin`],
+                            readyMarkerId: `${harness.instrument.id}/${harness.storage.version}/.ready.json`,
+                        },
+                    },
+                }),
+        ],
+    ])('fails closed before artifact verification for %s', async (_case, indexBytes) => {
+        const harness = createDdspStorageTestHarness();
+        harness.files.set(harness.indexModelId, indexBytes(harness));
+        injectStorage(harness.bridge);
+
+        await expect(checkDdspInstrumentReady(harness.storage)).resolves.toBe(false);
+
+        expect(harness.bridge.verifyModel).not.toHaveBeenCalled();
+    });
+
     it.each(['missing', 'wrong'] as const)(
         'fails closed with a current index and valid artifacts but a %s ready marker',
         async (kind) => {
