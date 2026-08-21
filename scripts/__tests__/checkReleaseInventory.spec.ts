@@ -8,6 +8,8 @@ import {
     audioWorkletReleaseInventoryContract,
     loadRepositorySnapshot,
     REQUIRED_SNAPSHOT_PATHS,
+    TRADEMARK_NOTICE_PATH,
+    trademarkReleaseInventoryContract,
     type ReleaseInventory,
     type RepositorySnapshot,
     validateReleaseInventory,
@@ -54,6 +56,24 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('binds the shipped trademark notice', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-trademark-notice-'));
+        const legal = join(root, 'public/legal');
+        mkdirSync(legal, { recursive: true });
+        writeFileSync(join(root, TRADEMARK_NOTICE_PATH), 'notice');
+
+        try {
+            const before = trademarkReleaseInventoryContract(root);
+            expect(TRADEMARK_NOTICE_PATH).toBe('public/legal/TRADEMARKS.md');
+            expect(before.licenses).toEqual(['not-applicable:trademark-rights-not-granted']);
+
+            writeFileSync(join(root, TRADEMARK_NOTICE_PATH), 'changed');
+            expect(trademarkReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds direct worklet source bytes without inventing a generator', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-worklet-provenance-'));
         const worklets = join(root, 'public/audio/worklets');
@@ -192,6 +212,22 @@ describe('release inventory', () => {
                 'required marks missing from inventory:\n- Roland',
                 'Neve: paths must be non-empty',
             ])
+        );
+    });
+
+    it('requires the trademark notice beside every classified mark path', () => {
+        const value = inventory();
+        value.surfaces.push({
+            ...value.surfaces[0]!,
+            id: 'third-party-marks',
+            paths: ['src/provider.ts'],
+        });
+        value.marks = [{ value: 'Roland', paths: ['src/provider.ts'] }];
+        const state = snapshot();
+        state.markPaths = { Roland: ['src/provider.ts'] };
+
+        expect(validateReleaseInventory(value, state, ['Roland'])).toContain(
+            `third-party-marks: required notice missing: ${TRADEMARK_NOTICE_PATH}`
         );
     });
 
