@@ -174,6 +174,42 @@ describe('migrateActiveProjectIdentity', () => {
         });
     });
 
+    it('does not let a rejected superseded migration roll back its successor', async () => {
+        const firstPersistence = Promise.withResolvers<void>();
+        const secondPersistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject
+            .mockReturnValueOnce(firstPersistence.promise)
+            .mockReturnValueOnce(secondPersistence.promise);
+        mocks.project.value = legacyProject('first-invalid-id');
+
+        const first = migrateActiveProjectIdentity();
+
+        mocks.project.value = {
+            ...legacyProject('second-invalid-id'),
+            name: 'Successor Legacy Project',
+        };
+        const second = migrateActiveProjectIdentity();
+        const successorCandidate = mocks.project.value?.projectId;
+        expect(isCanonicalProjectId(successorCandidate)).toBe(true);
+
+        const firstFailure = new Error('superseded persistence failed');
+        firstPersistence.reject(firstFailure);
+        await expect(first).rejects.toBe(firstFailure);
+        expect(mocks.project.value).toMatchObject({
+            name: 'Successor Legacy Project',
+            projectId: successorCandidate,
+            identityMigrationPending: true,
+        });
+
+        secondPersistence.resolve();
+        await expect(second).resolves.toBe(true);
+        expect(mocks.project.value).toMatchObject({
+            name: 'Successor Legacy Project',
+            projectId: successorCandidate,
+            identityMigrationPending: false,
+        });
+    });
+
     it('restores the original projection when the first CRDT flush throws and permits retry', async () => {
         const failure = new Error('CRDT flush failed');
         mocks.project.value = legacyProject('not-a-uuid');
