@@ -41,19 +41,26 @@ test.describe('MIDI note velocity and piano-roll chrome', () => {
 
     test('stamping a note on the piano roll round-trips through undo and redo', async ({ page }) => {
         const pianoRoll = page.getByLabel('Piano roll editor');
+        const noteCount = page.getByLabel(/notes? in /i);
         const undo = page.getByRole('button', { name: 'Undo', exact: true });
         const redo = page.getByRole('button', { name: 'Redo', exact: true });
+        const paint = page.getByRole('button', { name: 'Toggle paint mode' });
 
-        await pianoRoll.click({ position: { x: 80, y: 80 } });
+        await expect(noteCount).toHaveText('0 notes');
+        await expect(paint).not.toHaveAttribute('aria-pressed', 'true');
+        await paint.click();
+        await expect(paint).toHaveAttribute('aria-pressed', 'true');
+
+        await pianoRoll.click({ position: { x: 200, y: 130 } });
+        await expect(noteCount).toHaveText('1 note');
         await expect(undo).toBeEnabled();
 
         await undo.click();
-        await expect(pianoRoll).toBeVisible();
+        await expect(noteCount).toHaveText('0 notes');
         await expect(redo).toBeEnabled();
 
         await redo.click();
-        await expect(pianoRoll).toBeVisible();
-        await expect(undo).toBeEnabled();
+        await expect(noteCount).toHaveText('1 note');
     });
 
     test('Expression view opens the velocity lane by default', async ({ page }) => {
