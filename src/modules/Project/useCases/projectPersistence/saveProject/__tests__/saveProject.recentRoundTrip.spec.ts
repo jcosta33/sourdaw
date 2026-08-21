@@ -120,6 +120,9 @@ function makeProjectData(): ProjectData {
     return {
         version: CURRENT_PROJECT_VERSION,
         meta: {
+            // Required by isHydratableProjectData; this fixture predates
+            // that hardening.
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             name: PROJECT_NAME,
             createdAt: CREATED_AT,
             updatedAt: CREATED_AT,

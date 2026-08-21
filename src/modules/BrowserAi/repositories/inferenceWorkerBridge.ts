@@ -15,8 +15,17 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
+import { type DdspArtifact } from '../models/DdspArtifactManifest';
+import {
+    type DdspSettings,
+    type DdspStoredArtifact,
+    type WorkerRequest,
+    type WorkerResponse,
+} from '../models/InferenceRequest';
+import { computeDdspSessionKey } from '../services/computeDdspSessionKey';
 import { updateActiveRenderProgress } from '../stores/inferenceProgressStore';
+
+import { modelStorageWorkerBridge } from './modelStorageWorkerBridge';
 
 type PendingRequest = {
     resolve: (value: WorkerResponse) => void;
@@ -34,17 +43,24 @@ const workerState: {
     onnx: WorkerState;
     tfjs: WorkerState;
     tfjsIdleTimer: ReturnType<typeof setTimeout> | null;
+    tfjsShutdownPromise: Promise<void> | null;
 } = {
     onnx: { worker: null, pendingRequests: new Map(), initialized: false },
     tfjs: { worker: null, pendingRequests: new Map(), initialized: false },
     tfjsIdleTimer: null,
+    tfjsShutdownPromise: null,
 };
 
 const TFJS_IDLE_TIMEOUT_MS = 60_000; // 1 minute — destroy TF.js worker after idle
 
-function createMessageHandler(state: WorkerState): (event: MessageEvent<WorkerResponse>) => void {
+function createMessageHandler(state: WorkerState, worker: Worker): (event: MessageEvent<WorkerResponse>) => void {
     return (event: MessageEvent<WorkerResponse>): void => {
         const msg = event.data;
+
+        if (msg.type === 'worker-fatal-error') {
+            resetWorkerAfterFailure(state, worker, new Error(msg.error));
+            return;
+        }
 
         // Progress events don't resolve a pending request
         if (msg.type === 'inference-progress') {
@@ -79,6 +95,116 @@ function toError(reason: unknown, fallback: string): Error {
     return new Error(typeof reason === 'string' && reason ? reason : fallback);
 }
 
+function createAbortError(): DOMException {
+    return new DOMException('Render cancelled', 'AbortError');
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+    if (signal?.aborted) {
+        throw createAbortError();
+    }
+}
+
+async function waitForAbortableTfjsRequest<TResult>(
+    request: Promise<TResult>,
+    requestId: string,
+    signal: AbortSignal | undefined
+): Promise<TResult> {
+    if (signal === undefined) {
+        return request;
+    }
+    const cancel = (): void => inferenceWorkerBridge.cancelTfjsRequest(requestId);
+    if (signal.aborted) {
+        cancel();
+    }
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+        return await request;
+    } finally {
+        signal.removeEventListener('abort', cancel);
+    }
+}
+
+async function waitForAbortableModelRead(
+    read: Promise<MessagePort | null>,
+    signal: AbortSignal | undefined
+): Promise<MessagePort | null> {
+    if (signal === undefined) {
+        return read;
+    }
+    if (signal.aborted) {
+        void read.then(
+            (port) => port?.close(),
+            () => undefined
+        );
+        throw createAbortError();
+    }
+    return new Promise((resolve, reject) => {
+        let aborted = false;
+        const cancel = (): void => {
+            aborted = true;
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', cancel, { once: true });
+        void read.then(
+            (port) => {
+                signal.removeEventListener('abort', cancel);
+                if (aborted) {
+                    port?.close();
+                    return;
+                }
+                resolve(port);
+            },
+            (error: unknown) => {
+                signal.removeEventListener('abort', cancel);
+                if (!aborted) {
+                    reject(error);
+                }
+            }
+        );
+    });
+}
+
+async function waitForAbortableShutdown(shutdown: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+    if (signal === undefined) {
+        await shutdown.catch(() => undefined);
+        return;
+    }
+    throwIfAborted(signal);
+    await new Promise<void>((resolve, reject) => {
+        const cancel = (): void => {
+            signal.removeEventListener('abort', cancel);
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', cancel, { once: true });
+        void shutdown.then(
+            () => {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            },
+            () => {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            }
+        );
+    });
+}
+
+function stopWorker(state: WorkerState, stoppedWorker: Worker): void {
+    stoppedWorker.onmessage = null;
+    stoppedWorker.onerror = null;
+    stoppedWorker.onmessageerror = null;
+    stoppedWorker.terminate();
+    if (state.worker === stoppedWorker) {
+        state.worker = null;
+        state.initialized = false;
+    }
+    if (state === workerState.tfjs && workerState.tfjsIdleTimer !== null) {
+        clearTimeout(workerState.tfjsIdleTimer);
+        workerState.tfjsIdleTimer = null;
+    }
+}
+
 function resetWorkerAfterFailure(state: WorkerState, failedWorker: Worker, reason: Error): void {
     if (state.worker !== failedWorker) {
         return;
@@ -87,13 +213,7 @@ function resetWorkerAfterFailure(state: WorkerState, failedWorker: Worker, reaso
         reject(reason);
     }
     state.pendingRequests.clear();
-    failedWorker.terminate();
-    state.worker = null;
-    state.initialized = false;
-    if (state === workerState.tfjs && workerState.tfjsIdleTimer !== null) {
-        clearTimeout(workerState.tfjsIdleTimer);
-        workerState.tfjsIdleTimer = null;
-    }
+    stopWorker(state, failedWorker);
 }
 
 function installFailureHandlers(state: WorkerState, worker: Worker, label: string): void {
@@ -112,43 +232,70 @@ async function getOnnxWorker(): Promise<Worker> {
     }
 
     const worker = new Worker(new URL('../workers/onnxInferenceWorker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = createMessageHandler(workerState.onnx);
+    worker.onmessage = createMessageHandler(workerState.onnx, worker);
     workerState.onnx.worker = worker;
     workerState.onnx.initialized = true;
     installFailureHandlers(workerState.onnx, worker, 'ONNX');
     return worker;
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await -- consistent async API; callers await this; worker creation is currently synchronous
-async function getTfjsWorker(): Promise<Worker> {
+async function getTfjsWorker(signal?: AbortSignal): Promise<Worker> {
     // Reset idle timer
     if (workerState.tfjsIdleTimer !== null) {
         clearTimeout(workerState.tfjsIdleTimer);
         workerState.tfjsIdleTimer = null;
     }
 
+    if (workerState.tfjsShutdownPromise !== null) {
+        await waitForAbortableShutdown(workerState.tfjsShutdownPromise, signal);
+    }
+    throwIfAborted(signal);
+
     if (workerState.tfjs.worker && workerState.tfjs.initialized) {
         return workerState.tfjs.worker;
     }
 
     const worker = new Worker(new URL('../workers/tfjsInferenceWorker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = createMessageHandler(workerState.tfjs);
+    worker.onmessage = createMessageHandler(workerState.tfjs, worker);
     workerState.tfjs.worker = worker;
     workerState.tfjs.initialized = true;
     installFailureHandlers(workerState.tfjs, worker, 'TF.js');
     return worker;
 }
 
+async function disposeTfjsWorker(worker: Worker): Promise<void> {
+    const requestId = crypto.randomUUID();
+    try {
+        const response = await sendRequest(worker, workerState.tfjs, { type: 'dispose-worker', requestId });
+        if (response.type !== 'worker-disposed') {
+            throw new Error(`TF.js worker did not confirm disposal: ${response.type}`);
+        }
+    } finally {
+        if (workerState.tfjs.worker === worker) {
+            stopWorker(workerState.tfjs, worker);
+        }
+    }
+}
+
 function scheduleTfjsDestroy(): void {
-    if (workerState.tfjsIdleTimer !== null) {
+    if (
+        workerState.tfjsIdleTimer !== null ||
+        workerState.tfjs.worker === null ||
+        workerState.tfjsShutdownPromise !== null
+    ) {
         return;
     }
     workerState.tfjsIdleTimer = setTimeout(() => {
-        if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
-            workerState.tfjs.worker.terminate();
-            workerState.tfjs.worker = null;
-            workerState.tfjs.initialized = false;
-            workerState.tfjsIdleTimer = null;
+        workerState.tfjsIdleTimer = null;
+        const worker = workerState.tfjs.worker;
+        if (workerState.tfjs.pendingRequests.size === 0 && worker !== null) {
+            const tracked = disposeTfjsWorker(worker).finally(() => {
+                if (workerState.tfjsShutdownPromise === tracked) {
+                    workerState.tfjsShutdownPromise = null;
+                }
+            });
+            workerState.tfjsShutdownPromise = tracked;
+            void tracked.catch(() => undefined);
         }
     }, TFJS_IDLE_TIMEOUT_MS);
 }
@@ -199,12 +346,82 @@ type RunDiffSingerInput = Extract<WorkerRequest, { type: 'run-diffsinger-phrase'
 
 type RunDdspInput = Extract<WorkerRequest, { type: 'run-ddsp-inference' }>;
 
+type LoadDdspSessionInput = {
+    artifactVersion: string;
+    artifacts: readonly DdspArtifact[];
+    instrumentId: string;
+    requestId?: string;
+};
+
+const DDSP_ARTIFACT_PATHS = ['model.json', 'group1-shard1of1.bin', 'settings.json'] as const;
+
+function validateDdspArtifacts(artifacts: readonly DdspArtifact[]): void {
+    const paths = artifacts.map(({ path }) => path);
+    if (
+        paths.length !== DDSP_ARTIFACT_PATHS.length ||
+        new Set(paths).size !== paths.length ||
+        !DDSP_ARTIFACT_PATHS.every((path) => paths.includes(path))
+    ) {
+        throw new Error('DDSP artifact manifest is incomplete');
+    }
+}
+
+async function readDdspArtifacts(
+    { artifactVersion, artifacts, instrumentId }: LoadDdspSessionInput,
+    signal?: AbortSignal
+): Promise<DdspStoredArtifact[]> {
+    validateDdspArtifacts(artifacts);
+    const storedArtifacts: DdspStoredArtifact[] = [];
+    try {
+        for (const artifact of artifacts) {
+            throwIfAborted(signal);
+            const modelDataPort = await waitForAbortableModelRead(
+                modelStorageWorkerBridge.readModel({
+                    family: 'ddsp',
+                    modelId: `${instrumentId}/${artifactVersion}/${artifact.path}`,
+                    expectedSizeBytes: artifact.sizeBytes,
+                    expectedSha256: artifact.sha256,
+                }),
+                signal
+            );
+            if (modelDataPort === null) {
+                throw new Error(`Verified DDSP artifact is missing: ${artifact.path}`);
+            }
+            storedArtifacts.push({
+                path: artifact.path,
+                sizeBytes: artifact.sizeBytes,
+                sha256: artifact.sha256,
+                modelDataPort,
+            });
+        }
+        throwIfAborted(signal);
+        return storedArtifacts;
+    } catch (error) {
+        for (const artifact of storedArtifacts) {
+            artifact.modelDataPort.close();
+        }
+        throw error;
+    }
+}
+
 function isOnnxExecutionProviderList(value: unknown): value is Array<'webgpu' | 'wasm'> {
     if (!Array.isArray(value) || value.length === 0) {
         return false;
     }
     const providers = new Set(value);
     return providers.size === value.length && value.every((provider) => provider === 'webgpu' || provider === 'wasm');
+}
+
+function isOnnxSessionResponse(
+    response: WorkerResponse
+): response is Extract<WorkerResponse, { type: 'session-created'; modelId: string }> {
+    return response.type === 'session-created' && 'modelId' in response;
+}
+
+function isDdspSessionResponse(
+    response: WorkerResponse
+): response is Extract<WorkerResponse, { type: 'session-created'; sessionKey: string }> {
+    return response.type === 'session-created' && 'sessionKey' in response;
 }
 
 /**
@@ -238,7 +455,7 @@ export const inferenceWorkerBridge = {
             response = await sendRequest(worker, workerState.onnx, request, [input.modelData]);
         }
         if (
-            response.type !== 'session-created' ||
+            !isOnnxSessionResponse(response) ||
             response.modelId !== modelId ||
             !isOnnxExecutionProviderList(response.executionProviders)
         ) {
@@ -261,12 +478,57 @@ export const inferenceWorkerBridge = {
         return response.type === 'status' ? response.loadedModels : [];
     },
 
-    async loadDdspSession({ modelId, modelUrl }: { modelId: string; modelUrl: string }): Promise<void> {
-        logger.info(`[WorkerBridge] Loading DDSP (TF.js) session from URL: ${modelId}`);
-        const worker = await getTfjsWorker();
-        const requestId = crypto.randomUUID();
-        const request: WorkerRequest = { type: 'create-session-from-url', requestId, modelId, modelUrl };
-        await sendRequest(worker, workerState.tfjs, request);
+    async loadDdspSession(
+        input: LoadDdspSessionInput,
+        signal?: AbortSignal
+    ): Promise<{ sessionKey: string; backend: 'webgpu'; modelFrameLength: number; settings: DdspSettings }> {
+        throwIfAborted(signal);
+        const sessionKey = await computeDdspSessionKey(input);
+        logger.info(`[WorkerBridge] Loading verified DDSP session: ${sessionKey}`);
+        const artifacts = await readDdspArtifacts(input, signal);
+        let handedOff = false;
+        try {
+            const worker = await getTfjsWorker(signal);
+            throwIfAborted(signal);
+            const requestId = input.requestId ?? crypto.randomUUID();
+            const request: WorkerRequest = {
+                type: 'create-ddsp-session',
+                requestId,
+                sessionKey,
+                artifacts,
+            };
+            const pending = sendRequest(
+                worker,
+                workerState.tfjs,
+                request,
+                artifacts.map(({ modelDataPort }) => modelDataPort)
+            );
+            handedOff = true;
+            const response = await waitForAbortableTfjsRequest(pending, requestId, signal);
+            if (
+                !isDdspSessionResponse(response) ||
+                response.sessionKey !== sessionKey ||
+                response.backend !== 'webgpu' ||
+                !Number.isSafeInteger(response.modelFrameLength) ||
+                response.modelFrameLength <= 0 ||
+                response.settings.modelMaxFrameLength !== response.modelFrameLength
+            ) {
+                throw new Error(`Unexpected DDSP session response: ${response.type}`);
+            }
+            return {
+                sessionKey: response.sessionKey,
+                backend: response.backend,
+                modelFrameLength: response.modelFrameLength,
+                settings: response.settings,
+            };
+        } finally {
+            if (!handedOff) {
+                for (const artifact of artifacts) {
+                    artifact.modelDataPort.close();
+                }
+            }
+            scheduleTfjsDestroy();
+        }
     },
 
     async runKokoroTts(input: RunKokoroInput): Promise<Extract<WorkerResponse, { type: 'tts-result' }>> {
@@ -288,11 +550,26 @@ export const inferenceWorkerBridge = {
         return response as Extract<WorkerResponse, { type: 'diffsinger-result' }>;
     },
 
-    async runDdspInference(input: RunDdspInput): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
-        const worker = await getTfjsWorker();
-        const response = await sendRequest(worker, workerState.tfjs, input);
-        scheduleTfjsDestroy();
-        return response as Extract<WorkerResponse, { type: 'ddsp-result' }>;
+    async runDdspInference(
+        input: RunDdspInput,
+        signal?: AbortSignal
+    ): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
+        throwIfAborted(signal);
+        const worker = await getTfjsWorker(signal);
+        throwIfAborted(signal);
+        try {
+            const response = await waitForAbortableTfjsRequest(
+                sendRequest(worker, workerState.tfjs, input, [input.f0Hz.buffer, input.loudnessDb.buffer]),
+                input.requestId,
+                signal
+            );
+            if (response.type !== 'ddsp-result' || response.backend !== 'webgpu') {
+                throw new Error(`Unexpected DDSP inference response: ${response.type}`);
+            }
+            return response;
+        } finally {
+            scheduleTfjsDestroy();
+        }
     },
 
     // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API
@@ -304,14 +581,32 @@ export const inferenceWorkerBridge = {
         workerState.onnx.worker.postMessage(request);
     },
 
-    // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API
-    async releaseDdspSession(modelId: string): Promise<void> {
+    async releaseDdspSession(sessionKey: string): Promise<void> {
+        if (workerState.tfjsShutdownPromise !== null) {
+            await workerState.tfjsShutdownPromise.catch(() => undefined);
+        }
         if (!workerState.tfjs.worker) {
             return;
         }
-        const request: WorkerRequest = { type: 'release-session', modelId };
-        workerState.tfjs.worker.postMessage(request);
-        scheduleTfjsDestroy();
+        if (workerState.tfjsIdleTimer !== null) {
+            clearTimeout(workerState.tfjsIdleTimer);
+            workerState.tfjsIdleTimer = null;
+        }
+        const worker = workerState.tfjs.worker;
+        const requestId = crypto.randomUUID();
+        const request: WorkerRequest = { type: 'release-ddsp-session', requestId, sessionKey };
+        try {
+            const response = await sendRequest(worker, workerState.tfjs, request);
+            if (
+                response.type !== 'ddsp-session-released' ||
+                response.requestId !== requestId ||
+                response.sessionKey !== sessionKey
+            ) {
+                throw new Error(`Unexpected DDSP release response: ${response.type}`);
+            }
+        } finally {
+            scheduleTfjsDestroy();
+        }
     },
 
     /**
@@ -361,7 +656,7 @@ export const inferenceWorkerBridge = {
 
     /**
      * Cancel a single in-flight DDSP (TF.js) render without disturbing siblings.
-     * Mirror of cancelOnnxRequest — see that method for the rationale.
+     * The worker receives the same request id and aborts only that runtime task.
      */
     cancelTfjsRequest(requestId: string): void {
         const pending = workerState.tfjs.pendingRequests.get(requestId);
@@ -369,16 +664,17 @@ export const inferenceWorkerBridge = {
             return;
         }
         workerState.tfjs.pendingRequests.delete(requestId);
-        pending.reject(new Error('Render cancelled'));
-        if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
-            workerState.tfjs.worker.terminate();
-            workerState.tfjs.worker = null;
-            workerState.tfjs.initialized = false;
-            if (workerState.tfjsIdleTimer !== null) {
-                clearTimeout(workerState.tfjsIdleTimer);
-                workerState.tfjsIdleTimer = null;
+        pending.reject(createAbortError());
+        const worker = workerState.tfjs.worker;
+        if (worker) {
+            try {
+                worker.postMessage({ type: 'cancel-request', requestId } satisfies WorkerRequest);
+            } catch (error) {
+                resetWorkerAfterFailure(workerState.tfjs, worker, toError(error, 'TF.js cancellation failed'));
+                return;
             }
         }
+        scheduleTfjsDestroy();
     },
 
     /**
@@ -390,15 +686,15 @@ export const inferenceWorkerBridge = {
             reject(new Error('Render cancelled'));
         }
         workerState.tfjs.pendingRequests.clear();
-        if (workerState.tfjs.worker) {
-            workerState.tfjs.worker.terminate();
-            workerState.tfjs.worker = null;
-            workerState.tfjs.initialized = false;
+        const worker = workerState.tfjs.worker;
+        if (worker) {
+            stopWorker(workerState.tfjs, worker);
         }
         if (workerState.tfjsIdleTimer !== null) {
             clearTimeout(workerState.tfjsIdleTimer);
             workerState.tfjsIdleTimer = null;
         }
+        workerState.tfjsShutdownPromise = null;
     },
 
     terminateAll(): void {

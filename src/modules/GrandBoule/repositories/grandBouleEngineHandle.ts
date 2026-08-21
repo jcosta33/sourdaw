@@ -1,5 +1,5 @@
 /**
- * Thin I/O wrapper around the `GrandBouleInstance` WASM export.
+ * Thin I/O contract for the retained Grand Boule engine host.
  *
  * The runtime graph wiring (AudioWorklet construction, SharedArrayBuffer
  * plumbing, device-registry integration) lives in the AudioEngine module in
@@ -46,9 +46,9 @@ export type GrandBouleEngineHandle = {
 };
 
 /**
- * A no-op handle used before the audio engine has instantiated the WASM
- * module. Keeps the call sites in use cases branchless and allows them to
- * be exercised in unit tests without WASM.
+ * A no-op handle used while release admission withholds engine construction.
+ * Keeps use-case call sites branchless and supports focused tests without a
+ * distributed constructor.
  */
 export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHandle {
     return {

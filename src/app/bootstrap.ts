@@ -119,7 +119,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
 import {
-    doesProductionBriefAllowActionBatch,
+    productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
     initProjectDirtyTracking,
     migrateLegacyProjectSnapshots,
@@ -181,7 +181,7 @@ setActionHistoryMetadataPort({
     markReverted: markActionHistoryEntryReverted,
     clear: clearCrdtActionHistory,
 });
-productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 configureRuntimeGraphProjectRevisionValidator(
     (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision

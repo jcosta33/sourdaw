@@ -228,7 +228,11 @@ export const EffectsTab = ({
                         badge="MIDI FX"
                         description="Arpeggiator · Chord Generator · Scale Filter"
                         onClick={() => {
-                            addDeviceThroughAction('yeast', () => panelActions?.showYeast(null));
+                            // The new device's own id, not `null`: Yeast rack
+                            // state is per device instance, so the panel must
+                            // open bound to the device it just added
+                            // (issue #2422).
+                            addDeviceThroughAction('yeast', (deviceId) => panelActions?.showYeast(deviceId));
                         }}
                         theme={YEAST_THEME}
                     />

@@ -60,15 +60,35 @@ function createLockManager(): { locks: Pick<LockManager, 'request'>; names: stri
                 return Promise.reject(new TypeError('Lock callback is required'));
             }
             return new Promise((resolve, reject) => {
+                if (options.signal?.aborted) {
+                    reject(options.signal.reason);
+                    return;
+                }
                 names.push(name);
                 const queue = queues.get(name) ?? [];
                 queues.set(name, queue);
-                queue.push({
+                let started = false;
+                const pending: PendingLock = {
                     mode: options.mode ?? 'exclusive',
                     start: (finish) => {
+                        started = true;
+                        options.signal?.removeEventListener('abort', onAbort);
                         void Promise.resolve(callback(null)).then(resolve, reject).finally(finish);
                     },
-                });
+                };
+                const onAbort = (): void => {
+                    if (started) {
+                        return;
+                    }
+                    const index = queue.indexOf(pending);
+                    if (index >= 0) {
+                        queue.splice(index, 1);
+                    }
+                    reject(options.signal?.reason);
+                    drain(name);
+                };
+                options.signal?.addEventListener('abort', onAbort, { once: true });
+                queue.push(pending);
                 drain(name);
             });
         }
@@ -134,6 +154,48 @@ describe('withDdspInstrumentLock', () => {
         await expect(withDdspInstrumentLock('ddsp-violin', 'shared', async () => undefined)).rejects.toThrow(
             'Web Locks API'
         );
+    });
+
+    it('does not enter an already-aborted lock request', async () => {
+        const controller = new AbortController();
+        const operation = vi.fn();
+        controller.abort();
+
+        await expect(
+            withDdspInstrumentLock('ddsp-violin', 'shared', async () => operation(), controller.signal)
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(operation).not.toHaveBeenCalled();
+    });
+
+    it('removes an aborted queued request without disturbing the lock holder or next waiter', async () => {
+        const held = gate();
+        const events: string[] = [];
+        const holder = withDdspInstrumentLock('ddsp-violin', 'exclusive', async () => {
+            events.push('holder-start');
+            await held.promise;
+            events.push('holder-end');
+        });
+        const controller = new AbortController();
+        const cancelled = withDdspInstrumentLock(
+            'ddsp-violin',
+            'shared',
+            async () => {
+                events.push('cancelled-entered');
+            },
+            controller.signal
+        );
+        const next = withDdspInstrumentLock('ddsp-violin', 'exclusive', async () => {
+            events.push('next');
+        });
+
+        await vi.waitFor(() => expect(events).toEqual(['holder-start']));
+        controller.abort();
+        await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+        held.open();
+        await Promise.all([holder, next]);
+
+        expect(events).toEqual(['holder-start', 'holder-end', 'next']);
     });
 
     it('should use a distinct exact lock name for each instrument so unrelated work is independent', async () => {

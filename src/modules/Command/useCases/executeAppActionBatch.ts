@@ -510,7 +510,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return { status: 'cancelled', reason: 'Batch execution authority was revoked', actions: [] };
             }
-            if (!productionBriefAdmissionPort.allows(actions)) {
+            const productionBriefAdmission = productionBriefAdmissionPort.capture(actions);
+            if (!productionBriefAdmission.allowsCurrent()) {
                 return {
                     status: 'conflicted',
                     reason: 'Action batch conflicts with locked production intent',
@@ -710,6 +711,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
+            storageTransaction.validateCommit(() =>
+                productionBriefAdmission.allowsCurrent() ? null : 'Action batch conflicts with locked production intent'
+            );
             if (storageTransaction.status === 'threw') {
                 storageTransaction.abort();
                 clearBatchSemanticContext();

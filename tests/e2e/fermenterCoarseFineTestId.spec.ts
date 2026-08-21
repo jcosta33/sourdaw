@@ -1,51 +1,26 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
-async function openFermenter(page: import('@playwright/test').Page): Promise<void> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill('fermenter');
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: /^Fermenter/i }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.click();
-    await expect(page.getByRole('button', { name: /Close Fermenter/i }).first()).toBeVisible({ timeout: 15_000 });
-}
-
-// Fermenter oscillator Coarse + Fine pitch knobs (always visible on the default
-// Oscillator section). No E2E covers these — the existing Fermenter specs cover
-// Unison knobs + Macro combobox + filter knobs + envelope + LFO + FX + waveform.
-test.describe('Fermenter Coarse + Fine knobs', () => {
+test.describe('Fermenter oscillator Coarse and Fine', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await openFermenter(page);
+        await open_browser_instrument({ page, instrument: 'Fermenter' });
     });
 
-    test('Coarse pitch knob responds to keyboard', async ({ page }) => {
-        const coarse = page.getByRole('slider', { name: 'Coarse', exact: true }).first();
-        await expect(coarse).toBeVisible({ timeout: 10_000 });
-        await coarse.focus();
-        const before = Number(await coarse.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await coarse.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
-    });
+    test('ArrowUp steps Coarse from 0 to 1 and Fine from 0 to 0.1', async ({ page }) => {
+        const coarse = page.getByRole('slider', { name: 'Coarse', exact: true });
+        await expect(coarse).toHaveAttribute('aria-valuenow', '0');
+        await coarse.scrollIntoViewIfNeeded();
+        await coarse.press('ArrowUp');
+        await expect(coarse).toHaveAttribute('aria-valuenow', '1');
 
-    test('Fine pitch knob responds to keyboard', async ({ page }) => {
-        const fine = page.getByRole('slider', { name: 'Fine', exact: true }).first();
-        await expect(fine).toBeVisible({ timeout: 10_000 });
-        await fine.focus();
-        const before = Number(await fine.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await fine.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        const fine = page.getByRole('slider', { name: 'Fine', exact: true });
+        await expect(fine).toHaveAttribute('aria-valuenow', '0');
+        await fine.scrollIntoViewIfNeeded();
+        await fine.press('ArrowUp');
+        await expect.poll(async () => Number(await fine.getAttribute('aria-valuenow'))).toBeCloseTo(0.1, 5);
     });
 });

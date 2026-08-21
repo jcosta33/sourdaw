@@ -65,6 +65,33 @@ impl Default for PluginRelayScratch {
     }
 }
 
+/// The command-side producer end of every crumbs sampler's record bridge.
+///
+/// One struct so the record feed takes exactly one lock per block: the bridge
+/// handles and the de-interleave scratch they share come back together, the
+/// same one-lock discipline `process_plugin_audio` keeps for the CLAP relay.
+/// The lock is command-side only — the native audio callback pops the far end
+/// of these rings through the scheduler and never touches this struct.
+pub struct CrumbsRecordFeed {
+    /// Bridge handles keyed by engine_plugin_id. Holds only crumbs bridges:
+    /// CLAP handles live on their `EnginePluginInstanceData`.
+    pub bridges: HashMap<usize, PluginAudioBridgeHandle>,
+    /// De-interleave scratch refilled in place by every `feed_record_input`
+    /// call, then copied into each bridge's preallocated block. Never grows
+    /// past `MAX_BLOCK_FRAMES`: an oversized block is refused before the
+    /// de-interleave, mirroring `process_plugin_audio`.
+    pub scratch: PluginRelayScratch,
+}
+
+impl Default for CrumbsRecordFeed {
+    fn default() -> Self {
+        Self {
+            bridges: HashMap::new(),
+            scratch: PluginRelayScratch::default(),
+        }
+    }
+}
+
 pub struct EnginePluginInstanceData {
     pub engine_plugin_id: usize,
     pub runtime: Arc<SharedHostedPlugin>,
@@ -96,14 +123,14 @@ pub struct AppState {
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
     /// Open plugin GUI windows, keyed by instance_id → window label.
     pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
-    /// Audio bridge handles keyed by engine_plugin_id.
-    ///
-    /// Only the crumbs sampler writes this map, and nothing reads it: the
-    /// producer wiring that would feed those rings is missing and tracked
-    /// separately. A CLAP instance's handle is not here — it lives on its
+    /// The crumbs samplers' record feed: bridge handles keyed by
+    /// engine_plugin_id, plus the shared de-interleave scratch the feed
+    /// command refills per block. Only crumbs registration writes the map;
+    /// `feed_record_input` reads it once per monitored-input block.
+    /// A CLAP instance's handle is not here — it lives on its
     /// `EnginePluginInstanceData`, because the relay resolves it by instance id
     /// on the audio relay path.
-    pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
+    pub audio_bridges: Arc<Mutex<CrumbsRecordFeed>>,
     /// Retired engine-owned runtimes kept alive after scheduler removal is
     /// queued so the render callback never final-drops a hosted plugin. Declared
     /// after `engine` so app teardown drops the stream before these runtimes.
@@ -211,7 +238,7 @@ impl Default for AppState {
             engine_plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
-            audio_bridges: Arc::new(Mutex::new(HashMap::new())),
+            audio_bridges: Arc::new(Mutex::new(CrumbsRecordFeed::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
             bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
             timeline_samples: Arc::new(Mutex::new(HashMap::new())),

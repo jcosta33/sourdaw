@@ -22,7 +22,7 @@ import { renderTrackSubgraphOffline } from '../../useCases/offlineRender/renderT
  * asserts a contract the product deliberately revoked.
  *
  * The transport guard did not go with it. `grandBouleOfflineNoteTiming`,
- * `grandBouleOfflineRenderBudget`, `grandBouleConsumerClock` and
+ * `grandBouleOfflineTransport`, `grandBouleConsumerClock` and
  * `grandBouleDispatchParity` all reach `NATIVE_DSP_DEVICE_FACTORIES` or the
  * processor registry directly, which is the implementation ADR 0032 preserves,
  * and they still measure it. What is left over — and what only this path can
@@ -141,7 +141,10 @@ const wasmStub = vi.hoisted(() => {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: () => ({ memory: wasmStub.memory }),
-    GrandBouleInstance: wasmStub.GrandBouleInstanceStub,
+}));
+vi.mock('../grandBouleWasmInstance', () => ({
+    createGrandBouleWasmInstance: (sampleRate: number, voiceCount: number) =>
+        new wasmStub.GrandBouleInstanceStub(sampleRate, voiceCount),
 }));
 
 // The `?worker&url` imports resolve to a bundler URL that vitest cannot serve;

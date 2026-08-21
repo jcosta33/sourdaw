@@ -1,52 +1,27 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
-async function openFermenterEnvelopes(page: import('@playwright/test').Page): Promise<void> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill('fermenter');
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: /^Fermenter/i }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.click();
-    await expect(page.getByRole('button', { name: /Close Fermenter/i }).first()).toBeVisible({ timeout: 15_000 });
-    await page.getByRole('button', { name: 'Envelopes', exact: true }).first().click();
-    await page.waitForTimeout(400);
-}
-
-// Fermenter envelope Decay + Release knobs (paramId-named, Envelopes section).
-// #1775 covered Attack + Sustain; these complete the ADSR quartet.
-test.describe('Fermenter envelope Decay + Release knobs', () => {
+test.describe('Fermenter envelope Decay and Release', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await openFermenterEnvelopes(page);
+        await open_browser_instrument({ page, instrument: 'Fermenter' });
+        await page.locator('.fermenter-faceplate').getByRole('button', { name: 'Envelopes', exact: true }).click();
     });
 
-    test('Decay knob responds to keyboard', async ({ page }) => {
-        const decay = page.getByRole('slider', { name: 'ampDecay' }).first();
-        await expect(decay).toBeVisible({ timeout: 10_000 });
-        await decay.focus();
-        const before = Number(await decay.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await decay.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
-    });
+    test('ArrowUp steps amp Decay 0.2 to 0.206 and Release 0.3 to 0.306', async ({ page }) => {
+        const decay = page.getByRole('slider', { name: 'ampDecay', exact: true });
+        await expect(decay).toHaveAttribute('aria-valuenow', '0.2');
+        await decay.scrollIntoViewIfNeeded();
+        await decay.press('ArrowUp');
+        await expect(decay).toHaveAttribute('aria-valuenow', '0.206');
 
-    test('Release knob responds to keyboard', async ({ page }) => {
-        const release = page.getByRole('slider', { name: 'ampRelease' }).first();
-        await expect(release).toBeVisible({ timeout: 10_000 });
-        await release.focus();
-        const before = Number(await release.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await release.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        const release = page.getByRole('slider', { name: 'ampRelease', exact: true });
+        await expect(release).toHaveAttribute('aria-valuenow', '0.3');
+        await release.scrollIntoViewIfNeeded();
+        await release.press('ArrowUp');
+        await expect(release).toHaveAttribute('aria-valuenow', '0.306');
     });
 });

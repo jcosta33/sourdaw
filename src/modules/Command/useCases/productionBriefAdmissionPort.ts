@@ -1,11 +1,15 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-type ProductionBriefAdmissionGuard = (actions: readonly AppAction[]) => boolean;
+type ProductionBriefAdmission = {
+    allowsCurrent(): boolean;
+};
 
-let guard: ProductionBriefAdmissionGuard = () => true;
+type ProductionBriefAdmissionGuard = (actions: readonly AppAction[]) => ProductionBriefAdmission;
+
+let guard: ProductionBriefAdmissionGuard = () => ({ allowsCurrent: () => true });
 
 export const productionBriefAdmissionPort = {
-    allows(actions: readonly AppAction[]): boolean {
+    capture(actions: readonly AppAction[]): ProductionBriefAdmission {
         return guard(actions);
     },
     setGuard(nextGuard: ProductionBriefAdmissionGuard): void {

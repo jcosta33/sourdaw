@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 // ── Hoisted mocks for module-level collaborators ────────────────────────────
 const loadOnnxSession = vi.hoisted(() =>
     vi.fn<(input: { modelId: string; modelDataPort: MessagePort }) => Promise<void>>()
@@ -60,10 +62,14 @@ vi.mock('../../services/kokoroTokenizer', () => ({ textToKokoroInputIds }));
 vi.mock('../../services/audioResampler', () => ({ resampleTo44100, applyFades }));
 
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
+import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
-import { renderQueueStore } from '../../stores/renderQueueStore';
+import { enqueueRender, renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 import { renderKokoroTts } from '../renderKokoroTts';
+import { supersedeBrowserRender } from '../supersedeBrowserRender';
+
+const logger = { info: vi.fn() };
 
 function voice_embedding_buffer(): ArrayBuffer {
     return new ArrayBuffer(522_240);
@@ -119,9 +125,17 @@ describe('renderKokoroTts', () => {
         sha256ArrayBuffer.mockReset().mockResolvedValue(voice_hash('af_heart'));
         cancelOnnxRequest.mockReset();
         cancelTfjsRequest.mockReset();
+        logger.info.mockReset();
         releaseGate.kokoro = true;
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
         inferenceProgressStore.set({ activeRenders: {} });
+        injectDependencies(renderKokoroTts, {
+            logger,
+            readRenderCache,
+            readVerifiedModel,
+            supersedeBrowserRender,
+            writeRenderCache,
+        });
         stub_fetch_ok(voice_embedding_buffer());
     });
 
@@ -377,6 +391,25 @@ describe('renderKokoroTts', () => {
         expect(renderQueueStore.value?.entries).toEqual([]);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
         expect(renderQueueStore.value?.cachedPhraseIds).toContain('new-cache-key');
+    });
+
+    it('aborts a queued DDSP owner through TFJS when Kokoro replaces the phrase', async () => {
+        const ddspLease = renderRequestCancellation.own('phrase-1', 'ddsp-old');
+        enqueueRender({
+            phraseId: 'phrase-1',
+            requestId: 'ddsp-old',
+            pipeline: 'ddsp',
+            status: 'queued',
+            queuedAt: 1,
+        });
+
+        await callRender();
+        const ddspAborted = ddspLease.signal.aborted;
+        ddspLease.dispose();
+
+        expect(ddspAborted).toBe(true);
+        expect(cancelTfjsRequest).toHaveBeenCalledWith('ddsp-old');
+        expect(cancelOnnxRequest).not.toHaveBeenCalledWith('ddsp-old');
     });
 
     it('should throw a re-download message when the Kokoro model is absent or invalid', async () => {
