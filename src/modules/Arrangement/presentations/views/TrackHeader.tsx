@@ -18,6 +18,7 @@ import {
 import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { LatchButton } from '#/components/daw/LatchButton';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -134,32 +135,35 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     let freezeStateContent = null;
     if (isFreezing) {
         freezeStateContent = (
-            <div className="flex flex-col gap-1 w-16 ml-2" data-testid="track-freezing-badge">
+            <Stack gap={1} className="w-16 ml-2" data-testid="track-freezing-badge">
                 <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
                 <DawMeterBar
                     value={(track.freezeState.renderProgress ?? 0) * 100}
                     size="sm"
                     fillClassName="bg-primary"
                 />
-            </div>
+            </Stack>
         );
     } else if (track.frozen) {
         freezeStateContent = (
-            <div className="flex items-center gap-1 ml-2" data-testid="track-frozen-badge">
+            <Row gap={1} className="ml-2" data-testid="track-frozen-badge">
                 <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
                 <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
                 {isStale ? (
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
+                            <Row
+                                gap={0.5}
+                                className="ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40"
+                            >
                                 <AlertCircle className="size-2.5 text-state-warning" />
                                 <span className="text-[8px] text-state-warning font-bold">STALE</span>
-                            </div>
+                            </Row>
                         </TooltipTrigger>
                         <TooltipContent>Track content has changed since freezing. Update required.</TooltipContent>
                     </Tooltip>
                 ) : null}
-            </div>
+            </Row>
         );
     }
 
@@ -207,7 +211,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                         <InputSelector trackId={track.id} inputId={track.inputId} />
                     ) : null}
 
-                    <div className="flex items-center gap-1 ml-auto">
+                    <Row gap={1} className="ml-auto">
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
@@ -326,7 +330,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 {track.soloed ? 'Unsolo' : 'Solo (⌘+click for additive)'}
                             </TooltipContent>
                         </Tooltip>
-                    </div>
+                    </Row>
                 </div>
 
                 <ResizeHandle trackId={track.id} />
