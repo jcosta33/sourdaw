@@ -169,6 +169,13 @@ describe('PianoRollToolbar', () => {
         expect(screen.getByText('1/8')).toBeInTheDocument();
     });
 
+    it('presses the active snap value and leaves the others unpressed', () => {
+        render(<PianoRollToolbar {...defaultProps} gridSnap={0.25} />);
+        expect(screen.getByRole('button', { name: '1/4' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: '1/8' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: '1/2' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
     it('should call onGridSnapChange when snap button is clicked', () => {
         render(<PianoRollToolbar {...defaultProps} />);
         fireEvent.click(screen.getByText('1/4'));
