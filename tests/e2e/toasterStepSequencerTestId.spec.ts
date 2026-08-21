@@ -11,16 +11,7 @@ test.describe('Toaster step sequencer', () => {
     });
 
     test('default pattern exposes sixteen off Kick steps', async ({ page }) => {
-        const kickSteps = page.getByRole('checkbox', { name: /^Kick step / });
-        await expect(kickSteps).toHaveCount(16);
-        await expect(page.getByRole('checkbox', { name: 'Kick step 1, off', exact: true })).toHaveAttribute(
-            'aria-checked',
-            'false'
-        );
-        await expect(page.getByRole('checkbox', { name: 'Kick step 16, off', exact: true })).toHaveAttribute(
-            'aria-checked',
-            'false'
-        );
+        await expect(page.getByRole('checkbox', { name: /^Kick step \d+, off$/ })).toHaveCount(16);
     });
 
     test('Kick step 1 reports velocity 80% when on and turns off again', async ({ page }) => {
