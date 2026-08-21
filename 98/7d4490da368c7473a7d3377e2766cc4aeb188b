@@ -1,0 +1,61 @@
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_b94d06aaf377b1 1239-1304,1309-1310
+  s_27578aec2aab3b::t_e65d71386eeaae 332-334,337-340,343-344,346,349-353,355-356,358-374,376-427,431-433,436-439
+  s_27578aec2aab3b::t_5995a9d9edc22e 341-342
+scripts/runElectronE2E.ts
+  s_27578aec2aab3b::t_679e9ec78d8183 9-11,15,20-44,55-56,70-73,80,88-208,233-243,246-248
+  s_27578aec2aab3b::t_ca50bf60d27ab1 227
+  s_27578aec2aab3b::t_170f4117b0fd00 220,224,226,228-229,232
+electron/protocol.ts
+  s_27578aec2aab3b::t_5995a9d9edc22e 29,96
+  s_27578aec2aab3b::t_ea116bde245214 94-95,97
+  s_27578aec2aab3b::t_ca50bf60d27ab1 30-45
+scripts/__tests__/electronE2EIsolation.spec.ts
+  s_27578aec2aab3b::t_ca50bf60d27ab1 1,62
+  s_27578aec2aab3b::t_c4037f577319c0 30
+  s_27578aec2aab3b::t_fa09c6d380acda 69-71,89,94
+  s_27578aec2aab3b::t_72528929e2ace0 2-29,31-61,63-68,72-88,90-93,95-97
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_72528929e2ace0 108-114
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_e783c9363ce25a 69-78,81-183,185,766-767
+  s_27578aec2aab3b::t_51bbfcaa981952 303
+  s_27578aec2aab3b::t_5995a9d9edc22e 79-80
+electron/main.ts
+  s_27578aec2aab3b::t_ca50bf60d27ab1 24-32,281-282
+scripts/__tests__/runElectronE2E.spec.ts
+  s_27578aec2aab3b::t_72528929e2ace0 1-25,27-65,70-98
+  s_27578aec2aab3b::t_51bbfcaa981952 26,66-69
+tests/e2e/ddspProductionCspElectron.spec.ts
+  s_27578aec2aab3b::t_e3ca2ac1a72a78 1,3-4,8-13,15,35-38,46-61,65-72,74-76,80,82-97,120,160-170
+  s_27578aec2aab3b::t_fa09c6d380acda 14,39-40,62-64,108-119,158
+tests/e2e/ddspRenderElectron.spec.ts
+  s_27578aec2aab3b::t_e3ca2ac1a72a78 8-9,48-63,65-69,71-81
+  s_27578aec2aab3b::t_de5153a412ef90 82
+scripts/electronE2EIsolation.ts
+  s_27578aec2aab3b::t_679e9ec78d8183 1-87
+electron/__tests__/webviewSecurity.spec.ts
+  s_27578aec2aab3b::t_72528929e2ace0 25-34,126-138
+  s_27578aec2aab3b::t_3de57b9a22fd84 139-140
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_03ff57493eb8a0 9-10,12,62-76
+src/modules/BrowserAi/repositories/__tests__/ddspModelStorage.spec.ts
+  s_27578aec2aab3b::t_fa09c6d380acda 154,156-159,180,237-242
+  s_27578aec2aab3b::t_72528929e2ace0 143-144,147,168-169,218,228,247-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "987d4490da368c7473a7d3377e2766cc4aeb188b",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
