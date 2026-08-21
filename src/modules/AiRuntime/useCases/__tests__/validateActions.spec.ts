@@ -185,6 +185,148 @@ describe('validateActions', () => {
         expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([action]);
     });
 
+    // Every field documented in `handlerContract.ts` as "AiRuntime payload validation
+    // rejects this field" (or "these fields") is pinned here as one (action type,
+    // application-owned field) pair. `hasOnlyInitiatingPayloadKeys` returns `true`
+    // unconditionally for any action type absent from `RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS`,
+    // so a documented field with no map entry — or a map entry a maintainer widens to
+    // include it — is otherwise invisible to this suite. A field added to the contract
+    // without a matching row here has nowhere obvious to be pinned; removing the row
+    // that excludes one of these fields reddens the case below instead of shipping quietly.
+    const APPLICATION_OWNED_PAYLOAD_FIELDS = [
+        {
+            type: 'armTrack',
+            field: 'midiInputTrackId',
+            basePayload: { trackId: 'track-1', armed: true },
+            value: 'midi-input-1',
+        },
+        {
+            type: 'armTrack',
+            field: 'expectedMidiInputTrackId',
+            basePayload: { trackId: 'track-1', armed: true },
+            value: 'midi-input-1',
+        },
+        {
+            type: 'armTrack',
+            field: 'midiInputOwnerId',
+            basePayload: { trackId: 'track-1', armed: true },
+            value: 'owner-1',
+        },
+        {
+            type: 'armTrack',
+            field: 'expectedMidiInputOwnerId',
+            basePayload: { trackId: 'track-1', armed: true },
+            value: 'owner-1',
+        },
+        {
+            type: 'freezeTrack',
+            field: 'freezeId',
+            basePayload: { trackId: 'track-1' },
+            value: 'freeze-supplied-by-the-model',
+        },
+        { type: 'setTempo', field: 'tempoChangeId', basePayload: { bpm: 120 }, value: 'tempo-change-1' },
+        { type: 'setTempo', field: 'expectedBpm', basePayload: { bpm: 120 }, value: 110 },
+        {
+            type: 'addClip',
+            field: 'id',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 'clip-supplied-by-the-model',
+        },
+        {
+            type: 'addClip',
+            field: 'assetHash',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 'hash-1',
+        },
+        {
+            type: 'addClip',
+            field: 'isGhost',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: true,
+        },
+        {
+            type: 'addClip',
+            field: 'audioOffsetBeats',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 1,
+        },
+        {
+            type: 'addClip',
+            field: 'midiOffsetBeats',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 1,
+        },
+        {
+            type: 'addClip',
+            field: 'fadeInBeats',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 1,
+        },
+        {
+            type: 'addClip',
+            field: 'fadeOutBeats',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 1,
+        },
+        {
+            type: 'addClip',
+            field: 'gain',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: 1,
+        },
+        {
+            type: 'addClip',
+            field: 'color',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: '#ffffff',
+        },
+        {
+            type: 'addClip',
+            field: 'locked',
+            basePayload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip' },
+            value: true,
+        },
+        {
+            type: 'setClipFade',
+            field: 'expectedFadeInBeats',
+            basePayload: { clipId: 'clip-1', fadeInBeats: 0, fadeOutBeats: 0 },
+            value: 1,
+        },
+        {
+            type: 'setClipFade',
+            field: 'expectedFadeOutBeats',
+            basePayload: { clipId: 'clip-1', fadeInBeats: 0, fadeOutBeats: 0 },
+            value: 1,
+        },
+        {
+            type: 'setClipGain',
+            field: 'expectedGain',
+            basePayload: { clipId: 'clip-1', gain: 1 },
+            value: 0.5,
+        },
+        {
+            type: 'setPunchEnabled',
+            field: 'expectedEnabled',
+            basePayload: { enabled: true },
+            value: false,
+        },
+    ] as const;
+
+    it.each(APPLICATION_OWNED_PAYLOAD_FIELDS)(
+        'drops $type carrying the application-owned $field and keeps it without $field',
+        ({ type, field, basePayload, value }) => {
+            const withField = { type, payload: { ...basePayload, [field]: value } } as unknown as RuntimeAction;
+            const withoutField = { type, payload: basePayload } as unknown as RuntimeAction;
+
+            expect(validateActions([withField])).toEqual([]);
+            expect(mockLogger.warn).toHaveBeenLastCalledWith(
+                `Command-owned payload fields rejected for action ${type}`
+            );
+
+            expect(validateActions([withoutField])).toEqual([withoutField]);
+        }
+    );
+
     it('should reject hidden and symbol payload fields', () => {
         const hiddenPayload = Object.defineProperty({ clipId: 'clip-1' }, 'targetClipId', { value: 'clip-2' });
         const symbolPayload = { clipId: 'clip-1', [Symbol('targetClipId')]: 'clip-2' };
