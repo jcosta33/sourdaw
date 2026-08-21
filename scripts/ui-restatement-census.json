@@ -632,7 +632,7 @@
   {
     "id": "ui-05b52c034698d936",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 378,
+    "line": 379,
     "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -776,7 +776,7 @@
   {
     "id": "ui-0752ec1304dc1a6c",
     "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 325,
+    "line": 326,
     "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -1591,24 +1591,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0e48efea4a4da911",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 650,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-0e62ea7db15a427b",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 450,
-    "fingerprint": "label\tflex flex-col gap-1 text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0e9267cdae19946a",
@@ -2477,7 +2459,7 @@
   {
     "id": "ui-168227ab8aea5d4f",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 175,
+    "line": 176,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -2698,6 +2680,15 @@
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-190de2a67937340b",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 696,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1914183c9f0507b4",
@@ -2941,15 +2932,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-1c6adc0086240257",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 560,
-    "fingerprint": "div\tflex items-start justify-between gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1c752ccf46246b14",
@@ -3751,6 +3733,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-243af7b7a8757114",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 170,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-245d28fbe22a8e4b",
@@ -4583,7 +4574,7 @@
   {
     "id": "ui-2be541ccdb9bedb6",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 476,
+    "line": 481,
     "fingerprint": "div\tgrid grid-cols-2 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -4740,6 +4731,15 @@
     "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2d0587c98986a3e1",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 118,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -4929,6 +4929,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2ec02844c2b1d71f",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 45,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -5276,7 +5285,7 @@
   {
     "id": "ui-337d16d49f7aca3b",
     "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 398,
+    "line": 399,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -5451,6 +5460,15 @@
     "fingerprint": "Separator\t",
     "kind": "generic-control",
     "mapping": "Separator",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-357a701f70143632",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 606,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -6921,15 +6939,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-43a9201db8eb36ef",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 691,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-43f82197ebbe74b4",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
     "line": 189,
@@ -7200,15 +7209,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-461c2abbd5e6e26f",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 169,
-    "fingerprint": "div\tflex flex-col gap-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-461cfbc2cfd1d541",
     "file": "src/modules/Proof/presentations/components/ProofLimiterSection.tsx",
     "line": 62,
@@ -7261,15 +7261,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-46b8ecbb46a9770a",
-    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 310,
-    "fingerprint": "div\tflex h-full items-center justify-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-46bf8515c26e318d",
@@ -7350,6 +7341,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-476e4803ef329b51",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 86,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -7747,15 +7747,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-4bfe7c6e1f199935",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 85,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-4c00958c1867d499",
@@ -8444,7 +8435,7 @@
   {
     "id": "ui-53800d0aa2230d20",
     "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
-    "line": 76,
+    "line": 77,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8526,6 +8517,15 @@
     "id": "ui-542e38c5a989f489",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 861,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-543e4c029fbfa341",
+    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
+    "line": 398,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9369,15 +9369,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-5ca2984e02d01b72",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 44,
-    "fingerprint": "div\tflex flex-col gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5cce727eb75ae0ee",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 143,
@@ -9693,6 +9684,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-5fe741e2d983cd53",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 451,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5ff0e7b786ce4f2c",
     "file": "src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx",
     "line": 723,
@@ -9826,15 +9826,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-613906d655ed32f1",
-    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 116,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6140db0930679672",
@@ -10100,7 +10091,7 @@
   {
     "id": "ui-63dcd41d0b79a7fc",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 48,
+    "line": 49,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10550,7 +10541,7 @@
   {
     "id": "ui-68cb702cf85596d1",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 322,
+    "line": 323,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11169,15 +11160,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6fa29a81e46295b5",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 318,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6fadd3dd5265ee79",
     "file": "src/modules/ContentBrowser/presentations/components/Sidebar/InstrumentCard.tsx",
     "line": 158,
@@ -11423,7 +11405,7 @@
   {
     "id": "ui-724a2b6d82910581",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 618,
+    "line": 623,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -11473,15 +11455,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-72f495ad0be7ab53",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 603,
-    "fingerprint": "div\tflex flex-col gap-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-730d52cde4e9ed93",
@@ -11729,7 +11702,7 @@
   {
     "id": "ui-761fcd612d5fbb3c",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 196,
+    "line": 197,
     "fingerprint": "div\tgrid grid-cols-2 gap-x-2 transition-opacity",
     "kind": "layout",
     "mapping": "Grid",
@@ -11787,6 +11760,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7671dc7077ee9e83",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 119,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -11891,7 +11873,7 @@
   {
     "id": "ui-778be3fc6cdac682",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 568,
+    "line": 573,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -12024,15 +12006,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-787921bb1ae92205",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 614,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7885b5e48fa6e936",
     "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
     "line": 64,
@@ -12040,15 +12013,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-7895d285667f6c37",
-    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 397,
-    "fingerprint": "div\tflex items-center gap-2 pt-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-78989c03f123a2ee",
@@ -12357,15 +12321,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-7af256718802aad7",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 630,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7b10fb7e2cf4dac3",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1680,
@@ -12391,6 +12346,15 @@
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7b2a6e9b5e38914a",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 104,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7b2c62179a03c9a6",
@@ -12490,6 +12454,15 @@
     "kind": "daw-chrome",
     "mapping": "DawChannelStripShell",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7be138d7e758f5eb",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 43,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7be59c7dae230a6e",
@@ -13223,7 +13196,7 @@
   {
     "id": "ui-833a14937ba19f97",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 452,
+    "line": 457,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -13268,7 +13241,7 @@
   {
     "id": "ui-8369a9624c4a8f1e",
     "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
-    "line": 63,
+    "line": 64,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -13923,6 +13896,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-8971bbfa7b1efe0a",
+    "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
+    "line": 94,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-897c60c3179ba46e",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1512,
@@ -13992,6 +13974,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-8a07afd94e476201",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 565,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -15147,15 +15138,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-979ea439444f95fe",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 567,
-    "fingerprint": "div\tflex flex-wrap justify-end gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-97c83245a704e793",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 136,
@@ -15172,15 +15154,6 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-97cee8aa2180ed30",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 559,
-    "fingerprint": "section\tflex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-97cffc12cb24ba3e",
@@ -15984,6 +15957,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-a027c31e741da57e",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 317,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a03308da75020d4f",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 1179,
@@ -16004,7 +15986,7 @@
   {
     "id": "ui-a05550b8556591c8",
     "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 317,
+    "line": 318,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -16017,6 +15999,15 @@
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a0727edc53e970c8",
+    "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
+    "line": 63,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -16063,6 +16054,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-a146d27c2875b169",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 319,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a16bcb002f6dd154",
@@ -16157,7 +16157,7 @@
   {
     "id": "ui-a201365963ba1ac5",
     "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
-    "line": 87,
+    "line": 88,
     "fingerprint": "div\tmt-2 grid grid-cols-4 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -16341,6 +16341,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a3e3158d176308a6",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 564,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -17295,6 +17304,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ae006e13d02fd53a",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 655,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -18731,7 +18749,7 @@
   {
     "id": "ui-bc49cf17a171bae5",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 430,
+    "line": 431,
     "fingerprint": "div\tgrid grid-cols-2 items-end gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -19032,15 +19050,6 @@
     "fingerprint": "div\tflex flex-col items-center gap-0 mt-auto",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c0034b7d4c2f644a",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 118,
-    "fingerprint": "div\tflex items-center justify-between text-[8px] text-muted-foreground/50",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -19406,7 +19415,7 @@
   {
     "id": "ui-c383211e4d661d42",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 692,
+    "line": 697,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -19437,6 +19446,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-c410b25a0c8b0e11",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 566,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -19863,15 +19881,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-c93998d5854da2ec",
-    "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
-    "line": 93,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c9462c9d49c3a3c1",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 228,
@@ -19959,6 +19968,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ca1176e404c99f08",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 635,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -20396,7 +20414,7 @@
   {
     "id": "ui-cd842c96b4557ecf",
     "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 299,
+    "line": 300,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
@@ -20437,15 +20455,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-cdeee39fea146c1f",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 117,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ce8e7dfc2b8f7239",
@@ -20634,6 +20643,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-d07df4ef7ec18bc7",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 608,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -20936,7 +20954,7 @@
   {
     "id": "ui-d37c66d6f49fea73",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 654,
+    "line": 659,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21098,7 +21116,7 @@
   {
     "id": "ui-d55f4d326e8667a9",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 183,
+    "line": 184,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -21112,6 +21130,15 @@
     "kind": "generic-control",
     "mapping": "Select",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-d594f328d198476a",
+    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
+    "line": 117,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d5a1842918d27ee5",
@@ -21237,15 +21264,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-d739cfabd2bd5dfb",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 42,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -21807,15 +21825,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-dce19d6371c292ee",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 561,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-dd0d96c1bdfebdb9",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/GenericDeviceLayout.tsx",
     "line": 193,
@@ -21827,7 +21836,7 @@
   {
     "id": "ui-dd114a4ba5bcac4b",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 163,
+    "line": 164,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
@@ -22173,6 +22182,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-e13a6aeb7a71ad50",
+    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
+    "line": 172,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -22662,6 +22680,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-e59e5694fbd3d05e",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 619,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e6248fea959cfc4b",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx",
     "line": 156,
@@ -22880,7 +22907,7 @@
   {
     "id": "ui-e982ce6f60b94349",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 634,
+    "line": 639,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -22950,15 +22977,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-e9eda5a6079845d6",
-    "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
-    "line": 171,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e9f276f5155eca53",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 790,
@@ -23011,6 +23029,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-ea59948fb7812d81",
+    "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
+    "line": 311,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ea64aec9a6a055bb",
@@ -23627,7 +23654,7 @@
   {
     "id": "ui-efa1092e6c2be34a",
     "file": "src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx",
-    "line": 361,
+    "line": 362,
     "fingerprint": "div\tgrid grid-cols-3 gap-x-2 gap-y-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -23904,15 +23931,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-f258b0908fbd10ed",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 103,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f27da407985e09f1",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 396,
@@ -23956,6 +23974,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-f2d17b51e62bd622",
+    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
+    "line": 572,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f2e2942c55d929af",
@@ -24183,15 +24210,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-f534eb77132d2d08",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 316,
-    "fingerprint": "aside\tflex min-h-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f53da724767f2e26",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
     "line": 213,
@@ -24257,7 +24275,7 @@
   {
     "id": "ui-f65d73c6dfc6dad3",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 315,
+    "line": 316,
     "fingerprint": "div\tgrid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -24446,7 +24464,7 @@
   {
     "id": "ui-f7d13e60c900087c",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 535,
+    "line": 540,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -24885,15 +24903,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-fc27e35bab6acb6b",
-    "file": "src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx",
-    "line": 62,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-fc494b71f1520c18",
     "file": "src/modules/Preferences/presentations/views/PreferencesDialog.tsx",
     "line": 120,
@@ -24919,15 +24928,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-fc7fa884a5362017",
-    "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 601,
-    "fingerprint": "aside\tflex min-h-0 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fc88c45a15b08a19",
@@ -25085,7 +25085,7 @@
   {
     "id": "ui-fdc5470926712456",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
-    "line": 71,
+    "line": 72,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
