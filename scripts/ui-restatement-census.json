@@ -3305,7 +3305,7 @@
   {
     "id": "ui-1e4b67278e16aa28",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 247,
+    "line": 254,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -7787,7 +7787,7 @@
   {
     "id": "ui-4bf1f97acdd56199",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 299,
+    "line": 306,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7958,7 +7958,7 @@
   {
     "id": "ui-4e160e9b0a1794fe",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 399,
+    "line": 406,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -9263,7 +9263,7 @@
   {
     "id": "ui-5b671385d9aec9d3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 252,
+    "line": 259,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -10883,7 +10883,7 @@
   {
     "id": "ui-6c104af92448306f",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 426,
+    "line": 433,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -11756,7 +11756,7 @@
   {
     "id": "ui-75b26891ba192447",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 269,
+    "line": 276,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -18857,7 +18857,7 @@
   {
     "id": "ui-bdaa4e3a7fd826b4",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 321,
+    "line": 328,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19712,7 +19712,7 @@
   {
     "id": "ui-c73030a432e1a528",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 398,
+    "line": 405,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20225,7 +20225,7 @@
   {
     "id": "ui-cc05f52fe55b3619",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 242,
+    "line": 249,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -22799,7 +22799,7 @@
   {
     "id": "ui-e6eea4402aed8f16",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 365,
+    "line": 372,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24302,7 +24302,7 @@
   {
     "id": "ui-f63af9cf24748e3e",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 346,
+    "line": 353,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24788,7 +24788,7 @@
   {
     "id": "ui-fa5977bc451365b3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 275,
+    "line": 282,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
