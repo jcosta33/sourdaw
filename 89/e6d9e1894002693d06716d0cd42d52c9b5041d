@@ -1,0 +1,81 @@
+crates/daw-dsp/benches/wasm/run.mjs
+  s_0a3429e31e555d::t_a56df5bdcbe826 55-56,181-183,203-204
+  s_0a3429e31e555d::t_d836f4c159384a 678
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_0a3429e31e555d::t_a56df5bdcbe826 67-69
+  s_0a3429e31e555d::t_d79a2f14a59a03 15-16,159-162,197-199,803,805-806
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_0a3429e31e555d::t_d576aa2aeb4b6e 99-107,134
+crates/daw-dsp/src/lib.rs
+  s_0a3429e31e555d::t_a24ed5e1e7a5c4 6
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineTransport.spec.ts
+  s_0a3429e31e555d::t_5b67b012dc1652 1-177
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_127ac4bfc57646 113-119,166-168,244
+  s_0a3429e31e555d::t_af7fa00e016aa9 217-237
+  s_0a3429e31e555d::t_9ca1f20d6fc55f 158-165,170-177,182-216,242-243,252,257-260,262,265-266,281,287,293,297-311
+  s_0a3429e31e555d::t_c32b271144f093 11,14,32,72-73,77-112
+  s_0a3429e31e555d::t_f4d1e7e4d846cf 169,261
+crates/daw-dsp/tests/quantum_bench_census.rs
+  s_0a3429e31e555d::t_af7fa00e016aa9 200-201,223-226
+  s_0a3429e31e555d::t_1466c0496c7467 1,5-6,23-26,159,185
+  s_0a3429e31e555d::t_d683e0a17f370c 191-199,202-222,227-237
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_0a3429e31e555d::t_661a6c7b8f2554 3-5,39-46,48-62,68
+crates/daw-dsp/benches/wasm/quantumCostProcessor.js
+  s_0a3429e31e555d::t_d79a2f14a59a03 27
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_0a3429e31e555d::t_a56df5bdcbe826 123-125
+  s_0a3429e31e555d::t_97114c8fcc7c7e 1,4-5,25,27-29,31-33,77-79,359-360,363-366,377-378,407-408,417-419,456
+crates/daw-dsp/AGENTS.md
+  s_0a3429e31e555d::t_4aea366590b8ee 4-6
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_0a3429e31e555d::t_a24ed5e1e7a5c4 181
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_ade5fa305de893 175-176,183-185,188-190,199-208
+  s_0a3429e31e555d::t_127ac4bfc57646 280,308-309,468
+  s_0a3429e31e555d::t_b356b56a7d98da 209,216-217,219-222,231-279,281-307,310-313,315-316,322-329
+  s_0a3429e31e555d::t_a7f80efa4623c1 344-367,369-378,380-398
+  s_0a3429e31e555d::t_3fbfe8dade9e61 919
+  s_0a3429e31e555d::t_f4d1e7e4d846cf 379
+  s_0a3429e31e555d::t_4d7e61a4702130 210
+.agents/decisions/0034-grand-boule-native-only-wasm-contract.md
+  s_0a3429e31e555d::t_4aea366590b8ee 10,12,33-35,46-52,56-57
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_0a3429e31e555d::t_939607951c5288 25
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_9f5a7892dc9e13 522
+  s_0a3429e31e555d::t_f4d1e7e4d846cf 507
+  s_0a3429e31e555d::t_9027c8b29dc21d 614,620,874
+  s_0a3429e31e555d::t_2185ac40d7ae7f 501-506,508-519,521,523
+src/modules/GrandBoule/repositories/grandBouleEngineHandle.ts
+  s_0a3429e31e555d::t_4514b7ed154f1c 2,49-51
+src/modules/AudioEngine/AGENTS.md
+  s_0a3429e31e555d::t_4aea366590b8ee 16-18
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_0a3429e31e555d::t_343ddba0a0bfd4 88
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0a3429e31e555d::t_d243a6d7482cdf 1,755-756,759-773,807-862,865-878
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0a3429e31e555d::t_85472d6c4c5283 1,5-6,9-23,57-112,115-128
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_744ea082286651 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0a3429e31e555d::t_ea5c243d8a2522 1,755-756,759-773,807-862,865-878
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "89e6d9e1894002693d06716d0cd42d52c9b5041d",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
