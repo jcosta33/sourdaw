@@ -1,0 +1,49 @@
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_27578aec2aab3b::t_8d78cf3d963115 22,46-53,86-87,90-92,95,99
+  s_27578aec2aab3b::t_7854a0b65f8017 88-89,93-94,96-98
+  s_27578aec2aab3b::t_baea98e8282caf 100-102
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_27578aec2aab3b::t_6644563c59063a 109
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_7f3ffd516d5e33 19-20,46-65,95,121,124-130,160,187,192,201
+tests/e2e/ddspRender.spec.ts
+  s_27578aec2aab3b::t_6adb281a1c0b85 60
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_05672740cb6341 37-41,57-59,63,65-113,120-122,169,199,364,384,405,430,453,477,506
+  s_27578aec2aab3b::t_7854a0b65f8017 60-62,64,114-119,220,262,299-300
+  s_27578aec2aab3b::t_c81ee1f44a8abe 219,221-261,263-298,301-354
+tests/e2e/ddspRenderElectron.spec.ts
+  s_27578aec2aab3b::t_6adb281a1c0b85 103
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_3296f7880d931c 435,455,737
+  s_27578aec2aab3b::t_71b04860426e71 132-136,140,145,149,483-602
+  s_27578aec2aab3b::t_6644563c59063a 237,239
+  s_27578aec2aab3b::t_7f42ec1b5817db 603
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_a0adbc680cc791 640-678
+tests/e2e/ddspRenderProbe.ts
+  s_27578aec2aab3b::t_6adb281a1c0b85 130
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_27578aec2aab3b::t_3d41c8bcf04b5f 49-55,353,359-360,366,667,678-688,690-700,702-707,710-712,716-718,720-721,725-742,751,755,785-791,794-799,815,818
+  s_27578aec2aab3b::t_7854a0b65f8017 701
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_de34c12e45a72f 123
+  s_27578aec2aab3b::t_ec0a826f3bfbba 32,36,173,184-251
+  s_27578aec2aab3b::t_20e1c61edc1c74 252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "59eb435df04a0b36c8bf7cda3bcf691f645ab052",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
