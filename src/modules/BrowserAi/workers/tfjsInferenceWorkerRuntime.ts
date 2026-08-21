@@ -535,6 +535,9 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             return;
         }
         let load = sessionLoads.get(request.sessionKey);
+        if (load?.controller.signal.aborted) {
+            load = undefined;
+        }
         if (load) {
             closeArtifactPorts(request.artifacts);
         } else {
