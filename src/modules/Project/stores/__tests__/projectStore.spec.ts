@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    findAutomergeStorageRawProjectionLosses,
+} from '#/infra/store/storage/createAutomergeStorage';
 
-import { deriveProjectIdFromMeta } from '../../models/ProjectData';
+import { isCanonicalProjectId } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '../projectStore';
 
 type TestDoc = {
@@ -96,7 +99,7 @@ describe('projectStore', () => {
 
         expect(projectStore.value).toEqual({
             ...defaultProjectStoreState,
-            projectId: deriveProjectIdFromMeta(defaultProjectStoreState),
+            projectId: undefined,
         });
     });
 
@@ -113,7 +116,7 @@ describe('projectStore', () => {
         });
     });
 
-    it('derives a deterministic identity when hydrating legacy metadata without one', () => {
+    it('keeps a legacy projection without identity visibly noncanonical', () => {
         const { projectId: _projectId, ...legacyMeta } = create_valid_meta();
         fake_doc.projectMeta = legacyMeta;
 
@@ -121,7 +124,7 @@ describe('projectStore', () => {
 
         expect(projectStore.value).toEqual({
             ...legacyMeta,
-            projectId: deriveProjectIdFromMeta(legacyMeta),
+            projectId: undefined,
             dirty: false,
             loading: true,
             initialized: false,
@@ -129,7 +132,7 @@ describe('projectStore', () => {
     });
 
     it.each(['not-a-uuid', '123e4567-e89b-42d3-7456-426614174000'])(
-        'replaces malformed persisted identity %s with the deterministic compatibility identity',
+        'keeps malformed persisted identity %s visibly noncanonical until migration',
         (projectId) => {
             const persistedMeta = { ...create_valid_meta(), projectId };
             fake_doc.projectMeta = persistedMeta;
@@ -138,11 +141,13 @@ describe('projectStore', () => {
 
             expect(projectStore.value).toEqual({
                 ...persistedMeta,
-                projectId: deriveProjectIdFromMeta(persistedMeta),
+                projectId,
                 dirty: false,
                 loading: true,
                 initialized: false,
             });
+            expect(isCanonicalProjectId(projectStore.value?.projectId)).toBe(false);
+            expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document: fake_doc })).toEqual([]);
         }
     );
 

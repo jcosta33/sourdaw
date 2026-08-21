@@ -19,7 +19,6 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
-import { deriveProjectIdFromMeta } from '../../../models/ProjectData';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { finishProjectLoading } from '../../finishProjectLoading';
@@ -309,7 +308,7 @@ export async function replaceProjectData({
             runCommittedStep('module store hydration', () => hydrateModuleStoresFromProjectData(data));
             runCommittedStep('project metadata publication', () => {
                 projectStore.set({
-                    projectId: data.meta.projectId ?? deriveProjectIdFromMeta(data.meta),
+                    projectId: data.meta.projectId,
                     name: data.meta.name,
                     createdAt: data.meta.createdAt,
                     updatedAt: data.meta.updatedAt,

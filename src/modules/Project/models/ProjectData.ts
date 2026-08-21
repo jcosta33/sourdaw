@@ -168,7 +168,7 @@ export type ProjectAdjustmentLayers = {
 };
 
 export type ProjectMeta = {
-    /** Stable project address. Version-1 files omit it and migrate deterministically. */
+    /** Stable project address. Version-1 files omit it and mint one during the explicit forward migration. */
     projectId?: string;
     name: string;
     createdAt: number;

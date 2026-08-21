@@ -3,7 +3,7 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
 
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../models/ProductionBrief';
-import { createProjectId, deriveProjectIdFromMeta, isCanonicalProjectId } from '../models/ProjectData';
+import { createProjectId, isCanonicalProjectId } from '../models/ProjectData';
 
 const DOC_PREFIX_ROOT = 'root';
 const TUNING_FREQUENCY_COUNT = 128;
@@ -233,11 +233,11 @@ function apply_production_brief(source: object, next_state: ProjectStoreState): 
 
 function apply_project_id(source: object, next_state: ProjectStoreState): void {
     const property = get_own_value({ value: source, key: 'projectId' });
-    if (property.found && isCanonicalProjectId(property.value)) {
+    if (property.found && typeof property.value === 'string') {
         next_state.projectId = property.value;
         return;
     }
-    next_state.projectId = deriveProjectIdFromMeta(next_state);
+    next_state.projectId = undefined;
 }
 
 function get_valid_transient_state(value: unknown): ProjectTransientState | null {
@@ -331,8 +331,7 @@ export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
         toCrdt: (state) => {
             const { projectId, name, createdAt, updatedAt, keyRoot, scaleName, tuning, productionBrief } = state;
-            return {
-                projectId: isCanonicalProjectId(projectId) ? projectId : deriveProjectIdFromMeta(state),
+            const durableState = {
                 name,
                 createdAt,
                 updatedAt,
@@ -341,11 +340,12 @@ export const projectStore = createStore<ProjectStoreState>({
                 tuning,
                 productionBrief,
             };
+            return isCanonicalProjectId(projectId) ? { projectId, ...durableState } : durableState;
         },
         fromCrdt: normalize_project_meta_from_crdt,
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
-        hydrateMissing: () => defaultProjectStoreState,
+        hydrateMissing: () => ({ ...create_default_project_store_state(), projectId: undefined }),
     }),
     initialData: defaultProjectStoreState,
     sanitize: sanitize_project_store_state,

@@ -60,18 +60,9 @@ const productionBriefFixture = vi.hoisted(() => ({
     updatedAt: 2,
 }));
 const STORED_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+const projectStoreMock = vi.hoisted((): { value: Record<string, unknown> } => ({ value: {} }));
 vi.mock('../../../../stores/projectStore', () => ({
-    projectStore: {
-        value: {
-            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
-            name: 'P',
-            createdAt: 1,
-            keyRoot: 0,
-            scaleName: 'major',
-            tuning: { name: '12-TET', frequencies: [] },
-            productionBrief: productionBriefFixture,
-        },
-    },
+    projectStore: projectStoreMock,
 }));
 
 // The store mock's value is set per test; the real sanitizer stays importable
@@ -93,6 +84,15 @@ describe('buildProjectData', () => {
         exportCachedAudioBuffersMock.mockReset();
         exportCachedAudioBuffersMock.mockResolvedValue({});
         Object.assign(productionBriefFixture, { id: 'production-brief', supersedesBriefId: null });
+        projectStoreMock.value = {
+            projectId: STORED_PROJECT_ID,
+            name: 'P',
+            createdAt: 1,
+            keyRoot: 0,
+            scaleName: 'major',
+            tuning: { name: '12-TET', frequencies: [] },
+            productionBrief: productionBriefFixture,
+        };
     });
 
     // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the
@@ -128,6 +128,17 @@ describe('buildProjectData', () => {
         const built = await buildProjectData({ includeAudioBuffers: false });
 
         expect(built?.data.meta.projectId).toBe(STORED_PROJECT_ID);
+    });
+
+    it('refuses to serialize a version-2 snapshot before identity migration', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        projectStoreMock.value.projectId = undefined;
+
+        await expect(buildProjectData({ includeAudioBuffers: false })).resolves.toBeNull();
+        expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
     });
 
     // Presence pin for the assertion above (ADR 0015 rule 4): the opt-in shape
