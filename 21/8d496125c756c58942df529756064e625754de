@@ -1,0 +1,19 @@
+tests/e2e/fermenterLfoKnobsTestId.spec.ts
+  s_24b1bdbc3c31ad::t_54bc5ca4206fb6 3,5,10-11,14-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "218d496125c756c58942df529756064e625754de",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
