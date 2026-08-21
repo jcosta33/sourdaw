@@ -11,7 +11,7 @@ use super::parameters::{
 };
 use super::pedals::{PedalState, UNA_CORDA_SYMPATHETIC_COUPLING};
 use super::radiation::RadiationModel;
-use super::soundboard::Soundboard;
+use super::soundboard::{RenderedBridgeSignal, Soundboard};
 use super::sympathetic::Sympathetic;
 use super::voice::{PianoVoice, PianoVoiceStart, VoiceQuality};
 use crate::primitives::ProcessLifecycle;
@@ -703,10 +703,11 @@ impl GrandBouleEngine {
             let sym_amount = self.effective_sympathetic_send() * self.sympathetic_level * 2.0;
             let sympathetic = self.sympathetic.tick(bridge) * sym_amount;
 
-            // 3. Soundboard receives bridge + sympathetic. Model body_resonance
-            //    scales the drive into the soundboard.
-            let sb_drive = bridge + sympathetic;
-            let (sb_l_raw, sb_r_raw) = self.soundboard.tick(sb_drive);
+            // 3. The completed bridge bus feeds the independent soundboard
+            //    resonator stage. Model body_resonance scales that stage's
+            //    output, never the string-modal coefficients.
+            let bridge_signal = RenderedBridgeSignal::new(bridge + sympathetic);
+            let (sb_l_raw, sb_r_raw) = self.soundboard.process_rendered_bridge(bridge_signal);
             let body = self.body_resonance;
             let sb_l = sb_l_raw * body;
             let sb_r = sb_r_raw * body;
@@ -1030,6 +1031,91 @@ mod tests {
         engine.process_block(&mut left, &mut right);
         let peak = left.iter().fold(0.0_f32, |acc, &v| acc.max(v.abs()));
         assert!(peak > 0.0);
+    }
+
+    #[test]
+    fn soundboard_controls_do_not_change_string_modal_coefficients() {
+        let modal_signature = |engine: &GrandBouleEngine| {
+            engine
+                .voices
+                .iter()
+                .find(|voice| !voice.is_idle())
+                .expect("note-on must configure a string voice")
+                .string_modal_coefficient_signature()
+        };
+        let exercise_mid_note_decay_reset = |engine: &mut GrandBouleEngine| {
+            engine.set_sustain(1.0);
+            engine.note_on(60, 0.8);
+            engine.note_off(60);
+            let before_reset = modal_signature(engine);
+
+            // Pedal-up with the key already released is the current engine
+            // path that rebuilds a ringing voice's decay coefficients.
+            engine.set_sustain(0.0);
+            let mut left = [0.0_f32; 16];
+            let mut right = [0.0_f32; 16];
+            engine.process_block(&mut left, &mut right);
+            let after_reset = modal_signature(engine);
+            assert_ne!(
+                before_reset, after_reset,
+                "pedal-driven mid-note decay reset must change the modal signature"
+            );
+            (before_reset, after_reset)
+        };
+
+        let mut neutral = GrandBouleEngine::new(48_000.0, 1);
+        let mut altered_soundboard = GrandBouleEngine::new(48_000.0, 1);
+        altered_soundboard.set_param("soundboard_send", 0.0);
+        altered_soundboard.set_param("soundboard_brightness", 1.0);
+        altered_soundboard.set_param("body_resonance", 0.0);
+        let _ = altered_soundboard
+            .soundboard
+            .process_rendered_bridge(RenderedBridgeSignal::new(1.0));
+
+        let (neutral_before_reset, neutral_after_reset) =
+            exercise_mid_note_decay_reset(&mut neutral);
+        let (altered_before_reset, altered_after_reset) =
+            exercise_mid_note_decay_reset(&mut altered_soundboard);
+        assert_eq!(
+            neutral_before_reset, altered_before_reset,
+            "soundboard controls and resonator state must not reach initial string-modal configuration"
+        );
+        assert_eq!(
+            neutral_after_reset, altered_after_reset,
+            "soundboard controls and resonator state must not reach pedal-driven string-modal decay reset"
+        );
+    }
+
+    #[test]
+    fn global_soundboard_processes_once_per_frame_after_multiple_voices_render() {
+        const FRAMES: usize = 16;
+
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.note_on(60, 0.8);
+        engine.note_on(64, 0.8);
+        assert_eq!(
+            engine
+                .voices
+                .iter()
+                .filter(|voice| !voice.is_idle())
+                .count(),
+            2,
+            "the proof must render multiple active voices"
+        );
+
+        let mut left = [0.0_f32; 1];
+        let mut right = [0.0_f32; 1];
+        for _ in 0..FRAMES {
+            let before = engine.soundboard.rendered_bridge_process_count();
+            engine.process_block(&mut left, &mut right);
+            let after = engine.soundboard.rendered_bridge_process_count();
+
+            assert_eq!(
+                after - before,
+                1,
+                "the global soundboard must run once per output frame, never once per voice or zero times"
+            );
+        }
     }
 
     #[test]

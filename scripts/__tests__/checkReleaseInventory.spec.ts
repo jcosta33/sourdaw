@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -5,7 +6,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertGrandBouleReleaseInventory,
     audioWorkletReleaseInventoryContract,
+    grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
     ownerVisualAssetReleaseInventoryContract,
@@ -58,6 +61,58 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('binds Grand Boule source bytes to its inventory digest', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-provenance-'));
+        const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');
+        mkdirSync(grandBoule, { recursive: true });
+        writeFileSync(join(grandBoule, 'engine.rs'), 'initial source');
+        execFileSync('git', ['init', '--quiet'], { cwd: root });
+        execFileSync('git', ['add', 'crates/daw-dsp/src/grand_boule'], { cwd: root });
+
+        try {
+            const before = grandBouleReleaseInventoryContract(root);
+            expect(before.revisions).toEqual(['current tracked source']);
+            expect(before.digests).toEqual([
+                expect.stringMatching(/^tree-sha256:[0-9a-f]{64}:crates\/daw-dsp\/src\/grand_boule$/),
+            ]);
+
+            writeFileSync(join(grandBoule, 'untracked.rs'), 'untracked source');
+            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
+
+            writeFileSync(join(grandBoule, 'engine.rs'), 'changed source');
+            expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-assertion-'));
+        const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');
+        mkdirSync(grandBoule, { recursive: true });
+        writeFileSync(join(grandBoule, 'engine.rs'), 'current source');
+        execFileSync('git', ['init', '--quiet'], { cwd: root });
+        execFileSync('git', ['add', 'crates/daw-dsp/src/grand_boule'], { cwd: root });
+
+        try {
+            const current = grandBouleReleaseInventoryContract(root);
+            expect(() =>
+                assertGrandBouleReleaseInventory(root, {
+                    revisions: ['stale tracked source'],
+                    digests: current.digests,
+                })
+            ).toThrow('Grand Boule release inventory revisions does not match provenance');
+            expect(() =>
+                assertGrandBouleReleaseInventory(root, {
+                    revisions: current.revisions,
+                    digests: ['tree-sha256:stale:crates/daw-dsp/src/grand_boule'],
+                })
+            ).toThrow('Grand Boule release inventory digests does not match provenance');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds owner-created visual assets and every derived rendition', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-'));
         mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
