@@ -994,8 +994,10 @@ fn bandlimited_stereo_sample(
     };
 
     for tap in 0..tap_count {
-        let lowpass = if distance.abs() < f32::EPSILON {
-            cutoff_scale
+        let lowpass = if distance.abs() < 1.0e-3 {
+            let x = core::f32::consts::PI * distance * cutoff_scale;
+            let x2 = x * x;
+            cutoff_scale * (1.0 - x2 * (1.0 / 6.0 - x2 * (1.0 / 120.0)))
         } else {
             sinc_sin / (core::f32::consts::PI * distance)
         };
@@ -1459,5 +1461,43 @@ mod tests {
             resampling_work_units_for_pitch(60, 60, 0.0, false) * 2,
             "admission must charge the same doubling the live accounting does"
         );
+    }
+
+    #[test]
+    fn centre_tap_sinc_weight_holds_accuracy_across_phase_sweep_at_max_radius() {
+        let sample = SampleData::from_mono(vec![1.0; 512], SAMPLE_RATE as u32);
+        let window = [1.0f32; MAX_BANDLIMITED_TAPS];
+        let tap_count = MAX_BANDLIMITED_TAPS; // 161 taps, radius 80
+        let cutoff_scale = 0.25f32;
+        let step = core::f32::consts::PI * cutoff_scale;
+        let (sinc_step_sin, sinc_step_cos) = step.sin_cos();
+
+        // Sweep fractional phases, especially near 0.0 where distance at centre tap is tiny.
+        for i in 0..10_000 {
+            let fraction = i as f32 / 10_000.0;
+            let (out_l, _) = bandlimited_stereo_sample(
+                &sample,
+                256,
+                fraction,
+                cutoff_scale,
+                sinc_step_sin,
+                sinc_step_cos,
+                tap_count,
+                &window,
+                0,
+                0,
+                512,
+                LoopMode::Forward,
+                false,
+            );
+            assert!(
+                out_l.is_finite() && !out_l.is_nan(),
+                "output at fraction {fraction} must be finite"
+            );
+            assert!(
+                (out_l - 1.0).abs() < 0.05,
+                "constant DC signal through normalized bandlimited filter must reconstruct unity: got {out_l} at fraction {fraction}"
+            );
+        }
     }
 }
