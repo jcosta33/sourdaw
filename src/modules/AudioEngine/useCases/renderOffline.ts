@@ -110,12 +110,19 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             projectMidiEvents,
             selectMidiEventProbability,
             projectPpqEndpoints,
+            resolveTempoAtBeat,
             processYeastMidi,
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
         } = renderContext;
-        if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints || !projectChordPitch) {
+        if (
+            !projectMidiEvents ||
+            !selectMidiEventProbability ||
+            !projectPpqEndpoints ||
+            !projectChordPitch ||
+            !resolveTempoAtBeat
+        ) {
             throw new Error('Offline musical projection is not configured');
         }
 
@@ -240,6 +247,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 defaultTempo,
                 changes,
                 projectPpqEndpoints,
+                resolveTempoAtBeat,
                 renderableTracks: allRenderableTracks,
                 scheduledTracks,
                 scheduledTrackIds,
@@ -409,6 +417,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    resolveTempoAtBeat,
                     processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,

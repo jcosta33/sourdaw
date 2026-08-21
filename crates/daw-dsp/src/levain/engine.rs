@@ -2755,11 +2755,17 @@ mod tests {
     }
 
     /// A voice whose every stream has run dry can only emit zeros, so holding
-    /// the pool with it costs polyphony and buys nothing. `VoicePool::allocate`
-    /// cannot recover the slot either: `steal_priority` scores an inaudible
-    /// release tail `1`, the *minimum* among active voices, while any sounding
-    /// voice scores `2 + …` — so the allocator steals the note that is still
-    /// ringing and leaves the silence in place.
+    /// the pool with it costs polyphony and buys nothing. This pins that
+    /// outcome: over an ordinary part, a note-on lands on the silence rather
+    /// than on the note still ringing.
+    ///
+    /// It is not evidence about `steal_priority`'s release-tail ordering, and
+    /// must not be read as covering it. The outcome here is reached by `tick`
+    /// deactivating a run-dry voice and `allocate` taking the freed slot by
+    /// its own short-circuit, so deleting the release-tail branch from
+    /// `steal_priority` outright leaves this test green. That ordering is
+    /// pinned in `voice.rs`'s own tests instead, against quantities the score
+    /// does not consume.
     ///
     /// Pinned on an ordinary part rather than a stress case: 4 notes a second,
     /// each struck and let go like a mallet stroke.

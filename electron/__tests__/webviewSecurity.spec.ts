@@ -303,12 +303,21 @@ describe('the navigation lockdown', () => {
         expect(isNavigationAllowed(origins, 'not a url')).toBe(false);
     });
 
-    it('denies every window-open target, opening only web URLs externally', () => {
+    it('denies every window-open target and routes only explicit safe destinations', () => {
         // `deny` is unconditional: a second Electron window would inherit this
         // origin, and with it the whole IPC surface.
         expect(decideWindowOpen('https://anthropic.com')).toEqual({ action: 'deny', openExternally: true });
         expect(decideWindowOpen('http://localhost:5173')).toEqual({ action: 'deny', openExternally: true });
+        expect(decideWindowOpen(`${APP_ORIGIN}/legal/THIRD-PARTY-NOTICES.md`)).toEqual({
+            action: 'deny',
+            openExternally: false,
+            legalDocument: 'THIRD-PARTY-NOTICES.md',
+        });
         expect(decideWindowOpen(`${APP_ORIGIN}/index.html`)).toEqual({ action: 'deny', openExternally: false });
+        expect(decideWindowOpen(`${APP_ORIGIN}/legal/THIRD-PARTY-NOTICES.md?other=true`)).toEqual({
+            action: 'deny',
+            openExternally: false,
+        });
         expect(decideWindowOpen('file:///etc/passwd')).toEqual({ action: 'deny', openExternally: false });
         expect(decideWindowOpen('javascript:alert(1)')).toEqual({ action: 'deny', openExternally: false });
         expect(decideWindowOpen('not a url')).toEqual({ action: 'deny', openExternally: false });

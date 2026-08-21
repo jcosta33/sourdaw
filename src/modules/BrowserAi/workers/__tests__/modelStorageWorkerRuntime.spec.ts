@@ -1452,6 +1452,38 @@ describe('modelStorageWorkerRuntime', () => {
         });
     });
 
+    it('reports a cache hit when the model file already exists in OPFS', async () => {
+        const fileHandle = {} as unknown as FileSystemFileHandle;
+        const familyDirectory = {
+            getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
+        } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const responses: ModelStorageWorkerResponse[] = [];
+        const handler = createModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'check-model',
+            requestId: 'check-hit',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+        });
+
+        expect(familyDirectory.getFileHandle).toHaveBeenCalledWith('model.onnx', { create: false });
+        expect(responses).toContainEqual({
+            type: 'model-checked',
+            requestId: 'check-hit',
+            cached: true,
+        });
+    });
+
     it('measures only BrowserAi model and render bytes', async () => {
         const file = (size: number) =>
             ({

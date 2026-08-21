@@ -77,15 +77,52 @@
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "desktop"],
-            "paths": ["electron/**", "build/**", "electron-builder.yml"],
-            "sources": ["https://github.com/electron/electron", "package.json"],
-            "revisions": ["pnpm-lock.yaml"],
-            "digests": ["pending:OS-07-final-desktop-package"],
-            "licenses": ["pending:OS-07"],
+            "paths": [
+                "electron/**",
+                "build/**",
+                "electron-builder.yml",
+                "public/legal/ELECTRON-SOURCES.json",
+                "public/legal/RELINKING.md",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "scripts/checkElectronRuntimeProvenance.ts",
+                "scripts/electronRuntimeContract.ts",
+                "scripts/flipElectronFuses.ts"
+            ],
+            "sources": [
+                "https://github.com/electron/electron",
+                "https://chromium.googlesource.com/chromium/src",
+                "https://github.com/nodejs/node",
+                "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
+                "package.json",
+                "public/legal/ELECTRON-SOURCES.json"
+            ],
+            "revisions": [
+                "electron 43.4.1 340bae15aaef12b7e96f1c857be986aa9f65c21c",
+                "Chromium 150.0.7871.224 36bfd07adec25f5027aaecf2023b35821f30ee4e",
+                "Node v24.18.1 9623d9ad85d37d2f0610ec4a82b48182cf2c6061",
+                "FFmpeg ad41607c61898cf7150e0fb20fe4bbabd44922a3",
+                "pnpm-lock.yaml"
+            ],
+            "digests": [
+                "npm-integrity:sha512-5b+EuiwkgG5iRcsEL34rimgRpkYp15SsfZOa0pC5kXs0Tb82TH4n95rpQzTZa7yRCbA7tm0WoEbuBL6NaAhAcA==",
+                "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+                "public/legal/ELECTRON-SOURCES.json",
+                "pending:OS-12-final-desktop-package"
+            ],
+            "licenses": [
+                "MIT:Electron",
+                "LGPL-2.1-or-later:Electron-FFmpeg",
+                "bundled-notices:electron-LICENSES.chromium.html"
+            ],
             "productSurfaces": ["Electron shell"],
-            "evidence": ["package.json"],
+            "evidence": [
+                "Exact package, source, target archive, and legal-file identities are pinned and checked.",
+                "The packaging hook copies verified Electron legal bytes outside app.asar before signing."
+            ],
             "obligations": [
-                "Reconcile the Electron shell and every bundled runtime notice before the desktop package ships."
+                "Keep Electron's exact license and bundled notices beside every desktop package.",
+                "Keep FFmpeg's exact source route and replacement instructions with every desktop release.",
+                "Block desktop release until its complete corresponding Electron FFmpeg source and build material ships beside it."
             ]
         },
         {
@@ -133,22 +170,28 @@
             "id": "mp3-encoder",
             "kind": "runtime-library",
             "retention": "keep-with-obligations",
-            "owner": "OS-10",
+            "owner": "OS-07",
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
+                "public/legal/LGPL-3.0-and-GPL-3.0.txt",
+                "public/legal/RELINKING.md",
+                "public/legal/SOURCES.json",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "public/legal/lamejs-NOTICE.txt",
                 "src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts"
             ],
-            "sources": ["https://github.com/shijinyu/lamejs", "node_modules/@breezystack/lamejs/package.json"],
-            "revisions": ["@breezystack/lamejs@1.2.7"],
+            "sources": ["https://github.com/gideonstele/lamejs", "public/legal/SOURCES.json"],
+            "revisions": ["@breezystack/lamejs@1.2.7", "1fb0ef5fa177413107e2e107d054a9b994e3f79c"],
             "digests": [
-                "pnpm-integrity:sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA=="
+                "pnpm-integrity:sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
+                "public/legal/SOURCES.json"
             ],
-            "licenses": ["LGPL-3.0"],
+            "licenses": ["LGPL-3.0-only"],
             "productSurfaces": ["MP3 export"],
-            "evidence": ["Installed package metadata declares LGPL-3.0."],
-            "obligations": ["Preserve LGPL notices and satisfy distribution obligations."]
+            "evidence": ["Exact package bytes, source revision, notice, license, and relink route are pinned."],
+            "obligations": ["Keep the source route, license, notice, and relink instructions beside every build."]
         },
         {
             "id": "webllm-qwen-artifacts",
@@ -506,15 +549,32 @@
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": ["public/faust/**"],
-            "sources": ["https://www.npmjs.com/package/@grame/faustwasm", "public/faust/"],
-            "revisions": ["checked files match @grame/faustwasm 0.15.7; package lock selects 0.16.7"],
-            "digests": ["pending:OS-07-version-matched-package-proof"],
-            "licenses": ["LGPL-3.0"],
+            "paths": [
+                "public/faust/**",
+                "public/legal/RELINKING.md",
+                "public/legal/SOURCES.json",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "public/legal/faustwasm-COPYING.txt"
+            ],
+            "sources": [
+                "https://github.com/grame-cncm/faustwasm",
+                "https://github.com/grame-cncm/faust",
+                "public/legal/SOURCES.json"
+            ],
+            "revisions": [
+                "@grame/faustwasm@0.16.7",
+                "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+                "libfaust 2.86.2 at 011423ab76674cd96009385af15cadcd281a3259"
+            ],
+            "digests": [
+                "pnpm-integrity:sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
+                "public/legal/SOURCES.json"
+            ],
+            "licenses": ["LGPL-2.1-or-later"],
             "productSurfaces": ["browser Faust compiler", "desktop Faust compiler"],
-            "evidence": ["Checked Faust binaries match an older LGPL dependency version and lack a source route."],
+            "evidence": ["Shipped compiler bytes match the pinned package and embedded compiler source version."],
             "obligations": [
-                "Supply version-matched source, LGPL text, attribution, and modification notice or replace the component."
+                "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build."
             ]
         },
         {
@@ -525,29 +585,49 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": ["public/wasm/**"],
             "sources": ["crates/daw-dsp/", "crates/daw-wasm-decoder/", "crates/proof-chamber/", "crates/scoring/"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": ["public/wasm/manifest.json"],
-            "licenses": ["pending:OS-10-project-grant", "dependency terms from Cargo.lock"],
+            "revisions": [
+                "rust nightly-2026-04-14",
+                "wasm-pack 0.14.0",
+                "wasm-bindgen 0.2.127",
+                "wasm-opt bundled-by-wasm-pack@0.14.0",
+                "daw-dsp sha256:96097d7fa2755b5784f611be9aad75a09d5b7e276f570b140469ad70968ca250",
+                "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
+                "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
+                "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
+            ],
+            "digests": [
+                "sha256:7de28ba843fa2780b77f635e8d133f26bf3add02ddadf5db6e1d69ab37a8d6fd:public/wasm/manifest.json"
+            ],
+            "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
-            "evidence": ["WASM packages map to workspace Rust sources and carry generated manifests."],
+            "evidence": ["The WASM gate binds every artifact to its crate closure and pinned toolchain."],
             "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
         },
         {
-            "id": "generated-audio-worklets",
-            "kind": "generated-binary",
+            "id": "audio-worklet-sources",
+            "kind": "project-source",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": ["public/audio/worklets/**"],
-            "sources": ["tracked project worklet sources and generators"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": ["pending:OS-07-source-to-output-map"],
+            "paths": [
+                "public/audio/worklets/native-plugin-bridge-processor.js",
+                "public/audio/worklets/sidechain-compressor-processor.js"
+            ],
+            "sources": [
+                "public/audio/worklets/native-plugin-bridge-processor.js",
+                "public/audio/worklets/sidechain-compressor-processor.js"
+            ],
+            "revisions": ["not-applicable:direct-project-source"],
+            "digests": [
+                "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
+                "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
+            ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
-            "evidence": ["Tracked worklet processors are shipped from the public release tree."],
-            "obligations": [
-                "Map every generated processor to its source and carry the project and dependency notices into distributions."
-            ]
+            "evidence": [
+                "Both shipped processors are direct project source; no generator or second source tree exists."
+            ],
+            "obligations": ["Carry the project grant into every distribution."]
         },
         {
             "id": "online-sample-sources",
@@ -568,10 +648,12 @@
             ],
             "revisions": ["live per-item sources"],
             "digests": ["not-applicable:linked-external-content"],
-            "licenses": ["per-item terms pending:OS-08"],
+            "licenses": ["external-item-terms:not-distributed"],
             "productSurfaces": ["online sample browser"],
-            "evidence": ["Current collection-level labels overstate item-level reuse rights."],
-            "obligations": ["Resolve and display the exact selected item's current terms before claiming reuse rights."]
+            "evidence": [
+                "No third-party sample is imported or redistributed; the browser links to source pages and makes no reuse claim."
+            ],
+            "obligations": ["Do not claim reuse rights without displaying the selected item's current terms."]
         },
         {
             "id": "owner-visual-assets",
@@ -703,7 +785,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "3dff3e25cf2d460fad86c8eb91703ee27e55e553c6be3c462bb5c4f54d8db929"
+            "sha256": "728835e50c1dc97634412728a7be672f458597e067c2e0121e4f095adf8dead2"
         },
         {
             "path": "server/package.json",
@@ -715,7 +797,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "f4a793c9674e94f0f8928957a5d9b1521a86ed70892a679e7762f5983530293d"
+            "sha256": "131903d9fd1ca4d3d7dc9559020afce5dbfbea4e56f6d18385d8406d0ae7bcec"
         },
         {
             "path": "Cargo.toml",
@@ -731,10 +813,143 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "9ff9f519be41d2b0cb9d3252c4c6e018630cf766d0830b3081c1975d051fcca2"
+            "sha256": "7de28ba843fa2780b77f635e8d133f26bf3add02ddadf5db6e1d69ab37a8d6fd"
         }
     ],
     "externalReferences": [
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://chromium.googlesource.com/chromium/src"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://chromium.googlesource.com/chromium/third_party/ffmpeg"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://github.com/electron/electron"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://github.com/nodejs/node"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://api.github.com/repos/${slot}/git/ref/tags/${slot}",
+            "templateSha256": "06d7919ac5cb5e29bcd0d7a3b1fe8f6682ef8ffb9f468dfcecd4b0881005512d"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://chromium.googlesource.com/chromium/src/+/refs/tags/${slot}?format=JSON",
+            "templateSha256": "254cb082f18652a0938eb20052c5a83f8407af4c53db8f7eb887876f663bdfea"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://chromium.googlesource.com/chromium/src/+/${slot}/DEPS?format=TEXT",
+            "templateSha256": "3017f6722da4b287495058fc18ef2372a13d809b358c3ed483a2734cf8da6742"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/${slot}?format=JSON",
+            "templateSha256": "efd1b2b24038aa89a08dcfeca1feaee596bb97e1aee2b7b73091efbaced7dc13"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://github.com/electron/electron/releases/download/v${slot}/SHASUMS256.txt",
+            "templateSha256": "6fcfb82cfd4e50b3ee9c7897a04fea0432705b4e83b32bdb635666db0e656ae9"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://raw.githubusercontent.com/electron/electron/${slot}/DEPS",
+            "templateSha256": "3ad2f537ccb7e7bbf2d4eacd893b4f197bad3eb1acf1afe66285900edd864831"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://registry.npmjs.org/electron/${slot}",
+            "templateSha256": "49c8146ce69424e645d7c1fc776f100568f688c4449640a18af71352000f7215"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://chromium.googlesource.com/chromium/src"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://chromium.googlesource.com/chromium/third_party/ffmpeg"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://github.com/electron/electron"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://github.com/nodejs/node"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/gideonstele/lamejs"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faust"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faustwasm"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://registry.npmjs.org/${slot}/${slot}",
+            "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
+        },
+        {
+            "surface": "mp3-encoder",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/gideonstele/lamejs"
+        },
+        {
+            "surface": "mp3-encoder",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faust"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faust/archive/011423ab76674cd96009385af15cadcd281a3259.tar.gz"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustwasm"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustwasm/archive/a1ae243d885d6494409a2a4a227cbdd2a6833edf.tar.gz"
+        },
         {
             "surface": "community-links",
             "file": "crates/daw-plugin-host/src/clap_host.rs",
@@ -877,6 +1092,12 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://x-access-token:${slot}@github.com/${slot}.git",
             "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/reconcileTrackerIssue.ts",
+            "value": "https://api.github.com/repos/${slot}",
+            "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
         },
         {
             "surface": "cloud-ai-providers",

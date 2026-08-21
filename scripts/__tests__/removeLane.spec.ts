@@ -152,6 +152,12 @@ describe('lane removal', () => {
         ['ignored data', target, { ignored: ['.env'] }, /ignored data/],
         ['operation', target, { operation: 'rebase' }, /active rebase/],
         ['open PR', target, { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null })] }, /still active/],
+        [
+            'open draft PR',
+            target,
+            { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null, isDraft: true })] },
+            /still active/,
+        ],
         ['foreign repository', target, { pullRequests: [pullRequest({ headRepository: 'jcosta33/fork' })] }, /foreign/],
         ['reused branch', target, { pullRequests: [pullRequest(), pullRequest({ number: 43 })] }, /one pull request/],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
@@ -202,10 +208,62 @@ describe('lane removal', () => {
         expect(calls).toContain(`remove:${target}`);
     });
 
+    /**
+     * `supersessionReplacement` returns `undefined` for a comment that is not receipt-shaped, and
+     * that entry must not still count toward the receipt total: one parsed receipt plus one
+     * unrelated author-bot comment is one receipt, not two.
+     */
+    it('removes a superseded lane carrying one valid receipt alongside an unrelated author-bot comment', () => {
+        const { port, calls } = fakePort({
+            pullRequests: [supersededPullRequest()],
+            comments: [supersessionReceipt(99), supersessionReceipt(99, { body: 'Thanks for the update!' })],
+        });
+
+        let thrown: unknown;
+        try {
+            removeLane(target, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown, 'a valid receipt was outvoted by an unparsed comment').toBeUndefined();
+        expect(calls).toContain(`remove:${target}`);
+    });
+
+    /**
+     * The draft flag says nothing about whether the work landed. `pr:supersede` can close a draft
+     * pull request against a genuinely merged replacement, and that lane must be removable through
+     * the same receipt path a non-draft superseded lane uses.
+     */
+    it('removes a superseded draft carrying a valid receipt naming a merged replacement', () => {
+        const { port, calls } = fakePort({
+            pullRequests: [supersededPullRequest({ isDraft: true })],
+            comments: [supersessionReceipt(99)],
+        });
+
+        let thrown: unknown;
+        try {
+            removeLane(target, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(
+            thrown,
+            'a superseded draft, and the share of the author lock it holds, stayed stranded'
+        ).toBeUndefined();
+        expect(calls).toContain(`remove:${target}`);
+    });
+
     it.each([
         [
             'closed with no receipt at all',
             { pullRequests: [supersededPullRequest()], comments: [] },
+            /closed without a supersession receipt/,
+        ],
+        [
+            'closed draft with no receipt',
+            { pullRequests: [supersededPullRequest({ isDraft: true })], comments: [] },
             /closed without a supersession receipt/,
         ],
         [

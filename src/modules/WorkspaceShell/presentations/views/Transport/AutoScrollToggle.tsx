@@ -24,7 +24,7 @@ export const AutoScrollToggle = (): ReactElement => {
                     variant={autoScrollEnabled ? 'secondary' : 'ghost'}
                     size="icon-sm"
                     aria-label="Auto-scroll follows playhead"
-                    aria-pressed={autoScrollEnabled}
+                    aria-pressed={autoScrollEnabled ? 'true' : 'false'}
                     onClick={() => {
                         toggleTimelineAutoScroll();
                     }}

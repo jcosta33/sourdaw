@@ -173,16 +173,22 @@ type OwnershipSnapshot = {
  * unmerged work.
  *
  * The receipt is what separates them. `pr:supersede` posts exactly one author-bot comment naming
- * the replacement and verifies it is the only one before it closes anything, so a closed pull
- * request carrying that receipt was closed by the supersede path and by nothing else. Reading it
- * back is not enough on its own: the receipt says where the work went, not that it arrived, so the
- * named replacement must itself be merged before this lane counts as spent.
+ * the replacement before it closes anything. This function does not itself establish that
+ * invariant — that guarantee lives in `supersedePullRequest.ts`, which refuses to post a receipt
+ * onto a pull request already carrying a non-matching author-bot comment. What this function does
+ * independently is count only the author-bot comments that actually parse as a receipt, so a
+ * closed pull request carrying exactly one parsed receipt is trusted, and one carrying zero or
+ * more than one — whether from unrelated author-bot chatter or genuinely conflicting receipts — is
+ * refused. Reading the receipt back is not enough on its own: it says where the work went, not
+ * that it arrived, so the named replacement must itself be merged before this lane counts as
+ * spent.
  */
 function supersededReplacement(number: number, port: LaneRemovalPort): number {
     const receipts = port
         .comments(number)
         .filter((comment) => comment.authorType === 'Bot' && isAuthorBotLogin(comment.authorLogin))
-        .map((comment) => supersessionReplacement(comment.body));
+        .map((comment) => supersessionReplacement(comment.body))
+        .filter((parsed): parsed is number => parsed !== undefined);
     const [replacement] = receipts;
     if (receipts.length !== 1 || replacement === undefined) {
         fail(`PR #${number} is closed without a supersession receipt`);
@@ -247,7 +253,13 @@ function validateOwnership(
         fail(`PR #${pullRequest.number} is foreign`);
     }
     const merged = pullRequest.state === 'MERGED' && pullRequest.mergedAt !== null;
-    if (pullRequest.isDraft || (!merged && pullRequest.state !== 'CLOSED')) {
+    // The draft flag says nothing about whether the work landed: an OPEN draft is already refused
+    // below because it is neither merged nor closed, and GitHub cannot merge a pull request while
+    // it is still a draft, so a MERGED pull request is never a draft either. A CLOSED draft is the
+    // one state a standalone `isDraft` refusal here would wrongly block — `pr:supersede` can close
+    // a draft pull request against a genuinely merged replacement, and that lane must still be able
+    // to prove it through the receipt path below.
+    if (!merged && pullRequest.state !== 'CLOSED') {
         fail(`PR #${pullRequest.number} is still active`);
     }
     const supersededBy = merged ? undefined : supersededReplacement(pullRequest.number, port);
