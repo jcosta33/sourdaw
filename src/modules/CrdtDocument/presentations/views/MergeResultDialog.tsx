@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 export type MergeResultData = {
@@ -22,7 +23,7 @@ type MergeResultDialogProps = {
 export const MergeResultDialog = ({ result, onClose }: MergeResultDialogProps): ReactElement => {
     if (!result.success) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
+            <Row justify="center" className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
                 <DawUtilityPanel className="w-full max-w-sm">
                     <DawHeaderBand
                         className="px-4 py-3"
@@ -30,23 +31,23 @@ export const MergeResultDialog = ({ result, onClose }: MergeResultDialogProps): 
                         title="Merge Failed"
                         titleClassName="text-[11px] text-foreground"
                     />
-                    <div className="space-y-4 px-4 py-4">
+                    <Stack gap={4} className="px-4 py-4">
                         <p className="text-sm leading-relaxed text-muted-foreground">
                             {result.error ?? 'An unknown error occurred during merge.'}
                         </p>
-                        <div className="flex justify-end">
+                        <Row align="stretch" justify="end">
                             <Button variant="secondary" size="sm" onClick={onClose}>
                                 Close
                             </Button>
-                        </div>
-                    </div>
+                        </Row>
+                    </Stack>
                 </DawUtilityPanel>
-            </div>
+            </Row>
         );
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
+        <Row justify="center" className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
             <DawUtilityPanel className="w-full max-w-sm">
                 <DawHeaderBand
                     className="px-4 py-3"
@@ -54,8 +55,8 @@ export const MergeResultDialog = ({ result, onClose }: MergeResultDialogProps): 
                     title="Merge Complete"
                     titleClassName="text-[11px] text-foreground"
                 />
-                <div className="space-y-4 px-4 py-4">
-                    <div className="space-y-2 text-sm text-foreground/88">
+                <Stack gap={4} className="px-4 py-4">
+                    <Stack gap={2} className="text-sm text-foreground/88">
                         {result.tracksAdded > 0 ? (
                             <p>
                                 {result.tracksAdded} new track{result.tracksAdded > 1 ? 's' : ''} added
@@ -76,14 +77,14 @@ export const MergeResultDialog = ({ result, onClose }: MergeResultDialogProps): 
                                 No changes detected. The projects are already in sync.
                             </p>
                         ) : null}
-                    </div>
-                    <div className="flex justify-end">
+                    </Stack>
+                    <Row align="stretch" justify="end">
                         <Button size="sm" onClick={onClose}>
                             Done
                         </Button>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             </DawUtilityPanel>
-        </div>
+        </Row>
     );
 };
