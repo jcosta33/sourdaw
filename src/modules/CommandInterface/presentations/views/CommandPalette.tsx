@@ -1,6 +1,7 @@
 import { type ReactElement, type KeyboardEvent, useState, useRef } from 'react';
 
 import { DawKeycap } from '#/components/daw/DawKeycap';
+import { Row } from '#/components/layout';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
@@ -67,7 +68,7 @@ export const CommandPalette = (): ReactElement | null => {
         >
             <DialogContent className="max-w-md gap-0 overflow-hidden p-0" aria-describedby={undefined}>
                 <DialogTitle className="sr-only">Command Palette</DialogTitle>
-                <div className="daw-header-band flex items-center rounded-t-lg px-3">
+                <Row className="daw-header-band rounded-t-lg px-3">
                     <span className="text-sm text-muted-foreground mr-2">&gt;</span>
                     <Input
                         ref={inputRef}
@@ -82,7 +83,7 @@ export const CommandPalette = (): ReactElement | null => {
                         data-testid="command-palette-input"
                         autoFocus
                     />
-                </div>
+                </Row>
 
                 <div className="max-h-72 overflow-y-auto bg-surface-base py-1" role="listbox">
                     {results.map((cmd, index) => (
