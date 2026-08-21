@@ -1,0 +1,34 @@
+src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts
+  s_a40848e8f8cca9::t_99e30bb5a862a9 447
+  s_a40848e8f8cca9::t_69702ac27321c2 24-26,150,202,238-239,241-242,244-271
+  s_a40848e8f8cca9::t_99e0f1f7d5b215 240,243,272-274
+  s_24b1bdbc3c31ad::t_c74e116eff0e64 275-276
+src/modules/Project/useCases/semanticProjectQueries.ts
+  s_a40848e8f8cca9::t_66e2510148f4ad 272,310-317,403,631
+src/modules/Project/useCases/semanticProjectIndex.ts
+  s_a40848e8f8cca9::t_66e2510148f4ad 321,327,514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9cf0e853cd8b93d6317df5010e9422d348afe82c",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
