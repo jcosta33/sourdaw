@@ -3,6 +3,7 @@ import { type ReactElement, useState, useEffect } from 'react';
 import { Check, Undo2, X } from 'lucide-react';
 
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 import { undoLastAction } from '../../useCases/aiPanelActions/undoLastAction';
@@ -50,22 +51,26 @@ export const AiChangeToast = (): ReactElement | null => {
             role="status"
             aria-live="polite"
         >
-            <div className="flex items-start gap-2">
-                <div className="mt-0.5 size-5 rounded-full bg-[var(--color-state-success)]/20 flex items-center justify-center shrink-0">
+            <Row align="start" gap={2}>
+                <Row
+                    justify="center"
+                    shrink={false}
+                    className="mt-0.5 size-5 rounded-full bg-[var(--color-state-success)]/20"
+                >
                     <Check className="size-3 text-[var(--color-state-success)]" />
-                </div>
+                </Row>
                 <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
                     {latest.details.length > 0 ? (
-                        <div className="mt-1 space-y-0.5">
+                        <Stack gap={0.5} className="mt-1">
                             {detailRows.map((detail_row) => (
                                 <p key={detail_row.key} className="text-[10px] text-muted-foreground">
                                     {detail_row.detail}
                                 </p>
                             ))}
-                        </div>
+                        </Stack>
                     ) : null}
-                    <div className="mt-2 flex gap-1">
+                    <Row align="stretch" gap={1} className="mt-2">
                         <Button
                             variant="ghost"
                             size="xs"
@@ -79,9 +84,9 @@ export const AiChangeToast = (): ReactElement | null => {
                         <Button variant="ghost" size="xs" onClick={() => setChanges((prev) => prev.slice(1))}>
                             <X className="size-3 mr-1" /> Dismiss
                         </Button>
-                    </div>
+                    </Row>
                 </div>
-            </div>
+            </Row>
         </DawUtilityPanel>
     );
 };

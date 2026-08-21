@@ -14,7 +14,10 @@ describe('resolveRenderContext', () => {
         vi.clearAllMocks();
         restoreTransportSnapshot({ tempo: 120 });
         restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
-        configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
+        configureOfflinePpqEndpointProjection({
+            project: projectPpqEndpoints,
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+        });
     });
 
     it('returns durationSeconds for a plain duration (no start offset, no tail)', () => {
@@ -68,10 +71,16 @@ describe('resolveRenderContext', () => {
     it('snapshots the PPQ projector for the lifetime of one render context', () => {
         const firstProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
         const replacementProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
-        configureOfflinePpqEndpointProjection({ project: firstProjector });
+        configureOfflinePpqEndpointProjection({
+            project: firstProjector,
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+        });
 
         const context = resolveRenderContext(4);
-        configureOfflinePpqEndpointProjection({ project: replacementProjector });
+        configureOfflinePpqEndpointProjection({
+            project: replacementProjector,
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+        });
 
         expect(context.projectPpqEndpoints).toBe(firstProjector);
     });

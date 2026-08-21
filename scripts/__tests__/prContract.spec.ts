@@ -6,10 +6,15 @@ import {
     assertLaneSlug,
     assertPullRequestBody,
     assertReviewCommentBody,
+    canonicalIssueReferenceFromBody,
+    composeDeliveryReceipt,
     composePublishBody,
     fail,
     issueRelationshipFromBody,
     laneBranchName,
+    parseDeliveryReceipt,
+    supersessionCommentBody,
+    supersessionReplacement,
 } from '../prContract.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -90,6 +95,60 @@ describe('pull-request contract', () => {
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
         expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
             /exactly one relationship/
+        );
+    });
+
+    it('derives delivery authority only from one canonical same-repository relationship', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(canonicalIssueReferenceFromBody(`${prefix}Closes #2164`, 'jcosta33/sourdaw')).toEqual({
+            issue: 2164,
+            relationship: 'closes',
+        });
+        expect(canonicalIssueReferenceFromBody(`${prefix}Closes JCOSTA33/SOURDAW#2164`, 'jcosta33/sourdaw')).toEqual({
+            issue: 2164,
+            relationship: 'closes',
+        });
+        expect(canonicalIssueReferenceFromBody(`${prefix}Related #2164`, 'jcosta33/sourdaw')).toEqual({
+            issue: 2164,
+            relationship: 'relates',
+        });
+        expect(canonicalIssueReferenceFromBody(`${prefix}None.`, 'jcosta33/sourdaw')).toBeUndefined();
+        expect(() =>
+            canonicalIssueReferenceFromBody(`${prefix}Closes other/repository#2164`, 'jcosta33/sourdaw')
+        ).toThrow(/must target jcosta33\/sourdaw/);
+        expect(() => canonicalIssueReferenceFromBody(`${prefix}Closes #90071992547409930`, 'jcosta33/sourdaw')).toThrow(
+            /safe positive integer/
+        );
+    });
+
+    it.each(['Fixes #2164', 'closes #2164', 'Closes: #2164'])('rejects non-canonical delivery authority %s', (line) => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(() => canonicalIssueReferenceFromBody(`${prefix}${line}`, 'jcosta33/sourdaw')).toThrow(/canonical/);
+    });
+
+    it('rejects closing authority outside the canonical Related tickets section', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(() => canonicalIssueReferenceFromBody(`Fixes #99\n${prefix}Closes #2164`, 'jcosta33/sourdaw')).toThrow(
+            /unexpected issue-closing references/
+        );
+    });
+
+    it('round-trips one exact immutable delivery receipt and rejects malformed variants', () => {
+        const payload = {
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+        };
+        const receipt = composeDeliveryReceipt(payload);
+
+        expect(parseDeliveryReceipt(receipt)).toEqual(payload);
+        expect(parseDeliveryReceipt('ordinary PR comment')).toBeUndefined();
+        expect(() =>
+            parseDeliveryReceipt(receipt.replace('closing-issue: 2406', 'closing-issue: 90071992547409930'))
+        ).toThrow(/safe positive integer/);
+        expect(() => parseDeliveryReceipt(receipt.replace('body-sha256:', 'body-digest:'))).toThrow(
+            /invalid delivery receipt/
         );
     });
 
@@ -215,6 +274,28 @@ describe('pull-request contract', () => {
         expect(() => assertLaneSlug('2206')).toThrow(/purely numeric/);
         expect(() => assertLaneSlug('0')).toThrow(/purely numeric/);
         expect(() => assertLaneSlug('sprint-2206')).not.toThrow();
+    });
+
+    /**
+     * `pr:supersede` writes this comment and `lane:remove` reads it back to decide whether a closed
+     * lane may be deleted. The two only agree because they share this pair, so the round trip is
+     * the contract, not the literal.
+     */
+    it('round-trips the supersession receipt it writes', () => {
+        expect(supersessionCommentBody(2398)).toBe('Superseded by #2398.');
+        expect(supersessionReplacement(supersessionCommentBody(2398))).toBe(2398);
+    });
+
+    it.each([
+        ['a bare Done reply', 'Done'],
+        ['prose that merely mentions a supersession', 'This was superseded by #12, see there.'],
+        ['a receipt with trailing commentary', 'Superseded by #12. Please look there.'],
+        ['a receipt with a leading quote', '> Superseded by #12.'],
+        ['a receipt with no terminating period', 'Superseded by #12'],
+        ['a receipt naming pull request zero', 'Superseded by #0.'],
+        ['a receipt naming no pull request', 'Superseded by #.'],
+    ])('reads no replacement out of %s', (_case, body) => {
+        expect(supersessionReplacement(body)).toBeUndefined();
     });
 
     it('requires one-paragraph review comments with defect, consequence, and outcome', () => {

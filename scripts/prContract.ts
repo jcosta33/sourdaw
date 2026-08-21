@@ -100,11 +100,27 @@ export const NO_RELATED_TICKETS = 'None.';
 
 export type IssueRelationship = 'closes' | 'relates';
 
+export type CanonicalIssueReference = {
+    issue: number;
+    relationship: IssueRelationship;
+};
+
+export type DeliveryReceiptPayload = {
+    pullRequest: number;
+    head: string;
+    bodySha256: string;
+    closingIssue?: number;
+};
+
 const CLOSING_REFERENCE_PATTERN =
     /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))\b/gi;
 const CLOSING_RELATIONSHIP_PATTERN =
     /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
 const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
+const CANONICAL_CLOSING_RELATIONSHIP_PATTERN = /^Closes (?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/;
+const DELIVERY_RECEIPT_PREFIX = '<!-- sourdaw-delivery-receipt:v1';
+const DELIVERY_RECEIPT_PATTERN =
+    /^<!-- sourdaw-delivery-receipt:v1\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)\n-->$/;
 
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
@@ -142,22 +158,116 @@ function assertIssueClosingReferences(
     }
 }
 
-export function issueRelationshipFromBody(
-    body: string,
-    issue: number | undefined,
-    repository?: string
-): IssueRelationship | undefined {
+function relatedTicketLines(body: string): string[] {
     const heading = REQUIRED_BODY_HEADINGS.at(-1);
     const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
     if (heading === undefined || headingIndex < 0 || headingIndex !== body.lastIndexOf(heading)) {
         fail('pull-request body must contain exactly one Related tickets section');
     }
-    const lines = body
+    return body
         .slice(headingIndex + heading.length)
         .trim()
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter((line) => line !== '');
+}
+
+export function canonicalIssueReferenceFromBody(body: string, repository: string): CanonicalIssueReference | undefined {
+    const lines = relatedTicketLines(body);
+    if (lines[0] === NO_RELATED_TICKETS) {
+        if (
+            lines.some(
+                (line) => CANONICAL_CLOSING_RELATIONSHIP_PATTERN.test(line) || RELATED_RELATIONSHIP_PATTERN.test(line)
+            )
+        ) {
+            fail('pull-request body cannot combine None. with an issue relationship');
+        }
+        assertIssueClosingReferences(body, undefined, undefined, repository);
+        return undefined;
+    }
+
+    const references = lines.flatMap<ClosingReference & { relationship: IssueRelationship }>((line) => {
+        const closing = CANONICAL_CLOSING_RELATIONSHIP_PATTERN.exec(line);
+        if (closing !== null) {
+            return [
+                {
+                    relationship: 'closes',
+                    repository: closing[2],
+                    issue: closing[1] ?? closing[3] ?? '',
+                },
+            ];
+        }
+        const related = RELATED_RELATIONSHIP_PATTERN.exec(line);
+        return related === null ? [] : [{ relationship: 'relates', issue: related[1] ?? '' }];
+    });
+    const reference = references[0];
+    if (references.length !== 1 || reference === undefined || lines.includes(NO_RELATED_TICKETS)) {
+        fail('pull-request body must contain exactly one canonical issue relationship or None.');
+    }
+    if (reference.repository !== undefined && reference.repository.toLowerCase() !== repository.toLowerCase()) {
+        fail(`pull-request body issue relationship must target ${repository}`);
+    }
+    const issue = Number(reference.issue);
+    if (!Number.isSafeInteger(issue) || issue <= 0) {
+        fail('pull-request body issue relationship must use a safe positive integer');
+    }
+    assertIssueClosingReferences(body, issue, reference.relationship, repository);
+    return { issue, relationship: reference.relationship };
+}
+
+export function composeDeliveryReceipt(payload: DeliveryReceiptPayload): string {
+    assertSafeIssueNumber(payload.pullRequest, 'delivery receipt pull request');
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(payload.head)) {
+        fail('delivery receipt head is invalid');
+    }
+    if (!/^[0-9a-f]{64}$/.test(payload.bodySha256)) {
+        fail('delivery receipt body digest is invalid');
+    }
+    if (payload.closingIssue !== undefined) {
+        assertSafeIssueNumber(payload.closingIssue, 'delivery receipt closing issue');
+    }
+    return [
+        DELIVERY_RECEIPT_PREFIX,
+        `pull-request: ${payload.pullRequest}`,
+        `head: ${payload.head}`,
+        `body-sha256: ${payload.bodySha256}`,
+        `closing-issue: ${payload.closingIssue === undefined ? 'none' : String(payload.closingIssue)}`,
+        '-->',
+    ].join('\n');
+}
+
+export function parseDeliveryReceipt(body: string): DeliveryReceiptPayload | undefined {
+    if (!body.startsWith('<!-- sourdaw-delivery-receipt:')) {
+        return undefined;
+    }
+    const match = DELIVERY_RECEIPT_PATTERN.exec(body);
+    if (match === null) {
+        fail('invalid delivery receipt');
+    }
+    const pullRequest = Number(match[1]);
+    const head = match[2] ?? '';
+    const bodySha256 = match[3] ?? '';
+    const rawClosingIssue = match[4];
+    const closingIssue = rawClosingIssue === 'none' ? undefined : Number(rawClosingIssue);
+    const payload = { pullRequest, head, bodySha256, closingIssue };
+    if (composeDeliveryReceipt(payload) !== body) {
+        fail('non-canonical delivery receipt');
+    }
+    return payload;
+}
+
+function assertSafeIssueNumber(value: number, label: string): void {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+        fail(`${label} must be a safe positive integer`);
+    }
+}
+
+export function issueRelationshipFromBody(
+    body: string,
+    issue: number | undefined,
+    repository?: string
+): IssueRelationship | undefined {
+    const lines = relatedTicketLines(body);
     const relationships = lines.flatMap<IssueReference>((line) => {
         const closing = CLOSING_RELATIONSHIP_PATTERN.exec(line);
         if (closing !== null) {
@@ -248,6 +358,27 @@ export function assertLaneSlug(slug: string): void {
 
 export function laneBranchName(issue: number | undefined, slug: string): string {
     return issue === undefined ? `agent/${slug}` : `agent/${issue}/${slug}`;
+}
+
+/**
+ * The supersession receipt. `pr:supersede` writes exactly this comment as the author bot before it
+ * closes the old pull request, and `lane:remove` reads it back to tell a superseded lane from an
+ * abandoned one. Both sides go through this pair, so the receipt is one contract rather than two
+ * string literals that drift apart.
+ */
+export function supersessionCommentBody(replacement: number): string {
+    return `Superseded by #${replacement}.`;
+}
+
+const SUPERSESSION_COMMENT_PATTERN = /^Superseded by #([1-9][0-9]*)\.$/;
+
+export function supersessionReplacement(body: string): number | undefined {
+    const captured = SUPERSESSION_COMMENT_PATTERN.exec(body)?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const replacement = Number(captured);
+    return Number.isSafeInteger(replacement) && replacement > 0 ? replacement : undefined;
 }
 
 export function assertReviewCommentBody(body: string): void {

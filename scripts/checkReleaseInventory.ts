@@ -6,7 +6,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
+import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
+import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RETENTION_CLASSES = [
     'keep',
@@ -61,6 +64,8 @@ export const REQUIRED_MARKS = [
     'Yamaha',
 ] as const;
 
+export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
     'rave-models': [
         'src/modules/BrowserAi/handlers/rave/**',
@@ -88,6 +93,9 @@ type ReleaseSurface = {
     evidence: string[];
     obligations: string[];
 };
+
+type SurfaceContract = Pick<ReleaseSurface, 'kind' | 'paths' | 'sources' | 'revisions' | 'digests' | 'licenses'>;
+type TrademarkSurfaceContract = Omit<SurfaceContract, 'paths'>;
 
 type ExternalReference = {
     file: string;
@@ -124,6 +132,66 @@ const ignoredUrlHosts = new Set([
 
 function sortedUnique(values: string[]): string[] {
     return [...new Set(values)].sort();
+}
+
+function fileSha256(path: string): string {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+export const AUDIO_WORKLET_SOURCES = [
+    'public/audio/worklets/native-plugin-bridge-processor.js',
+    'public/audio/worklets/sidechain-compressor-processor.js',
+] as const;
+
+export function audioWorkletReleaseInventoryContract(root: string): SurfaceContract {
+    return {
+        kind: 'project-source',
+        paths: [...AUDIO_WORKLET_SOURCES],
+        sources: [...AUDIO_WORKLET_SOURCES],
+        revisions: ['not-applicable:direct-project-source'],
+        digests: AUDIO_WORKLET_SOURCES.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+        licenses: ['pending:OS-10-project-grant'],
+    };
+}
+
+export function trademarkReleaseInventoryContract(root: string): TrademarkSurfaceContract {
+    return {
+        kind: 'reference-map',
+        sources: [TRADEMARK_NOTICE_PATH, 'current source text'],
+        revisions: ['current release text'],
+        digests: [`sha256:${fileSha256(resolve(root, TRADEMARK_NOTICE_PATH))}:${TRADEMARK_NOTICE_PATH}`],
+        licenses: ['not-applicable:trademark-rights-not-granted'],
+    };
+}
+
+export function wasmReleaseInventoryContract(root: string, manifest: WasmManifest): SurfaceContract {
+    const packages = Object.entries(manifest.packages).sort(([left], [right]) => left.localeCompare(right));
+    return {
+        kind: 'generated-binary',
+        paths: ['public/wasm/**'],
+        sources: packages.map(([, entry]) => `${entry.crate}/`),
+        revisions: [
+            `rust ${manifest.toolchain.rustToolchain}`,
+            `wasm-pack ${manifest.toolchain.wasmPack}`,
+            `wasm-bindgen ${manifest.toolchain.wasmBindgen}`,
+            `wasm-opt ${manifest.toolchain.wasmOpt}`,
+            ...packages.map(([id, entry]) => `${id} ${entry.crateSourceHash}`),
+        ],
+        digests: [`sha256:${fileSha256(resolve(root, 'public/wasm/manifest.json'))}:public/wasm/manifest.json`],
+        licenses: ['pending:OS-10-project-grant', 'pending:OS-10-Cargo-dependency-notices'],
+    };
+}
+
+function assertSurfaceContract(
+    surface: ReleaseSurface | undefined,
+    expected: Partial<SurfaceContract>,
+    label: string
+): void {
+    for (const [field, value] of Object.entries(expected)) {
+        if (JSON.stringify(surface?.[field as keyof ReleaseSurface]) !== JSON.stringify(value)) {
+            throw new Error(`${label} release inventory ${field} does not match provenance`);
+        }
+    }
 }
 
 function isScannedSource(path: string): boolean {
@@ -480,6 +548,10 @@ export function validateReleaseInventory(
                 errors.push('required component surface missing: third-party-marks');
             } else {
                 const mappedPaths = sortedUnique(inventory.marks.flatMap((mark) => mark.paths));
+                const allowedPaths = sortedUnique([...mappedPaths, TRADEMARK_NOTICE_PATH]);
+                if (!markSurface.paths.includes(TRADEMARK_NOTICE_PATH)) {
+                    errors.push(`third-party-marks: required notice missing: ${TRADEMARK_NOTICE_PATH}`);
+                }
                 errors.push(
                     formatMissing(
                         'third-party-marks: candidate paths missing from surface',
@@ -489,7 +561,7 @@ export function validateReleaseInventory(
                 errors.push(
                     formatMissing(
                         'third-party-marks: stale surface paths',
-                        markSurface.paths.filter((path) => !mappedPaths.includes(path))
+                        markSurface.paths.filter((path) => !allowedPaths.includes(path))
                     )
                 );
             }
@@ -565,6 +637,24 @@ export function checkReleaseInventory(root: string): void {
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
+    execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
+        cwd: root,
+        stdio: 'inherit',
+    });
+    const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
+    assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
+    const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
+    assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
+    const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
+    assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
+    checkElectronRuntimeProvenance(root);
+    const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
+    for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
+        if (JSON.stringify(electronSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
+            throw new Error(`Electron release inventory ${field} does not match provenance`);
+        }
+    }
+    checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
     const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
     const levainContract = {

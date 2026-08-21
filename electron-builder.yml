@@ -70,6 +70,9 @@ files:
     - '!node_modules/**/*'
 
 extraResources:
+    # LGPL notices and relinking material remain readable outside the asar.
+    - from: public/legal
+      to: legal
     # `resolveContentRoots()` in `electron/protocol.ts` reads packaged samples
     # from `<Resources>/samples`.
     - from: public/samples
@@ -86,8 +89,10 @@ extraResources:
           - '*.node'
           - '*.dylib'
 
-# Flips and then reads back the Electron fuses. Runs before signing, so the
-# signature electron-builder applies covers the modified binary.
+# Capture the target Electron archive's exact legal files before the mac packager
+# removes them. Flip and read back the fuses after packaging. Both hooks run
+# before signing.
+afterExtract: ./scripts/flipElectronFuses.ts
 afterPack: ./scripts/flipElectronFuses.ts
 
 mac:

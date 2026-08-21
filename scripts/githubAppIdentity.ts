@@ -18,6 +18,12 @@ export function isAuthorBotLogin(login: string | undefined | null): boolean {
     return login === AUTHOR_BOT_LOGIN || login === AUTHOR_GRAPHQL_LOGIN;
 }
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
+/**
+ * The one branch a pull request may target. `lane:publish` opens every pull request against it and
+ * `deliver` merges into nothing else, so a base that is not this branch is a retarget the delivery
+ * scripts did not make.
+ */
+export const REQUIRED_BASE_BRANCH = 'main';
 export const GITHUB_HTTPS_REMOTE = `https://github.com/${REQUIRED_REPOSITORY}.git`;
 export function githubAuthenticatedRemote(token: string): string {
     return `https://x-access-token:${token}@github.com/${REQUIRED_REPOSITORY}.git`;
@@ -46,6 +52,10 @@ export const AUTHOR_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
+export const TRACKER_AUTHOR_MINT_PERMISSIONS = {
+    pull_requests: 'write',
+} as const;
+
 export const REVIEWER_MINT_PERMISSIONS = {
     contents: 'read',
     pull_requests: 'write',
@@ -61,8 +71,9 @@ export type RoleCredentials = {
 };
 
 export type MintPermissions = {
-    contents: 'read' | 'write';
-    pull_requests: 'write';
+    contents?: 'read' | 'write';
+    pull_requests?: 'write';
+    issues?: 'write';
 };
 
 export type MintedInstallation = {
@@ -246,6 +257,26 @@ export async function authenticateRole(input: {
         privateKey: credentials.privateKey,
         permissions: input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS,
         expectedLogin: input.role === 'author' ? AUTHOR_BOT_LOGIN : REVIEWER_BOT_LOGIN,
+        request: input.request,
+    });
+    return { credentials, minted, session: createGhSession(minted.token, env) };
+}
+
+export async function authenticateTrackerAuthor(input: {
+    primaryRoot: string;
+    readFile?: FileReader;
+    request?: GitHubJsonClient;
+    env?: NodeJS.ProcessEnv;
+}): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
+    const env = input.env ?? process.env;
+    clearInheritedGithubEnv(env);
+    const credentials = loadRoleCredentials(input.primaryRoot, 'author', input.readFile);
+    const minted = await mintInstallationToken({
+        appId: credentials.appId,
+        installationId: credentials.installationId,
+        privateKey: credentials.privateKey,
+        permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
+        expectedLogin: AUTHOR_BOT_LOGIN,
         request: input.request,
     });
     return { credentials, minted, session: createGhSession(minted.token, env) };
@@ -442,13 +473,10 @@ function assertMintedPermissions(requested: MintPermissions, granted: Record<str
     if (requested.contents === 'read' && granted.contents === 'write') {
         fail('reviewer installation token granted contents: write');
     }
-    if (granted.contents !== requested.contents) {
-        fail(`installation token contents is ${granted.contents ?? '<missing>'}; expected ${requested.contents}`);
-    }
-    if (granted.pull_requests !== requested.pull_requests) {
-        fail(
-            `installation token pull_requests is ${granted.pull_requests ?? '<missing>'}; expected ${requested.pull_requests}`
-        );
+    for (const [name, expected] of Object.entries(requested)) {
+        if (granted[name] !== expected) {
+            fail(`installation token ${name} is ${granted[name] ?? '<missing>'}; expected ${expected}`);
+        }
     }
     const requestedNames = new Set(Object.keys(requested));
     for (const [key, level] of Object.entries(granted)) {

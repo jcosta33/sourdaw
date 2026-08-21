@@ -1,22 +1,34 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 import {
     AUTHOR_BOT_LOGIN,
     REVIEWER_BOT_LOGIN,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
+    authenticateTrackerAuthor,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
+    isAuthorBotLogin,
     isReviewerBotLogin,
-    originMainBlob,
+    REQUIRED_BASE_BRANCH,
+    REQUIRED_REPOSITORY,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
 } from './githubAppIdentity.ts';
-import { TITLE_PATTERN, assertPullRequestBody, fail } from './prContract.ts';
+import {
+    TITLE_PATTERN,
+    assertPullRequestBody,
+    canonicalIssueReferenceFromBody,
+    composeDeliveryReceipt,
+    fail,
+    parseDeliveryReceipt,
+    type DeliveryReceiptPayload,
+} from './prContract.ts';
+import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
+import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
 export type PullRequestSnapshot = {
     number: number;
@@ -53,7 +65,22 @@ export type DeliveryPort = {
     repositoryDeletesMergedBranches: () => boolean;
     merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
     retarget: (number: number, baseBranch: string) => void;
+    deliveryReceipts: (number: number) => DeliveryReceiptComment[];
+    addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
     log: (message: string) => void;
+};
+
+export type DeliveryReceiptComment = {
+    id: string;
+    body: string;
+    authorLogin: string | null;
+    authorType: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type TrackerCompletionPort = {
+    complete: (issueNumber: number) => void;
 };
 
 export type ShellRunner = {
@@ -71,13 +98,19 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    assertPullRequestBody(pullRequest.body ?? '', `PR #${pullRequest.number} body`);
     if (pullRequest.mergeStateStatus !== 'CLEAN') {
         fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
     }
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
+}
+
+function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
+    const body = pullRequest.body ?? '';
+    assertPullRequestBody(body, `PR #${pullRequest.number} body`);
+    const reference = canonicalIssueReferenceFromBody(body, REQUIRED_REPOSITORY);
+    return reference?.relationship === 'closes' ? reference.issue : undefined;
 }
 
 function validateReview(number: number, review: ReviewState): void {
@@ -89,13 +122,148 @@ function validateReview(number: number, review: ReviewState): void {
     }
 }
 
+/**
+ * The base is what the change merges into, and nothing in a pull request's own state proves it is
+ * still the branch the reviewer approved against: a retarget moves it silently and leaves the head,
+ * the approval and the merge state untouched. Stacking does not need a non-default base here.
+ * `deliver` merges the bottom pull request of a stack and then retargets whatever was based on its
+ * head onto its own base, so the pull request being delivered always targets the trunk, and only
+ * its not-yet-delivered dependents ever carry a lane branch as a base.
+ */
+function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.baseRefName !== REQUIRED_BASE_BRANCH) {
+        fail(
+            `PR #${pullRequest.number} targets ${pullRequest.baseRefName}, not ${REQUIRED_BASE_BRANCH}; ` +
+                `deliver merges into ${REQUIRED_BASE_BRANCH} only. Deliver the pull request this one is ` +
+                `stacked on, which retargets this one.`
+        );
+    }
+}
+
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'body'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
         }
     }
+}
+
+function validateStableTrackerTarget(number: number, before: number | undefined, after: number | undefined): void {
+    if (before !== after) {
+        fail(`PR #${number} closing target changed during delivery`);
+    }
+}
+
+function expectedDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    closingIssue: number | undefined
+): DeliveryReceiptPayload {
+    return {
+        pullRequest: pullRequest.number,
+        head: pullRequest.headRefOid,
+        bodySha256: createHash('sha256')
+            .update(pullRequest.body ?? '')
+            .digest('hex'),
+        closingIssue,
+    };
+}
+
+function deliveryReceiptCandidates(
+    comments: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment[] {
+    const candidates: DeliveryReceiptComment[] = [];
+    for (const comment of comments) {
+        if (!isAuthorBotLogin(comment.authorLogin)) {
+            continue;
+        }
+        const payload = parseDeliveryReceipt(comment.body);
+        if (payload === undefined) {
+            continue;
+        }
+        assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
+        if (payload.head === pullRequest.headRefOid) {
+            candidates.push(comment);
+        }
+    }
+    return candidates;
+}
+
+function assertOwnedDeliveryReceipt(
+    comment: DeliveryReceiptComment,
+    payload: DeliveryReceiptPayload,
+    pullRequestNumber: number
+): void {
+    if (
+        comment.id === '' ||
+        !isAuthorBotLogin(comment.authorLogin) ||
+        comment.authorType !== 'Bot' ||
+        comment.createdAt === '' ||
+        comment.createdAt !== comment.updatedAt ||
+        payload.pullRequest !== pullRequestNumber
+    ) {
+        fail(`PR #${pullRequestNumber} has an invalid delivery receipt`);
+    }
+}
+
+function assertCanonicalDeliveryReceipt(
+    comment: DeliveryReceiptComment,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    expected?: DeliveryReceiptPayload
+): DeliveryReceiptPayload {
+    const payload = parseDeliveryReceipt(comment.body);
+    if (payload === undefined) {
+        fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
+    }
+    assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
+    if (
+        payload.head !== pullRequest.headRefOid ||
+        (expected !== undefined && comment.body !== composeDeliveryReceipt(expected))
+    ) {
+        fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
+    }
+    return payload;
+}
+
+function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
+    const candidates = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const receipt = candidates[0];
+    if (candidates.length !== 1 || receipt === undefined) {
+        fail(`PR #${pullRequest.number} must have exactly one canonical delivery receipt`);
+    }
+    return assertCanonicalDeliveryReceipt(receipt, pullRequest);
+}
+
+function ensureDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    closingIssue: number | undefined,
+    port: DeliveryPort
+): DeliveryReceiptPayload {
+    const expected = expectedDeliveryReceipt(pullRequest, closingIssue);
+    const existing = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+    if (existing.length > 1) {
+        fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
+    }
+    let receipt = existing[0];
+    if (receipt === undefined) {
+        const body = composeDeliveryReceipt(expected);
+        try {
+            receipt = port.addDeliveryReceipt(pullRequest.number, body);
+        } catch (error) {
+            const recovered = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+            if (recovered.length !== 1 || recovered[0] === undefined) {
+                throw error;
+            }
+            receipt = recovered[0];
+        }
+    }
+    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+    const verified = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
+    if (verified.length !== 1 || verified[0]?.id !== receipt.id) {
+        fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+    }
+    return assertCanonicalDeliveryReceipt(verified[0], pullRequest, expected);
 }
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
@@ -143,15 +311,38 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
     }
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort): void {
+function completeIssueAfterMerge(
+    pullRequestNumber: number,
+    issueNumber: number | undefined,
+    tracker: TrackerCompletionPort
+): void {
+    if (issueNumber === undefined) {
+        return;
+    }
+    try {
+        tracker.complete(issueNumber);
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+            `PR #${pullRequestNumber} is already merged, but issue #${issueNumber} was not completed: ${detail}`,
+            { cause: error }
+        );
+    }
+}
+
+export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
     port.fetch();
     const initial = port.pullRequest(number);
+    validateBaseBranch(initial);
     if (initial.state === 'MERGED') {
+        const receipt = readDeliveryReceipt(initial, port);
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
+        completeIssueAfterMerge(number, receipt.closingIssue, tracker);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
+    const initialTrackerTarget = trackerCompletionTarget(initial);
     validatePullRequest(initial);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
@@ -163,7 +354,9 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
 
     port.fetch();
     const current = port.pullRequest(number);
+    const currentTrackerTarget = trackerCompletionTarget(current);
     validatePullRequest(current);
+    validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
     validateStablePullRequest(initial, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
     const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
@@ -172,8 +365,10 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
+    const receipt = ensureDeliveryReceipt(current, currentTrackerTarget, port);
     port.merge(number, current.headRefOid, currentDependents.length > 0);
     retargetDependents(currentDependents, current.baseRefName, port);
+    completeIssueAfterMerge(number, receipt.closingIssue, tracker);
 }
 
 function capture(command: string, args: string[]): string {
@@ -240,6 +435,35 @@ function repositoryMergePolicy(repository: string, shell: ShellRunner): Reposito
         throw new Error('squash merge is not enabled for this repository');
     }
     return { method: 'squash', deletesMergedBranches: settings.delete_branch_on_merge };
+}
+
+function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        fail('invalid delivery receipt comment');
+    }
+    const comment = value as {
+        node_id?: unknown;
+        body?: unknown;
+        user?: { login?: unknown; type?: unknown } | null;
+        created_at?: unknown;
+        updated_at?: unknown;
+    };
+    if (
+        typeof comment.node_id !== 'string' ||
+        typeof comment.body !== 'string' ||
+        typeof comment.created_at !== 'string' ||
+        typeof comment.updated_at !== 'string'
+    ) {
+        fail('invalid delivery receipt comment');
+    }
+    return {
+        id: comment.node_id,
+        body: comment.body,
+        authorLogin: typeof comment.user?.login === 'string' ? comment.user.login : null,
+        authorType: typeof comment.user?.type === 'string' ? comment.user.type : null,
+        createdAt: comment.created_at,
+        updatedAt: comment.updated_at,
+    };
 }
 
 export function shellPort(
@@ -410,6 +634,39 @@ export function shellPort(
                 `base=${baseBranch}`,
                 '--silent',
             ]),
+        deliveryReceipts: (number) => {
+            const pages = parseJson<unknown>(
+                shell.capture('gh', [
+                    'api',
+                    '--paginate',
+                    '--slurp',
+                    `repos/${repository}/issues/${number}/comments?per_page=100`,
+                ]),
+                `delivery receipts for PR #${number}`
+            );
+            if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
+                fail(`cannot inspect delivery receipts for PR #${number}`);
+            }
+            const comments = pages.flat().map(toDeliveryReceiptComment);
+            if (new Set(comments.map((comment) => comment.id)).size !== comments.length) {
+                fail(`duplicate comment identity on PR #${number}`);
+            }
+            return comments;
+        },
+        addDeliveryReceipt: (number, body) =>
+            toDeliveryReceiptComment(
+                parseJson<unknown>(
+                    shell.capture('gh', [
+                        'api',
+                        '--method',
+                        'POST',
+                        `repos/${repository}/issues/${number}/comments`,
+                        '-f',
+                        `body=${body}`,
+                    ]),
+                    `delivery receipt for PR #${number}`
+                )
+            ),
         log: (message) => console.log(message),
     };
 }
@@ -431,8 +688,77 @@ export function parseCliArgs(args: string[]): { number?: number; help: boolean }
     return { number, help: false };
 }
 
-async function main(): Promise<number> {
-    const parsed = parseCliArgs(process.argv.slice(2));
+export type DeliveryAuthentication = {
+    minted: { token: string; login: string; permissions: Record<string, string> };
+    session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
+};
+
+export type DeliveryCoordinatorDependencies = {
+    primaryRoot: () => string;
+    authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
+    authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
+    repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
+    deliveryPort: (repository: string, authentication: DeliveryAuthentication, primaryRoot: string) => DeliveryPort;
+    trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
+    completeIssue: (issueNumber: number, login: string, port: ReconcileTrackerIssuePort) => void;
+    deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
+};
+
+function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        deliveryPort: (repository, authentication, primaryRoot) => {
+            const shell: ShellRunner = {
+                capture: (command, args) =>
+                    spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
+                run: (command, args) => spawnRun(command, args, { env: authentication.session.env, cwd: primaryRoot }),
+            };
+            return shellPort(repository, shell, {
+                gitToken: authentication.minted.token,
+                helperDir: authentication.session.configDir,
+            });
+        },
+        trackerPort: (session) => trackerIssueShellPort(session, cwd),
+        completeIssue: completeTrackerIssue,
+        deliver: deliverPullRequest,
+    };
+}
+
+export async function coordinateDelivery(
+    number: number,
+    dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+    let trackerAuth: DeliveryAuthentication | undefined;
+    try {
+        if (authorAuth.minted.login !== AUTHOR_BOT_LOGIN) {
+            fail(`minted login ${authorAuth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        }
+        const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+        assertRequiredRepository(repository);
+        const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
+        trackerAuth = authenticatedTracker;
+        const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
+        dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
+            complete: (issueNumber) =>
+                dependencies.completeIssue(issueNumber, authenticatedTracker.minted.login, trackerPort),
+        });
+    } finally {
+        trackerAuth?.session.dispose();
+        authorAuth.session.dispose();
+    }
+}
+
+export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {
+    const parsed = parseCliArgs(args);
     if (parsed.help) {
         console.log('Usage: pnpm deliver <pr-number>');
         return 0;
@@ -440,44 +766,6 @@ async function main(): Promise<number> {
     if (parsed.number === undefined) {
         fail('usage: pnpm deliver <pr-number>');
     }
-    const executingFile = fileURLToPath(import.meta.url);
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/deliverPullRequest.ts',
-        executingFile,
-        originMainBlob('scripts/deliverPullRequest.ts', cwd)
-    );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
-    try {
-        if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
-        }
-        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
-            cwd: primaryRoot,
-        });
-        assertRequiredRepository(repository);
-        const shell: ShellRunner = {
-            capture: (command, args) => spawnCapture(command, args, { env: auth.session.env, cwd: primaryRoot }),
-            run: (command, args) => spawnRun(command, args, { env: auth.session.env, cwd: primaryRoot }),
-        };
-        deliverPullRequest(
-            parsed.number,
-            shellPort(repository, shell, { gitToken: auth.minted.token, helperDir: auth.session.configDir })
-        );
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
+    await coordinateDelivery(parsed.number, dependencies);
+    return 0;
 }

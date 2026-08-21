@@ -4,6 +4,8 @@
  */
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { type PadState } from '../../models/ToasterKit';
 
 type PadMixerProps = {
@@ -12,9 +14,9 @@ type PadMixerProps = {
 };
 
 export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
-    <div className="flex gap-0.5 overflow-x-auto pb-1">
+    <Row align="stretch" gap={0.5} className="overflow-x-auto pb-1">
         {pads.slice(0, 16).map((pad, index) => (
-            <div key={pad.id} className="flex flex-col items-center w-9 shrink-0">
+            <Stack align="center" shrink={false} className="w-9" key={pad.id}>
                 {/* Volume fader track */}
                 <div
                     className="w-3 rounded-full relative cursor-ns-resize mb-0.5"
@@ -105,7 +107,7 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                 </div>
 
                 {/* Mute / Solo */}
-                <div className="flex gap-px mb-0.5">
+                <Row align="stretch" className="gap-px mb-0.5">
                     <button
                         type="button"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.muted ? 'bg-red-500/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
@@ -126,7 +128,7 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                     >
                         S
                     </button>
-                </div>
+                </Row>
 
                 {/* Name */}
                 <span
@@ -135,7 +137,7 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                 >
                     {pad.name.slice(0, 5)}
                 </span>
-            </div>
+            </Stack>
         ))}
-    </div>
+    </Row>
 );
