@@ -3,6 +3,7 @@
 //! Default order: EQ → Multiband Dynamics → Stereo Imager → Exciter → Limiter
 //! Each stage has an inline MeterTap after it for signal visualization.
 
+use super::clamped_param;
 use super::dither::Ditherer;
 use super::dynamic_eq::DynamicEq;
 use super::eq::MasteringEq;
@@ -29,6 +30,32 @@ pub enum ModuleId {
 const NUM_MODULES: usize = 5;
 // 6 taps: input + after each of the 5 modules
 const NUM_TAPS: usize = NUM_MODULES + 1;
+
+/// Declared range of the chain's input and output trim, in dB. Mirrored at the
+/// worklet wire boundary in `proofProcessor.ts`; held here as well so the
+/// engine never trusts its caller to have checked.
+pub(super) const MIN_CHAIN_GAIN_DB: f32 = -24.0;
+pub(super) const MAX_CHAIN_GAIN_DB: f32 = 24.0;
+
+/// Unity trim, in dB — the fallback for a value that is not finite.
+pub(super) const DEFAULT_CHAIN_GAIN_DB: f32 = 0.0;
+
+/// Linear gain for a dB trim, clamped to the declared range.
+///
+/// Unclamped, `10^(value / 20)` answers `inf` for any value past ~+38 dB, and
+/// the poisoned gain then multiplies every later sample: one malformed control
+/// message took the chain out permanently, since nothing recomputes the factor
+/// until the next message arrives. [`clamped_param`] carries the NaN handling
+/// this shares with the limiter's setters.
+pub(super) fn gain_from_db(value: f32) -> f32 {
+    let db = clamped_param(
+        value,
+        MIN_CHAIN_GAIN_DB,
+        MAX_CHAIN_GAIN_DB,
+        DEFAULT_CHAIN_GAIN_DB,
+    );
+    10.0_f32.powf(db / 20.0)
+}
 
 pub struct ProofChain {
     pub eq: MasteringEq,
@@ -165,8 +192,8 @@ impl ProofChain {
         match name {
             "bypass" => self.bypassed = value > 0.5,
             "ab_bypass" => self.ab_bypass = value > 0.5,
-            "input_gain" => self.input_gain = 10.0_f32.powf(value / 20.0),
-            "output_gain" => self.output_gain = 10.0_f32.powf(value / 20.0),
+            "input_gain" => self.input_gain = gain_from_db(value),
+            "output_gain" => self.output_gain = gain_from_db(value),
             _ => {}
         }
 
@@ -331,6 +358,122 @@ impl ProofChain {
     /// against those stages bypassed for exactly this reason.
     pub fn latency_samples(&self) -> usize {
         self.limiter.latency_samples() + self.linear_eq.latency_samples()
+    }
+}
+
+#[cfg(test)]
+mod gain_range_tests {
+    //! `input_gain` and `output_gain` fed `10^(value / 20)` straight from the
+    //! wire. Past roughly +38 dB that answers `inf`, and the factor is stored,
+    //! not recomputed per block — so one malformed control message multiplied
+    //! every subsequent sample by infinity for the life of the device, with no
+    //! recovery short of another message. The worklet checks the range too;
+    //! this is the engine declining to trust that it did.
+
+    use super::{gain_from_db, ProofChain, MAX_CHAIN_GAIN_DB, MIN_CHAIN_GAIN_DB};
+
+    const SR: f64 = 48_000.0;
+    const INPUT_LEVEL: f32 = 0.25;
+
+    fn linear(db: f32) -> f32 {
+        10.0_f32.powf(db / 20.0)
+    }
+
+    /// A chain whose every processing stage is bypassed, so the only thing
+    /// between input and output is the pair of trims under test.
+    fn trim_only_chain() -> ProofChain {
+        let mut chain = ProofChain::new(SR);
+        for stage in [
+            "eq_bypass",
+            "dyneq_bypass",
+            "dyn_bypass",
+            "img_bypass",
+            "exc_bypass",
+            "lim_bypass",
+        ] {
+            chain.set_param(stage, 1.0);
+        }
+        chain
+    }
+
+    fn render_one_block(chain: &mut ProofChain) -> f32 {
+        let mut left = [INPUT_LEVEL; 8];
+        let mut right = [INPUT_LEVEL; 8];
+        chain.process(&mut left, &mut right);
+        left[0]
+    }
+
+    #[test]
+    fn an_overflowing_trim_is_clamped_instead_of_reaching_the_signal_path_as_infinity() {
+        for name in ["input_gain", "output_gain"] {
+            let mut chain = trim_only_chain();
+            chain.set_param(name, f32::MAX);
+            let out = render_one_block(&mut chain);
+
+            assert!(
+                out.is_finite(),
+                "{name} = f32::MAX reached the signal path as {out}; \
+                 10^(f32::MAX / 20) is inf and the factor is stored, so one \
+                 malformed message poisons the device permanently"
+            );
+            let expected = INPUT_LEVEL * linear(MAX_CHAIN_GAIN_DB);
+            assert!(
+                (out - expected).abs() <= expected * 1e-4,
+                "{name} = f32::MAX must apply the top of the declared range \
+                 ({MAX_CHAIN_GAIN_DB} dB, {expected:.6}), got {out:.6}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_underflowing_trim_is_clamped_to_the_bottom_of_the_declared_range() {
+        for name in ["input_gain", "output_gain"] {
+            let mut chain = trim_only_chain();
+            chain.set_param(name, -f32::MAX);
+            let out = render_one_block(&mut chain);
+
+            let expected = INPUT_LEVEL * linear(MIN_CHAIN_GAIN_DB);
+            assert!(
+                (out - expected).abs() <= expected * 1e-4,
+                "{name} = -f32::MAX must apply the bottom of the declared range \
+                 ({MIN_CHAIN_GAIN_DB} dB, {expected:.6}), got {out:.6}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_finite_trim_leaves_the_gain_at_unity() {
+        // `f32::clamp` answers NaN for a NaN input, so clamping alone would
+        // still hand `powf` a NaN and silence the device permanently.
+        for name in ["input_gain", "output_gain"] {
+            let mut chain = trim_only_chain();
+            chain.set_param(name, f32::NAN);
+            let out = render_one_block(&mut chain);
+
+            assert!(
+                (out - INPUT_LEVEL).abs() <= INPUT_LEVEL * 1e-6,
+                "{name} = NaN must leave the trim at unity, got {out:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_in_range_trim_is_applied_unchanged() {
+        // The counter-check: the clamp must not be swallowing ordinary values,
+        // or the tests above would pass against a trim wired to a constant.
+        for db in [-18.0_f32, -6.0, 0.0, 6.0, 18.0] {
+            let mut chain = trim_only_chain();
+            chain.set_param("input_gain", db);
+            let out = render_one_block(&mut chain);
+
+            let expected = INPUT_LEVEL * linear(db);
+            assert!(
+                (out - expected).abs() <= expected * 1e-5,
+                "an in-range {db} dB trim must pass through exactly: \
+                 expected {expected:.6}, got {out:.6}"
+            );
+            assert_eq!(gain_from_db(db), linear(db));
+        }
     }
 }
 

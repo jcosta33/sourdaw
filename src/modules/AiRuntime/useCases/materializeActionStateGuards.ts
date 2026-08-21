@@ -1,4 +1,5 @@
 import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
@@ -501,7 +502,10 @@ export function materializeActionStateGuards(
                     track.automationMode === 'off' ||
                     !Number.isFinite(track.gain) ||
                     track.gain <= 0 ||
-                    track.gain * 10 ** (action.payload.gainDb / 20) > 1 ||
+                    // The fader's own ceiling, matching what
+                    // `handleAutomateTrackGainRange` admits. Bounding at unity
+                    // rejects a lift the fader itself can reach by hand.
+                    track.gain * 10 ** (action.payload.gainDb / 20) > FADER_MAX_GAIN ||
                     (context.automationLanes ?? []).some(
                         (lane) =>
                             lane.id === `auto-gain-${encodeURIComponent(trackId)}` ||

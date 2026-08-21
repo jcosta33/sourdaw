@@ -448,7 +448,11 @@ describe('renderTrackSubgraphOffline', () => {
         mocks.buildDeviceChain.mockImplementation(() =>
             Promise.resolve([createHistorySensitiveInstrumentEntry('fermenter-1')])
         );
-        let scheduleTally = { scheduledNotes: 0, scheduledBuffers: [] as AudioBuffer[] };
+        let scheduleTally = {
+            scheduledNotes: 0,
+            scheduledBuffers: [] as AudioBuffer[],
+            withheldDeviceTypes: [] as string[],
+        };
 
         const full = await renderTrackSubgraphOffline({
             targetTrackId: track.id,
@@ -935,7 +939,11 @@ describe('renderTrackSubgraphOffline', () => {
                 onScheduled,
             });
 
-            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 1, scheduledBuffers: [] });
+            expect(onScheduled).toHaveBeenCalledWith({
+                scheduledNotes: 1,
+                scheduledBuffers: [],
+                withheldDeviceTypes: [],
+            });
         });
 
         it('counts nothing when the clip length has projected every note away', async () => {
@@ -971,7 +979,11 @@ describe('renderTrackSubgraphOffline', () => {
             });
 
             expect(midiStore.value?.notesByClipId['clip-1']).toHaveLength(1);
-            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+            expect(onScheduled).toHaveBeenCalledWith({
+                scheduledNotes: 0,
+                scheduledBuffers: [],
+                withheldDeviceTypes: [],
+            });
         });
 
         it('counts nothing when every note loses its probability roll', async () => {
@@ -1001,7 +1013,11 @@ describe('renderTrackSubgraphOffline', () => {
                 onScheduled,
             });
 
-            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+            expect(onScheduled).toHaveBeenCalledWith({
+                scheduledNotes: 0,
+                scheduledBuffers: [],
+                withheldDeviceTypes: [],
+            });
         });
 
         it('records the source buffer of an audio clip it started, so the caller can read its samples', async () => {
@@ -1029,7 +1045,11 @@ describe('renderTrackSubgraphOffline', () => {
                 onScheduled,
             });
 
-            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [sourceBuffer] });
+            expect(onScheduled).toHaveBeenCalledWith({
+                scheduledNotes: 0,
+                scheduledBuffers: [sourceBuffer],
+                withheldDeviceTypes: [],
+            });
         });
 
         it('records the frozen buffer an already-frozen contributor plays back', async () => {
@@ -1063,7 +1083,11 @@ describe('renderTrackSubgraphOffline', () => {
                 onScheduled,
             });
 
-            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [frozenBuffer] });
+            expect(onScheduled).toHaveBeenCalledWith({
+                scheduledNotes: 0,
+                scheduledBuffers: [frozenBuffer],
+                withheldDeviceTypes: [],
+            });
         });
 
         it('records nothing for an audio clip whose buffer is missing from the cache', async () => {
@@ -1082,7 +1106,11 @@ describe('renderTrackSubgraphOffline', () => {
                 onScheduled,
             });
 
-            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+            expect(onScheduled).toHaveBeenCalledWith({
+                scheduledNotes: 0,
+                scheduledBuffers: [],
+                withheldDeviceTypes: [],
+            });
         });
     });
 

@@ -5,6 +5,9 @@
 import { type ReactElement, useState } from 'react';
 
 import { Search, Star, ChevronRight } from 'lucide-react';
+
+import { Row, Stack } from '#/components/layout';
+
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields this browser renders.
 type SoundPreset = {
     id: string;
@@ -87,7 +90,7 @@ export const PresetBrowser = ({
     }
 
     return (
-        <div className="flex flex-col h-full">
+        <Stack className="h-full">
             {/* Search */}
             <div className="relative px-2 py-1.5 shrink-0">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
@@ -100,7 +103,7 @@ export const PresetBrowser = ({
                 />
             </div>
             {/* Category pills */}
-            <div className="flex flex-wrap gap-0.5 px-2 py-1 shrink-0 border-b border-border/20">
+            <Row align="stretch" wrap gap={0.5} shrink={false} className="px-2 py-1 border-b border-border/20">
                 {CATEGORIES.map((cat) => {
                     let pillStyle: React.CSSProperties | undefined = undefined;
                     if (category === cat.id && cat.color) {
@@ -127,10 +130,10 @@ export const PresetBrowser = ({
                         </button>
                     );
                 })}
-            </div>
+            </Row>
             {/* Tag filter (contextual) */}
             {category !== 'user' ? (
-                <div className="flex flex-wrap gap-0.5 px-2 py-0.5 shrink-0">
+                <Row align="stretch" wrap gap={0.5} shrink={false} className="px-2 py-0.5">
                     {TAGS.filter((tag) => {
                         // Only show tags that have matching presets in current category
                         return filtered.some((p) => p.tags.includes(tag));
@@ -150,7 +153,7 @@ export const PresetBrowser = ({
                                 #{tag}
                             </button>
                         ))}
-                </div>
+                </Row>
             ) : null}
             {/* Preset list */}
             <div className="flex-1 overflow-y-auto px-1 py-0.5">
@@ -177,6 +180,6 @@ export const PresetBrowser = ({
             <div className="px-2 py-0.5 border-t border-border/20 shrink-0">
                 <span className="text-[7px] text-muted-foreground/40">{filtered.length} presets</span>
             </div>
-        </div>
+        </Stack>
     );
 };

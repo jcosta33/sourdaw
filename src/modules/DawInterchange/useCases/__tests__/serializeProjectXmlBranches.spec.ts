@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type ProjectData } from '../projectDataContract';
 import { serializeProjectXml } from '../serializeProjectXml';
 
@@ -174,10 +176,16 @@ describe('serializeProjectXml — formatNumber', () => {
 });
 
 describe('serializeProjectXml — channel gain/pan clamping', () => {
-    it('clamps gain > 1 to 1.0', () => {
+    it('clamps gain above the fader ceiling down to it', () => {
         const project = buildProject([buildTrack({ gain: 5 })]);
         const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
-        expect(xml).toContain('<Volume value="1"/>');
+        expect(xml).toContain(`<Volume value="${String(Math.round(FADER_MAX_GAIN * 1_000_000) / 1_000_000)}"/>`);
+    });
+
+    it('carries a gain above unity through unflattened', () => {
+        const project = buildProject([buildTrack({ gain: 1.5 })]);
+        const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
+        expect(xml).toContain('<Volume value="1.5"/>');
     });
 
     it('clamps negative gain to 0', () => {

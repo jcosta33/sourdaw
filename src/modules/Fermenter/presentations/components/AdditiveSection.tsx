@@ -5,6 +5,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Stack } from '#/components/layout';
 
 type AdditiveSectionProps = {
     partials: number;
@@ -21,13 +22,13 @@ export const AdditiveSection = ({
     inharmonicity,
     onParam,
 }: AdditiveSectionProps): ReactElement => (
-    <div className="space-y-2">
+    <Stack gap={2}>
         <DawPluginSectionHeader title="Additive" titleClassName="px-1 text-muted-foreground" />
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Sum of sine partials — shape the harmonic spectrum directly.
         </div>
         <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col items-center gap-0.5">
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={partials}
                     onChange={(v) => onParam('additivePartials', v)}
@@ -40,8 +41,8 @@ export const AdditiveSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Partials</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{partials}</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={tilt}
                     onChange={(v) => onParam('additiveTilt', v)}
@@ -54,8 +55,8 @@ export const AdditiveSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Tilt</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{tilt.toFixed(1)}dB</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={oddEmphasis}
                     onChange={(v) => onParam('additiveOdd', v)}
@@ -68,8 +69,8 @@ export const AdditiveSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Odd</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{Math.round(oddEmphasis * 100)}%</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={inharmonicity}
                     onChange={(v) => onParam('additiveInharm', v)}
@@ -84,7 +85,7 @@ export const AdditiveSection = ({
                 <span className="text-[6px] text-muted-foreground/50 font-mono">
                     {(inharmonicity * 1000).toFixed(1)}
                 </span>
-            </div>
+            </Stack>
         </div>
-    </div>
+    </Stack>
 );

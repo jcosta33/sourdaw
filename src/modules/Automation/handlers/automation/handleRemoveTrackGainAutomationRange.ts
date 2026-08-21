@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AutomationLane, type AutomationPoint } from '../../models/Automation';
 import { buildTrackGainAutomationRangeLane } from '../../services/buildTrackGainAutomationRangeLane';
+import { getAutomationLaneCeiling } from '../../useCases/automation/getAutomationLaneCeiling';
 import { removeTrackGainAutomationRange } from '../../useCases/automation/removeTrackGainAutomationRange';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
@@ -31,6 +32,24 @@ function pointsMatch(actual: readonly AutomationPoint[], expected: readonly Auto
     );
 }
 
+/**
+ * Compare the two lanes' ceilings through {@link getAutomationLaneCeiling}
+ * rather than as stored scalars.
+ *
+ * `expected` is rebuilt live by `buildTrackGainAutomationRangeLane`, which now
+ * ranges a gain lane over the fader law, while `actual` is whatever the
+ * document holds. `actionHistoryStore` is a slot of the synced root document,
+ * so an entry outlives the session that made it: a "lift the chorus by 3 dB"
+ * recorded before the fader widened left a lane storing `1`, the rebuilt
+ * expectation is `FADER_MAX_GAIN`, and a raw scalar comparison refuses that
+ * undo outright. The derivation reads both as the same ceiling, so an entry
+ * recorded on either side of the change still validates — and redo cannot
+ * write a lane whose ceiling differs from the one it replaced.
+ */
+function ceilingMatches(actual: AutomationLane, expected: AutomationLane): boolean {
+    return getAutomationLaneCeiling(actual) === getAutomationLaneCeiling(expected);
+}
+
 function laneMatches(actual: AutomationLane, expected: AutomationLane): boolean {
     return (
         actual.id === expected.id &&
@@ -49,7 +68,7 @@ function laneMatches(actual: AutomationLane, expected: AutomationLane): boolean 
         actual.linkedLaneId === expected.linkedLaneId &&
         actual.linkScale === expected.linkScale &&
         actual.minValue === expected.minValue &&
-        actual.maxValue === expected.maxValue &&
+        ceilingMatches(actual, expected) &&
         actual.viewMinValue === expected.viewMinValue &&
         actual.viewMaxValue === expected.viewMaxValue &&
         actual.color === expected.color
