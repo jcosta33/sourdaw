@@ -1,5 +1,6 @@
 import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
@@ -388,28 +389,32 @@ export const TimelineSurface = (): ReactElement => {
             onDrop={handleFileDrop}
         >
             {isDragOver ? (
-                <div
+                <Stack
+                    align="center"
+                    justify="center"
+                    gap={2}
+                    className="absolute inset-0 z-10 bg-primary/10 border-2 border-dashed border-primary pointer-events-none"
                     role="status"
                     aria-live="polite"
-                    className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary/10 border-2 border-dashed border-primary pointer-events-none"
                 >
                     <span className="text-sm font-medium text-primary">Drop audio or MIDI files here</span>
                     <span className="text-xs text-primary/60">WAV, MP3, FLAC, AIFF, OGG, MIDI</span>
-                </div>
+                </Stack>
             ) : null}
             {isImporting ? (
-                <div
+                <Row
+                    justify="center"
+                    className="absolute inset-0 z-20 bg-surface-base/60 pointer-events-none"
                     role="status"
                     aria-live="polite"
-                    className="absolute inset-0 z-20 flex items-center justify-center bg-surface-base/60 pointer-events-none"
                 >
-                    <div className="daw-floating-surface flex items-center gap-2 rounded-md px-4 py-2">
+                    <Row gap={2} className="daw-floating-surface rounded-md px-4 py-2">
                         {/* Decorative spinner: only animate when the user has not
                             requested reduced motion (prefers-reduced-motion). */}
                         <div className="size-4 motion-safe:animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <span className="text-sm font-medium text-foreground">Importing audio…</span>
-                    </div>
-                </div>
+                    </Row>
+                </Row>
             ) : null}
             <canvas
                 ref={canvasRef}

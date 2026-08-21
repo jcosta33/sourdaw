@@ -1,5 +1,6 @@
 import { type ChangeEvent, type DragEvent, type ReactElement, useId, useState } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { MIDI_CLIP_DRAG_MIME_TYPE } from '#/utils/midiClipDrag';
@@ -164,11 +165,11 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
     };
 
     return (
-        <div aria-busy={saving} className="flex flex-col gap-1 px-1 pb-1">
+        <Stack gap={1} className="px-1 pb-1" aria-busy={saving}>
             <label className="sr-only" htmlFor={clipSelectId}>
                 MIDI clip for groove extraction
             </label>
-            <div className="flex gap-1">
+            <Row align="stretch" gap={1}>
                 <select id={clipSelectId} value={selectedClipId} disabled={saving} onChange={handleSelectedClipChange}>
                     <option value="">Select a MIDI clip</option>
                     {midiClips.map((clip) => (
@@ -184,7 +185,7 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
                 >
                     Preview groove
                 </button>
-            </div>
+            </Row>
             <div
                 aria-label="Extract groove from MIDI clip"
                 aria-disabled={saving}
@@ -196,7 +197,7 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
             </div>
             {proposal ? <p role="status">{getProposalMessage(proposal)}</p> : null}
             {proposal?.status === 'extracted' ? (
-                <div className="flex gap-1">
+                <Row align="stretch" gap={1}>
                     <button type="button" disabled={saving} onClick={() => handleConfirm().catch(() => undefined)}>
                         {saving ? 'Saving…' : 'Save groove'}
                     </button>
@@ -207,9 +208,9 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
                     >
                         Cancel
                     </button>
-                </div>
+                </Row>
             ) : null}
             {error ? <p role="alert">{getErrorMessage(error)}</p> : null}
-        </div>
+        </Stack>
     );
 };

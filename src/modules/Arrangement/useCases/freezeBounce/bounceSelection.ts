@@ -69,7 +69,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return false;
     }
 
-    let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+    let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
     const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
         onScheduled: (tally) => {
             scheduleTally = tally;

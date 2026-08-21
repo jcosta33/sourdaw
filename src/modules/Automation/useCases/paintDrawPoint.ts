@@ -1,6 +1,7 @@
 import { type AutomationPoint } from '../models/Automation';
 import { automationStore, type AutomationStoreState } from '../stores/automationStore';
 
+import { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
 import { automationDrawModeState } from './automationDrawMode';
 import { flushPendingDrawState } from './flushPendingDrawState';
 import { snapDrawBeatToGrid } from './snapDrawBeatToGrid';
@@ -36,7 +37,7 @@ export function paintDrawPoint(beat: number, value: number): void {
             const filteredPoints = lane.points.filter((point) => Math.abs(point.beat - snappedBeat) > 0.001);
             const newPoint: AutomationPoint = {
                 beat: snappedBeat,
-                value: Math.max(lane.minValue, Math.min(lane.maxValue, paintValue)),
+                value: Math.max(lane.minValue, Math.min(getAutomationLaneCeiling(lane), paintValue)),
                 curve: 'step',
                 tension: 0,
             };

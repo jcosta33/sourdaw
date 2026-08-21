@@ -11,6 +11,7 @@ import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
+import { Row, Stack } from '#/components/layout';
 
 type EffectsSectionProps = {
     rotaryKnob?: RotaryKnobComponent;
@@ -106,7 +107,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
         switch (activeTab) {
             case 'dist':
                 return (
-                    <div className="flex items-start gap-4">
+                    <Row align="start" gap={4}>
                         <DistortionCurve
                             drive={props.distDrive}
                             tone={props.distTone}
@@ -123,7 +124,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 }
                             }}
                         />
-                        <div className="flex gap-2">
+                        <Row align="stretch" gap={2}>
                             <RotaryKnobControl
                                 rotaryKnob={rotaryKnob}
                                 paramId="distMix"
@@ -157,12 +158,12 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={0.5}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 );
             case 'comp':
                 return (
-                    <div className="flex items-start gap-4">
+                    <Row align="start" gap={4}>
                         <CompressorCurve
                             threshold={props.compThreshold}
                             ratio={props.compRatio}
@@ -178,7 +179,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 }
                             }}
                         />
-                        <div className="flex flex-wrap gap-2 max-w-[200px]">
+                        <Row align="stretch" wrap gap={2} className="max-w-[200px]">
                             <RotaryKnobControl
                                 rotaryKnob={rotaryKnob}
                                 paramId="compMix"
@@ -234,12 +235,12 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={1}
                                 defaultValue={100}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 );
             case 'reverb':
                 return (
-                    <div className="flex gap-3">
+                    <Row align="stretch" gap={3}>
                         <RotaryKnobControl
                             rotaryKnob={rotaryKnob}
                             paramId="reverbMix"
@@ -262,7 +263,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             step={0.01}
                             defaultValue={0.5}
                         />
-                        <div className="flex gap-0.5 items-end pb-4">
+                        <Row align="end" gap={0.5} className="pb-4">
                             {['Plate', 'FDN'].map((name, i) => (
                                 <button
                                     key={name}
@@ -273,12 +274,12 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     {name}
                                 </button>
                             ))}
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 );
             case 'delay':
                 return (
-                    <div className="flex items-start gap-4">
+                    <Row align="start" gap={4}>
                         <DelayTaps
                             time={props.delayTime}
                             feedback={props.delayFeedback}
@@ -295,7 +296,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 }
                             }}
                         />
-                        <div className="flex gap-2">
+                        <Row align="stretch" gap={2}>
                             <RotaryKnobControl
                                 rotaryKnob={rotaryKnob}
                                 paramId="delayMix"
@@ -329,15 +330,15 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={0.35}
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 );
             case 'mod':
                 return (
-                    <div className="flex gap-6">
-                        <div className="space-y-1">
+                    <Row align="stretch" gap={6}>
+                        <Stack gap={1}>
                             <div className="text-[9px] text-muted-foreground/70 font-medium">Chorus</div>
-                            <div className="flex gap-2">
+                            <Row align="stretch" gap={2}>
                                 <RotaryKnobControl
                                     rotaryKnob={rotaryKnob}
                                     paramId="chorusMix"
@@ -371,11 +372,11 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     step={0.01}
                                     defaultValue={0.4}
                                 />
-                            </div>
-                        </div>
-                        <div className="space-y-1">
+                            </Row>
+                        </Stack>
+                        <Stack gap={1}>
                             <div className="text-[9px] text-muted-foreground/70 font-medium">Phaser</div>
-                            <div className="flex gap-2">
+                            <Row align="stretch" gap={2}>
                                 <RotaryKnobControl
                                     rotaryKnob={rotaryKnob}
                                     paramId="phaserMix"
@@ -409,13 +410,13 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     step={0.01}
                                     defaultValue={0.5}
                                 />
-                            </div>
-                        </div>
-                    </div>
+                            </Row>
+                        </Stack>
+                    </Row>
                 );
             case 'eq':
                 return (
-                    <div className="flex items-start gap-4">
+                    <Row align="start" gap={4}>
                         <EQCurve
                             lowGain={props.eqLowGain ?? 0}
                             lowFreq={props.eqLowFreq ?? 100}
@@ -446,12 +447,12 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 }
                             }}
                         />
-                    </div>
+                    </Row>
                 );
             case 'master':
                 return (
-                    <div className="flex items-end gap-4">
-                        <div className="flex flex-col items-center gap-1">
+                    <Row align="end" gap={4}>
+                        <Stack align="center" gap={1}>
                             <Knob
                                 paramId="stereoWidth"
                                 value={props.stereoWidth}
@@ -467,8 +468,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             <span className="text-[8px] text-muted-foreground/50 font-mono">
                                 {props.stereoWidth < 0.01 ? 'Mono' : `${Math.round(props.stereoWidth * 100)}%`}
                             </span>
-                        </div>
-                        <div className="flex flex-col items-center gap-1">
+                        </Stack>
+                        <Stack align="center" gap={1}>
                             <Knob
                                 paramId="masterGain"
                                 value={props.masterGain}
@@ -484,8 +485,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             <span className="text-[8px] text-muted-foreground/50 font-mono">
                                 {(props.masterGain * 100).toFixed(0)}%
                             </span>
-                        </div>
-                    </div>
+                        </Stack>
+                    </Row>
                 );
         }
 
@@ -493,9 +494,9 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
     };
 
     return (
-        <div className="space-y-2">
+        <Stack gap={2}>
             {/* FX sub-tabs */}
-            <div className="flex gap-0.5 flex-wrap">
+            <Row align="stretch" wrap gap={0.5}>
                 {TAB_ITEMS.map(({ id, label, color }) => {
                     let tone: 'danger' | 'lavender' | 'mint' | 'cyan' | 'peach' | 'neutral' = 'neutral';
                     if (id === 'dist') {
@@ -523,9 +524,9 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                         </DawPluginChip>
                     );
                 })}
-            </div>
+            </Row>
             {/* Active effect content */}
             <div className="min-h-[130px]">{renderContent()}</div>
-        </div>
+        </Stack>
     );
 };

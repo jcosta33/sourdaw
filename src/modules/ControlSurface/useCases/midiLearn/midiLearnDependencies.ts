@@ -8,6 +8,15 @@ import type { Track } from '#/modules/Arrangement/stores';
  * that prevented hundreds of other cycles from clearing.
  */
 export type MidiLearnDependencies = {
+    /**
+     * What a gain request for this track actually becomes. `handleMidiMessage`
+     * writes the store and the engine through two separate calls, and only the
+     * store-side one clamps — so a controller riding a Toaster-pad-mirrored
+     * track left the engine running above the pad's unity while the project
+     * recorded unity, and the two disagreed until something else rewrote the
+     * node. Resolving the value once, here, is what keeps the pair honest.
+     */
+    clampTrackGain: (trackId: string, gain: number) => number;
     setTrackGainArrangement: (trackId: string, gain: number) => void;
     setTrackPanArrangement: (trackId: string, pan: number) => void;
     setDeviceParameter: (deviceId: string, paramId: string, value: number) => void;

@@ -1,5 +1,6 @@
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
+import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import {
     scheduleTrackAutomation,
     type OfflineDeviceAutomationLaw,
@@ -47,17 +48,37 @@ function legacyFixtureDeviceLaw(
     };
 }
 
+/**
+ * The lane-ceiling law these older fixtures were written against: the scalar the
+ * lane stores, with no widening.
+ *
+ * Production hands `scheduleTrackAutomation` Automation's
+ * `getAutomationLaneCeiling`, which reads a legacy track gain lane's stored
+ * `maxValue: 1` as the fader's real `+6 dB` ceiling. None of the fixtures using
+ * this helper is about that widening — they ride pan, sends, device parameters
+ * and slew grain — so they keep the plain declared range, which is what the live
+ * `clampToLaneRange` also reduces to for every lane the widening does not touch.
+ *
+ * The production law is driven from its real caller in
+ * `useCases/offlineRender/__tests__/legacyGainLaneRenderParity.spec.ts`; do not
+ * read a green run here as evidence about it.
+ */
+function declaredCeiling(lane: Pick<AutomationLane, 'maxValue'>): number {
+    return lane.maxValue;
+}
+
 type ScheduleTrackAutomationFixtureInput = Omit<
     ScheduleTrackAutomationInput,
-    'slewTickSeconds' | 'deviceParameterLaw'
+    'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling'
 > &
-    Partial<Pick<ScheduleTrackAutomationInput, 'slewTickSeconds' | 'deviceParameterLaw'>>;
+    Partial<Pick<ScheduleTrackAutomationInput, 'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling'>>;
 
-/** `scheduleTrackAutomation` with the two render-context inputs defaulted. */
+/** `scheduleTrackAutomation` with the three render-context inputs defaulted. */
 export function scheduleTrackAutomationFixture(input: ScheduleTrackAutomationFixtureInput): void {
     scheduleTrackAutomation({
         slewTickSeconds: SHIPPING_GRAIN_SLEW_TICK_SECONDS,
         deviceParameterLaw: legacyFixtureDeviceLaw(input.deviceEntries),
+        resolveLaneCeiling: declaredCeiling,
         ...input,
     });
 }

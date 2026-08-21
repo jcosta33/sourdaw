@@ -13,6 +13,7 @@ import {
     getSelectionBounds,
     adjustYZoom,
     zoomToUsedRange,
+    getAutomationLaneCeiling,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -126,9 +127,11 @@ export const AutomationLaneRow = ({
     const viewportStartBeat = scrollX / pixelsPerBeat;
     const viewportEndBeat = viewportStartBeat + containerWidth / pixelsPerBeat;
 
-    // Per-lane Y-axis zoom support
+    // Per-lane Y-axis zoom support. The unzoomed ceiling is derived from the
+    // fader law rather than read off the stored scalar, so a gain lane saved
+    // before the fader widened shares the Y scale of one saved after it.
     const vMin = lane.viewMinValue ?? lane.minValue;
-    const vMax = lane.viewMaxValue ?? lane.maxValue;
+    const vMax = lane.viewMaxValue ?? getAutomationLaneCeiling(lane);
     const vRange = vMax - vMin;
     const isYZoomed = lane.viewMinValue !== undefined || lane.viewMaxValue !== undefined;
 

@@ -1,5 +1,6 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
+import { formatGainDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
@@ -65,13 +66,15 @@ function formatDescriptorParameterValue(value: number, unit: string, choices?: r
     return formatParameterValue(value, unit);
 }
 
+/**
+ * The confirmation prose's dB readout. The conversion and the `-∞` branch come
+ * from the shared level law rather than from a fourth copy of the arithmetic
+ * here — a confirmation sentence free to drift from the strip the user is
+ * about to look at is worse than no sentence. Two trimmed decimals is this
+ * surface's presentation choice: prose wants `0 dB`, not the mixer's `0.0 dB`.
+ */
 function formatDecibelsFromGain(value: number): string {
-    if (value <= 0) {
-        return '-∞ dB';
-    }
-    const decibels = 20 * Math.log10(value);
-    const rounded = Math.round(decibels * 100) / 100;
-    return `${String(rounded)} dB`;
+    return `${formatGainDb(value, { fractionDigits: 2, trimTrailingZeros: true })} dB`;
 }
 
 function resolveActionTrackName(trackId: string, actions: readonly AppAction[], context: ProjectContext): string {

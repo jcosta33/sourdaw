@@ -9,6 +9,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
+import { Row, Stack } from '#/components/layout';
 
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
 
@@ -64,7 +65,7 @@ export const FilterSection = ({
     }
 
     return (
-        <div className="space-y-2 w-full">
+        <Stack gap={2} className="w-full">
             {/* Model + mode selectors in one row */}
             <DawPluginSectionHeader
                 title="Filter"
@@ -72,7 +73,7 @@ export const FilterSection = ({
                 className="gap-3"
                 actions={
                     <>
-                        <div className="flex gap-0.5">
+                        <Row align="stretch" gap={0.5}>
                             {FILTER_MODEL_NAMES.map((name, i) => (
                                 <DawPluginChip
                                     key={name}
@@ -84,9 +85,9 @@ export const FilterSection = ({
                                     {name}
                                 </DawPluginChip>
                             ))}
-                        </div>
+                        </Row>
                         {isSvf ? (
-                            <div className="ml-auto flex gap-0.5">
+                            <Row align="stretch" gap={0.5} className="ml-auto">
                                 {FILTER_MODE_NAMES.map((name, i) => (
                                     <DawPluginChip
                                         key={name}
@@ -98,7 +99,7 @@ export const FilterSection = ({
                                         {name}
                                     </DawPluginChip>
                                 ))}
-                            </div>
+                            </Row>
                         ) : (
                             <span className="ml-auto text-[7px] text-muted-foreground/50">{description}</span>
                         )}
@@ -126,8 +127,8 @@ export const FilterSection = ({
             </div>
 
             {/* Knobs — all in one row */}
-            <div className="flex items-end gap-3">
-                <div className="flex flex-col items-center gap-0">
+            <Row align="end" gap={3}>
+                <Stack align="center">
                     <Knob
                         paramId="filterCutoff"
                         value={cutoff}
@@ -144,8 +145,8 @@ export const FilterSection = ({
                     <span className="text-[6px] text-muted-foreground/50 font-mono">
                         {cutoff >= 1000 ? `${(cutoff / 1000).toFixed(1)}k` : Math.round(cutoff)}
                     </span>
-                </div>
-                <div className="flex flex-col items-center gap-0">
+                </Stack>
+                <Stack align="center">
                     <Knob
                         paramId="filterResonance"
                         value={resonance}
@@ -159,7 +160,7 @@ export const FilterSection = ({
                     />
                     <span className="text-[7px] text-muted-foreground">Reso</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{resonance.toFixed(1)}</span>
-                </div>
+                </Stack>
                 <Knob
                     paramId="filterDrive"
                     value={drive}
@@ -196,7 +197,7 @@ export const FilterSection = ({
                     label="Key"
                     tone="sage"
                 />
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
