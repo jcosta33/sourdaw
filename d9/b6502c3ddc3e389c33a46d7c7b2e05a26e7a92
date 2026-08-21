@@ -1,0 +1,57 @@
+tests/e2e/ddspRenderProbe.ts
+  s_27578aec2aab3b::t_d59c0e85ccde03 1-4,25-30,63
+  s_27578aec2aab3b::t_d88c6ada47abca 9,60-62
+  s_27578aec2aab3b::t_04d0de785c54b9 65,73
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_27578aec2aab3b::t_82431a48f18fa6 1-2,4-7,9,13-16,19-28,30-60,63-92,96-103,105,108-145,147-158,160-191,193-207,209-276,283-284,286-311,313-442,444-453,455-458,460-583
+  s_27578aec2aab3b::t_a9f33db81111b9 3,8,10-12,17-18,29,93-95,104,106,192,208,312,454
+  s_27578aec2aab3b::t_bd6d27fa7504ab 107,146,159,443,459
+  s_27578aec2aab3b::t_6b52446104d51e 62
+  s_27578aec2aab3b::t_a6e4f5e307f890 277-282,285
+  s_27578aec2aab3b::t_cab1e14b1a384c 61
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_b2bbdf067d2796 121-140,191,195,197
+  s_27578aec2aab3b::t_b2908f181a6ae2 367-368,397,399-410,454,469,494,508
+  s_27578aec2aab3b::t_0690e544af6080 326,398,482-492
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_b5e8c7d0c8943a 25-30,57,65,82,84,95-108,113,121-123,136
+src/modules/BrowserAi/models/InferenceRequest.ts
+  s_27578aec2aab3b::t_a1ca070601c516 32-40
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_a74773b75a2b99 325-345
+  s_27578aec2aab3b::t_a6e4f5e307f890 71
+  s_27578aec2aab3b::t_1483f84945f4ff 3,11-15,18-19,21,23,26,28-51,58-69,72-126,135-136,138-140,142-145,152-200,203-221,244-256,259-260,266-271,274-288,294-324,346-375,379-393,395,398-411,419-426,428-465
+  s_27578aec2aab3b::t_9256e90d050f0a 127-129,132-134,146-151,261-265
+  s_27578aec2aab3b::t_d88c6ada47abca 412-418
+  s_27578aec2aab3b::t_891566db3d98c4 1,4-9,17,20,24-25,130-131
+  s_27578aec2aab3b::t_9921fee6b3adfb 137,141
+  s_27578aec2aab3b::t_858cf4a8bb8070 54-57,70,224-230,232-237,239-241,289-293
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_f4cc062d6e395b 380,399-404,443-460,697-719,744-746,759,761-763
+  s_27578aec2aab3b::t_732ae221de9897 405-420
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_27578aec2aab3b::t_0e423966fd9653 1,14,16,19,29-45,71-76,88-89,94-95,98-103,105-109
+  s_27578aec2aab3b::t_61a4c92dc832c3 62
+  s_27578aec2aab3b::t_b68c34cd460e35 10
+  s_27578aec2aab3b::t_fe5c8ec2b5ce70 12-13
+  s_27578aec2aab3b::t_2cfb9cedeb4927 3-8,46-61,63-64,66-67,69,77-87,90
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_ee32258e959879 75-102
+  s_27578aec2aab3b::t_8e64249f655233 103-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d9b6502c3ddc3e389c33a46d7c7b2e05a26e7a92",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
