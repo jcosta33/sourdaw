@@ -12,6 +12,7 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { gainNodePool } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
@@ -120,20 +121,24 @@ type StartFn = (when: number, offset: number, duration: number) => void;
 /**
  * A fresh fake AudioBufferSourceNode that records its start() arguments.
  *
- * `start` rejects a negative offset because the real node does: the Web Audio
- * specification requires `AudioBufferSourceNode.start()` to throw a
- * `RangeError` when `offset` is negative. A permissive fake would let this
- * suite go green on a scheduler that crashes the moment a musician slips a clip
- * past the head of its file.
+ * `start` rejects a negative `when`, `offset`, or `duration` because the real
+ * node does: the Web Audio specification requires
+ * `AudioBufferSourceNode.start(when, offset, duration)` to throw a
+ * `RangeError` when any of the three is negative — `when` has no meaning
+ * before the context's origin, `offset` has no earlier sample to seek to, and
+ * `duration` has no negative span of audio to play. A fake that only checked
+ * `offset` would stay green on a scheduler that computes a negative
+ * `playDuration` and hands it straight to `start()` — exactly the defect the
+ * `playDuration <= 0` guard in `scheduleAudioClips.ts` exists to prevent.
  */
 function makeFakeSource(): { start: ReturnType<typeof vi.fn<StartFn>>; [k: string]: unknown } {
     return {
         buffer: null,
         playbackRate: { value: 1 },
         connect: vi.fn(),
-        start: vi.fn<StartFn>((_when, offset) => {
-            if (offset < 0) {
-                throw new RangeError('offset must be non-negative');
+        start: vi.fn<StartFn>((when, offset, duration) => {
+            if (when < 0 || offset < 0 || duration < 0) {
+                throw new RangeError('start() arguments must be non-negative');
             }
         }),
         onended: null,
@@ -551,6 +556,31 @@ describe('scheduleAudioClips', () => {
         expect(duration).toBeCloseTo(1.5, 6);
     });
 
+    /// Companion to the pre-roll test above: here the offset doesn't just eat
+    /// into the buffer, it clears the whole thing. `sourceOffsetSeconds` (5 s)
+    /// alone exceeds the 0.25 s buffer, so `(buffer.duration -
+    /// sourceOffsetSeconds) / stretchRatio` goes negative and wins the
+    /// `Math.min` over the untouched 2 s iteration span, driving `playDuration`
+    /// below zero. Nothing audible remains, so the source must never start and
+    /// both pooled GainNodes must come back rather than leak into a disposed
+    /// graph.
+    it('releases both gain nodes and never starts a source when the offset clears a short buffer', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 0.25 } as AudioBuffer);
+        // Non-zero env gain so an envGainNode is also acquired, exercising both
+        // pool slots this guard is responsible for releasing.
+        vi.mocked(getGainAtBeat).mockReturnValue(3);
+        // clipBeatsPerSecond = 2; audioOffsetBeats 10 → 5 s into a 0.25 s buffer.
+        mockResolveClips.mockReturnValue([makeAudioClip({ audioOffsetBeats: 10 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect(fakeSource.start).not.toHaveBeenCalled();
+        expect(gainNodePool).toHaveLength(2);
+    });
+
     it('moves the start across a tempo change while leaving the buffer content offset alone', () => {
         // The two conversions in this path answer different questions and must not
         // be unified. `when` is a timeline position, so it integrates the map. The
@@ -740,6 +770,34 @@ describe('scheduleAudioClips', () => {
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
         const fadeGain = ctx.createGain.mock.results[0]!.value;
         expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(1, 5);
+    });
+
+    /// No existing test combined a drawn fade-in with a negative offset, so
+    /// `effectiveStart = Math.max(soundStartTime, now)` — the line that decides
+    /// where a fade actually lands — went unobserved for this case. A pre-roll
+    /// (from the negative offset) longer than the drawn fade window pushes
+    /// `effectiveStart` past `fadeInEnd`, and the bare `setValueAtTime(1, …)`
+    /// jump would start the source at unity on a discontinuity. Drawing a fade
+    /// is the gesture that says "no click here", so the fix substitutes the
+    /// same micro anti-click ramp an undrawn fade gets.
+    it('applies a micro fade instead of a bare jump when pre-roll outruns a drawn fade-in', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        // fadeInBeats 1 → 0.5 s fade window (iterStartTime 4 → fadeInEnd 4.5).
+        // audioOffsetBeats -2 → clipAudioOffsetSeconds -1 s → preRollSeconds 1 s,
+        // which outruns the fade and pushes effectiveStart to 5 (past fadeInEnd).
+        mockResolveClips.mockReturnValue([makeAudioClip({ fadeInBeats: 1, audioOffsetBeats: -2 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        // Before the fix this was setValueAtTime(1, 5) — a bare jump to unity.
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 5);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 5.003);
+        expect(fadeGain.gain.setValueAtTime).not.toHaveBeenCalledWith(1, 5);
     });
 
     it('applies a micro fade-in when there is no explicit fade-in (fadeInBeats === 0)', () => {

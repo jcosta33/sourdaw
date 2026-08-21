@@ -310,6 +310,20 @@ export function scheduleAudioClips(
                             const progressRatio = Math.max(0, effectiveStart - iterStartTime) / fadeInSeconds;
                             fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
                             fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
+                        } else if (preRollSeconds > 0) {
+                            // The drawn fade window fully elapsed inside the pre-roll
+                            // silence, so `effectiveStart` lands past `fadeInEnd` with
+                            // nothing left to ramp — but drawing a fade is the gesture
+                            // that says "no click here", and the source is about to
+                            // start on a discontinuity regardless. Give it the same
+                            // anti-click MICRO_FADE_SECONDS gives an undrawn fade,
+                            // rather than jumping straight to unity. This leaves the
+                            // no-pre-roll transport-resume case (preRollSeconds === 0)
+                            // alone: that one starts mid-buffer, where the
+                            // discontinuity is unavoidable and a ramp would only mask
+                            // real material.
+                            fadeGain.gain.setValueAtTime(0, effectiveStart);
+                            fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
                         } else {
                             fadeGain.gain.setValueAtTime(1, effectiveStart);
                         }
