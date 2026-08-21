@@ -1,0 +1,20 @@
+tests/e2e/instrumentPanelsTestId.spec.ts
+  s_24b1bdbc3c31ad::t_cab8cb093bd24c 1,6,24-25,28,36,39,41-43
+  s_24b1bdbc3c31ad::t_69e234d832df61 5,7-23,33-35,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5bd16c2b7ae98a1a47c1115b84db9b9bab17a501",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
