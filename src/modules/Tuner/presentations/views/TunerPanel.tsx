@@ -7,6 +7,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
@@ -170,7 +171,9 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         {MODES.map((entry) => {
                             const selected = mode === entry.id;
                             return (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     key={entry.id}
                                     type="button"
                                     aria-pressed={selected}
@@ -187,7 +190,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                         <div className="text-[9px] text-white/42">{entry.detail}</div>
                                     </div>
                                     {selected ? <DawPluginLed tone="mint">Live</DawPluginLed> : null}
-                                </button>
+                                </Button>
                             );
                         })}
                     </div>

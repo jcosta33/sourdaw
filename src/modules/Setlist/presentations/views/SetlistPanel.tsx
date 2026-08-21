@@ -167,13 +167,15 @@ export const SetlistPanel = (): ReactElement => {
                         }}
                     />
                 ) : (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="text-xs font-semibold text-foreground hover:text-accent-cyan"
                         onClick={() => setEditingSetlistName(true)}
                     >
                         {state.name}
-                    </button>
+                    </Button>
                 )}
 
                 <div className="text-[10px] text-muted-foreground">
@@ -347,7 +349,9 @@ export const SetlistPanel = (): ReactElement => {
                                                 }}
                                             />
                                         ) : (
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 className="truncate text-xs text-foreground hover:text-accent-cyan text-left"
                                                 onClick={(event) => {
@@ -356,7 +360,7 @@ export const SetlistPanel = (): ReactElement => {
                                                 }}
                                             >
                                                 {item.name}
-                                            </button>
+                                            </Button>
                                         )}
                                     </Row>
 
@@ -366,7 +370,9 @@ export const SetlistPanel = (): ReactElement => {
 
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 className={cn(
                                                     'size-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors',
@@ -382,7 +388,7 @@ export const SetlistPanel = (): ReactElement => {
                                                 }}
                                             >
                                                 AS
-                                            </button>
+                                            </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>Auto-stop after this item finishes</TooltipContent>
                                     </Tooltip>

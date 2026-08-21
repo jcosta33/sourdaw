@@ -10,6 +10,7 @@ pnpm deps:validate
 pnpm typecheck
 pnpm typecheck:test
 pnpm typecheck:scripts
+pnpm census:ui -- --check
 pnpm typecheck:e2e
 pnpm lint:full
 pnpm test:command-schema

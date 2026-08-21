@@ -1,6 +1,8 @@
 import { type ChangeEvent, type DragEvent, type ReactElement, useId, useState } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { MIDI_CLIP_DRAG_MIME_TYPE } from '#/utils/midiClipDrag';
@@ -170,21 +172,28 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
                 MIDI clip for groove extraction
             </label>
             <Row align="stretch" gap={1}>
-                <select id={clipSelectId} value={selectedClipId} disabled={saving} onChange={handleSelectedClipChange}>
+                <DawCompactSelect
+                    id={clipSelectId}
+                    value={selectedClipId}
+                    disabled={saving}
+                    onChange={handleSelectedClipChange}
+                >
                     <option value="">Select a MIDI clip</option>
                     {midiClips.map((clip) => (
                         <option key={clip.id} value={clip.id}>
                             {clip.name}
                         </option>
                     ))}
-                </select>
-                <button
+                </DawCompactSelect>
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     disabled={saving || !canPreviewSelectedClip}
                     onClick={() => previewClip(selectedClipId)}
                 >
                     Preview groove
-                </button>
+                </Button>
             </Row>
             <div
                 aria-label="Extract groove from MIDI clip"
@@ -198,16 +207,24 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
             {proposal ? <p role="status">{getProposalMessage(proposal)}</p> : null}
             {proposal?.status === 'extracted' ? (
                 <Row align="stretch" gap={1}>
-                    <button type="button" disabled={saving} onClick={() => handleConfirm().catch(() => undefined)}>
+                    <Button
+                        variant="bare"
+                        size="bare"
+                        type="button"
+                        disabled={saving}
+                        onClick={() => handleConfirm().catch(() => undefined)}
+                    >
                         {saving ? 'Saving…' : 'Save groove'}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         disabled={saving}
                         onClick={() => setPreviewState({ subdivision, proposal: null, error: null })}
                     >
                         Cancel
-                    </button>
+                    </Button>
                 </Row>
             ) : null}
             {error ? <p role="alert">{getErrorMessage(error)}</p> : null}

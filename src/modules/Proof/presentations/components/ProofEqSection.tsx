@@ -9,6 +9,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -99,7 +100,9 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                         key={EQ_BAND_KEYS[i]}
                     >
                         {/* Enable toggle */}
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             aria-label={`EQ ${EQ_BAND_LABELS[i]!} band`}
                             aria-pressed={band.enabled}

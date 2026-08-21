@@ -1,6 +1,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useRef } from 'react';
 
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 
 import { SourdawLogo } from './SourdawLogo';
 
@@ -73,14 +74,16 @@ export const ProjectLoadFailureOverlay = ({
                 Your saved projects were not modified. Reload to get back to them.
             </p>
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 ref={reloadRef}
                 type="button"
                 onClick={onReload}
                 className="rounded-md px-4 py-2 text-sm font-medium text-white/90 ring-1 ring-white/20 hover:ring-white/40"
             >
                 Reload
-            </button>
+            </Button>
         </Stack>
     );
 };

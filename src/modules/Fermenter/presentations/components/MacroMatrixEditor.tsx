@@ -1,6 +1,9 @@
 import { type ChangeEvent, type ReactElement, useState } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 
 import {
     DEFAULT_MACRO_MAPPINGS,
@@ -74,7 +77,7 @@ function NumberField({
     return (
         <Stack as="label" gap={1}>
             <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">{label}</span>
-            <input
+            <Input
                 type="number"
                 value={Number.isFinite(value) ? value : 0}
                 onChange={(event) => onChange(Number(event.target.value))}
@@ -132,7 +135,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                     </div>
                     <div className="text-[10px] text-muted-foreground/70">Assign macro targets</div>
                 </div>
-                <select
+                <DawCompactSelect
                     aria-label="Macro"
                     value={selectedMacro}
                     onChange={(event) => setSelectedMacro(Number(event.target.value))}
@@ -143,7 +146,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                             {label}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             </Row>
 
             <Stack gap={2}>
@@ -153,7 +156,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                         className="rounded-lg border border-border/20 bg-black/15 p-2"
                     >
                         <Row gap={2}>
-                            <select
+                            <DawCompactSelect
                                 aria-label={`Target ${targetIndex + 1}`}
                                 value={String(target.target)}
                                 onChange={(event: ChangeEvent<HTMLSelectElement>) => {
@@ -166,14 +169,16 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                                         {param.label}
                                     </option>
                                 ))}
-                            </select>
-                            <button
+                            </DawCompactSelect>
+                            <Button
+                                variant="bare"
+                                size="bare"
                                 type="button"
                                 onClick={() => removeTarget(targetIndex)}
                                 className="rounded border border-border/30 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground"
                             >
                                 Clear
-                            </button>
+                            </Button>
                         </Row>
 
                         <Grid cols={2} gap={2} className="mt-2">
@@ -203,7 +208,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                             <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">
                                 Curve
                             </span>
-                            <select
+                            <DawCompactSelect
                                 value={target.curve}
                                 onChange={(event) =>
                                     setTarget(targetIndex, {
@@ -215,20 +220,22 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                             >
                                 <option value="linear">Linear</option>
                                 <option value="exponential">Exponential</option>
-                            </select>
+                            </DawCompactSelect>
                         </Stack>
                     </div>
                 ))}
             </Stack>
 
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 onClick={addTarget}
                 disabled={mapping.targets.length >= MAX_TARGETS_PER_MACRO}
                 className="w-full rounded border border-dashed border-border/40 px-2 py-2 text-[9px] uppercase tracking-[0.18em] text-muted-foreground transition hover:border-[var(--color-accent-sage)]/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
             >
                 Add target
-            </button>
+            </Button>
         </Stack>
     );
 }

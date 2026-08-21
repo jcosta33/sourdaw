@@ -33,16 +33,12 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 vi.mock('#/components/ui/button', () => ({
     Button: ({
         children,
-        onClick,
-        disabled,
-        className,
-    }: {
-        children: React.ReactNode;
-        onClick?: () => void;
-        disabled?: boolean;
-        className?: string;
-    }) => (
-        <button type="button" onClick={onClick} disabled={disabled} className={className}>
+        variant,
+        size,
+        asChild: _asChild,
+        ...props
+    }: React.ComponentProps<'button'> & { variant?: string; size?: string; asChild?: boolean }) => (
+        <button type="button" data-variant={variant} data-size={size} {...props}>
             {children}
         </button>
     ),

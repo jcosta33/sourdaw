@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from 'react';
 
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { compileReorderDevicesAction, getPlatformPlugins, selectTrack } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
@@ -76,7 +77,9 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 {data.name}
                             </span>
                         </MixerInsetButton>
-                        <button
+                        <Button
+                            variant="bare"
+                            size="bare"
                             type="button"
                             className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
                             onClick={(event) => {
@@ -93,7 +96,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             title={`Remove ${data.name}`}
                         >
                             ×
-                        </button>
+                        </Button>
                     </div>
                 ))}
             </Stack>
@@ -136,7 +139,9 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             ♪ {fx.name}
                         </MixerInsetButton>
                     ))}
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="w-full text-[10px] text-muted-foreground hover:text-foreground"
                         onClick={(event) => {
@@ -145,7 +150,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         }}
                     >
                         cancel
-                    </button>
+                    </Button>
                 </Stack>
             ) : (
                 <MixerInsetButton

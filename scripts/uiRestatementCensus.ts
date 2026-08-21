@@ -329,13 +329,8 @@ const NON_TEXT_INPUT_TYPES = new Set([
 
 const NUMERIC_GRID_COLS = /(?:^|\s)grid-cols-[1-6](?:\s|$)/;
 
-function isDawCompactDefinition(relativePath: string): boolean {
-    return (
-        relativePath === 'src/components/daw/DawCompactCheckbox.tsx' ||
-        relativePath === 'src/components/daw/DawCompactInput.tsx' ||
-        relativePath === 'src/components/daw/DawCompactSelect.tsx' ||
-        relativePath === 'src/components/daw/DawCompactTextarea.tsx'
-    );
+function isDawChromeDefinition(relativePath: string): boolean {
+    return relativePath.startsWith('src/components/daw/');
 }
 
 function nativeControlDisposition(
@@ -344,7 +339,7 @@ function nativeControlDisposition(
     inputType: string | undefined,
     classNames: string
 ): UiRestatementDisposition {
-    if (relativePath.startsWith('src/components/ui/') || isDawCompactDefinition(relativePath)) {
+    if (relativePath.startsWith('src/components/ui/') || isDawChromeDefinition(relativePath)) {
         return 'semantic-wrapper';
     }
     if (relativePath.includes('/visualizers/')) {
@@ -354,7 +349,7 @@ function nativeControlDisposition(
         return 'one-off';
     }
     if (
-        tag === 'input' &&
+        (tag === 'input' || tag === 'select' || tag === 'textarea') &&
         classNames.includes('bg-transparent') &&
         !/(?:^|\s)h-(?:5|6|7|8|10)(?:\s|$)/.test(classNames)
     ) {
@@ -583,6 +578,14 @@ export function checkUiRestatementCensus(root: string, ledgerPath: string = defa
     }
     if (errors.length === 0 && canonicalizeCensus(actual) !== ledgerText) {
         errors.push('census ledger is not canonical JSON');
+    }
+    const eligible = actual.filter((row) => row.disposition === 'eligible');
+    if (eligible.length > 0) {
+        const preview = eligible
+            .slice(0, 8)
+            .map((row) => `${row.id} ${row.file}:${String(row.line)}`)
+            .join('; ');
+        errors.push(`${String(eligible.length)} eligible restatement(s) remain; replace or exclude (e.g. ${preview})`);
     }
     return errors;
 }

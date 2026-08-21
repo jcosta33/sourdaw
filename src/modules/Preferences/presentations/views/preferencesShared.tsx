@@ -43,7 +43,9 @@ export const ToggleRow = ({
 }): ReactElement => (
     <Row justify="between">
         <span className="text-xs text-foreground">{label}</span>
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             role="switch"
             aria-checked={value}
@@ -55,7 +57,7 @@ export const ToggleRow = ({
             <span
                 className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white transition-transform ${value ? 'translate-x-4' : ''}`}
             />
-        </button>
+        </Button>
     </Row>
 );
 

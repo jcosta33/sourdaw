@@ -3,6 +3,7 @@
  */
 import { type ReactElement } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 
@@ -40,7 +41,7 @@ export const FmSection = ({
 
             {/* Algorithm selector */}
             <div className="px-1">
-                <select
+                <DawCompactSelect
                     value={algorithm}
                     onChange={(e) => onParam('fmAlgorithm', Number(e.target.value))}
                     className="w-full bg-surface-inset border border-border/40 rounded px-1.5 py-0.5 text-[9px] text-foreground cursor-pointer"
@@ -50,7 +51,7 @@ export const FmSection = ({
                             {name}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             </div>
 
             {/* Operator ratios + levels */}

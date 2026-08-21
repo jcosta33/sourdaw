@@ -12,6 +12,7 @@ import { type DragEvent, type ReactElement, useEffect, useRef, useState } from '
 import { GripVertical, Play, Square } from 'lucide-react';
 
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import {
     cachePreviewAudioBuffer,
     playCachedAudioBufferPreview,
@@ -140,7 +141,9 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
-            <button
+            <Button
+                variant="bare"
+                size="bare"
                 type="button"
                 onClick={handlePlay}
                 className="shrink-0 size-5 flex items-center justify-center rounded hover:bg-border/30 transition-colors"
@@ -151,7 +154,7 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
                 ) : (
                     <Play className="size-2.5 text-muted-foreground" />
                 )}
-            </button>
+            </Button>
             <span className="text-[9px] font-medium text-foreground/80 min-w-[14px]">{label}</span>
             <span className="text-[9px] text-muted-foreground/60 flex-1 truncate">{name}</span>
             <span className="text-[9px] text-muted-foreground/40 tabular-nums">{durationSec.toFixed(1)}s</span>

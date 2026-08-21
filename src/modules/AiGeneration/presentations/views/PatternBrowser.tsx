@@ -377,7 +377,9 @@ export const PatternBrowser = (): ReactElement => {
             ) : null}
             {/* Category filter */}
             <Row align="stretch" wrap gap={1}>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className={cn(
                         'px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
@@ -388,9 +390,11 @@ export const PatternBrowser = (): ReactElement => {
                     onClick={() => setActiveCategory(undefined)}
                 >
                     All
-                </button>
+                </Button>
                 {PATTERN_CATEGORIES.map((cat) => (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={cat.id}
                         type="button"
                         className={cn(
@@ -402,7 +406,7 @@ export const PatternBrowser = (): ReactElement => {
                         onClick={() => setActiveCategory(activeCategory === cat.id ? undefined : cat.id)}
                     >
                         {cat.label}
-                    </button>
+                    </Button>
                 ))}
                 <span className="text-[9px] text-muted-foreground/40 self-center ml-auto">
                     {filteredTemplates.length}/{PATTERN_TEMPLATES.length}

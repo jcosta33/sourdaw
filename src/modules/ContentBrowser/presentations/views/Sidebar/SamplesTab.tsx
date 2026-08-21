@@ -5,6 +5,7 @@ import { Folder, File, Star, Upload } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -114,7 +115,9 @@ export const SamplesTab = ({
                                     heading={sample.name}
                                     description={sample.duration}
                                     endSlot={
-                                        <button
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
                                             type="button"
                                             className={cn(
                                                 'size-3 opacity-0 transition-opacity group-hover:opacity-100',
@@ -136,7 +139,7 @@ export const SamplesTab = ({
                                                         : 'text-muted-foreground'
                                                 )}
                                             />
-                                        </button>
+                                        </Button>
                                     }
                                 />
                             </div>

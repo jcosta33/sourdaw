@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, type RefObject } from 'react';
 
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type TransportSegmentedReadoutProps = {
@@ -32,7 +33,9 @@ export const TransportSegmentedReadout = ({
     const secondaryTone = active ? 'rgba(127,184,164,0.5)' : 'rgba(176,176,176,0.4)';
 
     return (
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             className="daw-readout-well group flex cursor-pointer items-center gap-0.5 rounded-sm px-2.5 py-1 font-mono font-medium tabular-nums transition-colors"
             onClick={onClick}
@@ -57,6 +60,6 @@ export const TransportSegmentedReadout = ({
             <span ref={segmentRefs?.[2]} className={cn('mt-0.5 min-w-8 text-sm')} style={{ color: secondaryTone }}>
                 {segments[2]}
             </span>
-        </button>
+        </Button>
     );
 };

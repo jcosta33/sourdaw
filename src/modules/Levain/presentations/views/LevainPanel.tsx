@@ -9,6 +9,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
 import { type InstrumentId } from '../../models/LevainPatch';
@@ -150,7 +151,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             {visibleInstruments.map((instrument) => {
                                 const active = patch.instrumentId === instrument.id;
                                 return (
-                                    <button
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
                                         key={instrument.id}
                                         type="button"
                                         aria-pressed={active}
@@ -170,7 +173,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 {instrument.family}
                                             </span>
                                         </Row>
-                                    </button>
+                                    </Button>
                                 );
                             })}
                         </Stack>

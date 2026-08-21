@@ -26,6 +26,7 @@ const buttonVariants = cva(
                 transport:
                     'text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-l-[rgba(255,255,255,0.04)] border-b-[rgba(0,0,0,0.3)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_4px_rgba(0,0,0,0.5)] hover:text-accent-cyan hover:brightness-[1.05] active:translate-y-px active:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(0,0,0,0.4)] [background:linear-gradient(180deg,#1d1d1d_0%,#111111_100%)] active:[background:linear-gradient(180deg,#111_0%,#181818_100%)]',
                 danger: 'daw-panel-surface text-text-secondary hover:border-transparent hover:bg-state-danger hover:text-white active:translate-y-px active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50',
+                bare: '',
             },
             size: {
                 default: 'h-8 px-3 text-xs rounded-sm',
@@ -37,6 +38,7 @@ const buttonVariants = cva(
                     "size-5 flex items-center justify-center rounded-micro p-0 [&_svg:not([class*='size-'])]:size-3",
                 'icon-sm': 'size-6 flex items-center justify-center rounded-sm p-0',
                 'icon-lg': 'size-10 flex items-center justify-center rounded-md p-0',
+                bare: '',
             },
         },
         defaultVariants: {

@@ -227,7 +227,9 @@ const TemplateCard = ({
     const isDemo = template.category === 'demo';
 
     return (
-        <button
+        <Button
+            variant="bare"
+            size="bare"
             type="button"
             disabled={disabled}
             className={`group relative flex flex-col items-start gap-2.5 rounded-xl border p-4 text-left transition-all hover:scale-[1.01] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none cursor-pointer ${colors.border} hover:${colors.border.replace('/20', '/40')} bg-surface-base/50 hover:bg-surface-raised/80`}
@@ -256,7 +258,7 @@ const TemplateCard = ({
                 ) : null}
             </Row>
             <p className="text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2">{template.description}</p>
-        </button>
+        </Button>
     );
 };
 

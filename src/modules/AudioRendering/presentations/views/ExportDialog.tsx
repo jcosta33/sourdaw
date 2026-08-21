@@ -3,6 +3,8 @@ import { type ReactElement, useState, useRef } from 'react';
 import { zipSync } from 'fflate';
 import { Flame, X, CheckCircle2 } from 'lucide-react';
 
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
@@ -10,6 +12,7 @@ import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
+import { Input } from '#/components/ui/input';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import {
@@ -978,7 +981,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     <DawDialogSection tone="warm" title="Tail" detail="Extra seconds so reverb/delay can ring out.">
                         <Row gap={3}>
                             <Row gap={2}>
-                                <input
+                                <Input
                                     type="number"
                                     min={0}
                                     max={MAX_MANUAL_TAIL_SECONDS}
@@ -997,7 +1000,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 <span className="text-[10px] text-stone-500">seconds</span>
                             </Row>
                             <Row as="label" gap={1.5} className="text-[11px] text-stone-400">
-                                <input
+                                <DawCompactCheckbox
                                     type="checkbox"
                                     checked={autoTail}
                                     onChange={(e) => setAutoTail(e.target.checked)}
@@ -1023,7 +1026,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             title="Target Track"
                             detail="Where to place the rendered audio clip."
                         >
-                            <select
+                            <DawCompactSelect
                                 value={renderTargetTrackId}
                                 onChange={(e) => setRenderTargetTrackId(e.target.value)}
                                 disabled={exporting}
@@ -1036,7 +1039,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         {t.name || t.id}
                                     </option>
                                 ))}
-                            </select>
+                            </DawCompactSelect>
                         </DawDialogSection>
                     ) : null}
 
@@ -1047,7 +1050,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     {FORMAT_OPTIONS.map((freq) => {
                                         const active = formats.has(freq.value);
                                         return (
-                                            <button
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
                                                 type="button"
                                                 key={freq.value}
                                                 data-testid={`export-format-${freq.value}`}
@@ -1072,7 +1077,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 >
                                                     {freq.desc}
                                                 </div>
-                                            </button>
+                                            </Button>
                                         );
                                     })}
                                 </Grid>

@@ -1,5 +1,6 @@
 import { type ReactElement, type PointerEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -387,7 +388,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 {AVAILABLE_STRETCH_MODES.length > 1 ? (
                     <Row as="label" gap={1} className="text-[10px] text-muted-foreground">
                         Stretch
-                        <select
+                        <DawCompactSelect
                             className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
                             value={warpState.stretchMode}
                             onChange={(e) => handleStretchMode(e.target.value as StretchMode)}
@@ -398,14 +399,14 @@ export const ElasticEditorPanel = (): ReactElement => {
                                     {getStretchModeInfo(mode).name}
                                 </option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
                     </Row>
                 ) : null}
 
                 {AVAILABLE_ALGORITHMS.length > 1 ? (
                     <Row as="label" gap={1} className="text-[10px] text-muted-foreground">
                         Algorithm
-                        <select
+                        <DawCompactSelect
                             className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
                             value={warpSnapshot.defaultAlgorithm}
                             onChange={(e) => handleAlgorithm(e.target.value as WarpAlgorithm)}
@@ -416,7 +417,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                                     {getAlgorithmInfo(algo).name}
                                 </option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
                     </Row>
                 ) : null}
 

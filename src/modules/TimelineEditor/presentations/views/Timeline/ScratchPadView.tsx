@@ -18,6 +18,7 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { scratchPadStore } from '#/modules/Arrangement/stores';
 import {
@@ -128,7 +129,9 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 <div className="flex-1" />
 
                 {/* Capture current arrangement */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5 transition-colors"
                     title="Capture current arrangement"
@@ -136,11 +139,13 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 >
                     <Copy className="size-2.5" />
                     <span>Capture</span>
-                </button>
+                </Button>
 
                 {/* Commit to arrangement */}
                 {sections.length > 0 ? (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-[var(--color-accent-peach)]/70 hover:text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/10 transition-colors"
                         title="Apply scratch pad to main arrangement"
@@ -148,12 +153,14 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     >
                         <ArrowUpFromLine className="size-2.5" />
                         <span>Apply</span>
-                    </button>
+                    </Button>
                 ) : null}
 
                 {/* Clear */}
                 {sections.length > 0 ? (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="size-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
                         aria-label="Clear scratch pad"
@@ -161,28 +168,32 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         onClick={() => clearScratchPad()}
                     >
                         <Trash2 className="size-2.5" />
-                    </button>
+                    </Button>
                 ) : null}
 
                 {/* Collapse toggle */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="size-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5 transition-colors"
                     aria-label={collapsed ? 'Expand scratch pad' : 'Collapse scratch pad'}
                     onClick={() => setCollapsed(!collapsed)}
                 >
                     {collapsed ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-                </button>
+                </Button>
 
                 {/* Close */}
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     className="size-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground/50 hover:bg-white/5 transition-colors text-[10px] font-bold"
                     aria-label="Close scratch pad"
                     onClick={onToggle}
                 >
                     ✕
-                </button>
+                </Button>
             </Row>
             {/* ── Sections area ── */}
             {!collapsed ? (
@@ -260,7 +271,9 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
                         onClick={() => {
@@ -269,7 +282,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         }}
                     >
                         Rename
-                    </button>
+                    </Button>
                     <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                     <Row align="stretch" gap={1} className="px-2 pb-1">
                         {SECTION_COLORS.map((context) => (
@@ -286,7 +299,9 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         ))}
                     </Row>
                     <DawMenuSeparator className="my-0.5 border-border/50" />
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
                         disabled={contextMenu.section.order === 0}
@@ -296,8 +311,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         }}
                     >
                         Move Left
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
                         disabled={contextMenu.section.order === sections.length - 1}
@@ -307,9 +324,11 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         }}
                     >
                         Move Right
-                    </button>
+                    </Button>
                     <DawMenuSeparator className="my-0.5 border-border/50" />
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
                         onClick={() => {
@@ -318,7 +337,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         }}
                     >
                         Delete
-                    </button>
+                    </Button>
                 </div>
             ) : null}
         </Stack>

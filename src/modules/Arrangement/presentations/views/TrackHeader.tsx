@@ -214,7 +214,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     <Row gap={1} className="ml-auto">
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     aria-label="Toggle variation lanes"
                                     aria-pressed={track.showVariationLanes}
@@ -230,7 +232,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     }}
                                 >
                                     <Layers className="size-3" />
-                                </button>
+                                </Button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">Variation Lanes (Track Alternatives)</TooltipContent>
                         </Tooltip>

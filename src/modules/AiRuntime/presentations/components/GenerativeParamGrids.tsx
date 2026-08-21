@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { Grid } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 type GridProps = {
@@ -44,7 +45,9 @@ const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerPr
             {options.map((opt) => {
                 const isSelected = value === opt.id;
                 return (
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         key={opt.id}
                         type="button"
                         aria-pressed={isSelected}
@@ -83,7 +86,7 @@ const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerPr
                         >
                             {opt.label}
                         </span>
-                    </button>
+                    </Button>
                 );
             })}
         </Grid>

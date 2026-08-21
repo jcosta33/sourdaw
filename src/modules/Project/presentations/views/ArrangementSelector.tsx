@@ -5,6 +5,7 @@ import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
+import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
@@ -96,7 +97,9 @@ export const ArrangementSelector = (): ReactElement | null => {
         <div className="relative" ref={menuRef}>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="daw-readout-well flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
                         aria-label="Arrangement selector"
@@ -109,7 +112,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                             {currentArrangement?.name ?? 'Arrangement'}
                         </span>
                         <ChevronDown className="size-2.5 text-muted-foreground/40" />
-                    </button>
+                    </Button>
                 </TooltipTrigger>
                 <TooltipContent>Arrangement View Snapshots</TooltipContent>
             </Tooltip>
@@ -182,7 +185,9 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                 </div>
                                             }
                                             endSlot={
-                                                <button
+                                                <Button
+                                                    variant="bare"
+                                                    size="bare"
                                                     type="button"
                                                     className={cn(
                                                         'rounded p-0.5 transition-all hover:bg-background/80',
@@ -195,7 +200,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                     }}
                                                 >
                                                     <Edit2 className="size-3" />
-                                                </button>
+                                                </Button>
                                             }
                                             title={arr.name}
                                         />
@@ -207,7 +212,9 @@ export const ArrangementSelector = (): ReactElement | null => {
 
                     <DawMenuSeparator role="separator" />
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -215,9 +222,11 @@ export const ArrangementSelector = (): ReactElement | null => {
                     >
                         <Plus className="size-3 text-muted-foreground shrink-0" />
                         <span>New Arrangement</span>
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
@@ -225,7 +234,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                     >
                         <Copy className="size-3 text-muted-foreground shrink-0" />
                         <span>Duplicate Current</span>
-                    </button>
+                    </Button>
                 </div>
             ) : null}
         </div>

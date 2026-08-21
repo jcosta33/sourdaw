@@ -88,7 +88,9 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                 <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
                             </DialogHeader>
                             {NAV_ITEMS.map((item) => (
-                                <button
+                                <Button
+                                    variant="bare"
+                                    size="bare"
                                     type="button"
                                     key={item.id}
                                     className={cn(
@@ -101,7 +103,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                 >
                                     {item.icon}
                                     {item.label}
-                                </button>
+                                </Button>
                             ))}
 
                             <DawDialogFooter

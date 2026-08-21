@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react';
 
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 
 /**
@@ -50,20 +51,24 @@ export class ErrorBoundary extends Component<Props, State> {
                     <p className="text-sm text-muted-foreground max-w-md text-center">
                         {this.state.error?.message ?? 'An unexpected error occurred.'}
                     </p>
-                    <button
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
                         onClick={() => this.setState({ hasError: false, error: null })}
                     >
                         Try Again
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
                         type="button"
                         className="text-xs text-muted-foreground underline"
                         onClick={() => window.location.reload()}
                     >
                         Reload App
-                    </button>
+                    </Button>
                 </Stack>
             );
         }

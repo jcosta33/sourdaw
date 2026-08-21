@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '#/modules/Project/useCases';
 
@@ -47,7 +48,9 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     type="button"
                     data-testid="project-name"
                     className="flex items-center gap-1.5 rounded-sm px-1.5 py-1 hover:bg-white/[0.04] transition-colors cursor-pointer group shrink-0"
@@ -74,7 +77,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                             />
                         ) : null}
                     </Row>
-                </button>
+                </Button>
             </TooltipTrigger>
             <TooltipContent>Click to rename, double-click to save</TooltipContent>
         </Tooltip>
