@@ -16,7 +16,8 @@
  * every exposed command has a production caller, so the surface never widens
  * ahead of a real need.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -60,23 +61,36 @@ const ADDON_PLUMBING: ReadonlySet<string> = new Set([
 /** Every command the product registers: the addon surface minus plumbing. */
 const registeredCommands = (): string[] => addonMethods().filter((name) => !ADDON_PLUMBING.has(name));
 
+/** The renderer's copy of the argument table, at the one path it lives at. */
+const SEAM_TABLE_PATH = join('src', 'utils', 'sourdawCommandArguments.ts');
+
 /**
  * Every production TypeScript source under a directory, concatenated. Specs,
  * stories and E2E files are excluded: a command whose only mention is a test
  * has no caller.
+ *
+ * `skip` is per-call rather than baked in, because the two callers want
+ * opposite things from an exclusion. In the `src` caller scan an excluded file
+ * makes the check stricter; in the `electron` renderer-import pin an excluded
+ * file can only hide a breach. A skip shared by both — and keyed on a bare
+ * filename rather than on the one path it means to exclude — would silently
+ * exempt any shell file that happened to carry that name from the pin.
  */
-const readProductionTypescript = (directory: string): string =>
+const readProductionTypescript = (directory: string, skip: (path: string) => boolean = () => false): string =>
     readdirSync(directory, { withFileTypes: true })
         .filter((entry) => entry.name !== '__tests__' && entry.name !== 'out')
         .flatMap((entry) => {
             const path = join(directory, entry.name);
             if (entry.isDirectory()) {
-                return [readProductionTypescript(path)];
+                return [readProductionTypescript(path, skip)];
             }
             if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) {
                 return [];
             }
             if (entry.name.includes('.spec.') || entry.name.includes('.stories.') || entry.name.includes('.e2e.')) {
+                return [];
+            }
+            if (skip(path)) {
                 return [];
             }
             return [readFileSync(path, 'utf8')];
@@ -103,7 +117,17 @@ describe('the Electron command surface', () => {
         // this check passes on any quoted occurrence, reachable or not. An
         // exposure therefore also needs the call chain verified by hand and
         // recorded in the exposing commit.
-        const productionSource = readProductionTypescript('src');
+        const productionSource = readProductionTypescript('src', (path) => path === SEAM_TABLE_PATH);
+        // The seam table's own quoted command names would satisfy every
+        // membership check below regardless of whether a real caller exists,
+        // so its exclusion from the scan is load-bearing: prove it is still
+        // in effect rather than trusting the walk's skip silently.
+        // The identifier alone is the wrong probe — `desktopBridge.ts` is a
+        // legitimate production caller and imports it by name — so this
+        // matches the *declaration*, which only the seam table itself carries.
+        expect(productionSource, 'the seam table is back in the caller scan').not.toMatch(
+            /export const SOURDAW_COMMAND_ARGUMENTS/u
+        );
         for (const command of EXPOSED_COMMANDS) {
             expect(productionSource, `no production caller for '${command}'`).toMatch(
                 new RegExp(`["']${command}["']`, 'u')
@@ -138,14 +162,36 @@ describe('the Electron command surface', () => {
     });
 
     it('keeps shell runtime code out of the renderer tree', () => {
-        // Only the specs may import from `src/` (this file cross-checks the
-        // renderer's seam table). `electron/tsconfig.json` maps `#/*` for that
-        // spec-only use; this pin is what keeps the mapping from becoming a
-        // runtime dependency on the renderer bundle.
+        // Only the specs may reach into `src/` (this file cross-checks the
+        // renderer's seam table, through the explicit relative import at the
+        // top). `electron/tsconfig.json` carries no `paths` alias, so `#/` is
+        // unresolvable in the shell to begin with; this pin is what keeps
+        // either route from becoming a runtime dependency on the renderer.
         const shellSource = readProductionTypescript('electron');
 
         expect(shellSource).not.toMatch(/from\s+'#\//u);
         expect(shellSource).not.toMatch(/from\s+'\.\.\/src\//u);
+    });
+
+    it('scans a shell file that shares the seam table filename', () => {
+        // The seam-table exclusion belongs to the `src` caller scan alone. Held
+        // in the shared walk it would also exempt a shell file of that name
+        // from the pin above, where an exclusion can only hide a breach — and
+        // a shell-side copy of the argument table is exactly the file that
+        // would arrive under that name. Run against a throwaway tree so the
+        // pin's real inputs are never disturbed.
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-shell-scan-'));
+
+        try {
+            writeFileSync(join(directory, 'sourdawCommandArguments.ts'), "import { x } from '#/x';\n");
+
+            expect(
+                readProductionTypescript(directory),
+                'the shared walk exempts the seam table filename everywhere'
+            ).toMatch(/from\s+'#\//u);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
     });
 });
 
@@ -293,19 +339,14 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['destroy_crumbs', ['instance_id']],
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
     ['detect_smart_loop_points', ['instance_id', 'sample_id']],
-    ['disable_link', []],
-    ['enable_link', []],
     ['engine_rt_diagnostics', []],
     ['ensure_whisper_ready', []],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
-    ['get_link_status', []],
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
     ['is_plugin_gui_supported', ['instance_id']],
-    ['link_start_playing', []],
-    ['link_stop_playing', []],
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_plugin', ['plugin_id', 'instance_id']],
@@ -325,7 +366,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['send_push_midi', ['bytes']],
     ['set_crumbs_mode', ['instance_id', 'mode']],
     ['set_crumbs_param', ['instance_id', 'param', 'value']],
-    ['set_link_tempo', ['tempo']],
     ['set_plugin_bypass', ['instance_id', 'bypassed']],
     ['set_plugin_parameter', ['instance_id', 'param_id', 'value']],
     ['set_plugin_state_bytes', ['instance_id', 'plugin_state']],
