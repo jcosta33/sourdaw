@@ -152,6 +152,74 @@
             "obligations": ["Reconcile every distributed dependency license and notice before release."]
         },
         {
+            "id": "ddsp-tfjs-runtime",
+            "kind": "runtime-library",
+            "retention": "keep-with-obligations",
+            "owner": "OS-04",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "package.json",
+                "pnpm-lock.yaml",
+                "public/legal/Apache-2.0.txt",
+                "public/legal/Magenta.js-NOTICE.txt",
+                "public/legal/TensorFlow.js-NOTICE.txt",
+                "public/legal/seedrandom-MIT.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "src/modules/BrowserAi/models/InferenceRequest.ts",
+                "src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
+                "src/modules/BrowserAi/services/computeDdspSessionKey.ts",
+                "src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
+                "src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts"
+            ],
+            "sources": [
+                "git:github.com/tensorflow/tfjs@e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7",
+                "git:github.com/dcodeIO/long.js@941c5c62471168b5d18153755c2a7b38d2560e58",
+                "git:github.com/davidbau/seedrandom@4460ad325a0a15273a211e509f03ae0beb99511a",
+                "git:github.com/magenta/magenta-js@0692eb2b79681f062c6b6dd53a0361967f298caa:music/src/ddsp/model.ts",
+                "package.json",
+                "pnpm-lock.yaml"
+            ],
+            "revisions": [
+                "@tensorflow/tfjs-core 4.22.0",
+                "@tensorflow/tfjs-converter 4.22.0",
+                "@tensorflow/tfjs-backend-webgpu 4.22.0",
+                "@tensorflow/tfjs-backend-cpu 4.22.0 shared helpers only",
+                "long 4.0.0",
+                "seedrandom 3.0.5",
+                "Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa Roll operation",
+                "runtime tfjs-4.22.0-webgpu-raw-v1"
+            ],
+            "digests": [
+                "npm-integrity:sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==:@tensorflow/tfjs-core@4.22.0",
+                "npm-integrity:sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==:@tensorflow/tfjs-converter@4.22.0",
+                "npm-integrity:sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==:@tensorflow/tfjs-backend-webgpu@4.22.0",
+                "npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0",
+                "npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0",
+                "npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5",
+                "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
+                "sha256:5d7b38822c5c0a4b51559a39c08b39f5bbbf83df0df214c0a21771816966c9e2:public/legal/Magenta.js-NOTICE.txt",
+                "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
+                "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
+                "sha256:c48f556438d5cd89bebe7857d65192a90a0caffae364804898b803b975e31c7c:public/legal/THIRD-PARTY-NOTICES.md"
+            ],
+            "licenses": [
+                "Apache-2.0:TensorFlow.js",
+                "Apache-2.0:long",
+                "Apache-2.0:Magenta.js-Roll-adaptation",
+                "MIT:seedrandom-and-Alea"
+            ],
+            "productSurfaces": ["release-withheld browser and desktop DDSP WebGPU worker runtime"],
+            "evidence": [
+                "Exact package versions and npm integrity digests are pinned in the install graph.",
+                "The existing release validator binds this complete runtime and legal-file closure.",
+                "The false model release-admission gate keeps the runtime unreachable from product flows."
+            ],
+            "obligations": [
+                "Keep the Apache-2.0 and MIT texts and exact component notices with every distribution.",
+                "Do not characterize separately downloaded DDSP checkpoint artifacts under these runtime licenses."
+            ]
+        },
+        {
             "id": "rust-dependencies",
             "kind": "dependency-graph",
             "retention": "keep-with-obligations",
@@ -330,8 +398,8 @@
             "releaseModes": ["web", "desktop"],
             "paths": [
                 "src/infra/release/modelReleaseAdmission.ts",
-                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
+                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts"
             ],
@@ -854,7 +922,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "728835e50c1dc97634412728a7be672f458597e067c2e0121e4f095adf8dead2"
+            "sha256": "e5d65b2903c66c64813567216f3b042e407ac5ca46c61bab732eb14f6cb48a2e"
         },
         {
             "path": "server/package.json",
@@ -866,7 +934,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "131903d9fd1ca4d3d7dc9559020afce5dbfbea4e56f6d18385d8406d0ae7bcec"
+            "sha256": "fcb5d3d1ccc3093c4f934df7fd5a3dade0c867a63f0d9d97b5b09c0ca01e6f5a"
         },
         {
             "path": "Cargo.toml",

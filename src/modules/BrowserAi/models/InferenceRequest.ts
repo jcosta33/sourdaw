@@ -19,8 +19,26 @@ export type SessionOptions = {
 
 export type OnnxExecutionProvider = NonNullable<SessionOptions['executionProviders']>[number];
 
+export type DdspStoredArtifact = {
+    path: 'model.json' | 'group1-shard1of1.bin' | 'settings.json';
+    sizeBytes: number;
+    sha256: string;
+    /** Already-verified artifact stream from the model-storage worker. */
+    modelDataPort: MessagePort;
+};
+
 // Main thread → Worker
 export type WorkerRequest =
+    | {
+          /** Abort exactly one worker request without disturbing sibling work. */
+          type: 'cancel-request';
+          requestId: string;
+      }
+    | {
+          /** Drain and dispose every TF.js resource before acknowledging shutdown. */
+          type: 'dispose-worker';
+          requestId: string;
+      }
     | {
           type: 'create-session';
           /** UUID used to correlate with the session-created response */
@@ -53,25 +71,25 @@ export type WorkerRequest =
           requestId: string;
       }
     | {
-          /**
-           * Load a TF.js GraphModel from a CDN directory URL.
-           * Used for DDSP instruments (multi-file models: model.json + weight shards).
-           * TF.js handles IndexedDB caching internally.
-           */
-          type: 'create-session-from-url';
-          /** UUID used to correlate with the session-created response */
+          /** Load a TF.js GraphModel from already-verified OPFS artifact streams. */
+          type: 'create-ddsp-session';
           requestId: string;
-          modelId: string;
-          modelUrl: string;
+          sessionKey: string;
+          artifacts: DdspStoredArtifact[];
+      }
+    | {
+          /** Drain this DDSP session and acknowledge exact model disposal. */
+          type: 'release-ddsp-session';
+          requestId: string;
+          sessionKey: string;
       }
     | {
           type: 'run-ddsp-inference';
           requestId: string;
-          modelId: string;
-          pitchHz: Float32Array;
+          sessionKey: string;
+          /** Already-conditioned fixed-shape model input; conditioning belongs to the render use case. */
+          f0Hz: Float32Array;
           loudnessDb: Float32Array;
-          /** Frame rate expected by this model (typically 250 Hz) */
-          frameRate: number;
       }
     | {
           type: 'run-kokoro-tts';
@@ -109,10 +127,23 @@ export type WorkerRequest =
 // Worker → Main thread
 export type WorkerResponse =
     | {
+          /** Worker-level protocol failure that cannot be correlated to one request. */
+          type: 'worker-fatal-error';
+          error: string;
+      }
+    | {
           type: 'session-created';
           requestId: string;
           modelId: string;
           executionProviders?: OnnxExecutionProvider[];
+      }
+    | {
+          type: 'session-created';
+          requestId: string;
+          /** DDSP-only session identity and runtime facts. */
+          sessionKey: string;
+          backend: 'webgpu';
+          modelFrameLength: number;
       }
     | {
           type: 'inference-result';
@@ -125,7 +156,10 @@ export type WorkerResponse =
           /** PCM audio at model native sample rate */
           audio: Float32Array;
           nativeSampleRate: number;
+          backend: 'webgpu';
       }
+    | { type: 'ddsp-session-released'; requestId: string; sessionKey: string }
+    | { type: 'worker-disposed'; requestId: string }
     | {
           type: 'tts-result';
           requestId: string;

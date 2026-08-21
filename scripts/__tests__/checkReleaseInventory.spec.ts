@@ -11,6 +11,9 @@ import {
     assertGrandBouleRustWasmBoundary,
     assertGrandBouleWithheldFromWasm,
     audioWorkletReleaseInventoryContract,
+    checkReleaseInventory,
+    DDSP_TFJS_RUNTIME_PATHS,
+    ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
     GRAND_BOULE_PRESERVATION_REGISTRY,
     grandBouleReleaseInventoryContract,
@@ -282,6 +285,40 @@ describe('release inventory', () => {
             expect(() => assertGrandBouleWithheldFromWasm(root)).toThrow(
                 'WASM manifest package proof-chamber has unexpected artifact public/wasm/hostile.js'
             );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
+        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    });
+
+    it('binds the exact DDSP TF.js dependency and legal closure', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
+        for (const path of DDSP_TFJS_RUNTIME_PATHS) {
+            if (!path.startsWith('public/legal/')) {
+                continue;
+            }
+            mkdirSync(join(root, path, '..'), { recursive: true });
+            writeFileSync(join(root, path), path);
+        }
+
+        try {
+            const before = ddspTfjsRuntimeReleaseInventoryContract(root);
+            expect(before.kind).toBe('runtime-library');
+            expect(before.paths).toEqual(DDSP_TFJS_RUNTIME_PATHS);
+            expect(before.revisions).toContain('@tensorflow/tfjs-backend-webgpu 4.22.0');
+            expect(before.revisions).toContain('@tensorflow/tfjs-backend-cpu 4.22.0 shared helpers only');
+            expect(before.licenses).toEqual([
+                'Apache-2.0:TensorFlow.js',
+                'Apache-2.0:long',
+                'Apache-2.0:Magenta.js-Roll-adaptation',
+                'MIT:seedrandom-and-Alea',
+            ]);
+
+            writeFileSync(join(root, 'public/legal/TensorFlow.js-NOTICE.txt'), 'changed');
+            expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
