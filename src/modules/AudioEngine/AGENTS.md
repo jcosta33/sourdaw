@@ -16,6 +16,9 @@ Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch
 - Grand Boule remains complete native Rust and TypeScript host source, but the complete Rust module
   is absent from the `wasm32` crate graph. The host stack imports a local structural interface and an
   inert production construction seam; focused tests inject in-memory instances at that seam.
+- The release census covers the complete `public/wasm` tree and every manifest-declared AudioEngine
+  mirror. Package ids and artifact paths come from `scripts/wasm-artifacts.ts`; unknown sidecars,
+  manifest paths, text references, or binary exports fail release validation.
 - The main thread revalidates, fetches and asynchronously compiles each WASM URL once. A
   short-lived module lease is released on abort or host-construction failure; successful host
   construction commits one URL per bundle to the `AudioContext`, because wasm-bindgen glue is a

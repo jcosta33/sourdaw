@@ -6,10 +6,10 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
 /**
  * Preserved host/transport proof for the withheld Grand Boule implementation.
  * The real distributed `daw-dsp` module is compiled and passed into the real
- * offline processor, while the source-owned constructor seam supplies a
- * deterministic in-memory engine. This proves module handoff, 64-voice
- * construction, dispatch, and block transfer. It deliberately makes no DSP
- * timing claim; native Rust benches own performance evidence.
+ * offline processor, while the source-owned constructor seam supplies
+ * synthetic transport data. This proves exact module handoff, 64-voice
+ * construction, dispatch, and block transfer. It makes no browser-WASM DSP or
+ * timing claim; native Rust benches own retained native-only evidence.
  */
 
 const HOST_SAMPLE_RATE = 48_000;
@@ -33,7 +33,7 @@ const wasmStub = vi.hoisted(() => {
     const leftPtr = 0;
     const rightPtr = maxBlockFrames * Float32Array.BYTES_PER_ELEMENT;
 
-    class GrandBouleInstanceStub {
+    class SyntheticTransportInstance {
         readonly phases = new Map<number, number>();
 
         constructor(
@@ -87,16 +87,33 @@ const wasmStub = vi.hoisted(() => {
         }
     }
 
-    const instances: GrandBouleInstanceStub[] = [];
-    return { memory, GrandBouleInstanceStub, instances };
+    const instances: SyntheticTransportInstance[] = [];
+    const initModules: WebAssembly.Module[] = [];
+    let expectedModule: WebAssembly.Module | null = null;
+    return {
+        memory,
+        SyntheticTransportInstance,
+        instances,
+        initModules,
+        expectedModule: () => expectedModule,
+        setExpectedModule: (module: WebAssembly.Module) => {
+            expectedModule = module;
+        },
+    };
 });
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
-    initSync: () => ({ memory: wasmStub.memory }),
+    initSync: ({ module }: { module: WebAssembly.Module }) => {
+        wasmStub.initModules.push(module);
+        if (module !== wasmStub.expectedModule()) {
+            throw new Error('Grand Boule transport received a substituted compiled WASM module');
+        }
+        return { memory: wasmStub.memory };
+    },
 }));
 vi.mock('../grandBouleWasmInstance', () => ({
     createGrandBouleWasmInstance: (sampleRate: number, voiceCount: number) => {
-        const instance = new wasmStub.GrandBouleInstanceStub(sampleRate, voiceCount);
+        const instance = new wasmStub.SyntheticTransportInstance(sampleRate, voiceCount);
         wasmStub.instances.push(instance);
         return instance;
     },
@@ -119,6 +136,7 @@ class AudioWorkletProcessorShim {
 describe('the retained Grand Boule offline host transport', () => {
     let processor: ProcessorLike;
     let port: HarnessPort;
+    let compiledWasmModule: WebAssembly.Module;
 
     beforeAll(async () => {
         Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => harnessFrame });
@@ -137,13 +155,14 @@ describe('the retained Grand Boule offline host transport', () => {
         // Compile where the real node factory does: outside the processor and
         // once, before constructing the worklet instance.
         const wasmBytes = readFileSync(WASM_PATH);
-        const wasmModule = new WebAssembly.Module(
+        compiledWasmModule = new WebAssembly.Module(
             wasmBytes.buffer.slice(wasmBytes.byteOffset, wasmBytes.byteOffset + wasmBytes.byteLength)
         );
+        wasmStub.setExpectedModule(compiledWasmModule);
         const inner: HarnessPort = { onmessage: null, postMessage: vi.fn() };
         pendingProcessorPort = inner;
         try {
-            processor = new Processor({ processorOptions: { wasmModule } });
+            processor = new Processor({ processorOptions: { wasmModule: compiledWasmModule } });
         } finally {
             pendingProcessorPort = null;
         }
@@ -152,7 +171,7 @@ describe('the retained Grand Boule offline host transport', () => {
         port.onmessage?.({ data: { type: 'init' } } as MessageEvent);
     });
 
-    it('hands off the compiled module, dispatches 64 notes, and transfers a non-silent block', () => {
+    it('hands off the exact compiled module, dispatches 64 notes, and transfers synthetic audio', () => {
         for (let voice = 0; voice < VOICE_COUNT; voice++) {
             port.onmessage?.({
                 data: { type: 'noteOn', midiNote: LOWEST_PIANO_NOTE + voice, velocity: 0.9 },
@@ -165,6 +184,8 @@ describe('the retained Grand Boule offline host transport', () => {
 
         expect(processor.process([], [[left, right]])).toBe(true);
         expect(port.postMessage).toHaveBeenCalledWith({ type: 'ready' });
+        expect(wasmStub.initModules).toEqual([compiledWasmModule]);
+        expect(wasmStub.initModules[0]).toBe(compiledWasmModule);
         expect(wasmStub.instances).toHaveLength(1);
         expect(wasmStub.instances[0]).toMatchObject({
             instanceSampleRate: HOST_SAMPLE_RATE,
@@ -173,5 +194,17 @@ describe('the retained Grand Boule offline host transport', () => {
         expect(wasmStub.instances[0]?.phases.size).toBe(VOICE_COUNT);
         expect(left.some((sample) => Math.abs(sample) > 0.001)).toBe(true);
         expect(right).toEqual(left);
+    });
+
+    it('rejects a substituted compiled module at the retained construction boundary', async () => {
+        const substitutedModule = new WebAssembly.Module(
+            Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
+        );
+        const { createGrandBouleInstance } = await import('../grandBouleEngineCore');
+
+        expect(() => createGrandBouleInstance({ wasmModule: substitutedModule, sampleRate: HOST_SAMPLE_RATE })).toThrow(
+            'Grand Boule transport received a substituted compiled WASM module'
+        );
+        expect(wasmStub.initModules.at(-1)).toBe(substitutedModule);
     });
 });

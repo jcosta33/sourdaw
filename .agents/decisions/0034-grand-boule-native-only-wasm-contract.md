@@ -42,14 +42,22 @@ construction seam is inert and imports no generated Grand Boule value or type. F
 replace that seam with in-memory instances. `deviceReleaseAdmission.ts` remains the primary live and
 offline reachability gate.
 
-The release inventory check inspects every generated text surface and the WebAssembly export table.
-Its manifest-derived recursive census rejects missing or unexpected package and mirror artifacts,
-then scans every declared text artifact and every declared WebAssembly export table. Any Grand Boule
-surface fails release validation.
+The committed WASM package registry is authoritative for package ids, crate roots, public artifact
+paths, and AudioEngine mirror paths. The release inventory check compares the manifest to that
+registry, recursively censuses the complete `public/wasm` tree and declared AudioEngine mirrors,
+allows only the manifest itself as a public non-artifact control file, and rejects every missing or
+unexpected sidecar. It scans every declared text artifact and every declared WebAssembly export
+table. Any Grand Boule surface fails release validation.
+
+One Grand Boule preservation registry owns the stable release metadata, inventory paths, and hash
+boundaries. It binds the native Rust module, Grand Boule product module, product descriptor,
+release-admission gate, node host, ring protocol, Worker host, and the exact `grandBoule*.ts`
+worklet set. Inventory validation fails when any boundary is deleted or its tracked bytes change.
 
 The browser-WASM cost benchmark imports and constructs only exported WASM instances. Grand Boule
-DSP remains in the native benchmark; the browser benchmark retains only the host ring-consumer row
-and makes no Grand Boule DSP timing claim.
+DSP remains native-only benchmark evidence; the browser benchmark retains only the host
+ring-consumer row, reproduces the successful consumer branch atomics, and makes no Grand Boule DSP
+timing claim.
 
 ## Consequences
 

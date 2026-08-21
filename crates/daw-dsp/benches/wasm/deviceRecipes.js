@@ -190,7 +190,16 @@ export function loopSample(frames) {
  *   timed run, so a device that fell silent halfway through cannot be reported.
  * - `note` — what the load parameter is and where production sets it.
  */
-export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, only, quantaBudget }) {
+export function buildDevices({
+    dsp,
+    chamber,
+    scoring,
+    ring,
+    publishGrandBouleConsumerClock,
+    readBlockAcquire,
+    only,
+    quantaBudget,
+}) {
     const devices = [];
     /**
      * Constructing a device allocates: Levain and Crumbs each load a one-second
@@ -806,8 +815,8 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     // out of the SAB ring. This row times the real `readBlockAcquire` from
     // `worklets/grandBouleProcessor.ts` — the server strips its types on the
     // way out, so this is the function production runs, not a reproduction —
-    // plus the surrounding `Atomics.load`s that `process()` performs per
-    // quantum on the consuming path.
+    // plus every consumer-clock, read-head, sleep-head, and render-request
+    // atomic that `process()` performs on the successful consuming path.
     //
     // The ring is kept ahead of the read head from here rather than by a
     // Worker, so the timed path is the steady *consuming* branch. The underrun
@@ -816,6 +825,9 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     if (wanted('grand_boule_ring_consumer')) {
         const ringFrames = 8192;
         const controlInts = new Int32Array(new SharedArrayBuffer(ring.GRAND_BOULE_CONTROL_HEADER_BYTES));
+        const syncInts = new Int32Array(
+            new SharedArrayBuffer(ring.GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT)
+        );
         const leftRing = new Float32Array(ringFrames);
         const rightRing = new Float32Array(ringFrames);
         for (let i = 0; i < ringFrames; i += 1) {
@@ -827,14 +839,17 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
         const out1 = new Float32Array(QUANTUM);
         let consumedCount = 0;
         let underruns = 0;
+        let consumerContextFrame = 0;
 
         devices.push({
             id: 'grand_boule_ring_consumer',
-            label: 'Grand Boule ring consumer (the live audio-thread cost)',
-            note: 'the only Grand Boule code on the audio thread in the live transport; real readBlockAcquire from grandBouleProcessor.ts',
-            feed() {
-                // Keep the producer ahead of the consumer, the way the engine
-                // Worker does. Untimed: production pays this on the Worker.
+            label: 'Grand Boule retained ring consumer (host transport only)',
+            note: 'retained host transport only, with no Grand Boule WASM DSP or constructor; reproduces the successful consumer branch from grandBouleProcessor.ts',
+            feed(frame) {
+                // Keep the producer ahead of the consumer, as the retained
+                // Worker design does. Producer work is untimed because this
+                // row measures only the host consumer branch.
+                consumerContextFrame = frame * QUANTUM;
                 const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
                 Atomics.store(controlInts, ring.GRAND_BOULE_WRITE_HEAD_IDX, (readHead + 4 * QUANTUM) | 0);
             },
@@ -846,7 +861,14 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
                 const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
                 const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, QUANTUM);
                 if (consumed) {
-                    Atomics.store(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX, (readHead + QUANTUM) | 0);
+                    publishGrandBouleConsumerClock(syncInts, consumerContextFrame, readHead);
+                    const nextReadHead = (readHead + QUANTUM) | 0;
+                    Atomics.store(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX, nextReadHead);
+                    const sleepHead = Atomics.load(controlInts, ring.GRAND_BOULE_SLEEP_HEAD_IDX);
+                    if (nextReadHead !== sleepHead) {
+                        Atomics.add(controlInts, ring.GRAND_BOULE_RENDER_REQUEST_IDX, 1);
+                        Atomics.notify(controlInts, ring.GRAND_BOULE_RENDER_REQUEST_IDX);
+                    }
                     consumedCount += 1;
                 } else {
                     underruns += 1;
@@ -859,11 +881,21 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
                     sum += out0[i] * out0[i] + out1[i] * out1[i];
                 }
                 const level = Math.sqrt(sum / (2 * QUANTUM));
+                const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
+                const syncReadHead = Atomics.load(syncInts, ring.GRAND_BOULE_SYNC_READ_HEAD_IDX);
+                const renderRequests = Atomics.load(controlInts, ring.GRAND_BOULE_RENDER_REQUEST_IDX);
                 return {
-                    ok: level > 1e-5 && underruns === 0 && consumedCount > 0,
+                    ok:
+                        level > 1e-5 &&
+                        underruns === 0 &&
+                        consumedCount > 0 &&
+                        Atomics.load(syncInts, ring.GRAND_BOULE_CONSUMER_CLOCK_PUBLISHED_IDX) === 1 &&
+                        syncReadHead === ((readHead - QUANTUM) | 0) &&
+                        renderRequests === consumedCount,
                     detail:
                         `${consumedCount} quanta consumed, ${underruns} underruns (must be 0 — an underrun ` +
-                        `takes the cheap silence branch), output RMS ${level.toExponential(3)}`,
+                        `takes the cheap silence branch), ${renderRequests} render requests, output RMS ` +
+                        `${level.toExponential(3)}`,
                 };
             },
         });

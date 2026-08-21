@@ -32,6 +32,7 @@ import { buildDevices, QUANTUM } from './deviceRecipes.js';
 // The real shipped audio-thread code, type-stripped by the harness server, so
 // the ring-consumer row times the function production runs.
 import * as ring from '/src/modules/AudioEngine/models/GrandBouleRingProtocol.ts';
+import { publishGrandBouleConsumerClock } from '/src/modules/AudioEngine/worklets/grandBouleConsumerClock.ts';
 import { readBlockAcquire } from '/src/modules/AudioEngine/worklets/grandBouleProcessor.ts';
 
 /**
@@ -117,6 +118,7 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
             chamber: { memory: chamberExports.memory, ProofChamberInstance },
             scoring: { memory: scoringExports.memory, ScoringInstance },
             ring,
+            publishGrandBouleConsumerClock,
             readBlockAcquire,
             });
         } catch (error) {

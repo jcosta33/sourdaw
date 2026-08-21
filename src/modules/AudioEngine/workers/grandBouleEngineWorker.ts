@@ -1,14 +1,15 @@
 /// <reference lib="webworker" />
 /**
- * Grand Boule Engine Worker — runs the WASM physical-modeling piano engine
- * on a dedicated thread, rendering ahead into a SharedArrayBuffer ring buffer
- * that the AudioWorklet consumes.
+ * Retained Grand Boule engine Worker design. If a constructor is injected by a
+ * focused source test, it renders ahead into the SharedArrayBuffer ring that
+ * the retained consumer worklet drains. Released daw-dsp WASM provides no
+ * Grand Boule constructor and release admission does not reach this path.
  *
  * This decouples the heavy DSP from the AudioWorklet's strict real-time
  * deadline (~2.67 ms per 128-sample quantum at 48 kHz). The Worker gets a
  * full OS timeslice and can absorb occasional spikes without causing glitches.
  *
- * **Live playback only.** Offline rendering used to come through here too and
+ * **Worker transport only.** Offline rendering used to come through here too and
  * that is what starved exports into 97-99 % silence: an `OfflineAudioContext`
  * has no deadline for the ring to protect (Web Audio §2.6), so its back-pressure
  * and macrotask pacing were pure cost. Renders now run the engine inside

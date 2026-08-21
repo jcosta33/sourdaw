@@ -58,8 +58,16 @@ declarations, and binaries therefore contain no Grand Boule constructor or imple
 admission remains the primary product reachability gate.
 
 The browser cost benchmark imports only constructors exported by the committed WASM. Grand Boule
-DSP remains in the native `benches/quantum.rs` benchmark; the browser benchmark retains only its
-host-side ring-consumer row and makes no Grand Boule DSP timing claim.
+DSP remains native-only evidence in `benches/quantum.rs`; the browser benchmark retains only its
+host-side ring-consumer row. That row executes the retained consumer clock publication, read-head
+publication, sleep-head load, and render-request atomics, but constructs no Grand Boule DSP and
+makes no browser-WASM DSP timing claim.
+
+Release validation treats `scripts/wasm-artifacts.ts` as the package and path authority. It rejects
+unexpected manifest packages, crate roots, artifact paths, and recursively discovered sidecars
+across the complete `public/wasm` tree and every declared AudioEngine mirror. `manifest.json` is the
+only public non-artifact control file. Every declared text artifact is scanned and every declared
+`.wasm` export table is inspected before a release inventory can pass.
 
 ## 3. What runs where
 

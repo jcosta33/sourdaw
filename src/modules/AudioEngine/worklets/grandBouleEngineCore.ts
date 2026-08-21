@@ -1,14 +1,15 @@
 /**
- * Grand Boule engine core — everything two hosts run identically.
+ * Retained Grand Boule engine-core contract shared by two host designs.
  *
- * Grand Boule is rendered by two different transports, and the split is
- * deliberate rather than accidental:
+ * Release admission withholds both paths and distributed daw-dsp WASM exposes
+ * no constructor. Focused tests inject a structural instance so this complete
+ * host source can retain its transport and dispatch behavior.
  *
- *  - **Live** the WASM engine runs in a Web Worker and publishes into a
+ *  - **Worker ring** publishes rendered blocks into a
  *    SharedArrayBuffer ring that a consumer worklet drains. A Grand Boule
  *    overload starves its own ring and only Grand Boule drops out; the rest of
  *    the session keeps its deadline.
- *  - **Offline** the engine runs directly inside a plain `AudioWorkletProcessor`.
+ *  - **Inline offline** runs the injected engine inside an `AudioWorkletProcessor`.
  *    An `OfflineAudioContext` has no system-level audio callback and therefore no
  *    load value and no underrun (Web Audio §2.6), so the ring protects against a
  *    deadline that does not exist — while its back-pressure and its

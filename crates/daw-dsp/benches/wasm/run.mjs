@@ -18,11 +18,8 @@
  * # Where a cost is charged
  *
  * Rows are separated by **cost site** rather than lumped into one budget. Grand
- * Boule's DSP runs in a `Worker` in the live transport and cannot reach the
- * audio thread; what the audio thread pays for it is the ring-consumer row. See
- * `COST_SITE` in `deviceRecipes.js`. Summing a Worker's cost into an
- * audio-thread budget is the mistake the first version of this table made, and
- * it inflated the headline by more than everything else combined.
+ * Boule has no browser-WASM DSP row or constructor. Its retained ring-consumer
+ * row measures host transport only. See `COST_SITE` in `deviceRecipes.js`.
  *
  * # The clock
  *

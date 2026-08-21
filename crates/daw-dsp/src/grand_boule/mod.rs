@@ -1,8 +1,9 @@
 //! Grand Boule — Sourdaw's physically-modelled grand piano.
 //!
 //! Modal synthesis engine producing polyphonic piano audio from an inharmonic
-//! biquad bank driven by a nonlinear felt-hammer interaction. Compiles to
-//! both native (Rust library) and WASM (AudioWorklet).
+//! biquad bank driven by a nonlinear felt-hammer interaction. The complete
+//! module is retained for native builds and excluded from the wasm32 crate
+//! graph by `lib.rs` while Grand Boule remains release-withheld.
 //!
 //! The audio path is lock-free and allocation-free after construction, per
 //! `docs/architecture/01-system.md §3.1`.
@@ -28,10 +29,10 @@ use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
 use parameters::Temperament;
 use wasm_bindgen::prelude::*;
 
-/// Pre-allocated maximum block size exposed to the AudioWorklet side.
+/// Pre-allocated maximum block size exposed by the retained native wrapper.
 const MAX_BLOCK_SIZE: usize = 4096;
 
-/// Native Grand Boule host instance retained while the WASM export is withheld.
+/// Grand Boule host instance retained for native builds.
 #[wasm_bindgen]
 pub struct GrandBouleInstance {
     engine: GrandBouleEngine,

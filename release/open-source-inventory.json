@@ -502,26 +502,36 @@
             "paths": [
                 "crates/daw-dsp/src/grand_boule/**",
                 "src/modules/GrandBoule/**",
+                "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
+                "src/infra/release/deviceReleaseAdmission.ts",
                 "src/modules/AudioEngine/engine/GrandBouleNode.ts",
                 "src/modules/AudioEngine/models/GrandBouleRingProtocol.ts",
                 "src/modules/AudioEngine/workers/grandBouleEngineWorker.ts",
-                "src/modules/AudioEngine/worklets/**"
+                "src/modules/AudioEngine/worklets/grandBoule*.ts"
             ],
             "sources": [
                 "crates/daw-dsp/src/grand_boule/",
                 "src/modules/GrandBoule/",
+                "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
+                "src/infra/release/deviceReleaseAdmission.ts",
                 "retained Grand Boule AudioEngine host, worker, and worklet source",
                 "active patent sources recorded in the readiness audit"
             ],
             "revisions": [
                 "current tracked Rust source",
                 "current tracked Grand Boule product source",
+                "current tracked Grand Boule descriptor and release-admission boundary",
                 "current tracked AudioEngine host boundary"
             ],
             "digests": [
-                "tree-sha256:28c2549e5fbe8772e2016a988375ad0bac2898160eefa16a02ab6870a015b9d7:crates/daw-dsp/src/grand_boule",
-                "tree-sha256:9d6db6ed66261fc35777ee1b7285a692ea4e2de732c13523269a7f5d1768fa73:src/modules/GrandBoule",
-                "tracked-set-sha256:d406aca8b1460f45a72d952dc7294b946f98d0396c23e13ce1c0deabf256c07e:grand-boule-audio-engine-hosts"
+                "tracked-set-sha256:3565ddf142d69dbc650cf3795df819b4be5d42ec6adc8b6885a31a33847a3f07:grand-boule-native-rust",
+                "tracked-set-sha256:9d6db6ed66261fc35777ee1b7285a692ea4e2de732c13523269a7f5d1768fa73:grand-boule-product-module",
+                "tracked-set-sha256:e3dcbf65cd71fe13596e6c0119c99ea6d82084085a0acd6636f61fc3ada560e1:grand-boule-product-descriptor",
+                "tracked-set-sha256:d81a023a3cc73d6c357998ba97fd73aa452b0f848dafdb247dca5ccf6465ac1d:grand-boule-release-admission",
+                "tracked-set-sha256:47a8669a605c554a9ace4001d4a3f647e0ddb4ae28703567dd90d77257adde2d:grand-boule-node-host",
+                "tracked-set-sha256:d2028fb5c96872cd29e93fc1599982d63f67b84aca679d031e46aca04825d935:grand-boule-ring-protocol",
+                "tracked-set-sha256:44e47a67b95ec9fb6bc518aa127db036ad405b16b2b7165c114fa793d66da170:grand-boule-worker-host",
+                "tracked-set-sha256:af5770faf2d09655c0494bae51e1b93d62e4e4c130e6f83c8d92ed0e9bbd5bc1:grand-boule-worklet-hosts"
             ],
             "licenses": ["pending:OS-10-project-grant", "unverified:HAL-parameter-source-reuse-terms"],
             "productSurfaces": ["Preserved Grand Boule source and project schema"],
@@ -612,13 +622,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:dbe8ce26e26628a81f6decad7e123c2627104645c1d2bc9b0e959b9176fee6ae",
+                "daw-dsp sha256:4253201a4449cc4b1db17c1632124fcc9a9ddb872a865129d1c9ad20b9a5241e",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
                 "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:dd2b2963fe1314ba521cdbc5822a8fc1d45fa8ff6f25bf2e27c03307c34a4143:public/wasm/manifest.json"
+                "sha256:a2912b2561baca7fdce7d36cc6167e71923badcdb2adb44e88a31b0c16216793:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -872,7 +882,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "dd2b2963fe1314ba521cdbc5822a8fc1d45fa8ff6f25bf2e27c03307c34a4143"
+            "sha256": "a2912b2561baca7fdce7d36cc6167e71923badcdb2adb44e88a31b0c16216793"
         }
     ],
     "externalReferences": [

@@ -68,7 +68,7 @@ Treat p95 and p99 as indicative.
 
 ## Method
 
-- **Warm-up:** discarded quanta running the *identical* loop body to the timed pass, clock reads
+- **Warm-up:** discarded quanta running the _identical_ loop body to the timed pass, clock reads
   included. Warming through a cheaper loop warms the DSP but not the loop — that mistake put every
   row's first 500 timed samples 20–60% above its own median.
 - **`black_box` / sink:** every render's return value is consumed, natively via
@@ -81,7 +81,7 @@ Treat p95 and p99 as indicative.
   and the machine load are all evaluated first; a failure means no table, not a table with a warning
   under it.
 - **The wall-clock bound is independent.** Each row's total compute must fit inside a
-  `performance.now()` span measured on the *main thread*, which the worklet's clock cannot influence.
+  `performance.now()` span measured on the _main thread_, which the worklet's clock cannot influence.
   The bound this replaces compared a 20 000-sample sum against a 24 000-quantum span, so it tolerated
   a ~20% overstatement and bounded understatement not at all.
 - **Machine load is recorded per row, not gated.** An earlier version refused to publish above half
@@ -91,9 +91,9 @@ Treat p95 and p99 as indicative.
   are valid under it.
 
 **The wasm host is an `OfflineAudioContext`, one per device.** An offline render has no deadline, so
-this measures **cost** and cannot observe a dropout — that is AC-3's job, and *"its compute exceeds
-the budget"* and *"it misses the deadline"* are different claims. One device per context is also the
-*favourable* case for cache residency, so a full mix's per-device cost is at least this.
+this measures **cost** and cannot observe a dropout — that is AC-3's job, and _"its compute exceeds
+the budget"_ and _"it misses the deadline"_ are different claims. One device per context is also the
+_favourable_ case for cache residency, so a full mix's per-device cost is at least this.
 
 ## The measurement is a pair of bounds, not a point
 
@@ -101,7 +101,7 @@ the budget"* and *"it misses the deadline"* are different claims. One device per
 load average between 20 and 180 from ordinary applications — Claude, Codex, WindowServer, Kimi — and
 an earlier version of this harness gated on load and therefore produced no table at all.
 
-*This* run was comparatively quiet: the Provenance block above records the load actually sampled,
+_This_ run was comparatively quiet: the Provenance block above records the load actually sampled,
 3.06 before and 5.47 after, and every row carries its own. That is a measurement, not a promise
 about the next run — which is exactly why the load is printed per row rather than asserted once in
 prose. The bounds argument below is what makes the table valid either way, and a quiet run only
@@ -115,7 +115,7 @@ time to a sample, it never removes it.** So from a single contended run:
   machine.
 
 Both are valid measurements taken on a busy machine, and they bracket the truth. That makes the
-*upper* bound the decisive one here: if the contaminated total already fits the budget, the true
+_upper_ bound the decisive one here: if the contaminated total already fits the budget, the true
 total certainly fits, and no quieter machine is needed to establish it.
 
 **One mechanism can make a sample read short**, and it is counted rather than assumed away. The
@@ -145,105 +145,116 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 
 ### Provenance
 
-| | |
-| --- | --- |
-| Machine | Apple M4 Pro (`Mac16,11`), 8P + 4E, 24 GB |
-| OS | macOS 26.6 (25G72), arm64 |
-| Browser | **150.0.7871.187** (Google Chrome stable, headless) |
-| User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36` |
-| **Commit measured** | **`98b99045b86eb1f07cfcc7bd52e84759ff5392d2`** |
-| Base it sits on | `8f444deb11f59ee72bb77e9bf9fb5a62e00f21ef` |
-| Working tree | dirty |
-| Taken | 2026-08-04T16:08:07.386Z |
-| Machine load | 3.06 before, 5.47 after — **recorded, not gated** |
-| Warm-up / samples | 4000 discarded, 20000 timed quanta per row |
-| Budget | 2.6667 ms = 128 frames ÷ 48 kHz |
+|                     |                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Machine             | Apple M4 Pro (`Mac16,11`), 8P + 4E, 24 GB                                                                                       |
+| OS                  | macOS 26.6.2 (25G83), arm64                                                                                                     |
+| Browser             | **151.0.7922.173** (Google Chrome stable, headless)                                                                             |
+| User agent          | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36` |
+| **Commit measured** | **`32225d07796ba80620a4dbab3c438edb14b5e229`**                                                                                  |
+| Base it sits on     | `89e6d9e1894002693d06716d0cd42d52c9b5041d`                                                                                      |
+| Working tree        | dirty                                                                                                                           |
+| Taken               | 2026-08-21T18:20:43.994Z                                                                                                        |
+| Machine load        | 3.06 before, 4.38 after — **recorded, not gated**                                                                               |
+| Warm-up / samples   | 4000 discarded, 20000 timed quanta per row                                                                                      |
+| Budget              | 2.6667 ms = 128 frames ÷ 48 kHz                                                                                                 |
 
 ### On the audio thread — these share the one 2.667 ms deadline
 
 `≥ floor` is a lower bound and `≤ upper bound` is an upper bound; both are valid under the load shown.
 A dash means the clock stalled too often on that row for a floor to mean anything — the upper bound stands.
 
-| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
-| --- | ---: | ---: | ---: | ---: | ---: | :---: |
-| Crumbs (32 sounding voices, in-memory pool) | 250 µs | **360 µs** | **13%** | 5 | 0.0% | yes |
-| Grinder (Crunch JCM, ch 1, gain 5 — shipped patch) | 80 µs | **140 µs** | **5.1%** | 4 | 0.0% | yes |
-| Toaster (16 pads, re-struck 1/s) | 79 µs | **120 µs** | **4.5%** | 5 | 0.1% | yes |
-| Proof (limiter engaged) | 35 µs | **63 µs** | **2.3%** | 4 | 0.0% | yes |
-| Fermenter (16 sounding voices, 1 layer) | 23 µs | **49 µs** | **1.8%** | 4 | 0.3% | yes |
-| Levain (32 sounding voices, looped zone) | 17 µs | **30 µs** | **1.1%** | 5 | 0.0% | yes |
-| ProofChamber (FDN-16 — heaviest selectable) | 9.6 µs | **26 µs** | **0.99%** | 5 | 0.3% | yes |
-| Bacteria (3 bands, distortion on, Smudge/STFT) | 12 µs | **25 µs** | **0.95%** | 3 | 0.1% | yes |
-| Crust (true-peak limiting, 4x OS) | 5.5 µs | **18 µs** | **0.66%** | 5 | 0.4% | yes |
-| Bacteria (3 bands, mix 1.0, all stages off) | 9.2 µs | **15 µs** | **0.58%** | 5 | 0.0% | yes |
-| ProofChamber (Plate — shipped default) | — | **7.2 µs** | **0.27%** | 5 | 1.4% | yes |
-| Gluten (4:1, -24 dB, compressing) | — | **5.9 µs** | **0.22%** | 5 | 1.8% | yes |
-| Scoring / Tuner (pitch detection running) | — | **1.1 µs** | **0.043%** | 5 | 3.3% | yes |
-| Knead (+4 semitones, PSOLA engaged) | — | **0.52 µs** | **0.02%** | 4 | 3.6% | yes |
-| Grand Boule ring consumer (the live audio-thread cost) | 0.096 µs | **0.23 µs** | **0.0087%** | 5 | 0.8% | **no** |
-
+| Device                                                          | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
+| --------------------------------------------------------------- | ------: | ------------: | -------------------: | ---: | -----------: | :-----: |
+| Crumbs (32 sounding voices, in-memory pool)                     |  440 µs |    **570 µs** |              **21%** |    4 |         0.1% |   yes   |
+| Grinder (Crunch JCM, ch 1, gain 5 — shipped patch)              |   98 µs |    **130 µs** |             **4.8%** |    3 |         0.0% |   yes   |
+| Toaster (16 pads, re-struck 1/s)                                |   95 µs |    **120 µs** |             **4.5%** |    4 |         0.0% |   yes   |
+| Fermenter + 1050 automated params (16 sounding voices, 1 layer) |   86 µs |     **96 µs** |             **3.6%** |    3 |         0.0% |   yes   |
+| Fermenter (32 sounding voices, 1 layer)                         |   78 µs |     **92 µs** |             **3.4%** |    3 |         0.0% |   yes   |
+| Fermenter + 105 automated params (16 sounding voices, 1 layer)  |   49 µs |     **74 µs** |             **2.8%** |    3 |         0.0% | **no**  |
+| Fermenter + 90 automated params (16 sounding voices, 1 layer)   |   59 µs |     **71 µs** |             **2.7%** |    4 |         0.0% |   yes   |
+| Fermenter + 16 automated params (16 sounding voices, 1 layer)   |   56 µs |     **70 µs** |             **2.6%** |    4 |         0.0% |   yes   |
+| Proof (limiter engaged)                                         |   51 µs |     **61 µs** |             **2.3%** |    3 |         0.0% |   yes   |
+| ProofChamber (FDN-16 — heaviest selectable)                     |   24 µs |     **34 µs** |             **1.3%** |    4 |         0.0% |   yes   |
+| Levain (32 sounding voices, looped zone)                        |   27 µs |     **29 µs** |             **1.1%** |    4 |         0.0% | **no**  |
+| Bacteria (3 bands, distortion on, Smudge/STFT)                  |  7.1 µs |     **18 µs** |            **0.68%** |    3 |         0.8% |   yes   |
+| Crust (true-peak limiting, 4x OS)                               |  9.1 µs |     **17 µs** |            **0.64%** |    4 |         0.0% |   yes   |
+| Bacteria (3 bands, mix 1.0, all stages off)                     |  8.2 µs |      **9 µs** |            **0.34%** |    4 |         0.0% |   yes   |
+| ProofChamber (Plate — shipped default)                          |  1.4 µs |    **8.6 µs** |            **0.32%** |    4 |         0.2% |   yes   |
+| Gluten (4:1, -24 dB, compressing)                               |  1.3 µs |    **7.4 µs** |            **0.28%** |    4 |         0.2% |   yes   |
+| Scoring / Tuner (pitch detection running)                       |       — |      **1 µs** |           **0.038%** |    4 |         2.3% |   yes   |
+| Knead (+4 semitones, PSOLA engaged)                             |       — |   **0.51 µs** |           **0.019%** |    3 |         2.3% |   yes   |
+| Grand Boule retained ring consumer (host transport only)        | 0.19 µs |   **0.27 µs** |            **0.01%** |    4 |         0.3% | **no**  |
 
 ### Duty cycles, not tails
 
-| Device | period | duty | cost in the tick | cost otherwise | amortised mean | period comes from |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| bacteria_smudge | every 4 quanta | 25% | 1100 µs (42%) | 25 µs | **300 µs (11%)** | `stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta` |
-| knead | every 16 quanta | 6.3% | 1000 µs (39%) | 0.52 µs | **66 µs (2.5%)** | `yin_cfg.frame_size = 2048 frames / 128 = 16 quanta` |
-| scoring | every 12.5 quanta | 8% | 240 µs (9.1%) | 1.1 µs | **20 µs (0.76%)** | `hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta` |
+| Device          |            period | duty | cost in the tick | cost otherwise |    amortised mean | period comes from                                                         |
+| --------------- | ----------------: | ---: | ---------------: | -------------: | ----------------: | ------------------------------------------------------------------------- |
+| bacteria_smudge |    every 4 quanta |  25% |    1000 µs (39%) |          17 µs |  **270 µs (10%)** | `stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta` |
+| knead           |   every 16 quanta | 6.3% |    1000 µs (39%) |         0.5 µs |  **65 µs (2.4%)** | `yin_cfg.frame_size = 2048 frames / 128 = 16 quanta`                      |
+| scoring         | every 12.5 quanta |   8% |    220 µs (8.1%) |           1 µs | **18 µs (0.68%)** | `hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta`                |
 
 ### The reference project
 
 Audio thread: 1 × grand_boule_ring_consumer, 1 × fermenter, 1 × levain, 1 × toaster, 1 × crumbs, 1 × grinder, 1 × knead, 1 × bacteria, 1 × proof, 3 × gluten, 1 × proof_chamber_plate.
 
-Measured at a mean 1-minute load average of **5** on 12 logical
+Measured at a mean 1-minute load average of **4** on 12 logical
 cores. Both bounds are valid under that load; see the note on direction above.
 
-| | ms | % of 2.667 ms | |
-| --- | ---: | ---: | --- |
-| Audio thread, lower bound | 0.5 | 19% | partial — no floor from 3 rows, counted as zero |
-| **Audio thread, upper bound** | **0.86** | **32%** | **the decisive figure** |
-| Audio thread, worst quantum, upper bound | 1.9 | 71% | + the largest single duty spike |
+|                                          |      ms | % of 2.667 ms |                                                 |
+| ---------------------------------------- | ------: | ------------: | ----------------------------------------------- |
+| Audio thread, lower bound                |     0.8 |           30% | partial — no floor from 1 rows, counted as zero |
+| **Audio thread, upper bound**            | **1.1** |       **41%** | **the decisive figure**                         |
+| Audio thread, worst quantum, upper bound |     2.1 |           80% | + the largest single duty spike                 |
 
 **DECIDED: the upper bound already fits.**
-Even measured under a load average of 5, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
+Even measured under a load average of 4, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
 
 ### Occupancy, verified after each timed run
 
 - **bacteria** — after the timed run: output RMS 7.367e-2
 - **bacteria_smudge** — after the timed run: output RMS 3.057e-1
 - **crust** — after the timed run: output RMS 2.506e-1
-- **gluten** — after the timed run: output RMS 1.861e-1
+- **gluten** — after the timed run: output RMS 2.133e-1
 - **proof** — after the timed run: output RMS 3.601e-1
 - **knead** — after the timed run: output RMS 1.413e-1
 - **grinder** — after the timed run: engine output -4.57 dBFS
-- **fermenter** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.323e-1
-- **grand_boule_ring_consumer** — after the timed run: 24000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), output RMS 3.278e-1
-- **toaster** — after the timed run: 16 notes, no active-voice export: output RMS 3.203e-2 is 2.2x one identically-driven voice (1.471e-2), band 1.8-8.8x around sqrt(16) = 4.0x
+- **fermenter** — after the timed run: active_voices() = 32, expected 32 from 32 note-ons, output RMS 7.365e-1
+- **fermenter_automation_16** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 7.724e-1, 384000/384000 schedule visits wrote through set_param_by_id (100.0%), 0/16 schedules exhausted their segments, timeline covers 25000 quanta
+- **fermenter_automation_90** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 7.293e-1, 2160000/2160000 schedule visits wrote through set_param_by_id (100.0%), 0/90 schedules exhausted their segments, timeline covers 25000 quanta
+- **fermenter_automation_105** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 7.111e-1, 2520000/2520000 schedule visits wrote through set_param_by_id (100.0%), 0/105 schedules exhausted their segments, timeline covers 25000 quanta
+- **fermenter_automation_1050** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 1.395e+0, 25200000/25200000 schedule visits wrote through set_param_by_id (100.0%), 0/1050 schedules exhausted their segments, timeline covers 25000 quanta
+- **grand_boule_ring_consumer** — after the timed run: 24000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), 24000 render requests, output RMS 3.278e-1
+- **toaster** — after the timed run: 16 notes, no active-voice export: output RMS 4.944e-2 is 3.4x one identically-driven voice (1.471e-2), band 1.8-8.8x around sqrt(16) = 4.0x
 - **levain** — after the timed run: active_voices() = 32, expected 32 from 64 note-ons, output RMS 1.264e+0
-- **crumbs** — after the timed run: active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.736e+0
-- **proof_chamber_plate** — after the timed run: output RMS 2.008e-1
-- **proof_chamber_fdn16** — after the timed run: output RMS 2.568e-1
+- **crumbs** — after the timed run: active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.734e+0
+- **proof_chamber_plate** — after the timed run: output RMS 1.784e-1
+- **proof_chamber_fdn16** — after the timed run: output RMS 1.937e-1
 - **scoring** — after the timed run: output RMS 2.795e-1, detected 110.1 Hz (stimulus fundamental 110 Hz)
 
 ### Clock, per row
 
-| Device | segments | ticks/ms (median) | rate spread | compute ÷ wall | raw min | floor (p1) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| bacteria | 1 | 190000 | 0.0% | 77% | 0 µs | 9.2 µs |
-| bacteria_smudge | 7 | 150000 | 40.4% | 103% | 0 µs | 12 µs |
-| crust | 1 | 130000 | 0.0% | 79% | 0 µs | 5.5 µs |
-| gluten | 1 | 130000 | 0.0% | 56% | 0 µs | withheld |
-| proof | 2 | 130000 | 0.3% | 93% | 0 µs | 35 µs |
-| knead | 2 | 120000 | 7.3% | 95% | 0 µs | withheld |
-| grinder | 3 | 130000 | 0.7% | 95% | 13 µs | 80 µs |
-| fermenter | 1 | 130000 | 0.0% | 89% | 0 µs | 23 µs |
-| grand_boule_ring_consumer | 1 | 180000 | 0.0% | 19% | 0 µs | 0.096 µs |
-| toaster | 3 | 180000 | 2.5% | 85% | 0 µs | 79 µs |
-| levain | 1 | 180000 | 0.0% | 96% | 0 µs | 17 µs |
-| crumbs | 8 | 170000 | 33.9% | 100% | 39 µs | 250 µs |
-| proof_chamber_plate | 1 | 110000 | 0.0% | 58% | 0 µs | withheld |
-| proof_chamber_fdn16 | 1 | 110000 | 0.0% | 83% | 0 µs | 9.6 µs |
-| scoring | 1 | 120000 | 0.0% | 81% | 0 µs | withheld |
+| Device                    | segments | ticks/ms (median) | rate spread | compute ÷ wall | raw min | floor (p1) |
+| ------------------------- | -------: | ----------------: | ----------: | -------------: | ------: | ---------: |
+| bacteria                  |        1 |            200000 |        0.0% |            67% |    0 µs |     8.2 µs |
+| bacteria_smudge           |        6 |            160000 |       38.9% |           101% |    0 µs |     7.1 µs |
+| crust                     |        1 |            130000 |        0.0% |            80% |    0 µs |     9.1 µs |
+| gluten                    |        1 |            130000 |        0.0% |            63% |    0 µs |     1.3 µs |
+| proof                     |        2 |            130000 |        2.2% |            93% |    0 µs |      51 µs |
+| knead                     |        2 |            130000 |        1.6% |            94% |    0 µs |   withheld |
+| grinder                   |        3 |            130000 |        2.2% |            97% |   60 µs |      98 µs |
+| fermenter                 |        2 |            130000 |        1.5% |            93% |   36 µs |      78 µs |
+| fermenter_automation_16   |        2 |            130000 |        0.9% |            92% |    0 µs |      56 µs |
+| fermenter_automation_90   |        2 |            130000 |        0.3% |            91% |    0 µs |      59 µs |
+| fermenter_automation_105  |        2 |            170000 |       13.8% |            88% |   15 µs |      49 µs |
+| fermenter_automation_1050 |        2 |            200000 |        0.4% |            93% |   49 µs |      86 µs |
+| grand_boule_ring_consumer |        1 |            180000 |        0.0% |            22% |    0 µs |    0.19 µs |
+| toaster                   |        3 |            190000 |        1.9% |            85% |    0 µs |      95 µs |
+| levain                    |        1 |            190000 |        0.0% |            97% |  6.3 µs |      27 µs |
+| crumbs                    |       12 |            130000 |       55.4% |           109% |    0 µs |     440 µs |
+| proof_chamber_plate       |        1 |            130000 |        0.0% |            66% |    0 µs |     1.4 µs |
+| proof_chamber_fdn16       |        1 |            130000 |        0.0% |            89% |    0 µs |      24 µs |
+| scoring                   |        1 |            130000 |        0.0% |            81% |    0 µs |   withheld |
 
 <!-- generated:end -->
 
@@ -262,7 +273,7 @@ on the scheduler's worker and it does not dissolve.
 **What the per-quantum work actually is**, read before it was measured: the loop is **per schedule,
 not per scheduled event**. `_handleMessage` replaces an existing entry with the same `paramId`
 rather than appending, so the array length is bounded by the distinct-ordinal count — 16 today, ~105
-if the table is grown — however many automation *events* the timeline carries. Per entry the loop
+if the table is grown — however many automation _events_ the timeline carries. Per entry the loop
 does a forward-only segment-cursor advance, one linear interpolation, and — only when the value
 moved — one `set_param_by_id` call across the wasm-bindgen boundary into a string-matched
 `MasterSynth::set_param` cascade. That call, not the array walk, is where any cost would live. The
@@ -276,13 +287,13 @@ schedules, then `process(128)`. Ordinals cycle `paramId % 16` because only 16 ex
 **set of parameters actually moved is identical in every row** — the DSP consequence of automation
 is held constant and the difference between rows is the schedule count and nothing else.
 
-| Row | ≥ floor | ≤ upper bound | upper as % of budget |
-| --- | ---: | ---: | ---: |
-| Fermenter, no automation | 43 µs | **46 µs** | **1.7%** |
-| Fermenter + 16 automated params (today's ceiling) | 62 µs | **68 µs** | **2.6%** |
-| Fermenter + 90 automated params | 67 µs | **71 µs** | **2.7%** |
-| Fermenter + 105 automated params | 61 µs | **71 µs** | **2.7%** |
-| Fermenter + 1050 automated params (amplifier, not a product configuration) | 85 µs | **96 µs** | **3.6%** |
+| Row                                                                        | ≥ floor | ≤ upper bound | upper as % of budget |
+| -------------------------------------------------------------------------- | ------: | ------------: | -------------------: |
+| Fermenter, no automation                                                   |   43 µs |     **46 µs** |             **1.7%** |
+| Fermenter + 16 automated params (today's ceiling)                          |   62 µs |     **68 µs** |             **2.6%** |
+| Fermenter + 90 automated params                                            |   67 µs |     **71 µs** |             **2.7%** |
+| Fermenter + 105 automated params                                           |   61 µs |     **71 µs** |             **2.7%** |
+| Fermenter + 1050 automated params (amplifier, not a product configuration) |   85 µs |     **96 µs** |             **3.6%** |
 
 Provenance: Apple M4 Pro (`Mac16,11`), macOS 26.6, Chrome **151.0.7922.76** headless, commit
 `132fa4970` (base `e8eb38075`; working tree dirty — this branch adds the rows), 4000 warm-up +
@@ -294,7 +305,7 @@ immediately preceding run reproduced every row within 1 µs. Reproduce with
 ### Why there is a 1050 row
 
 The first run of 16 / 90 / 105 came back **flat** — all three within a microsecond of each other.
-Flat is consistent with a marginal per-schedule cost of zero *and* with one of tens of nanoseconds
+Flat is consistent with a marginal per-schedule cost of zero _and_ with one of tens of nanoseconds
 that 89 extra schedules cannot lift above a clock good to about ±10% on a 70 µs row. Publishing "no
 measurable difference" without separating those would have been the argue-from-shape mistake this
 table exists to stop. The 1050 row is 10× the target so the marginal cost clears the noise, and it
@@ -344,7 +355,7 @@ stands on its own — but it is the number to take before automating the EQ band
 **What these rows therefore cannot say:** the table shows a **+22 µs step** (46 → 68 µs) between no automation
 and any automation. Cycling `paramId % 16` holds the set of moved parameters constant by
 construction, so these rows contain **no information** about how that step scales with distinct
-parameters. +22 µs is what 16 *distinct* cheap parameters cost. Whether 105 distinct parameters —
+parameters. +22 µs is what 16 _distinct_ cheap parameters cost. Whether 105 distinct parameters —
 nine of them recomputing biquads — cost 22 µs or considerably more is a separate measurement that
 has not been taken. Do not read the step as already paid.
 
@@ -414,11 +425,11 @@ invalidate the DSP crate's committed artifacts.
   tick quantum at 42% of the whole budget** every fourth quantum. Roughly 19x amortised, 73x on the
   tick, from one user-reachable control. Read this as the general warning it is: a row measures the
   configuration it is set to, and occupancy proves only that something was running, not what.
-- **Toaster falls silent if held and forgotten.** Over 53 s its 16 struck pads decay to *exact zero*
+- **Toaster falls silent if held and forgotten.** Over 53 s its 16 struck pads decay to _exact zero_
   while still paying full price, because the quality demotion reads the release envelope, pinned at
   1.0 with the key down. It re-strikes once a second. Crumbs needed its zone looped for the same reason: a one-shot voice
   pitched 48 semitones above the root plays a one-second sample in 62 ms, and unlooped the pool
-  drained from 32 voices to 12 during the *warm-up*.
+  drained from 32 voices to 12 during the _warm-up_.
 - **Grinder is measured at the shipped patch** — `ampModel: 'crunch-jcm'`, `channel: 1`, `gain: 5`
   (`GrinderPatch.ts:299-301`), two triode stages. An earlier version used channel 2 at gain 8.2,
   which is the lead channel at high gain and three stages, so it measured a heavier circuit than the
@@ -446,7 +457,7 @@ CARGO_PROFILE_RELEASE_LTO=false \
 that by editing `[profile.release]`** — that profile is hashed into all four wasm crate-source
 fingerprints, and editing it invalidates every committed wasm artifact.
 
-`--test quantum_cost` is also required: those two crates' *unit* tests do not build in release,
+`--test quantum_cost` is also required: those two crates' _unit_ tests do not build in release,
 because `assert_no_alloc`'s `disable_release` feature configures `AllocDisabler` out and their
 `src/lib.rs` imports it. (`cargo test -p daw-dsp --release` fails for the separate pre-existing
 `-C embed-bitcode=no` / `lto` reason, reproducible on a pristine `origin/main`.)

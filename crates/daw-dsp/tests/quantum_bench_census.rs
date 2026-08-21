@@ -22,7 +22,7 @@
 //! every worklet drives, and it is the shape the bench's budget claim is about.
 //! Grand Boule remains in this native population even though `lib.rs` gates its
 //! complete module out of wasm32. The separate browser-WASM assertion below
-//! prevents its removed constructor from returning to browser benchmark
+//! prevents its withheld constructor from returning to browser benchmark
 //! imports, recipes, runner totals, or the `DEVICE_IDS` census.
 //!
 //! # What counts as covered
@@ -224,6 +224,23 @@ fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
         !current_record.contains("\"id\": \"grand_boule\""),
         "the current browser WASM cost record must not retain a Grand Boule DSP row"
     );
+
+    for required in [
+        "publishGrandBouleConsumerClock",
+        "GRAND_BOULE_READ_HEAD_IDX",
+        "GRAND_BOULE_SLEEP_HEAD_IDX",
+        "GRAND_BOULE_RENDER_REQUEST_IDX",
+        "Atomics.notify",
+    ] {
+        assert!(
+            recipes.contains(required),
+            "the retained host ring-consumer benchmark must reproduce the production consumed branch marker `{required}`"
+        );
+    }
+    assert!(
+        processor.contains("publishGrandBouleConsumerClock"),
+        "the browser benchmark processor must inject the production consumer-clock publisher into the recipe"
+    );
 }
 
 #[test]
@@ -233,6 +250,9 @@ fn grand_boule_remains_in_the_native_cost_bench() {
     assert!(bench.contains("GrandBouleInstance::new"));
     assert!(bench.contains("bench_grand_boule_process_block"));
     assert!(bench.contains("bench_grand_boule_instance"));
+    assert!(!bench.contains("REFERENCE_PROJECT_WORKER"));
+    assert!(!bench.contains("WORKER line item, Grand Boule"));
+    assert!(bench.contains("native-only evidence"));
 }
 
 /// The deliberately broken fixtures ADR 0015 rule 2 (iv) requires.
