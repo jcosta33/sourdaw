@@ -136,6 +136,19 @@ impl DeviceParam {
             Self::FormantPreserve => "formant_preserve",
         }
     }
+
+    /// Resolve a `SetParam` name onto its address — the inverse of
+    /// [`Self::name`]. `None` refuses the name control-side: the scheduler's
+    /// named command no longer exists, so a name with no address cannot cross
+    /// the ring to be counted as unmapped after the fact.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "shift_semitones" => Some(Self::ShiftSemitones),
+            "retune_speed_ms" => Some(Self::RetuneSpeedMs),
+            "formant_preserve" => Some(Self::FormantPreserve),
+            _ => None,
+        }
+    }
 }
 
 /// Counters for every timeline command the graph refused, published off the
@@ -147,7 +160,9 @@ impl DeviceParam {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct TimelineRtDiagnosticsSnapshot {
     /// A track, bus, clip, send, or device-chain entry that would have pushed
-    /// its collection past the fixed capacity it was built with.
+    /// its collection past the fixed capacity it was built with, or an effect
+    /// or audio bridge the scheduler's own fixed tables refused for the same
+    /// reason.
     pub capacity_refusals: u64,
     /// An add command naming an id another live node already holds.
     pub id_collisions: u64,
@@ -1220,6 +1235,12 @@ impl TimelineGraph {
     /// scheduler resolves itself.
     pub(crate) fn record_unknown_target(&mut self) {
         self.diagnostics.record_unknown_target();
+    }
+
+    /// Count a registration the scheduler's own fixed tables refused, for the
+    /// tables that live on the scheduler rather than in the graph.
+    pub(crate) fn record_capacity_refusal(&mut self) {
+        self.diagnostics.record_capacity_refusal();
     }
 
     /// Whether the graph holds anything at all. An empty graph is skipped
@@ -2388,6 +2409,21 @@ mod tests {
         }
 
         assert_eq!(graph.diagnostics().automation_queue_overflows, 1);
+    }
+
+    /// `from_name` is the inverse of `name`, so the named boundary the control
+    /// side resolves through and the addressed command the audio thread
+    /// applies cannot drift into meaning different things.
+    #[test]
+    fn device_param_from_name_is_the_inverse_of_name() {
+        for param in [
+            DeviceParam::ShiftSemitones,
+            DeviceParam::RetuneSpeedMs,
+            DeviceParam::FormantPreserve,
+        ] {
+            assert_eq!(DeviceParam::from_name(param.name()), Some(param));
+        }
+        assert_eq!(DeviceParam::from_name("not_a_real_param"), None);
     }
 
     #[test]

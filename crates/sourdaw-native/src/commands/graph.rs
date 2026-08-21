@@ -119,7 +119,7 @@
 
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::scheduler::{GraphCommand, GraphProgressSnapshot};
+use daw_engine::scheduler::{BuiltinEffectType, GraphCommand, GraphProgressSnapshot};
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
     ClipPlayback, DeviceKind, DeviceParam, RampShape, RouteTarget, TimelineBus, TimelineClip,
@@ -153,12 +153,6 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// material it accepts, so an unbounded payload is an unbounded allocation
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
-
-/// The `SetParam` names the built-in Knead effect maps
-/// (`daw_engine::scheduler::apply_knead_param`). A knead device carrying any
-/// other parameter name refuses control-side rather than being counted as an
-/// unmapped call after the fact.
-const KNEAD_PARAM_NAMES: [&str; 3] = ["shift_semitones", "retune_speed_ms", "formant_preserve"];
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -904,8 +898,12 @@ fn map_device(
         return Ok(None);
     }
 
+    // The built-in's parameters resolve through `DeviceParam::from_name`, the
+    // same single mapping the engine's addressed `SetParam` applies. A knead
+    // device carrying any other parameter name refuses control-side rather
+    // than being counted as an unmapped call after the fact.
     for name in device.parameter_values.keys() {
-        if !KNEAD_PARAM_NAMES.contains(&name.as_str()) {
+        if DeviceParam::from_name(name).is_none() {
             return Err(format!(
                 "device '{}' carries parameter '{}', which knead does not map",
                 device.id, name
@@ -921,12 +919,14 @@ fn map_device(
     // batch put on one strip.
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
-        "knead".to_string(),
+        BuiltinEffectType::Knead,
     ));
     for (name, value) in &device.parameter_values {
+        let param = DeviceParam::from_name(name)
+            .expect("the validation above refused every name knead does not map");
         ops.push(GraphCommand::SetParam(
             effect_id,
-            name.clone(),
+            param,
             finite(*value, "device parameter value")? as f32,
         ));
     }

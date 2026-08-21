@@ -18,8 +18,8 @@ use midi::diagnostics::{
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
-    graph_progress_channel, GraphCommand, GraphProgressReader, GraphProgressSnapshot,
-    RetiredGraphObjects,
+    graph_progress_channel, BuiltinEffectType, GraphCommand, GraphProgressReader,
+    GraphProgressSnapshot, RetiredGraphObjects,
 };
 use std::sync::mpsc::Sender;
 use timeline::{
@@ -279,16 +279,27 @@ impl EngineHandle {
     }
 
     /// Add a built-in effect to the native rendering graph.
+    ///
+    /// The type name resolves to a fixed-size address here, on the control
+    /// side: the command that crosses the ring may not carry a heap allocation
+    /// onto the audio thread (ADR 0020), so an unknown name is refused where
+    /// it can be reported rather than counted on the callback after the fact.
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
+        let plugin_type = BuiltinEffectType::from_name(plugin_type)
+            .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
         self.command_tx
-            .push(GraphCommand::AddEffect(id, plugin_type.to_string()))
+            .push(GraphCommand::AddEffect(id, plugin_type))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
-    /// Update an effect parameter natively.
+    /// Update an effect parameter natively. The name resolves to a fixed-size
+    /// address on the control side, for the reason given on
+    /// [`Self::add_effect`].
     pub fn set_effect_param(&mut self, id: usize, param: &str, value: f32) -> Result<(), String> {
+        let param = DeviceParam::from_name(param)
+            .ok_or_else(|| format!("unknown built-in parameter '{param}'"))?;
         self.command_tx
-            .push(GraphCommand::SetParam(id, param.to_string(), value))
+            .push(GraphCommand::SetParam(id, param, value))
             .map_err(|_| "Audio command queue full".to_string())
     }
 
@@ -600,8 +611,8 @@ mod tests {
     use super::{engine_handle_for_command_capture, spawn_with_fallback};
     use crate::audio_bridge::create_audio_bridge;
     use crate::plugin_slot::NativePlugin;
-    use crate::scheduler::{AudioScheduler, GraphCommand};
-    use crate::timeline::TimelineTrack;
+    use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand};
+    use crate::timeline::{DeviceParam, TimelineTrack};
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::cell::RefCell;
@@ -716,6 +727,43 @@ mod tests {
             retirements += 1;
         }
         assert_eq!(retirements, 151);
+    }
+
+    /// The typed handle resolves effect type and parameter names to
+    /// fixed-size addresses before anything crosses the ring: a command
+    /// carrying a `String` would have its allocation freed on the audio
+    /// thread when consumed (ADR 0020). An unknown name refuses here, where
+    /// it can be reported, instead of being counted on the callback after
+    /// the fact — the replacement for the unsupported-type and unmapped-name
+    /// counters that path used to feed.
+    #[test]
+    fn unknown_effect_types_and_parameter_names_refuse_control_side() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        assert!(engine.add_effect(7, "not-a-real-effect").is_err());
+        assert!(engine.set_effect_param(7, "not_a_real_param", 1.0).is_err());
+        assert!(
+            command_rx.pop().is_err(),
+            "a refused name must not cross the ring"
+        );
+
+        // The known names still do — as the addresses the scheduler applies.
+        engine
+            .add_effect(7, "knead")
+            .expect("knead is a built-in type");
+        engine
+            .set_effect_param(7, "shift_semitones", 3.0)
+            .expect("shift_semitones is a knead parameter");
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::AddEffect(id, BuiltinEffectType::Knead)) if id == 7
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::SetParam(id, DeviceParam::ShiftSemitones, value))
+                if id == 7 && value == 3.0
+        ));
     }
 
     #[test]
