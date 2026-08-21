@@ -43,6 +43,7 @@ const REQUEST_A = '00000000-0000-4000-8000-00000000000a';
 const REQUEST_B = '00000000-0000-4000-8000-00000000000b';
 
 describe('renderDdspInstrument request ownership', () => {
+    const computeRenderCacheKey = vi.fn().mockResolvedValue('cache-key');
     const readRenderCache = vi.fn().mockResolvedValue(null);
     const writeRenderCache = vi.fn().mockResolvedValue(undefined);
     const checkDdspInstrumentReady = vi.fn().mockResolvedValue(true);
@@ -68,6 +69,7 @@ describe('renderDdspInstrument request ownership', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         readRenderCache.mockReset().mockResolvedValue(null);
+        computeRenderCacheKey.mockReset().mockResolvedValue('cache-key');
         writeRenderCache.mockReset().mockResolvedValue(undefined);
         checkDdspInstrumentReady.mockReset().mockResolvedValue(true);
         withDdspInstrumentLock.mockClear();
@@ -77,6 +79,7 @@ describe('renderDdspInstrument request ownership', () => {
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
         injectDependencies(renderDdspInstrument, {
             logger,
+            computeRenderCacheKey,
             readRenderCache,
             writeRenderCache,
             ddspModelStorage: { checkDdspInstrumentReady },
@@ -106,6 +109,10 @@ describe('renderDdspInstrument request ownership', () => {
             expect.objectContaining({ modelId }),
             undefined
         );
+        expect(computeRenderCacheKey).toHaveBeenCalledWith(
+            expect.objectContaining({ modelId, qualityParams: 'ddsp-conditioned-v1-250' })
+        );
+        expect(rendered.audio[500]).toBeCloseTo(0.25, 6);
     });
 
     it('holds the shared generation lock through readiness, session creation, and inference', async () => {

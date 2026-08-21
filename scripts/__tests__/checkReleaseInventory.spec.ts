@@ -75,6 +75,7 @@ describe('release inventory', () => {
             'unverified:checkpoint-weights-no-license-grant-established'
         );
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toContain('index.html');
         expect(DDSP_RELEASE_INVENTORY_PATHS).toEqual(
             expect.arrayContaining([
                 'src/modules/Transport/useCases/secondsBetweenBeats.ts',

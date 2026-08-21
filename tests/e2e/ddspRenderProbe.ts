@@ -42,8 +42,62 @@ const storage = ddspModelStorage as {
 
 type DdspProbe = {
     prepare: () => Promise<{ ready: boolean; artifactCount: number }>;
-    renderOffline: () => Promise<{ backend: string; pcmLength: number; finite: boolean }>;
+    renderOffline: () => Promise<{
+        backend: string;
+        pcmLength: number;
+        finite: boolean;
+        signature: DdspAudioSignature;
+    }>;
 };
+
+type DdspAudioSignature = {
+    activeRatio: number;
+    crestFactor: number;
+    meanAbsolute: number;
+    middleRms: number;
+    peak: number;
+    rms: number;
+    zeroCrossingRate: number;
+};
+
+function rmsBetween(audio: Float32Array, start: number, end: number): number {
+    let squared = 0;
+    for (let index = start; index < end; index += 1) {
+        squared += audio[index] ** 2;
+    }
+    return Math.sqrt(squared / Math.max(1, end - start));
+}
+
+function audioSignature(audio: Float32Array): DdspAudioSignature {
+    let absolute = 0;
+    let active = 0;
+    let peak = 0;
+    let squared = 0;
+    let crossings = 0;
+    for (let index = 0; index < audio.length; index += 1) {
+        const sample = audio[index];
+        const magnitude = Math.abs(sample);
+        absolute += magnitude;
+        squared += sample ** 2;
+        peak = Math.max(peak, magnitude);
+        if (magnitude > 0.000_01) {
+            active += 1;
+        }
+        if (index > 0 && sample < 0 !== audio[index - 1] < 0) {
+            crossings += 1;
+        }
+    }
+    const rms = Math.sqrt(squared / audio.length);
+    return {
+        activeRatio: active / audio.length,
+        crestFactor: peak / Math.max(rms, Number.EPSILON),
+        meanAbsolute: absolute / audio.length,
+        middleRms: rmsBetween(audio, Math.floor(audio.length * 0.3), Math.floor(audio.length * 0.7)),
+        peak,
+        rms,
+        zeroCrossingRate: crossings / Math.max(1, audio.length - 1),
+    };
+}
 
 async function prepare(): Promise<{ ready: boolean; artifactCount: number }> {
     await removeInstrument(admittedInstrument.id);
@@ -59,7 +113,12 @@ async function prepare(): Promise<{ ready: boolean; artifactCount: number }> {
     return { ready, artifactCount: admittedInstrument.artifacts.length };
 }
 
-async function renderOffline(): Promise<{ backend: string; pcmLength: number; finite: boolean }> {
+async function renderOffline(): Promise<{
+    backend: string;
+    pcmLength: number;
+    finite: boolean;
+    signature: DdspAudioSignature;
+}> {
     inferenceWorkerBridge.terminateAll();
     if (!isDdspInstrumentId(admittedInstrument.id)) {
         throw new Error(`DDSP probe instrument is not callable: ${admittedInstrument.id}`);
@@ -74,7 +133,12 @@ async function renderOffline(): Promise<{ backend: string; pcmLength: number; fi
     if (!finite) {
         throw new Error(`Invalid DDSP render: samples=${String(result.audio.length)}`);
     }
-    return { backend: result.backend, pcmLength: result.audio.length, finite };
+    return {
+        backend: result.backend,
+        pcmLength: result.audio.length,
+        finite,
+        signature: audioSignature(result.audio),
+    };
 }
 
 Reflect.set(window, '__SOURDAW_DDSP_PROBE__', { prepare, renderOffline } satisfies DdspProbe);

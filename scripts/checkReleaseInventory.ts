@@ -69,6 +69,7 @@ export const TFJS_APACHE_LICENSE_PATH = 'public/legal/Apache-2.0.txt';
 export const TFJS_NOTICE_PATH = 'public/legal/TensorFlow.js-NOTICE.txt';
 
 export const DDSP_RELEASE_INVENTORY_PATHS = [
+    'index.html',
     'package.json',
     'pnpm-lock.yaml',
     TFJS_APACHE_LICENSE_PATH,

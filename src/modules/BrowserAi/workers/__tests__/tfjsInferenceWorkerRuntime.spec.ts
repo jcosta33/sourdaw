@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../../models/InferenceRequest';
 import {
     createTfjsInferenceRequestHandler,
+    parseDdspSettings,
     type TfjsWorkerModel,
     type TfjsWorkerRuntime,
     type TfjsWorkerTensor,
@@ -30,8 +31,28 @@ type Runtime = ReturnType<typeof createTfjsInferenceRequestHandler>;
 const MODEL_JSON = new TextEncoder().encode(
     JSON.stringify({ modelTopology: {}, weightsManifest: [{ weights: [] }], format: 'graph-model' })
 ).buffer;
-const SETTINGS = new TextEncoder().encode(JSON.stringify({ modelMaxFrameLength: 1_250 })).buffer;
+const VIOLIN_SETTINGS = {
+    averageMaxLoudness: -48.6,
+    loudnessThreshold: -100,
+    meanLoudness: -68.5,
+    meanPitch: 62,
+    postGain: 2,
+    modelMaxFrameLength: 1_250,
+};
+const TRUMPET_SETTINGS = {
+    averageMaxLoudness: -61.7,
+    loudnessThreshold: -100,
+    meanLoudness: -72.5,
+    meanPitch: 68.6,
+    postGain: 1.5,
+    modelMaxFrameLength: 1_250,
+};
+const SETTINGS = settingsBytes(VIOLIN_SETTINGS);
 const WEIGHTS = Uint8Array.from([1, 2, 3]).buffer;
+
+function settingsBytes(settings: Record<string, number>): ArrayBuffer {
+    return new TextEncoder().encode(JSON.stringify(settings)).buffer;
+}
 
 function deferred<TValue>(): Deferred<TValue> {
     let resolveDeferred: (value: TValue) => void = () => undefined;
@@ -78,7 +99,10 @@ function artifactPort(
     return port as unknown as MessagePort;
 }
 
-function artifacts(overrides: Partial<Record<DdspStoredArtifact['path'], MessagePort>> = {}): DdspStoredArtifact[] {
+function artifacts(
+    overrides: Partial<Record<DdspStoredArtifact['path'], MessagePort>> = {},
+    settings = SETTINGS
+): DdspStoredArtifact[] {
     return [
         {
             modelId: 'ddsp-violin/v1/model.json',
@@ -97,9 +121,9 @@ function artifacts(overrides: Partial<Record<DdspStoredArtifact['path'], Message
         {
             modelId: 'ddsp-violin/v1/settings.json',
             path: 'settings.json',
-            sizeBytes: SETTINGS.byteLength,
+            sizeBytes: settings.byteLength,
             sha256: 'c'.repeat(64),
-            modelDataPort: overrides['settings.json'] ?? artifactPort(SETTINGS),
+            modelDataPort: overrides['settings.json'] ?? artifactPort(settings),
         },
     ];
 }
@@ -122,6 +146,29 @@ function inferenceRequest(requestId: string, frameCount: number): WorkerRequest 
         loudnessDb: Float32Array.from({ length: frameCount }, (_, index) => -60 + index / 100),
         frameRate: 250,
     };
+}
+
+function exactInferenceRequest(
+    requestId: string,
+    pitchHz: readonly number[],
+    loudnessDb: readonly number[],
+    frameRate = 250
+): WorkerRequest {
+    return {
+        type: 'run-ddsp-inference',
+        requestId,
+        modelId: 'ddsp-violin:v1',
+        pitchHz: Float32Array.from(pitchHz),
+        loudnessDb: Float32Array.from(loudnessDb),
+        frameRate,
+    };
+}
+
+function expectArrayClose(actual: Float32Array, expected: readonly number[]): void {
+    expect(actual).toHaveLength(expected.length);
+    for (const [index, value] of expected.entries()) {
+        expect(actual[index]).toBeCloseTo(value, 4);
+    }
 }
 
 function createHarness(
@@ -172,6 +219,92 @@ afterEach(() => {
 });
 
 describe('tfjsInferenceWorkerRuntime', () => {
+    it('parses every required checkpoint conditioning field', () => {
+        expect(parseDdspSettings(SETTINGS)).toEqual(VIOLIN_SETTINGS);
+    });
+
+    it.each([
+        ['averageMaxLoudness', 1],
+        ['loudnessThreshold', -121],
+        ['meanLoudness', 1],
+        ['meanPitch', 111],
+        ['postGain', 0],
+        ['modelMaxFrameLength', 1],
+    ] as const)('rejects missing, non-finite, and out-of-range %s settings', (field, outOfRange) => {
+        const missing = { ...VIOLIN_SETTINGS } as Record<string, number>;
+        delete missing[field];
+        expect(() => parseDdspSettings(settingsBytes(missing))).toThrow(field);
+
+        const validJson = JSON.stringify(VIOLIN_SETTINGS);
+        const nonFiniteJson = validJson.replace(`"${field}":${String(VIOLIN_SETTINGS[field])}`, `"${field}":1e400`);
+        expect(() => parseDdspSettings(new TextEncoder().encode(nonFiniteJson).buffer)).toThrow(field);
+        expect(() => parseDdspSettings(settingsBytes({ ...VIOLIN_SETTINGS, [field]: outOfRange }))).toThrow(field);
+    });
+
+    it.each([
+        {
+            name: 'violin',
+            settings: VIOLIN_SETTINGS,
+            expectedPitch: [0, 440, 880, 1_760],
+            expectedLoudness: [-120, -88.43872, -68.39981, -48.46109],
+        },
+        {
+            name: 'trumpet',
+            settings: TRUMPET_SETTINGS,
+            expectedPitch: [0, 880, 1_760, 3_520],
+            expectedLoudness: [-120, -102.78986, -83.12112, -63.45238],
+        },
+    ])('normalizes fixed MIDI features for the $name checkpoint before prediction', async (example) => {
+        const harness = createHarness();
+        await harness.runtime.handleRequest(
+            createSessionRequest('load', artifacts({}, settingsBytes(example.settings)))
+        );
+
+        await harness.runtime.handleRequest(
+            exactInferenceRequest('condition', [0, 440, 880, 1_760], [-120, -60, -40, -20])
+        );
+
+        const feeds = harness.model.predict.mock.calls[0]?.[0] as
+            { f0_hz: FakeTensor; loudness_db: FakeTensor } | undefined;
+        if (!feeds) {
+            throw new Error('Expected conditioned DDSP prediction');
+        }
+        expectArrayClose(feeds.f0_hz.values.subarray(0, 4), example.expectedPitch);
+        expectArrayClose(feeds.loudness_db.values.subarray(0, 4), example.expectedLoudness);
+    });
+
+    it('preserves silence and uses the model sentinel values only for chunk padding', async () => {
+        const harness = createHarness();
+        await harness.runtime.handleRequest(
+            createSessionRequest('load', artifacts({}, settingsBytes({ ...VIOLIN_SETTINGS, modelMaxFrameLength: 4 })))
+        );
+
+        await harness.runtime.handleRequest(exactInferenceRequest('silence', [0, 0], [-120, -120]));
+
+        const feeds = harness.model.predict.mock.calls[0]?.[0] as
+            { f0_hz: FakeTensor; loudness_db: FakeTensor } | undefined;
+        if (!feeds) {
+            throw new Error('Expected silent DDSP prediction');
+        }
+        expect(feeds.f0_hz.values).toEqual(new Float32Array([0, 0, -1, -1]));
+        expect(feeds.loudness_db.values).toEqual(new Float32Array([-120, -120, -120, -120]));
+    });
+
+    it('applies checkpoint postGain to model audio before publishing', async () => {
+        const modelAudio = new Float32Array(80_000).fill(0.25);
+        const harness = createHarness({ predict: vi.fn(() => fakeTensor(modelAudio, modelAudio)) });
+        await harness.runtime.handleRequest(createSessionRequest('load'));
+
+        await harness.runtime.handleRequest(inferenceRequest('post-gain', 125));
+
+        const response = harness.responses.at(-1);
+        if (response?.type !== 'ddsp-result') {
+            throw new Error('Expected DDSP result');
+        }
+        expect(response.audio[0]).toBeCloseTo(0.5, 6);
+        expect(response.audio.at(-1)).toBeCloseTo(0.5, 6);
+    });
+
     it('coalesces TF.js initialization and concurrent identical model loads', async () => {
         const modelGate = deferred<FakeModel>();
         const harness = createHarness({
@@ -456,9 +589,9 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
         const firstPitch = (firstCall[0] as { f0_hz: FakeTensor }).f0_hz.values;
         const secondPitch = (secondCall[0] as { f0_hz: FakeTensor }).f0_hz.values;
-        expect(firstPitch.slice(0, 3)).toEqual(new Float32Array([100, 101, 102]));
-        expect(secondPitch.slice(0, 3)).toEqual(new Float32Array([1_100, 1_101, 1_102]));
-        expect(secondPitch[499]).toBe(1_599);
+        expect(firstPitch.slice(1_000, 1_003)).toEqual(secondPitch.slice(0, 3));
+        expect(secondPitch[0]).toBeGreaterThan(0);
+        expect(secondPitch[499]).toBeGreaterThan(secondPitch[0] ?? 0);
         expect(secondPitch[500]).toBe(-1);
 
         const response = harness.responses.at(-1);
@@ -466,11 +599,11 @@ describe('tfjsInferenceWorkerRuntime', () => {
             throw new Error('Expected DDSP result');
         }
         expect(response.audio).toHaveLength(96_000);
-        expect(response.audio[63_999]).toBe(1);
-        expect(response.audio[64_000]).toBeCloseTo(1, 6);
-        expect(response.audio[72_000]).toBeCloseTo(2, 6);
-        expect(response.audio[79_999]).toBeCloseTo(3, 3);
-        expect(response.audio[80_000]).toBe(3);
+        expect(response.audio[63_999]).toBe(2);
+        expect(response.audio[64_000]).toBeCloseTo(2, 6);
+        expect(response.audio[72_000]).toBeCloseTo(4, 6);
+        expect(response.audio[79_999]).toBeCloseTo(6, 3);
+        expect(response.audio[80_000]).toBe(6);
     });
 
     it('stops before predicting a later chunk when the request is cancelled', async () => {

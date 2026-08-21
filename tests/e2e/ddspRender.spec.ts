@@ -1,9 +1,40 @@
 import { expect, test } from '@playwright/test';
 
+type DdspAudioSignature = {
+    activeRatio: number;
+    crestFactor: number;
+    meanAbsolute: number;
+    middleRms: number;
+    peak: number;
+    rms: number;
+    zeroCrossingRate: number;
+};
+
 type DdspProbe = {
     prepare: () => Promise<{ ready: boolean; artifactCount: number }>;
-    renderOffline: () => Promise<{ backend: string; pcmLength: number; finite: boolean }>;
+    renderOffline: () => Promise<{
+        backend: string;
+        pcmLength: number;
+        finite: boolean;
+        signature: DdspAudioSignature;
+    }>;
 };
+
+function expectConditionedAudioSignature(signature: DdspAudioSignature): void {
+    expect(signature.rms).toBeGreaterThan(0.005);
+    expect(signature.rms).toBeLessThan(0.05);
+    expect(signature.peak).toBeGreaterThan(0.02);
+    expect(signature.peak).toBeLessThan(0.2);
+    expect(signature.meanAbsolute).toBeGreaterThan(0.003);
+    expect(signature.meanAbsolute).toBeLessThan(0.03);
+    expect(signature.middleRms).toBeGreaterThan(0.005);
+    expect(signature.middleRms).toBeLessThan(0.04);
+    expect(signature.activeRatio).toBeGreaterThan(0.9);
+    expect(signature.crestFactor).toBeGreaterThan(3.5);
+    expect(signature.crestFactor).toBeLessThan(6.5);
+    expect(signature.zeroCrossingRate).toBeGreaterThan(0.04);
+    expect(signature.zeroCrossingRate).toBeLessThan(0.08);
+}
 
 declare global {
     // oxlint-disable-next-line typescript/consistent-type-definitions -- Window must merge with the DOM global.
@@ -27,4 +58,5 @@ test('downloads verified Magenta artifacts then recreates a WebGPU worker offlin
 
     expect(rendered).toMatchObject({ backend: 'webgpu', finite: true });
     expect(rendered.pcmLength).toBe(22_050);
+    expectConditionedAudioSignature(rendered.signature);
 });

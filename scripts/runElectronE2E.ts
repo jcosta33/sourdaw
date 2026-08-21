@@ -22,7 +22,8 @@ export type PackagedProvenance = FileProvenance & {
     unpacked: { path: string; state: 'absent' } | { path: string; state: 'present'; files: Record<string, string> };
 };
 
-export const PACKAGED_BUILD_INPUTS = [
+export const ELECTRON_BUILD_INPUTS = [
+    'index.html',
     'package.json',
     'pnpm-lock.yaml',
     'Cargo.toml',
@@ -127,10 +128,13 @@ function hasAsarIntegrityMetadata(infoPlist: string): boolean {
     return contents.includes('ElectronAsarIntegrity') && contents.includes('Resources/app.asar');
 }
 
-export function assertPackagedBuildInputsClean(root = process.cwd()): void {
+export function assertElectronBuildInputsClean(
+    root = process.cwd(),
+    mode: 'development' | 'packaged' = 'packaged'
+): void {
     const result = spawnSync(
         'git',
-        ['status', '--porcelain=v1', '--untracked-files=all', '--', ...PACKAGED_BUILD_INPUTS],
+        ['status', '--porcelain=v1', '--untracked-files=all', '--', ...ELECTRON_BUILD_INPUTS],
         { cwd: root, encoding: 'utf8' }
     );
     if (result.error !== undefined) {
@@ -141,8 +145,21 @@ export function assertPackagedBuildInputsClean(root = process.cwd()): void {
     }
     const dirty = result.stdout.trim();
     if (dirty !== '') {
-        throw new Error(`dirty packaged-build inputs:\n${dirty}`);
+        throw new Error(`dirty ${mode}-build inputs:\n${dirty}`);
     }
+}
+
+export function assertPackagedBuildInputsClean(root = process.cwd()): void {
+    assertElectronBuildInputsClean(root, 'packaged');
+}
+
+export function runWithCleanElectronBuildInputs(
+    mode: 'development' | 'packaged',
+    build: () => void,
+    root = process.cwd()
+): void {
+    assertElectronBuildInputsClean(root, mode);
+    build();
 }
 
 export function createPackagedProvenance(root: string, arch: NodeJS.Architecture, head: string): PackagedProvenance {
@@ -207,26 +224,29 @@ export function validatePackagedProvenance(
 }
 
 function buildDevShell(): void {
-    run('pnpm', ['build']);
-    run('pnpm', ['exec', 'tsc', '-p', 'electron/tsconfig.dev.json']);
-    run(process.execPath, ['scripts/buildElectronPreload.ts']);
-    run(process.execPath, ['scripts/buildNativeAddon.ts']);
-    writeProvenance(join('electron', 'out', 'ddsp-e2e-provenance.json'), [
-        join('electron', 'out', 'main.js'),
-        join('electron', 'out', 'preload.cjs'),
-    ]);
+    runWithCleanElectronBuildInputs('development', () => {
+        run('pnpm', ['build']);
+        run('pnpm', ['exec', 'tsc', '-p', 'electron/tsconfig.dev.json']);
+        run(process.execPath, ['scripts/buildElectronPreload.ts']);
+        run(process.execPath, ['scripts/buildNativeAddon.ts']);
+        writeProvenance(join('electron', 'out', 'ddsp-e2e-provenance.json'), [
+            join('electron', 'out', 'main.js'),
+            join('electron', 'out', 'preload.cjs'),
+        ]);
+    });
 }
 
 function buildPackagedShell(): void {
     if (process.platform !== 'darwin') {
         throw new Error(`Packaged DDSP CSP proof is maintained on macOS, received ${process.platform}`);
     }
-    assertPackagedBuildInputsClean();
-    run('pnpm', ['desktop:build']);
-    const provenance = createPackagedProvenance(process.cwd(), process.arch, output('git', ['rev-parse', 'HEAD']));
-    const provenancePath = join('release', 'desktop', 'ddsp-csp-e2e-provenance.json');
-    mkdirSync(join(provenancePath, '..'), { recursive: true });
-    writeFileSync(provenancePath, `${JSON.stringify(provenance)}\n`, 'utf8');
+    runWithCleanElectronBuildInputs('packaged', () => {
+        run('pnpm', ['desktop:build']);
+        const provenance = createPackagedProvenance(process.cwd(), process.arch, output('git', ['rev-parse', 'HEAD']));
+        const provenancePath = join('release', 'desktop', 'ddsp-csp-e2e-provenance.json');
+        mkdirSync(join(provenancePath, '..'), { recursive: true });
+        writeFileSync(provenancePath, `${JSON.stringify(provenance)}\n`, 'utf8');
+    });
 }
 
 function main(): void {

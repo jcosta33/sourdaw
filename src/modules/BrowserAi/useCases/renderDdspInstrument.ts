@@ -10,12 +10,13 @@ import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readRenderCache } from '../repositories/readRenderCache';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { writeRenderCache } from '../repositories/writeRenderCache';
-import { applyFades, normalizePeak, resampleTo44100 } from '../services/audioResampler';
+import { applyFades, limitPeak, resampleTo44100 } from '../services/audioResampler';
 import { type MidiNote, midiToDdspInput } from '../services/midiToDdspInput';
 import { clearActiveRender, startActiveRender } from '../stores/inferenceProgressStore';
 import { cancelQueuedRender, enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441;
+const DDSP_RENDER_CACHE_REVISION = 'conditioned-v1';
 
 type RenderDdspInstrumentInput = {
     phraseId: string;
@@ -42,6 +43,7 @@ function isAbortError(error: unknown): boolean {
 }
 
 export const renderDdspInstrument = inject({
+    computeRenderCacheKey,
     ddspModelStorage,
     inferenceWorkerBridge,
     logger,
@@ -49,7 +51,15 @@ export const renderDdspInstrument = inject({
     withDdspInstrumentLock,
     writeRenderCache,
 })(
-    ({ ddspModelStorage, inferenceWorkerBridge, logger, readRenderCache, withDdspInstrumentLock, writeRenderCache }) =>
+    ({
+        computeRenderCacheKey,
+        ddspModelStorage,
+        inferenceWorkerBridge,
+        logger,
+        readRenderCache,
+        withDdspInstrumentLock,
+        writeRenderCache,
+    }) =>
         async function renderDdspInstrument({
             phraseId,
             instrumentId,
@@ -86,7 +96,7 @@ export const renderDdspInstrument = inject({
                     const cacheKey = await computeRenderCacheKey({
                         modelId,
                         inputData,
-                        qualityParams: `ddsp-${String(nFrames)}`,
+                        qualityParams: `ddsp-${DDSP_RENDER_CACHE_REVISION}-${String(nFrames)}`,
                     });
                     throwIfAborted(signal);
                     const cached = await readRenderCache({ cacheKey });
@@ -151,7 +161,7 @@ export const renderDdspInstrument = inject({
                         fromSampleRate: result.nativeSampleRate,
                     });
                     throwIfAborted(signal);
-                    normalizePeak(audio);
+                    limitPeak(audio);
                     applyFades(audio, FADE_SAMPLES);
                     await writeRenderCache({ cacheKey, audio });
                     throwIfAborted(signal);

@@ -25,8 +25,17 @@ type CreateTfjsInferenceRequestHandlerInput = {
 };
 
 type DdspSession = {
-    maxFrameLength: number;
     model: TfjsWorkerModel;
+    settings: DdspSettings;
+};
+
+export type DdspSettings = {
+    averageMaxLoudness: number;
+    loudnessThreshold: number;
+    meanLoudness: number;
+    meanPitch: number;
+    postGain: number;
+    modelMaxFrameLength: number;
 };
 
 type SessionLoad = {
@@ -54,12 +63,21 @@ type ModelJson = {
 
 const DDSP_NATIVE_SAMPLE_RATE = 16_000;
 const SILENT_LOUDNESS_DB = -120;
+const LOUDNESS_CONFIDENCE_REDUCTION_DB = -25;
+const CONFIDENCE_SMOOTH_FRAMES = 100;
+const CONFIDENCE_THRESHOLD = 0.7;
+const HIGHEST_DDSP_PITCH_HZ = 440 * 2 ** ((110 - 69) / 12);
 
+// Conditioning constants and operation order follow Magenta's admitted DDSP
+// implementation at immutable revision 0692eb2b79681f062c6b6dd53a0361967f298caa:
+// https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts
+// https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/constants.ts
 // Magenta DDSP overlaps adjacent fixed-duration predictions by one second and
 // linearly crossfades them before trimming to the original requested duration.
-// Source: https://github.com/magenta/magenta-js/blob/master/music/src/ddsp/constants.ts
-// Chunking: https://github.com/magenta/magenta-js/blob/master/music/src/ddsp/model.ts
-// Crossfade: https://github.com/magenta/magenta-js/blob/master/music/src/ddsp/audio_utils.ts
+// Chunking and post-gain source:
+// https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts
+// Crossfade source:
+// https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/audio_utils.ts
 const DDSP_CROSSFADE_SECONDS = 1;
 
 function abortError(): Error {
@@ -78,16 +96,142 @@ function throwIfAborted(signal: AbortSignal): void {
     }
 }
 
-export function parseDdspSettings(bytes: ArrayBuffer): { maxFrameLength: number } {
-    const settings = JSON.parse(new TextDecoder().decode(bytes)) as { modelMaxFrameLength?: unknown };
-    if (
-        typeof settings.modelMaxFrameLength !== 'number' ||
-        !Number.isInteger(settings.modelMaxFrameLength) ||
-        settings.modelMaxFrameLength <= 0
-    ) {
-        throw new Error('DDSP settings omit a valid modelMaxFrameLength');
+function settingsNumber(
+    settings: Record<string, unknown>,
+    field: keyof DdspSettings,
+    minimum: number,
+    maximum: number,
+    options: { integer?: boolean; minimumExclusive?: boolean } = {}
+): number {
+    const value = settings[field];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new TypeError(`DDSP settings omit a valid ${field}`);
     }
-    return { maxFrameLength: settings.modelMaxFrameLength };
+    const minimumValid = options.minimumExclusive ? value > minimum : value >= minimum;
+    if (!minimumValid || value > maximum || (options.integer === true && !Number.isInteger(value))) {
+        throw new Error(`DDSP settings omit a valid ${field}`);
+    }
+    return value;
+}
+
+export function parseDdspSettings(bytes: ArrayBuffer): DdspSettings {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new TypeError('DDSP settings must be an object');
+    }
+    const settingsRecord: Record<string, unknown> = Object.fromEntries(Object.entries(parsed));
+    const settings: DdspSettings = {
+        averageMaxLoudness: settingsNumber(settingsRecord, 'averageMaxLoudness', SILENT_LOUDNESS_DB, 0, {
+            minimumExclusive: true,
+        }),
+        loudnessThreshold: settingsNumber(settingsRecord, 'loudnessThreshold', SILENT_LOUDNESS_DB, 0),
+        meanLoudness: settingsNumber(settingsRecord, 'meanLoudness', SILENT_LOUDNESS_DB, 0, {
+            minimumExclusive: true,
+        }),
+        meanPitch: settingsNumber(settingsRecord, 'meanPitch', 0, 110),
+        postGain: settingsNumber(settingsRecord, 'postGain', 0, 16, { minimumExclusive: true }),
+        modelMaxFrameLength: settingsNumber(settingsRecord, 'modelMaxFrameLength', 1, 250_000, {
+            integer: true,
+            minimumExclusive: true,
+        }),
+    };
+    if (settings.loudnessThreshold >= settings.meanLoudness) {
+        throw new Error('DDSP settings loudnessThreshold must be below meanLoudness');
+    }
+    if (settings.meanLoudness >= settings.averageMaxLoudness) {
+        throw new Error('DDSP settings meanLoudness must be below averageMaxLoudness');
+    }
+    return settings;
+}
+
+function average(values: readonly number[]): number {
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function smoothConfidences(confidences: Float32Array): Float32Array<ArrayBuffer> {
+    const smoothed = new Float32Array(confidences.length);
+    const prefixSums = new Float64Array(confidences.length + 1);
+    for (let index = 0; index < confidences.length; index += 1) {
+        prefixSums[index + 1] = prefixSums[index]! + confidences[index]!;
+    }
+    // TensorFlow SAME padding for an even 100-frame kernel uses 49 frames to
+    // the left and 50 to the right, excluding padding from the average.
+    for (let index = 0; index < confidences.length; index += 1) {
+        const start = Math.max(0, index - (CONFIDENCE_SMOOTH_FRAMES / 2 - 1));
+        const end = Math.min(confidences.length, index + CONFIDENCE_SMOOTH_FRAMES / 2 + 1);
+        smoothed[index] = (prefixSums[end]! - prefixSums[start]!) / (end - start);
+    }
+    return smoothed;
+}
+
+function normalizeDdspAudioFeatures(
+    pitchHz: Float32Array,
+    loudnessDb: Float32Array,
+    settings: DdspSettings
+): { pitchHz: Float32Array<ArrayBuffer>; loudnessDb: Float32Array<ArrayBuffer> } {
+    if (pitchHz.length === 0) {
+        return { pitchHz: new Float32Array(), loudnessDb: new Float32Array() };
+    }
+    const confidences = new Float32Array(pitchHz.length);
+    let maximumLoudness = -Infinity;
+    for (let index = 0; index < pitchHz.length; index += 1) {
+        const pitch = pitchHz[index]!;
+        const loudness = loudnessDb[index]!;
+        if (!Number.isFinite(pitch) || !Number.isFinite(loudness)) {
+            throw new TypeError('DDSP input features must be finite');
+        }
+        confidences[index] = pitch > 0 && loudness > SILENT_LOUDNESS_DB ? 1 : 0;
+        maximumLoudness = Math.max(maximumLoudness, loudness);
+    }
+
+    const shiftedLoudness = Array.from(
+        loudnessDb,
+        (loudness) => loudness + (settings.averageMaxLoudness - maximumLoudness)
+    );
+    const aboveThreshold = shiftedLoudness.filter((loudness) => loudness > settings.loudnessThreshold);
+    const shiftedMean = average(aboveThreshold.length > 0 ? aboveThreshold : shiftedLoudness);
+    const adjustedLoudness = shiftedLoudness.map((loudness) =>
+        Math.min(
+            settings.averageMaxLoudness,
+            Math.max(SILENT_LOUDNESS_DB, loudness + (settings.meanLoudness - shiftedMean))
+        )
+    );
+    const oldMinimum = adjustedLoudness.reduce((minimum, loudness) => Math.min(minimum, loudness), Infinity);
+    const oldRange = shiftedMean - oldMinimum;
+    if (!Number.isFinite(oldRange) || oldRange <= 0) {
+        throw new Error('DDSP checkpoint conditioning produced an invalid loudness range');
+    }
+    const targetRange = settings.meanLoudness - SILENT_LOUDNESS_DB;
+    const smoothedConfidences = smoothConfidences(confidences);
+    const normalizedLoudness = Float32Array.from(adjustedLoudness, (loudness, index) => {
+        const rescaled = ((loudness - oldMinimum) / oldRange) * targetRange + SILENT_LOUDNESS_DB;
+        const confidenceAdjustment =
+            smoothedConfidences[index]! <= CONFIDENCE_THRESHOLD ? LOUDNESS_CONFIDENCE_REDUCTION_DB : 0;
+        return Math.max(SILENT_LOUDNESS_DB, rescaled + confidenceAdjustment);
+    });
+
+    const midiPitches = Array.from(pitchHz, (pitch) => (pitch > 0 ? 69 + 12 * Math.log2(pitch / 440) : 0));
+    const selectedPitches = midiPitches.filter(
+        (_pitch, index) =>
+            confidences[index]! <= CONFIDENCE_THRESHOLD || normalizedLoudness[index]! > settings.loudnessThreshold
+    );
+    const pitchMean = average(selectedPitches.length > 0 ? selectedPitches : midiPitches);
+    const octaveShift = Math.round((settings.meanPitch - pitchMean) / 12);
+    const octaveMultiplier = 2 ** octaveShift;
+    const normalizedPitch = Float32Array.from(pitchHz, (pitch) =>
+        pitch > 0 ? Math.min(HIGHEST_DDSP_PITCH_HZ, pitch * octaveMultiplier) : 0
+    );
+    return { pitchHz: normalizedPitch, loudnessDb: normalizedLoudness };
+}
+
+function applyPostGain(audio: Float32Array, postGain: number): void {
+    for (let index = 0; index < audio.length; index += 1) {
+        const amplified = audio[index]! * postGain;
+        if (!Number.isFinite(amplified)) {
+            throw new TypeError('DDSP model returned non-finite audio');
+        }
+        audio[index] = amplified;
+    }
 }
 
 function firstTensor(
@@ -345,7 +489,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                     if (disposed || load.subscribers.size === 0) {
                         throw abortError();
                     }
-                    const session = { maxFrameLength: settings.maxFrameLength, model: loadedModel };
+                    const session = { model: loadedModel, settings };
                     sessions.set(request.modelId, session);
                     loadedModel = undefined;
                     return session;
@@ -443,16 +587,25 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         const tf = await getTfjs();
         const backend = requireWebgpu(tf);
         const overlapSamples = Math.round(DDSP_CROSSFADE_SECONDS * DDSP_NATIVE_SAMPLE_RATE);
+        const normalized = normalizeDdspAudioFeatures(request.pitchHz, request.loudnessDb, session.settings);
         let audio: Float32Array<ArrayBuffer> = new Float32Array();
         for (const { start, end } of modelFrameChunks(
-            request.pitchHz.length,
-            session.maxFrameLength,
+            normalized.pitchHz.length,
+            session.settings.modelMaxFrameLength,
             request.frameRate
         )) {
             throwIfAborted(signal);
-            const pitch = tf.tensor1d(paddedFrames(request.pitchHz, start, end, session.maxFrameLength, -1));
+            const pitch = tf.tensor1d(
+                paddedFrames(normalized.pitchHz, start, end, session.settings.modelMaxFrameLength, -1)
+            );
             const loudness = tf.tensor1d(
-                paddedFrames(request.loudnessDb, start, end, session.maxFrameLength, SILENT_LOUDNESS_DB)
+                paddedFrames(
+                    normalized.loudnessDb,
+                    start,
+                    end,
+                    session.settings.modelMaxFrameLength,
+                    SILENT_LOUDNESS_DB
+                )
             );
             let output: TfjsWorkerTensor | undefined;
             try {
@@ -470,6 +623,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         throwIfAborted(signal);
         const requestedSamples = Math.round((request.pitchHz.length / request.frameRate) * DDSP_NATIVE_SAMPLE_RATE);
         audio = exactLength(audio, requestedSamples);
+        applyPostGain(audio, session.settings.postGain);
         throwIfAborted(signal);
         input.postResponse(
             {

@@ -7,9 +7,24 @@ import { _electron as electron, expect, test } from '@playwright/test';
 
 import { terminateChildProcess, withIsolatedElectronUserData } from '../../scripts/electronE2EIsolation';
 
+type DdspAudioSignature = {
+    activeRatio: number;
+    crestFactor: number;
+    meanAbsolute: number;
+    middleRms: number;
+    peak: number;
+    rms: number;
+    zeroCrossingRate: number;
+};
+
 type DdspProbe = {
     prepare: () => Promise<{ ready: boolean; artifactCount: number }>;
-    renderOffline: () => Promise<{ backend: string; pcmLength: number; finite: boolean }>;
+    renderOffline: () => Promise<{
+        backend: string;
+        pcmLength: number;
+        finite: boolean;
+        signature: DdspAudioSignature;
+    }>;
 };
 type Provenance = { head: string; files: Record<string, string> };
 
@@ -42,6 +57,22 @@ function assertCurrentDevShellOutput(): void {
     expect(provenance.files['electron/out/preload.cjs']).toBe(digest(PRELOAD_ENTRY));
 }
 
+function expectConditionedAudioSignature(signature: DdspAudioSignature): void {
+    expect(signature.rms).toBeGreaterThan(0.005);
+    expect(signature.rms).toBeLessThan(0.05);
+    expect(signature.peak).toBeGreaterThan(0.02);
+    expect(signature.peak).toBeLessThan(0.2);
+    expect(signature.meanAbsolute).toBeGreaterThan(0.003);
+    expect(signature.meanAbsolute).toBeLessThan(0.03);
+    expect(signature.middleRms).toBeGreaterThan(0.005);
+    expect(signature.middleRms).toBeLessThan(0.04);
+    expect(signature.activeRatio).toBeGreaterThan(0.9);
+    expect(signature.crestFactor).toBeGreaterThan(3.5);
+    expect(signature.crestFactor).toBeLessThan(6.5);
+    expect(signature.zeroCrossingRate).toBeGreaterThan(0.04);
+    expect(signature.zeroCrossingRate).toBeLessThan(0.08);
+}
+
 test('Electron renderer recreates the WebGPU DDSP worker offline from OPFS', async () => {
     assertCurrentDevShellOutput();
 
@@ -69,7 +100,8 @@ test('Electron renderer recreates the WebGPU DDSP worker offline from OPFS', asy
                 .route('https://storage.googleapis.com/magentadata/**', (route) => route.abort('blockedbyclient'));
 
             const rendered = await page.evaluate(() => window.__SOURDAW_DDSP_PROBE__!.renderOffline());
-            expect(rendered).toEqual({ backend: 'webgpu', pcmLength: 22_050, finite: true });
+            expect(rendered).toMatchObject({ backend: 'webgpu', pcmLength: 22_050, finite: true });
+            expectConditionedAudioSignature(rendered.signature);
         },
         shutdown: async (app) => {
             const child = app.process();

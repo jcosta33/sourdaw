@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertElectronBuildInputsClean,
     assertPackagedBuildInputsClean,
     createPackagedProvenance,
+    runWithCleanElectronBuildInputs,
     validatePackagedProvenance,
 } from '../runElectronE2E';
 
@@ -99,6 +101,76 @@ describe('Electron packaged E2E provenance', () => {
 
             write(root, 'src/main.ts', 'export const value = 2;\n');
             expect(() => assertPackagedBuildInputsClean(root)).toThrow(/dirty packaged-build inputs/u);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('checks development inputs before running the build and rejects dirty renderer files', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-development-inputs-'));
+        try {
+            execFileSync('git', ['init'], { cwd: root });
+            execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
+            execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
+            write(root, '.gitignore', 'dist/\nelectron/out/\n');
+            write(root, 'src/main.ts', 'export const value = 1;\n');
+            write(root, 'public/runtime.txt', 'runtime\n');
+            write(root, 'package.json', '{}\n');
+            execFileSync('git', ['add', '.'], { cwd: root });
+            execFileSync('git', ['commit', '-m', 'fixture'], { cwd: root });
+
+            let buildCount = 0;
+            runWithCleanElectronBuildInputs(
+                'development',
+                () => {
+                    buildCount += 1;
+                },
+                root
+            );
+            expect(buildCount).toBe(1);
+
+            write(root, 'src/main.ts', 'export const value = 2;\n');
+            write(root, 'public/untracked.txt', 'untracked\n');
+            expect(() =>
+                runWithCleanElectronBuildInputs(
+                    'development',
+                    () => {
+                        buildCount += 1;
+                    },
+                    root
+                )
+            ).toThrow(/dirty development-build inputs/u);
+            expect(buildCount).toBe(1);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects dirty or untracked root index.html in both build modes while allowing ignored outputs', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-index-input-'));
+        try {
+            execFileSync('git', ['init'], { cwd: root });
+            execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
+            execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
+            write(root, '.gitignore', 'dist/\nelectron/out/\n');
+            write(root, 'package.json', '{}\n');
+            execFileSync('git', ['add', '.'], { cwd: root });
+            execFileSync('git', ['commit', '-m', 'fixture'], { cwd: root });
+
+            write(root, 'dist/index.html', 'generated');
+            write(root, 'electron/out/main.js', 'generated');
+            expect(() => assertElectronBuildInputsClean(root, 'development')).not.toThrow();
+            expect(() => assertElectronBuildInputsClean(root, 'packaged')).not.toThrow();
+
+            write(root, 'index.html', '<main>untracked build input</main>');
+            expect(() => assertElectronBuildInputsClean(root, 'development')).toThrow(/\?\? index\.html/u);
+            expect(() => assertElectronBuildInputsClean(root, 'packaged')).toThrow(/\?\? index\.html/u);
+
+            execFileSync('git', ['add', 'index.html'], { cwd: root });
+            execFileSync('git', ['commit', '-m', 'track index'], { cwd: root });
+            write(root, 'index.html', '<main>dirty build input</main>');
+            expect(() => assertElectronBuildInputsClean(root, 'development')).toThrow(/index\.html/u);
+            expect(() => assertElectronBuildInputsClean(root, 'packaged')).toThrow(/index\.html/u);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

@@ -329,6 +329,7 @@
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
+                "index.html",
                 "package.json",
                 "pnpm-lock.yaml",
                 "public/legal/Apache-2.0.txt",
