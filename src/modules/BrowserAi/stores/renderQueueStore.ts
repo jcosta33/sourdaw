@@ -32,6 +32,13 @@ export const renderQueueStore = createStore<RenderQueueState>({
     },
 });
 
+export function isCurrentRenderRequest(phraseId: string, requestId: string): boolean {
+    return (
+        renderQueueStore.value?.entries.some((entry) => entry.phraseId === phraseId && entry.requestId === requestId) ??
+        false
+    );
+}
+
 export function enqueueRender(entry: RenderQueueEntry): void {
     renderQueueStore.update((state) => {
         if (!state) {

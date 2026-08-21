@@ -31,11 +31,22 @@ import { writeRenderCache } from '../repositories/writeRenderCache';
 import { resampleTo44100, applyFades } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
-import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
+import {
+    enqueueRender,
+    isCurrentRenderRequest,
+    markRenderComplete,
+    updateRenderStatus,
+} from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441; // 10 ms at 44.1 kHz
 const KOKORO_MODEL_ID = KOKORO_MODEL_ARTIFACT.id;
 const KOKORO_NATIVE_SAMPLE_RATE = 24000;
+
+function assertCurrentRenderRequest(phraseId: string, requestId: string): void {
+    if (!isCurrentRenderRequest(phraseId, requestId)) {
+        throw new Error('Kokoro render was cancelled or superseded');
+    }
+}
 
 /** In-memory cache: voiceId → full float32 array (N × 256 floats, reshaped as flat) */
 const voiceEmbeddingCache = new Map<string, Float32Array>();
@@ -136,8 +147,10 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     inputData,
                     qualityParams: 'kokoro-q8',
                 });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 const cached = await readRenderCache({ cacheKey });
+                assertCurrentRenderRequest(phraseId, requestId);
                 if (cached) {
                     logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
                     const provenance: RenderProvenance = {
@@ -170,16 +183,19 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     sha256: KOKORO_MODEL_ARTIFACT.sha256,
                     sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
                 });
+                assertCurrentRenderRequest(phraseId, requestId);
                 if (!modelDataPort) {
                     throw new Error('Kokoro model is absent or failed verification; download it in AI Settings');
                 }
                 await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelDataPort });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 // 2. Tokenize text on the main thread
                 const { inputIds, tokenCount } = textToKokoroInputIds(text);
 
                 // 3. Fetch voice embedding (CDN, cached in memory)
                 const style = await fetchVoiceStyle(voice, tokenCount);
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 // 4. Run Kokoro ONNX inference in the worker
                 //    inputIds and style buffers are transferred (zero-copy) — do not use after this call.
@@ -189,6 +205,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     style,
                     speed,
                 });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 if (result.audio.length === 0) {
                     throw new Error(
@@ -201,6 +218,7 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     audio: result.audio,
                     fromSampleRate: KOKORO_NATIVE_SAMPLE_RATE,
                 });
+                assertCurrentRenderRequest(phraseId, requestId);
 
                 // 6. Time-stretch to target duration if requested
                 let finalAudio = resampled;
@@ -213,12 +231,14 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                             audio: resampled,
                             fromSampleRate: Math.round(44100 * stretchRatio),
                         });
+                        assertCurrentRenderRequest(phraseId, requestId);
                     }
                 }
 
                 applyFades(finalAudio, FADE_SAMPLES);
 
                 await writeRenderCache({ cacheKey, audio: finalAudio });
+                assertCurrentRenderRequest(phraseId, requestId);
                 markRenderComplete(phraseId, requestId, cacheKey);
 
                 const provenance: RenderProvenance = {
