@@ -16,6 +16,8 @@ export type ProjectStoreState = {
     updatedAt: number;
     dirty: boolean;
     loading: boolean;
+    /** Ephemeral publication barrier while a newly minted identity is becoming durable. */
+    identityMigrationPending?: boolean;
     keyRoot: number; // 0-11 (C=0)
     scaleName: string;
     /** Current project-wide tuning table (128 frequencies).
@@ -40,6 +42,7 @@ export const defaultProjectStoreState: ProjectStoreState = {
     updatedAt: DEFAULT_PROJECT_CREATED_AT,
     dirty: false,
     loading: true,
+    identityMigrationPending: false,
     keyRoot: 0,
     scaleName: 'chromatic',
     tuning: {
@@ -60,7 +63,7 @@ const DURABLE_PROJECT_META_KEYS = [
     'tuning',
     'productionBrief',
 ] as const;
-const TRANSIENT_PROJECT_META_KEYS = ['dirty', 'loading', 'initialized'] as const;
+const TRANSIENT_PROJECT_META_KEYS = ['dirty', 'loading', 'identityMigrationPending', 'initialized'] as const;
 const PROJECT_STORE_STATE_KEYS = [...DURABLE_PROJECT_META_KEYS, ...TRANSIENT_PROJECT_META_KEYS] as const;
 const TUNING_KEYS = ['name', 'frequencies'] as const;
 
@@ -85,11 +88,17 @@ type HasProjectStoreStateValuesInput = {
     state: ProjectStoreState;
 };
 
-type ProjectTransientState = Pick<ProjectStoreState, 'dirty' | 'loading' | 'initialized'>;
+type ProjectTransientState = {
+    dirty: boolean;
+    loading: boolean;
+    identityMigrationPending: boolean;
+    initialized: boolean;
+};
 
 const defaultProjectTransientState: ProjectTransientState = {
     dirty: defaultProjectStoreState.dirty,
     loading: defaultProjectStoreState.loading,
+    identityMigrationPending: defaultProjectStoreState.identityMigrationPending ?? false,
     initialized: defaultProjectStoreState.initialized,
 };
 
@@ -245,13 +254,19 @@ function get_valid_transient_state(value: unknown): ProjectTransientState | null
         return null;
     }
 
-    if (!is_boolean(value.dirty) || !is_boolean(value.loading) || !is_boolean(value.initialized)) {
+    if (
+        !is_boolean(value.dirty) ||
+        !is_boolean(value.loading) ||
+        !is_boolean(value.identityMigrationPending) ||
+        !is_boolean(value.initialized)
+    ) {
         return null;
     }
 
     return {
         dirty: value.dirty,
         loading: value.loading,
+        identityMigrationPending: value.identityMigrationPending,
         initialized: value.initialized,
     };
 }
@@ -268,6 +283,7 @@ function normalize_project_store_state(
 
     next_state.dirty = transient_state.dirty;
     next_state.loading = transient_state.loading;
+    next_state.identityMigrationPending = transient_state.identityMigrationPending;
     next_state.initialized = transient_state.initialized;
 
     apply_name(value, next_state);

@@ -141,6 +141,28 @@ describe('buildProjectData', () => {
         expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
     });
 
+    it('refuses to serialize while canonical identity persistence is pending', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        projectStoreMock.value.identityMigrationPending = true;
+
+        await expect(buildProjectData({ includeAudioBuffers: false })).resolves.toBeNull();
+        expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed identity before reaching the audio exporter', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        projectStoreMock.value.projectId = 'not-a-uuid';
+
+        await expect(buildProjectData({ includeAudioBuffers: true })).resolves.toBeNull();
+        expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
+    });
+
     // Presence pin for the assertion above (ADR 0015 rule 4): the opt-in shape
     // — the explicit `.sourdaw` export, now the only caller that asks for it —
     // really does reach the exporter and really does embed what it returns.

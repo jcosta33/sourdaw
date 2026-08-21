@@ -20,6 +20,7 @@ export function createFreshProjectMetadata(input: CreateFreshProjectMetadataInpu
         updatedAt: createdAt,
         dirty: false,
         loading: input.loading,
+        identityMigrationPending: false,
         keyRoot: input.keyRoot ?? 0,
         scaleName: input.scaleName ?? 'chromatic',
         tuning: {

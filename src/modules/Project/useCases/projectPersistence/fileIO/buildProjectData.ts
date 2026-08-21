@@ -136,6 +136,7 @@ export async function buildProjectData({
         !midi ||
         !project ||
         !arrState ||
+        project.identityMigrationPending ||
         !isCanonicalProjectId(project.projectId)
     ) {
         return null;

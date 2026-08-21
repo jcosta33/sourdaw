@@ -294,6 +294,13 @@ describe('agent project model contract', () => {
         expect(JSON.stringify(contract)).not.toContain('channelData');
     });
 
+    it('refuses a no-input contract while project persistence withholds a snapshot', async () => {
+        buildProjectDataMock.mockResolvedValueOnce(null);
+
+        await expect(getAgentProjectModelContract()).resolves.toBeNull();
+        expect(buildProjectDataMock).toHaveBeenCalledOnce();
+    });
+
     it('projects every AC-002 semantic without exposing large media bytes', async () => {
         const contract = await getAgentProjectModelContract({ projectData: projectData() });
 

@@ -112,6 +112,7 @@ describe('projectStore', () => {
             ...create_valid_meta(),
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
     });
@@ -127,6 +128,7 @@ describe('projectStore', () => {
             projectId: undefined,
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
     });
@@ -144,6 +146,7 @@ describe('projectStore', () => {
                 projectId,
                 dirty: false,
                 loading: true,
+                identityMigrationPending: false,
                 initialized: false,
             });
             expect(isCanonicalProjectId(projectStore.value?.projectId)).toBe(false);
@@ -165,6 +168,7 @@ describe('projectStore', () => {
             ...create_valid_meta(),
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
     });
@@ -174,6 +178,7 @@ describe('projectStore', () => {
             ...create_default_state(),
             dirty: true,
             loading: false,
+            identityMigrationPending: false,
             initialized: true,
         });
         await flush_pending_frame();
@@ -188,6 +193,7 @@ describe('projectStore', () => {
             ...changed_meta,
             dirty: true,
             loading: false,
+            identityMigrationPending: false,
             initialized: true,
         });
     });
@@ -214,6 +220,7 @@ describe('projectStore', () => {
             updatedAt: valid_meta.updatedAt,
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             keyRoot: defaultProjectStoreState.keyRoot,
             scaleName: valid_meta.scaleName,
             tuning: valid_meta.tuning,
@@ -259,6 +266,7 @@ describe('projectStore', () => {
                 ...valid_meta,
                 dirty: false,
                 loading: true,
+                identityMigrationPending: false,
                 tuning: defaultProjectStoreState.tuning,
                 initialized: false,
             });
@@ -275,6 +283,7 @@ describe('projectStore', () => {
             ...create_valid_meta(),
             dirty: false,
             loading: true,
+            identityMigrationPending: false,
             initialized: false,
         });
         expect(mutation_count).toBe(0);

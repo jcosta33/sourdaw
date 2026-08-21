@@ -317,6 +317,7 @@ export async function replaceProjectData({
                     tuning: data.meta.tuning,
                     productionBrief: data.meta.productionBrief ?? createDefaultProductionBrief(data.meta.createdAt),
                     dirty: false,
+                    identityMigrationPending: false,
                     // Still loading: `batchStoreUpdates` defers subscriber
                     // notification to the end of the batch, so the hydration
                     // writes above have not reached their subscribers yet. The
