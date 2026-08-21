@@ -81,13 +81,18 @@ describe('cancelRender', () => {
         // Active render says DDSP, but there is NO matching queue entry (stale/missing lookup).
         // The old code fell to the ONNX terminate branch here, killing unrelated ONNX renders.
         seedActiveRender({ requestId: 'req-T', phraseId: 'phrase-T', pipeline: 'ddsp' });
-        // renderQueueStore intentionally left empty.
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: { 'phrase-T': 'rendering-browser' },
+        });
 
         cancelRender({ phraseId: 'phrase-T', requestId: 'req-T' });
 
         expect(cancelTfjsRequest).toHaveBeenCalledWith('req-T');
         expect(cancelOnnxRequest).not.toHaveBeenCalled();
         expect(terminateOnnxWorker).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-T']).toBe('not-rendered');
     });
 
     it('does NOT terminate the ONNX worker when the pipeline is unknown (no active render, no queue entry)', () => {

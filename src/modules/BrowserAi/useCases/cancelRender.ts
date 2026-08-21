@@ -42,7 +42,7 @@ export const cancelRender = inject({ logger })(
             }
             // Unknown pipeline → no worker teardown (avoid collateral cancellation).
 
-            cancelQueuedRender(phraseId, requestId);
+            cancelQueuedRender(phraseId, requestId, activeRender?.phraseId === phraseId);
             clearActiveRender(requestId);
         }
 );

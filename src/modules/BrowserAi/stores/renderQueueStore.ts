@@ -103,16 +103,19 @@ export function markPhraseStale(phraseId: string): void {
     });
 }
 
-export function cancelQueuedRender(phraseId: string, requestId: string): void {
+export function cancelQueuedRender(phraseId: string, requestId: string, hasActiveRender = false): void {
     renderQueueStore.update((state) => {
         if (!state) {
             return state;
         }
-        const ownsPhrase = state.entries.some((event) => event.phraseId === phraseId && event.requestId === requestId);
-        if (!ownsPhrase) {
+        const phraseEntries = state.entries.filter((event) => event.phraseId === phraseId);
+        const ownsPhrase = phraseEntries.some((event) => event.requestId === requestId);
+        if (!ownsPhrase && (phraseEntries.length > 0 || !hasActiveRender)) {
             return state;
         }
-        const entries = state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId);
+        const entries = ownsPhrase
+            ? state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId)
+            : state.entries;
         return {
             ...state,
             entries,
