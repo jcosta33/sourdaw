@@ -11,6 +11,7 @@ import { type DragEvent, type ReactElement, useEffect, useRef, useState } from '
 
 import { GripVertical, Play, Square } from 'lucide-react';
 
+import { Row } from '#/components/layout';
 import {
     cachePreviewAudioBuffer,
     playCachedAudioBufferPreview,
@@ -132,8 +133,9 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     };
 
     return (
-        <div
-            className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-surface-overlay/50 border border-border/20 cursor-grab active:cursor-grabbing"
+        <Row
+            gap={1.5}
+            className="px-1.5 py-1 rounded bg-surface-overlay/50 border border-border/20 cursor-grab active:cursor-grabbing"
             draggable
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
@@ -154,6 +156,6 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
             <span className="text-[9px] text-muted-foreground/60 flex-1 truncate">{name}</span>
             <span className="text-[9px] text-muted-foreground/40 tabular-nums">{durationSec.toFixed(1)}s</span>
             <GripVertical className="size-3 text-muted-foreground/30 shrink-0" aria-hidden="true" />
-        </div>
+        </Row>
     );
 };
