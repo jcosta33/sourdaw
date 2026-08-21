@@ -1,3 +1,5 @@
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../../models/ProjectContext';
 import { type WholeProjectVibeMixCapability, type WholeProjectVibeMixPlan } from '../../models/WholeProjectVibeMixPlan';
 
@@ -100,7 +102,9 @@ export function getWholeProjectVibeMixScope(
                 track.automationMode === 'off' ||
                 !Number.isFinite(track.gain) ||
                 track.gain <= 0 ||
-                track.gain * 10 ** (IMPACT_GAIN_DB / 20) > 1 ||
+                // The fader's own ceiling, matching what
+                // `handleAutomateTrackGainRange` admits.
+                track.gain * 10 ** (IMPACT_GAIN_DB / 20) > FADER_MAX_GAIN ||
                 (context.automationLanes ?? []).some(
                     (lane) =>
                         lane.id === `auto-gain-${encodeURIComponent(track.id)}` ||

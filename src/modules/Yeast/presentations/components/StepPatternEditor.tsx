@@ -15,6 +15,8 @@
  */
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { type ArpStep, type NoteSelector, type StepType } from '../../models/ArpPattern';
 
 type Props = {
@@ -84,9 +86,9 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
     };
 
     return (
-        <div className="flex flex-col gap-1">
+        <Stack gap={1}>
             {/* Step grid */}
-            <div className="flex gap-px overflow-x-auto pb-1">
+            <Row align="stretch" className="gap-px overflow-x-auto pb-1">
                 {steps.map((step, index) => {
                     const isPlaying = index === currentStep;
                     const velNorm = step.velocity / 127;
@@ -215,9 +217,9 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                 >
                     +
                 </button>
-            </div>
+            </Row>
             {/* Length control */}
-            <div className="flex items-center gap-2 px-1">
+            <Row gap={2} className="px-1">
                 <span className="text-[7px] text-muted-foreground">Steps: {steps.length}</span>
                 <button
                     type="button"
@@ -243,7 +245,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                         {len}
                     </button>
                 ))}
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };

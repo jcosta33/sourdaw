@@ -1,5 +1,7 @@
 import { type ChangeEvent, type FormEvent, type ReactElement, useId, useState } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { deleteYeastGrooveTemplate } from '../../useCases/deleteYeastGrooveTemplate';
 import { renameYeastGrooveTemplate } from '../../useCases/renameYeastGrooveTemplate';
 
@@ -138,8 +140,8 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
     };
 
     return (
-        <div className="flex flex-col gap-1 px-1 pb-1">
-            <form className="flex gap-1" onSubmit={handleRename}>
+        <Stack gap={1} className="px-1 pb-1">
+            <Row as="form" align="stretch" gap={1} onSubmit={handleRename}>
                 <label className="sr-only" htmlFor={nameInputId}>
                     Groove template name
                 </label>
@@ -152,11 +154,11 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
                 <button type="submit" disabled={renameState.pending}>
                     {renameState.pending ? 'Renaming…' : 'Rename'}
                 </button>
-            </form>
+            </Row>
             <button type="button" disabled={renameState.pending} onClick={handleDelete}>
                 Delete template
             </button>
             {error ? <p role="alert">{error}</p> : null}
-        </div>
+        </Stack>
     );
 };

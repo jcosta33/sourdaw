@@ -1,13 +1,15 @@
 /**
- * Level laws: the shared dB ↔ linear-gain conversion and the send-control
- * taper (FX-7).
+ * Level laws: the shared dB ↔ linear-gain conversion, the fader ceiling, and
+ * the send-control taper (FX-7).
  *
  * Two distinct things are easy to conflate here:
  *
  * - **Stored level** (`Send.level`, `Track.gain`) is, and stays, a **linear
  *   amplitude multiplier** — it is wire format written into project truth and
  *   handed straight to `GainNode.gain`. Nothing in this module changes what a
- *   stored value means, so existing projects render bit-identically.
+ *   stored value means, so existing projects render bit-identically; a
+ *   project saved with `gain: 0.8` keeps `0.8`, and only what a control
+ *   *displays* for that value can change.
  * - **Control position** is what a slider reports (0–100). Mapping that
  *   position linearly onto gain is the ergonomics defect FX-7 names: half the
  *   travel is spent between −6 dB and 0 dB, while the entire useful bottom of
@@ -26,33 +28,6 @@
 /** Control travel below unity, in decibels. −60 dB is effectively silent. */
 export const SEND_MIN_DB = -60;
 
-/**
- * The fader ceiling, as a linear amplitude multiplier. The track fader tops out
- * at unity (0 dBFS): there is no make-up gain above the fader, by design.
- *
- * This is a **product invariant, not an implementation detail** — every writer
- * of a track's fader gain must apply it, or a value the fader itself cannot
- * produce reaches the output. #789 found the first half of that divergence (a
- * stored gain above unity rendered louder on export than it ever played back)
- * and fixed the static strip gain; {@link clampFaderGain} is the shared law
- * both runtimes now route through, including gain *automation*, which
- * escaped the offline clamp because it writes the AudioParam directly rather
- * than through the strip's initial value.
- */
-export const FADER_MAX_GAIN = 1;
-
-/**
- * Clamp a linear amplitude to the fader's range, `[0, {@link FADER_MAX_GAIN}]`.
- * The floor is a hard 0 — negative amplitude is a phase inversion, never a
- * level — and the ceiling is unity.
- */
-export function clampFaderGain(gain: number): number {
-    if (!(gain > 0)) {
-        return 0;
-    }
-    return Math.min(FADER_MAX_GAIN, gain);
-}
-
 /** Linear amplitude gain for a level in decibels. `dbToGain(0) === 1`. */
 export function dbToGain(db: number): number {
     return 10 ** (db / 20);
@@ -68,6 +43,120 @@ export function gainToDb(gain: number): number {
     }
     return 20 * Math.log10(gain);
 }
+
+/**
+ * How a dB readout renders its digits. The *law* — the conversion and the
+ * `-∞` branch — never varies; only the presentation does.
+ */
+export type GainDbFormat = {
+    /** Digits after the decimal point. Defaults to one. */
+    fractionDigits?: number;
+    /**
+     * Drop trailing zeros, so a whole number reads as prose (`0 dB`) rather
+     * than as a meter (`0.00 dB`). Defaults to `false`: a mixer readout wants
+     * the fixed width so the number does not jitter as the fader moves, while
+     * a sentence wants the short form.
+     */
+    trimTrailingZeros?: boolean;
+};
+
+/**
+ * The shared fader dB readout: `-∞` at silence, one decimal everywhere else.
+ * Every fader-style dB readout in the mixer (track strip, master strip)
+ * formats through here rather than through its own arithmetic — a hand-rolled
+ * formula per strip is how the track strip ended up reporting "0.0 dB" at a
+ * gain of 0.8 (true value ≈ −1.9 dB) and the master strip disagreed with it
+ * on a different wrong number.
+ *
+ * The AI confirmation prose formats through here too, at two trimmed
+ * decimals. Its own copy of this arithmetic was a fourth statement of the
+ * same law, free to drift from the three the mixer already shares — and a
+ * confirmation sentence that disagrees with the strip the user is about to
+ * look at is worse than no sentence.
+ */
+export function formatGainDb(gain: number, format: GainDbFormat = {}): string {
+    const { fractionDigits = 1, trimTrailingZeros = false } = format;
+    const db = gainToDb(gain);
+    if (!Number.isFinite(db)) {
+        return '-∞';
+    }
+    const fixed = db.toFixed(fractionDigits);
+    return trimTrailingZeros ? String(Number(fixed)) : fixed;
+}
+
+/**
+ * Headroom a fader allows above unity, in decibels. Every shipping DAW allows
+ * some: Ableton Live and Logic stop at +6 dB, Pro Tools and Reaper go further,
+ * to +12 dB. Sourdaw follows the conservative end of that convention.
+ */
+export const FADER_HEADROOM_DB = 6;
+
+/**
+ * The fader ceiling, as a linear amplitude multiplier: `+{@link
+ * FADER_HEADROOM_DB} dB` of headroom above unity, not unity itself — a track
+ * fader can produce make-up gain, the same as the reference DAWs above.
+ *
+ * This is a **product invariant, not an implementation detail** — every writer
+ * of a track's fader gain must apply it, or a value the fader itself cannot
+ * produce reaches the output. #789 found the first half of that divergence (a
+ * stored gain above unity rendered louder on export than it ever played back)
+ * and fixed the static strip gain; {@link clampFaderGain} is the shared law
+ * both runtimes now route through, including gain *automation*, which
+ * escaped the offline clamp because it writes the AudioParam directly rather
+ * than through the strip's initial value.
+ */
+export const FADER_MAX_GAIN = dbToGain(FADER_HEADROOM_DB);
+
+/**
+ * {@link FADER_MAX_GAIN} as the decimal an LLM-facing schema advertises.
+ *
+ * A tool description that names a ceiling is a *contract with the model*, and
+ * the model will not ask for a value it has been told is out of range. Every
+ * such description therefore derives its number from here rather than typing
+ * one: the literals this constant replaced still read `1.0` after the ceiling
+ * moved to `+{@link FADER_HEADROOM_DB} dB`, so the widened acceptor was
+ * unreachable from the tool path — the model asked for `1.0` and got unity
+ * when the user asked for make-up gain.
+ *
+ * Three decimals, rounded down by truncation of the trailing digits, so the
+ * advertised value is always one the acceptor honours.
+ */
+export const FADER_MAX_GAIN_LABEL = (Math.floor(FADER_MAX_GAIN * 1000) / 1000).toFixed(3);
+
+/**
+ * The range clause every fader-gain tool schema advertises, stating the real
+ * contract rather than a ceiling of unity: the top of the travel, where unity
+ * sits inside it, and the default a new track carries.
+ */
+export const FADER_GAIN_RANGE_DESCRIPTION = `0.0 to about ${FADER_MAX_GAIN_LABEL} (1.0 = unity, 0.8 = default)`;
+
+/**
+ * Clamp a linear amplitude to the fader's range, `[0, {@link FADER_MAX_GAIN}]`.
+ * The floor is a hard 0 — negative amplitude is a phase inversion, never a
+ * level — and the ceiling is the fader's headroom, not unity.
+ */
+export function clampFaderGain(gain: number): number {
+    if (!(gain > 0)) {
+        return 0;
+    }
+    return Math.min(FADER_MAX_GAIN, gain);
+}
+
+/**
+ * Ceiling for a VCA group's own gain multiplier, before it folds into a
+ * member track's fader. Deliberately **not** derived from {@link
+ * FADER_HEADROOM_DB} — a VCA multiplier is not a fader position, and the
+ * render fold already clamps the *composed* result to {@link
+ * FADER_MAX_GAIN} regardless of how large the raw multiplier is
+ * (`createOfflineTrackStrip.ts`'s `clampFaderGain(track.gain *
+ * vcaMultiplier)`, `graph.rs`'s `folded.min(fader_max_gain())`). This is the
+ * bound the engine's actual VCA write path enforces on the multiplier
+ * itself — `setVcaGain.ts` clamps to this same constant — so any AI-facing
+ * check of a raw VCA gain value matches it, rather than being either looser
+ * than what a person can never reach or stricter than what a person's own
+ * slider already allows.
+ */
+export const VCA_MAX_GAIN = 2;
 
 /**
  * Maps a 0–100 send-control position onto the stored linear send level.

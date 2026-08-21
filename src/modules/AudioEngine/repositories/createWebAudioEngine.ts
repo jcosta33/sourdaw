@@ -6,6 +6,7 @@ import {
 } from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -1162,7 +1163,11 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.masterGainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, value)), this.context.currentTime, 0.01);
+        this.masterGainNode.gain.setTargetAtTime(
+            Math.max(0, Math.min(FADER_MAX_GAIN, value)),
+            this.context.currentTime,
+            0.01
+        );
     }
 
     public getMasterGain(): number {

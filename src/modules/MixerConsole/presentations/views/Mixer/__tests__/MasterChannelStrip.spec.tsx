@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
 // Mock hooks
@@ -30,10 +32,11 @@ vi.mock('#/components/daw/DawChannelStripShell', () => ({
 }));
 
 vi.mock('#/components/daw/Fader', () => ({
-    Fader: ({ value, onChange }: { value: number; onChange: (val: number) => void }) => (
+    Fader: ({ value, onChange, max }: { value: number; onChange: (val: number) => void; max?: number }) => (
         <input
             type="range"
             data-testid="fader"
+            data-max={max}
             value={value}
             onChange={(event) => onChange(parseFloat(event.target.value))}
         />
@@ -75,7 +78,10 @@ describe('MasterChannelStrip', () => {
 
     it('should display correct dB value for gain 80', () => {
         render(<MasterChannelStrip widthClass="w-36" />);
-        expect(screen.getByTestId('level-value')).toHaveTextContent('0.0 dB');
+        // The real gain law (`20 * log10(linear)`), not the old hand-rolled
+        // `(masterGain / 80 - 1) * 12` formula that reported "0.0 dB" here.
+        // True unity is masterGain 100 (linear 1.0); 80 is about -1.9 dB.
+        expect(screen.getByTestId('level-value')).toHaveTextContent('-1.9 dB');
     });
 
     it('should display -∞ when master gain is 0', () => {
@@ -86,17 +92,31 @@ describe('MasterChannelStrip', () => {
         expect(screen.getByTestId('level-value')).toHaveTextContent('-∞');
     });
 
+    it('should display 0.0 dB at true unity (masterGain 100)', () => {
+        storeMocks.useStore.mockReturnValueOnce({ masterGain: 100 });
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        expect(screen.getByTestId('level-value')).toHaveTextContent('0.0 dB');
+    });
+
     it('should compute a negative dB value for a below-unity gain', () => {
         storeMocks.useStore.mockReturnValueOnce({ masterGain: 40 });
 
         render(<MasterChannelStrip widthClass="w-36" />);
 
-        expect(screen.getByTestId('level-value')).toHaveTextContent('-6.0 dB');
+        expect(screen.getByTestId('level-value')).toHaveTextContent('-8.0 dB');
     });
 
     it('should scale master gain to the 0-1 fader range', () => {
         render(<MasterChannelStrip widthClass="w-36" />);
 
         expect(screen.getByTestId('fader')).toHaveValue('0.8');
+    });
+
+    it('gives the master fader real travel up to the +6 dB ceiling instead of dead space above unity', () => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        expect(Number(screen.getByTestId('fader').getAttribute('data-max'))).toBeCloseTo(FADER_MAX_GAIN, 5);
     });
 });

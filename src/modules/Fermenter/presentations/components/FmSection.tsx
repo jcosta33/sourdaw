@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { FM_ALGORITHM_NAMES } from '../../models/FermenterPatch';
 
@@ -34,7 +35,7 @@ export const FmSection = ({
     onParam,
 }: FmSectionProps): ReactElement => {
     return (
-        <div className="space-y-2">
+        <Stack gap={2}>
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">FM Engine</div>
 
             {/* Algorithm selector */}
@@ -58,7 +59,7 @@ export const FmSection = ({
                     const ratio = ratios[i];
                     const level = levels[i];
                     return (
-                        <div key={i} className="flex flex-col items-center gap-0.5">
+                        <Stack align="center" gap={0.5} key={i}>
                             <span className={`text-[8px] font-bold ${OP_COLORS[i]}`}>Op {i + 1}</span>
                             <Knob
                                 paramId={`fmRatio${i + 1}`}
@@ -86,14 +87,14 @@ export const FmSection = ({
                             <span className="text-[7px] text-muted-foreground/60 font-mono">
                                 {Math.round(level * 100)}%
                             </span>
-                        </div>
+                        </Stack>
                     );
                 })}
             </div>
 
             {/* Feedback + Mod Depth */}
-            <div className="flex items-end gap-2 px-1">
-                <div className="flex flex-col items-center gap-0.5">
+            <Row align="end" gap={2} className="px-1">
+                <Stack align="center" gap={0.5}>
                     <Knob
                         paramId="fmFeedback"
                         value={feedback}
@@ -106,8 +107,8 @@ export const FmSection = ({
                         tone="sage"
                     />
                     <span className="text-[8px] text-muted-foreground">Feedback</span>
-                </div>
-                <div className="flex flex-col items-center gap-0.5">
+                </Stack>
+                <Stack align="center" gap={0.5}>
                     <Knob
                         paramId="fmModAmount"
                         value={modAmount}
@@ -120,8 +121,8 @@ export const FmSection = ({
                         tone="sage"
                     />
                     <span className="text-[8px] text-muted-foreground">Depth</span>
-                </div>
-            </div>
-        </div>
+                </Stack>
+            </Row>
+        </Stack>
     );
 };

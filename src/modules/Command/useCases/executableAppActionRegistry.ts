@@ -1,3 +1,4 @@
+import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 
@@ -1201,7 +1202,7 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setTrackGain',
         risk: 'bounded-reversible',
-        description: 'Set track volume. 0.0=silence, 0.8=default, 1.0=max.',
+        description: `Set track volume. 0.0=silence, 0.8=default, 1.0=unity, ${FADER_MAX_GAIN_LABEL}=max.`,
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
         targetRules: trackTargetRules,
         valueRules: [
@@ -1215,7 +1216,7 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: {
                 trackId: { type: 'string' },
-                gain: { type: 'number', description: '0.0 to 1.0' },
+                gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION },
             },
             required: ['trackId', 'gain'],
         },
@@ -1636,7 +1637,7 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setMasterGain',
         risk: 'authority-sensitive',
-        description: 'Set master output gain from 0.0 through 1.0.',
+        description: `Set master output gain from 0.0 through about ${FADER_MAX_GAIN_LABEL} (1.0 = unity, 0.8 = default).`,
         intentPhrases: [
             'set master gain',
             'set the master gain',
@@ -1648,7 +1649,7 @@ export const executableAppActionDescriptors = [
         targetRules: [],
         valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
         parameters: {
-            properties: { gain: { type: 'number', description: '0.0 to 1.0' } },
+            properties: { gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION } },
             required: ['gain'],
         },
     },

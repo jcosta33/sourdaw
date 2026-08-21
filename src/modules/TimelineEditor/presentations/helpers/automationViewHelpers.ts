@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import {
     createDeviceAutomationTargetId,
     getDeviceAutomationParameterId,
@@ -17,7 +18,12 @@ export const getAutomatableParams = (
     lanes?: readonly { trackId?: string; clipId?: string; parameterId: string }[]
 ): { id: string; name: string; min: number; max: number }[] => {
     const params: { id: string; name: string; min: number; max: number }[] = [
-        { id: 'gain', name: 'Volume', min: 0, max: 1 },
+        // The fader's real ceiling, and the same one `addAutomationLane` writes
+        // into a new gain lane. Both of this helper's callers currently read only
+        // `id` and `name`, so the range is inert — but a stale `1` sitting in a
+        // structure named for parameter ranges hands the next reader who wires it
+        // up a unity lane on a fader with `+6 dB` of headroom.
+        { id: 'gain', name: 'Volume', min: 0, max: FADER_MAX_GAIN },
         { id: 'pan', name: 'Pan', min: -1, max: 1 },
     ];
 

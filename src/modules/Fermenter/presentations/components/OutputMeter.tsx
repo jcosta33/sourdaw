@@ -4,6 +4,8 @@
  */
 import { type ReactElement } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { useFermenterPeaks } from '../hooks/useFermenterTelemetry';
 
 type OutputMeterProps = {
@@ -43,9 +45,9 @@ export const OutputMeter = ({ deviceId, height = 48 }: OutputMeterProps): ReactE
     };
 
     return (
-        <div className="flex items-end gap-0.5" style={{ height }}>
+        <Row align="end" gap={0.5} style={{ height }}>
             {/* L */}
-            <div className="flex flex-col items-center gap-0.5">
+            <Stack align="center" gap={0.5}>
                 <div
                     className="w-1.5 rounded-sm transition-all duration-75"
                     style={{
@@ -55,9 +57,9 @@ export const OutputMeter = ({ deviceId, height = 48 }: OutputMeterProps): ReactE
                     }}
                 />
                 <span className="text-[7px] text-muted-foreground/60">L</span>
-            </div>
+            </Stack>
             {/* R */}
-            <div className="flex flex-col items-center gap-0.5">
+            <Stack align="center" gap={0.5}>
                 <div
                     className="w-1.5 rounded-sm transition-all duration-75"
                     style={{
@@ -67,7 +69,7 @@ export const OutputMeter = ({ deviceId, height = 48 }: OutputMeterProps): ReactE
                     }}
                 />
                 <span className="text-[7px] text-muted-foreground/60">R</span>
-            </div>
-        </div>
+            </Stack>
+        </Row>
     );
 };

@@ -11,7 +11,12 @@ import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/prese
 import { trackStore, timelineViewStore } from '#/modules/Arrangement/stores';
 import { scrollTimelineViewportHorizontallyFromWheel, setAutomationMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases';
+import {
+    addAutomationLane,
+    getAutomationLaneCeiling,
+    toggleLaneCollapsed,
+    removeAutomationLane,
+} from '#/modules/Automation/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
@@ -78,12 +83,16 @@ const LaneSparkline = ({
     width: number;
 }): ReactElement => {
     const color = lane.color ?? trackColor;
-    const { points, minValue, maxValue } = lane;
+    const { points, minValue } = lane;
     if (points.length < 2) {
         return <div style={{ height: SPARKLINE_HEIGHT }} className="bg-surface-base/20" />;
     }
 
-    const range = maxValue - minValue;
+    // The same derived ceiling the expanded lane row draws against, not the
+    // stored scalar: a gain lane saved before the fader widened still records
+    // `maxValue: 1`, and normalising by that would draw a point at 1.5 above the
+    // top of this box while the expanded view of the same lane draws it inside.
+    const range = getAutomationLaneCeiling(lane) - minValue;
     const pathData = points
         .map((param, index) => {
             const x = (param.beat / (points[points.length - 1]!.beat || 1)) * width;

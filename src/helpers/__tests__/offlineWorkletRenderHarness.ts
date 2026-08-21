@@ -20,10 +20,12 @@ import { vi } from 'vitest';
  * interleave with the main thread's macrotask queue between quanta, and the
  * suspend/resume round trip is the one place another thread gets a turn.
  *
- * It is a model, not a browser. Delay lines do not delay and oscillators are
- * silent — deliberately, so a test cannot pass on the fallback synth
- * `scheduleTrackClips` reaches for when a track has no instrument. Assert on
- * energy in a region, not on waveform fidelity.
+ * It is a model, not a browser. Delay lines do not delay, and an oscillator
+ * emits a plain sine between its start and stop times whatever waveform it was
+ * asked for — audible, because the builtin fallback synth is built out of
+ * oscillators and a silent one would make a wrong-instrument substitution
+ * invisible to every spec that asserts its absence. Assert on energy in a
+ * region, not on waveform fidelity.
  */
 
 /** The Web Audio render quantum. */
@@ -183,18 +185,58 @@ export function createOfflineWorkletRenderHarness(): OfflineWorkletRenderHarness
     }
 
     /**
-     * Deliberately silent. `scheduleTrackClips` falls back to a builtin
-     * oscillator synth when a track has no instrument, and a harness whose
-     * oscillators sounded would let a test pass on the fallback instead of on
-     * the device it is about.
+     * Audible between `start()` and `stop()`, like a real `OscillatorNode`, and
+     * that is load-bearing rather than a fidelity upgrade.
+     *
+     * `scheduleTrackClips` builds the builtin fallback synth out of these when a
+     * track has no instrument. A silent oscillator does not stop that
+     * substitution — it *hides* it: the fallback renders as zeros, so a spec
+     * asserting the fallback is absent passes whether or not it happened. This
+     * harness was written the other way round on the theory that silence stopped
+     * a test passing *on* the fallback, which is true only for a spec asserting
+     * energy. Every spec here asserts its absence, so the polarity was inverted
+     * and the guard was blind.
+     *
+     * It is still a model. It emits a plain sine at `frequency.value` whatever
+     * `type` says, and `setValueAtTime` is a spy, so a note's scheduled pitch
+     * and envelope do not reach it. Assert on energy in a region, not on
+     * waveform fidelity or pitch.
      */
     class HarnessOscillatorNode extends HarnessAudioNode {
         type = 'sine';
         readonly frequency = createParam(440);
         readonly detune = createParam(0);
         override numberOfInputs = 0;
-        start(): void {}
-        stop(): void {}
+        private startSeconds: number | null = null;
+        private stopSeconds = Number.POSITIVE_INFINITY;
+
+        constructor(private readonly nodeSampleRate: number) {
+            super();
+        }
+
+        start(when = 0): void {
+            this.startSeconds = when;
+        }
+        stop(when = Number.POSITIVE_INFINITY): void {
+            this.stopSeconds = when;
+        }
+
+        protected override transform(): void {
+            if (this.startSeconds === null) {
+                return;
+            }
+            const step = (2 * Math.PI * this.frequency.value) / this.nodeSampleRate;
+            for (let index = 0; index < HARNESS_QUANTUM_FRAMES; index++) {
+                const frame = harnessFrame + index;
+                const seconds = frame / this.nodeSampleRate;
+                if (seconds < this.startSeconds || seconds >= this.stopSeconds) {
+                    continue;
+                }
+                const sample = Math.sin(step * frame);
+                this.out.left[index] = (this.out.left[index] ?? 0) + sample;
+                this.out.right[index] = (this.out.right[index] ?? 0) + sample;
+            }
+        }
     }
 
     class HarnessBiquadFilterNode extends HarnessAudioNode {
@@ -258,7 +300,7 @@ export function createOfflineWorkletRenderHarness(): OfflineWorkletRenderHarness
             return new HarnessBufferSourceNode();
         }
         createOscillator(): HarnessOscillatorNode {
-            return new HarnessOscillatorNode();
+            return new HarnessOscillatorNode(this.sampleRate);
         }
         createBiquadFilter(): HarnessBiquadFilterNode {
             return new HarnessBiquadFilterNode();

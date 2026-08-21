@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected, TrackNode, type TrackNodeDeps } from '../TrackNode';
@@ -73,8 +75,14 @@ describe('TrackNode', () => {
         track.setGain(0.5);
         expect(faderGain.setTargetAtTime).toHaveBeenCalledWith(0.5, ctx.currentTime, 0.01);
 
-        track.setGain(1.5); // should clamp to 1.0
-        expect(faderGain.setTargetAtTime).toHaveBeenCalledWith(1.0, ctx.currentTime, 0.01);
+        // 1.5 is inside the fader's +6 dB headroom now, so it passes through
+        // unclamped — the fader is no longer dead travel above unity.
+        track.setGain(1.5);
+        expect(faderGain.setTargetAtTime).toHaveBeenCalledWith(1.5, ctx.currentTime, 0.01);
+
+        // A value past the ceiling still clamps, just at the new ceiling.
+        track.setGain(2.5);
+        expect(faderGain.setTargetAtTime).toHaveBeenCalledWith(FADER_MAX_GAIN, ctx.currentTime, 0.01);
     });
 
     it('should set pan with scale (-50..50 -> -1..1)', () => {
@@ -103,13 +111,17 @@ describe('TrackNode', () => {
         expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(0.5, ctx.currentTime + 0.02);
     });
 
-    it('RT-5: clamps a scheduled gain to [0,1]', () => {
+    it('RT-5: clamps a scheduled gain to the fader ceiling, not to unity', () => {
         const track = new TrackNode('track-1', deps);
         const faderGain = track.strip.faderNode.gain;
 
+        // Inside the +6 dB headroom: passes through unclamped.
         track.scheduleGainAutomation(1.5, ctx.currentTime + 0.02);
+        expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(1.5, ctx.currentTime + 0.02);
 
-        expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.02);
+        // Past the ceiling: clamps at the ceiling, not at 1.
+        track.scheduleGainAutomation(2.5, ctx.currentTime + 0.02);
+        expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(FADER_MAX_GAIN, ctx.currentTime + 0.02);
     });
 
     it('RT-5: floors an uncompensated gain write (time === now) to a minimum glide, not a step', () => {

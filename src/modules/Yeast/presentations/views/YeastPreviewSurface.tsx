@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { Row } from '#/components/layout';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type YeastRuntimeStatus } from '../../models/YeastProcessorProjection';
@@ -291,7 +292,7 @@ export function YeastPreviewSurface({
 
     return (
         <section className="yeast-window p-3" aria-label="Scheduled event preview">
-            <div className="mb-2 flex items-start justify-between gap-3">
+            <Row align="start" justify="between" gap={3} className="mb-2">
                 <div>
                     <div className="text-[10px] font-medium text-foreground">Phrase view</div>
                     <div className="text-[9px] text-muted-foreground">Read-only preview of upcoming rack output.</div>
@@ -310,7 +311,7 @@ export function YeastPreviewSurface({
                         <dd className="text-foreground">{processorSummary}</dd>
                     </div>
                 </dl>
-            </div>
+            </Row>
             <div ref={viewportRef} className="h-28 w-full">
                 <canvas
                     ref={canvasRef}
