@@ -4,7 +4,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { normalizeTrack, type Clip } from '../../models/Track';
-import { defaultTrackState, trackStore, type TrackStoreState } from '../trackStore';
+import { defaultTrackState, sanitizeTrackSnapshot, trackStore, type TrackStoreState } from '../trackStore';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -319,5 +319,30 @@ describe('trackStore', () => {
 
         expect(trackStore.value).toEqual(valid_state);
         expect(mutation_count).toBe(0);
+    });
+
+    it('should preserve and hydrate fileId on audio clips through sanitizeTrackSnapshot and store hydration', async () => {
+        const audio_clip: Clip = {
+            ...create_valid_clip({ id: 'clip-audio-file', trackId: 'track-audio' }),
+            fileId: 'project/audio/recording-1.wav',
+        };
+        const track = TrackDummy.create({
+            id: 'track-audio',
+            name: 'Audio Track',
+            kind: 'audio',
+            clips: [audio_clip],
+        });
+
+        const sanitized = sanitizeTrackSnapshot({
+            tracks: [track],
+            selectedTrackId: 'track-audio',
+        });
+        expect(sanitized.tracks[0]?.clips[0]?.fileId).toBe('project/audio/recording-1.wav');
+
+        fake_doc.tracks = { tracks: [track] };
+        trackStore.hydrate();
+        await flush_pending_frame();
+
+        expect(trackStore.value?.tracks[0]?.clips[0]?.fileId).toBe('project/audio/recording-1.wav');
     });
 });

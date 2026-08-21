@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode, useRef, useState, useEffect } from '
 
 import { DawAnalysisCard } from '#/components/daw/DawAnalysisCard';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Row } from '#/components/layout';
 import { ScrollArea } from '#/components/ui/scroll-area';
 
 import { Goniometer } from './Goniometer';
@@ -44,9 +45,9 @@ const Measured = ({ children, className = '' }: MeasuredProps): ReactElement => 
 
     return (
         <div ref={ref} className={`relative ${className}`}>
-            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+            <Row justify="center" className="absolute inset-0 overflow-hidden">
                 {size.width > 0 && size.height > 0 ? children(size) : null}
-            </div>
+            </Row>
         </div>
     );
 };
@@ -56,7 +57,7 @@ export const AnalysisPanel = (): ReactElement => {
     return (
         <DawPanelSurface>
             <ScrollArea className="flex-1">
-                <div className="p-2 flex flex-wrap gap-2">
+                <Row align="stretch" wrap gap={2} className="p-2">
                     <DawAnalysisCard
                         title="Spectrum Analyzer"
                         detail="FFT spectrum in a shared analyzer shell."
@@ -134,7 +135,7 @@ export const AnalysisPanel = (): ReactElement => {
                             {({ width }) => <PhaseCorrelationDisplay width={width} height={20} />}
                         </Measured>
                     </DawAnalysisCard>
-                </div>
+                </Row>
             </ScrollArea>
         </DawPanelSurface>
     );
