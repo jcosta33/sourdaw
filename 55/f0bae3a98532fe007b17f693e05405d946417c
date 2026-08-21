@@ -1,0 +1,42 @@
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_487e9aa1e46063::t_65f7eb0c1c0aab 304-308,311
+  s_487e9aa1e46063::t_6ba05ed877231e 29-30,36-47,50,52-55
+  s_487e9aa1e46063::t_6e69e8e4b7e59c 212
+  s_487e9aa1e46063::t_5db9079bdca04e 290-291
+src/modules/Arrangement/useCases/freezeBounce/detectSilentBake.ts
+  s_487e9aa1e46063::t_4faf80145a1933 64-70
+src/modules/AudioEngine/repositories/deviceStrategy/createWithheldDeviceStrategy.ts
+  s_487e9aa1e46063::t_5ec9293193b004 1-69
+src/helpers/__tests__/offlineWorkletRenderHarness.ts
+  s_487e9aa1e46063::t_6c0352d06e2a5c 188-203,210-239
+  s_487e9aa1e46063::t_0ccd42ffeebe8e 303
+  s_487e9aa1e46063::t_8a63df066667b9 23-28
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_487e9aa1e46063::t_daf53efcfc727c 332
+  s_487e9aa1e46063::t_563b5bb65d0a4f 318,321
+  s_487e9aa1e46063::t_f0371f44f307aa 310-312
+  s_487e9aa1e46063::t_4e9a948f642b88 34-41,51-54
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_487e9aa1e46063::t_fc6d1dc710f29e 231,238-239
+  s_487e9aa1e46063::t_d1c07751f8164f 311
+  s_487e9aa1e46063::t_350a1f0d57f280 174,177-183
+  s_487e9aa1e46063::t_ded45c60359f61 232-237
+  s_487e9aa1e46063::t_40c37a297a3be1 3,20,27
+  s_487e9aa1e46063::t_94359f2ef8485c 28,240-251,253-310,312-320,322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "55f0bae3a98532fe007b17f693e05405d946417c",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
