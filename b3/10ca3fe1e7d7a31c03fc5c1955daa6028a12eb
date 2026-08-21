@@ -1,0 +1,19 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_2175fca1f07426::t_b57a7c13be1a1f 998
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "b310ca3fe1e7d7a31c03fc5c1955daa6028a12eb",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
