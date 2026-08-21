@@ -35,6 +35,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
                 return mocks.trackStoreValue.value;
             },
             set: mocks.trackStoreSet,
+            // Real subscribe: the Yeast stores module subscribes at import
+            // time, and a mock without it crashes that module's evaluation.
+            subscribe: actual.trackStore.subscribe.bind(actual.trackStore),
         },
     };
 });

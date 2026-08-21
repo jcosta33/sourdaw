@@ -262,6 +262,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const scoringDeviceId = activePanel?.kind === 'scoring' ? activePanel.deviceId : null;
     const proofDeviceId = activePanel?.kind === 'proof' ? activePanel.deviceId : null;
     const yeastOpen = activePanel?.kind === 'yeast';
+    // `null` while the panel is closed OR bound to no device — the panel then
+    // resolves its device from the selected track (issue #2422: the rack the
+    // panel edits must belong to one device instance).
+    const yeastDeviceId = activePanel?.kind === 'yeast' ? activePanel.deviceId : null;
     const crustDeviceId = activePanel?.kind === 'crust' ? activePanel.deviceId : null;
     const samplerDeviceId = activePanel?.kind === 'sampler' ? activePanel.deviceId : null;
     const grandBouleDeviceId = activePanel?.kind === 'grandBoule' ? activePanel.deviceId : null;
@@ -744,7 +748,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onClose={closeActivePanel}
                             >
                                 <ErrorBoundary variant="inline">
-                                    <YeastPanel />
+                                    <YeastPanel deviceId={yeastDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}

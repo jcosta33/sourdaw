@@ -19,7 +19,7 @@ import {
 } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { yeastStore } from '#/modules/Yeast/stores';
+import { readYeastRack } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
@@ -34,6 +34,26 @@ import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArra
 import { serializeArrangementTracks } from './serializeArrangementTracks';
 import { serializeProjectGrooves } from './serializeProjectGrooves';
 import { serializeProjectMidi } from './serializeProjectMidi';
+
+/**
+ * Yeast device ids on a set of tracks, in track order — one rack per id.
+ * Takes the rows structurally with `devices` optional: the arrangement
+ * sanitizer accepts minimal track rows without them, and a row without
+ * devices simply owns no Yeast rack.
+ */
+function collectYeastDeviceIds(
+    trackList: readonly { devices?: readonly { id: string; type: string }[] }[]
+): Set<string> {
+    const ids = new Set<string>();
+    for (const track of trackList) {
+        for (const device of track.devices ?? []) {
+            if (device.type === 'yeast') {
+                ids.add(device.id);
+            }
+        }
+    }
+    return ids;
+}
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
  * referenced by a TrackStoreState so the export can embed the raw PCM. */
@@ -127,7 +147,6 @@ export async function buildProjectData({
     const midi = midiStore.value;
     const project = projectStore.value;
     const arrState = arrangementStore.value;
-    const yeastState = yeastStore.value;
 
     if (
         !tracks ||
@@ -179,11 +198,30 @@ export async function buildProjectData({
 
     const resolvedIds = new Set(Object.keys(audioBuffers));
     const missingBufferCount = includeAudioBuffers ? [...allBufferIds].filter((id) => !resolvedIds.has(id)).length : 0;
-    let yeast: ProjectData['yeast'];
-    if (yeastState && yeastState.processors.length > 0) {
-        yeast = {
-            processors: structuredClone(yeastState.processors),
+    // Every Yeast device's rack, from the live arrangement AND every stored
+    // arrangement — a device in a non-active arrangement owns its rack too.
+    // Rack state is per device instance (issue #2422), so writing only the
+    // active device's rack would silently drop every other rack from the
+    // file. The section is omitted when no rack holds a processor, matching
+    // the pre-split file's omit-when-empty behaviour.
+    const yeastDeviceIds = new Set<string>();
+    for (const device of collectYeastDeviceIds(tracks.tracks)) {
+        yeastDeviceIds.add(device);
+    }
+    for (const arrangement of arrState.arrangements) {
+        for (const device of collectYeastDeviceIds(arrangement.tracks.tracks)) {
+            yeastDeviceIds.add(device);
+        }
+    }
+    const racks: NonNullable<ProjectData['yeast']> = { racks: {} };
+    for (const deviceId of yeastDeviceIds) {
+        racks.racks[deviceId] = {
+            processors: structuredClone(readYeastRack(deviceId).processors),
         };
+    }
+    let yeast: ProjectData['yeast'];
+    if (Object.values(racks.racks).some((rack) => rack.processors.length > 0)) {
+        yeast = racks;
     }
 
     let cvGateState: ProjectData['cvGate'];

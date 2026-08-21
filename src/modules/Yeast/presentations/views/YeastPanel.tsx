@@ -7,7 +7,7 @@
  * Level 4 (Route):  Live note activity, CC routing
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
-import { type ComponentProps, type ReactElement, useState } from 'react';
+import { type ComponentProps, type ReactElement, useEffect, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -34,7 +34,7 @@ import {
     decodeArpPatternParams,
 } from '../../models/ArpPattern';
 import { PROCESSOR_PARAM_DEFAULTS, PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
-import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
+import { setActiveYeastDevice, yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
 import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
@@ -172,7 +172,7 @@ type PreviewBinding = Readonly<{
     unavailableReason?: YeastPreviewUnavailableReason;
 }>;
 
-function resolvePreviewBinding(trackState: TrackStoreState): PreviewBinding {
+function resolvePreviewBinding(trackState: TrackStoreState, deviceId: string | null): PreviewBinding {
     if (!trackState.selectedTrackId) {
         return {
             scope: null,
@@ -186,7 +186,7 @@ function resolvePreviewBinding(trackState: TrackStoreState): PreviewBinding {
             unavailableReason: { code: 'no-track', message: 'The selected MIDI track is unavailable.' },
         };
     }
-    const yeastDevice = track.devices.find((device) => device.type === 'yeast');
+    const yeastDevice = track.devices.find((device) => device.type === 'yeast' && device.id === deviceId);
     if (!yeastDevice) {
         return {
             scope: null,
@@ -433,7 +433,7 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     );
 };
 
-export const YeastPanel = (): ReactElement => {
+export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): ReactElement => {
     const state = useStore(yeastStore, defaultYeastState);
     const trackState = useStore(trackStore, defaultTrackState);
     // Fed by YeastPreviewSurface's own preview subscription — the panel has no
@@ -442,9 +442,20 @@ export const YeastPanel = (): ReactElement => {
     // second one.
     const [soundingNotes, setSoundingNotes] = useState<readonly number[]>([]);
 
+    // Racks are per device instance (issue #2422). Pin the store to this
+    // panel's device for the panel's lifetime; with no explicit device the
+    // store resolves the selected track's Yeast device itself. The cleanup
+    // unpins so a closed panel leaves no stale device pinned.
+    useEffect(() => {
+        setActiveYeastDevice(deviceId);
+        return () => setActiveYeastDevice(null);
+    }, [deviceId]);
+
     const { uiLevel } = state;
     const levelMeta = getLevelMeta(uiLevel);
-    const previewBinding = resolvePreviewBinding(trackState);
+    const selectedTrack = trackState.tracks.find((candidate) => candidate.id === trackState.selectedTrackId);
+    const effectiveDeviceId = deviceId ?? selectedTrack?.devices.find((device) => device.type === 'yeast')?.id ?? null;
+    const previewBinding = resolvePreviewBinding(trackState, effectiveDeviceId);
 
     return (
         <div className="yeast-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">

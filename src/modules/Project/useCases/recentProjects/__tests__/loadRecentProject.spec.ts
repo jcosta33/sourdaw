@@ -73,6 +73,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
 const validProjectData = {
     version: CURRENT_PROJECT_VERSION,
     meta: {
+        // The validator requires a canonical project id; this fixture
+        // predates that hardening and failed isHydratableProjectData
+        // without it.
+        projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
         name: 'Large Project',
         createdAt: 1,
         updatedAt: 2,
@@ -114,7 +118,6 @@ describe('loadRecentProject', () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
 
         const ok = await loadRecentProject('sourdaw:project:Large Project');
-
         expect(ok).toBe('committed');
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
