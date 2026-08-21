@@ -908,7 +908,12 @@ function bridgeToolCall({
                 track.automationMode === 'off' ||
                 !Number.isFinite(track.gain) ||
                 track.gain <= 0 ||
-                track.gain * 10 ** (gainDb / 20) > 1 ||
+                // The lift must land inside the fader's own range, which is
+                // `FADER_MAX_GAIN` and not unity — `handleAutomateTrackGainRange`
+                // admits exactly that, so a unity bound here would reject a bus
+                // at the 0.8 default asked for a 3 dB section lift and leave the
+                // handler's own check unreachable.
+                track.gain * 10 ** (gainDb / 20) > FADER_MAX_GAIN ||
                 (context.automationLanes ?? []).some(
                     (lane) =>
                         lane.id === `auto-gain-${encodeURIComponent(trackId)}` ||

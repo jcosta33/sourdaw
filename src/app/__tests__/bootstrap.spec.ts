@@ -129,6 +129,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: noop,
     persistDevicePatch: noop,
     cleanupUnusedFreezeFiles: noop,
+    clampTrackGain: noop,
     setTrackGain: noop,
     setTrackPan: noop,
     setDeviceParameter: noop,

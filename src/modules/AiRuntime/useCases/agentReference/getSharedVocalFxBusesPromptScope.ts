@@ -304,6 +304,15 @@ export function getSharedVocalFxBusesPromptScope(
             track.devices.at(-1)?.id !== source?.device.id ||
             track.pan !== 0 ||
             track.outputId !== 'master' ||
+            // Unity, deliberately — not the fader's ceiling. The refusal below
+            // says "unity-or-lower" and means it: EX-08 lifts each vocal's tail
+            // effect onto a shared bus, and it can only promise the balance
+            // survives while the strip applies no make-up gain the send would
+            // have to be re-trimmed against. Every other bound here is the same
+            // kind of "plainly routed" condition. This one was unreachable
+            // while `1` was also the fader's ceiling; widening it to
+            // `FADER_MAX_GAIN` would keep it unreachable and contradict the
+            // reason the caller is handed.
             track.gain > 1 ||
             (track.vcaGroupId !== null && track.vcaGroupId !== undefined) ||
             (track.sends?.length ?? 0) > 0

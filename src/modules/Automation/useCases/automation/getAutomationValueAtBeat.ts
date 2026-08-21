@@ -31,22 +31,43 @@ const _laneByIdCache = new Map<string, AutomationLane>();
  * fixture that never set them (several specs construct lanes with only the
  * fields their assertions touch) degrades to a no-op instead of NaN.
  *
- * The ceiling is {@link getAutomationLaneCeiling}, not the stored `maxValue`.
- * A gain lane authored before the fader gained its `+6 dB` of headroom still
- * stores `maxValue: 1` — deliberately, since rewriting that scalar reads as
- * document corruption — and `paintDrawPoint` draws into the headroom on the
- * derived ceiling. Clamping here on the stored one would make the live path
- * hand back unity for a point drawn at `1.5`, while the offline path clamps
- * the same lane with `clampFaderGain` (`automationScheduling.ts`) and renders
- * it at `1.5`: the drawn curve, what is heard, and what is exported would be
- * three different things, which is the live-versus-offline divergence #789
- * exists to close.
+ * The ceiling is the lane's **declared** `maxValue`, raised only as far as a
+ * stored point on the segment in play actually reaches, and never past
+ * {@link getAutomationLaneCeiling}.
+ *
+ * That is two jobs kept apart on purpose. Containing spline overshoot is this
+ * function's original one, and it must keep using the declared value: a gain
+ * lane authored before the fader gained its `+6 dB` of headroom stores
+ * `maxValue: 1`, and bounding its overshoot at the derived ceiling instead
+ * would make a project saved last week — opened and played with no edit at
+ * all — up to `+6 dB` louder wherever a smooth curve rides near unity. The
+ * derived ceiling governs what may be *written* into a lane (`paintDrawPoint`)
+ * and the axis it is drawn on, not what an untouched curve is allowed to
+ * overshoot to.
+ *
+ * The raise is what keeps the two consistent. `paintDrawPoint` can now put a
+ * point at `1.5` into a legacy lane, and flattening that stored point back to
+ * unity here would make the drawn curve, what is heard, and what the offline
+ * path exports three different things. Bounding by the segment's own points
+ * honours it without inventing level anywhere else: a lane whose points all
+ * sit at or below its declared ceiling clamps exactly as it did before.
+ *
+ * Segment-local rather than lane-wide because this runs per tick, per lane —
+ * a scan for the lane's highest point would be O(points) on every call.
  */
-function clampToLaneRange(value: number, lane: AutomationLane): number {
+function clampToLaneRange(value: number, lane: AutomationLane, firstValue: number, secondValue: number): number {
     if (!Number.isFinite(lane.minValue) || !Number.isFinite(lane.maxValue)) {
         return value;
     }
-    return Math.min(getAutomationLaneCeiling(lane), Math.max(lane.minValue, value));
+    let ceiling = lane.maxValue;
+    const derived = getAutomationLaneCeiling(lane);
+    if (derived > ceiling) {
+        const highestStored = Math.max(firstValue, secondValue);
+        if (highestStored > ceiling) {
+            ceiling = Math.min(derived, highestStored);
+        }
+    }
+    return Math.min(ceiling, Math.max(lane.minValue, value));
 }
 
 export function getAutomationValueAtBeat(
@@ -103,10 +124,12 @@ export function getAutomationValueAtBeat(
     }
 
     if (beforeIdx === -1) {
-        return clampToLaneRange(points[0]!.value, lane) * resolved.scale;
+        const held = points[0]!.value;
+        return clampToLaneRange(held, lane, held, held) * resolved.scale;
     }
     if (beforeIdx === points.length - 1) {
-        return clampToLaneRange(points[beforeIdx]!.value, lane) * resolved.scale;
+        const held = points[beforeIdx]!.value;
+        return clampToLaneRange(held, lane, held, held) * resolved.scale;
     }
 
     // Pass the surrounding points so a 'smooth' (Catmull-Rom) segment uses its
@@ -121,5 +144,7 @@ export function getAutomationValueAtBeat(
         previousPoint: points[beforeIdx - 1],
         nextPoint: points[beforeIdx + 2],
     });
-    return clampToLaneRange(interpolated, lane) * resolved.scale;
+    return (
+        clampToLaneRange(interpolated, lane, points[beforeIdx]!.value, points[beforeIdx + 1]!.value) * resolved.scale
+    );
 }

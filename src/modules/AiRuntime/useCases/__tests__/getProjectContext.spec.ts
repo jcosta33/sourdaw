@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import {
     getProjectContext,
     type ProjectContextAdjustmentLayer,
@@ -66,6 +68,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.markerStoreValue.value;
         },
     },
+    // Reached only through the graph `#/modules/Automation/useCases` pulls in
+    // for `getAutomationLaneCeiling`; this spec never exercises it, but a
+    // barrel factory replaces the whole module, so an omitted name is a
+    // resolution failure rather than an unused stub.
+    resolveEligibleDeviceWriteTarget: () => null,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -88,6 +95,12 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
             return mocks.repairStateStoreValue.value;
         },
     },
+    // Same reason as the Arrangement factory above: these names are reached
+    // through the graph behind `#/modules/Automation/useCases`, and a barrel
+    // factory that omits one fails to resolve rather than leaving it real.
+    actionHistoryStore: { value: null },
+    clearSemanticContext: () => {},
+    setSemanticContext: () => {},
 }));
 
 vi.mock('#/modules/Routing/stores', () => ({
@@ -495,7 +508,13 @@ describe('getProjectContext', () => {
                 name: 'Gain',
                 enabled: true,
                 minValue: 0,
-                maxValue: 1,
+                // The ceiling this track-gain lane really has, not the `1` the
+                // document stores. Written before the fader gained its `+6 dB`
+                // of headroom, it still records unity — and a provider handed
+                // that scalar is told the lane cannot reach a value the fader
+                // plainly can, so `addAutomationPoint` refuses the ride the user
+                // asked for on an old project and takes it on a new one.
+                maxValue: FADER_MAX_GAIN,
                 points: [
                     { beat: 0, value: 0.4, curve: 'linear' },
                     { beat: 8, value: 0.8, curve: 'smooth' },
@@ -509,6 +528,8 @@ describe('getProjectContext', () => {
                 name: 'Clip Gain',
                 enabled: true,
                 minValue: 0,
+                // Untouched at `1`: a clip's own gain is not a fader, and the
+                // headroom the strip gained says nothing about it.
                 maxValue: 1,
                 points: [{ beat: 0, value: 1, curve: 'linear' }],
             },

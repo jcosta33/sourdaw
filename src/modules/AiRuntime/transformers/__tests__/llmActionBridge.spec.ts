@@ -700,6 +700,65 @@ describe('bridgeLlmToolCalls', () => {
         expect(colorThenRemove.rejections).toHaveLength(1);
     });
 
+    it('bridges a section gain lift that lands above unity, and rejects one that clears the fader ceiling', () => {
+        // #2350 gap 2: the *producing* path's headroom gate, not the handler's.
+        // `handleAutomateTrackGainRange` admits a lift up to `FADER_MAX_GAIN`,
+        // but the bridge is the only route a provider reaches it by — so while
+        // this gate read unity, a bus at the 0.8 default asked for +3 dB was
+        // refused here and the handler's widened check was unreachable from the
+        // only caller that feeds it. Driving the bridge is the point: a
+        // hand-built payload handed straight to `execute` would pass either way.
+        const sectionSignatures = [{ sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }];
+        const busTrack = {
+            ...projectContext.tracks[0]!,
+            id: 'bus-impact',
+            name: 'Impact',
+            kind: 'bus',
+            vcaGroupId: null,
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+        };
+        const withBus = (gain: number): ProjectContext => ({
+            ...projectContext,
+            tracks: [...projectContext.tracks, { ...busTrack, gain }],
+        });
+
+        // 0.8 x 10^(3/20) ≈ 1.128 — above unity, comfortably below the ceiling.
+        const aboveUnity = bridge({
+            calls: [
+                {
+                    name: 'automateTrackGainRange',
+                    arguments: { trackIds: ['bus-impact'], sectionName: 'Verse', gainDb: 3 },
+                },
+            ],
+            context: withBus(0.8),
+            sectionSignatures,
+        });
+        // 1.5 x 10^(6/20) ≈ 2.993 — past `FADER_MAX_GAIN`, so still refused.
+        const pastCeiling = bridge({
+            calls: [
+                {
+                    name: 'automateTrackGainRange',
+                    arguments: { trackIds: ['bus-impact'], sectionName: 'Verse', gainDb: 6 },
+                },
+            ],
+            context: withBus(1.5),
+            sectionSignatures,
+        });
+
+        expect(aboveUnity.rejections).toEqual([]);
+        expect(aboveUnity.actions).toEqual([
+            {
+                type: 'automateTrackGainRange',
+                payload: { trackIds: ['bus-impact'], sectionName: 'Verse', gainDb: 3 },
+            },
+        ]);
+        expect(pastCeiling.actions).toEqual([]);
+        expect(pastCeiling.rejections.map((entry) => entry.name)).toEqual(['automateTrackGainRange']);
+    });
+
     it('bridges addSection with an exact finite range and safe name', () => {
         const result = bridge({
             calls: [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } }],

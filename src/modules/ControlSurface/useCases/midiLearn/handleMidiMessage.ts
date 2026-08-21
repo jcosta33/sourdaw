@@ -32,8 +32,14 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
         switch (mapping.targetType) {
             case 'trackGain': {
                 if (mapping.trackId) {
-                    deps.setTrackGainArrangement(mapping.trackId, scaled);
-                    deps.engineSetTrackGain(mapping.trackId, scaled);
+                    // Both writes take the same resolved value. The store-side
+                    // call clamps on its own; the engine-side call does not, and
+                    // it lands second, so passing the raw scaled value there put
+                    // the audio node above the ceiling the project had just
+                    // recorded.
+                    const gain = deps.clampTrackGain(mapping.trackId, scaled);
+                    deps.setTrackGainArrangement(mapping.trackId, gain);
+                    deps.engineSetTrackGain(mapping.trackId, gain);
                 }
                 break;
             }

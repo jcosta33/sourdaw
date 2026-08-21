@@ -75,7 +75,13 @@ export type NativeOfflineRenderInput = Readonly<{
     sampleRate: number;
     frameCount: number;
     durationSeconds: number;
-    /** The project master level, already clamped to 0…1 by the caller. */
+    /**
+     * The project master level, already bounded by the caller to the fader
+     * law's own range — `0` up to `FADER_MAX_GAIN`, not `0…1`. The master fader
+     * reaches the same `+6 dB` of headroom every other fader does, so a render
+     * that re-clamped this at unity would print quieter than the mix it was
+     * asked to bounce.
+     */
     masterGainValue: number;
     defaultTempo: number;
     changes: TempoMapStoreState['changes'];

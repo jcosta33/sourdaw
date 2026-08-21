@@ -28,12 +28,27 @@ const LEGACY_GAIN_MAX_VALUE = 1;
  * project holding a legacy gain lane would stall at repair-required instead of
  * opening. See the note on `automationStore`'s `sanitize`.
  *
- * Only the exact legacy default is reinterpreted: a lane whose range came from
- * a parameter-range resolver keeps the range that parameter defined, and a lane
- * for any other parameter is returned untouched.
+ * Only the exact legacy default is reinterpreted, and only on a lane that is
+ * unambiguously a track fader's own:
+ *
+ * - `maxValue` must be the legacy `1`. A lane whose range came from a
+ *   parameter-range resolver keeps the range that parameter defined.
+ * - `minValue` must be `0`. A gain lane with `minValue < 0` is a **decibel**
+ *   lane — `automationScheduling.ts` reads exactly that predicate and applies
+ *   `dbToGain(value)` — so its `maxValue: 1` means `+1 dB`, and reinterpreting
+ *   it as {@link FADER_MAX_GAIN} would hand back a number in the wrong unit.
+ * - `clipId` must be absent. A clip's own gain lane is bounded by the clip, not
+ *   by the track fader that this widening is about.
  */
-export function getAutomationLaneCeiling(lane: Pick<AutomationLane, 'parameterId' | 'maxValue'>): number {
-    if (lane.parameterId === GAIN_PARAMETER_ID && lane.maxValue === LEGACY_GAIN_MAX_VALUE) {
+export function getAutomationLaneCeiling(
+    lane: Pick<AutomationLane, 'parameterId' | 'maxValue' | 'minValue' | 'clipId'>
+): number {
+    if (
+        lane.parameterId === GAIN_PARAMETER_ID &&
+        lane.maxValue === LEGACY_GAIN_MAX_VALUE &&
+        lane.minValue === 0 &&
+        lane.clipId === undefined
+    ) {
         return FADER_MAX_GAIN;
     }
     return lane.maxValue;
