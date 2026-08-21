@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/legacyGainLaneRenderParity.spec.ts
+  s_487e9aa1e46063::t_1a24ff89de7c3b 65-96
+  s_487e9aa1e46063::t_9e82a59199a72c 277-306
+  s_487e9aa1e46063::t_4265c9459e97f5 276
+src/modules/Automation/useCases/automation/__tests__/getAutomationValueAtBeat.spec.ts
+  s_487e9aa1e46063::t_44128352177396 334-340,355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "adbcbfd2b8113fe584cf79898e87702971aff363",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
