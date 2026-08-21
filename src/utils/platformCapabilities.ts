@@ -16,7 +16,7 @@ export type PlatformCapabilities = {
     readonly hasPluginScanning: boolean;
     /** MIDI input — Web MIDI API (Chrome) or native */
     readonly hasMidiInput: boolean;
-    /** Voice command ASR — native (whisper-rs) or browser SpeechRecognition */
+    /** Voice command ASR — desktop-local only; model verification is separate. */
     readonly hasVoiceCommands: boolean;
     /** Native OS file save dialogs — desktop only */
     readonly hasNativeFileDialogs: boolean;
@@ -27,9 +27,6 @@ export type PlatformCapabilities = {
 };
 
 const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
-
-const speechRecognitionSupported =
-    typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
 let cached: PlatformCapabilities | null = null;
 
@@ -50,7 +47,7 @@ export function getPlatformCapabilities(): PlatformCapabilities {
         hasNativePlugins: isDesktop,
         hasPluginScanning: isDesktop,
         hasMidiInput: webMidiSupported || isDesktop,
-        hasVoiceCommands: isDesktop || speechRecognitionSupported,
+        hasVoiceCommands: isDesktop,
         hasNativeFileDialogs: isDesktop,
         hasMultiTrackRecording: isDesktop,
         isDesktopApp: isDesktop,

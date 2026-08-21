@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use zeroize::{Zeroize, Zeroizing};
 
 use super::{filesystem, model_download};
 
@@ -21,6 +22,14 @@ use super::{filesystem, model_download};
 struct LoadedModel {
     ctx: Arc<WhisperContext>,
     name: String,
+}
+
+struct SensitiveCaptureBuffer(Vec<f32>);
+
+impl Drop for SensitiveCaptureBuffer {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
 }
 
 pub struct DictationState {
@@ -288,30 +297,24 @@ const WHISPER_MODEL: model_download::ModelDownload = model_download::ModelDownlo
     expected_size_bytes: WHISPER_MODEL_SIZE_BYTES,
 };
 
-/// Ensure the Whisper model is downloaded and loaded.
-/// Auto-downloads `ggml-base.en.bin` (~142MB) from HuggingFace on first use.
-///
-/// The already-loaded short-circuit reports whatever model is actually
-/// loaded, not the default file: a caller may have loaded a custom model via
-/// `load_whisper_model` first. Concurrent calls serialize on `load_guard`
-/// inside `ensure_loaded_exclusively`, so exactly one downloads and builds.
-pub async fn ensure_whisper_ready(state: &DictationState) -> Result<AsrStatus, String> {
-    let loaded = ensure_loaded_exclusively(&state.loaded, &state.load_guard, || async {
-        let model_path = model_download::ensure_model(&WHISPER_MODEL).await?;
-        let model_path_str = model_path.to_string_lossy().to_string();
-
-        let ctx =
+/// Verify and load the bundled Whisper artifact from the local model cache.
+/// This boundary never creates cache directories, repairs files, or downloads.
+pub async fn load_cached_whisper_model(state: &DictationState) -> Result<AsrStatus, String> {
+    let model_path = model_download::verify_cached_model(&WHISPER_MODEL).await?;
+    let _exclusive = state.load_guard.lock().await;
+    let model_path_str = model_path.to_string_lossy().to_string();
+    let loaded = LoadedModel {
+        ctx: Arc::new(
             WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
-                .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
-
-        eprintln!("[Whisper] Model loaded: {}", WHISPER_MODEL_FILE);
-
-        Ok(LoadedModel {
-            ctx: Arc::new(ctx),
-            name: WHISPER_MODEL_FILE.to_string(),
-        })
-    })
-    .await?;
+                .map_err(|e| format!("Failed to load verified local Whisper model: {e}"))?,
+        ),
+        name: WHISPER_MODEL_FILE.to_string(),
+    };
+    let mut guard = state
+        .loaded
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+    *guard = Some(loaded.clone());
 
     Ok(AsrStatus {
         loaded: true,
@@ -357,19 +360,20 @@ pub async fn start_dictation(
         let record_result = record_mic(&stop);
         match record_result {
             Ok((samples, sample_rate, channels)) => {
+                let mut raw_audio = Zeroizing::new(samples);
                 let start = std::time::Instant::now();
 
                 // Convert to mono if stereo
-                let mono = if channels > 1 {
-                    to_mono(&samples, channels as usize)
+                let mut mono_audio = if channels > 1 {
+                    Zeroizing::new(to_mono(&raw_audio, channels as usize))
                 } else {
-                    samples
+                    Zeroizing::new(std::mem::take(&mut *raw_audio))
                 };
 
                 // Resample to 16kHz
                 let audio_16k = if sample_rate != 16000 {
-                    match resample_to_16k(&mono, sample_rate) {
-                        Ok(resampled) => resampled,
+                    match resample_to_16k(&mono_audio, sample_rate) {
+                        Ok(resampled) => Zeroizing::new(resampled),
                         Err(e) => {
                             session_guard
                                 .emit_error(format!("Resampling the recording failed: {e}"));
@@ -377,7 +381,7 @@ pub async fn start_dictation(
                         }
                     }
                 } else {
-                    mono
+                    Zeroizing::new(std::mem::take(&mut *mono_audio))
                 };
 
                 // Run Whisper inference
@@ -443,8 +447,9 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
 
     let sample_rate = config.sample_rate();
     let channels = config.channels();
-    let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(
-        sample_rate as usize * 15 * channels as usize,
+    let capacity = sample_rate as usize * 15 * channels as usize;
+    let buffer: Arc<Mutex<SensitiveCaptureBuffer>> = Arc::new(Mutex::new(SensitiveCaptureBuffer(
+        Vec::with_capacity(capacity),
     )));
 
     let buf_writer = buffer.clone();
@@ -452,8 +457,9 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
         .build_input_stream(
             config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut buf) = buf_writer.lock() {
-                    buf.extend_from_slice(data);
+                if let Ok(mut buf) = buf_writer.try_lock() {
+                    let count = capacity.saturating_sub(buf.0.len()).min(data.len());
+                    buf.0.extend_from_slice(&data[..count]);
                 }
             },
             |e| eprintln!("[Dictation] Mic stream error: {e}"),
@@ -476,10 +482,8 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
 
     drop(stream);
 
-    let samples = buffer
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?
-        .clone();
+    let mut buffer = buffer.lock().map_err(|e| format!("Lock error: {e}"))?;
+    let samples = std::mem::take(&mut buffer.0);
 
     Ok((samples, sample_rate, channels))
 }
@@ -513,15 +517,24 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 
     let input_f64: Vec<f64> = input.iter().map(|&s| s as f64).collect();
     let frames = input_f64.len();
-    let channels = [input_f64];
-    let adapter = SequentialSliceOfVecs::new(&channels, 1, frames)
-        .map_err(|e| format!("Resampler buffer error: {e}"))?;
+    let mut channels = [input_f64];
+    let adapter = match SequentialSliceOfVecs::new(&channels, 1, frames) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            channels[0].zeroize();
+            return Err(format!("Resampler buffer error: {error}"));
+        }
+    };
 
-    let resampled = resampler
-        .process_all(&adapter, frames, None)
-        .map_err(|e| format!("Resample error: {e}"))?;
+    let resampled_result = resampler.process_all(&adapter, frames, None);
+    drop(adapter);
+    channels[0].zeroize();
+    let resampled = resampled_result.map_err(|e| format!("Resample error: {e}"))?;
 
-    Ok(resampled.take_data().iter().map(|&s| s as f32).collect())
+    let mut resampled_data = resampled.take_data();
+    let output = resampled_data.iter().map(|&sample| sample as f32).collect();
+    resampled_data.zeroize();
+    Ok(output)
 }
 
 /// Run Whisper inference on 16 kHz mono f32 audio.
@@ -553,6 +566,37 @@ fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_voice_loader_has_no_route_into_the_model_downloader_or_network_client() {
+        const SPEECH_SOURCE: &str = include_str!("speech.rs");
+        let production_source = SPEECH_SOURCE
+            .rsplit_once("#[cfg(test)]")
+            .map(|(source, _tests)| source)
+            .expect("speech production source precedes its test module");
+
+        assert!(production_source.contains("model_download::verify_cached_model"));
+        assert!(!production_source.contains("model_download::ensure_model"));
+        assert!(!production_source.contains("reqwest::"));
+    }
+
+    #[test]
+    fn sensitive_raw_and_derived_audio_buffers_are_zeroized() {
+        let mut raw = vec![0.25_f32, -0.5_f32];
+        let mut mono = vec![0.75_f32];
+        let mut resampler_input = vec![0.25_f64, -0.5_f64];
+        let mut resampler_output = vec![0.75_f64];
+
+        raw.zeroize();
+        mono.zeroize();
+        resampler_input.zeroize();
+        resampler_output.zeroize();
+
+        assert!(raw.is_empty());
+        assert!(mono.is_empty());
+        assert!(resampler_input.is_empty());
+        assert!(resampler_output.is_empty());
+    }
 
     #[test]
     fn dictation_event_source_boundary_admits_only_bounded_final_text() {

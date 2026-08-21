@@ -301,9 +301,9 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn ensure_whisper_ready(&self) -> Result<Value> {
+    pub async fn load_cached_whisper_model(&self) -> Result<Value> {
         json(reason(
-            commands::speech::ensure_whisper_ready(&self.singletons.dictation).await,
+            commands::speech::load_cached_whisper_model(&self.singletons.dictation).await,
         )?)
     }
 

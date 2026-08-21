@@ -14,12 +14,17 @@ pub struct ModelDownload {
 
 /// Get the shared model cache directory.
 pub fn model_dir() -> Result<PathBuf, String> {
-    let dir = dirs::data_dir()
-        .ok_or("Could not determine data directory")?
-        .join("com.sourdaw.app")
-        .join("models");
+    let dir = cached_model_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
     Ok(dir)
+}
+
+/// Locate the shared model cache without creating or mutating it.
+pub fn cached_model_dir() -> Result<PathBuf, String> {
+    Ok(dirs::data_dir()
+        .ok_or("Could not determine data directory")?
+        .join("com.sourdaw.app")
+        .join("models"))
 }
 
 /// One async lock per model filename, shared process-wide.
@@ -102,6 +107,21 @@ pub async fn ensure_model(model: &'static ModelDownload) -> Result<PathBuf, Stri
         .map_err(|e| format!("Failed to finalize model file: {e}"))?;
 
     eprintln!("[Model] {} ready", model.filename);
+    Ok(path)
+}
+
+/// Verify and return an already-cached model without creating files,
+/// removing files, or entering a download path.
+pub async fn verify_cached_model(model: &'static ModelDownload) -> Result<PathBuf, String> {
+    validate_model_spec(model)?;
+    let path = cached_model_dir()?.join(model.filename);
+    if !path.is_file() {
+        return Err(format!(
+            "Verified local model {} is not cached.",
+            model.filename
+        ));
+    }
+    verify_model_file_off_thread(path.clone(), model).await?;
     Ok(path)
 }
 

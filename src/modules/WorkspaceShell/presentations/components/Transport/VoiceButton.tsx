@@ -10,7 +10,7 @@ type VoiceButtonProps = {
     isAvailable: boolean;
     isListening: boolean;
     isTranscribing: boolean;
-    onToggle: () => void;
+    onToggle: (event: Event) => void;
 };
 
 export const VoiceButton = ({
@@ -25,8 +25,8 @@ export const VoiceButton = ({
 
     const active = isListening || isTranscribing;
 
-    const handleClick = () => {
-        onToggle();
+    const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        onToggle(event.nativeEvent);
     };
 
     return (
