@@ -1,0 +1,19 @@
+tests/e2e/fermenterFilterResoDriveTestId.spec.ts
+  s_24b1bdbc3c31ad::t_0d4311c4c65ef0 3,5,10-11,14-19,21-25,27-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "997198e475edee7cb87f82226226eb0d6aec79b8",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
