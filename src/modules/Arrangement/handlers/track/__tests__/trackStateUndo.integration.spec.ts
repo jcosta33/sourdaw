@@ -253,6 +253,11 @@ describe('track-state guarded undo integration', () => {
             seedClipWithEnvelope();
             seedSiblingClip();
             kneadStore.set({ ...defaultKneadState });
+            // The sibling is already retuned when the cut is taken, so the cut's snapshot
+            // carries a real payload — which is what makes the later divergence an edit
+            // the restore would throw away rather than an absence it has nothing to say
+            // about. The seeded-default case is a separate test, and must *not* conflict.
+            updateClipKneadState('clip-sibling', (state) => ({ ...state, retuneSpeedMs: 12, humanizePercent: 10 }));
             await run({ type: 'cutClip' });
             // Only the selected clip goes; the sibling is untouched by the cut, and its
             // id keeps the same position in what is left.
@@ -280,6 +285,61 @@ describe('track-state guarded undo integration', () => {
             // Nothing is written at all, so the cut clip stays cut.
             expect(track('track-1')?.clips.map((clip) => clip.id)).toEqual(['clip-sibling']);
             expect(readClipSatelliteEntry('clip-1').gainEnvelope).toBeNull();
+        });
+
+        it('cut: survives the Knead analysis seeding a state onto a sibling clip that had none', async () => {
+            seedClipWithEnvelope();
+            seedSiblingClip();
+            kneadStore.set({ ...defaultKneadState });
+            await run({ type: 'cutClip' });
+            expect(track('track-1')?.clips[0]?.kneadState).toBeUndefined();
+
+            // Not an authored edit. `ClipView` mounts one `KneadEditor` for whatever clip
+            // the selection store names while the panel sits in pitch mode, and its
+            // effect fires the pitch analysis for any clip with no blobs — so merely
+            // clicking the next clip runs this. `dspAnalysis` ends in exactly this call,
+            // and `updateClipKneadState` fills a seeded default for a clip that had no
+            // state at all, so even a silent clip diverges from a snapshot that carried
+            // none.
+            updateClipKneadState('clip-sibling', (state) => ({ ...state, blobs: [] }));
+            expect(track('track-1')?.clips[0]?.kneadState).toMatchObject({
+                blobs: [],
+                retuneSpeedMs: 25,
+                humanizePercent: 40,
+            });
+
+            await undo();
+
+            // The decisive assertion: the undo goes through. A guard comparing an absent
+            // snapshot value against that seeded default refuses here, `undoImpl` leaves
+            // the conflicted entry on `past` and reports nothing, and undo is dead for
+            // the session with every older edit stranded beneath it.
+            expect(track('track-1')?.clips.map((clip) => clip.id)).toEqual(['clip-1', 'clip-sibling']);
+            expect(readClipSatelliteEntry('clip-1').gainEnvelope).toMatchObject({ enabled: true });
+            // And the restore does not write the snapshot's absence over the live value:
+            // the field the guard declined to compare is the field the write leaves alone.
+            expect(track('track-1')?.clips.find((clip) => clip.id === 'clip-sibling')?.kneadState).toMatchObject({
+                blobs: [],
+                retuneSpeedMs: 25,
+                humanizePercent: 40,
+            });
+        });
+
+        it('cut: conflicts rather than reverting a take lane a collaborator renamed', async () => {
+            seedClipWithEnvelope();
+            await run({ type: 'cutClip' });
+
+            // `renameTrackAlternative` is an ordinary undoable action writing exactly this
+            // field, and the cut's snapshot carries the whole lane including the old name.
+            divergeTrack('track-1', { alternatives: [{ id: 'alt-1', name: 'Comp B', clips: [] }] });
+
+            await undo();
+
+            // The decisive assertion: the restore replaces `alternatives` wholesale, so a
+            // guard blind to `name` hands back "Alternative 1", reports the restore as
+            // written, and propagates the revert through the CRDT.
+            expect(track('track-1')?.alternatives).toEqual([{ id: 'alt-1', name: 'Comp B', clips: [] }]);
+            expect(track('track-1')?.clips).toEqual([]);
         });
 
         it('cut: conflicts rather than reverting a MIDI note edit on a clip that only shares the track', async () => {

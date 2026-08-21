@@ -156,12 +156,22 @@ const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
     // edits this is here to protect, since Knead's writes do not go through
     // `executeAppAction` and file no undo entry of their own.
     //
-    // Compared despite churning on every frame of a pitch-blob drag, and despite the
-    // Knead editor auto-filling it from an async analysis when it opens on a clip with
-    // none. Neither is churn nobody authored: the drag's final value is what the
-    // musician left there, and the analysis only runs for a clip whose editor they
-    // opened. Both persist, and both are what the restore would throw away.
-    kneadState: (live, expected) => structuralValueMatches(live.kneadState, expected.kneadState),
+    // Compared only when the snapshot carries one, and that half-comparison is the
+    // whole point. A clip acquires a `kneadState` merely by being *selected* while the
+    // Knead editor is the open audio-edit mode: the editor mounts on whatever clip the
+    // selection store names, its effect fires the pitch analysis for a clip with no
+    // blobs, and `updateClipKneadState` seeds a default payload for a clip that had no
+    // state at all — a fresh object every time, so its no-op short-circuit cannot fire.
+    // Comparing an absent snapshot value against that seeded default refuses the undo,
+    // and `undo` leaves the conflicted entry on `past` reporting nothing, so the whole
+    // stack dies on the most ordinary vocal-editing gesture in the product.
+    //
+    // Skipping the comparison costs the musician nothing, because the snapshot has no
+    // `kneadState` to restore either: `restoredClips` leaves the live value in place
+    // rather than writing the absence back. A snapshot that *does* carry one is a
+    // genuine retune the restore would throw away, and still conflicts.
+    kneadState: (live, expected) =>
+        expected.kneadState === undefined || structuralValueMatches(live.kneadState, expected.kneadState),
 };
 
 /**
@@ -231,6 +241,14 @@ function deviceStateMatches(
  * the previous payload and the loss would only surface the next time the project was
  * opened and rehydrated from it.
  *
+ * `externalPluginId` and `externalInstanceId` are compared for the same reason as the
+ * rest: they are a device's plugin-host identity, minted once by `addExternalDevice`
+ * when the musician loads the plugin and never rewritten in place afterwards — the
+ * only other writers mint a whole new device (preset load, template load, track
+ * duplicate). Nothing recomputes them on a tick, so comparing them cannot trip on
+ * churn, and restoring a stale pair would point a live device at the wrong plugin
+ * instance.
+ *
  * `externalStateChunk` is the one exclusion, and it is genuinely different: it is
  * refetched at save time from the still-live native plugin instance, so a stale value
  * written back here is overwritten before it can reach disk, while a deep compare on
@@ -242,6 +260,8 @@ function deviceMatches(live: Device, expected: DeviceSnapshot): boolean {
         live.name === expected.name &&
         live.type === expected.type &&
         live.bypassed === expected.bypassed &&
+        live.externalPluginId === expected.externalPluginId &&
+        live.externalInstanceId === expected.externalInstanceId &&
         parameterValuesMatch(live.parameterValues, expected.parameterValues) &&
         deviceStateMatches(live.deviceState, expected.deviceState)
     );
@@ -259,6 +279,34 @@ function devicesMatch(live: readonly Device[], expected: readonly DeviceSnapshot
     });
 }
 
+/**
+ * One comparator per field of a take lane, keyed by `TrackAlternative`'s own keys with
+ * `-?`, for exactly the reason the clip, track and snapshot tables above and below are
+ * tables: the restore replaces the whole `alternatives` array, so every field on a lane
+ * is a field it overwrites, and one added later must not become writable before
+ * somebody decides how the guard sees it.
+ *
+ * This element was the one hop in the chain without that gate — hand-written over a
+ * subset while its three neighbours were mapped — and `name` is what fell through it.
+ */
+type AlternativeFieldComparators = {
+    readonly [Key in keyof TrackAlternative]-?: (
+        live: TrackAlternative,
+        expected: TrackCollectionAlternativeSnapshot
+    ) => boolean;
+};
+
+const ALTERNATIVE_FIELD_COMPARATORS: AlternativeFieldComparators = {
+    id: (live, expected) => live.id === expected.id,
+    // `renameTrackAlternative` is an ordinary `undoable: true` user action that writes
+    // this and nothing else, and the restore puts the captured name back with the rest
+    // of the cloned lane. Uncompared, undoing a cut silently reverts a take lane a
+    // collaborator renamed in between, reports the restore as written, and propagates
+    // the revert back through the CRDT.
+    name: (live, expected) => live.name === expected.name,
+    clips: (live, expected) => clipsMatch(live.clips, expected.clips),
+};
+
 function alternativesMatch(
     live: readonly TrackAlternative[],
     expected: readonly TrackCollectionAlternativeSnapshot[]
@@ -270,8 +318,7 @@ function alternativesMatch(
         const expectedAlternative = expected[index];
         return (
             expectedAlternative !== undefined &&
-            alternative.id === expectedAlternative.id &&
-            clipsMatch(alternative.clips, expectedAlternative.clips)
+            Object.values(ALTERNATIVE_FIELD_COMPARATORS).every((matches) => matches(alternative, expectedAlternative))
         );
     });
 }
@@ -313,10 +360,21 @@ const TRACK_FIELD_COMPARATORS: TrackFieldComparators = {
 /**
  * One clip's MIDI lane, compared against the live store.
  *
- * Keyed by what the snapshot carries rather than by what the track holds, because the
- * snapshot's keys are exactly what `writeTrackClipState` replaces. A clip whose lane
- * was empty at capture has no key here and is not written, so notes recorded onto it
- * since survive the restore untouched and must not refuse it.
+ * Keyed by what the snapshot carries rather than by what the track holds, so a clip
+ * whose lane was empty at capture has no key here and is not compared — notes recorded
+ * onto it since survive the restore untouched and must not refuse it.
+ *
+ * That reasoning is exact for this guard and deliberately incomplete for the handler,
+ * and the gap is accepted rather than unnoticed. This and the three satellite guards
+ * beside it read the *`expected`* entry's keys, while `writeTrackClipState` writes the
+ * *`replacement`* entry's keys, and the two are independent captures taken at different
+ * moments — so a key the replacement carries and `expected` does not is written without
+ * this guard ever having looked at it. It is accepted because both entries come from
+ * one `captureTrackClipStates` call over the same track ids and the same clip ids, so
+ * their key sets diverge only where the forward operation itself added or removed a
+ * lane, and no reachable loss was constructible from that. It is written down because
+ * the containment is a property of the callers, not of this function, and a new caller
+ * that captures the two sides over different clip sets breaks it silently.
  */
 function midiLanesMatch(
     live: Readonly<Record<string, readonly unknown[]>> | undefined,
@@ -411,6 +469,54 @@ function clipIdsOf(entry: TrackClipStateSnapshot): string[] {
 }
 
 /**
+ * Every live clip the track owns, keyed by id — the active collection and the take
+ * lanes together, because `restoredClips` reconciles both and a clip moves between the
+ * two when an alternative is switched.
+ */
+function liveClipsById(track: Track): Map<string, Clip> {
+    const byId = new Map<string, Clip>();
+    for (const clip of track.clips) {
+        byId.set(clip.id, clip);
+    }
+    for (const alternative of track.alternatives) {
+        for (const clip of alternative.clips) {
+            byId.set(clip.id, clip);
+        }
+    }
+    return byId;
+}
+
+/**
+ * The clips to write, which is the snapshot's clips except for `kneadState`.
+ *
+ * That one field is not a wholesale replacement, and the asymmetry is the exact
+ * counterpart of the one in `CLIP_FIELD_COMPARATORS.kneadState`: the guard declines to
+ * compare a `kneadState` the snapshot does not carry, so this write must not put that
+ * absence over a live value the guard was never asked about. Refusing to compare *and*
+ * refusing to write is sound precisely because the snapshot has nothing there to lose —
+ * leaving the live value alone restores exactly as much as writing `undefined` would,
+ * and destroys nothing.
+ *
+ * No other field may be handled this way, and the reason is the same one read backwards:
+ * every other field is compared, so writing it back is authorised by the guard that just
+ * ran. Skipping a comparison without also skipping the write is a silent overwrite;
+ * skipping a write for a field the snapshot genuinely carries is a silent failure to
+ * restore. Only a field that is both absent and uncompared belongs here.
+ */
+function restoredClips(
+    clips: readonly ClipStateSnapshot[],
+    liveByClipId: ReadonlyMap<string, Clip>
+): ClipStateSnapshot[] {
+    return clips.map((clip) => {
+        if (clip.kneadState !== undefined) {
+            return clip;
+        }
+        const liveKneadState = liveByClipId.get(clip.id)?.kneadState;
+        return liveKneadState === undefined ? clip : { ...clip, kneadState: liveKneadState };
+    });
+}
+
+/**
  * Restore one track. Writes `clips` together with every track-level field a
  * collection rewrite overwrites: restoring clips alone would hand back the right
  * clips on a track that had lost its kind, its device chain, its frozen take and
@@ -420,17 +526,25 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
     // The snapshot's `clips`, `devices` and `alternatives` structurally satisfy their
     // declared element types while actually carrying the whole cloned objects — the
     // same convention `handleRestoreClip` casts through for a single clip.
-    updateTrack(entry.trackId, (track) => ({
-        ...track,
-        clips: entry.clips as never,
-        kind: entry.trackFields.kind,
-        devices: entry.trackFields.devices as never,
-        frozen: entry.trackFields.frozen,
-        frozenBufferId: entry.trackFields.frozenBufferId,
-        freezeState: entry.trackFields.freezeState,
-        activeAlternativeId: entry.trackFields.activeAlternativeId,
-        alternatives: entry.trackFields.alternatives as never,
-    }));
+    updateTrack(entry.trackId, (track) => {
+        const liveByClipId = liveClipsById(track);
+        return {
+            ...track,
+            clips: restoredClips(entry.clips, liveByClipId) as never,
+            kind: entry.trackFields.kind,
+            devices: entry.trackFields.devices as never,
+            frozen: entry.trackFields.frozen,
+            frozenBufferId: entry.trackFields.frozenBufferId,
+            freezeState: entry.trackFields.freezeState,
+            activeAlternativeId: entry.trackFields.activeAlternativeId,
+            // A take lane's clips go through the same reconciliation: `clipsMatch` is
+            // what guards them, so the comparator's exclusion reaches here too.
+            alternatives: entry.trackFields.alternatives.map((alternative) => ({
+                ...alternative,
+                clips: restoredClips(alternative.clips, liveByClipId),
+            })) as never,
+        };
+    });
 
     const midiClipIds = new Set([
         ...Object.keys(entry.midiNotesByClipId),

@@ -313,6 +313,11 @@ export type TrackHeightSnapshot = { readonly trackId: string; readonly height: n
  */
 export type TrackCollectionAlternativeSnapshot = {
     readonly id: string;
+    /** Declared because `captureTrackClipStates` clones the whole live alternative and
+     *  the restore writes the whole object back — so the name has always travelled and
+     *  always been restored, and a narrower declaration only hid it from the guard.
+     *  `renameTrackAlternative` writes exactly this field. */
+    readonly name: string;
     /** Whole clips, for the same reason `TrackClipStateSnapshot.clips` carries them:
      *  the restore replaces each alternative's clip array outright, so the guard has
      *  to be able to see an edit *inside* one of those clips, not just its id. */

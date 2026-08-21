@@ -56,15 +56,26 @@ vi.mock('../../../useCases/clip/applyClipAutomationLaneTransition', () => ({
     applyClipAutomationLaneTransition: mocks.applyClipAutomationLaneTransition,
 }));
 
-/** The track-level fields a collection rewrite overwrites, as `TrackDummy` has them. */
-const TRACK_FIELDS = {
-    kind: 'audio',
-    devices: [],
-    frozen: false,
-    freezeState: { status: 'unfrozen' },
-    activeAlternativeId: 'alt-1',
-    alternatives: [{ id: 'alt-1', clips: [] }],
-} as const satisfies TrackClipStateSnapshot['trackFields'];
+/**
+ * The track-level fields a collection rewrite overwrites, in the live track's own shape.
+ *
+ * One helper for the live track and the snapshot, for the reason `clipsFor` gives below
+ * and against the same failure. `TrackDummy` seeds its take lane with a `name` while
+ * this fixture spelled out an unnamed one, so every case in this file paired a named
+ * live lane against a nameless snapshot lane — twenty passing tests over a field no
+ * comparison read. A fresh object per call, so a live value and a snapshot value are
+ * never the same reference and a comparison has something to do.
+ */
+function trackFields() {
+    return {
+        kind: 'audio',
+        devices: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+    } satisfies Partial<Track>;
+}
 
 /**
  * The clips both sides of the guard are built from.
@@ -90,7 +101,7 @@ function snapshotFor(
     return {
         trackId,
         clips: clipsFor(trackId, clipIds),
-        trackFields: TRACK_FIELDS,
+        trackFields: trackFields(),
         midiNotesByClipId: {},
         midiCcByClipId: {},
         midiPitchBendByClipId: {},
@@ -100,9 +111,15 @@ function snapshotFor(
     };
 }
 
-/** A live track carrying exactly the clips `snapshotFor` would snapshot for it. */
+/** A live track carrying exactly the clips and track fields `snapshotFor` would
+ *  snapshot for it. */
 function liveTrack(trackId: string, clipIds: readonly string[], overrides?: Partial<Track>): Track {
-    return TrackDummy.create({ id: trackId, clips: clipsFor(trackId, clipIds), ...overrides });
+    return TrackDummy.create({
+        id: trackId,
+        clips: clipsFor(trackId, clipIds),
+        ...trackFields(),
+        ...overrides,
+    });
 }
 
 describe('handleRestoreTrackClipStates', () => {
@@ -233,19 +250,74 @@ describe('handleRestoreTrackClipStates', () => {
             // `executeAppAction`, so a retune files no undo entry of its own to protect
             // it — the same situation `deviceState` is in. The retuned clip is not the
             // clip being restored; it only shares a track with it.
+            //
+            // The snapshot carries a payload of its own here, which is what makes the
+            // divergence an edit rather than an absence: a clip that had no `kneadState`
+            // at capture is the seeded-analysis case two tests below, and must not
+            // conflict.
+            const captured = {
+                blobs: [],
+                retuneSpeedMs: 25,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
             const [kept, retuned] = clipsFor('t1', ['c1', 'c2']);
             mocks.getTrackStoreState.mockReturnValue({
                 tracks: [
                     TrackDummy.create({
                         id: 't1',
+                        ...trackFields(),
                         clips: [
                             kept!,
                             {
                                 ...retuned!,
+                                kneadState: { ...captured, retuneSpeedMs: 5, humanizePercent: 0 },
+                            },
+                        ],
+                    }),
+                ],
+            });
+            const capturedSnapshot = snapshotFor('t1', ['c1', 'c2']);
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        {
+                            ...capturedSnapshot,
+                            clips: capturedSnapshot.clips.map((clip) =>
+                                clip.id === 'c2' ? { ...clip, kneadState: captured } : clip
+                            ),
+                        },
+                    ],
+                    replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
+        it('still restores when a sibling clip acquired a Knead state the snapshot never carried', () => {
+            // Selecting a clip while the Knead editor is the open audio-edit mode fires
+            // the pitch analysis on it, and `updateClipKneadState` seeds a default
+            // payload for a clip that had no state at all — the same seeded shape here.
+            // That is a view action, not an edit, and the snapshot has no `kneadState` to
+            // restore over it, so refusing would kill the undo stack for nothing.
+            const [kept, analysed] = clipsFor('t1', ['c1', 'c2']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    TrackDummy.create({
+                        id: 't1',
+                        ...trackFields(),
+                        clips: [
+                            kept!,
+                            {
+                                ...analysed!,
                                 kneadState: {
                                     blobs: [],
-                                    retuneSpeedMs: 5,
-                                    humanizePercent: 0,
+                                    retuneSpeedMs: 25,
+                                    humanizePercent: 40,
                                     formantPreserve: true,
                                 },
                             },
@@ -258,7 +330,87 @@ describe('handleRestoreTrackClipStates', () => {
                 type: 'restoreTrackClipStates',
                 payload: {
                     expected: [snapshotFor('t1', ['c1', 'c2'])],
+                    replacement: [snapshotFor('t1', ['c1', 'c2'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves a live Knead state in place rather than writing the snapshot absence over it', () => {
+            // The write side of the same exclusion. The guard declined to compare this
+            // field, so the write must not replace it either — a wholesale clip array
+            // replacement would silently drop the analysis the guard was never asked
+            // about, which is the loss the comparator exists to prevent.
+            const [analysed] = clipsFor('t1', ['c1']);
+            const kneadState = {
+                blobs: [],
+                retuneSpeedMs: 25,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
+            const track = TrackDummy.create({
+                id: 't1',
+                ...trackFields(),
+                clips: [{ ...analysed!, kneadState }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'])],
                     replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            const [, updater] = mocks.updateTrack.mock.calls[0]!;
+            expect(updater(track).clips[0]?.kneadState).toEqual(kneadState);
+        });
+
+        it('refuses when a take lane was renamed since capture', () => {
+            // `renameTrackAlternative` writes only the lane's `name`, and the restore
+            // puts the whole captured lane back. Left uncompared, undoing a cut reverts
+            // a collaborator's rename and reports the restore as written.
+            const track = liveTrack('t1', ['c1'], {
+                alternatives: [{ id: 'alt-1', name: 'Comp B', clips: [] }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'])],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
+        it('refuses when a device was pointed at a different plugin instance since capture', () => {
+            const device = {
+                id: 'device-1',
+                name: 'Reverb',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'com.vendor.reverb',
+                externalInstanceId: 'com.vendor.reverb-instance-1',
+            };
+            const track = liveTrack('t1', ['c1'], {
+                devices: [{ ...device, externalInstanceId: 'com.vendor.reverb-instance-2' }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'], { trackFields: { ...trackFields(), devices: [device] } })],
+                    replacement: [snapshotFor('t1', [])],
                 },
             });
 
@@ -357,29 +509,23 @@ describe('handleRestoreTrackClipStates', () => {
             // there before, and every one of those fields has to come back — restoring
             // only `clips` hands the musician their MIDI clips on an audio track with no
             // instrument, no plugins and the frozen take gone.
-            const track = liveTrack('t1', ['c1'], {
-                kind: 'audio',
-                devices: [],
-                frozen: false,
-                freezeState: { status: 'unfrozen' },
-                activeAlternativeId: 'alt-2',
-                alternatives: [{ id: 'alt-2', name: 'Alternative 2', clips: [] }],
-            });
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
-            const note = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
-            const cc = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
-            const pitchBend = { id: 'pb-1', value: 0, beat: 0, channel: 0 };
-            const restoredClip = ClipDummy.create({ id: 'restored-c1', trackId: 't1' });
             // What the live track holds now — `flattenTrack`'s own output. `expected` is
-            // always the post-write state, so the guard compares these against live.
+            // always the post-write state, so the guard compares these against live, and
+            // the live track below is built from this same value rather than restating it.
             const postFlattenFields = {
                 kind: 'audio' as const,
                 devices: [],
                 frozen: false,
                 freezeState: { status: 'unfrozen' as const },
                 activeAlternativeId: 'alt-2',
-                alternatives: [{ id: 'alt-2', clips: [] }],
+                alternatives: [{ id: 'alt-2', name: 'Alternative 2', clips: [] }],
             } satisfies TrackClipStateSnapshot['trackFields'];
+            const track = liveTrack('t1', ['c1'], structuredClone(postFlattenFields));
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+            const note = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+            const cc = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
+            const pitchBend = { id: 'pb-1', value: 0, beat: 0, channel: 0 };
+            const restoredClip = ClipDummy.create({ id: 'restored-c1', trackId: 't1' });
             const preFlattenFields = {
                 kind: 'midi' as const,
                 devices: [
@@ -390,8 +536,8 @@ describe('handleRestoreTrackClipStates', () => {
                 freezeState: { status: 'frozen' as const },
                 activeAlternativeId: 'alt-1',
                 alternatives: [
-                    { id: 'alt-1', clips: [] },
-                    { id: 'alt-9', clips: [] },
+                    { id: 'alt-1', name: 'Alternative 1', clips: [] },
+                    { id: 'alt-9', name: 'Alternative 9', clips: [] },
                 ],
             } satisfies TrackClipStateSnapshot['trackFields'];
             const satellite: ClipSatelliteEntrySnapshot = {
