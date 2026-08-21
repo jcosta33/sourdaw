@@ -26,7 +26,7 @@ test.describe('Status bar', () => {
         const toggle = page.getByRole('button', { name: 'Toggle undo history panel', exact: true });
         const close = page.getByRole('button', { name: 'Close undo history', exact: true });
 
-        await expect(toggle).toContainText('0 undos');
+        await expect(toggle).toHaveText('0 undos');
         await expect(close).toHaveCount(0);
 
         await toggle.click();
@@ -43,12 +43,12 @@ test.describe('Status bar', () => {
         const toggle = page.getByRole('button', { name: 'Toggle undo history panel', exact: true });
         const lastAction = 'Add midi track "MIDI"';
 
-        await expect(toggle).toContainText('0 undos');
+        await expect(toggle).toHaveText('0 undos');
         await expect(status.getByText(/^Last: /)).toHaveCount(0);
 
         await addMidiTrack(page);
 
-        await expect(toggle).toContainText('1 undo');
+        await expect(toggle).toHaveText('1 undo');
         await expect(status.getByText(`Last: ${lastAction}`, { exact: true })).toBeVisible();
 
         await toggle.click();
