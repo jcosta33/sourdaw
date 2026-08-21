@@ -1,85 +1,40 @@
-import { test, expect } from '@playwright/test';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { expect, test } from '@playwright/test';
 
-async function openToaster(page: import('@playwright/test').Page): Promise<boolean> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill('toaster');
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: /^Toaster/i }).first();
-    if (await card.isVisible().catch(() => false)) {
-        await card.click();
-        await page.waitForTimeout(2000);
-        return true;
-    }
-    return false;
-}
+import { launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
-test.describe('Toaster kit & pad deep', () => {
+test.describe('Toaster kit shelf and sequencer', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+        await open_browser_instrument({ page, instrument: 'Toaster' });
     });
 
-    test('Toaster pads are clickable and select correctly', async ({ page }) => {
-        const opened = await openToaster(page);
-        if (!opened) return;
+    test('loading Sourdough 808 selects that kit and remaps Closed HH to CH', async ({ page }) => {
+        const closedHh = page.getByRole('button', { name: 'Trigger Closed HH', exact: true });
+        const ch = page.getByRole('button', { name: 'Trigger CH', exact: true });
+        const load808 = page.getByRole('button', { name: 'Load kit Sourdough 808', exact: true });
 
-        const pad0 = page.getByTestId('toaster-pad-0');
-        await pad0.click();
-        await expect(pad0).toHaveAttribute('aria-pressed', 'true');
+        await expect(closedHh).toBeVisible();
+        await expect(ch).toHaveCount(0);
+        await expect(load808).toHaveAttribute('aria-pressed', 'false');
+
+        await load808.click();
+
+        await expect(load808).toHaveAttribute('aria-pressed', 'true');
+        await expect(ch).toBeVisible();
+        await expect(closedHh).toHaveCount(0);
     });
 
-    test('Toaster step sequencer cells toggle', async ({ page }) => {
-        const opened = await openToaster(page);
-        if (!opened) return;
+    test('Kick step 1 toggles on and Close dismisses Toaster', async ({ page }) => {
+        const off = page.getByRole('checkbox', { name: 'Kick step 1, off', exact: true });
+        await expect(off).toHaveAttribute('aria-checked', 'false');
 
-        const step = page.getByTestId('toaster-step-0-0');
-        await expect(step).toBeVisible({ timeout: 5000 });
+        await off.click();
+        await expect(page.getByRole('checkbox', { name: /Kick step 1, on/ })).toHaveAttribute('aria-checked', 'true');
 
-        const before = await step.getAttribute('aria-checked');
-        await step.click();
-        await page.waitForTimeout(300);
-        const after = await step.getAttribute('aria-checked');
-        expect(after).not.toBe(before);
-    });
-
-    test('Toaster panel has parameter sliders', async ({ page }) => {
-        const opened = await openToaster(page);
-        if (!opened) return;
-
-        const sliders = page.getByRole('slider');
-        expect(await sliders.count()).toBeGreaterThan(0);
-    });
-
-    test('Toaster close button works', async ({ page }) => {
-        const opened = await openToaster(page);
-        if (!opened) return;
-
-        const close = page.getByRole('button', { name: /Close Toaster/i }).first();
+        const close = page.getByRole('button', { name: 'Close Toaster', exact: true });
         await close.click();
-        await page.waitForTimeout(500);
-        await expect(close).not.toBeVisible();
-    });
-
-    test('Toaster pad selection persists across step toggle', async ({ page }) => {
-        const opened = await openToaster(page);
-        if (!opened) return;
-
-        const pad0 = page.getByTestId('toaster-pad-0');
-        await pad0.click();
-        await expect(pad0).toHaveAttribute('aria-pressed', 'true');
-
-        // Toggle a step — pad should still be selected.
-        const step = page.getByTestId('toaster-step-0-0');
-        if (await step.isVisible().catch(() => false)) {
-            await step.click();
-            await page.waitForTimeout(300);
-        }
-
-        await expect(pad0).toHaveAttribute('aria-pressed', 'true');
+        await expect(close).toHaveCount(0);
     });
 });
