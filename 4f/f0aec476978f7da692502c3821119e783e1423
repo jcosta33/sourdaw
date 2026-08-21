@@ -1,0 +1,23 @@
+src/components/ui/bipolar-slider.tsx
+  s_2175fca1f07426::t_a4bf4e008fcd97 81
+src/infra/dialogService/ConfirmDialog.tsx
+  s_2175fca1f07426::t_eeeeda75f42e63 53
+src/infra/dialogService/PromptDialog.tsx
+  s_2175fca1f07426::t_461c35c0a65686 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4ff0aec476978f7da692502c3821119e783e1423",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
