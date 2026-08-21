@@ -1,0 +1,72 @@
+.agents/decisions/README.md
+  s_0a3429e31e555d::t_3ef9dde7392cd3 50
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_0a3429e31e555d::t_13a9443f735102 72-74
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_0a3429e31e555d::t_13a9443f735102 73-75
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_0a3429e31e555d::t_13a9443f735102 86-88
+crates/daw-dsp/AGENTS.md
+  s_0a3429e31e555d::t_3ef9dde7392cd3 4-5,8
+  s_0a3429e31e555d::t_2161cd133728a4 3
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRenderBudget.spec.ts
+  s_0a3429e31e555d::t_dd1e6af4a8f98b 9-10,19-24,65-131,146,195
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_0a3429e31e555d::t_f47410f87ca4bb 52
+src/modules/AudioEngine/worklets/__tests__/grandBouleWasmInstance.spec.ts
+  s_0a3429e31e555d::t_fc94e8b77e592f 1-11
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_0a3429e31e555d::t_13a9443f735102 148-149
+  s_0a3429e31e555d::t_9c966fb40e9ac3 150-151
+src/modules/AudioEngine/AGENTS.md
+  s_0a3429e31e555d::t_5d0765d55e2272 3,16-18,25-28
+.agents/decisions/0034-grand-boule-native-only-wasm-contract.md
+  s_0a3429e31e555d::t_3ef9dde7392cd3 1-53
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_c4f22a2f7c325e 505,510,596,602,856
+src/modules/AudioEngine/worklets/grandBouleWasmInstance.ts
+  s_0a3429e31e555d::t_f47410f87ca4bb 1-43
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_e9d14d975e2d5c 198-227
+  s_0a3429e31e555d::t_61f3bea9a49d85 228-230,770
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_0a3429e31e555d::t_f47410f87ca4bb 77
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_0a3429e31e555d::t_9c966fb40e9ac3 114-115
+  s_0a3429e31e555d::t_13a9443f735102 112-113
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_0a3429e31e555d::t_13a9443f735102 144-145
+  s_0a3429e31e555d::t_9c966fb40e9ac3 146-147
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_0a3429e31e555d::t_f47410f87ca4bb 26,28,30,32,36,39-40,49,188
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_0a3429e31e555d::t_f47410f87ca4bb 25-26,51-53,139-140,148
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_e9d14d975e2d5c 4-5,11,13-14,31-76,114-138
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_0a3429e31e555d::t_13a9443f735102 104-106
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0a3429e31e555d::t_406fcfecf609da 1,756-758,777-811,833,848-861
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0a3429e31e555d::t_acea5b7e76df4a 1,6-8,27-61,83,98-111
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_65b855ab15ea62 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0a3429e31e555d::t_a326f8abe65d4c 1,756-758,777-811,833,848-861
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "878e82368d103df6dc3c3975ded765a4dee32d33",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
