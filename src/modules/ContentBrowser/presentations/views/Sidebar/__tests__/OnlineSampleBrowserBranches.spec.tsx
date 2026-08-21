@@ -30,15 +30,16 @@ describe('OnlineSampleBrowser — source links', () => {
         expect(links.length).toBeGreaterThan(6);
     });
 
-    it('renders license badge text for sources', () => {
+    it('warns that item terms vary without claiming a license', () => {
         render(<OnlineSampleBrowser preview={makePreview()} />);
-        // Multiple sources have CC0 — use getAllByText
-        expect(screen.getAllByText('CC0').length).toBeGreaterThan(0);
+        expect(screen.getByText(/Terms vary by item; verify the selected file before use/i)).toBeInTheDocument();
+        expect(screen.queryByText('CC0')).not.toBeInTheDocument();
+        expect(screen.queryByText(/commercially usable/i)).not.toBeInTheDocument();
     });
 
     it('renders the intro paragraph', () => {
         render(<OnlineSampleBrowser preview={makePreview()} />);
-        expect(screen.getByText(/Free sample libraries/i)).toBeInTheDocument();
+        expect(screen.getByText(/External collections/i)).toBeInTheDocument();
     });
 });
 
