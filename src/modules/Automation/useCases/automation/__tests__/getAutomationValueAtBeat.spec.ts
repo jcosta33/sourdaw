@@ -267,4 +267,109 @@ describe('getAutomationValueAtBeat — declared-range clamp', () => {
         automationStore.set({ lanes: [lane('l1', [point(0, 0.2), point(4, 0.8)])] });
         expect(getAutomationValueAtBeat('l1', 2)).toBeCloseTo(0.5, 10);
     });
+
+    /**
+     * The live half of the `+6 dB` fader headroom on a *legacy* gain lane.
+     *
+     * Such a lane stores `maxValue: 1` and keeps it — the scalar is durable
+     * CRDT state, and a sanitizer that rewrote it would read as document
+     * corruption — so the ceiling is derived here instead. That derivation is
+     * load-bearing rather than cosmetic: `paintDrawPoint` already draws into
+     * the headroom, and the offline path clamps the same lane with
+     * `clampFaderGain` (`automationScheduling.ts`). Clamping on the stored `1`
+     * here would play a point drawn at `1.5` back at unity while exporting it
+     * at `1.5` — the live-versus-offline divergence #789 exists to close.
+     */
+    it('plays a legacy gain lane back at the point drawn into its headroom', () => {
+        automationStore.set({
+            lanes: [lane('gain-lane', [point(0, 1.5), point(4, 1.5)], { parameterId: 'gain', maxValue: 1 })],
+        });
+
+        expect(getAutomationValueAtBeat('gain-lane', 2)).toBeCloseTo(1.5, 10);
+    });
+
+    it('still holds a non-gain lane to its own stored ceiling', () => {
+        automationStore.set({
+            lanes: [lane('send-lane', [point(0, 1.5), point(4, 1.5)], { parameterId: 'send-bus-1', maxValue: 1 })],
+        });
+
+        expect(getAutomationValueAtBeat('send-lane', 2)).toBe(1);
+    });
+
+    /**
+     * The other half of that headroom, and the one that reaches a musician who
+     * changed nothing.
+     *
+     * Widening the *overshoot* bound as well as the point bound would make a
+     * project saved before this change play louder on being opened: Catmull-Rom
+     * overshoots between control points by construction, and a gain lane riding
+     * near unity would have that overshoot flattened at `FADER_MAX_GAIN`
+     * instead of at the `1` the lane declares. These are the same points the
+     * suite's declared-range case uses, on a legacy gain lane — every one at or
+     * below unity, so nothing on this lane asks for headroom and nothing may be
+     * given any.
+     */
+    it('plays a legacy smooth gain lane no louder than the lane declares', () => {
+        automationStore.set({
+            lanes: [
+                lane('gain-lane', [point(0, 0.2), point(2, 0.95, 'smooth'), point(4, 1.0), point(6, 0.2)], {
+                    parameterId: 'gain',
+                    maxValue: 1,
+                }),
+            ],
+        });
+
+        const value = getAutomationValueAtBeat('gain-lane', 3.2);
+
+        expect(value).not.toBeNull();
+        // The raw spline value here is ~1.0748; the derived ceiling would have
+        // admitted all of it.
+        expect(value!).toBeLessThanOrEqual(1);
+    });
+
+    /**
+     * The overshoot bound rises with the segment's own points and no further:
+     * a stored `1.5` is played, but the spline is not allowed to sail past it
+     * to the derived ceiling on the strength of that point existing.
+     *
+     * Pinned to the one value the bound can produce rather than bracketed by an
+     * inequality. The raw curve here is ~1.6348 and the derived ceiling is
+     * `FADER_MAX_GAIN`, so `> 1` and `<= 1.5` together admit `1.45` as well —
+     * which is exactly what a bound that read only the segment's *first*
+     * bracketing point would return, and the segment's raise lives on its
+     * second one.
+     */
+    it('bounds overshoot at the segment its points describe, not at the derived ceiling', () => {
+        automationStore.set({
+            lanes: [
+                lane('gain-lane', [point(0, 0.2), point(2, 1.45, 'smooth'), point(4, 1.5), point(6, 0.2)], {
+                    parameterId: 'gain',
+                    maxValue: 1,
+                }),
+            ],
+        });
+
+        const value = getAutomationValueAtBeat('gain-lane', 3.2);
+
+        expect(value).not.toBeNull();
+        expect(value!).toBe(1.5);
+    });
+
+    /**
+     * A gain lane with `minValue < 0` is a decibel lane — `automationScheduling`
+     * reads exactly that predicate and applies `dbToGain`. Its `maxValue: 1`
+     * means `+1 dB`, so reinterpreting it as the linear fader ceiling would
+     * hand back `+1.995 dB`: a number in the wrong unit.
+     */
+    it('never reinterprets a decibel gain lane ceiling as a linear one', () => {
+        automationStore.set({
+            lanes: [
+                lane('db-gain', [point(0, 1.5), point(4, 1.5)], { parameterId: 'gain', minValue: -60, maxValue: 1 }),
+            ],
+        });
+
+        // `+1 dB` is what this lane declares, and it stays that. Widening it
+        // would hand the scheduler `1.5` to feed `dbToGain`.
+        expect(getAutomationValueAtBeat('db-gain', 2)).toBe(1);
+    });
 });

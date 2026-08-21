@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { defaultTransportState, type TransportState } from '../models/TransportState';
 
@@ -13,11 +14,16 @@ const MAX_TIME_SIGNATURE_NUMERATOR = 32;
 const MIN_BARS = 1;
 const MAX_BARS = 8;
 /**
- * Shared with `setMasterGain`'s [0, 100] write contract — hydration must not
- * accept a value the engine cannot express. `MasterChannelStrip` derives its
- * dB readout and fader position from this same ceiling.
+ * Shared with `setMasterGain`'s `[0, MAX_MASTER_GAIN]` write contract —
+ * hydration must not accept a value the engine cannot express.
+ * `MasterChannelStrip` derives its dB readout and fader position from this
+ * same ceiling. `masterGain` is a 0–100 scale where 100 is true unity (linear
+ * gain 1.0, 0 dBFS) — the engine divides by 100 before handing the value to
+ * `GainNode.gain` — so the ceiling here is the track fader's own
+ * {@link FADER_MAX_GAIN} headroom expressed on that 0–100 scale, keeping the
+ * master fader's travel and the track fader's travel the same shape.
  */
-export const MAX_MASTER_GAIN = 100;
+export const MAX_MASTER_GAIN = 100 * FADER_MAX_GAIN;
 
 const RUNTIME_TRANSPORT_KEYS = [
     'isPlaying',

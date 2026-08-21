@@ -145,9 +145,13 @@ describe('offline render composes the VCA multiplier the way live does', () => {
     });
 
     it('clamps the VCA-composed product to the fader ceiling instead of clamping before the multiply', async () => {
-        // Clamp-then-multiply would give 0.8 * 2 = 1.6 on the output; the live
-        // order (multiply, then clamp) tops out at unity.
-        seedVcaProject({ trackGain: 0.8, groupGain: 2 });
+        // Clamp-then-multiply would give 0.8 * 3 = 2.4 on the output; the live
+        // order (multiply, then clamp) tops out at the fader's +6 dB ceiling
+        // (≈ 1.995), not at unity — the ceiling moved, but the order this test
+        // exists to pin did not. 0.8 * 2 = 1.6 no longer exceeds the ceiling on
+        // its own, so it could no longer tell the two orders apart; 3 keeps the
+        // product past the new ceiling.
+        seedVcaProject({ trackGain: 0.8, groupGain: 3 });
         const live = liveFaderGain('track-1', 0.8);
 
         const strip = await createOfflineTrackStrip(
@@ -156,8 +160,8 @@ describe('offline render composes the VCA multiplier the way live does', () => {
             { vcaMultiplier: offlineVcaMultiplier('track-1') }
         );
 
-        expect(live).toBe(1);
-        expect(strip.faderNode.gain.value).toBe(1);
+        expect(live).toBeCloseTo(dbToGain(6), 5);
+        expect(strip.faderNode.gain.value).toBeCloseTo(dbToGain(6), 5);
     });
 
     it('leaves a track outside every VCA group at its own fader level', async () => {

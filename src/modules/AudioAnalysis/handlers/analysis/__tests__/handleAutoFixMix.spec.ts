@@ -352,6 +352,70 @@ describe('handleAutoFixMix', () => {
         expect(masterCall.payload.expectedPercent).toBe(20);
     });
 
+    it('should reduce a master parked in the headroom by the computed amount, not down to unity', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        // 190% = 1.9 linear: above unity, inside the fader's `+6 dB` headroom.
+        mocks.getTransportState.mockReturnValue({ masterGain: 190 });
+
+        vi.mocked(analyzeMix).mockResolvedValue(
+            create_analysis_result({
+                trackLevels: [],
+                // Above the -3 dBFS trigger, so the master branch actually runs.
+                overallLevel: { peakDb: -2.5 },
+            })
+        );
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        const masterCall = mocks.executeAppAction.mock.calls
+            .map(([action]) => action)
+            .find((action): action is Extract<AppAction, { type: 'setMasterGain' }> => action.type === 'setMasterGain');
+
+        if (!masterCall) {
+            throw new Error('Expected setMasterGain call');
+        }
+
+        // Overshoot = -2.5 - (-6) = +3.5 dB, so the correction asks for
+        // 1.9 * 10 ** (-3.5 / 20) ≈ 1.27 — still above unity. A ceiling of `1`
+        // here would return exactly 1 and attenuate ~2.1 dB more than asked.
+        const expected = 1.9 * 10 ** (-3.5 / 20);
+        expect(expected).toBeGreaterThan(1);
+        expect(masterCall.payload.gain).toBeCloseTo(expected, 10);
+        expect(masterCall.payload.gain).toBeGreaterThan(1);
+        expect(masterCall.payload.expectedPercent).toBe(190);
+    });
+
+    it('should reduce a track parked in the headroom by the computed amount, not down to unity', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'hot', gain: 1.5 }] });
+        mocks.getTransportState.mockReturnValue({ masterGain: 80 });
+
+        vi.mocked(analyzeMix).mockResolvedValue(
+            create_analysis_result({
+                trackLevels: [create_track_level({ trackId: 'hot', peakDb: -0.5, isClipping: true })],
+                overallLevel: { peakDb: -10 },
+            })
+        );
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        const trackCall = mocks.executeAppAction.mock.calls
+            .map(([action]) => action)
+            .find((action): action is Extract<AppAction, { type: 'setTrackGain' }> => action.type === 'setTrackGain');
+
+        if (!trackCall) {
+            throw new Error('Expected setTrackGain call');
+        }
+
+        // Overshoot = -0.5 - CLIP_THRESHOLD_DB = 0, plus the 3 dB safety
+        // margin: 1.5 * 10 ** (-3 / 20) ≈ 1.0618. Still above unity, so a
+        // ceiling of `1` would attenuate ~0.5 dB more than the fix asked for.
+        const expected = 1.5 * 10 ** (-3 / 20);
+        expect(expected).toBeGreaterThan(1);
+        expect(trackCall.payload.gain).toBeCloseTo(expected, 10);
+        expect(trackCall.payload.gain).toBeGreaterThan(1);
+        expect(trackCall.payload.expectedGain).toBe(1.5);
+    });
+
     it('should not attenuate the master again when the track correction already brought it under target', async () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 0.8 }] });
         mocks.getTransportState.mockReturnValue({ masterGain: 80 });

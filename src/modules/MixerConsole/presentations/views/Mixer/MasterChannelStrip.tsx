@@ -5,6 +5,7 @@ import { Fader } from '#/components/daw/Fader';
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
+import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
@@ -17,7 +18,11 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
 
     return (
-        <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel" data-testid="channel-master">
+        <DawChannelStripShell
+            className={cn('ml-2', widthClass)}
+            aria-label="Master channel"
+            data-testid="channel-master"
+        >
             <div className="h-1 w-full rounded-full bg-border-active" />
             <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
             <MixerLevelReadout
@@ -30,12 +35,17 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                             onChange={(value) => {
                                 setMasterGain(value * 100);
                             }}
+                            min={0}
+                            max={FADER_MAX_GAIN}
+                            step={0.01}
+                            fineStep={0.001}
+                            defaultValue={defaultTransportState.masterGain / 100}
                             height={100}
                             aria-label="Master gain"
                         />
                     </div>
                 }
-                value={masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
+                value={`${formatGainDb(masterGain / 100)} dB`}
             />
         </DawChannelStripShell>
     );

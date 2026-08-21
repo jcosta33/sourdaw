@@ -66,4 +66,5 @@ export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
 
 // Helper for playheadScheduler
 export { getAutomationValueAtBeat } from './automation/getAutomationValueAtBeat';
+export { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
 export { isRecordingAutomation } from './automationRecording/isRecordingAutomation';

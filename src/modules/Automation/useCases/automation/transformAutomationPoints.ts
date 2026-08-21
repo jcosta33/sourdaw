@@ -1,6 +1,8 @@
 import { type AutomationLane, type AutomationPoint } from '../../models/Automation';
 import { simplifyAutomationPoints } from '../../services/automationPointAlgorithms';
 
+import { getAutomationLaneCeiling } from './getAutomationLaneCeiling';
+
 type AutomationPointTransform =
     | { type: 'scale'; factor: number; anchor?: number }
     | { type: 'stretch'; factor: number; anchorBeat?: number }
@@ -176,11 +178,18 @@ export function transformAutomationPoints(
     lane: AutomationLane,
     transform: AutomationPointTransform
 ): AutomationPoint[] {
+    // Both value-space transforms bound themselves by what the lane can hold,
+    // and on a gain lane that is the fader law's ceiling rather than the stored
+    // `maxValue` — a project written before the fader widened still records `1`
+    // there. Reading the stored scalar would make "scale this ride up by 1.5x"
+    // stop dead at unity on an old project and reach `+6 dB` on a new one, and
+    // would mirror an inversion about a top the fader no longer stops at.
+    const ceiling = getAutomationLaneCeiling(lane);
     if (transform.type === 'scale') {
         const anchor = transform.anchor ?? 0;
         return lane.points.map((point) => ({
             ...clonePoint(point),
-            value: Math.min(lane.maxValue, Math.max(lane.minValue, anchor + (point.value - anchor) * transform.factor)),
+            value: Math.min(ceiling, Math.max(lane.minValue, anchor + (point.value - anchor) * transform.factor)),
         }));
     }
     if (transform.type === 'stretch') {
@@ -199,7 +208,7 @@ export function transformAutomationPoints(
         // depend only on the beat fraction — mirroring every value the
         // combination reads therefore mirrors its result automatically,
         // regardless of tension's sign.
-        const mirror = (value: number) => lane.maxValue - (value - lane.minValue);
+        const mirror = (value: number) => ceiling - (value - lane.minValue);
         return lane.points.map((point) => ({
             ...clonePoint(point),
             value: mirror(point.value),
