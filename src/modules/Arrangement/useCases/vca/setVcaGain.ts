@@ -1,7 +1,9 @@
+import { VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { getVcaGroupsState, setVcaGroupsState } from '../../stores/vcaGroupStore';
 
 export function setVcaGain(vcaGroupId: string, gain: number): boolean {
-    const clampedGain = Math.max(0, Math.min(2, gain));
+    const clampedGain = Math.max(0, Math.min(VCA_MAX_GAIN, gain));
     const groups = getVcaGroupsState();
     const updatedGroups = groups.map((group) => {
         if (group.id !== vcaGroupId || Object.is(group.gain, clampedGain)) {

@@ -6,6 +6,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
@@ -601,8 +602,8 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setTrackGain',
-        'Set track volume. 0.0=silence, 0.8=default, 1.0=max.',
-        { trackId: { type: 'string' }, gain: { type: 'number', description: '0.0 to 1.0' } },
+        `Set track volume. 0.0=silence, 0.8=default, 1.0=unity, ${FADER_MAX_GAIN_LABEL}=max.`,
+        { trackId: { type: 'string' }, gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION } },
         ['trackId', 'gain'],
         'bounded-reversible',
         false
@@ -832,8 +833,8 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setMasterGain',
-        'Set master output gain from 0.0 through 1.0.',
-        { gain: { type: 'number', description: '0.0 to 1.0' } },
+        `Set master output gain from 0.0 through about ${FADER_MAX_GAIN_LABEL} (1.0 = unity, 0.8 = default).`,
+        { gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION } },
         ['gain'],
         'authority-sensitive',
         true

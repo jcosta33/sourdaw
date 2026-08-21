@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { transformAutomationPoints } from '../transformAutomationPoints';
 
 import type { AutomationLane, AutomationPoint } from '#/modules/Automation/models/Automation';
@@ -84,6 +86,61 @@ describe('transformAutomationPoints — scale', () => {
         const result = transformAutomationPoints(lane, { type: 'scale', factor: 0.5, anchor: 0.5 });
         // 0.5 + (0.4-0.5)*0.5 = 0.45; 0.5 + (0.6-0.5)*0.5 = 0.55
         expect(values(result)).toEqual([0.45, 0.55]);
+    });
+});
+
+describe('transformAutomationPoints — the ceiling a gain lane really has', () => {
+    // A gain lane written before the fader gained its `+6 dB` of headroom still
+    // stores `maxValue: 1`. Reading that scalar gave one project two different
+    // transforms depending on when its lane happened to be created: the same
+    // "scale this ride up" stopped dead at unity on the old one and reached the
+    // fader ceiling on the new one, and an inversion mirrored about a top the
+    // fader no longer stops at. Both cases pair a legacy lane against a current
+    // one and demand the same answer.
+    const legacyGainLane = (points: Array<{ beat: number; value: number }>) => ({
+        ...makeLane(points, 0, 1),
+        parameterId: 'gain',
+    });
+    const currentGainLane = (points: Array<{ beat: number; value: number }>) => ({
+        ...makeLane(points, 0, FADER_MAX_GAIN),
+        parameterId: 'gain',
+    });
+
+    it('scales a legacy gain lane into the headroom the fader has, exactly as it scales a current one', () => {
+        const points = [{ beat: 0, value: 0.8 }];
+
+        const legacy = transformAutomationPoints(legacyGainLane(points), { type: 'scale', factor: 2 });
+        const current = transformAutomationPoints(currentGainLane(points), { type: 'scale', factor: 2 });
+
+        expect(values(legacy)).toEqual([1.6]);
+        expect(values(legacy)).toEqual(values(current));
+    });
+
+    it('still stops a legacy gain lane at the fader ceiling', () => {
+        const legacy = transformAutomationPoints(legacyGainLane([{ beat: 0, value: 0.8 }]), {
+            type: 'scale',
+            factor: 4,
+        });
+
+        expect(values(legacy)).toEqual([FADER_MAX_GAIN]);
+    });
+
+    it('mirrors a legacy gain lane about the fader ceiling, exactly as it mirrors a current one', () => {
+        const points = [{ beat: 0, value: 0.5 }];
+
+        const legacy = transformAutomationPoints(legacyGainLane(points), { type: 'invert' });
+        const current = transformAutomationPoints(currentGainLane(points), { type: 'invert' });
+
+        expect(values(legacy)).toEqual([FADER_MAX_GAIN - 0.5]);
+        expect(values(legacy)).toEqual(values(current));
+    });
+
+    it('leaves a decibel gain lane alone, where `1` means +1 dB rather than unity', () => {
+        const lane = { ...makeLane([{ beat: 0, value: 0.5 }], -60, 1), parameterId: 'gain' };
+
+        const result = transformAutomationPoints(lane, { type: 'scale', factor: 4 });
+
+        expect(values(result)).toEqual([1]);
     });
 });
 

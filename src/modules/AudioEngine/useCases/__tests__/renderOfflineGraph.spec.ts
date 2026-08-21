@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 import { type TransportState } from '#/modules/Transport/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { MAX_OFFLINE_FRAMES } from '../offlineRender/constants';
@@ -272,10 +273,13 @@ describe('renderOffline — graph construction and lifecycle', () => {
         expect(createdContexts[0]!.frames).toBe(MAX_OFFLINE_FRAMES);
     });
 
-    it('clamps an out-of-range project master gain into 0..1 and defaults to 80% when transport is missing', async () => {
-        mocks.resolveRenderContext.mockReturnValue(makeContext({ transport: { masterGain: 150 } as TransportState }));
+    it('clamps an out-of-range project master gain into the fader ceiling and defaults to 80% when transport is missing', async () => {
+        // 300 / 100 = 3.0, still past FADER_MAX_GAIN (≈ 1.995) — the ceiling
+        // moved from unity to +6 dB, so a value that used to prove clamping
+        // (150 -> linear 1.5) no longer does; 300 keeps the product past it.
+        mocks.resolveRenderContext.mockReturnValue(makeContext({ transport: { masterGain: 300 } as TransportState }));
         await renderOffline(4);
-        expect(createdContexts[0]!.gains[0]!.gain.value).toBe(1);
+        expect(createdContexts[0]!.gains[0]!.gain.value).toBeCloseTo(FADER_MAX_GAIN, 6);
 
         mocks.resolveRenderContext.mockReturnValue(makeContext({ transport: null }));
         await renderOffline(4);

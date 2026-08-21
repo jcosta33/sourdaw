@@ -3,7 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Slider } from '#/components/ui/slider';
-import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
+import { getTrackFaderCeiling, setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
 import { MidiLearnButton } from '#/modules/ControlSurface/presentations/views';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -53,6 +53,24 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             valueClassName="font-normal"
                         />
                         <div className="w-full px-1 flex items-center justify-center">
+                            {/*
+                             * Percent of unity, so the readout above and this
+                             * control share one scale. The travel is the
+                             * writer's own ceiling — `getTrackFaderCeiling`, the
+                             * same bound `ExpandedChannelStrip` applies — rather
+                             * than a flat 100: a track pushed into the fader's
+                             * `+6 dB` of headroom from the mixer reads `150%`
+                             * here, and a control that stopped at 100 would
+                             * write that make-up gain away on first touch.
+                             *
+                             * These two handlers deliberately call `setTrackGain`
+                             * rather than `executeAppAction`: an Inspector gain
+                             * edit has never recorded an undo entry, on any
+                             * value, so routing it is a separate repair to the
+                             * mutation path and not part of carrying the
+                             * ceiling. Widening the travel is what stops this
+                             * control destroying a value it cannot represent.
+                             */}
                             <Slider
                                 value={[activeGain * 100]}
                                 onValueChange={([value]) => {
@@ -67,7 +85,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                         setTrackGain(track.id, value / 100, false);
                                     }
                                 }}
-                                max={100}
+                                max={getTrackFaderCeiling(track.id) * 100}
                                 step={1}
                                 aria-label={`${track.name} gain`}
                                 data-testid="inspector-track-gain"

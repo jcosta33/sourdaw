@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { defaultTransportState } from '../../models/TransportState';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { MAX_MASTER_GAIN } from '../../stores/transportStore';
 import { setMasterGain } from '../setMasterGain';
 
 vi.mock('../../repositories/transport/getTransportState');
@@ -56,12 +58,13 @@ describe('setMasterGain', () => {
         expect(setMasterGainValue).toHaveBeenCalledWith(0);
     });
 
-    it('should clamp a value above the contract maximum down to 100', () => {
+    it('should clamp a value above the contract maximum down to the +6 dB ceiling, not to 100', () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
 
         setMasterGain(500);
 
-        expect(updateTransportState).toHaveBeenCalledWith({ masterGain: 100 });
-        expect(setMasterGainValue).toHaveBeenCalledWith(1);
+        const calledWith = vi.mocked(updateTransportState).mock.calls.at(-1)?.[0];
+        expect(calledWith?.masterGain).toBeCloseTo(MAX_MASTER_GAIN, 5);
+        expect(setMasterGainValue).toHaveBeenCalledWith(expect.closeTo(FADER_MAX_GAIN, 5));
     });
 });

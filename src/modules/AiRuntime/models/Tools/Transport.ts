@@ -1,3 +1,5 @@
+import { FADER_GAIN_RANGE_DESCRIPTION } from '#/utils/audioLevelLaw';
+
 import { tool, type ToolSchema } from './Types';
 
 export const transportTools: readonly ToolSchema[] = [
@@ -45,7 +47,7 @@ export const transportTools: readonly ToolSchema[] = [
         'setMasterGain',
         'Set the master output volume.',
         {
-            gain: { type: 'number', description: '0.0 to 1.0 (0.8 = default)' },
+            gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION },
         },
         ['gain']
     ),

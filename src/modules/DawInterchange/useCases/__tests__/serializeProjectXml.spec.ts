@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { parseProjectXml } from '../parseProjectXml';
 import { type ProjectData, type ProjectTrack } from '../projectDataContract';
 import { serializeProjectXml } from '../serializeProjectXml';
@@ -373,14 +375,28 @@ describe('serializeProjectXml — markers + devices + escaping', () => {
         expect(xml).not.toContain('name="A & B');
     });
 
-    it('clamps and normalises channel gain/pan into [0,1] volume and [0,1] pan', () => {
+    it('clamps channel gain to the fader ceiling and normalises pan into [0,1]', () => {
         const project = buildProjectFixture();
         const track = project.arrangement.tracks[0]!;
-        track.gain = 5; // clamps to 1
+        track.gain = 5; // clamps to the fader's +6 dB ceiling, not to unity
         track.pan = -2; // clamps to -1 → normalised (−1+1)/2 = 0
         const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
-        expect(xml).toContain('<Volume value="1"/>');
+        expect(xml).toContain(`<Volume value="${String(Math.round(FADER_MAX_GAIN * 1_000_000) / 1_000_000)}"/>`);
         expect(xml).toContain('<Pan value="0"/>');
+    });
+
+    /**
+     * `<Volume>` carries a linear amplitude, and the fader reaches
+     * `FADER_MAX_GAIN`. Clamping the export at unity discarded every track's
+     * make-up gain on the way out, silently — a round trip through interchange
+     * flattened a +3.5 dB track to 0 dB with nothing said about it.
+     */
+    it('carries a gain above unity through the export instead of flattening it', () => {
+        const project = buildProjectFixture();
+        const track = project.arrangement.tracks[0]!;
+        track.gain = 1.5;
+        const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
+        expect(xml).toContain('<Volume value="1.5"/>');
     });
 
     it('normalises interior gain/pan values that no clamp saturates', () => {
