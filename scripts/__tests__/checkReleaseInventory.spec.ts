@@ -304,6 +304,19 @@ describe('release inventory', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
+    it('composes the admitted DDSP model contract into live release inventory validation', () => {
+        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    });
+
+    it('keeps the public DDSP notice truthful about active downloads and the unverified checkpoint license', () => {
+        const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
+
+        expect(notice).not.toContain('release-withheld DDSP worker');
+        expect(notice).not.toContain('product admission gate remains closed');
+        expect(notice).toContain('checkpoint license remains unverified');
+        expect(notice).toContain('does not bundle or redistribute');
+    });
+
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
         for (const path of DDSP_TFJS_RUNTIME_PATHS) {

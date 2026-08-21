@@ -6,6 +6,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
@@ -97,6 +99,22 @@ const DDSP_TFJS_LEGAL_PATHS = [
     'public/legal/TensorFlow.js-NOTICE.txt',
     'public/legal/seedrandom-MIT.txt',
     'public/legal/THIRD-PARTY-NOTICES.md',
+] as const;
+
+export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md';
+
+export const DDSP_MODEL_PATHS = [
+    DDSP_ADMISSION_DECISION_PATH,
+    'public/legal/THIRD-PARTY-NOTICES.md',
+    'scripts/checkReleaseInventory.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
@@ -538,9 +556,12 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
 }
 
 /** Exact distributed code and notice closure for the DDSP worker runtime. */
-export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceContract {
+export function ddspTfjsRuntimeReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
     return {
         kind: 'runtime-library',
+        retention: 'keep-with-obligations',
+        owner: 'OS-04',
+        releaseModes: ['source', 'web', 'desktop'],
         paths: [...DDSP_TFJS_RUNTIME_PATHS],
         sources: [
             'git:github.com/tensorflow/tfjs@e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
@@ -575,6 +596,59 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceCo
             'Apache-2.0:Magenta.js-Roll-adaptation',
             'MIT:seedrandom-and-Alea',
         ],
+        productSurfaces: ['browser and desktop DDSP hardware-WebGPU worker runtime'],
+        evidence: [
+            'Exact package versions and npm integrity digests are pinned in the install graph.',
+            'The release validator binds the complete runtime and legal-file closure.',
+            'The runtime accepts only locally verified checkpoint artifact transfers and registers no CPU or WebGL fallback.',
+        ],
+        obligations: [
+            'Keep the Apache-2.0 and MIT texts and exact component notices with every distribution.',
+            'Do not characterize separately downloaded DDSP checkpoint artifacts under these runtime licenses.',
+        ],
+    };
+}
+
+/** Exact admitted identity, delivery boundary, and legal status of the Magenta DDSP checkpoints. */
+export function ddspModelsReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
+    const artifacts = Object.values(DDSP_ARTIFACTS).flat();
+
+    return {
+        kind: 'model-stack',
+        retention: 'keep-with-obligations',
+        owner: 'OS-04',
+        releaseModes: ['web', 'desktop'],
+        paths: [...DDSP_MODEL_PATHS],
+        sources: [
+            'https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md',
+            'https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
+            'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+            DDSP_ADMISSION_DECISION_PATH,
+        ],
+        revisions: [
+            DDSP_CHECKPOINT_VERSION,
+            'Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa',
+            `${artifacts.length} exact artifacts`,
+        ],
+        digests: [
+            `sha256:${fileSha256(resolve(root, DDSP_ADMISSION_DECISION_PATH))}:${DDSP_ADMISSION_DECISION_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'src/modules/BrowserAi/models/DdspArtifactManifest.ts'))}:src/modules/BrowserAi/models/DdspArtifactManifest.ts`,
+            `sha256:${fileSha256(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'))}:public/legal/THIRD-PARTY-NOTICES.md`,
+            ...artifacts.map(({ sha256, sizeBytes, url }) => `sha256:${sha256}:bytes:${sizeBytes}:${url}`),
+        ],
+        licenses: ['unverified:exact-GCS-checkpoint-artifacts'],
+        productSurfaces: ['explicit browser and desktop downloads of four pinned Magenta DDSP instruments'],
+        evidence: [
+            'DdspArtifactManifest pins the exact URL, byte size, and SHA-256 for all twelve admitted artifacts.',
+            'Each user-requested direct Magenta download is staged and verified before its local generation is published or used.',
+            'Sourdaw does not bundle or redistribute the checkpoint bytes.',
+        ],
+        obligations: [
+            'Keep the checkpoint license explicitly unverified; runtime licenses and notices do not cover the weights.',
+            'Keep all checkpoint bytes out of Sourdaw distributions and fetch only the admitted identities directly from Magenta until issue #2595 is resolved.',
+            'Set MODEL_RELEASE_ADMISSION.ddsp to false if exact identity, verification, or delivery-boundary evidence stops holding.',
+        ],
     };
 }
 
@@ -598,7 +672,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
 
 function assertSurfaceContract(
     surface: Partial<ReleaseSurface> | undefined,
-    expected: Partial<SurfaceContract>,
+    expected: Partial<ReleaseSurface>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
@@ -1099,6 +1173,10 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
             ddspTfjsRuntimeReleaseInventoryContract(root),
             'DDSP TF.js runtime'
         )
+    );
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    validateSurface('ddsp-models', () =>
+        assertSurfaceContract(ddspModelsSurface, ddspModelsReleaseInventoryContract(root), 'DDSP models')
     );
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
