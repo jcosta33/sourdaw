@@ -18,12 +18,15 @@ import { DDSP_INSTRUMENT_CATALOG } from '../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroArtifactManifest';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
 import { checkVerifiedModel } from '../repositories/checkVerifiedModel';
+import { ddspModelStorage } from '../repositories/ddspModelStorage';
+import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
 let midiStaleSubscription: (() => void) | undefined;
+const checkDdspInstrumentReady = ddspModelStorage.checkDdspInstrumentReady;
 
 export const KOKORO_MODEL_ENTRY: KokoroModel = {
     id: KOKORO_MODEL_ARTIFACT.id,
@@ -40,8 +43,14 @@ export const KOKORO_MODEL_ENTRY: KokoroModel = {
     sha256: KOKORO_MODEL_ARTIFACT.sha256,
 };
 
-export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkVerifiedModel })(
-    ({ logger, detectCapabilitiesRepo, checkVerifiedModel }) =>
+export const initBrowserAi = inject({
+    logger,
+    detectCapabilitiesRepo,
+    checkVerifiedModel,
+    checkDdspInstrumentReady,
+    withDdspInstrumentLock,
+})(
+    ({ logger, detectCapabilitiesRepo, checkVerifiedModel, checkDdspInstrumentReady, withDdspInstrumentLock }) =>
         async function initBrowserAi(): Promise<void> {
             logger.info('[BrowserAi] Initializing…');
 
@@ -72,11 +81,29 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkVerif
 
             // ── 3. Build admitted model entries ────────────────────────────
             const ddspInstruments: DdspInstrument[] = MODEL_RELEASE_ADMISSION.ddsp
-                ? DDSP_INSTRUMENT_CATALOG.map((cat) => ({
-                      ...cat,
-                      status: 'error' as const,
-                      downloadProgress: 0,
-                  }))
+                ? await Promise.all(
+                      DDSP_INSTRUMENT_CATALOG.map(async (instrument) => {
+                          let ready = false;
+                          try {
+                              ready = await withDdspInstrumentLock(instrument.id, 'shared', async () =>
+                                  checkDdspInstrumentReady({
+                                      id: instrument.id,
+                                      version: instrument.artifactVersion,
+                                      artifacts: instrument.artifacts,
+                                  })
+                              );
+                          } catch (error) {
+                              logger.warn(
+                                  `[BrowserAi] DDSP startup readiness probe failed: ${instrument.id}: ${String(error)}`
+                              );
+                          }
+                          return {
+                              ...instrument,
+                              status: ready ? ('ready' as const) : ('not-downloaded' as const),
+                              downloadProgress: ready ? 1 : 0,
+                          };
+                      })
+                  )
                 : [];
 
             let kokoroModel: KokoroModel | null = null;

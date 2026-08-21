@@ -47,6 +47,14 @@ function create_logger_mock(): LoggerMock {
     };
 }
 
+async function pass_through_ddsp_lock<TResult>(
+    _id: string,
+    _mode: 'exclusive' | 'shared',
+    operation: () => Promise<TResult>
+): Promise<TResult> {
+    return operation();
+}
+
 const fresh_capability_report: CapabilityReport = {
     capability: 'supported',
     webGpu: { status: 'supported' },
@@ -92,6 +100,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -112,6 +122,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -136,6 +148,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -154,6 +168,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -173,6 +189,8 @@ describe('initBrowserAi', () => {
             logger: logger_mock,
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -196,6 +214,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -217,6 +237,8 @@ describe('initBrowserAi', () => {
             logger: logger_mock,
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await expect(initBrowserAi()).resolves.toBeUndefined();
@@ -239,6 +261,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -266,6 +290,8 @@ describe('initBrowserAi', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
