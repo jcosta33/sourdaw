@@ -12,11 +12,7 @@ export const removeDdspInstrument = inject({ ddspModelStorage, getStorageStatus,
             const instrument = resolveDdspInstrument(instrumentId);
             await withDdspInstrumentLock(instrument.id, async () => {
                 try {
-                    await ddspModelStorage.deleteDdspInstrumentArtifacts({
-                        id: instrument.id,
-                        version: instrument.artifactVersion,
-                        artifacts: instrument.artifacts,
-                    });
+                    await ddspModelStorage.removeDdspInstrumentGenerations({ id: instrument.id });
                 } finally {
                     updateModelStatus(instrument.id, { status: 'not-downloaded', downloadProgress: 0 });
                     const status = await getStorageStatus();

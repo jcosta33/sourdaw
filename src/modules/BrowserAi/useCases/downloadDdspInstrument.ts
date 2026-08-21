@@ -7,7 +7,13 @@ import { downloadModel as downloadModelRepo } from '../repositories/modelDownloa
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setStorageUsed, updateModelStatus } from '../stores/modelRegistryStore';
 
-const activeDownloads = new Map<string, Promise<void>>();
+type DownloadDdspInstrumentOptions = { signal?: AbortSignal };
+
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+}
 
 export const downloadDdspInstrument = inject({
     downloadModelRepo,
@@ -16,23 +22,31 @@ export const downloadDdspInstrument = inject({
     withDdspInstrumentLock,
 })(
     ({ downloadModelRepo, ddspModelStorage, getStorageStatus, withDdspInstrumentLock }) =>
-        function downloadDdspInstrument(instrumentId: DdspInstrumentId): Promise<void> {
+        function downloadDdspInstrument(
+            instrumentId: DdspInstrumentId,
+            { signal }: DownloadDdspInstrumentOptions = {}
+        ): Promise<void> {
             const instrument = resolveDdspInstrument(instrumentId);
-            const operationKey = `${instrument.id}:${instrument.artifactVersion}`;
-            const active = activeDownloads.get(operationKey);
-            if (active) {
-                return active;
-            }
-
-            const operation = withDdspInstrumentLock(instrument.id, async (): Promise<void> => {
-                updateModelStatus(instrument.id, { status: 'downloading', downloadProgress: 0 });
+            return withDdspInstrumentLock(instrument.id, async (): Promise<void> => {
                 const storage = {
                     id: instrument.id,
                     version: instrument.artifactVersion,
                     artifacts: instrument.artifacts,
                 };
+                throwIfAborted(signal);
+                if (await ddspModelStorage.checkDdspInstrumentReady(storage)) {
+                    updateModelStatus(instrument.id, { status: 'ready', downloadProgress: 1 });
+                    return;
+                }
+
+                updateModelStatus(instrument.id, { status: 'downloading', downloadProgress: 0 });
+                let staged = false;
+                let published = false;
                 try {
+                    await ddspModelStorage.stageDdspInstrumentGeneration(storage);
+                    staged = true;
                     for (const [index, artifact] of instrument.artifacts.entries()) {
+                        throwIfAborted(signal);
                         await downloadModelRepo({
                             spec: {
                                 family: 'ddsp',
@@ -41,14 +55,19 @@ export const downloadDdspInstrument = inject({
                                 sizeBytes: artifact.sizeBytes,
                                 sha256: artifact.sha256,
                             },
+                            signal,
                         });
                         updateModelStatus(instrument.id, {
                             downloadProgress: (index + 1) / instrument.artifacts.length,
                         });
                     }
-                    await ddspModelStorage.writeDdspReadyMarker(storage);
+                    throwIfAborted(signal);
+                    await ddspModelStorage.publishDdspInstrumentGeneration(storage);
+                    published = true;
                 } catch (error) {
-                    await ddspModelStorage.cleanupDdspInstrumentArtifacts(storage);
+                    if (staged && !published) {
+                        await ddspModelStorage.cleanupUnpublishedDdspGeneration(storage);
+                    }
                     updateModelStatus(instrument.id, { status: 'error', downloadProgress: 0 });
                     throw error;
                 }
@@ -56,8 +75,5 @@ export const downloadDdspInstrument = inject({
                 const status = await getStorageStatus();
                 setStorageUsed(status.usedBytes);
             });
-            activeDownloads.set(operationKey, operation);
-            void operation.finally(() => activeDownloads.delete(operationKey)).catch(() => undefined);
-            return operation;
         }
 );

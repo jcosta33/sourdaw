@@ -8,7 +8,7 @@ import { type StorageStatus } from '../../models/StorageStatus';
 import { type ModelRegistryState, modelRegistryStore } from '../../stores/modelRegistryStore';
 import { removeDdspInstrument } from '../removeDdspInstrument';
 
-const instrument = DDSP_INSTRUMENT_CATALOG[0]! as Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
+const instrument = DDSP_INSTRUMENT_CATALOG[0] as Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
     artifactVersion: string;
     artifacts: NonNullable<DdspInstrument['artifacts']>;
 };
@@ -36,16 +36,17 @@ describe('removeDdspInstrument', () => {
     });
 
     it('only reports not-downloaded and refreshes usage after strict artifact deletion succeeds', async () => {
-        const deleteDdspInstrumentArtifacts = vi.fn().mockResolvedValue(undefined);
+        const removeDdspInstrumentGenerations = vi.fn().mockResolvedValue(undefined);
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         injectDependencies(removeDdspInstrument, {
-            ddspModelStorage: { deleteDdspInstrumentArtifacts },
+            ddspModelStorage: { removeDdspInstrumentGenerations },
             withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
             getStorageStatus,
         });
 
-        await removeDdspInstrument(instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId);
+        await removeDdspInstrument(instrument.id);
 
+        expect(removeDdspInstrumentGenerations).toHaveBeenCalledWith({ id: instrument.id });
         expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({
             status: 'not-downloaded',
             downloadProgress: 0,
@@ -57,14 +58,14 @@ describe('removeDdspInstrument', () => {
     it('invalidates ready truth and refreshes usage when generation cleanup partially fails', async () => {
         const getStorageStatus = vi.fn().mockResolvedValue(storageStatus);
         injectDependencies(removeDdspInstrument, {
-            ddspModelStorage: { deleteDdspInstrumentArtifacts: vi.fn().mockRejectedValue(new Error('OPFS denied')) },
+            ddspModelStorage: {
+                removeDdspInstrumentGenerations: vi.fn().mockRejectedValue(new Error('OPFS denied')),
+            },
             withDdspInstrumentLock: async (_id: string, operation: () => Promise<void>) => operation(),
             getStorageStatus,
         });
 
-        await expect(
-            removeDdspInstrument(instrument.id as import('../../models/DdspInstrumentCatalog').DdspInstrumentId)
-        ).rejects.toThrow('OPFS denied');
+        await expect(removeDdspInstrument(instrument.id)).rejects.toThrow('OPFS denied');
 
         expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({
             status: 'not-downloaded',

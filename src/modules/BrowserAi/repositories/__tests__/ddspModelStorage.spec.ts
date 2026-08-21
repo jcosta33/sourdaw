@@ -5,169 +5,248 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { ddspModelStorage } from '../ddspModelStorage';
 
-const instrument = DDSP_INSTRUMENT_CATALOG[0]!;
+const instrument = DDSP_INSTRUMENT_CATALOG[0];
 const storage = {
     id: instrument.id,
     version: instrument.artifactVersion!,
     artifacts: instrument.artifacts!,
 };
+const indexModelId = `${instrument.id}/.generations.json`;
 
-function modelDataPort(): MessagePort {
+type GenerationIndex = {
+    schemaVersion: 1;
+    currentVersion: string | null;
+    generations: Record<string, { artifactIds: string[]; readyMarkerId: string }>;
+};
+
+function bytes(value: unknown): ArrayBuffer {
+    return new TextEncoder().encode(JSON.stringify(value)).buffer;
+}
+
+function decode(value: ArrayBuffer | undefined): GenerationIndex {
+    if (value === undefined) {
+        throw new Error('Expected stored generation index');
+    }
+    return JSON.parse(new TextDecoder().decode(value)) as GenerationIndex;
+}
+
+function generation(
+    version: string,
+    artifactIds = storage.artifacts.map(({ path }) => `${instrument.id}/${version}/${path}`)
+) {
+    return {
+        artifactIds,
+        readyMarkerId: `${instrument.id}/${version}/.ready.json`,
+    };
+}
+
+function modelDataPort(modelData: ArrayBuffer): MessagePort {
     const channel = new MessageChannel();
-    channel.port2.postMessage({ type: 'model-data', modelData: new ArrayBuffer(1) });
+    channel.port2.postMessage({ type: 'model-data', modelData }, [modelData]);
     channel.port2.close();
     return channel.port1;
 }
 
-function storageBridge() {
+function storageBridge(input?: { files?: Map<string, ArrayBuffer>; failDeletes?: Set<string> }) {
+    const files = input?.files ?? new Map<string, ArrayBuffer>();
+    const failDeletes = input?.failDeletes ?? new Set<string>();
+    const events: string[] = [];
+    const writes = new Map<string, { modelId: string; chunks: ArrayBuffer[] }>();
+    let writeNumber = 0;
     return {
-        readModel: vi.fn(),
-        verifyModel: vi.fn(),
-        deleteModel: vi.fn(),
+        files,
+        events,
+        bridge: {
+            abortModelWrite: vi.fn(async (writeId: string) => {
+                writes.delete(writeId);
+            }),
+            beginModelWrite: vi.fn(async ({ modelId }: { modelId: string }) => {
+                const writeId = `write-${String(++writeNumber)}`;
+                writes.set(writeId, { modelId, chunks: [] });
+                return writeId;
+            }),
+            writeModelChunk: vi.fn(async ({ writeId, chunk }: { writeId: string; chunk: ArrayBuffer }) => {
+                const write = writes.get(writeId);
+                if (write === undefined) {
+                    throw new Error(`Unknown test write: ${writeId}`);
+                }
+                const transferred = structuredClone(chunk, { transfer: [chunk] });
+                write.chunks.push(transferred);
+                return transferred.byteLength;
+            }),
+            commitModelWrite: vi.fn(async ({ writeId }: { writeId: string }) => {
+                const write = writes.get(writeId);
+                if (write === undefined) {
+                    throw new Error(`Unknown test write: ${writeId}`);
+                }
+                const storedBytes = write.chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+                const stored = new Uint8Array(storedBytes);
+                let offset = 0;
+                for (const chunk of write.chunks) {
+                    stored.set(new Uint8Array(chunk), offset);
+                    offset += chunk.byteLength;
+                }
+                files.set(write.modelId, stored.buffer);
+                events.push(`commit:${write.modelId}`);
+                writes.delete(writeId);
+                return { storedBytes, extractedPath: null };
+            }),
+            readModel: vi.fn(async ({ modelId }: { modelId: string }) => {
+                const stored = files.get(modelId);
+                return stored === undefined ? null : modelDataPort(stored.slice(0));
+            }),
+            verifyModel: vi.fn(async () => true),
+            deleteModel: vi.fn(async ({ modelId }: { modelId: string }) => {
+                events.push(`delete:${modelId}`);
+                if (failDeletes.has(modelId)) {
+                    throw new Error(`OPFS denied: ${modelId}`);
+                }
+                files.delete(modelId);
+            }),
+        },
     };
 }
 
-describe('ddspModelStorage readiness', () => {
+function injectStorage(bridge: ReturnType<typeof storageBridge>['bridge']): void {
+    const sha256 = vi.fn().mockResolvedValue('sha');
+    injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
+        logger: { warn: vi.fn() },
+        modelStorageWorkerBridge: bridge,
+        sha256ArrayBuffer: sha256,
+    });
+    injectDependencies(ddspModelStorage.stageDdspInstrumentGeneration, {
+        modelStorageWorkerBridge: bridge,
+        sha256ArrayBuffer: sha256,
+    });
+    injectDependencies(ddspModelStorage.publishDdspInstrumentGeneration, {
+        modelStorageWorkerBridge: bridge,
+        sha256ArrayBuffer: sha256,
+    });
+    injectDependencies(ddspModelStorage.removeDdspInstrumentGenerations, {
+        modelStorageWorkerBridge: bridge,
+        sha256ArrayBuffer: sha256,
+    });
+    injectDependencies(ddspModelStorage.cleanupUnpublishedDdspGeneration, {
+        logger: { warn: vi.fn() },
+        modelStorageWorkerBridge: bridge,
+        sha256ArrayBuffer: sha256,
+    });
+}
+
+describe('ddspModelStorage generation index', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('is not ready when the versioned ready marker is absent', async () => {
-        const bridge = storageBridge();
-        bridge.readModel.mockResolvedValue(null);
-        const sha256ArrayBuffer = vi.fn().mockResolvedValue('marker-sha');
-        const logger = { warn: vi.fn() };
-        injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
-            logger,
-            modelStorageWorkerBridge: bridge,
-            sha256ArrayBuffer,
-        });
-
-        await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
-        expect(bridge.readModel).toHaveBeenCalledWith({
-            family: 'ddsp',
-            modelId: `${instrument.id}/${instrument.artifactVersion}/.ready.json`,
-            expectedSizeBytes: expect.any(Number),
-            expectedSha256: 'marker-sha',
-        });
-        expect(bridge.verifyModel).not.toHaveBeenCalled();
-    });
-
-    it('ignores an old ready marker rather than treating it as the requested version', async () => {
-        const bridge = storageBridge();
-        bridge.readModel.mockResolvedValue(null);
-        const requested = { ...storage, version: 'next-checkpoint-version' };
-        injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
-            logger: { warn: vi.fn() },
-            modelStorageWorkerBridge: bridge,
-            sha256ArrayBuffer: vi.fn().mockResolvedValue('marker-sha'),
-        });
-
-        await expect(ddspModelStorage.checkDdspInstrumentReady(requested)).resolves.toBe(false);
-        expect(bridge.readModel).toHaveBeenCalledWith(
-            expect.objectContaining({ modelId: `${instrument.id}/next-checkpoint-version/.ready.json` })
-        );
-        expect(bridge.readModel).not.toHaveBeenCalledWith(
-            expect.objectContaining({ modelId: `${instrument.id}/${instrument.artifactVersion}/.ready.json` })
-        );
-    });
-
-    it('uses disjoint artifact and marker keys for distinct admitted versions', async () => {
-        const bridge = storageBridge();
-        bridge.readModel.mockResolvedValue(null);
-        const next = { ...storage, version: 'next-checkpoint-version' };
-        injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
-            logger: { warn: vi.fn() },
-            modelStorageWorkerBridge: bridge,
-            sha256ArrayBuffer: vi.fn().mockResolvedValue('marker-sha'),
-        });
-        await ddspModelStorage.checkDdspInstrumentReady(storage);
-        await ddspModelStorage.checkDdspInstrumentReady(next);
-        expect(bridge.readModel.mock.calls.map(([input]) => input.modelId)).toEqual([
-            `${instrument.id}/${storage.version}/.ready.json`,
-            `${instrument.id}/${next.version}/.ready.json`,
+    it('publishes v2 before deleting the exact indexed v1 generation and leaves v2 ready', async () => {
+        const v1 = 'v1';
+        const v1Generation = generation(v1, [
+            `${instrument.id}/${v1}/model.json`,
+            `${instrument.id}/${v1}/weights.bin`,
         ]);
+        const files = new Map<string, ArrayBuffer>([
+            [indexModelId, bytes({ schemaVersion: 1, currentVersion: v1, generations: { [v1]: v1Generation } })],
+        ]);
+        const testStorage = storageBridge({ files });
+        injectStorage(testStorage.bridge);
+
+        await ddspModelStorage.publishDdspInstrumentGeneration(storage);
+
+        const firstIndexCommit = testStorage.events.indexOf(`commit:${indexModelId}`);
+        const firstStaleDelete = testStorage.events.findIndex((event) => event.startsWith('delete:'));
+        expect(testStorage.events.slice(0, firstIndexCommit)).toEqual([
+            `commit:${instrument.id}/${storage.version}/.ready.json`,
+        ]);
+        expect(firstIndexCommit).toBeGreaterThanOrEqual(0);
+        expect(firstStaleDelete).toBeGreaterThan(firstIndexCommit);
+        expect(testStorage.bridge.deleteModel.mock.calls.map(([input]) => input.modelId)).toEqual([
+            v1Generation.readyMarkerId,
+            ...v1Generation.artifactIds,
+        ]);
+        expect(testStorage.bridge.deleteModel).not.toHaveBeenCalledWith(
+            expect.objectContaining({ modelId: expect.stringContaining(`/${storage.version}/`) })
+        );
+        expect(decode(files.get(indexModelId))).toEqual({
+            schemaVersion: 1,
+            currentVersion: storage.version,
+            generations: { [storage.version]: generation(storage.version) },
+        });
+        await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(true);
     });
 
-    it('is not ready when a ready marker exists but an admitted artifact is missing', async () => {
-        const bridge = storageBridge();
-        bridge.readModel.mockResolvedValue(modelDataPort());
-        bridge.verifyModel.mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-        injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
-            logger: { warn: vi.fn() },
-            modelStorageWorkerBridge: bridge,
-            sha256ArrayBuffer: vi.fn().mockResolvedValue('marker-sha'),
+    it('keeps v2 current and ready with stale metadata when indexed v1 cleanup partially fails', async () => {
+        const v1 = 'v1';
+        const v1Generation = generation(v1, [
+            `${instrument.id}/${v1}/model.json`,
+            `${instrument.id}/${v1}/weights.bin`,
+        ]);
+        const failedPath = v1Generation.artifactIds[1]!;
+        const files = new Map<string, ArrayBuffer>([
+            [indexModelId, bytes({ schemaVersion: 1, currentVersion: v1, generations: { [v1]: v1Generation } })],
+        ]);
+        const testStorage = storageBridge({ files, failDeletes: new Set([failedPath]) });
+        injectStorage(testStorage.bridge);
+
+        await expect(ddspModelStorage.publishDdspInstrumentGeneration(storage)).resolves.toBeUndefined();
+
+        expect(decode(files.get(indexModelId))).toEqual({
+            schemaVersion: 1,
+            currentVersion: storage.version,
+            generations: {
+                [v1]: v1Generation,
+                [storage.version]: generation(storage.version),
+            },
         });
+        await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(true);
+    });
+
+    it('fails closed on a malformed index for readiness and publication', async () => {
+        const testStorage = storageBridge({
+            files: new Map([[indexModelId, bytes({ currentVersion: storage.version, generations: [] })]]),
+        });
+        injectStorage(testStorage.bridge);
 
         await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
-        expect(bridge.verifyModel).toHaveBeenCalledTimes(storage.artifacts.length);
-    });
-
-    it.each(['size', 'hash'] as const)(
-        'is not ready when worker verification rejects a corrupt artifact %s',
-        async () => {
-            const bridge = storageBridge();
-            bridge.readModel.mockResolvedValue(modelDataPort());
-            bridge.verifyModel.mockResolvedValue(false);
-            injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
-                logger: { warn: vi.fn() },
-                modelStorageWorkerBridge: bridge,
-                sha256ArrayBuffer: vi.fn().mockResolvedValue('marker-sha'),
-            });
-
-            await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
-            expect(bridge.verifyModel).toHaveBeenCalledWith({
-                family: 'ddsp',
-                modelId: `${instrument.id}/${storage.version}/${storage.artifacts[0]!.path}`,
-                expectedSizeBytes: storage.artifacts[0]!.sizeBytes,
-                expectedSha256: storage.artifacts[0]!.sha256,
-            });
-        }
-    );
-
-    it('accepts only the exact marker and every exact admitted artifact verification', async () => {
-        const bridge = storageBridge();
-        bridge.readModel.mockResolvedValue(modelDataPort());
-        bridge.verifyModel.mockResolvedValue(true);
-        const sha256ArrayBuffer = vi.fn(async (bytes: ArrayBuffer) => {
-            expect(JSON.parse(new TextDecoder().decode(bytes))).toEqual({
-                version: storage.version,
-                artifacts: storage.artifacts.map(({ path, sizeBytes, sha256 }) => ({ path, sizeBytes, sha256 })),
-            });
-            return 'marker-sha';
-        });
-        injectDependencies(ddspModelStorage.checkDdspInstrumentReady, {
-            logger: { warn: vi.fn() },
-            modelStorageWorkerBridge: bridge,
-            sha256ArrayBuffer,
-        });
-
-        await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(true);
-        expect(bridge.verifyModel.mock.calls.map(([input]) => input)).toEqual(
-            storage.artifacts.map((artifact) => ({
-                family: 'ddsp',
-                modelId: `${instrument.id}/${storage.version}/${artifact.path}`,
-                expectedSizeBytes: artifact.sizeBytes,
-                expectedSha256: artifact.sha256,
-            }))
+        await expect(ddspModelStorage.publishDdspInstrumentGeneration(storage)).rejects.toThrow(
+            'Invalid DDSP generation index'
         );
-    });
-});
-
-describe('ddspModelStorage deletion', () => {
-    it('propagates a user-requested deletion failure', async () => {
-        const bridge = storageBridge();
-        bridge.deleteModel.mockRejectedValue(new Error('OPFS denied'));
-        injectDependencies(ddspModelStorage.deleteDdspInstrumentArtifacts, { modelStorageWorkerBridge: bridge });
-
-        await expect(ddspModelStorage.deleteDdspInstrumentArtifacts(storage)).rejects.toThrow('OPFS denied');
+        expect(testStorage.bridge.beginModelWrite).not.toHaveBeenCalled();
+        expect(testStorage.bridge.deleteModel).not.toHaveBeenCalled();
     });
 
-    it('suppresses a best-effort failed-download cleanup deletion failure', async () => {
-        const bridge = storageBridge();
-        bridge.deleteModel.mockRejectedValue(new Error('OPFS denied'));
-        injectDependencies(ddspModelStorage.deleteDdspInstrumentArtifacts, { modelStorageWorkerBridge: bridge });
+    it('clears current before removal and preserves cleanup metadata after an artifact delete fails', async () => {
+        const currentGeneration = generation(storage.version);
+        const failedPath = currentGeneration.artifactIds[1]!;
+        const files = new Map<string, ArrayBuffer>([
+            [
+                indexModelId,
+                bytes({
+                    schemaVersion: 1,
+                    currentVersion: storage.version,
+                    generations: { [storage.version]: currentGeneration },
+                }),
+            ],
+        ]);
+        const testStorage = storageBridge({ files, failDeletes: new Set([failedPath]) });
+        injectStorage(testStorage.bridge);
 
-        await expect(ddspModelStorage.cleanupDdspInstrumentArtifacts(storage)).resolves.toBeUndefined();
+        await expect(ddspModelStorage.removeDdspInstrumentGenerations({ id: instrument.id })).rejects.toThrow(
+            'OPFS denied'
+        );
+
+        const firstIndexCommit = testStorage.events.indexOf(`commit:${indexModelId}`);
+        const firstDelete = testStorage.events.findIndex((event) => event.startsWith('delete:'));
+        expect(firstIndexCommit).toBeGreaterThanOrEqual(0);
+        expect(firstDelete).toBeGreaterThan(firstIndexCommit);
+        expect(testStorage.bridge.deleteModel.mock.calls.map(([input]) => input.modelId)).toEqual([
+            currentGeneration.readyMarkerId,
+            ...currentGeneration.artifactIds,
+        ]);
+        expect(decode(files.get(indexModelId))).toEqual({
+            schemaVersion: 1,
+            currentVersion: null,
+            generations: { [storage.version]: currentGeneration },
+        });
+        await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
     });
 });
