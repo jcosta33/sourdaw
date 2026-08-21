@@ -1,0 +1,19 @@
+tests/e2e/chordExpressionTestId.spec.ts
+  s_24b1bdbc3c31ad::t_0878df6913b849 1,5-16,18-23,25,28,30,33,35,38-39,42-45,47-50,52-53,56-60,62,64-65,67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e308dbe6f558e494cb48f4f69efcd3d01e01e0f0",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
