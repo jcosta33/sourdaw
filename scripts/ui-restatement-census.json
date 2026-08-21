@@ -27,15 +27,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-00728ceeba01d172",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 981,
-    "fingerprint": "div\tmb-3 max-h-[260px] space-y-1 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0075b35d626ae6a1",
     "file": "src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx",
     "line": 28,
@@ -353,7 +344,7 @@
   {
     "id": "ui-02fc07208b99f5a6",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 666,
+    "line": 665,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -394,15 +385,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-033cab96aa1c68c4",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 1005,
-    "fingerprint": "div\tflex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0363a1096f1018fe",
@@ -933,15 +915,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-08990dd623b9608d",
-    "file": "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
-    "line": 365,
-    "fingerprint": "div\tflex gap-1 px-3 py-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -1811,7 +1784,7 @@
   {
     "id": "ui-1042f7617e901baf",
     "file": "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
-    "line": 272,
+    "line": 273,
     "fingerprint": "DawMenuInlineEditor\t",
     "kind": "daw-chrome",
     "mapping": "DawMenuInlineEditor",
@@ -2270,7 +2243,7 @@
   {
     "id": "ui-143508723f16bd7b",
     "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
-    "line": 356,
+    "line": 357,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -2311,15 +2284,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-147ebc24657e2731",
-    "file": "src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx",
-    "line": 133,
-    "fingerprint": "div\tabsolute inset-x-2 top-2 z-10 flex flex-col pointer-events-none",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-148c430e034b454c",
@@ -2418,15 +2382,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-15a2c8c96e09d1ce",
-    "file": "src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx",
-    "line": 51,
-    "fingerprint": "div\tflex gap-1 px-3 py-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -2574,9 +2529,27 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-17ca7bcf69c15e19",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 980,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-17cbb73a8f367e03",
     "file": "src/modules/Toaster/presentations/views/ToasterPanel.tsx",
     "line": 287,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-17cc1490b9f2c27a",
+    "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
+    "line": 217,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -2689,15 +2662,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-18a4df52b683a322",
-    "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
-    "line": 406,
-    "fingerprint": "div\tdaw-floating-surface flex items-center gap-2 rounded-md px-4 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1908f5350999319f",
@@ -2934,6 +2898,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-1bd5a50c66baaf8d",
+    "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
+    "line": 388,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1c549171e4801e2e",
     "file": "src/modules/Crust/presentations/components/CrustGainStrip.tsx",
     "line": 94,
@@ -3105,6 +3078,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-1dababebc89c8cc0",
+    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
+    "line": 309,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1dbee28c1e3d70d5",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/SectionHeader.tsx",
     "line": 7,
@@ -3157,6 +3139,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-1ded98a4f33fc8b3",
+    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
+    "line": 155,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1df524e44d4d4ff4",
@@ -3512,7 +3503,7 @@
   {
     "id": "ui-20d13cc8752aec92",
     "file": "src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx",
-    "line": 53,
+    "line": 54,
     "fingerprint": "DawSwatchButton\t",
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
@@ -3735,15 +3726,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-23f23eeccde7981c",
-    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 148,
-    "fingerprint": "div\tflex items-center gap-1 ml-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2410c195107046e9",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 623,
@@ -3908,7 +3890,7 @@
   {
     "id": "ui-2603c2ea5e395007",
     "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
-    "line": 256,
+    "line": 261,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -3922,15 +3904,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-261b44b17596618d",
-    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
-    "line": 249,
-    "fingerprint": "div\tflex items-center gap-1 rounded-sm px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-white/10",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-2646d6f89599f15f",
@@ -4212,6 +4185,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-285723d85a5aceeb",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 950,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-285784080bef6b9a",
     "file": "src/modules/Command/presentations/views/UndoHistoryPanel.tsx",
     "line": 54,
@@ -4347,15 +4329,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-29d2ed7c5885cf10",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 958,
-    "fingerprint": "div\tmb-3 flex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-29dddf9c2fd9707f",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/GenericDeviceLayout.tsx",
     "line": 138,
@@ -4452,6 +4425,15 @@
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2af7e1eb02c86fc3",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 408,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -4599,15 +4581,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2c01c61856a367a1",
-    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
-    "line": 244,
-    "fingerprint": "div\tflex flex-col h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2c0327d48ae25fd6",
     "file": "src/modules/Proof/presentations/components/ProofLimiterSection.tsx",
     "line": 143,
@@ -4655,7 +4628,7 @@
   {
     "id": "ui-2c65d1dd742a6d18",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 1006,
+    "line": 1007,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4903,6 +4876,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-2e9d5e52d4d66538",
+    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
+    "line": 322,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-2ea276fbc11bef49",
@@ -5605,15 +5587,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-372307c9c0288aa3",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 767,
-    "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-black/40",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-37446e096fea3b57",
@@ -6446,7 +6419,7 @@
   {
     "id": "ui-3fbeb4d057401b77",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 322,
+    "line": 325,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6590,7 +6563,7 @@
   {
     "id": "ui-410a0d43221097c4",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 347,
+    "line": 356,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7524,15 +7497,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-48e1160da0c82041",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 774,
-    "fingerprint": "div\tmb-3 flex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-48ee3267a6b93a00",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
     "line": 238,
@@ -7702,6 +7666,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-4b79b686371b60ab",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 987,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4b7a2a9762984b7c",
@@ -7947,6 +7920,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-4e1725b2f5e48bae",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 808,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-4e18f6300008f356",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 109,
@@ -7963,6 +7945,15 @@
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-4e1cd43ca5ce2c1b",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 407,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4e7c7585a73bf125",
@@ -8143,6 +8134,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-509180b09b8878e9",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 766,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-509e83a10add52ba",
@@ -8640,15 +8640,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-55c74a93f8cc5eb8",
-    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 154,
-    "fingerprint": "div\tflex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-55cad56639289ad3",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1114,
@@ -8739,15 +8730,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-570abce911a5a2ac",
-    "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
-    "line": 328,
-    "fingerprint": "div\tabsolute top-0.5 bottom-0.5 rounded-sm flex items-center overflow-hidden border border-white/10",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-57195f99fa4cdf85",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 308,
@@ -8809,6 +8791,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-57ce2c5e73e14015",
+    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
+    "line": 214,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-57cfbab0d9dc4f69",
@@ -9209,7 +9200,7 @@
   {
     "id": "ui-5b27b0afca03039d",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 221,
+    "line": 224,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9783,15 +9774,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-6033d69c5b74c3b7",
-    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
-    "line": 233,
-    "fingerprint": "div\tabsolute top-0 bottom-0 flex items-center gap-1 group",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-604a875b100aae3d",
     "file": "src/components/daw/ValueField.tsx",
     "line": 400,
@@ -9799,6 +9781,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-60815d46698adb5f",
+    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
+    "line": 246,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-609158e66a261032",
@@ -9979,15 +9970,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-62217be054be2df6",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 406,
-    "fingerprint": "div\tflex items-center justify-between border-b border-border/30 px-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6225acbe09a7f3ed",
@@ -10248,6 +10230,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-65acb41c8959e382",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 773,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -11403,15 +11394,6 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-71f5a5cf414012ae",
-    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 430,
-    "fingerprint": "div\tflex h-full flex-col overflow-y-auto",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-71f7656f58057ea9",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 891,
@@ -11486,7 +11468,7 @@
   {
     "id": "ui-72cf78ea65cabc2c",
     "file": "src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx",
-    "line": 139,
+    "line": 140,
     "fingerprint": "DawContextMenuSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawContextMenuSurface",
@@ -11549,7 +11531,7 @@
   {
     "id": "ui-7326f9b5e502036a",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 414,
+    "line": 412,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11963,7 +11945,7 @@
   {
     "id": "ui-77c283e0cf3b2ffa",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 168,
+    "line": 172,
     "fingerprint": "div\trelative flex shrink-0 flex-col border-b border-border-soft cursor-pointer transition-colors duration-fast border-l-2 border-l-white/5 bg-surface-base hover:bg-surface-panel bg-state-warning/10 border-state-warning/20",
     "kind": "layout",
     "mapping": "Stack",
@@ -11999,7 +11981,7 @@
   {
     "id": "ui-781ec11c53ea08b0",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 325,
+    "line": 328,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -12013,6 +11995,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-782d907dcec974da",
+    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
+    "line": 439,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7838a81ea88e04e6",
@@ -12035,7 +12026,7 @@
   {
     "id": "ui-784e28878b58d9e7",
     "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
-    "line": 299,
+    "line": 304,
     "fingerprint": "DawSwatchButton\t",
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
@@ -12645,6 +12636,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7d2d348be6995841",
+    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
+    "line": 138,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7d77d016383a9823",
     "file": "src/modules/TimelineEditor/presentations/views/TempoEditor.tsx",
     "line": 226,
@@ -12786,6 +12786,15 @@
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7ea79fbf702b37c0",
+    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
+    "line": 253,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -13556,7 +13565,7 @@
   {
     "id": "ui-85b154886ad8cfeb",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 256,
+    "line": 259,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13601,7 +13610,7 @@
   {
     "id": "ui-8674480892ed2f6c",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 352,
+    "line": 355,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13817,7 +13826,7 @@
   {
     "id": "ui-88ab1dbeb2a0081b",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 965,
+    "line": 964,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14076,15 +14085,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-8b0e9a35992e1f84",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 814,
-    "fingerprint": "div\tmb-1 flex items-center justify-between text-[10px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-8b116510f2d653cc",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1019,
@@ -14128,15 +14128,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-8b5aed3a8f3ccd16",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 951,
-    "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-black/40",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8b6453ea6ef0a2fc",
@@ -14301,15 +14292,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-8d43072ec24f412a",
-    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 210,
-    "fingerprint": "div\tflex items-center gap-1 ml-auto",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-8d517630d1d37e3c",
     "file": "src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx",
     "line": 132,
@@ -14465,7 +14447,7 @@
   {
     "id": "ui-8ed04ba3b38f025a",
     "file": "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
-    "line": 260,
+    "line": 261,
     "fingerprint": "DawContextMenuSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawContextMenuSurface",
@@ -14681,7 +14663,7 @@
   {
     "id": "ui-9110391382355c7d",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 54,
+    "line": 57,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15147,15 +15129,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-971a5090bbee8220",
-    "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
-    "line": 387,
-    "fingerprint": "div\tflex items-center justify-center h-full",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9727d5f71a585db8",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
     "line": 516,
@@ -15561,15 +15534,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-9b29570f1a67cbbf",
-    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 137,
-    "fingerprint": "div\tflex flex-col gap-1 w-16 ml-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9b454fd38e7ca03a",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 822,
@@ -15608,7 +15572,7 @@
   {
     "id": "ui-9b744a8277be6130",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 86,
+    "line": 87,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16092,15 +16056,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a0d428b4184e7314",
-    "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 215,
-    "fingerprint": "div\trelative z-20 ml-auto flex items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a0f7a080bb494fb0",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 268,
@@ -16126,15 +16081,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-a131f0c0ec04c190",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 410,
-    "fingerprint": "div\tflex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a13cb912b123c161",
@@ -16929,15 +16875,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-a98e0937f76e82a5",
-    "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
-    "line": 407,
-    "fingerprint": "div\tflex gap-1 px-2 pb-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a999924744c1566d",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1274,
@@ -16959,6 +16896,15 @@
     "id": "ui-a9d51a17773eb23f",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1632,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a9dac6be658e8bb7",
+    "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
+    "line": 408,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17289,6 +17235,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-ad05ad646db24793",
+    "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
+    "line": 411,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ad1706245cfd3f23",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 184,
@@ -17354,7 +17309,7 @@
   {
     "id": "ui-adf42745e08fc5eb",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 159,
+    "line": 162,
     "fingerprint": "div\tflex items-center gap-2 border-t border-border-hairline px-2 py-1 bg-[var(--color-accent-mint)]/10 hover:bg-white/[0.03]",
     "kind": "layout",
     "mapping": "Row",
@@ -17377,6 +17332,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-ae0bdf35f3ce4a4f",
+    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
+    "line": 49,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ae4d952721e0a5d1",
@@ -17561,7 +17525,7 @@
   {
     "id": "ui-b01b3a92b727cab1",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 186,
+    "line": 190,
     "fingerprint": "div\tflex items-center gap-1 px-2 pl-7",
     "kind": "layout",
     "mapping": "Row",
@@ -17570,7 +17534,7 @@
   {
     "id": "ui-b03febe73b4eee3b",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 239,
+    "line": 242,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17795,7 +17759,7 @@
   {
     "id": "ui-b1bafb7b0546fd89",
     "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
-    "line": 409,
+    "line": 410,
     "fingerprint": "DawSwatchButton\t",
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
@@ -18236,7 +18200,7 @@
   {
     "id": "ui-b5ead67f74f39c5f",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 637,
+    "line": 636,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -18286,15 +18250,6 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
-  },
-  {
-    "id": "ui-b6919dbe74c22cf7",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 809,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b6963e04afbcc65e",
@@ -18405,9 +18360,27 @@
     "disposition": "complex-grid"
   },
   {
+    "id": "ui-b85ad2a7f523b442",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 1006,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b860db4018676139",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 1145,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b88fc85b8b1ed1c0",
+    "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
+    "line": 329,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -18776,7 +18749,7 @@
   {
     "id": "ui-bc4128c99053e58d",
     "file": "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
-    "line": 367,
+    "line": 368,
     "fingerprint": "DawSwatchButton\t",
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
@@ -19055,7 +19028,7 @@
   {
     "id": "ui-bf4556ec7b34cb6b",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 139,
+    "line": 140,
     "fingerprint": "DawMeterBar\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterBar",
@@ -19123,15 +19096,6 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-c043896648a1266a",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 633,
-    "fingerprint": "div\tabsolute left-0 top-0 z-10 flex items-center gap-1 border-r border-border/40 px-1 py-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c04898f57cbfbd81",
@@ -19260,6 +19224,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-c106b13fa0eb178b",
+    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
+    "line": 234,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c13a385da5636aa6",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
     "line": 104,
@@ -19381,15 +19354,6 @@
     "file": "src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx",
     "line": 37,
     "fingerprint": "div\tflex justify-end",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c2932764f785d4a0",
-    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 306,
-    "fingerprint": "div\tflex items-center gap-2 px-2 py-1 text-[10px]",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -19719,6 +19683,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-c66b3581e5ea8215",
+    "file": "src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx",
+    "line": 134,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c6702b140640e0cd",
     "file": "src/components/daw/DawMenuParts.tsx",
     "line": 75,
@@ -19834,6 +19807,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-c84fc43730ecc82f",
+    "file": "src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx",
+    "line": 52,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c858714bbfbe8d33",
@@ -19959,6 +19941,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-c9a053bfe6a91027",
+    "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
+    "line": 405,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -20207,7 +20198,7 @@
   {
     "id": "ui-cbe28ed3d8baa7c2",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 332,
+    "line": 341,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20349,6 +20340,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-cce01ea4ddea64bf",
+    "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
+    "line": 207,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-cd234c558d030fe4",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 1209,
@@ -20448,15 +20448,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-cdbc28382bdbbf33",
-    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 319,
-    "fingerprint": "div\tml-auto flex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-cdbe7a7758790c14",
     "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
     "line": 194,
@@ -20508,15 +20499,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-cf24df3f0afa972b",
-    "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
-    "line": 401,
-    "fingerprint": "div\tabsolute inset-0 z-20 flex items-center justify-center bg-surface-base/60 pointer-events-none",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -21249,15 +21231,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d6af6b95fe3dbe2f",
-    "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 48,
-    "fingerprint": "div\tabsolute top-0 bottom-0 flex items-center justify-between gap-1 rounded-sm border border-[var(--color-accent-cyan)]/70 bg-[var(--color-accent-cyan)]/15 px-1.5 text-[9px] font-semibold text-[var(--color-accent-cyan)]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d6c3002ff183ccdf",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
     "line": 97,
@@ -21427,6 +21400,15 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-d833376b9127c656",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 957,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d859a154b634dc9a",
@@ -21989,7 +21971,7 @@
   {
     "id": "ui-de780226069c7ece",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 72,
+    "line": 73,
     "fingerprint": "DawHierarchyRow\t",
     "kind": "daw-chrome",
     "mapping": "DawHierarchyRow",
@@ -22025,7 +22007,7 @@
   {
     "id": "ui-dec636bf7367a3a5",
     "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
-    "line": 388,
+    "line": 389,
     "fingerprint": "DawInlineHint\t",
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
@@ -22156,15 +22138,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-e051bbc94683ae6d",
-    "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
-    "line": 391,
-    "fingerprint": "div\tabsolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary/10 border-2 border-dashed border-primary pointer-events-none",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-e05487d4dd6e1db5",
@@ -22421,7 +22394,7 @@
   {
     "id": "ui-e381249837e60a74",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
-    "line": 213,
+    "line": 217,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22482,15 +22455,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-e3ec8a1ee28c236c",
-    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 988,
-    "fingerprint": "label\tflex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-[11px] hover:bg-white/5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e40739e303f53850",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 548,
@@ -22506,6 +22470,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-e41999909787bdad",
+    "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
+    "line": 149,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -22806,6 +22779,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-e7b85b4fa4c3b200",
+    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
+    "line": 302,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e7bde5a37bac00ee",
     "file": "src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx",
     "line": 187,
@@ -22835,7 +22817,7 @@
   {
     "id": "ui-e84c4f28bee5f7ea",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 992,
+    "line": 993,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -22970,7 +22952,7 @@
   {
     "id": "ui-e9d171e2603f038f",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
-    "line": 167,
+    "line": 170,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23519,7 +23501,7 @@
   {
     "id": "ui-eecabece376ed5e8",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 655,
+    "line": 654,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23565,6 +23547,15 @@
     "id": "ui-ef16b6803c74c79f",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 470,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ef22f797f78670d2",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 813,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -23620,15 +23611,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackLevelSection.tsx",
     "line": 99,
     "fingerprint": "div\tflex flex-col flex-1 min-w-0 overflow-hidden justify-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ef7bb13e36a80d86",
-    "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 206,
-    "fingerprint": "div\tflex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well",
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "eligible"
@@ -23695,6 +23677,24 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-eff9eab0249e2649",
+    "file": "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
+    "line": 366,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f0061ae1bdb1c194",
+    "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
+    "line": 392,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f058f0086d0390f6",
@@ -24012,15 +24012,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-f32dd212ec7b8574",
-    "file": "src/modules/Arrangement/presentations/views/MarkerLane.tsx",
-    "line": 297,
-    "fingerprint": "div\tflex gap-1 px-2 pb-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f32e88e747cf562e",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 356,
@@ -24073,6 +24064,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-f3a4242bdbe95af2",
+    "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
+    "line": 631,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f3d18522b6eea22c",
@@ -24194,7 +24194,7 @@
   {
     "id": "ui-f53da724767f2e26",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
-    "line": 211,
+    "line": 213,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -24671,7 +24671,7 @@
   {
     "id": "ui-f9b3bff015845680",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 783,
+    "line": 782,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25076,7 +25076,7 @@
   {
     "id": "ui-fda5527d5d246fea",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
-    "line": 1013,
+    "line": 1014,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
