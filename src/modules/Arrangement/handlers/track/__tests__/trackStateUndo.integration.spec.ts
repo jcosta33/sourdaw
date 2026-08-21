@@ -192,6 +192,38 @@ describe('track-state guarded undo integration', () => {
             expect(readClipSatelliteEntry('clip-1').gainEnvelope).toBeNull();
         });
 
+        it('cut: conflicts rather than reinstating a superseded device-state payload', async () => {
+            const device = {
+                id: 'device-toaster',
+                type: 'toaster',
+                name: 'Toaster',
+                bypassed: false,
+                parameterValues: {},
+                deviceState: { version: 1, data: { kitId: 'kit-808', pads: ['kick', 'snare'] } },
+            };
+            divergeTrack('track-1', { devices: [device] });
+            seedClipWithEnvelope();
+            await run({ type: 'cutClip' });
+
+            // `setDeviceState` — the only writer of this slot — is `undoable: false`, so
+            // swapping the kit after the cut files no undo entry of its own to protect it.
+            divergeTrack('track-1', {
+                devices: [{ ...device, deviceState: { version: 1, data: { kitId: 'kit-909', pads: ['kick'] } } }],
+            });
+
+            await undo();
+
+            // The decisive assertion: `deviceState` is authored project truth that nothing
+            // recomputes, and the restore replaces `devices` wholesale. A guard blind to it
+            // reinstates the old kit here; the session store keeps the track sounding right,
+            // so the loss only surfaces on the next project open.
+            expect(track('track-1')?.devices[0]?.deviceState).toEqual({
+                version: 1,
+                data: { kitId: 'kit-909', pads: ['kick'] },
+            });
+            expect(track('track-1')?.clips).toEqual([]);
+        });
+
         it('cut: conflicts rather than clobbering an edit inside a non-active alternative', async () => {
             seedClipWithEnvelope();
             await run({ type: 'cutClip' });

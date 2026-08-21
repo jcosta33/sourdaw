@@ -2,6 +2,8 @@ import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
     type DeviceSnapshot,
+    type DeviceStateChunkSnapshot,
+    type DeviceStateValueSnapshot,
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
@@ -33,11 +35,11 @@ function clipIdSequenceMatches(
 }
 
 /**
- * `undefined` is admitted on both sides on purpose. `normalizeTrack` passes `devices`
- * and `alternatives` through untouched, so a row loaded from an older project can be
- * missing `parameterValues` or an alternative's `clips` entirely. Throwing on that
- * inside a guard would turn a divergence check into a crash in the middle of undo;
- * treating an absent map as empty compares it against the equally absent snapshot.
+ * `undefined` is admitted on both sides defensively rather than because a live device
+ * is expected to lack the map — `normalizeTrack`'s device normalization always writes
+ * one. Throwing inside a guard would turn a divergence check into a crash in the
+ * middle of undo, and treating an absent map as empty still conflicts against a
+ * populated one because the key count is compared first.
  */
 function parameterValuesMatch(
     live: Readonly<Record<string, number>> | undefined,
@@ -52,20 +54,82 @@ function parameterValuesMatch(
     return liveKeys.every((key) => Object.is(liveValues[key], expectedValues[key]));
 }
 
+function deviceStateRecordMatches(
+    live: Readonly<Record<string, DeviceStateValueSnapshot>>,
+    expected: Readonly<Record<string, DeviceStateValueSnapshot>>
+): boolean {
+    const liveKeys = Object.keys(live);
+    if (liveKeys.length !== Object.keys(expected).length) {
+        return false;
+    }
+    return liveKeys.every((key) => deviceStateValueMatches(live[key], expected[key]));
+}
+
+/**
+ * Structural compare over a device-state payload. Safe to recurse without a cycle
+ * guard: `normalize_device_state_value` in `trackStore` admits only JSON-safe scalars,
+ * arrays and plain records into the slot, so nothing here can be self-referential or a
+ * class instance.
+ */
+function deviceStateValueMatches(
+    live: DeviceStateValueSnapshot | undefined,
+    expected: DeviceStateValueSnapshot | undefined
+): boolean {
+    if (live === undefined || expected === undefined) {
+        return live === expected;
+    }
+    if (Array.isArray(live) || Array.isArray(expected)) {
+        if (!Array.isArray(live) || !Array.isArray(expected) || live.length !== expected.length) {
+            return false;
+        }
+        return live.every((entry, index) => deviceStateValueMatches(entry, expected[index]));
+    }
+    if (live !== null && typeof live === 'object') {
+        if (expected === null || typeof expected !== 'object') {
+            return false;
+        }
+        return deviceStateRecordMatches(live, expected);
+    }
+    return Object.is(live, expected);
+}
+
+function deviceStateMatches(
+    live: DeviceStateChunkSnapshot | undefined,
+    expected: DeviceStateChunkSnapshot | undefined
+): boolean {
+    if (live === undefined || expected === undefined) {
+        return live === expected;
+    }
+    return live.version === expected.version && deviceStateRecordMatches(live.data, expected.data);
+}
+
 /**
  * Identity comparison for one device, in the shape `freezeStateSnapshotMatches` uses:
- * compare what the user authored — which device, whether it is bypassed, what its
- * parameters read — and not the opaque host-owned blobs. `externalStateChunk` and
- * `deviceState` are refetched from a live plugin instance without any user edit, so a
- * deep compare on them would report a conflict against state nothing meaningfully
- * changed, exactly the way a deep clip compare would.
+ * compare what the user authored and this restore replaces, and skip only what a
+ * later save recomputes anyway.
+ *
+ * `deviceState` is compared, and is the reason this is not a shorter list. It is
+ * authored project truth — the built-in state a device serialises for itself when
+ * `parameterValues` cannot express it — written only by the `setDeviceState` action
+ * behind the device commits, and recomputed by nothing. That action is
+ * `undoable: false`, so such an edit leaves no undo entry to protect it; if this
+ * guard skipped the field, undoing an unrelated clip edit would silently reinstate
+ * the previous payload and the loss would only surface the next time the project was
+ * opened and rehydrated from it.
+ *
+ * `externalStateChunk` is the one exclusion, and it is genuinely different: it is
+ * refetched at save time from the still-live native plugin instance, so a stale value
+ * written back here is overwritten before it can reach disk, while a deep compare on
+ * it would conflict against churn no user authored.
  */
 function deviceMatches(live: Device, expected: DeviceSnapshot): boolean {
     return (
         live.id === expected.id &&
+        live.name === expected.name &&
         live.type === expected.type &&
         live.bypassed === expected.bypassed &&
-        parameterValuesMatch(live.parameterValues, expected.parameterValues)
+        parameterValuesMatch(live.parameterValues, expected.parameterValues) &&
+        deviceStateMatches(live.deviceState, expected.deviceState)
     );
 }
 
