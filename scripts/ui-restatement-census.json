@@ -740,7 +740,7 @@
   {
     "id": "ui-06dcea363a08c094",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 159,
+    "line": 160,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -1161,15 +1161,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0a1a609860f8b725",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 160,
-    "fingerprint": "div\tspace-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0a20d1a0145a18ab",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 480,
@@ -1365,6 +1356,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-0c691198f137b0be",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 161,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -2837,7 +2837,7 @@
   {
     "id": "ui-19c7968944ae186d",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 69,
+    "line": 70,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3089,7 +3089,7 @@
   {
     "id": "ui-1ca29948ace5219f",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 184,
+    "line": 185,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -3413,7 +3413,7 @@
   {
     "id": "ui-1f20818feb965da3",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 149,
+    "line": 150,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -3485,7 +3485,7 @@
   {
     "id": "ui-1faa4a72509226f3",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 150,
+    "line": 151,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -3575,7 +3575,7 @@
   {
     "id": "ui-206a565d623b51ab",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 50,
+    "line": 51,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4011,6 +4011,15 @@
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-263cead182a48896",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 66,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -4889,7 +4898,7 @@
   {
     "id": "ui-2d8c67f8436dc431",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 204,
+    "line": 205,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -4979,7 +4988,7 @@
   {
     "id": "ui-2e394513bc53ce7b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 59,
+    "line": 60,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -5357,7 +5366,7 @@
   {
     "id": "ui-336474f2a7266f9d",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 166,
+    "line": 167,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -5744,7 +5753,7 @@
   {
     "id": "ui-37dcf6ef35eaa4ac",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 163,
+    "line": 164,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -6039,6 +6048,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3b0f36ecc02a9a1f",
+    "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
+    "line": 149,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3b13e755da6374da",
     "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
     "line": 144,
@@ -6248,7 +6266,7 @@
   {
     "id": "ui-3cec07342118e162",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 98,
+    "line": 99,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -6549,15 +6567,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-3fdf348bf1b489f2",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 106,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -7121,7 +7130,7 @@
   {
     "id": "ui-44f2ce06127b4370",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 169,
+    "line": 170,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -7418,7 +7427,7 @@
   {
     "id": "ui-47827ebcacba14f3",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 220,
+    "line": 221,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -8865,15 +8874,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-57c6271936d16f5c",
-    "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 148,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-57ce2c5e73e14015",
     "file": "src/modules/Arrangement/presentations/views/TrackHeader.tsx",
     "line": 214,
@@ -9137,7 +9137,7 @@
   {
     "id": "ui-59a15428116956eb",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 174,
+    "line": 175,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -9250,15 +9250,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-5b07b1e99976a51c",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 157,
-    "fingerprint": "div\tflex flex-col gap-3 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5b081ebc7a54b4ce",
@@ -9785,7 +9776,7 @@
   {
     "id": "ui-5ff148343f23432f",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 93,
+    "line": 94,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -9911,7 +9902,7 @@
   {
     "id": "ui-6140db0930679672",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 221,
+    "line": 222,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
@@ -9947,7 +9938,7 @@
   {
     "id": "ui-6170a2c97928390b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 64,
+    "line": 65,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -10521,15 +10512,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-674d284dfd382ea7",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 185,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6788dd2553d7530f",
     "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
     "line": 357,
@@ -10775,7 +10757,7 @@
   {
     "id": "ui-6a304883bc97c84f",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 107,
+    "line": 108,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -10946,7 +10928,7 @@
   {
     "id": "ui-6c186771a9c46f15",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 154,
+    "line": 155,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -11225,7 +11207,7 @@
   {
     "id": "ui-6f7f68130ac27791",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 152,
+    "line": 153,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -12206,7 +12188,7 @@
   {
     "id": "ui-791dd85da6d18552",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 89,
+    "line": 90,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -12314,7 +12296,7 @@
   {
     "id": "ui-7a12b4ce2007730a",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 197,
+    "line": 198,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -12453,15 +12435,6 @@
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-7b188dd5f0baedb0",
-    "file": "src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx",
-    "line": 135,
-    "fingerprint": "div\tflex items-center gap-1.5 px-1.5 py-1 rounded bg-surface-overlay/50 border border-border/20 cursor-grab active:cursor-grabbing",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -13776,15 +13749,6 @@
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-8795fe9be55fe1c4",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 65,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -15500,7 +15464,7 @@
   {
     "id": "ui-9a2c485ad1d6e93a",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 45,
+    "line": 46,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -15678,6 +15642,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-9ce24452eb1aac33",
+    "file": "src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx",
+    "line": 136,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9ce67f4dc3331b44",
     "file": "src/modules/ContentBrowser/presentations/components/ProjectSectionHeader.tsx",
     "line": 7,
@@ -15716,7 +15689,7 @@
   {
     "id": "ui-9d06a4c98b925410",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 165,
+    "line": 166,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -16418,7 +16391,7 @@
   {
     "id": "ui-a44577cfb0b595fd",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 133,
+    "line": 134,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -16787,7 +16760,7 @@
   {
     "id": "ui-a85b766cf34a5ca8",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 110,
+    "line": 111,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16932,6 +16905,15 @@
     "id": "ui-a9dac6be658e8bb7",
     "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
     "line": 408,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a9ebed5d8869c7bd",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 89,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17210,7 +17192,7 @@
   {
     "id": "ui-accda4ad64cfc488",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 123,
+    "line": 124,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17460,6 +17442,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-af47453484e51b5a",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 158,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-af704e4573868969",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx",
     "line": 117,
@@ -17475,6 +17466,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-af81e70b3d882738",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 186,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -17921,7 +17921,7 @@
   {
     "id": "ui-b31733aaac096ac8",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 156,
+    "line": 157,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -18785,7 +18785,7 @@
   {
     "id": "ui-bc287dc6c27dade7",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 179,
+    "line": 180,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -20360,7 +20360,7 @@
   {
     "id": "ui-ccaba29a7cb847af",
     "file": "src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx",
-    "line": 141,
+    "line": 143,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22628,7 +22628,7 @@
   {
     "id": "ui-e4e9fc19eadea53e",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 161,
+    "line": 162,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -22650,6 +22650,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-e50e4460679cc0ca",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 242,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -23213,7 +23222,7 @@
   {
     "id": "ui-ead8d90fb1545a4a",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 136,
+    "line": 137,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23267,7 +23276,7 @@
   {
     "id": "ui-eb76038a79fe6159",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 165,
+    "line": 166,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -23384,7 +23393,7 @@
   {
     "id": "ui-ec51e4aaa0c920d8",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 92,
+    "line": 93,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24005,7 +24014,7 @@
   {
     "id": "ui-f2969c9a19e6c011",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 149,
+    "line": 150,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -24273,6 +24282,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f5b93aaea5621af7",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 107,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f5d5f929054f4695",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx",
     "line": 113,
@@ -24442,15 +24460,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f77a0be7e20f3c08",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 241,
-    "fingerprint": "section\ttext-[9px] text-muted-foreground/55 border-t border-border/20 pt-2 space-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f7a0d855867f20c8",
@@ -24707,7 +24716,7 @@
   {
     "id": "ui-f9db61ca5468b14f",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 191,
+    "line": 192,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
@@ -25270,15 +25279,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ffcef303d8e63849",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 88,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ffe72965d13b61a3",
