@@ -107,6 +107,8 @@ export type Clip = {
     endBeat: number;
     type: 'audio' | 'midi';
     audioBufferId?: string;
+    /** Path or identifier of the audio file on disk (for pitch commits, external assets, etc.). */
+    fileId?: string;
     /** Content-addressed hash of the audio file (SHA-256 via AssetTransfer).
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
