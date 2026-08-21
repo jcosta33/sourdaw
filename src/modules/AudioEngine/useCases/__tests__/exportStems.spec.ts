@@ -149,6 +149,7 @@ function createRenderContext(tracks: unknown[] | null) {
         selectMidiEventProbability: vi.fn(() => true),
         projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
         projectPpqEndpoints: vi.fn(),
+        resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
         processYeastMidi: null,
     };
 }
@@ -171,6 +172,7 @@ describe('exportStems', () => {
             evaluateAutomationValue: () => null,
         });
         configureOfflinePpqEndpointProjection({
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             project: ({ startPpq, endPpq, sampleRate }) => ({
                 startSamples: startPpq * sampleRate,
                 endSamples: endPpq * sampleRate,
@@ -719,6 +721,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
             evaluateAutomationValue: () => null,
         });
         configureOfflinePpqEndpointProjection({
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             project: ({ startPpq, endPpq, sampleRate }) => ({
                 startSamples: startPpq * sampleRate,
                 endSamples: endPpq * sampleRate,

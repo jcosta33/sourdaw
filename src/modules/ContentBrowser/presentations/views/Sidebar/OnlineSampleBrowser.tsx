@@ -1,7 +1,4 @@
-/**
- * Curated free sample sources — direct links, no signup, no auth.
- * All CC0 or CC-BY licensed and safe for commercial use.
- */
+/** Links to third-party sample collections. Terms vary by item and can change. */
 import { type ReactElement } from 'react';
 
 import { ExternalLink, Package, Music, Drum, Guitar, Piano, Mic2, Waves } from 'lucide-react';
@@ -15,7 +12,6 @@ type SampleSource = {
     id: string;
     name: string;
     description: string;
-    license: string;
     icon: typeof Package;
     url: string;
     category: string;
@@ -27,7 +23,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'lmms-assets',
         name: 'LMMS Drum Samples',
         description: 'Kicks, snares, hats, toms, percussion. FLAC 44.1kHz.',
-        license: 'CC0',
         icon: Drum,
         url: 'https://github.com/LMMS/assets/tree/master/Samples',
         category: 'drums',
@@ -36,7 +31,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'vcsl-percussion',
         name: 'VCSL Percussion',
         description: 'Timpani, cymbals, triangle, glockenspiel, marimba. 24-bit WAV.',
-        license: 'CC0',
         icon: Drum,
         url: 'https://github.com/sgossner/VCSL',
         category: 'drums',
@@ -45,7 +39,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'sfz-gm-drums',
         name: 'GM Drum Bank',
         description: 'Full General MIDI drum kit. Multi-velocity samples.',
-        license: 'CC0/CC-BY',
         icon: Drum,
         url: 'https://github.com/sfzinstruments/Discord-SFZ-GM-Bank',
         category: 'drums',
@@ -56,7 +49,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'splendid-grand',
         name: 'Splendid Grand Piano',
         description: 'Steinway concert grand. Multi-velocity, round-robin. FLAC + SFZ.',
-        license: 'Public Domain',
         icon: Piano,
         url: 'https://github.com/sfzinstruments/SplendidGrandPiano',
         category: 'instruments',
@@ -65,7 +57,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'sfz-basses',
         name: 'Black & Blue Basses',
         description: 'Electric bass — fingered, picked, slapped. Multi-articulation.',
-        license: 'CC0',
         icon: Guitar,
         url: 'https://github.com/sfzinstruments/BlackAndBlueBasses',
         category: 'instruments',
@@ -74,7 +65,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'sfz-ergo-eub',
         name: 'Ergo EUB',
         description: 'Electric upright bass — arco and pizzicato.',
-        license: 'CC0',
         icon: Guitar,
         url: 'https://github.com/sfzinstruments/Ergo-EUB',
         category: 'instruments',
@@ -85,7 +75,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'iowa-mis',
         name: 'Iowa Musical Instruments',
         description: '23+ orchestral instruments. Anechoic chamber. Up to 24-bit/96kHz.',
-        license: 'Unrestricted',
         icon: Music,
         url: 'https://theremin.music.uiowa.edu/MIS.html',
         category: 'orchestral',
@@ -94,7 +83,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'vcsl-orchestral',
         name: 'VCSL Full Library',
         description: 'Woodwinds, brass, strings, experimental. SFZ mappings included.',
-        license: 'CC0',
         icon: Music,
         url: 'https://github.com/sgossner/VCSL/releases/tag/v1.2.2-RC',
         category: 'orchestral',
@@ -103,7 +91,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'philharmonia',
         name: 'Philharmonia Orchestra',
         description: 'Note samples from a world-class orchestra. All standard instruments.',
-        license: 'CC-BY-SA',
         icon: Music,
         url: 'https://philharmonia.co.uk/resources/sound-samples/',
         category: 'orchestral',
@@ -114,7 +101,6 @@ const SOURCES: readonly SampleSource[] = [
         id: 'olpc-berklee',
         name: 'OLPC Berklee Samples',
         description: 'Ethnic instruments, synths, percussion, FX. 8,000+ samples.',
-        license: 'CC-BY',
         icon: Waves,
         url: 'https://archive.org/details/olpc-sound-samples-v2.7z',
         category: 'synths',
@@ -122,8 +108,7 @@ const SOURCES: readonly SampleSource[] = [
     {
         id: 'ccmixter-stems',
         name: 'ccMixter Stems & Loops',
-        description: 'Stems, loops, a cappellas from remix community. Commercially usable.',
-        license: 'CC-BY',
+        description: 'Stems, loops, and a cappellas from a remix community.',
         icon: Waves,
         url: 'https://dig.ccmixter.org/',
         category: 'synths',
@@ -131,8 +116,7 @@ const SOURCES: readonly SampleSource[] = [
     {
         id: 'opengameart',
         name: 'OpenGameArt Audio',
-        description: 'Sound effects, chiptune, retro, jingles. All free licenses.',
-        license: 'CC0/CC-BY',
+        description: 'Sound effects, chiptune, retro, and jingles.',
         icon: Waves,
         url: 'https://opengameart.org/art-search-advanced?keys=&type=music',
         category: 'synths',
@@ -142,8 +126,7 @@ const SOURCES: readonly SampleSource[] = [
     {
         id: 'ccmixter-vocals',
         name: 'ccMixter Vocals',
-        description: 'A cappellas and vocal stems cleared for commercial use.',
-        license: 'CC-BY',
+        description: 'A cappellas and vocal stems from a remix community.',
         icon: Mic2,
         url: 'https://dig.ccmixter.org/tags/vocals',
         category: 'vocals',
@@ -153,8 +136,7 @@ const SOURCES: readonly SampleSource[] = [
     {
         id: 'archive-netlabels',
         name: 'Internet Archive Netlabels',
-        description: 'CC-licensed albums from independent labels. Full tracks and stems.',
-        license: 'CC0/CC-BY',
+        description: 'Albums from independent labels. Full tracks and stems.',
         icon: Package,
         url: 'https://archive.org/details/netlabels',
         category: 'general',
@@ -162,8 +144,7 @@ const SOURCES: readonly SampleSource[] = [
     {
         id: 'sfzinstruments-org',
         name: 'sfzinstruments Collection',
-        description: '20+ open-source SFZ instruments. Piano, bass, strings, drums.',
-        license: 'CC0/CC-BY',
+        description: '20+ SFZ instruments. Piano, bass, strings, and drums.',
         icon: Package,
         url: 'https://github.com/sfzinstruments',
         category: 'general',
@@ -224,7 +205,7 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
     return (
         <Stack gap={3}>
             <p className="text-[9px] text-muted-foreground/60 leading-relaxed">
-                Free sample libraries — download and import into your project.
+                External collections. Terms vary by item; verify the selected file before use.
             </p>
 
             {CATEGORY_ORDER.map((cat) => {
@@ -267,12 +248,7 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
                                     heading={source.name}
                                     description={source.description}
                                     endSlot={
-                                        <Row gap={1}>
-                                            <ExternalLink className="size-2 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
-                                            <span className="rounded bg-[var(--color-state-success)]/10 px-1 py-0.5 text-[7px] font-medium text-[var(--color-state-success)]/70">
-                                                {source.license}
-                                            </span>
-                                        </Row>
+                                        <ExternalLink className="size-2 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
                                     }
                                 />
                             );

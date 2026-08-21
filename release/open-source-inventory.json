@@ -648,10 +648,12 @@
             ],
             "revisions": ["live per-item sources"],
             "digests": ["not-applicable:linked-external-content"],
-            "licenses": ["per-item terms pending:OS-08"],
+            "licenses": ["external-item-terms:not-distributed"],
             "productSurfaces": ["online sample browser"],
-            "evidence": ["Current collection-level labels overstate item-level reuse rights."],
-            "obligations": ["Resolve and display the exact selected item's current terms before claiming reuse rights."]
+            "evidence": [
+                "No third-party sample is imported or redistributed; the browser links to source pages and makes no reuse claim."
+            ],
+            "obligations": ["Do not claim reuse rights without displaying the selected item's current terms."]
         },
         {
             "id": "owner-visual-assets",
@@ -678,7 +680,7 @@
         },
         {
             "id": "third-party-marks",
-            "kind": "product-name-candidates",
+            "kind": "reference-map",
             "retention": "keep-with-obligations",
             "owner": "OS-08",
             "releaseModes": ["source", "web", "desktop"],
@@ -686,6 +688,7 @@
                 "docs/manual/devices/11-grinder.md",
                 "docs/manual/devices/17-fermenter.md",
                 "public/faust/libfaust-wasm.js",
+                "public/legal/TRADEMARKS.md",
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
@@ -729,16 +732,20 @@
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
                 "src/modules/Toaster/repositories/toasterPresets.ts"
             ],
-            "sources": ["curated candidate values and exact current text paths"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "licenses": ["trademark disposition pending:OS-08"],
-            "productSurfaces": ["presets", "model selectors", "public screenshots"],
+            "sources": ["public/legal/TRADEMARKS.md", "current source text"],
+            "revisions": ["current release text"],
+            "digests": [
+                "sha256:e7a1cc9d47151f27d8992922228630de4db4c11269621562336154e5a56ea58c:public/legal/TRADEMARKS.md"
+            ],
+            "licenses": ["not-applicable:trademark-rights-not-granted"],
+            "productSurfaces": ["technical references", "compatibility identifiers", "presets", "model selectors"],
             "evidence": [
-                "The candidate map is deliberately conservative; OS-08 decides which occurrences are actual marks."
+                "The exact text map covers plain-text references to third-party products and generic audio terms.",
+                "The tracked marks appear only as plain text; visual-asset provenance is governed separately."
             ],
             "obligations": [
-                "Classify each candidate, then keep defensible descriptive use or rename, replace, or remove it."
+                "Keep references limited to identification, technical comparison, or compatibility.",
+                "Keep the trademark notice with every release and never imply affiliation or endorsement."
             ]
         },
         {
