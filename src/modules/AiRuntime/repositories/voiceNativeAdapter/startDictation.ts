@@ -1,6 +1,6 @@
-import { desktopInvoke } from '#/utils/desktopBridge';
+import { desktopStartVoiceDictation } from '#/utils/desktopBridge';
 
 /** Begin native audio capture + Whisper inference session. */
-export async function startDictation(): Promise<void> {
-    await desktopInvoke('start_dictation');
+export function startDictation(sessionId: string): Promise<string> {
+    return desktopStartVoiceDictation(sessionId);
 }

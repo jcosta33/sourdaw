@@ -2,8 +2,8 @@ import { type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
-import { voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
+import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
+import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
@@ -53,7 +53,9 @@ export const TransportBar = (): ReactElement => {
 
     const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
     const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
-    const voiceInputAvailable = isVoiceInputAvailable();
+    const voiceInputAvailable = useStore(voiceInputAvailabilityStore, {
+        hasVerifiedLocalModel: false,
+    }).hasVerifiedLocalModel;
     const anyTrackArmed = tracks.some((time) => time.armed);
     const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 

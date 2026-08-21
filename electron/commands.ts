@@ -57,7 +57,6 @@ export const EXPOSED_COMMANDS = [
     'detect_onsets',
     'detect_smart_loop_points',
     'engine_rt_diagnostics',
-    'ensure_whisper_ready',
     'get_crumbs_position',
     'get_default_plugin_paths',
     'get_plugin_parameters',
@@ -66,6 +65,7 @@ export const EXPOSED_COMMANDS = [
     'is_plugin_gui_supported',
     'list_directory',
     'list_midi_inputs',
+    'load_cached_whisper_model',
     'load_plugin',
     'load_sample',
     'map_graph_batch',
@@ -86,8 +86,6 @@ export const EXPOSED_COMMANDS = [
     'set_plugin_bypass',
     'set_plugin_parameter',
     'set_plugin_state_bytes',
-    'start_dictation',
-    'stop_dictation',
     'stop_recording',
     'unload_plugin',
     'write_file_bytes',
@@ -136,6 +134,7 @@ export const EXPOSED_COMMANDS = [
  */
 export const DENIED_COMMANDS = [
     'apply_graph_commands',
+    'cancel_dictation',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',
     'collab_start_advertising',
@@ -156,6 +155,8 @@ export const DENIED_COMMANDS = [
     'send_plugin_midi',
     'set_link_tempo',
     'show_all_plugin_guis',
+    'start_dictation',
+    'stop_dictation',
     'write_audio_file',
 ] as const;
 

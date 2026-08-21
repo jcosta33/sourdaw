@@ -18,20 +18,16 @@ describe('voiceToggle', () => {
         vi.clearAllMocks();
     });
 
-    it('should emit voice.toggle with active flag when toggleVoiceInput is called', () => {
-        mockEventBus.emit.mockResolvedValue(undefined);
+    it('rejects a forged isTrusted-shaped event without emitting a voice toggle', () => {
+        toggleVoiceInput({ isTrusted: true } as unknown as Event);
 
-        toggleVoiceInput(true);
-
-        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: true });
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 
-    it('should emit voice.toggle with undefined active when omitted', () => {
-        mockEventBus.emit.mockResolvedValue(undefined);
+    it('fails closed for an absent activation instead of throwing', () => {
+        expect(() => toggleVoiceInput(undefined as unknown as Event)).not.toThrow();
 
-        toggleVoiceInput();
-
-        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: undefined });
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 
     it('should subscribe to voice.toggle via onVoiceToggle', () => {

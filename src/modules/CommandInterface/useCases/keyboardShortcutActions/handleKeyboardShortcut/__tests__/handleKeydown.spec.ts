@@ -192,11 +192,11 @@ describe('handleKeydown', () => {
         injectDependencies(handleKeydown, { eventBus });
     });
 
-    it('emits voice.toggle active for a bare v and asks the caller to preventDefault', () => {
+    it('does not turn a bare v into a microphone start', () => {
         const prevent = handleKeydown(descriptor({ key: 'v' }));
 
-        expect(prevent).toBe(true);
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: true });
+        expect(prevent).toBe(false);
+        expect(eventBus.emit).not.toHaveBeenCalled();
     });
 
     it('does not toggle voice when v is pressed inside an input field', () => {

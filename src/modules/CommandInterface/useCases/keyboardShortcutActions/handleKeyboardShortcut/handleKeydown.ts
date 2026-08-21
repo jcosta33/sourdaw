@@ -567,13 +567,13 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             disarmAiLeader();
         }
 
-        // V: voice toggle (press)
+        // V has no keyboard voice-admission path. Microphone start accepts
+        // only the one-use token issued from the voice control's trusted UI event.
         if (key === 'v' && !mod && !shift && !alt && !repeat) {
             if (isInput) {
                 return false;
             }
-            void eventBus.emit('voice.toggle', { active: true });
-            return true;
+            return false;
         }
 
         // Check shortcut store first for ALL keys (including those with modifiers)

@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 
 import { VoiceToggleEventBus } from './voiceToggleEventBus';
 
-type VoiceTogglePayload = { active?: boolean };
+type VoiceTogglePayload = { gesture?: unknown };
 
 export const onVoiceToggle = inject({ eventBus: VoiceToggleEventBus })(
     ({ eventBus }) =>

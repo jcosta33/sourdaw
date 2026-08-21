@@ -11,9 +11,6 @@ import { cn } from '#/utils/Styles/cn';
 
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
-// Re-export for consumers that check availability
-export { isSpeechRecognitionAvailable } from '../hooks/useVoiceRecording';
-
 export const VoiceCommandOverlay = (): ReactElement | null => {
     const voice = useVoiceRecording();
 
