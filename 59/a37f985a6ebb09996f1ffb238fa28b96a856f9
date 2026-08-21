@@ -1,0 +1,41 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_afe5de519e26a5 28-29,144-149,153,157,176,201,289,628,799
+  s_a40848e8f8cca9::t_04e3ab56e5af0c 158-161,164,363,371,378,410,415,429-430,444,465,484,495,546,563,580,593,610,612,643,653,669-670,681,718,736-739,760-762,800,930,974,994,1012
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_632338f47b5837 263-286
+src/modules/AiRuntime/useCases/__tests__/promptDraft.spec.ts
+  s_a40848e8f8cca9::t_18507ad3738958 1-45
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_0e215471e93fd7 1-4,8-12,14-15,18,21,23-24,26-28,30,32-91,94-95,98,100-125,127-132,140-146,148-154,162-167,169,179-190,192-205,207-217,225-230,232-274,276-279
+  s_a40848e8f8cca9::t_e4afc0b90118c2 99,139,147,161,168,224,231
+  s_a40848e8f8cca9::t_e07bf329d6950d 133-138,155-160,218-223
+  s_a40848e8f8cca9::t_d591d58cd36847 5
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_e4787bc95f1d7a 95
+  s_a40848e8f8cca9::t_59536636c74085 6,76-81,84-93,96-99,102-103,107-129,159-162,174-184
+  s_a40848e8f8cca9::t_2f4f67531d1c22 185-187,291
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_4c17a6ab218afa 5,9,12,16-17,20,31-69,71-88,90-92,94-96,98-112,114-115,117-125,128-135,141,144-149,153-214,216-221,223-241,243-245,247-254,256-262,264-273,276-290,293-294,297-298,300,303-311
+  s_a40848e8f8cca9::t_e07bf329d6950d 113,116
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_18507ad3738958 1-51
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_8109074486c2fc 1-5,9-10,12-13,34-56,58-63,65-89,91-140,145-170,172-177,179-190,192-206,208-211,215-221,223-226,230,232-235,239-242
+  s_a40848e8f8cca9::t_4a86501472cb0b 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "59a37f985a6ebb09996f1ffb238fa28b96a856f9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
