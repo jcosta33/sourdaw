@@ -2,7 +2,9 @@
 name = "sourdaw-native"
 version = "0.1.0"
 description = "Sourdaw native audio, DSP and plugin-hosting addon"
-authors = ["Sourdaw Team"]
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 edition = "2021"
 
 [lib]

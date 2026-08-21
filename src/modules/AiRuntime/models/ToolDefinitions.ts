@@ -1,4 +1,5 @@
-/* (c) Copyright Sourdaw Ltd., all rights reserved. */
+/* SPDX-FileCopyrightText: 2026 Jose Costa */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 /**
  * Tool definitions for the Hermes function calling system prompt.

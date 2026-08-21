@@ -80,7 +80,7 @@ describe('release inventory', () => {
             expect(before.kind).toBe('owner-created-asset');
             expect(before.paths).toEqual(OWNER_VISUAL_ASSET_PATHS);
             expect(before.sources).toContain('owner attestation: Jose Costa, 2026-08-21');
-            expect(before.licenses).toEqual(['owner-created:pending-OS-10-project-license']);
+            expect(before.licenses).toEqual(['Apache-2.0']);
 
             writeFileSync(join(root, 'build/icons/nested/icon.png'), 'changed');
             expect(ownerVisualAssetReleaseInventoryContract(root).digests).not.toEqual(before.digests);

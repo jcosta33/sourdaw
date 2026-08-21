@@ -42,6 +42,8 @@
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
+                "LICENSE",
+                "NOTICE",
                 "README.md",
                 "SECURITY.md",
                 "components.json",
@@ -52,6 +54,8 @@
                 "playwright.config.ts",
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
+                "public/legal/APACHE-2.0.txt",
+                "public/legal/SOURDAW-NOTICE.txt",
                 "rust-toolchain.toml",
                 "tsconfig.app.json",
                 "tsconfig.e2e.json",
@@ -66,10 +70,49 @@
             "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553", "pnpm-lock.yaml", "Cargo.lock"],
             "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "licenses": ["pending:OS-10"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["repository source"],
             "evidence": ["Git history and the dependency manifests named in paths."],
-            "obligations": ["Apply Apache-2.0 metadata without erasing third-party notices."]
+            "obligations": ["Preserve Apache-2.0 metadata and every third-party notice."]
+        },
+        {
+            "id": "project-license-distribution",
+            "kind": "distribution",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop", "server"],
+            "paths": [
+                "LICENSE",
+                "NOTICE",
+                "public/legal/APACHE-2.0.txt",
+                "public/legal/SOURDAW-NOTICE.txt",
+                "package.json",
+                "server/package.json",
+                "Cargo.toml",
+                "crates/**"
+            ],
+            "sources": [
+                "LICENSE",
+                "NOTICE",
+                "public/legal/APACHE-2.0.txt",
+                "public/legal/SOURDAW-NOTICE.txt",
+                "package.json",
+                "server/package.json",
+                "Cargo.toml"
+            ],
+            "revisions": ["current project release metadata"],
+            "digests": ["metadata-bound:package.json,server/package.json,Cargo.toml"],
+            "licenses": ["Apache-2.0"],
+            "productSurfaces": [
+                "source distribution",
+                "web distribution",
+                "desktop distribution",
+                "server distribution"
+            ],
+            "evidence": [
+                "Canonical Apache-2.0 text, project notices, and SPDX metadata bind project-owned release surfaces."
+            ],
+            "obligations": ["Preserve component-specific licenses and third-party notices."]
         },
         {
             "id": "desktop-shell",
@@ -487,7 +530,7 @@
             "sources": ["server/collab-server.ts", "server/package-lock.json"],
             "revisions": ["exact collaboration-server npm lock graph"],
             "digests": ["sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"],
-            "licenses": ["project grant and dependency notices pending OS-10"],
+            "licenses": ["Apache-2.0", "individual dependency terms pending OS-10 notice assembly"],
             "productSurfaces": ["self-hosted collaboration WebSocket server"],
             "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
             "obligations": ["Publish accurate deployment, authentication, dependency, and notice requirements."]
@@ -502,7 +545,7 @@
             "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:crates/daw-dsp/src/grand_boule"],
-            "licenses": ["pending:OS-10-project-grant", "unverified:HAL-parameter-source-reuse-terms"],
+            "licenses": ["Apache-2.0", "unverified:HAL-parameter-source-reuse-terms"],
             "productSurfaces": ["Preserved Grand Boule source and project schema"],
             "evidence": [
                 "ADR 0032 maps the live independent-claim risk and withholds every released discovery and runtime path."
@@ -534,13 +577,13 @@
                 "git-tree:0ecebcfca0c7e0fe501f71964027f8f59fa0e432",
                 "file-level:public/samples/levain/provenance.tsv"
             ],
-            "licenses": ["CC0-1.0", "pending:OS-10-project-license"],
+            "licenses": ["CC0-1.0", "Apache-2.0"],
             "productSurfaces": ["bundled Levain orchestral sample bank"],
             "evidence": [
                 "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
             ],
             "obligations": [
-                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
+                "Preserve the pinned source proof, CC0 sample classification, and Apache-2.0 metadata for generated files."
             ]
         },
         {
@@ -590,15 +633,15 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:f156b0e977517b404227f250233f10c5ad02596f5754d9ead9bca0f526b847db",
-                "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
-                "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
-                "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
+                "daw-dsp sha256:dfc034ad3e257aaea28f7c7ebf697261acb38dadaa90a8cfaccf9edb60e51102",
+                "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
+                "proof-chamber sha256:841d105f5cb3a8cebb3118c2c42d199e7895db9a325aa5a42278e251f570b07a",
+                "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:b13312519d0161e6fec52a8fb4ff3dc37f03833b11d764e828a5944092ecad4f:public/wasm/manifest.json"
+                "sha256:325b09afcc544d9953d751023fac0a63a028ef521efe69205c1a31e2aba88be0:public/wasm/manifest.json"
             ],
-            "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
+            "licenses": ["Apache-2.0", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
             "evidence": ["The WASM gate binds every artifact to its crate closure and pinned toolchain."],
             "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
@@ -622,7 +665,7 @@
                 "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
             "evidence": [
                 "Both shipped processors are direct project source; no generator or second source tree exists."
@@ -685,10 +728,10 @@
                 "tree-sha256:7dac68d653c32736b1507d07574e5a288049351ba7d58d8d82fe6602f995cadf:public/logo-parts",
                 "tree-sha256:3e010276cd1d29a68235a79227300c6e8d7ec61484ef9166eaed92bf490b7f14:build/icons"
             ],
-            "licenses": ["owner-created:pending-OS-10-project-license"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
             "evidence": ["Owner attested authorship on 2026-08-21; repository history binds every rendition."],
-            "obligations": ["Apply the project license in OS-10 and preserve attribution."]
+            "obligations": ["Preserve the project license and attribution."]
         },
         {
             "id": "third-party-marks",
@@ -790,7 +833,7 @@
             "sources": ["git:github.com/jcosta33/sourdaw"],
             "revisions": ["current release text"],
             "digests": ["not-applicable:living-project-documentation"],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": [
                 "architecture documentation",
                 "engineering guidance",
@@ -813,7 +856,7 @@
             "sources": ["git:github.com/jcosta33/sourdaw"],
             "revisions": ["historical document state"],
             "digests": ["not-applicable:historical-planning-records"],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["legacy feature plans", "implementation records"],
             "evidence": ["The archive index denies current-shipping authority and routes live planning to GitHub."],
             "obligations": ["Preserve useful intent without presenting archived plans as current behavior."]
@@ -822,15 +865,15 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "728835e50c1dc97634412728a7be672f458597e067c2e0121e4f095adf8dead2"
+            "sha256": "95af0db0e8a5b002992fca828ed12eb30a26713b4285136076fbf701e92712cd"
         },
         {
             "path": "server/package.json",
-            "sha256": "ef552b98b85918dff58d7af933b26cc97eea053a84ee638fd2741d3ee9a5402e"
+            "sha256": "e52537024fa9b3cff993a31fc552f600584b0d0d77f67607744a8135ec674ed0"
         },
         {
             "path": "server/package-lock.json",
-            "sha256": "485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
+            "sha256": "1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
         },
         {
             "path": "pnpm-lock.yaml",
@@ -838,7 +881,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "b262f0a313e3396fc0376799364b947775f05832f8c4b7a8d3f7858ab8db2f45"
+            "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
         },
         {
             "path": "Cargo.lock",
@@ -850,7 +893,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "b13312519d0161e6fec52a8fb4ff3dc37f03833b11d764e828a5944092ecad4f"
+            "sha256": "325b09afcc544d9953d751023fac0a63a028ef521efe69205c1a31e2aba88be0"
         }
     ],
     "externalReferences": [
@@ -956,6 +999,26 @@
             "file": "scripts/checkLgplRuntimeProvenance.ts",
             "value": "https://registry.npmjs.org/${slot}/${slot}",
             "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/daw-dsp/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/daw-wasm-decoder/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/proof-chamber/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/scoring/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
         },
         {
             "surface": "mp3-encoder",

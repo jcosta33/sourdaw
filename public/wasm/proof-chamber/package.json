@@ -1,8 +1,16 @@
 {
   "name": "proof-chamber",
   "type": "module",
+  "collaborators": [
+    "Jose Costa"
+  ],
   "description": "Dutch Oven — flagship Dattorro plate reverb engine for Sourdaw",
   "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcosta33/sourdaw"
+  },
   "files": [
     "proof_chamber_bg.wasm",
     "proof_chamber.js",

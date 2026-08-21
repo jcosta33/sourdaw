@@ -1,8 +1,16 @@
 {
   "name": "daw-wasm-decoder",
   "type": "module",
+  "collaborators": [
+    "Jose Costa"
+  ],
   "description": "WASM-compiled audio file decoder (wraps daw-io symphonia decoder for browser use).",
   "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcosta33/sourdaw"
+  },
   "files": [
     "daw_wasm_decoder_bg.wasm",
     "daw_wasm_decoder.js"

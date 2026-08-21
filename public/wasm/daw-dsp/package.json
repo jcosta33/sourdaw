@@ -1,8 +1,16 @@
 {
   "name": "daw-dsp",
   "type": "module",
+  "collaborators": [
+    "Jose Costa"
+  ],
   "description": "Pure mathematical algorithms and DSP components for Sourdaw.",
   "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcosta33/sourdaw"
+  },
   "files": [
     "daw_dsp_bg.wasm",
     "daw_dsp.js",

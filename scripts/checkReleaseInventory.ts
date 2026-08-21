@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
+import { checkProjectLicense } from './checkProjectLicense.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RETENTION_CLASSES = [
@@ -184,7 +185,7 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
         sources: [...AUDIO_WORKLET_SOURCES],
         revisions: ['not-applicable:direct-project-source'],
         digests: AUDIO_WORKLET_SOURCES.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
-        licenses: ['pending:OS-10-project-grant'],
+        licenses: ['Apache-2.0'],
     };
 }
 
@@ -220,7 +221,7 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
             `tree-sha256:${directorySha256(root, 'public/logo-parts')}:public/logo-parts`,
             `tree-sha256:${directorySha256(root, 'build/icons')}:build/icons`,
         ],
-        licenses: ['owner-created:pending-OS-10-project-license'],
+        licenses: ['Apache-2.0'],
     };
 }
 
@@ -238,7 +239,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
             ...packages.map(([id, entry]) => `${id} ${entry.crateSourceHash}`),
         ],
         digests: [`sha256:${fileSha256(resolve(root, 'public/wasm/manifest.json'))}:public/wasm/manifest.json`],
-        licenses: ['pending:OS-10-project-grant', 'pending:OS-10-Cargo-dependency-notices'],
+        licenses: ['Apache-2.0', 'pending:OS-10-Cargo-dependency-notices'],
     };
 }
 
@@ -690,6 +691,7 @@ export function loadRepositorySnapshot(
 }
 
 export function checkReleaseInventory(root: string): void {
+    checkProjectLicense(root);
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
     const snapshot = loadRepositorySnapshot(root, inventory);
@@ -727,7 +729,7 @@ export function checkReleaseInventory(root: string): void {
         sources: [levain.source.repository],
         revisions: [levain.source.revision],
         digests: [`git-tree:${levain.source.tree}`, 'file-level:public/samples/levain/provenance.tsv'],
-        licenses: [levain.source.license, 'pending:OS-10-project-license'],
+        licenses: [levain.source.license, 'Apache-2.0'],
     };
     for (const [field, expected] of Object.entries(levainContract)) {
         if (JSON.stringify(levainSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
