@@ -1,0 +1,60 @@
+src/modules/BrowserAi/models/InferenceRequest.ts
+  s_27578aec2aab3b::t_1db656b36c19d5 130-133
+  s_0a3429e31e555d::t_12230777b5d859 129
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorker.spec.ts
+  s_27578aec2aab3b::t_b0d752e3d2a5e1 8,351,355
+  s_27578aec2aab3b::t_c264b33e8eb66d 162-165
+  s_27578aec2aab3b::t_1db656b36c19d5 221,226-229
+  s_27578aec2aab3b::t_341e267ad43e5b 77-87,176-179,182-184,186-189,277-279,284-289
+  s_27578aec2aab3b::t_f0928209e12b30 33,325-327
+  s_27578aec2aab3b::t_9306d99066f7fb 10-22,29-31,34-41,43,45-50,57-62,65-76,89-90,92,116-138,166-174,180,185,190-191,202-206,249,313-324,328-350,352-354,356-358
+  s_27578aec2aab3b::t_ba34b98300478a 23-28,32,42,44,63-64,88,175,181,251-255,260-270,272,274,276,280-283
+  s_27578aec2aab3b::t_fa7a9aff8752f7 250,256-259,271,273,275,290-312
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_50f0111915fb02 207-222,224,226,230-239
+  s_27578aec2aab3b::t_cae0264d4af7d8 430-447
+  s_27578aec2aab3b::t_2feaa20e09c590 240,689-743
+  s_27578aec2aab3b::t_78047a00fc784c 744-745
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_5737cd74e9167c 154-157,793,801-805,811-813,815,817-819,821-823,825-830,847,862,866
+  s_27578aec2aab3b::t_ef0ee807eafa6c 833-839
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_27578aec2aab3b::t_30039fd3475486 120
+  s_27578aec2aab3b::t_d2cd5244169874 17,21-23
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_1db656b36c19d5 783-813
+  s_27578aec2aab3b::t_8ff9a448da2e6c 814-815
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_30039fd3475486 51,55-59,165,189
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_b485474d32847a 11,67,69-70
+  s_27578aec2aab3b::t_0087dacc114ec4 68
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_27578aec2aab3b::t_f5f7f32d828a17 627,635-637
+  s_27578aec2aab3b::t_d2cd5244169874 84-88,90,97,116-136
+  s_27578aec2aab3b::t_aba354c86b6de4 104-106,109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f8227abf8dec18dfe4b677ab843a2aff03e596da",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
