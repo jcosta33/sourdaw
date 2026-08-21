@@ -1,0 +1,25 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_3e9975e2bd3e53 725,869,1343-1351,2786,3029,3362,3434,3542,3980-3988,4874,4964,5360,5747,5945,6041-6049,6260,7115,7403,8942,9095,9212,9743,9788,9869,9905,10715,10877,11165,11237,12155,12263,12794,15440,15617-15625,15665,15782,16394,16745,16904-16912,17186,17426-17434,17453-17461,17879,18743,18959,20363,21263,22001,22307,22631,22655-22663,23225,23279,23396,24017,24284-24292,24404,24728,25268
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_2175fca1f07426::t_e20562f327b743 14,136-138,159
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_2175fca1f07426::t_540921c7ede2a1 8,149,175
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_2175fca1f07426::t_ec25e47d918012 7,66,83,89,101,107,119,158,161,181,186,216,242-245,252-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5dd2af83bf49cc0441ed2831da0bc9a29c47b1ea",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
