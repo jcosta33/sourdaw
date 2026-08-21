@@ -13,6 +13,36 @@ type WeightSpec = {
     quantization?: { min: number; scale: number; dtype: 'uint8' | 'uint16' };
 };
 
+export function parseDdspSettings(bytes: ArrayBuffer): { maxFrameLength: number } {
+    const settings = JSON.parse(new TextDecoder().decode(bytes)) as { modelMaxFrameLength?: unknown };
+    if (
+        typeof settings.modelMaxFrameLength !== 'number' ||
+        !Number.isInteger(settings.modelMaxFrameLength) ||
+        settings.modelMaxFrameLength <= 0
+    ) {
+        throw new Error('DDSP settings omit a valid modelMaxFrameLength');
+    }
+    return { maxFrameLength: settings.modelMaxFrameLength };
+}
+
+export function splitDdspFrames(length: number, maxFrameLength: number): Array<{ start: number; end: number }> {
+    const chunks: Array<{ start: number; end: number }> = [];
+    for (let start = 0; start < length; start += maxFrameLength) {
+        chunks.push({ start, end: Math.min(start + maxFrameLength, length) });
+    }
+    return chunks;
+}
+
+export function concatenateDdspChunks(chunks: readonly Float32Array[]): Float32Array {
+    const audio = new Float32Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+        audio.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return audio;
+}
+
 function post(response: WorkerResponse, transfer?: Transferable[]): void {
     self.postMessage(response, transfer ? { transfer } : undefined);
 }
@@ -116,16 +146,7 @@ async function createSession(
         convertedBy?: string;
     };
     const weightData = await readArtifact(shard);
-    const modelSettings = JSON.parse(new TextDecoder().decode(await readArtifact(settings))) as {
-        modelMaxFrameLength?: unknown;
-    };
-    if (
-        typeof modelSettings.modelMaxFrameLength !== 'number' ||
-        !Number.isInteger(modelSettings.modelMaxFrameLength) ||
-        modelSettings.modelMaxFrameLength <= 0
-    ) {
-        throw new Error('DDSP settings omit a valid modelMaxFrameLength');
-    }
+    const modelSettings = parseDdspSettings(await readArtifact(settings));
     const handler: io.IOHandler = {
         load: async () => ({
             modelTopology: modelJson.modelTopology,
@@ -138,7 +159,7 @@ async function createSession(
     };
     sessions.set(request.modelId, {
         model: await tf.loadGraphModel(handler),
-        maxFrameLength: modelSettings.modelMaxFrameLength,
+        maxFrameLength: modelSettings.maxFrameLength,
     });
     post({ type: 'session-created', requestId: request.requestId, modelId: request.modelId, backend: tf.getBackend() });
 }
@@ -150,8 +171,7 @@ async function runInference(request: Extract<WorkerRequest, { type: 'run-ddsp-in
     }
     const tf = await loadTfjs();
     const chunks: Float32Array[] = [];
-    for (let start = 0; start < request.pitchHz.length; start += session.maxFrameLength) {
-        const end = Math.min(start + session.maxFrameLength, request.pitchHz.length);
+    for (const { start, end } of splitDdspFrames(request.pitchHz.length, session.maxFrameLength)) {
         const pitch = tf.tensor1d(request.pitchHz.slice(start, end));
         const loudness = tf.tensor1d(request.loudnessDb.slice(start, end));
         let outputTensor: Tensor | undefined;
@@ -165,12 +185,7 @@ async function runInference(request: Extract<WorkerRequest, { type: 'run-ddsp-in
             outputTensor?.dispose();
         }
     }
-    const audio = new Float32Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
-    let offset = 0;
-    for (const chunk of chunks) {
-        audio.set(chunk, offset);
-        offset += chunk.length;
-    }
+    const audio = concatenateDdspChunks(chunks);
     post(
         {
             type: 'ddsp-result',

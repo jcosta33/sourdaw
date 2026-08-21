@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 // Side-effect import: evaluates the module so `self.onmessage` is registered.
-import '../tfjsInferenceWorker';
+import { concatenateDdspChunks, parseDdspSettings, splitDdspFrames } from '../tfjsInferenceWorker';
 
 import type { WorkerRequest, WorkerResponse } from '../../models/InferenceRequest';
 
@@ -42,6 +42,32 @@ describe('tfjsInferenceWorker', () => {
             loadedModels: [],
             memoryUsageBytes: 0,
         });
+    });
+
+    it('rejects settings without the verified model frame contract', () => {
+        expect(() => parseDdspSettings(new TextEncoder().encode('{}').buffer)).toThrow('modelMaxFrameLength');
+    });
+
+    it('crops a short 0.5 second request to 8,000 native samples before resampling', () => {
+        const frames = 125;
+        const samples = Math.round((frames / 250) * 16_000);
+        expect(samples).toBe(8_000);
+        expect(concatenateDdspChunks([new Float32Array(80_000).slice(0, samples)])).toHaveLength(8_000);
+    });
+
+    it('splits longer phrases at the model limit and concatenates contiguous chunks without gaps or duplication', () => {
+        const chunks = splitDdspFrames(1_500, 1_250);
+        expect(chunks).toEqual([
+            { start: 0, end: 1_250 },
+            { start: 1_250, end: 1_500 },
+        ]);
+        const first = Float32Array.from({ length: 80_000 }, (_, index) => index);
+        const second = Float32Array.from({ length: 16_000 }, (_, index) => 80_000 + index);
+        const joined = concatenateDdspChunks([first, second]);
+        expect(joined).toHaveLength(96_000);
+        expect(joined[79_999]).toBe(79_999);
+        expect(joined[80_000]).toBe(80_000);
+        expect(joined.at(-1)).toBe(95_999);
     });
 
     it('silently no-ops on release-session', () => {
