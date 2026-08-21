@@ -1,0 +1,20 @@
+tests/e2e/mixAnalysisChatTestId.spec.ts
+  s_24b1bdbc3c31ad::t_cab31b08294428 16
+  s_24b1bdbc3c31ad::t_106993175d2805 1,5-15,17-19,21,24,27-28,30-39,41-42,44-58,61-63,65-73,76-85,88-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "29adf8891a8524117d62552cc920b5647143e14f",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
