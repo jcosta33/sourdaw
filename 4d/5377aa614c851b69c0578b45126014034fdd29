@@ -1,0 +1,91 @@
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts
+  s_487e9aa1e46063::t_5821e6995274c7 10
+  s_487e9aa1e46063::t_0818c7729fb11b 44-47,50
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts
+  s_487e9aa1e46063::t_f96b2ba09d94cd 238-259
+  s_487e9aa1e46063::t_1873a37bd7e8ba 5
+  s_487e9aa1e46063::t_970243300437e5 137-170,177
+  s_487e9aa1e46063::t_056d18c1217e97 136,237
+src/modules/Automation/stores/automationStore.ts
+  s_487e9aa1e46063::t_14d40e7e78d736 469,471-480,482-484
+  s_487e9aa1e46063::t_e73354470469b4 493
+src/modules/Automation/useCases/automationZoom/zoomToUsedRange.ts
+  s_487e9aa1e46063::t_0d7f2a25999cd0 36,38,46
+  s_487e9aa1e46063::t_cc753c674ca552 2,6-10
+src/modules/Automation/useCases/automationZoom/__tests__/adjustYZoom.spec.ts
+  s_487e9aa1e46063::t_fb1d5c9ef4b116 3-4
+  s_487e9aa1e46063::t_863acb56c987be 63-93
+src/modules/Automation/useCases/automationZoom/__tests__/zoomToUsedRange.spec.ts
+  s_487e9aa1e46063::t_19bdaed870775f 75-97
+src/modules/Arrangement/useCases/setTrackGainPan/getTrackFaderCeiling.ts
+  s_487e9aa1e46063::t_26f88a0fee5f6b 1-2,5,8-22,25
+  s_487e9aa1e46063::t_e700b5008c06c0 3-4,6-7,23-24,26
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_487e9aa1e46063::t_c9e83404ac7f87 13-14
+  s_487e9aa1e46063::t_bc17c5bf79e50e 309-314
+src/modules/Automation/useCases/automation/getAutomationValueAtBeat.ts
+  s_487e9aa1e46063::t_33e0e5b3d65779 6-7
+  s_487e9aa1e46063::t_adfebdf7f033c3 33-43,49
+src/modules/Automation/useCases/automation/__tests__/getAutomationValueAtBeat.spec.ts
+  s_487e9aa1e46063::t_82f88fbac58a4f 270-297
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_487e9aa1e46063::t_e81bbc0ecbbba1 16
+  s_487e9aa1e46063::t_e2dd2650444c70 130-132,134
+src/modules/Automation/useCases/automationZoom/adjustYZoom.ts
+  s_487e9aa1e46063::t_b1b01de4f27038 2,6-13,26,28,32,41
+src/modules/Automation/services/__tests__/buildTrackGainAutomationRangeLane.spec.ts
+  s_487e9aa1e46063::t_190d5e4998d23a 1-44
+src/modules/Automation/useCases/index.ts
+  s_487e9aa1e46063::t_d88a2a2fbb39e2 69
+src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts
+  s_487e9aa1e46063::t_252919eb7a5208 5
+  s_487e9aa1e46063::t_6b8cc53486783e 118-121
+  s_487e9aa1e46063::t_ab9d85d3eae781 75-81
+src/modules/Automation/useCases/automation/__tests__/getAutomationLaneCeiling.spec.ts
+  s_487e9aa1e46063::t_e8a73fa029dfa2 1-32
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_487e9aa1e46063::t_86f17c7a0df76d 147-150
+  s_487e9aa1e46063::t_9cc7385b7f31af 5
+  s_487e9aa1e46063::t_8d2938715ff959 186-197,199,201-211,213-222,227-228
+  s_487e9aa1e46063::t_387c9567954197 198,200,212
+  s_487e9aa1e46063::t_a9d247844cb27b 223-226
+  s_487e9aa1e46063::t_1f3bd2160c4f69 59-101
+  s_487e9aa1e46063::t_f558df8a80f4ad 229-232
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_487e9aa1e46063::t_93042f842dd4a7 17
+  s_487e9aa1e46063::t_a87eca69954e0c 286-316
+src/modules/Arrangement/useCases/index.ts
+  s_487e9aa1e46063::t_d5157b8dcae85c 47
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  s_487e9aa1e46063::t_cf893fc1bbcb00 357-358,363-364
+  s_487e9aa1e46063::t_1fbd01caca9c5b 409-414
+  s_487e9aa1e46063::t_fdc91a38cc89bc 378-381,385
+  s_487e9aa1e46063::t_815fa5b36ba5b4 355-356,359-362,365-377,382-384,386-408,415-418
+src/modules/Automation/useCases/automation/getAutomationLaneCeiling.ts
+  s_487e9aa1e46063::t_590a47edeced30 1-40
+src/modules/Automation/useCases/paintDrawPoint.ts
+  s_487e9aa1e46063::t_3a6f9a02cae3ad 40
+  s_487e9aa1e46063::t_a93e481f0be27e 4
+src/modules/Automation/stores/__tests__/automationStore.spec.ts
+  s_487e9aa1e46063::t_10f3373a11744a 87-98,101,103,123,125-127
+  s_487e9aa1e46063::t_9126c9c8d62a63 7
+src/modules/Automation/useCases/__tests__/paintDrawPoint.spec.ts
+  s_487e9aa1e46063::t_8acc2a15e5888a 3-4
+  s_487e9aa1e46063::t_42fb5c137e67a8 110,114-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4d5377aa614c851b69c0578b45126014034fdd29",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
