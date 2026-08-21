@@ -61,10 +61,15 @@ function describeTally(tally: RenderScheduleTally): string {
  *
  * **What it can actually catch** is narrower than "any silent export": an
  * instrument node that loads but emits zeros, a subgraph that resolves
- * disconnected, a worklet whose offline setup leaves it inert. A device that
- * fails to *load* is dropped with a warning and a MIDI track then falls back to
- * the builtin synth, which is audible; an unrenderable catalog device throws
- * out of `buildDeviceChain` before any of this runs.
+ * disconnected, and a worklet whose offline setup leaves it inert. A device
+ * that fails to *load* is dropped with a warning and a MIDI track then falls
+ * back to the builtin synth, which is audible; an unrenderable catalog device
+ * throws out of `buildDeviceChain` before any of this runs.
+ *
+ * **A withheld device is decided separately, and ahead of all of that.** It is
+ * the one input here that is a fact rather than an inference — the build does
+ * not contain the device — so it is read off the tally and refused before
+ * `classifyRenderSilence` gets a chance to abstain over it.
  */
 export function detectSilentBake({
     track,
@@ -83,6 +88,34 @@ export function detectSilentBake({
     }
     if (!isSilentAudioBuffer(buffer)) {
         return { silentBake: false };
+    }
+
+    // Ahead of `classifyRenderSilence`, because every value that function
+    // returns is an *abstention* — a reason to stand down when it cannot tell
+    // what the audio should have been. A withheld device is not that kind of
+    // uncertainty: the build does not contain the device, so this render can
+    // never contain it either, and no curve or fader setting changes that.
+    //
+    // Left behind the abstentions it was unreachable in the ordinary case.
+    // `freezeTrack` passes `bakesAutomation: true` unconditionally, and
+    // `classifyRenderSilence` abstains on `bakesAutomation && hasAutomationLanes`
+    // — one enabled lane with one point is enough. So a saved project with a
+    // withheld instrument and a volume ride froze "successfully" over silence,
+    // and `flattenTrack` then emptied the track's device list, dropping the
+    // device reference the withholding exists to preserve.
+    const withheldDeviceType = tally.withheldDeviceTypes[0];
+    if (withheldDeviceType !== undefined) {
+        return {
+            silentBake: true,
+            // Deliberately not the message below. That one ends "Play the track
+            // back to confirm it sounds, then try again" — advice with no exit
+            // here, because playback of a withheld device is silent too, so the
+            // user would loop forever on a check that can never pass.
+            message:
+                `Track "${track.name}" uses the device "${withheldDeviceType}", which is withheld from this build ` +
+                `and renders silent. ${operation} stopped rather than replacing the track with a buffer that does ` +
+                `not contain it. Remove the device from the track to ${operation.toLowerCase()} it.`,
+        };
     }
 
     const verdict = classifyRenderSilence({

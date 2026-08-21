@@ -4,6 +4,7 @@ import { type AutomationPoint } from '../models/Automation';
 import { automationStore } from '../stores/automationStore';
 
 import { DEFAULT_BEAT_MERGE_EPSILON, batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
+import { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
 
 // Local shape (AGENTS.md model isolation). Structurally compatible with what
 // Arrangement's `generateShapePoints` accepts; we do not import the type from
@@ -119,6 +120,13 @@ function shapeMergeEpsilon(points: readonly AutomationPoint[]): number {
 /**
  * Insert a predefined automation shape into a lane at a given beat range.
  * Uses the lane's min/max values to scale the shape vertically.
+ *
+ * The top of that scaling is {@link getAutomationLaneCeiling}, not the stored
+ * `maxValue`: a gain lane written before the fader gained its `+6 dB` of
+ * headroom still records `1` there, and reading the scalar would give the same
+ * project the same shape at two different depths depending on when its lane was
+ * created. The lane's travel is what the fader can reach, so that is what a
+ * full-depth shape spans.
  */
 export function insertAutomationShape(
     laneId: string,
@@ -148,7 +156,7 @@ export function insertAutomationShape(
             startBeat: cycleStart,
             endBeat: cycleEnd,
             minValue: lane.minValue,
-            maxValue: lane.maxValue,
+            maxValue: getAutomationLaneCeiling(lane),
         });
         // Skip the last point of each cycle except the final one to avoid duplicates at boundaries
         const pointCount = cycleIndex < cycles - 1 ? points.length - 1 : points.length;

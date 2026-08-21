@@ -49,6 +49,21 @@ export type OfflineScheduleTally = {
      * lazily rather than making every render pay for a peak scan.
      */
     scheduledBuffers: AudioBuffer[];
+    /**
+     * Device types release admission refused, which this render therefore
+     * replaced with a silent stand-in.
+     *
+     * Required rather than optional, so a new caller cannot omit it and quietly
+     * reopen the hole it closes: a silent-bake guard that cannot see this
+     * treats a withheld instrument's silence as an ordinary silent render, and
+     * `classifyRenderSilence` then abstains for any track carrying one enabled
+     * automation lane. Freeze reports success, and `flattenTrack` sets
+     * `devices: []` — deleting the very device reference withholding exists to
+     * preserve. A withheld verdict is a fact about the build, not a guess about
+     * the audio, so it must not sit behind an abstention meant for curves the
+     * guard cannot model.
+     */
+    withheldDeviceTypes: string[];
 };
 
 export type OfflineTrackStrip = {

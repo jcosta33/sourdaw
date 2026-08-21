@@ -28,6 +28,26 @@ import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
+/**
+ * Types withheld *on top of* the production set, never instead of it. The real
+ * `isDeviceReleaseAdmitted` still answers for everything this set does not name,
+ * so the tests below that use `grand-boule` keep reading the shipped admission
+ * list and still go red if it is emptied. This exists only so a topology can be
+ * covered for a type the build does not withhold today — the mechanism is meant
+ * to generalise past `grand-boule`, and a topology it structurally cannot reach
+ * is a defect whether or not it is reachable right now.
+ */
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
+
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+    return {
+        ...actual,
+        isDeviceReleaseAdmitted: (deviceType: string) =>
+            !injectedWithheldDeviceTypes.has(deviceType) && actual.isDeviceReleaseAdmitted(deviceType),
+    };
+});
+
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
@@ -142,6 +162,7 @@ const FAUST_EFFECT_TYPE = registerFaustDSP('Parity Fixture Reverb', PASSTHROUGH_
 describe('scheduleMidiNotes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        injectedWithheldDeviceTypes.clear();
         (trackStore as { value: unknown }).value = { tracks: [] };
         (midiStore as { value: unknown }).value = null;
         (automationStore as { value: unknown }).value = null;
@@ -395,6 +416,173 @@ describe('scheduleMidiNotes', () => {
         // ends half a beat later at 18000.
         expect(noteOn.mock.calls[0]).toEqual([62, 96, 6000, 0]);
         expect(noteOff.mock.calls[0]).toEqual([62, 18000, 0]);
+    });
+
+    // The first two here name `grand-boule` and so read the production withheld
+    // set (ADR 0032); only the toaster case injects a type. A track whose
+    // instrument the build withholds reaches this scheduler with the device in
+    // `track.devices` and no node on the strip — indistinguishable, from
+    // `deviceNodes` alone, from an instrument whose node failed to construct.
+    // The scheduler used to treat both the same way and hand the part to the
+    // builtin sawtooth, which is the "plausible wrong instrument" failure: the
+    // project plays back as if it contained something it does not, and the user
+    // is never told.
+    describe('a device the build withholds', () => {
+        function givenNoteOnTrack(deviceType: string) {
+            const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'd-1', type: deviceType }] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 64, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+                },
+            };
+        }
+
+        it('routes the notes nowhere rather than onto the fallback synth', async () => {
+            // `grand-boule` is a worklet synth in this scheduler's own table, so
+            // without the admission question its notes land in the terminal
+            // `else` and are voiced on the builtin sawtooth.
+            givenNoteOnTrack('grand-boule');
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+            // The fallback's parameters are not even fetched: the substitution
+            // is refused before it is configured, not after.
+            expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+        });
+
+        it('leaves a device missing for an environment reason on its fallback', async () => {
+            // The control, and the reason admission is asked rather than
+            // `deviceNodes` inspected. Fermenter is admitted; its node is absent
+            // here the way a failed worklet construction leaves it absent. That
+            // device was supposed to work and the user can fix it, so its
+            // long-standing fallback behaviour must survive this change.
+            givenNoteOnTrack('fermenter');
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(64);
+        });
+
+        // A rack can hold more than one note-capable device, and the dispatch
+        // tries exactly one of them: the first of its category, with no
+        // fall-through to a second. These two pin the lookup to that same
+        // choice. Read them as a pair — the only difference between them is
+        // rack order, and the answers are opposite, which is what proves the
+        // lookup is reading the order rather than the set.
+        it('keeps the fallback when an admitted instrument sits ahead of a withheld one', async () => {
+            // `fermenter` is admitted and is what the dispatch selects; it has
+            // no node here, the way a missing worklet asset or a reload leaves
+            // it. Its long-standing fallback must survive. A whole-rack scan
+            // instead reports the `grand-boule` behind it — a device the notes
+            // would never have reached — and drops them.
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'd-1', type: 'fermenter' },
+                    { id: 'd-2', type: 'grand-boule' },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 64, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(64);
+        });
+
+        it('silences the same rack when the withheld instrument sits first', async () => {
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'd-2', type: 'grand-boule' },
+                    { id: 'd-1', type: 'fermenter' },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 64, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        // The one topology where the voicing device is not on the track being
+        // scheduled. A toaster child's notes are dispatched to the *parent's*
+        // toaster device, so a lookup over `track.devices` alone answers
+        // "nothing withheld" here and hands the pad's part to the fallback
+        // sawtooth — this pull request's own defect, surviving in a corner of
+        // its own fix.
+        it('routes a toaster child nowhere when the parent toaster is withheld', async () => {
+            injectedWithheldDeviceTypes.add('toaster');
+            const parent = midiTrack({
+                id: 'toaster-parent',
+                kind: 'folder',
+                devices: [{ id: 'toaster', type: 'toaster' }],
+            });
+            const child = midiTrack({ parentId: 'toaster-parent', clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        // A live parent must not be silenced by the widened lookup, and a child
+        // carrying its own withheld instrument under that live parent must still
+        // play the parent's toaster: the toaster is what voices those notes, so
+        // the child's own device never sounded in this topology and silencing it
+        // would be a regression rather than a fix.
+        it('leaves a toaster child on the parent toaster when only the child device is withheld', async () => {
+            injectedWithheldDeviceTypes.add('fermenter');
+            const toasterNoteOn = vi.fn();
+            const parent = midiTrack({
+                id: 'toaster-parent',
+                kind: 'folder',
+                devices: [{ id: 'toaster', type: 'toaster', parameterValues: {} }],
+            });
+            const child = midiTrack({
+                parentId: 'toaster-parent',
+                clips: [midiClip()],
+                devices: [{ id: 'd-1', type: 'fermenter' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 }],
+                },
+            };
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                (trackId) =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes:
+                            trackId === 'toaster-parent'
+                                ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                                : [],
+                    }) as never
+            );
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(toasterNoteOn).toHaveBeenCalledTimes(1);
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {

@@ -1,5 +1,7 @@
 import { type ChangeEvent, type ReactElement, useState } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import {
     DEFAULT_MACRO_MAPPINGS,
     FERMENTER_PARAMS,
@@ -70,7 +72,7 @@ function NumberField({
     onChange: (value: number) => void;
 }): ReactElement {
     return (
-        <label className="flex flex-col gap-1">
+        <Stack as="label" gap={1}>
             <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">{label}</span>
             <input
                 type="number"
@@ -78,7 +80,7 @@ function NumberField({
                 onChange={(event) => onChange(Number(event.target.value))}
                 className="h-7 rounded border border-border/30 bg-surface-inset px-2 text-[10px] text-foreground"
             />
-        </label>
+        </Stack>
     );
 }
 
@@ -122,8 +124,8 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
     }
 
     return (
-        <div className="space-y-3 border-t border-border/15 pt-3">
-            <div className="flex items-center justify-between gap-2">
+        <Stack gap={3} className="border-t border-border/15 pt-3">
+            <Row justify="between" gap={2}>
                 <div>
                     <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-sage)]/70">
                         Matrix
@@ -142,15 +144,15 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                         </option>
                     ))}
                 </select>
-            </div>
+            </Row>
 
-            <div className="space-y-2">
+            <Stack gap={2}>
                 {mapping.targets.map((target, targetIndex) => (
                     <div
                         key={`${target.target}-${targetIndex}`}
                         className="rounded-lg border border-border/20 bg-black/15 p-2"
                     >
-                        <div className="flex items-center gap-2">
+                        <Row gap={2}>
                             <select
                                 aria-label={`Target ${targetIndex + 1}`}
                                 value={String(target.target)}
@@ -172,7 +174,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                             >
                                 Clear
                             </button>
-                        </div>
+                        </Row>
 
                         <div className="mt-2 grid grid-cols-2 gap-2">
                             <NumberField
@@ -197,7 +199,7 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                             />
                         </div>
 
-                        <label className="mt-2 flex flex-col gap-1">
+                        <Stack as="label" gap={1} className="mt-2">
                             <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">
                                 Curve
                             </span>
@@ -214,10 +216,10 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                                 <option value="linear">Linear</option>
                                 <option value="exponential">Exponential</option>
                             </select>
-                        </label>
+                        </Stack>
                     </div>
                 ))}
-            </div>
+            </Stack>
 
             <button
                 type="button"
@@ -227,6 +229,6 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
             >
                 Add target
             </button>
-        </div>
+        </Stack>
     );
 }
