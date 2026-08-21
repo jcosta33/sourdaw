@@ -229,11 +229,14 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
 
     function scheduleIdleCleanup(): void {
         cancelIdleCleanup();
-        if (disposed) {
+        if (disposed || activeRequests.size > 0) {
             return;
         }
         idleTimer = setTimeout(() => {
             idleTimer = undefined;
+            if (disposed || activeRequests.size > 0) {
+                return;
+            }
             disposeSessions();
         }, input.idleMs);
     }

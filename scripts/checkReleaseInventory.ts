@@ -65,10 +65,15 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+export const TFJS_APACHE_LICENSE_PATH = 'public/legal/Apache-2.0.txt';
+export const TFJS_NOTICE_PATH = 'public/legal/TensorFlow.js-NOTICE.txt';
 
 export const DDSP_RELEASE_INVENTORY_PATHS = [
     'package.json',
     'pnpm-lock.yaml',
+    TFJS_APACHE_LICENSE_PATH,
+    TFJS_NOTICE_PATH,
+    'public/legal/THIRD-PARTY-NOTICES.md',
     'vite.config.ts',
     'electron-builder.yml',
     'electron/main.ts',
@@ -140,12 +145,16 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
     sources: [
         'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md',
         'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs/package.json',
+        'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-backend-webgpu/package.json',
         'package.json',
         'pnpm-lock.yaml',
     ],
     revisions: [
         'magenta-js 0692eb2b79681f062c6b6dd53a0361967f298caa music/checkpoints/README.md',
         'magenta-js-ddsp-2020-01-05',
+        'TensorFlow.js tfjs-v4.22.0 e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
         '@tensorflow/tfjs 4.22.0',
         '@tensorflow/tfjs-backend-webgpu 4.22.0',
     ],
@@ -168,11 +177,14 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
         'unverified:checkpoint-weights-no-license-grant-established',
         'Apache-2.0:@tensorflow/tfjs',
         'Apache-2.0:@tensorflow/tfjs-backend-webgpu',
+        `Apache-2.0-license-text:${TFJS_APACHE_LICENSE_PATH}`,
+        `attribution-notice:${TFJS_NOTICE_PATH}`,
     ],
     evidence: [
         'The immutable Magenta checkpoint README permits direct application loading and downloading/self-hosting for the four named DDSP checkpoint directories.',
         'The manifest pins the exact URL, byte count, and SHA-256 of all twelve runtime-downloaded artifacts before OPFS readiness.',
         'Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface.',
+        'The TensorFlow.js 4.22.0 package metadata and unmodified Apache-2.0 license are pinned to upstream commit e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7.',
     ],
     obligations: [
         'Do not describe the checkpoint weights as Apache-2.0; the cited checkpoint permission does not establish that license.',
@@ -253,6 +265,24 @@ function sortedUnique(values: string[]): string[] {
 
 function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+export function ddspReleaseInventoryContract(root: string) {
+    return {
+        ...DDSP_RELEASE_INVENTORY_CONTRACT,
+        paths: [...DDSP_RELEASE_INVENTORY_CONTRACT.paths],
+        sources: [...DDSP_RELEASE_INVENTORY_CONTRACT.sources],
+        revisions: [...DDSP_RELEASE_INVENTORY_CONTRACT.revisions],
+        digests: [
+            ...DDSP_RELEASE_INVENTORY_CONTRACT.digests,
+            ...[TFJS_APACHE_LICENSE_PATH, TFJS_NOTICE_PATH].map(
+                (path) => `sha256:${fileSha256(resolve(root, path))}:${path}`
+            ),
+        ],
+        licenses: [...DDSP_RELEASE_INVENTORY_CONTRACT.licenses],
+        evidence: [...DDSP_RELEASE_INVENTORY_CONTRACT.evidence],
+        obligations: [...DDSP_RELEASE_INVENTORY_CONTRACT.obligations],
+    };
 }
 
 export const AUDIO_WORKLET_SOURCES = [
@@ -765,7 +795,7 @@ export function checkReleaseInventory(root: string): void {
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
     const ddspSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    assertSurfaceContract(ddspSurface, DDSP_RELEASE_INVENTORY_CONTRACT, 'DDSP');
+    assertSurfaceContract(ddspSurface, ddspReleaseInventoryContract(root), 'DDSP');
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

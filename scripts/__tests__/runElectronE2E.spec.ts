@@ -73,7 +73,7 @@ describe('Electron packaged E2E provenance', () => {
         }
     });
 
-    it('refuses dirty tracked build inputs but ignores generated and ignored package output', () => {
+    it('refuses tracked or untracked build inputs but ignores generated and ignored package output', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-packaged-inputs-'));
         try {
             execFileSync('git', ['init'], { cwd: root });
@@ -89,8 +89,16 @@ describe('Electron packaged E2E provenance', () => {
             write(root, 'electron/out/main.js', 'generated');
             expect(() => assertPackagedBuildInputsClean(root)).not.toThrow();
 
+            write(root, 'src/untracked.ts', 'export const untracked = true;\n');
+            write(root, 'public/untracked.txt', 'untracked\n');
+            expect(() => assertPackagedBuildInputsClean(root)).toThrow(
+                /public\/untracked\.txt[\s\S]*src\/untracked\.ts/u
+            );
+            rmSync(join(root, 'src/untracked.ts'));
+            rmSync(join(root, 'public/untracked.txt'));
+
             write(root, 'src/main.ts', 'export const value = 2;\n');
-            expect(() => assertPackagedBuildInputsClean(root)).toThrow(/dirty tracked packaged-build inputs/u);
+            expect(() => assertPackagedBuildInputsClean(root)).toThrow(/dirty packaged-build inputs/u);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

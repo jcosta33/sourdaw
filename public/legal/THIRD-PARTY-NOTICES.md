@@ -35,6 +35,15 @@ that exact compiler commit produced the binary.
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
 [RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
 
+## TensorFlow.js runtime
+
+Browser and desktop DDSP rendering includes TensorFlow.js 4.22.0 and its WebGPU backend under the
+Apache License 2.0. See [TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt) for the exact packages
+and immutable source revision, and [Apache-2.0.txt](./Apache-2.0.txt) for the complete license text.
+
+This attribution applies to the TensorFlow.js runtime only. It does not state or imply that the
+separately downloaded Magenta DDSP checkpoint weights are licensed under Apache-2.0.
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).

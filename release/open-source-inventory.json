@@ -331,6 +331,9 @@
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
+                "public/legal/Apache-2.0.txt",
+                "public/legal/TensorFlow.js-NOTICE.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md",
                 "vite.config.ts",
                 "electron-builder.yml",
                 "electron/main.ts",
@@ -398,12 +401,16 @@
             "sources": [
                 "https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md",
                 "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp",
+                "https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE",
+                "https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs/package.json",
+                "https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-backend-webgpu/package.json",
                 "package.json",
                 "pnpm-lock.yaml"
             ],
             "revisions": [
                 "magenta-js 0692eb2b79681f062c6b6dd53a0361967f298caa music/checkpoints/README.md",
                 "magenta-js-ddsp-2020-01-05",
+                "TensorFlow.js tfjs-v4.22.0 e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7",
                 "@tensorflow/tfjs 4.22.0",
                 "@tensorflow/tfjs-backend-webgpu 4.22.0"
             ],
@@ -419,19 +426,24 @@
                 "sha256:60e26d8fd06c963b2828c112f70d4e5667fc9cd328fe6a65977fe839d6393e93:173:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/settings.json",
                 "sha256:1b334b0639c2dd7f19e904a977339c7e4b53fe7fde4f56cc7c9797c99789787e:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/model.json",
                 "sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin",
-                "sha256:4632398ffae90dc12dccf6bb9480102c6947f5c5eb5829415108f25d8cf0a7fe:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json"
+                "sha256:4632398ffae90dc12dccf6bb9480102c6947f5c5eb5829415108f25d8cf0a7fe:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json",
+                "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30:public/legal/Apache-2.0.txt",
+                "sha256:b07c12b83ea7053ca2a39f43f3c384936ae05adaad3fe29b082464406b6fcc9a:public/legal/TensorFlow.js-NOTICE.txt"
             ],
             "licenses": [
                 "permission:Magenta-checkpoints-README-direct-application-loading-or-self-hosting",
                 "unverified:checkpoint-weights-no-license-grant-established",
                 "Apache-2.0:@tensorflow/tfjs",
-                "Apache-2.0:@tensorflow/tfjs-backend-webgpu"
+                "Apache-2.0:@tensorflow/tfjs-backend-webgpu",
+                "Apache-2.0-license-text:public/legal/Apache-2.0.txt",
+                "attribution-notice:public/legal/TensorFlow.js-NOTICE.txt"
             ],
             "productSurfaces": ["browser DDSP instruments", "desktop DDSP instruments"],
             "evidence": [
                 "The immutable Magenta checkpoint README permits direct application loading and downloading/self-hosting for the four named DDSP checkpoint directories.",
                 "The manifest pins the exact URL, byte count, and SHA-256 of all twelve runtime-downloaded artifacts before OPFS readiness.",
-                "Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface."
+                "Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface.",
+                "The TensorFlow.js 4.22.0 package metadata and unmodified Apache-2.0 license are pinned to upstream commit e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7."
             ],
             "obligations": [
                 "Do not describe the checkpoint weights as Apache-2.0; the cited checkpoint permission does not establish that license.",
@@ -1244,6 +1256,21 @@
             "surface": "ddsp-models",
             "file": "scripts/checkReleaseInventory.ts",
             "value": "https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs-backend-webgpu/package.json"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs/package.json"
         },
         {
             "surface": "ddsp-models",

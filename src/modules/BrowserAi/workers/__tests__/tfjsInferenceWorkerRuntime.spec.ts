@@ -271,6 +271,37 @@ describe('tfjsInferenceWorkerRuntime', () => {
         expect(harness.model.dispose).toHaveBeenCalledOnce();
     });
 
+    it('waits for every overlapping request before disposing an idle session', async () => {
+        vi.useFakeTimers();
+        const slowData = deferred<Float32Array>();
+        const fastAudio = new Float32Array(80_000).fill(1);
+        const slowAudio = new Float32Array(80_000).fill(2);
+        const harness = createHarness({
+            idleMs: 5,
+            predict: vi
+                .fn()
+                .mockReturnValueOnce(fakeTensor(fastAudio, fastAudio))
+                .mockReturnValueOnce(fakeTensor(slowAudio, slowData.promise)),
+        });
+        await harness.runtime.handleRequest(createSessionRequest('load'));
+        await vi.advanceTimersByTimeAsync(4);
+
+        const fast = harness.runtime.handleRequest(inferenceRequest('fast', 125));
+        const slow = harness.runtime.handleRequest(inferenceRequest('slow', 125));
+        await vi.waitFor(() => expect(harness.model.predict).toHaveBeenCalledTimes(2));
+        await fast;
+        await vi.advanceTimersByTimeAsync(5);
+
+        expect(harness.model.dispose).not.toHaveBeenCalled();
+        expect(harness.responses).toContainEqual(expect.objectContaining({ type: 'ddsp-result', requestId: 'fast' }));
+
+        slowData.resolve(slowAudio);
+        await slow;
+        await vi.advanceTimersByTimeAsync(5);
+
+        expect(harness.model.dispose).toHaveBeenCalledOnce();
+    });
+
     it.each([
         {
             name: 'incomplete manifest',

@@ -127,39 +127,38 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
             const durationKey =
                 targetDurationSec !== undefined && targetDurationSec > 0 ? `:${String(targetDurationSec)}` : '';
             const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}${durationKey}`).buffer;
-            const cacheKey = await computeRenderCacheKey({
-                modelId: KOKORO_MODEL_ID,
-                inputData,
-                qualityParams: 'kokoro-q8',
-            });
-
-            // Check render cache
-            const cached = await readRenderCache({ cacheKey });
             enqueueRender({ phraseId, requestId, pipeline: 'kokoro', status: 'preparing', queuedAt: Date.now() });
-            if (cached) {
-                logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
-                const provenance: RenderProvenance = {
-                    modelId: KOKORO_MODEL_ID,
-                    voiceId: speakerId,
-                    renderQuality: 'standard',
-                    renderedAt: Date.now(),
-                    tier: 'browser-preview',
-                };
-                markRenderComplete(phraseId, requestId, cacheKey);
-                return { audio: cached, sampleRate: 44100, provenance };
-            }
-
-            startActiveRender({
-                requestId,
-                phraseId,
-                pipeline: 'kokoro',
-                status: 'rendering-browser',
-                stage: 'Loading Kokoro TTS',
-                progress: 0,
-                startedAt: Date.now(),
-            });
 
             try {
+                const cacheKey = await computeRenderCacheKey({
+                    modelId: KOKORO_MODEL_ID,
+                    inputData,
+                    qualityParams: 'kokoro-q8',
+                });
+
+                const cached = await readRenderCache({ cacheKey });
+                if (cached) {
+                    logger.info(`[BrowserAi] Kokoro cache hit: ${phraseId}`);
+                    const provenance: RenderProvenance = {
+                        modelId: KOKORO_MODEL_ID,
+                        voiceId: speakerId,
+                        renderQuality: 'standard',
+                        renderedAt: Date.now(),
+                        tier: 'browser-preview',
+                    };
+                    markRenderComplete(phraseId, requestId, cacheKey);
+                    return { audio: cached, sampleRate: 44100, provenance };
+                }
+
+                startActiveRender({
+                    requestId,
+                    phraseId,
+                    pipeline: 'kokoro',
+                    status: 'rendering-browser',
+                    stage: 'Loading Kokoro TTS',
+                    progress: 0,
+                    startedAt: Date.now(),
+                });
                 updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
                 // 1. Load Kokoro model from OPFS → worker session cache

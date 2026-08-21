@@ -19,6 +19,8 @@ type GenerationIndex = {
     generations: Record<string, { artifactIds: string[]; readyMarkerId: string }>;
 };
 
+type StoredMetadata = { sizeBytes: number; sha256: string };
+
 function bytes(value: unknown): ArrayBuffer {
     return new TextEncoder().encode(JSON.stringify(value)).buffer;
 }
@@ -40,6 +42,13 @@ function generation(
     };
 }
 
+function readyMarkerBytes(): ArrayBuffer {
+    return bytes({
+        version: storage.version,
+        artifacts: storage.artifacts.map(({ path, sizeBytes, sha256 }) => ({ path, sizeBytes, sha256 })),
+    });
+}
+
 function modelDataPort(modelData: ArrayBuffer): MessagePort {
     const channel = new MessageChannel();
     channel.port2.postMessage({ type: 'model-data', modelData }, [modelData]);
@@ -47,24 +56,52 @@ function modelDataPort(modelData: ArrayBuffer): MessagePort {
     return channel.port1;
 }
 
-function storageBridge(input?: { files?: Map<string, ArrayBuffer>; failDeletes?: Set<string> }) {
+function expectedArtifactMetadata(): Map<string, StoredMetadata> {
+    return new Map(
+        storage.artifacts.map(({ path, sizeBytes, sha256 }) => [
+            `${instrument.id}/${storage.version}/${path}`,
+            { sizeBytes, sha256 },
+        ])
+    );
+}
+
+function storageBridge(input?: {
+    files?: Map<string, ArrayBuffer>;
+    failDeletes?: Set<string>;
+    metadata?: Map<string, StoredMetadata>;
+}) {
     const files = input?.files ?? new Map<string, ArrayBuffer>();
     const failDeletes = input?.failDeletes ?? new Set<string>();
+    const metadata = input?.metadata ?? expectedArtifactMetadata();
     const events: string[] = [];
-    const writes = new Map<string, { modelId: string; chunks: ArrayBuffer[] }>();
+    const writes = new Map<
+        string,
+        { modelId: string; chunks: ArrayBuffer[]; expectedSizeBytes: number; expectedSha256: string }
+    >();
     let writeNumber = 0;
     return {
         files,
+        metadata,
         events,
         bridge: {
             abortModelWrite: vi.fn(async (writeId: string) => {
                 writes.delete(writeId);
             }),
-            beginModelWrite: vi.fn(async ({ modelId }: { modelId: string }) => {
-                const writeId = `write-${String(++writeNumber)}`;
-                writes.set(writeId, { modelId, chunks: [] });
-                return writeId;
-            }),
+            beginModelWrite: vi.fn(
+                async ({
+                    modelId,
+                    expectedSizeBytes,
+                    expectedSha256,
+                }: {
+                    modelId: string;
+                    expectedSizeBytes: number;
+                    expectedSha256: string;
+                }) => {
+                    const writeId = `write-${String(++writeNumber)}`;
+                    writes.set(writeId, { modelId, chunks: [], expectedSizeBytes, expectedSha256 });
+                    return writeId;
+                }
+            ),
             writeModelChunk: vi.fn(async ({ writeId, chunk }: { writeId: string; chunk: ArrayBuffer }) => {
                 const write = writes.get(writeId);
                 if (write === undefined) {
@@ -86,22 +123,60 @@ function storageBridge(input?: { files?: Map<string, ArrayBuffer>; failDeletes?:
                     stored.set(new Uint8Array(chunk), offset);
                     offset += chunk.byteLength;
                 }
+                if (storedBytes !== write.expectedSizeBytes) {
+                    throw new Error(`Unexpected stored size for ${write.modelId}`);
+                }
                 files.set(write.modelId, stored.buffer);
+                metadata.set(write.modelId, {
+                    sizeBytes: write.expectedSizeBytes,
+                    sha256: write.expectedSha256,
+                });
                 events.push(`commit:${write.modelId}`);
                 writes.delete(writeId);
                 return { storedBytes, extractedPath: null };
             }),
-            readModel: vi.fn(async ({ modelId }: { modelId: string }) => {
-                const stored = files.get(modelId);
-                return stored === undefined ? null : modelDataPort(stored.slice(0));
-            }),
-            verifyModel: vi.fn(async () => true),
+            readModel: vi.fn(
+                async ({
+                    modelId,
+                    expectedSizeBytes,
+                    expectedSha256,
+                }: {
+                    modelId: string;
+                    expectedSizeBytes?: number;
+                    expectedSha256?: string;
+                }) => {
+                    const stored = files.get(modelId);
+                    const storedMetadata = metadata.get(modelId);
+                    if (
+                        expectedSizeBytes !== undefined &&
+                        (storedMetadata?.sizeBytes !== expectedSizeBytes || storedMetadata.sha256 !== expectedSha256)
+                    ) {
+                        return null;
+                    }
+                    return stored === undefined ? null : modelDataPort(stored.slice(0));
+                }
+            ),
+            verifyModel: vi.fn(
+                async ({
+                    modelId,
+                    expectedSizeBytes,
+                    expectedSha256,
+                }: {
+                    modelId: string;
+                    expectedSizeBytes: number;
+                    expectedSha256: string;
+                }) => {
+                    const storedMetadata = metadata.get(modelId);
+                    return storedMetadata?.sizeBytes === expectedSizeBytes && storedMetadata.sha256 === expectedSha256;
+                }
+            ),
             deleteModel: vi.fn(async ({ modelId }: { modelId: string }) => {
                 events.push(`delete:${modelId}`);
                 if (failDeletes.has(modelId)) {
                     throw new Error(`OPFS denied: ${modelId}`);
                 }
                 files.delete(modelId);
+                metadata.delete(modelId);
             }),
         },
     };
@@ -151,6 +226,15 @@ describe('ddspModelStorage generation index', () => {
 
         await ddspModelStorage.publishDdspInstrumentGeneration(storage);
 
+        expect(testStorage.bridge.verifyModel.mock.calls.map(([input]) => input)).toEqual(
+            storage.artifacts.map(({ path, sizeBytes, sha256 }) => ({
+                family: 'ddsp',
+                modelId: `${instrument.id}/${storage.version}/${path}`,
+                expectedSizeBytes: sizeBytes,
+                expectedSha256: sha256,
+            }))
+        );
+
         expect(testStorage.events).toEqual([
             `commit:${instrument.id}/${storage.version}/.ready.json`,
             `commit:${indexModelId}`,
@@ -174,6 +258,48 @@ describe('ddspModelStorage generation index', () => {
         });
         await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(true);
     });
+
+    it.each(['size', 'sha256'] as const)(
+        'fails readiness and publication when one admitted artifact has the wrong %s',
+        async (field) => {
+            const currentGeneration = generation(storage.version);
+            const marker = readyMarkerBytes();
+            const markerId = currentGeneration.readyMarkerId;
+            const foreignPath = `${instrument.id}/foreign/not-indexed.bin`;
+            const metadata = expectedArtifactMetadata();
+            const brokenArtifactId = currentGeneration.artifactIds[1]!;
+            const expected = metadata.get(brokenArtifactId)!;
+            metadata.set(brokenArtifactId, {
+                sizeBytes: field === 'size' ? expected.sizeBytes + 1 : expected.sizeBytes,
+                sha256: field === 'sha256' ? '0'.repeat(64) : expected.sha256,
+            });
+            metadata.set(markerId, { sizeBytes: marker.byteLength, sha256: 'sha' });
+            const files = new Map<string, ArrayBuffer>([
+                [
+                    indexModelId,
+                    bytes({
+                        schemaVersion: 1,
+                        currentVersion: storage.version,
+                        generations: { [storage.version]: currentGeneration },
+                    }),
+                ],
+                [markerId, marker],
+                [foreignPath, bytes('foreign')],
+            ]);
+            const testStorage = storageBridge({ files, metadata });
+            injectStorage(testStorage.bridge);
+
+            await expect(ddspModelStorage.checkDdspInstrumentReady(storage)).resolves.toBe(false);
+            await expect(ddspModelStorage.publishDdspInstrumentGeneration(storage)).rejects.toThrow(
+                'DDSP generation verification failed'
+            );
+
+            expect(testStorage.bridge.beginModelWrite).not.toHaveBeenCalled();
+            expect(testStorage.bridge.deleteModel).not.toHaveBeenCalled();
+            expect(files.has(markerId)).toBe(true);
+            expect(files.has(foreignPath)).toBe(true);
+        }
+    );
 
     it('keeps v2 current and ready with stale metadata when indexed v1 cleanup partially fails', async () => {
         const v1 = 'v1';

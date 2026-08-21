@@ -6,11 +6,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
     audioWorkletReleaseInventoryContract,
+    ddspReleaseInventoryContract,
     DDSP_RELEASE_INVENTORY_CONTRACT,
     DDSP_RELEASE_INVENTORY_PATHS,
     loadRepositorySnapshot,
     REQUIRED_COMPONENT_PATHS,
     REQUIRED_SNAPSHOT_PATHS,
+    TFJS_APACHE_LICENSE_PATH,
+    TFJS_NOTICE_PATH,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
     type ReleaseInventory,
@@ -72,6 +75,35 @@ describe('release inventory', () => {
             'unverified:checkpoint-weights-no-license-grant-established'
         );
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
+    });
+
+    it('binds the shipped TensorFlow.js attribution and full Apache license bytes', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-tfjs-legal-'));
+        const legal = join(root, 'public/legal');
+        mkdirSync(legal, { recursive: true });
+        writeFileSync(join(root, TFJS_APACHE_LICENSE_PATH), 'full Apache license');
+        writeFileSync(join(root, TFJS_NOTICE_PATH), 'TensorFlow.js 4.22.0 notice');
+
+        try {
+            const before = ddspReleaseInventoryContract(root);
+            expect(before.paths).toEqual(expect.arrayContaining([TFJS_APACHE_LICENSE_PATH, TFJS_NOTICE_PATH]));
+            expect(before.sources).toContain(
+                'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE'
+            );
+            expect(before.digests).toEqual(
+                expect.arrayContaining([
+                    expect.stringMatching(new RegExp(`${TFJS_APACHE_LICENSE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${TFJS_NOTICE_PATH}$`, 'u')),
+                ])
+            );
+
+            writeFileSync(join(root, TFJS_NOTICE_PATH), 'changed');
+            expect(ddspReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            rmSync(join(root, TFJS_APACHE_LICENSE_PATH));
+            expect(() => ddspReleaseInventoryContract(root)).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('binds the shipped trademark notice', () => {

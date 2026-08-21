@@ -1,0 +1,16 @@
+TensorFlow.js runtime notice
+
+Sourdaw distributes these TensorFlow.js runtime packages:
+
+- @tensorflow/tfjs 4.22.0
+- @tensorflow/tfjs-backend-webgpu 4.22.0
+
+Upstream project: TensorFlow.js
+Source: https://github.com/tensorflow/tfjs/tree/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7
+Release tag: tfjs-v4.22.0
+License: Apache License 2.0
+License text: Apache-2.0.txt
+
+This notice applies to the TensorFlow.js runtime packages only. The Magenta
+DDSP checkpoint weights downloaded by Sourdaw have separate permission and
+provenance records and are not described as Apache-2.0.

@@ -130,7 +130,7 @@ function hasAsarIntegrityMetadata(infoPlist: string): boolean {
 export function assertPackagedBuildInputsClean(root = process.cwd()): void {
     const result = spawnSync(
         'git',
-        ['status', '--porcelain=v1', '--untracked-files=no', '--', ...PACKAGED_BUILD_INPUTS],
+        ['status', '--porcelain=v1', '--untracked-files=all', '--', ...PACKAGED_BUILD_INPUTS],
         { cwd: root, encoding: 'utf8' }
     );
     if (result.error !== undefined) {
@@ -141,7 +141,7 @@ export function assertPackagedBuildInputsClean(root = process.cwd()): void {
     }
     const dirty = result.stdout.trim();
     if (dirty !== '') {
-        throw new Error(`dirty tracked packaged-build inputs:\n${dirty}`);
+        throw new Error(`dirty packaged-build inputs:\n${dirty}`);
     }
 }
 

@@ -15,7 +15,8 @@ const runKokoroTts = vi.hoisted(() =>
     >()
 );
 const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<MessagePort | null>>());
-const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
+type ReadRenderCacheInput = Parameters<typeof import('../../repositories/readRenderCache').readRenderCache>[0];
+const readRenderCache = vi.hoisted(() => vi.fn<(input: ReadRenderCacheInput) => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
 type ComputeRenderCacheKeyCall = Parameters<
     typeof import('../../repositories/computeRenderCacheKey').computeRenderCacheKey
@@ -28,6 +29,19 @@ const resampleTo44100 = vi.hoisted(() =>
 const applyFades = vi.hoisted(() => vi.fn());
 const sha256ArrayBuffer = vi.hoisted(() => vi.fn<() => Promise<string>>());
 const releaseGate = vi.hoisted(() => ({ kokoro: true }));
+
+type Deferred<TValue> = {
+    promise: Promise<TValue>;
+    resolve: (value: TValue) => void;
+};
+
+function deferred<TValue>(): Deferred<TValue> {
+    let resolveDeferred: (value: TValue) => void = () => undefined;
+    const promise = new Promise<TValue>((resolve) => {
+        resolveDeferred = resolve;
+    });
+    return { promise, resolve: resolveDeferred };
+}
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
@@ -135,6 +149,49 @@ describe('renderKokoroTts', () => {
         expect(loadOnnxSession).not.toHaveBeenCalled();
         expect(runKokoroTts).not.toHaveBeenCalled();
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+    });
+
+    it('does not let an older delayed cache hit reclaim a phrase from a newer render', async () => {
+        const oldCache = deferred<Float32Array | null>();
+        const newerInference = deferred<{
+            type: 'tts-result';
+            requestId: string;
+            audio: Float32Array;
+            samplingRate: number;
+        }>();
+        const cached = new Float32Array([0.25, 0.5]);
+        computeRenderCacheKey.mockResolvedValueOnce('old-cache-key').mockResolvedValueOnce('new-cache-key');
+        readRenderCache.mockImplementation(({ cacheKey }) =>
+            cacheKey === 'old-cache-key' ? oldCache.promise : Promise.resolve(null)
+        );
+        runKokoroTts.mockReturnValueOnce(newerInference.promise);
+
+        const oldRender = callRender({ text: 'old request' });
+        await vi.waitFor(() => expect(readRenderCache).toHaveBeenCalledWith({ cacheKey: 'old-cache-key' }));
+
+        const newerRender = callRender({ text: 'new request' });
+        await vi.waitFor(() => expect(runKokoroTts).toHaveBeenCalledOnce());
+        const newerOwner = renderQueueStore.value?.entries[0];
+        expect(newerOwner).toMatchObject({ phraseId: 'phrase-1', pipeline: 'kokoro', status: 'rendering-browser' });
+
+        oldCache.resolve(cached);
+        await expect(oldRender).resolves.toMatchObject({ audio: cached, sampleRate: 44100 });
+
+        expect(renderQueueStore.value?.entries).toEqual([newerOwner]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('rendering-browser');
+        expect(renderQueueStore.value?.cachedPhraseIds).not.toContain('old-cache-key');
+
+        newerInference.resolve({
+            type: 'tts-result',
+            requestId: newerOwner!.requestId,
+            audio: new Float32Array(2400),
+            samplingRate: 24000,
+        });
+        await newerRender;
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+        expect(renderQueueStore.value?.cachedPhraseIds).toContain('new-cache-key');
     });
 
     it('should throw a re-download message when the Kokoro model is absent or invalid', async () => {
