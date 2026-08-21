@@ -1,0 +1,52 @@
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_168e09730eb597 14,23,27-36,44,50,58-61,63-79,81-86,88-113,118,122-123,135-139
+src/modules/BrowserAi/stores/renderQueueStore.ts
+  s_27578aec2aab3b::t_9d8fb0b69bd93f 42-45,51,56-62,71,76-79,84,109,114-123
+src/modules/Transport/useCases/index.ts
+  s_27578aec2aab3b::t_df6b5fe46bc1f2 16
+src/modules/BrowserAi/useCases/isDdspInstrumentId.ts
+  s_27578aec2aab3b::t_0a837750f97d0d 1-5
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_b692cd5ca17dd5 23-27,29,155-157,185-189,207-216
+  s_27578aec2aab3b::t_3174bf1ea79be4 1-22,28,30-154,158-184,190-206,217-228
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_b692cd5ca17dd5 22,212-215,228,235,377-392
+  s_27578aec2aab3b::t_df6b5fe46bc1f2 26-27,216-217,229-234,236-244,272-274
+src/modules/BrowserAi/useCases/index.ts
+  s_27578aec2aab3b::t_0a837750f97d0d 9
+src/modules/BrowserAi/useCases/__tests__/cancelRender.spec.ts
+  s_27578aec2aab3b::t_18bc1f48dde516 144-183
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_0a837750f97d0d 94-95,98,295-304
+  s_27578aec2aab3b::t_a50b12b9a13d5a 84-93,96-97,99-112,305,308,313,324,332-340,342,374-378,380-386,465
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_fb9ccf482141ca 379-400,647-659
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_00a8673f2392c2 8,356-357,377-378,406,409-410,431-432,435-436,439-514
+src/modules/BrowserAi/stores/__tests__/renderQueueStore.spec.ts
+  s_27578aec2aab3b::t_316d478fffac2c 33,43,54,61-87,98,115,118-151,158-159,161
+  s_27578aec2aab3b::t_6d5359c55e7962 112
+src/modules/BrowserAi/useCases/cancelRender.ts
+  s_27578aec2aab3b::t_736fdb86773889 12,31-33,45
+src/modules/Transport/useCases/secondsBetweenBeats.ts
+  s_27578aec2aab3b::t_df6b5fe46bc1f2 1-13
+src/modules/BrowserAi/useCases/renderKokoroTts.ts
+  s_27578aec2aab3b::t_75cc2d5dbdf63a 138
+  s_27578aec2aab3b::t_269c40f09f5577 148,163,222,235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c085defdae219598644873eee3a2d1ef0b880f94",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
