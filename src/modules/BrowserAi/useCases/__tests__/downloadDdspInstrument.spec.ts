@@ -24,10 +24,20 @@ const instrument = DDSP_INSTRUMENT_CATALOG[0]! as Omit<DdspInstrument, 'status' 
     artifactVersion: string;
     artifacts: NonNullable<DdspInstrument['artifacts']>;
 };
+const admittedInstruments = DDSP_INSTRUMENT_CATALOG as Array<
+    Omit<DdspInstrument, 'status' | 'downloadProgress'> & {
+        artifactVersion: string;
+        artifacts: NonNullable<DdspInstrument['artifacts']>;
+    }
+>;
 
-function registry(): ModelRegistryState {
+function registry(instruments = admittedInstruments): ModelRegistryState {
     return {
-        ddspInstruments: [{ ...instrument, status: 'not-downloaded', downloadProgress: 0 }],
+        ddspInstruments: instruments.map((candidate) => ({
+            ...candidate,
+            status: 'not-downloaded',
+            downloadProgress: 0,
+        })),
         kokoroModel: null,
         diffSingerVoicebanks: [],
         vocoder: null,
@@ -40,42 +50,52 @@ describe('downloadDdspInstrument', () => {
         modelRegistryStore.set(registry());
     });
 
-    it('makes the instrument ready only after each pinned artifact and the ready marker commit', async () => {
-        const downloadModelRepo = vi.fn<DownloadModelRepo>().mockResolvedValue(undefined);
-        const writeDdspReadyMarker = vi.fn().mockResolvedValue(undefined);
-        const getStorageStatus = vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus);
+    it.each(admittedInstruments)(
+        'delegates every exact %s checkpoint artifact in manifest order and changes only its status',
+        async (candidate) => {
+            const downloadModelRepo = vi.fn<DownloadModelRepo>().mockResolvedValue(undefined);
+            const writeDdspReadyMarker = vi.fn().mockResolvedValue(undefined);
+            const getStorageStatus = vi.fn<GetStorageStatus>().mockResolvedValue(storageStatus);
 
-        injectDependencies(downloadDdspInstrument, {
-            downloadModelRepo,
-            ddspModelStorage: {
-                writeDdspReadyMarker,
-                deleteDdspInstrumentArtifacts: vi.fn(),
-                cleanupDdspInstrumentArtifacts: vi.fn(),
-            },
-            getStorageStatus,
-        });
+            injectDependencies(downloadDdspInstrument, {
+                downloadModelRepo,
+                ddspModelStorage: {
+                    writeDdspReadyMarker,
+                    deleteDdspInstrumentArtifacts: vi.fn(),
+                    cleanupDdspInstrumentArtifacts: vi.fn(),
+                },
+                getStorageStatus,
+            });
 
-        await downloadDdspInstrument(instrument);
+            await downloadDdspInstrument(candidate);
 
-        expect(downloadModelRepo).toHaveBeenCalledTimes(instrument.artifacts.length);
-        expect(downloadModelRepo).toHaveBeenLastCalledWith({
-            spec: {
-                family: 'ddsp',
-                modelId: `${instrument.id}/${instrument.artifacts.at(-1)!.path}`,
-                url: instrument.artifacts.at(-1)!.url,
-                sizeBytes: instrument.artifacts.at(-1)!.sizeBytes,
-                sha256: instrument.artifacts.at(-1)!.sha256,
-            },
-        });
-        expect(writeDdspReadyMarker).toHaveBeenCalledWith({
-            id: instrument.id,
-            version: instrument.artifactVersion,
-            artifacts: instrument.artifacts,
-        });
-        expect(modelRegistryStore.value?.ddspInstruments[0]).toMatchObject({ status: 'ready', downloadProgress: 1 });
-        expect(getStorageStatus).toHaveBeenCalledTimes(1);
-        expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
-    });
+            expect(downloadModelRepo.mock.calls.map(([input]) => input.spec)).toEqual(
+                candidate.artifacts.map((artifact) => ({
+                    family: 'ddsp',
+                    modelId: `${candidate.id}/${artifact.path}`,
+                    url: artifact.url,
+                    sizeBytes: artifact.sizeBytes,
+                    sha256: artifact.sha256,
+                }))
+            );
+            expect(writeDdspReadyMarker).toHaveBeenCalledWith({
+                id: candidate.id,
+                version: candidate.artifactVersion,
+                artifacts: candidate.artifacts,
+            });
+            expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+                admittedInstruments.map((entry) =>
+                    expect.objectContaining({
+                        id: entry.id,
+                        status: entry.id === candidate.id ? 'ready' : 'not-downloaded',
+                        downloadProgress: entry.id === candidate.id ? 1 : 0,
+                    })
+                )
+            );
+            expect(getStorageStatus).toHaveBeenCalledTimes(1);
+            expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
+        }
+    );
 
     it('cleans all partial artifacts when a download is cancelled or fails before the marker commit', async () => {
         const failure = new DOMException('cancelled', 'AbortError');
