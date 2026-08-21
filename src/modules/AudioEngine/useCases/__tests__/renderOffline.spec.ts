@@ -146,6 +146,7 @@ describe('renderOffline', () => {
             selectMidiEventProbability: vi.fn(() => true),
             projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
             projectPpqEndpoints: vi.fn(),
+            resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
             processYeastMidi: vi.fn(),
         });
         const rendered = { sampleRate: 44_100 };
@@ -177,6 +178,7 @@ describe('renderOffline', () => {
             selectMidiEventProbability: vi.fn(() => true),
             projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
             projectPpqEndpoints: vi.fn(() => ({ durationSeconds: 0 })),
+            resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
             processYeastMidi: vi.fn(),
         });
         const rendered = { sampleRate: 44_100 };
@@ -240,6 +242,7 @@ describe('renderOffline effective audibility (OE-4)', () => {
         selectMidiEventProbability: vi.fn(() => true),
         projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
         projectPpqEndpoints: vi.fn(),
+        resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
         processYeastMidi: vi.fn(),
     });
 
@@ -501,6 +504,7 @@ describe('renderOffline residual branches', () => {
         selectMidiEventProbability: vi.fn(() => true),
         projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
         projectPpqEndpoints: vi.fn(),
+        resolveTempoAtBeat: ({ defaultTempo }: { defaultTempo: number }) => defaultTempo,
         processYeastMidi: vi.fn(),
         evaluateAutomationValue: vi.fn(),
     });
@@ -517,6 +521,26 @@ describe('renderOffline residual branches', () => {
             // projectPpqEndpoints missing → the null-guard throws.
             ...fullProjections(),
             projectPpqEndpoints: undefined,
+        });
+        stubOfflineCtx();
+        await expect(renderOffline(4)).rejects.toThrow('Offline musical projection is not configured');
+    });
+
+    // The tempo resolver belongs in that same guard, and is the one dependency
+    // whose absence would not announce itself: the others make the render fail,
+    // while a missing resolver would quietly convert every clip's source offset
+    // at the project default and hand back a bounce that sounds plausible and
+    // seeks to the wrong place in every project carrying a tempo map.
+    it('throws when the clip tempo resolver is not configured', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: { tracks: [] },
+            midi: {},
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 1,
+            ...fullProjections(),
+            resolveTempoAtBeat: undefined,
         });
         stubOfflineCtx();
         await expect(renderOffline(4)).rejects.toThrow('Offline musical projection is not configured');

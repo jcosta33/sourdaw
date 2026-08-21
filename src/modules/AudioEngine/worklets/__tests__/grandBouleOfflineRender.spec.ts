@@ -215,6 +215,7 @@ describe('Grand Boule renders audible audio offline', () => {
         const { configureOfflineYeastMidiProcessing } =
             await import('../../useCases/configureOfflineYeastMidiProcessing');
         configureOfflinePpqEndpointProjection({
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
             project: ({ startPpq, endPpq, defaultTempo, sampleRate: rate }) => {
                 const startSamples = Math.round((startPpq / defaultTempo) * 60 * rate);
                 const endSamples = Math.round((endPpq / defaultTempo) * 60 * rate);
