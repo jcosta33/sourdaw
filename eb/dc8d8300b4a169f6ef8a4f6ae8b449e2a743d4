@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_f9ea2cc80e8187 392,720-722,724-728,731-741,743-747,750-756,869-870,872-876,879-886,888-892,895-898
+  s_27578aec2aab3b::t_e66b874e871d7d 271-282,723,729-730,742,748-749,871,877-878,887,893-894
+  s_27578aec2aab3b::t_9f87e0f88224b1 283,899-900
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_283d78ea875647 123-135,184-188,281-285,355-359,474-478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ebdc8d8300b4a169f6ef8a4f6ae8b449e2a743d4",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
