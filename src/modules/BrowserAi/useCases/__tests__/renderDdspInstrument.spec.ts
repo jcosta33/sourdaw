@@ -39,6 +39,16 @@ function result(sample = 0.25) {
     };
 }
 
+function expectAdmittedDdspProvenance(rendered: Awaited<ReturnType<typeof renderDdspInstrument>>): void {
+    expect(rendered.provenance).toEqual({
+        modelId: 'ddsp-violin',
+        renderQuality: 'standard',
+        renderedAt: expect.any(Number),
+        tier: 'browser-preview',
+    });
+    expect(Number.isFinite(rendered.provenance.renderedAt)).toBe(true);
+}
+
 const REQUEST_A = '00000000-0000-4000-8000-00000000000a';
 const REQUEST_B = '00000000-0000-4000-8000-00000000000b';
 
@@ -113,6 +123,7 @@ describe('renderDdspInstrument request ownership', () => {
             expect.objectContaining({ modelId, qualityParams: 'ddsp-conditioned-v1-250' })
         );
         expect(rendered.audio[500]).toBeCloseTo(0.25, 6);
+        expectAdmittedDdspProvenance(rendered);
     });
 
     it('holds the shared generation lock through readiness, session creation, and inference', async () => {
@@ -165,6 +176,7 @@ describe('renderDdspInstrument request ownership', () => {
         const rendered = await launch(60);
 
         expect(rendered).toMatchObject({ audio: cached, backend: 'webgpu', sampleRate: 44_100 });
+        expectAdmittedDdspProvenance(rendered);
         expect(inferenceWorkerBridge.loadDdspSession).toHaveBeenCalledOnce();
         expect(inferenceWorkerBridge.runDdspInference).not.toHaveBeenCalled();
     });

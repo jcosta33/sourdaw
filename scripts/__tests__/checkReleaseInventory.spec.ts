@@ -25,6 +25,8 @@ import {
 import type { WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
+const MAGENTA_NOTICE_PATH = 'public/legal/Magenta.js-NOTICE.txt';
+const THIRD_PARTY_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
 
 function inventory(): ReleaseInventory {
     return {
@@ -75,6 +77,18 @@ describe('release inventory', () => {
             'unverified:checkpoint-weights-no-license-grant-established'
         );
         expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).not.toContain('Apache-2.0:checkpoint-weights');
+        expect(DDSP_RELEASE_INVENTORY_PATHS).toContain(MAGENTA_NOTICE_PATH);
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.sources).toEqual(
+            expect.arrayContaining([
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts',
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/constants.ts',
+                'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/audio_utils.ts',
+            ])
+        );
+        expect(DDSP_RELEASE_INVENTORY_CONTRACT.licenses).toEqual(
+            expect.arrayContaining(['Apache-2.0:magenta-js-ddsp-code', `attribution-notice:${MAGENTA_NOTICE_PATH}`])
+        );
         expect(DDSP_RELEASE_INVENTORY_PATHS).toContain('index.html');
         expect(DDSP_RELEASE_INVENTORY_PATHS).toEqual(
             expect.arrayContaining([
@@ -109,16 +123,25 @@ describe('release inventory', () => {
         );
     });
 
-    it('binds the shipped TensorFlow.js attribution and full Apache license bytes', () => {
+    it('binds the shipped Magenta.js and TensorFlow.js notices plus full Apache license bytes', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-tfjs-legal-'));
         const legal = join(root, 'public/legal');
         mkdirSync(legal, { recursive: true });
         writeFileSync(join(root, TFJS_APACHE_LICENSE_PATH), 'full Apache license');
         writeFileSync(join(root, TFJS_NOTICE_PATH), 'TensorFlow.js 4.22.0 notice');
+        writeFileSync(join(root, MAGENTA_NOTICE_PATH), 'Magenta.js DDSP code notice');
+        writeFileSync(join(root, THIRD_PARTY_NOTICE_PATH), 'third-party notice index');
 
         try {
             const before = ddspReleaseInventoryContract(root);
-            expect(before.paths).toEqual(expect.arrayContaining([TFJS_APACHE_LICENSE_PATH, TFJS_NOTICE_PATH]));
+            expect(before.paths).toEqual(
+                expect.arrayContaining([
+                    TFJS_APACHE_LICENSE_PATH,
+                    TFJS_NOTICE_PATH,
+                    MAGENTA_NOTICE_PATH,
+                    THIRD_PARTY_NOTICE_PATH,
+                ])
+            );
             expect(before.sources).toContain(
                 'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE'
             );
@@ -126,12 +149,14 @@ describe('release inventory', () => {
                 expect.arrayContaining([
                     expect.stringMatching(new RegExp(`${TFJS_APACHE_LICENSE_PATH}$`, 'u')),
                     expect.stringMatching(new RegExp(`${TFJS_NOTICE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${MAGENTA_NOTICE_PATH}$`, 'u')),
+                    expect.stringMatching(new RegExp(`${THIRD_PARTY_NOTICE_PATH}$`, 'u')),
                 ])
             );
 
-            writeFileSync(join(root, TFJS_NOTICE_PATH), 'changed');
+            writeFileSync(join(root, MAGENTA_NOTICE_PATH), 'changed');
             expect(ddspReleaseInventoryContract(root).digests).not.toEqual(before.digests);
-            rmSync(join(root, TFJS_APACHE_LICENSE_PATH));
+            rmSync(join(root, MAGENTA_NOTICE_PATH));
             expect(() => ddspReleaseInventoryContract(root)).toThrow();
         } finally {
             rmSync(root, { recursive: true, force: true });

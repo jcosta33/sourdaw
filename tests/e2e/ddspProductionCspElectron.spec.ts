@@ -36,6 +36,8 @@ const APP_CONTENTS = join(PACKAGED_EXECUTABLE, '..', '..');
 const APP_ASAR = join(APP_CONTENTS, 'Resources', 'app.asar');
 const INFO_PLIST = join(APP_CONTENTS, 'Info.plist');
 const APP_ASAR_UNPACKED = join(APP_CONTENTS, 'Resources', 'app.asar.unpacked');
+const DDSP_RUNTIME_LEGAL_FILES = ['Apache-2.0.txt', 'Magenta.js-NOTICE.txt', 'TensorFlow.js-NOTICE.txt'] as const;
+const PACKAGED_LEGAL_ROOT = join(APP_CONTENTS, 'Resources', 'legal');
 const OUTSIDE_CSP_PROBE_URL =
     'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_2bar_small/config.json';
 
@@ -71,7 +73,8 @@ function directoryDigests(directory: string): Record<string, string> {
 }
 
 function assertCurrentPackagedOutput(): void {
-    for (const path of [PACKAGED_EXECUTABLE, APP_ASAR, INFO_PLIST]) {
+    const packagedLegalPaths = DDSP_RUNTIME_LEGAL_FILES.map((name) => join(PACKAGED_LEGAL_ROOT, name));
+    for (const path of [PACKAGED_EXECUTABLE, APP_ASAR, INFO_PLIST, ...packagedLegalPaths]) {
         expect(existsSync(path), `${relativePath(path)} must exist`).toBe(true);
     }
     expect(existsSync(PROVENANCE_PATH)).toBe(true);
@@ -79,8 +82,14 @@ function assertCurrentPackagedOutput(): void {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).trim();
     expect(provenance.schemaVersion).toBe(2);
     expect(provenance.head).toBe(head);
-    for (const path of [APP_ASAR, INFO_PLIST, PACKAGED_EXECUTABLE]) {
+    for (const path of [APP_ASAR, INFO_PLIST, PACKAGED_EXECUTABLE, ...packagedLegalPaths]) {
         expect(provenance.files[relativePath(path)]).toBe(digest(path));
+    }
+    for (const name of DDSP_RUNTIME_LEGAL_FILES) {
+        const source = join(process.cwd(), 'public', 'legal', name);
+        const packaged = join(PACKAGED_LEGAL_ROOT, name);
+        expect(existsSync(source), `${relativePath(source)} must exist`).toBe(true);
+        expect(digest(packaged), `${relativePath(packaged)} must match its source legal file`).toBe(digest(source));
     }
     const infoPlist = readFileSync(INFO_PLIST, 'utf8');
     expect(infoPlist).toContain('ElectronAsarIntegrity');

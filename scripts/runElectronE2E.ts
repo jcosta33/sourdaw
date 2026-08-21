@@ -43,6 +43,12 @@ export const ELECTRON_BUILD_INPUTS = [
     'scripts/flipElectronFuses.ts',
 ] as const;
 
+export const DDSP_RUNTIME_LEGAL_FILES = [
+    'Apache-2.0.txt',
+    'Magenta.js-NOTICE.txt',
+    'TensorFlow.js-NOTICE.txt',
+] as const;
+
 function run(command: string, args: readonly string[]): void {
     const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit' });
     if (result.error !== undefined) {
@@ -92,11 +98,13 @@ function packagedContents(root: string, arch: NodeJS.Architecture): string {
 
 function packagedPaths(root: string, arch: NodeJS.Architecture) {
     const contents = packagedContents(root, arch);
+    const resources = join(contents, 'Resources');
     return {
         executable: join(contents, 'MacOS', 'Sourdaw'),
-        appAsar: join(contents, 'Resources', 'app.asar'),
+        appAsar: join(resources, 'app.asar'),
         infoPlist: join(contents, 'Info.plist'),
-        unpacked: join(contents, 'Resources', 'app.asar.unpacked'),
+        unpacked: join(resources, 'app.asar.unpacked'),
+        legal: DDSP_RUNTIME_LEGAL_FILES.map((name) => join(resources, 'legal', name)),
     };
 }
 
@@ -164,7 +172,7 @@ export function runWithCleanElectronBuildInputs(
 
 export function createPackagedProvenance(root: string, arch: NodeJS.Architecture, head: string): PackagedProvenance {
     const paths = packagedPaths(root, arch);
-    for (const path of [paths.executable, paths.appAsar, paths.infoPlist]) {
+    for (const path of [paths.executable, paths.appAsar, paths.infoPlist, ...paths.legal]) {
         if (!existsSync(path)) {
             throw new Error(`Electron E2E build did not produce ${relativePath(root, path)}`);
         }
@@ -174,7 +182,7 @@ export function createPackagedProvenance(root: string, arch: NodeJS.Architecture
     }
 
     const files = Object.fromEntries(
-        [paths.appAsar, paths.infoPlist, paths.executable]
+        [paths.appAsar, paths.infoPlist, paths.executable, ...paths.legal]
             .map((path) => [relativePath(root, path), digest(path)] as const)
             .sort(([left], [right]) => left.localeCompare(right))
     );
@@ -196,7 +204,7 @@ export function validatePackagedProvenance(
 ): string[] {
     const errors: string[] = [];
     const paths = packagedPaths(root, arch);
-    for (const path of [paths.appAsar, paths.infoPlist, paths.executable]) {
+    for (const path of [paths.appAsar, paths.infoPlist, paths.executable, ...paths.legal]) {
         const id = relativePath(root, path);
         if (!existsSync(path)) {
             errors.push(`${id}: packaged output missing`);

@@ -106,11 +106,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     //     invalidated on switch, because the switch is only observable during render, where
     //     mutating a ref is unsafe (concurrent rendering can discard a render) and calling
     //     abort() is a side effect. A comparison has no such window and needs no bookkeeping.
-    //   supersession — a newer launch for the SAME clip replaced this one. Identity cannot see
-    //     that, so each launch owns an AbortController which the next launch aborts, entirely
-    //     inside event handlers. This is reachable: the render-time reset below clears the
-    //     `isGenerating…` / `isRendering…` flags on every clip change, so one A→B→A round trip
-    //     re-enables a button whose first job is still in flight.
+    //   cancellation — a committed clip change, unmount, or replacement launch aborts the
+    //     owning controller. Identity alone cannot distinguish an abandoned A launch after an
+    //     A→B→A selection round trip, so the signal remains part of every ownership check.
     const renderedClipIdRef = useRef(clip.id);
     const variationsLaunchRef = useRef<AbortController | null>(null);
     const ddspLaunchRef = useRef<AbortController | null>(null);
@@ -194,8 +192,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     };
 
     // Re-point the panel at the newly selected clip and drop the previous clip's scratch state.
-    // Note this also clears the in-flight flags, which is what makes same-clip supersession
-    // reachable — see the launch-ownership comment above.
+    // This also clears the in-flight flags so a fresh launch is available after a clip switch;
+    // the lifecycle cleanup above cancels the launch owned by the previous committed panel.
     if (renderedClipIdRef.current !== clip.id) {
         renderedClipIdRef.current = clip.id;
         setTtsText('');

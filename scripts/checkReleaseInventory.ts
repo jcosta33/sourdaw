@@ -67,6 +67,8 @@ export const REQUIRED_MARKS = [
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
 export const TFJS_APACHE_LICENSE_PATH = 'public/legal/Apache-2.0.txt';
 export const TFJS_NOTICE_PATH = 'public/legal/TensorFlow.js-NOTICE.txt';
+export const MAGENTA_NOTICE_PATH = 'public/legal/Magenta.js-NOTICE.txt';
+export const THIRD_PARTY_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
 
 export const DDSP_RELEASE_INVENTORY_PATHS = [
     'index.html',
@@ -74,7 +76,8 @@ export const DDSP_RELEASE_INVENTORY_PATHS = [
     'pnpm-lock.yaml',
     TFJS_APACHE_LICENSE_PATH,
     TFJS_NOTICE_PATH,
-    'public/legal/THIRD-PARTY-NOTICES.md',
+    MAGENTA_NOTICE_PATH,
+    THIRD_PARTY_NOTICE_PATH,
     'vite.config.ts',
     'electron-builder.yml',
     'electron/main.ts',
@@ -147,6 +150,11 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
     paths: [...DDSP_RELEASE_INVENTORY_PATHS],
     sources: [
         'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/ddsp.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/constants.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/audio_utils.ts',
+        'https://github.com/magenta/magenta-js/blob/0692eb2b79681f062c6b6dd53a0361967f298caa/LICENSE',
         'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
         'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/LICENSE',
         'https://github.com/tensorflow/tfjs/blob/e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7/tfjs/package.json',
@@ -156,6 +164,7 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
     ],
     revisions: [
         'magenta-js 0692eb2b79681f062c6b6dd53a0361967f298caa music/checkpoints/README.md',
+        'magenta-js DDSP code 0692eb2b79681f062c6b6dd53a0361967f298caa',
         'magenta-js-ddsp-2020-01-05',
         'TensorFlow.js tfjs-v4.22.0 e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
         '@tensorflow/tfjs 4.22.0',
@@ -178,20 +187,24 @@ export const DDSP_RELEASE_INVENTORY_CONTRACT = {
     licenses: [
         'permission:Magenta-checkpoints-README-direct-application-loading-or-self-hosting',
         'unverified:checkpoint-weights-no-license-grant-established',
+        'Apache-2.0:magenta-js-ddsp-code',
         'Apache-2.0:@tensorflow/tfjs',
         'Apache-2.0:@tensorflow/tfjs-backend-webgpu',
         `Apache-2.0-license-text:${TFJS_APACHE_LICENSE_PATH}`,
+        `attribution-notice:${MAGENTA_NOTICE_PATH}`,
         `attribution-notice:${TFJS_NOTICE_PATH}`,
     ],
     evidence: [
         'The immutable Magenta checkpoint README permits direct application loading and downloading/self-hosting for the four named DDSP checkpoint directories.',
         'The manifest pins the exact URL, byte count, and SHA-256 of all twelve runtime-downloaded artifacts before OPFS readiness.',
         'Worker, bridge, storage, render, UI, CSP, browser/Electron probe, build, and dependency paths are classified as one execution surface.',
+        'The immutable Magenta.js DDSP source headers and repository license establish Apache-2.0 for the adapted code basis, including model.ts Roll registration.',
         'The TensorFlow.js 4.22.0 package metadata and unmodified Apache-2.0 license are pinned to upstream commit e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7.',
     ],
     obligations: [
         'Do not describe the checkpoint weights as Apache-2.0; the cited checkpoint permission does not establish that license.',
         'Preserve per-file size and SHA-256 admission before readiness or inference.',
+        'Keep the Magenta.js copyright, code-basis attribution, modification notice, and Apache-2.0 license with distributed source and desktop builds.',
         'Keep TensorFlow.js Apache-2.0 attribution and notices with distributed source and desktop builds.',
         'Download checkpoint weights at runtime only until redistribution rights are independently established.',
     ],
@@ -278,7 +291,7 @@ export function ddspReleaseInventoryContract(root: string) {
         revisions: [...DDSP_RELEASE_INVENTORY_CONTRACT.revisions],
         digests: [
             ...DDSP_RELEASE_INVENTORY_CONTRACT.digests,
-            ...[TFJS_APACHE_LICENSE_PATH, TFJS_NOTICE_PATH].map(
+            ...[TFJS_APACHE_LICENSE_PATH, MAGENTA_NOTICE_PATH, TFJS_NOTICE_PATH, THIRD_PARTY_NOTICE_PATH].map(
                 (path) => `sha256:${fileSha256(resolve(root, path))}:${path}`
             ),
         ],

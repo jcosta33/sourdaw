@@ -26,6 +26,9 @@ function packagedFixture(): { root: string; arch: NodeJS.Architecture } {
     write(root, `${contents}/MacOS/Sourdaw`, 'launcher');
     write(root, `${contents}/Resources/app.asar`, 'current application');
     write(root, `${contents}/Info.plist`, '<key>ElectronAsarIntegrity</key><dict><key>Resources/app.asar</key></dict>');
+    write(root, `${contents}/Resources/legal/Apache-2.0.txt`, 'Apache license');
+    write(root, `${contents}/Resources/legal/Magenta.js-NOTICE.txt`, 'Magenta.js notice');
+    write(root, `${contents}/Resources/legal/TensorFlow.js-NOTICE.txt`, 'TensorFlow.js notice');
     return { root, arch };
 }
 
@@ -70,6 +73,34 @@ describe('Electron packaged E2E provenance', () => {
             }
             expect(Object.keys(present.unpacked.files)).toEqual([`${unpacked}/nested/a.js`, `${unpacked}/z.js`]);
             expect(validatePackagedProvenance(fixture.root, fixture.arch, present)).toEqual([]);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('pins every shipped DDSP runtime legal file and rejects missing or changed packaged notices', () => {
+        const fixture = packagedFixture();
+        const legalRoot = `release/desktop/mac-${fixture.arch}/Sourdaw.app/Contents/Resources/legal`;
+        try {
+            const provenance = createPackagedProvenance(fixture.root, fixture.arch, 'head');
+            expect(provenance.files).toEqual(
+                expect.objectContaining({
+                    [`${legalRoot}/Apache-2.0.txt`]: expect.stringMatching(/^[0-9a-f]{64}$/u),
+                    [`${legalRoot}/Magenta.js-NOTICE.txt`]: expect.stringMatching(/^[0-9a-f]{64}$/u),
+                    [`${legalRoot}/TensorFlow.js-NOTICE.txt`]: expect.stringMatching(/^[0-9a-f]{64}$/u),
+                })
+            );
+            expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toEqual([]);
+
+            write(fixture.root, `${legalRoot}/Magenta.js-NOTICE.txt`, 'changed notice');
+            expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toContain(
+                `${legalRoot}/Magenta.js-NOTICE.txt: packaged output drifted`
+            );
+
+            rmSync(join(fixture.root, `${legalRoot}/TensorFlow.js-NOTICE.txt`));
+            expect(validatePackagedProvenance(fixture.root, fixture.arch, provenance)).toContain(
+                `${legalRoot}/TensorFlow.js-NOTICE.txt: packaged output missing`
+            );
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }

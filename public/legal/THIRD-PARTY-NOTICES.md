@@ -44,6 +44,19 @@ and immutable source revision, and [Apache-2.0.txt](./Apache-2.0.txt) for the co
 This attribution applies to the TensorFlow.js runtime only. It does not state or imply that the
 separately downloaded Magenta DDSP checkpoint weights are licensed under Apache-2.0.
 
+## Magenta.js DDSP code basis
+
+Sourdaw's DDSP worker adapts feature conditioning, chunk overlap/crossfade, post-gain, and the
+GraphModel `Roll` operation from Magenta.js at immutable revision
+`0692eb2b79681f062c6b6dd53a0361967f298caa`. The upstream source files retain Google's copyright
+notice and are licensed under Apache License 2.0.
+
+See [Magenta.js-NOTICE.txt](./Magenta.js-NOTICE.txt) for the exact files, revision, copyright, and
+adaptation scope. The complete license is [Apache-2.0.txt](./Apache-2.0.txt).
+
+This code attribution is separate from the downloaded Magenta DDSP checkpoint weights. Sourdaw does
+not describe those weights as Apache-2.0.
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).
