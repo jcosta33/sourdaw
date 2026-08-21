@@ -115,6 +115,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
+    initializeVoiceInputAvailability: noop,
     setVoiceToggleEventBus: noop,
 }));
 
@@ -221,7 +222,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
     getUndoTreeHandlers: sentinelHandlers('UndoTree'),
     productionBriefAdmissionPort: {
-        allows: () => true,
+        capture: () => ({ allowsCurrent: () => true }),
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
@@ -319,7 +320,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
-    doesProductionBriefAllowActionBatch: () => true,
+    productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
     initProjectDirtyTracking: noop,

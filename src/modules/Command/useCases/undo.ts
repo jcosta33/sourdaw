@@ -156,7 +156,6 @@ async function undoImpl(): Promise<void> {
                 if (outcome.status === 'conflict') {
                     const label = undoEntryLabel(lastEntry);
                     notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
-                    commitUndoTransition(initial.past, past, []);
                     return;
                 }
 
@@ -221,8 +220,6 @@ async function undoImpl(): Promise<void> {
         if (outcome.status === 'conflict') {
             const label = undoEntryLabel(lastEntry);
             notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
-            past = past.slice(0, -1);
-            commitUndoTransition(initial.past, past, []);
             return;
         }
 

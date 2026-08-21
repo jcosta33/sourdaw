@@ -8,6 +8,32 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProductionBriefScope } from '../models/ProductionBrief';
 import { projectStore } from '../stores/projectStore';
 
+type ProductionBriefActionFootprint = {
+    readonly actions: readonly AppAction[];
+    readonly adjustmentLayers: typeof adjustmentLayerStore.value;
+    readonly automation: typeof automationStore.value;
+    readonly chordTrack: typeof chordTrackStore.value;
+    readonly markers: typeof markerStore.value;
+    readonly tracks: typeof trackStore.value;
+    readonly timeSignatureNumerator: number;
+    readonly rippleEditing: boolean;
+};
+
+function captureProductionBriefActionFootprint(actions: readonly AppAction[]): ProductionBriefActionFootprint {
+    // Project writers replace store state instead of mutating it, so these admission-time
+    // references preserve ownership/range facts without cloning the whole project per action.
+    return {
+        actions: structuredClone(actions),
+        adjustmentLayers: adjustmentLayerStore.value,
+        automation: automationStore.value,
+        chordTrack: chordTrackStore.value,
+        markers: markerStore.value,
+        tracks: trackStore.value,
+        timeSignatureNumerator: transportStore.value?.timeSignatureNumerator ?? 4,
+        rippleEditing: workspaceStore.value?.rippleEditing ?? false,
+    };
+}
+
 function collectActionStrings(value: unknown, values: Set<string>): void {
     if (typeof value === 'string') {
         values.add(value);
@@ -52,8 +78,8 @@ function valueOverlapsRange(value: unknown, scope: Extract<ProductionBriefScope,
     return Object.values(values).some((item) => valueOverlapsRange(item, scope));
 }
 
-function findClip(clipId: string) {
-    for (const track of trackStore.value?.tracks ?? []) {
+function findClip(clipId: string, footprint: ProductionBriefActionFootprint) {
+    for (const track of footprint.tracks?.tracks ?? []) {
         const clip = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].find(
             (candidate) => candidate.id === clipId
         );
@@ -84,10 +110,11 @@ function adjustmentLayerOverlapsRange(
 
 function projectedClipOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
     if (action.type === 'moveClip') {
-        const clip = findClip(action.payload.clipId);
+        const clip = findClip(action.payload.clipId, footprint);
         if (!clip) {
             return false;
         }
@@ -95,15 +122,15 @@ function projectedClipOverlapsRange(
         return intervalOverlapsRange(action.payload.startBeat, endBeat, scope);
     }
     if (action.type === 'trimClipStart') {
-        const clip = findClip(action.payload.clipId);
+        const clip = findClip(action.payload.clipId, footprint);
         return clip ? intervalOverlapsRange(action.payload.newStartBeat, clip.endBeat, scope) : false;
     }
     if (action.type === 'trimClipEnd') {
-        const clip = findClip(action.payload.clipId);
+        const clip = findClip(action.payload.clipId, footprint);
         return clip ? intervalOverlapsRange(clip.startBeat, action.payload.newEndBeat, scope) : false;
     }
     if (action.type === 'nudgeClip') {
-        const clip = findClip(action.payload.clipId);
+        const clip = findClip(action.payload.clipId, footprint);
         if (!clip) {
             return false;
         }
@@ -112,7 +139,7 @@ function projectedClipOverlapsRange(
     }
     if (action.type === 'glueClips') {
         const clips = action.payload.clipIds.flatMap((clipId) => {
-            const clip = findClip(clipId);
+            const clip = findClip(clipId, footprint);
             return clip ? [clip] : [];
         });
         if (clips.length !== action.payload.clipIds.length) {
@@ -140,12 +167,13 @@ function automationLaneOverlapsRange(
 
 function referencedAutomationOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
     const identifiers = new Set<string>();
     collectActionStrings(action.payload, identifiers);
     return (
-        automationStore.value?.lanes.some((lane) => {
+        footprint.automation?.lanes.some((lane) => {
             if (action.type === 'removeAutomationPoint' && action.payload.laneId === lane.id) {
                 const target = action.payload.pointId
                     ? lane.points.find((point) => point.id === action.payload.pointId)
@@ -176,15 +204,16 @@ function referencedAutomationOverlapsRange(
 
 function referencedMarkerOrSectionOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
     const identifiers = new Set<string>();
     collectActionStrings(action.payload, identifiers);
     return Boolean(
-        markerStore.value?.markers.some(
+        footprint.markers?.markers.some(
             (marker) => identifiers.has(marker.id) && marker.beat >= scope.startBeat && marker.beat < scope.endBeat
         ) ||
-        markerStore.value?.sections.some(
+        footprint.markers?.sections.some(
             (section) => identifiers.has(section.id) && intervalOverlapsRange(section.startBeat, section.endBeat, scope)
         )
     );
@@ -197,8 +226,12 @@ function chordEventOverlapsRange(
     return intervalOverlapsRange(event.beat, event.beat + event.duration, scope);
 }
 
-function chordActionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
-    const currentEvents = chordTrackStore.value?.events ?? [];
+function chordActionOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
+): boolean {
+    const currentEvents = footprint.chordTrack?.events ?? [];
     if (
         action.type === 'clearChordTrack' ||
         action.type === 'toggleChordTrack' ||
@@ -239,9 +272,10 @@ function chordActionOverlapsRange(action: AppAction, scope: Extract<ProductionBr
 
 function adjustmentLayerActionOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
-    const layers = adjustmentLayerStore.value?.layers ?? [];
+    const layers = footprint.adjustmentLayers?.layers ?? [];
     if (action.type === 'createAdjustmentLayer') {
         return true;
     }
@@ -284,19 +318,20 @@ function adjustmentLayerActionOverlapsRange(
 
 function duplicateClipProjectionOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
     if (action.type !== 'duplicateClip' && action.type !== 'duplicateClipToNextBar') {
         return false;
     }
-    const clip = findClip(action.payload.clipId);
+    const clip = findClip(action.payload.clipId, footprint);
     if (!clip) {
         return false;
     }
     const duration = clip.endBeat - clip.startBeat;
     let startBeat = clip.endBeat;
     if (action.type === 'duplicateClipToNextBar') {
-        const beatsPerBar = transportStore.value?.timeSignatureNumerator ?? 4;
+        const beatsPerBar = footprint.timeSignatureNumerator;
         startBeat = Math.ceil(clip.endBeat / beatsPerBar) * beatsPerBar;
     }
     return intervalOverlapsRange(startBeat, startBeat + duration, scope);
@@ -304,12 +339,13 @@ function duplicateClipProjectionOverlapsRange(
 
 function trackContainerOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
     if (action.type !== 'removeTrack' && action.type !== 'duplicateTrack') {
         return false;
     }
-    const track = trackStore.value?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+    const track = footprint.tracks?.tracks.find((candidate) => candidate.id === action.payload.trackId);
     if (!track) {
         return false;
     }
@@ -317,7 +353,7 @@ function trackContainerOverlapsRange(
         (clip) => intervalOverlapsRange(clip.startBeat, clip.endBeat, scope)
     );
     const automationOverlap =
-        automationStore.value?.lanes.some(
+        footprint.automation?.lanes.some(
             (lane) => lane.trackId === track.id && automationLaneOverlapsRange(lane, scope)
         ) ?? false;
     return clipOverlap || automationOverlap;
@@ -325,12 +361,13 @@ function trackContainerOverlapsRange(
 
 function rippleDeleteOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
-    if (action.type !== 'removeClip' || !workspaceStore.value?.rippleEditing) {
+    if (action.type !== 'removeClip' || !footprint.rippleEditing) {
         return false;
     }
-    const track = trackStore.value?.tracks.find((candidate) =>
+    const track = footprint.tracks?.tracks.find((candidate) =>
         candidate.clips.some((clip) => clip.id === action.payload.clipId)
     );
     const removed = track?.clips.find((clip) => clip.id === action.payload.clipId);
@@ -349,7 +386,7 @@ function rippleDeleteOverlapsRange(
             return true;
         }
         return (
-            automationStore.value?.lanes.some(
+            footprint.automation?.lanes.some(
                 (lane) =>
                     lane.clipId === clip.id &&
                     [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])].some(
@@ -391,46 +428,50 @@ function globalTimeActionMutatesTrack(action: AppAction): boolean {
     return action.type === 'insertTime' || action.type === 'deleteTime';
 }
 
-function actionIndirectlyMutatesObject(action: AppAction, objectId: string): boolean {
+function actionIndirectlyMutatesObject(
+    action: AppAction,
+    objectId: string,
+    footprint: ProductionBriefActionFootprint
+): boolean {
     if (action.type === 'insertTime' || action.type === 'deleteTime') {
-        const clip = findClip(objectId);
+        const clip = findClip(objectId, footprint);
         if (clip) {
             const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
             return clip.endBeat > boundary;
         }
-        const automationLane = automationStore.value?.lanes.find((lane) => lane.id === objectId);
+        const automationLane = footprint.automation?.lanes.find((lane) => lane.id === objectId);
         if (automationLane) {
             return true;
         }
-        const automationPoint = automationStore.value?.lanes
+        const automationPoint = footprint.automation?.lanes
             .flatMap((lane) => [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])])
             .find((point) => point.id === objectId);
         if (automationPoint) {
             const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
             return automationPoint.beat >= boundary;
         }
-        const automationObject = automationStore.value?.lanes
+        const automationObject = footprint.automation?.lanes
             .flatMap((lane) => lane.objects)
             .find((object) => object.id === objectId);
         if (automationObject) {
             const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
             return automationObject.endBeat > boundary;
         }
-        const marker = markerStore.value?.markers.find((candidate) => candidate.id === objectId);
+        const marker = footprint.markers?.markers.find((candidate) => candidate.id === objectId);
         if (marker) {
             const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
             return marker.beat >= boundary;
         }
-        const section = markerStore.value?.sections.find((candidate) => candidate.id === objectId);
+        const section = footprint.markers?.sections.find((candidate) => candidate.id === objectId);
         if (section && action.type === 'deleteTime') {
             return section.endBeat > action.payload.startBeat;
         }
     }
-    if (action.type !== 'removeClip' || !workspaceStore.value?.rippleEditing) {
+    if (action.type !== 'removeClip' || !footprint.rippleEditing) {
         return false;
     }
-    const lockedClip = findClip(objectId);
-    const removedClip = findClip(action.payload.clipId);
+    const lockedClip = findClip(objectId, footprint);
+    const removedClip = findClip(action.payload.clipId, footprint);
     return Boolean(
         lockedClip &&
         removedClip &&
@@ -440,31 +481,35 @@ function actionIndirectlyMutatesObject(action: AppAction, objectId: string): boo
     );
 }
 
-function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
+function actionOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
+): boolean {
     return (
         valueOverlapsRange(action.payload, scope) ||
-        referencedClipOverlapsRange(action, scope) ||
-        projectedClipOverlapsRange(action, scope) ||
-        referencedAutomationOverlapsRange(action, scope) ||
-        referencedMarkerOrSectionOverlapsRange(action, scope) ||
-        chordActionOverlapsRange(action, scope) ||
-        adjustmentLayerActionOverlapsRange(action, scope) ||
-        duplicateClipProjectionOverlapsRange(action, scope) ||
-        trackContainerOverlapsRange(action, scope) ||
-        rippleDeleteOverlapsRange(action, scope) ||
+        referencedClipOverlapsRange(action, scope, footprint) ||
+        projectedClipOverlapsRange(action, scope, footprint) ||
+        referencedAutomationOverlapsRange(action, scope, footprint) ||
+        referencedMarkerOrSectionOverlapsRange(action, scope, footprint) ||
+        chordActionOverlapsRange(action, scope, footprint) ||
+        adjustmentLayerActionOverlapsRange(action, scope, footprint) ||
+        duplicateClipProjectionOverlapsRange(action, scope, footprint) ||
+        trackContainerOverlapsRange(action, scope, footprint) ||
+        rippleDeleteOverlapsRange(action, scope, footprint) ||
         importedStemSetOverlapsRange(action, scope) ||
         globalTimeActionOverlapsRange(action, scope)
     );
 }
 
-function trackOwnedIds(trackId: string): Set<string> {
-    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+function trackOwnedIds(trackId: string, footprint: ProductionBriefActionFootprint): Set<string> {
+    const track = footprint.tracks?.tracks.find((candidate) => candidate.id === trackId);
     if (!track) {
         return new Set([trackId]);
     }
-    const automationLanes = automationStore.value?.lanes.filter((lane) => lane.trackId === trackId) ?? [];
+    const automationLanes = footprint.automation?.lanes.filter((lane) => lane.trackId === trackId) ?? [];
     const adjustmentLayers =
-        adjustmentLayerStore.value?.layers.filter(
+        footprint.adjustmentLayers?.layers.filter(
             (layer) => layer.affectedTrackIds.length === 0 || layer.affectedTrackIds.includes(trackId)
         ) ?? [];
     return new Set([
@@ -484,12 +529,13 @@ function trackOwnedIds(trackId: string): Set<string> {
 
 function referencedClipOverlapsRange(
     action: AppAction,
-    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>,
+    footprint: ProductionBriefActionFootprint
 ): boolean {
     const identifiers = new Set<string>();
     collectActionStrings(action.payload, identifiers);
     return (
-        trackStore.value?.tracks.some((track) =>
+        footprint.tracks?.tracks.some((track) =>
             [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some(
                 (clip) => identifiers.has(clip.id) && clip.startBeat < scope.endBeat && clip.endBeat > scope.startBeat
             )
@@ -497,8 +543,9 @@ function referencedClipOverlapsRange(
     );
 }
 
-export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[]): boolean {
+function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActionFootprint): boolean {
     const brief = projectStore.value?.productionBrief;
+    const { actions } = footprint;
     if (!brief || actions.every((action) => action.type === 'setProductionBrief')) {
         return true;
     }
@@ -529,7 +576,7 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             return false;
         }
         if (scope.kind === 'range') {
-            return projectActions.every((action) => !actionOverlapsRange(action, scope));
+            return projectActions.every((action) => !actionOverlapsRange(action, scope, footprint));
         }
         if (scope.kind === 'track') {
             if (projectActions.some((action) => action.type === 'createAdjustmentLayer')) {
@@ -538,26 +585,43 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             if (projectActions.some(globalTimeActionMutatesTrack)) {
                 return false;
             }
-            const ownedIds = trackOwnedIds(scope.trackId);
+            const ownedIds = trackOwnedIds(scope.trackId, footprint);
             return [...ownedIds].every((id) => !actionStrings.has(id));
         }
         if (scope.kind === 'section') {
             if (actionStrings.has(scope.sectionId)) {
                 return false;
             }
-            const section = markerStore.value?.sections.find((candidate) => candidate.id === scope.sectionId);
+            const section = footprint.markers?.sections.find((candidate) => candidate.id === scope.sectionId);
             if (!section) {
                 return true;
             }
             const sectionRange = { kind: 'range' as const, startBeat: section.startBeat, endBeat: section.endBeat };
-            return projectActions.every((action) => !actionOverlapsRange(action, sectionRange));
+            return projectActions.every((action) => !actionOverlapsRange(action, sectionRange, footprint));
         }
         if (scope.kind === 'object') {
             return (
                 !actionStrings.has(scope.objectId) &&
-                projectActions.every((action) => !actionIndirectlyMutatesObject(action, scope.objectId))
+                projectActions.every((action) => !actionIndirectlyMutatesObject(action, scope.objectId, footprint))
             );
         }
         return !actionStrings.has(scope.decisionId);
     });
+}
+
+function captureProductionBriefActionBatchAdmission(actions: readonly AppAction[]) {
+    const footprint = captureProductionBriefActionFootprint(actions);
+    return {
+        allowsCurrent(): boolean {
+            return doesProductionBriefAllowActionFootprint(footprint);
+        },
+    };
+}
+
+export const productionBriefActionBatchAdmission = {
+    capture: captureProductionBriefActionBatchAdmission,
+};
+
+export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[]): boolean {
+    return captureProductionBriefActionBatchAdmission(actions).allowsCurrent();
 }
