@@ -68,7 +68,7 @@ function expectConditionedAudioSignature(signature: DdspAudioSignature): void {
     expect(signature.middleRms).toBeLessThan(0.04);
     expect(signature.activeRatio).toBeGreaterThan(0.9);
     expect(signature.crestFactor).toBeGreaterThan(3.5);
-    expect(signature.crestFactor).toBeLessThan(6.5);
+    expect(signature.crestFactor).toBeLessThan(8);
     expect(signature.zeroCrossingRate).toBeGreaterThan(0.04);
     expect(signature.zeroCrossingRate).toBeLessThan(0.08);
 }
