@@ -1,0 +1,35 @@
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_a40848e8f8cca9::t_19ecf2e3f50759 15,117
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_a40848e8f8cca9::t_d6309ec3f63b79 180-212
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_fd3c08dfc431c1 16,138-152
+  s_a40848e8f8cca9::t_f6c7d00d46114c 153-154
+src/modules/Project/models/ProjectData.ts
+  s_a40848e8f8cca9::t_19ecf2e3f50759 27,29,34-38,186
+src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts
+  s_a40848e8f8cca9::t_e007b147ba6a46 1,3,10-12,146,164,282-296,377-418,437,440-446,448-462,465-471,474-481
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_5e08120984fd63 131-148
+  s_a40848e8f8cca9::t_e4ef7b2b2a0e72 97-100
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_19ecf2e3f50759 6,37
+src/modules/Project/useCases/projectPersistence/helpers/normalizeLegacyProjectData.ts
+  s_a40848e8f8cca9::t_19ecf2e3f50759 16,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0c68db855584f137be2e940cba7e1309e8debdd4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
