@@ -11,6 +11,11 @@ test.describe('Toaster Kick Bright', () => {
     });
 
     test('ArrowDown steps Kick Bright from 20000 to 19990', async ({ page }) => {
+        await expect(page.getByRole('button', { name: 'Trigger Kick', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+
         const bright = page.getByRole('slider', { name: 'Bright', exact: true });
         await expect(bright).toHaveAttribute('aria-valuenow', '20000');
 
