@@ -9,9 +9,11 @@ import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 import { renderDdspInstrument } from '../renderDdspInstrument';
+import { supersedeBrowserRender } from '../supersedeBrowserRender';
 
 const loadDdspSession = vi.fn();
 const runDdspInference = vi.fn();
+const cancelOnnxRequest = vi.fn();
 const cancelTfjsRequest = vi.fn();
 const checkDdspInstrumentReady = vi.fn();
 const computeRenderCacheKey = vi.fn();
@@ -69,6 +71,7 @@ describe('renderDdspInstrument', () => {
             });
         });
         cancelTfjsRequest.mockReset();
+        cancelOnnxRequest.mockReset();
         checkDdspInstrumentReady.mockReset().mockImplementation(() => {
             expect(lockHeld).toBe(true);
             return Promise.resolve(true);
@@ -100,15 +103,17 @@ describe('renderDdspInstrument', () => {
         logger.info.mockReset();
         logger.warn.mockReset();
         vi.spyOn(inferenceWorkerBridge, 'cancelTfjsRequest').mockImplementation(cancelTfjsRequest);
+        vi.spyOn(inferenceWorkerBridge, 'cancelOnnxRequest').mockImplementation(cancelOnnxRequest);
         injectDependencies(renderDdspInstrument, {
             applyFades,
             checkDdspInstrumentReady,
             computeRenderCacheKey,
-            inferenceWorkerBridge: { cancelTfjsRequest, loadDdspSession, runDdspInference },
+            inferenceWorkerBridge: { cancelOnnxRequest, cancelTfjsRequest, loadDdspSession, runDdspInference },
             logger,
             readRenderCache,
             renderRequestCancellation,
             resampleTo44100,
+            supersedeBrowserRender,
             withDdspInstrumentLock,
             writeRenderCache,
         });
@@ -385,6 +390,73 @@ describe('renderDdspInstrument', () => {
         expect(cancelTfjsRequest).not.toHaveBeenCalledWith(replacementRequestId);
     });
 
+    it('routes active Kokoro supersession to the ONNX request without touching TFJS', async () => {
+        renderQueueStore.set({
+            entries: [
+                {
+                    phraseId: 'phrase-1',
+                    requestId: 'kokoro-old',
+                    pipeline: 'kokoro',
+                    status: 'rendering-browser',
+                    queuedAt: 1,
+                },
+            ],
+            cachedPhraseIds: [],
+            phraseStatusMap: { 'phrase-1': 'rendering-browser' },
+            phraseRequestIds: { 'phrase-1': 'kokoro-old' },
+        });
+        inferenceProgressStore.set({
+            activeRenders: {
+                'kokoro-old': {
+                    requestId: 'kokoro-old',
+                    phraseId: 'phrase-1',
+                    pipeline: 'kokoro',
+                    status: 'rendering-browser',
+                    stage: 'Synthesizing speech',
+                    progress: 0.2,
+                    startedAt: 1,
+                },
+            },
+        });
+
+        await render();
+
+        expect(cancelOnnxRequest).toHaveBeenCalledWith('kokoro-old');
+        expect(cancelTfjsRequest).not.toHaveBeenCalledWith('kokoro-old');
+    });
+
+    it('rejects an already-aborted replacement before disturbing the current same-phrase owner', async () => {
+        let currentSignal: AbortSignal | undefined;
+        let rejectCurrent = (_error: unknown): void => undefined;
+        withDdspInstrumentLock.mockImplementationOnce(
+            (_id: string, _mode: string, _operation: () => Promise<unknown>, signal?: AbortSignal) =>
+                new Promise((_resolve, reject) => {
+                    currentSignal = signal;
+                    rejectCurrent = reject;
+                    signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+                })
+        );
+        const current = render().catch((error: unknown) => error);
+        await vi.waitFor(() => expect(withDdspInstrumentLock).toHaveBeenCalledOnce());
+        const currentOwner = renderQueueStore.value?.entries[0];
+        expect(currentOwner).toBeDefined();
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(render({ signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+        const keptCurrentOwner = currentSignal?.aborted === false;
+        const queueUnchanged = renderQueueStore.value?.entries[0]?.requestId === currentOwner?.requestId;
+        if (keptCurrentOwner) {
+            rejectCurrent(new DOMException('Test cleanup', 'AbortError'));
+        }
+        await expect(current).resolves.toMatchObject({ name: 'AbortError' });
+
+        expect(keptCurrentOwner).toBe(true);
+        expect(queueUnchanged).toBe(true);
+        expect(cancelTfjsRequest).not.toHaveBeenCalledWith(currentOwner?.requestId);
+        expect(cancelOnnxRequest).not.toHaveBeenCalledWith(currentOwner?.requestId);
+    });
+
     it('propagates caller abort into pending session work and releases only that request owner', async () => {
         const controller = new AbortController();
         let requestSignal: AbortSignal | undefined;
@@ -433,6 +505,7 @@ describe('renderDdspInstrument', () => {
         await expect(render({ phraseId: 'aborted', signal: controller.signal })).rejects.toMatchObject({
             name: 'AbortError',
         });
-        expect(renderQueueStore.value?.phraseStatusMap.aborted).toBe('not-rendered');
+        expect(renderQueueStore.value?.phraseStatusMap.aborted).toBeUndefined();
+        expect(withDdspInstrumentLock).toHaveBeenCalledOnce();
     });
 });

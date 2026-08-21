@@ -24,9 +24,10 @@ import {
     enqueueRender,
     isCurrentRenderRequest,
     markRenderComplete,
-    renderQueueStore,
     updateRenderStatus,
 } from '../stores/renderQueueStore';
+
+import { supersedeBrowserRender } from './supersedeBrowserRender';
 
 const OUTPUT_SAMPLE_RATE = 44_100;
 const CROSSFADE_SECONDS = 1;
@@ -89,6 +90,7 @@ export const renderDdspInstrument = inject({
     readRenderCache,
     renderRequestCancellation,
     resampleTo44100,
+    supersedeBrowserRender,
     withDdspInstrumentLock,
     writeRenderCache,
 })(
@@ -101,6 +103,7 @@ export const renderDdspInstrument = inject({
         readRenderCache,
         renderRequestCancellation,
         resampleTo44100,
+        supersedeBrowserRender,
         withDdspInstrumentLock,
         writeRenderCache,
     }) =>
@@ -114,16 +117,15 @@ export const renderDdspInstrument = inject({
             const targetSamples = targetSampleCount(durationSec, OUTPUT_SAMPLE_RATE);
             const instrument = resolveDdspInstrument(instrumentId);
             const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);
+            if (signal?.aborted) {
+                throw abortError();
+            }
             const requestId = crypto.randomUUID();
             const cancellation = renderRequestCancellation.own(phraseId, requestId, signal);
             const requestSignal = cancellation.signal;
-            const supersededRequestId = renderQueueStore.value?.phraseRequestIds?.[phraseId];
 
             try {
-                if (supersededRequestId !== undefined && supersededRequestId !== requestId) {
-                    renderRequestCancellation.cancel(phraseId, supersededRequestId);
-                    inferenceWorkerBridge.cancelTfjsRequest(supersededRequestId);
-                }
+                supersedeBrowserRender({ phraseId, nextRequestId: requestId });
                 enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
                 const renderWithLock = async (): RenderDdspInstrumentOutput => {
                     assertRequestOwner(phraseId, requestId, requestSignal);
