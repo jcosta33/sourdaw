@@ -1,1 +1,3 @@
 public/legal/DEPENDENCY-LICENSES.txt -text whitespace=-trailing-space
+public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt -text whitespace=-trailing-space
+release/dependency-license-proofs/** -text whitespace=-trailing-space

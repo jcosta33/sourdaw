@@ -1,4 +1,4 @@
-/* SPDX-FileCopyrightText: 2026 Jose Costa */
+/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /*****************************************************************************

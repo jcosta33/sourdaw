@@ -69,11 +69,17 @@ export const REQUIRED_MARKS = [
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
 export const ADAPTED_MIT_SOURCE_PATH = 'crates/daw-dsp/src/toaster/engines/kick_808.rs';
 export const ADAPTED_MIT_LICENSE_PATH = 'public/legal/MI-PLAITS-DSP-RS-MIT.txt';
+export const ADAPTED_ORIGINAL_MIT_LICENSE_PATH = 'public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt';
 export const ADAPTED_MIT_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
 export const ADAPTED_MIT_COMMIT = '6d3f7a5b84b25ec45d66c9f6be7109474690d795';
+export const ADAPTED_ORIGINAL_COMMIT = '99432f2bf443219b3eb77e65e1a18583faad422e';
+export const ADAPTED_ORIGINAL_SOURCE_PATH = 'plaits/dsp/drums/analog_bass_drum.h';
+export const ADAPTED_ORIGINAL_SOURCE_SHA256 = '46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea';
 
 const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+    'pnpm-lock.yaml': ['javascript-dependencies'],
     'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
+    'Cargo.lock': ['rust-dependencies'],
 };
 
 export const OWNER_VISUAL_ASSET_PATHS = [
@@ -414,12 +420,24 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
 export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceContract {
     return {
         kind: 'adapted-source',
-        paths: [ADAPTED_MIT_SOURCE_PATH, ADAPTED_MIT_LICENSE_PATH, ADAPTED_MIT_NOTICE_PATH],
-        sources: [`git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}`, ADAPTED_MIT_SOURCE_PATH],
-        revisions: [ADAPTED_MIT_COMMIT],
+        paths: [
+            ADAPTED_MIT_SOURCE_PATH,
+            ADAPTED_MIT_LICENSE_PATH,
+            ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
+            ADAPTED_MIT_NOTICE_PATH,
+        ],
+        sources: [
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}`,
+            `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            ADAPTED_MIT_SOURCE_PATH,
+        ],
+        revisions: [ADAPTED_MIT_COMMIT, ADAPTED_ORIGINAL_COMMIT],
         digests: [
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_SOURCE_PATH))}:${ADAPTED_MIT_SOURCE_PATH}`,
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
+            `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH))}:${ADAPTED_ORIGINAL_MIT_LICENSE_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_NOTICE_PATH))}:${ADAPTED_MIT_NOTICE_PATH}`,
         ],
         licenses: ['MIT'],
     };

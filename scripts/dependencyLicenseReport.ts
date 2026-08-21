@@ -6,6 +6,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 
 export const DEPENDENCY_LICENSE_REPORT_PATH = 'public/legal/DEPENDENCY-LICENSES.txt';
+export const SERVER_THIRD_PARTY_NOTICES_PATH = 'server/THIRD-PARTY-NOTICES.md';
+export const DEPENDENCY_LICENSE_PROOFS_PATH = 'release/dependency-license-proofs.json';
 
 type LegalFile = {
     label: string;
@@ -19,6 +21,34 @@ export type DependencyLicenseRecord = {
     version: string;
     license: string;
     legalFiles: LegalFile[];
+    graphs?: string[];
+};
+
+type DependencyLicenseProof = {
+    source: string;
+    revision: string;
+    files: Array<{ path: string; sha256: string }>;
+};
+
+type DependencyLicenseProofManifest = {
+    schemaVersion: 1;
+    packages: Record<string, DependencyLicenseProof>;
+};
+
+type PackageLock = {
+    packages: Record<
+        string,
+        {
+            version?: unknown;
+            license?: unknown;
+            dev?: boolean;
+            dependencies?: Record<string, string>;
+            optionalDependencies?: Record<string, string>;
+            os?: unknown;
+            cpu?: unknown;
+            libc?: unknown;
+        }
+    >;
 };
 
 type PnpmLicenseEntry = {
@@ -47,6 +77,7 @@ type CargoMetadata = {
 };
 
 const LEGAL_FILE = /^(?:licen[cs]e|notice|copying|copyright)(?:[._-].*)?$/iu;
+const COMPLETE_MIT_NOTICE = /copyright[\s\S]+permission is hereby granted[\s\S]+the above copyright notice/iu;
 
 function sha256(contents: Buffer): string {
     return createHash('sha256').update(contents).digest('hex');
@@ -62,9 +93,30 @@ function readLegalFile(path: string, label: string): LegalFile {
 }
 
 function packageLegalFiles(directory: string, explicitLicenseFile?: string): LegalFile[] {
-    const paths = readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && LEGAL_FILE.test(entry.name))
-        .map((entry) => resolve(directory, entry.name));
+    const paths: string[] = [];
+    const queue = [directory];
+    while (queue.length > 0) {
+        const current = queue.pop()!;
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const path = resolve(current, entry.name);
+            if (entry.isDirectory()) {
+                if (!['.git', 'node_modules', 'target'].includes(entry.name)) {
+                    queue.push(path);
+                }
+            } else if (entry.isFile() && LEGAL_FILE.test(entry.name)) {
+                paths.push(path);
+            }
+        }
+    }
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (!entry.isFile() || !/^readme(?:\..*)?$/iu.test(entry.name)) {
+            continue;
+        }
+        const path = resolve(directory, entry.name);
+        if (COMPLETE_MIT_NOTICE.test(readFileSync(path, 'utf8'))) {
+            paths.push(path);
+        }
+    }
     if (explicitLicenseFile !== undefined && existsSync(explicitLicenseFile)) {
         paths.push(explicitLicenseFile);
     }
@@ -91,7 +143,9 @@ function assertEquivalent(left: DependencyLicenseRecord, right: DependencyLicens
 }
 
 export function isPlatformRestrictedPackage(packageJson: { os?: unknown; cpu?: unknown; libc?: unknown }): boolean {
-    return Array.isArray(packageJson.os) || Array.isArray(packageJson.cpu) || Array.isArray(packageJson.libc);
+    return [packageJson.os, packageJson.cpu, packageJson.libc].some(
+        (selector) => typeof selector === 'string' || Array.isArray(selector)
+    );
 }
 
 export function collectNpmDependencyLicenses(root: string): DependencyLicenseRecord[] {
@@ -130,6 +184,7 @@ export function collectNpmDependencyLicenses(root: string): DependencyLicenseRec
                     version: packageJson.version,
                     license: licenseExpression(packageJson.license, packageJsonPath),
                     legalFiles: packageLegalFiles(packagePath),
+                    graphs: ['pnpm-lock.yaml'],
                 };
                 const key = `${record.name}@${record.version}`;
                 const previous = records.get(key);
@@ -142,6 +197,64 @@ export function collectNpmDependencyLicenses(root: string): DependencyLicenseRec
         }
     }
     return [...records.values()];
+}
+
+export function collectNpmLockDependencyLicenses(root: string): DependencyLicenseRecord[] {
+    const lockPath = resolve(root, 'server/package-lock.json');
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as PackageLock;
+    const included = new Set<string>();
+    const queue = Object.keys(lock.packages['']?.dependencies ?? {}).map((name) => `node_modules/${name}`);
+    while (queue.length > 0) {
+        const path = queue.pop()!;
+        if (included.has(path)) {
+            continue;
+        }
+        const metadata = lock.packages[path];
+        if (metadata === undefined || metadata.dev === true || isPlatformRestrictedPackage(metadata)) {
+            continue;
+        }
+        included.add(path);
+        const dependencies = { ...metadata.dependencies, ...metadata.optionalDependencies };
+        for (const name of Object.keys(dependencies)) {
+            const nested = `${path}/node_modules/${name}`;
+            queue.push(lock.packages[nested] === undefined ? `node_modules/${name}` : nested);
+        }
+    }
+    return [...included].sort().flatMap<DependencyLicenseRecord>((path) => {
+        const metadata = lock.packages[path]!;
+        const packagePath = resolve(root, 'server', path);
+        const packageJsonPath = resolve(packagePath, 'package.json');
+        if (!existsSync(packageJsonPath)) {
+            throw new Error(`${packageJsonPath}: locked server production dependency is not installed`);
+        }
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+            name?: unknown;
+            version?: unknown;
+            license?: unknown;
+            os?: unknown;
+            cpu?: unknown;
+            libc?: unknown;
+        };
+        if (typeof packageJson.name !== 'string' || typeof packageJson.version !== 'string') {
+            throw new TypeError(`${packageJsonPath}: package identity is incomplete`);
+        }
+        if (packageJson.version !== metadata.version) {
+            throw new Error(`${packageJsonPath}: installed version does not match server/package-lock.json`);
+        }
+        if (isPlatformRestrictedPackage(packageJson) || isPlatformRestrictedPackage(metadata)) {
+            return [];
+        }
+        return [
+            {
+                ecosystem: 'npm' as const,
+                name: packageJson.name,
+                version: packageJson.version,
+                license: licenseExpression(packageJson.license ?? metadata.license, packageJsonPath),
+                legalFiles: packageLegalFiles(packagePath),
+                graphs: ['server/package-lock.json'],
+            },
+        ];
+    });
 }
 
 function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
@@ -188,7 +301,72 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
                 dirname(pkg.manifest_path),
                 pkg.license_file === null ? undefined : pkg.license_file
             ),
+            graphs: ['Cargo.lock'],
         }));
+}
+
+function applyDependencyLicenseProofs(root: string, records: DependencyLicenseRecord[]): DependencyLicenseRecord[] {
+    const manifest = JSON.parse(
+        readFileSync(resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8')
+    ) as DependencyLicenseProofManifest;
+    if (manifest.schemaVersion !== 1 || typeof manifest.packages !== 'object') {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
+    }
+    const used = new Set<string>();
+    const unresolved: string[] = [];
+    const resolved = records.map((record) => {
+        if (record.legalFiles.length > 0) {
+            return record;
+        }
+        const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
+        const proof = manifest.packages[packageId];
+        if (
+            proof === undefined ||
+            proof.source.length === 0 ||
+            proof.revision.length === 0 ||
+            proof.files.length === 0
+        ) {
+            unresolved.push(packageId);
+            return record;
+        }
+        const legalFiles = proof.files.map(({ path, sha256: expected }) => {
+            const file = readLegalFile(resolve(root, path), path);
+            if (file.sha256 !== expected) {
+                throw new Error(`${packageId}: dependency proof drifted at ${path}`);
+            }
+            return { ...file, label: `${basename(path)} from ${proof.source}@${proof.revision}` };
+        });
+        used.add(packageId);
+        return { ...record, legalFiles };
+    });
+    if (unresolved.length > 0) {
+        throw new Error(
+            unresolved
+                .sort()
+                .map((packageId) => `${packageId}: exact license and copyright notice could not be proven`)
+                .join('\n')
+        );
+    }
+    const stale = Object.keys(manifest.packages).filter((packageId) => !used.has(packageId));
+    if (stale.length > 0) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: stale package proofs: ${stale.sort().join(', ')}`);
+    }
+    return resolved;
+}
+
+function mergeDependencyLicenseRecords(records: DependencyLicenseRecord[]): DependencyLicenseRecord[] {
+    const merged = new Map<string, DependencyLicenseRecord>();
+    for (const record of records) {
+        const key = `${record.ecosystem}:${record.name}@${record.version}`;
+        const previous = merged.get(key);
+        if (previous === undefined) {
+            merged.set(key, { ...record, graphs: [...new Set(record.graphs ?? [])].sort() });
+            continue;
+        }
+        assertEquivalent(previous, record);
+        previous.graphs = [...new Set([...(previous.graphs ?? []), ...(record.graphs ?? [])])].sort();
+    }
+    return [...merged.values()];
 }
 
 function compareRecords(left: DependencyLicenseRecord, right: DependencyLicenseRecord): number {
@@ -205,7 +383,10 @@ function compareRecords(left: DependencyLicenseRecord, right: DependencyLicenseR
     );
 }
 
-export function renderDependencyLicenseReport(records: DependencyLicenseRecord[]): string {
+export function renderDependencyLicenseReport(
+    records: DependencyLicenseRecord[],
+    graphDigests: Readonly<Record<string, string>> = {}
+): string {
     const sorted = [...records].sort(compareRecords);
     const blocks = new Map<string, { contents: string; labels: Set<string>; packages: Set<string> }>();
     const packageLines = sorted.map((record) => {
@@ -221,11 +402,17 @@ export function renderDependencyLicenseReport(records: DependencyLicenseRecord[]
             blocks.set(file.sha256, block);
             return `sha256:${file.sha256}`;
         });
-        const legal = references.length === 0 ? 'metadata-only' : [...new Set(references)].sort().join(',');
-        return `${packageId} | ${record.license} | ${legal}`;
+        if (references.length === 0) {
+            throw new Error(`${packageId}: exact license and copyright notice could not be proven`);
+        }
+        const graphs = [...new Set(record.graphs ?? [])].sort().join(',');
+        return `${packageId} | ${record.license} | ${[...new Set(references)].sort().join(',')} | ${graphs}`;
     });
     const npmCount = sorted.filter(({ ecosystem }) => ecosystem === 'npm').length;
     const cargoCount = sorted.length - npmCount;
+    const graphLines = Object.entries(graphDigests)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([path, digest]) => `- ${path} sha256:${digest}`);
     const legalBlocks = [...blocks.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([digest, block]) => {
@@ -248,10 +435,12 @@ export function renderDependencyLicenseReport(records: DependencyLicenseRecord[]
     return [
         'Sourdaw third-party dependency licenses',
         '',
-        'Generated from the platform-neutral installed production pnpm graph and the normal-dependency Cargo graph.',
-        'Each package keeps its own declared license expression and every root legal file shipped in its package archive.',
-        '`metadata-only` means that exact archive declared a license but shipped no root license or notice file;',
-        'this report does not synthesize or reattribute third-party terms.',
+        'Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.',
+        'Each package keeps its declared license expression and exact archive or pinned-upstream legal text.',
+        'Generation fails when exact legal evidence is unavailable.',
+        '',
+        'Source graph digests:',
+        ...graphLines,
         '',
         `Package inventory: ${String(npmCount)} npm, ${String(cargoCount)} Cargo`,
         '',
@@ -264,9 +453,44 @@ export function renderDependencyLicenseReport(records: DependencyLicenseRecord[]
     ].join('\n');
 }
 
+export function renderServerThirdPartyNotices(records: DependencyLicenseRecord[]): string {
+    const serverRecords = records
+        .filter((record) => record.graphs?.includes('server/package-lock.json'))
+        .sort(compareRecords);
+    if (serverRecords.length === 0) {
+        throw new Error('server/package-lock.json: production dependency closure is empty');
+    }
+    const sections = serverRecords.map((record) => {
+        const files = record.legalFiles.map((file) => file.contents.trimEnd()).join('\n\n');
+        return `## ${record.name} ${record.version}\n\nDeclared license: ${record.license}\n\n${files}`;
+    });
+    return ['# Third-Party Notices', '', ...sections, ''].join('\n');
+}
+
+export type DependencyLicenseArtifacts = {
+    report: string;
+    serverNotices: string;
+};
+
+export function buildDependencyLicenseArtifacts(root: string): DependencyLicenseArtifacts {
+    const records = applyDependencyLicenseProofs(
+        root,
+        mergeDependencyLicenseRecords([
+            ...collectNpmDependencyLicenses(root),
+            ...collectNpmLockDependencyLicenses(root),
+            ...collectCargoDependencyLicenses(root),
+        ])
+    );
+    return {
+        report: renderDependencyLicenseReport(records, {
+            'pnpm-lock.yaml': sha256(readFileSync(resolve(root, 'pnpm-lock.yaml'))),
+            'server/package-lock.json': sha256(readFileSync(resolve(root, 'server/package-lock.json'))),
+            'Cargo.lock': sha256(readFileSync(resolve(root, 'Cargo.lock'))),
+        }),
+        serverNotices: renderServerThirdPartyNotices(records),
+    };
+}
+
 export function buildDependencyLicenseReport(root: string): string {
-    return renderDependencyLicenseReport([
-        ...collectNpmDependencyLicenses(root),
-        ...collectCargoDependencyLicenses(root),
-    ]);
+    return buildDependencyLicenseArtifacts(root).report;
 }

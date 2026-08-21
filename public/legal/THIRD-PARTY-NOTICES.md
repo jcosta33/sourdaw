@@ -37,12 +37,12 @@ See [SOURCES.json](./SOURCES.json) for exact package, source, and file identitie
 
 ## JavaScript and Rust dependencies
 
-[DEPENDENCY-LICENSES.txt](./DEPENDENCY-LICENSES.txt) binds the platform-neutral production pnpm
-graph and normal-dependency Cargo graph to each package's declared license expression and every
-root license or notice file included in its package archive. Entries marked `metadata-only`
-identify archives that declare a license but do not include a root legal file; no replacement text
-or attribution is invented for them. Platform-restricted build auxiliaries are excluded; Electron's
-platform legal bundle remains authoritative for its shipped runtime.
+[DEPENDENCY-LICENSES.txt](./DEPENDENCY-LICENSES.txt) binds `pnpm-lock.yaml`, the standalone server's
+`package-lock.json`, and the normal-dependency `Cargo.lock` graph to each package's declared license
+expression and exact archive or immutable pinned-upstream legal files. The structured proof manifest
+and bundled proof files live under `release/dependency-license-proofs*`. Generation fails instead of
+publishing a dependency whose legal text cannot be proven. Platform-restricted build auxiliaries are
+excluded; Electron's platform legal bundle remains authoritative for its shipped runtime.
 
 The report identifies exact registry packages and versions, including the MPL-2.0 Rust packages
 whose corresponding source is available from those same crates.io package versions. Dedicated
@@ -53,6 +53,14 @@ runtime notices below remain authoritative for their narrower component closures
 `crates/daw-dsp/src/toaster/engines/kick_808.rs` adapts mi-plaits-dsp-rs at commit
 `6d3f7a5b84b25ec45d66c9f6be7109474690d795` under the MIT license. Copyright (c) 2022 Oliver
 Rockstedt. The exact upstream terms are in [MI-PLAITS-DSP-RS-MIT.txt](./MI-PLAITS-DSP-RS-MIT.txt).
+
+That port identifies Mutable Instruments Plaits firmware 1.2 as its original source. The adapted
+analog bass-drum source is pinned to `pichenettes/eurorack` commit
+`99432f2bf443219b3eb77e65e1a18583faad422e`, file
+`plaits/dsp/drums/analog_bass_drum.h`, SHA-256
+`46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea`. Copyright 2016 Emilie
+Gillet. Its exact MIT license header is in
+[MUTABLE-INSTRUMENTS-PLAITS-MIT.txt](./MUTABLE-INSTRUMENTS-PLAITS-MIT.txt).
 
 ## DDSP WebGPU runtime
 

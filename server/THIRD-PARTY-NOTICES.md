@@ -1,8 +1,8 @@
 # Third-Party Notices
 
-## ws
+## ws 8.21.1
 
-The standalone collaboration server uses ws 8.21.1 under the MIT license.
+Declared license: MIT
 
 Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
 Copyright (c) 2013 Arnout Kazemier and contributors

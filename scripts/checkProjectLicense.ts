@@ -6,19 +6,33 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildDependencyLicenseReport, DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import {
+    buildDependencyLicenseArtifacts,
+    DEPENDENCY_LICENSE_REPORT_PATH,
+    SERVER_THIRD_PARTY_NOTICES_PATH,
+    type DependencyLicenseArtifacts,
+} from './dependencyLicenseReport.ts';
 
 export const PROJECT_LICENSE_ID = 'Apache-2.0';
-export const PROJECT_OWNER = 'Jose Costa';
-export const PROJECT_NOTICE = `Sourdaw\nCopyright 2026 ${PROJECT_OWNER}\n\nThis product includes third-party software. See public/legal/THIRD-PARTY-NOTICES.md.\n`;
-export const DISTRIBUTION_PROJECT_NOTICE = `Sourdaw\nCopyright 2026 ${PROJECT_OWNER}\n\nThis product includes third-party software. See THIRD-PARTY-NOTICES.md.\n`;
-export const SPDX_OWNERSHIP_HEADER = `/* SPDX-FileCopyrightText: 2026 ${PROJECT_OWNER} */\n/* SPDX-License-Identifier: ${PROJECT_LICENSE_ID} */\n`;
+export const PROJECT_AUTHOR = 'Jose Costa';
+export const PROJECT_COPYRIGHT_HOLDERS = 'Sourdaw Ltd. and Sourdaw contributors';
+const RIGHTS_SCOPE_NOTICE =
+    'The Apache-2.0 grant covers only rights licensable by Sourdaw Ltd. and contributors.\n' +
+    'Third-party components remain under their own terms.\n';
+export const PROJECT_NOTICE = `Sourdaw\nCopyright ${PROJECT_COPYRIGHT_HOLDERS}\n\n${RIGHTS_SCOPE_NOTICE}\nThis product includes third-party software. See public/legal/THIRD-PARTY-NOTICES.md.\n`;
+export const DISTRIBUTION_PROJECT_NOTICE = `Sourdaw\nCopyright ${PROJECT_COPYRIGHT_HOLDERS}\n\n${RIGHTS_SCOPE_NOTICE}\nThis product includes third-party software. See THIRD-PARTY-NOTICES.md.\n`;
+export const SPDX_OWNERSHIP_HEADER = `/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */\n/* SPDX-License-Identifier: ${PROJECT_LICENSE_ID} */\n`;
 
 const PROJECT_APACHE_LICENSE_SHA256 = 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4';
 const DISTRIBUTED_APACHE_LICENSE_SHA256 = '84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1';
 const MI_PLAITS_DSP_RS_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
-const SERVER_THIRD_PARTY_NOTICES_SHA256 = 'bb11963c27505bc6245fb22d61f04980318f87b4cdcbd19934e36ff9118660f1';
+const MUTABLE_INSTRUMENTS_PLAITS_LICENSE_SHA256 = '22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0';
 const OWNERSHIP_FILES = [
+    '.dependency-cruiser.cjs',
+    '.dependency-cruiser.shared.cjs',
+    '.dependency-cruiser.tests.cjs',
+    '.dependency-cruiser.types.cjs',
+    '.dependency-cruiser.reachability.cjs',
     'src/infra/store/storage/LocalStorageKeys.ts',
     'src/modules/AiRuntime/models/ToolDefinitions.ts',
     'src/modules/AiRuntime/models/Tools/Types.ts',
@@ -63,11 +77,14 @@ export function validateProjectLicense(root: string, cargo: CargoMetadata): stri
             errors.push(`${path}: project attribution drifted`);
         }
     }
-    if (sha256(resolve(root, 'server/THIRD-PARTY-NOTICES.md')) !== SERVER_THIRD_PARTY_NOTICES_SHA256) {
-        errors.push('server/THIRD-PARTY-NOTICES.md: third-party notices drifted');
-    }
     if (sha256(resolve(root, 'public/legal/MI-PLAITS-DSP-RS-MIT.txt')) !== MI_PLAITS_DSP_RS_LICENSE_SHA256) {
         errors.push('public/legal/MI-PLAITS-DSP-RS-MIT.txt: upstream MIT license drifted');
+    }
+    if (
+        sha256(resolve(root, 'public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt')) !==
+        MUTABLE_INSTRUMENTS_PLAITS_LICENSE_SHA256
+    ) {
+        errors.push('public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt: original upstream MIT license drifted');
     }
 
     const packageFiles = ['package.json', 'server/package.json', 'server/package-lock.json'];
@@ -84,8 +101,8 @@ export function validateProjectLicense(root: string, cargo: CargoMetadata): stri
         if (crate.license !== PROJECT_LICENSE_ID) {
             errors.push(`${crate.name}: Cargo license must be ${PROJECT_LICENSE_ID}`);
         }
-        if (!crate.authors.includes(PROJECT_OWNER)) {
-            errors.push(`${crate.name}: Cargo authors must include ${PROJECT_OWNER}`);
+        if (!crate.authors.includes(PROJECT_AUTHOR)) {
+            errors.push(`${crate.name}: Cargo authors must include ${PROJECT_AUTHOR}`);
         }
     }
 
@@ -126,16 +143,32 @@ export function validateDependencyLicenseReport(root: string, expected: string):
     return [];
 }
 
-export function checkProjectLicense(root: string, reportBuilder = buildDependencyLicenseReport): void {
+export function validateServerThirdPartyNotices(root: string, expected: string): string[] {
+    try {
+        if (readFileSync(resolve(root, SERVER_THIRD_PARTY_NOTICES_PATH), 'utf8') !== expected) {
+            return [`${SERVER_THIRD_PARTY_NOTICES_PATH}: third-party notices drifted`];
+        }
+    } catch {
+        return [`${SERVER_THIRD_PARTY_NOTICES_PATH}: third-party notices missing`];
+    }
+    return [];
+}
+
+export function checkProjectLicense(
+    root: string,
+    artifactBuilder: (root: string) => DependencyLicenseArtifacts = buildDependencyLicenseArtifacts
+): void {
     const cargo = JSON.parse(
         execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
             cwd: root,
             encoding: 'utf8',
         })
     ) as CargoMetadata;
+    const artifacts = artifactBuilder(root);
     const errors = [
         ...validateProjectLicense(root, cargo),
-        ...validateDependencyLicenseReport(root, reportBuilder(root)),
+        ...validateDependencyLicenseReport(root, artifacts.report),
+        ...validateServerThirdPartyNotices(root, artifacts.serverNotices),
     ];
     if (errors.length > 0) {
         throw new Error(errors.join('\n'));

@@ -8,8 +8,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
     adaptedMitSourceReleaseInventoryContract,
+    ADAPTED_MIT_COMMIT,
     ADAPTED_MIT_LICENSE_PATH,
+    ADAPTED_MIT_NOTICE_PATH,
     ADAPTED_MIT_SOURCE_PATH,
+    ADAPTED_ORIGINAL_COMMIT,
+    ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
+    ADAPTED_ORIGINAL_SOURCE_PATH,
+    ADAPTED_ORIGINAL_SOURCE_SHA256,
     assertGrandBouleReleaseInventory,
     assertGrandBouleRustWasmBoundary,
     assertGrandBouleWithheldFromWasm,
@@ -501,14 +507,28 @@ describe('release inventory', () => {
         mkdirSync(join(root, 'public/legal'), { recursive: true });
         writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'adapted source');
         writeFileSync(join(root, ADAPTED_MIT_LICENSE_PATH), 'upstream license');
+        writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'original upstream license');
+        writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'public notice');
 
         try {
             const before = adaptedMitSourceReleaseInventoryContract(root);
             expect(before.licenses).toEqual(['MIT']);
-            expect(before.revisions).toEqual(['6d3f7a5b84b25ec45d66c9f6be7109474690d795']);
+            expect(before.revisions).toEqual([ADAPTED_MIT_COMMIT, ADAPTED_ORIGINAL_COMMIT]);
+            expect(before.sources).toContain(
+                `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`
+            );
+            expect(before.digests).toContain(
+                `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`
+            );
 
             writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'changed');
             expect(adaptedMitSourceReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
+
+            writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'changed original license');
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[3]).not.toBe(before.digests[3]);
+
+            writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'changed public notice');
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[4]).not.toBe(before.digests[4]);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -617,16 +637,18 @@ describe('release inventory', () => {
         );
     });
 
-    it('binds server lock digests on every owning surface to the snapshot', () => {
+    it('binds every dependency lock digest to its owning surface snapshot', () => {
         const value = inventory();
-        for (const id of ['javascript-dependencies', 'collaboration-server']) {
+        for (const id of ['javascript-dependencies', 'collaboration-server', 'rust-dependencies']) {
             value.surfaces.push({ ...value.surfaces[0]!, id, digests: ['sha256:stale'] });
         }
 
         expect(validateReleaseInventory(value, snapshot())).toEqual(
             expect.arrayContaining([
+                `javascript-dependencies: digest must match pnpm-lock.yaml snapshot (sha256:${fixtureDigest})`,
                 `javascript-dependencies: digest must match server/package-lock.json snapshot (sha256:${fixtureDigest})`,
                 `collaboration-server: digest must match server/package-lock.json snapshot (sha256:${fixtureDigest})`,
+                `rust-dependencies: digest must match Cargo.lock snapshot (sha256:${fixtureDigest})`,
             ])
         );
     });
