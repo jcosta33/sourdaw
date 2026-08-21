@@ -31,6 +31,16 @@ export type DeviceNodeEntry = {
     deviceType: string;
     node: OfflineDeviceNode;
     strategy: AudioDeviceStrategy;
+    /**
+     * True when release admission refused this device and the entry is the
+     * silent stand-in `createWithheldDeviceStrategy` built for it.
+     *
+     * Read rather than re-derived from `track.devices`, because it states what
+     * this render actually put in the graph. A caller that asked admission
+     * again would be a second source of truth that agrees today and drifts the
+     * day the two questions are asked at different points.
+     */
+    releaseWithheld?: true;
 
     // Kept for backwards compatibility with consumers until fully migrated
     nativeDsp?: {
@@ -229,6 +239,7 @@ export const buildDeviceChain = inject({ logger })(
 
             for (const device of activeDevices) {
                 let strategy: AudioDeviceStrategy;
+                let releaseWithheld = false;
                 // Asked before construction, and deliberately not folded into
                 // the catch below. `findReleasedNativeDspDeviceFactory` returns
                 // nothing for a withheld type, so the registry would throw a
@@ -239,6 +250,7 @@ export const buildDeviceChain = inject({ logger })(
                     strategy = createWithheldDeviceStrategy(ctx, {
                         acceptsNotes: isOfflineInstrumentDevice(device.type),
                     });
+                    releaseWithheld = true;
                     // Named as withholding rather than as a load failure: the
                     // user can act on the first (the device is gone from this
                     // build) and cannot act on the second.
@@ -345,6 +357,7 @@ export const buildDeviceChain = inject({ logger })(
                     deviceType: device.type,
                     node: dn,
                     strategy,
+                    ...(releaseWithheld ? { releaseWithheld: true as const } : {}),
                     // Proxies for legacy support (to be phased out completely soon)
                     nativeDsp: {
                         setParam: (name, value) => strategy.setParam(name, value),

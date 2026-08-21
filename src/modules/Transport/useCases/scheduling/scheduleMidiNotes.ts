@@ -1,3 +1,4 @@
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
@@ -61,6 +62,41 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     // device's export refusal was hiding, just pointing the other way.
     'builtin-crumbs': { controlsKey: 'crumbsControls' },
 };
+
+/**
+ * Device types this scheduler would voice a track's notes on if their node
+ * existed — the live counterpart of the offline chain's `acceptsNotes`.
+ *
+ * Only these matter to `findWithheldNoteVoicingDevice` below, because a
+ * withheld *effect* must not suppress the builtin fallback: a MIDI track whose
+ * rack holds only effects is *supposed* to play the fallback synth, and
+ * silencing it there would be a new defect rather than a fix.
+ *
+ * Drum kits are deliberately absent. `resolveDrumKitDef`/`resolveDrumKit` read
+ * `track.devices` directly and need no node, so a withheld kit would still
+ * voice its samples — and its branch runs ahead of the fallback anyway, so
+ * listing it here would change nothing. Whether admission should gate sample
+ * kits at all is a separate question about a separate mechanism.
+ */
+function isLiveNoteVoicingDeviceType(deviceType: string): boolean {
+    return deviceType in WORKLET_SYNTH_DEVICES || deviceType === 'toaster' || isFaustInstrumentModule(deviceType);
+}
+
+/**
+ * The track's instrument, when the build refuses to provide it.
+ *
+ * Asked of release admission rather than of `strip.deviceNodes`, and the
+ * difference is the whole point. A node can be missing because the device is
+ * withheld or because it failed to construct for an environment reason — a
+ * missing wasm asset, an unavailable worklet — and those two must not share an
+ * outcome. A runtime failure keeps the behaviour it has always had, including
+ * the fallback synth, because the device was supposed to work and the user can
+ * fix it. A withheld device is never going to work in this build, so voicing
+ * its part on a sawtooth misrepresents the project every time it is played.
+ */
+function findWithheldNoteVoicingDevice(devices: readonly { type: string }[]): { type: string } | undefined {
+    return devices.find((device) => !isDeviceReleaseAdmitted(device.type) && isLiveNoteVoicingDeviceType(device.type));
+}
 
 export type SchedulerCancellation = {
     generation: number;
@@ -403,6 +439,7 @@ export async function scheduleMidiNotes(
 
         const drumKitDef = resolveDrumKitDef(track.devices);
         const drumKit = drumKitDef ? null : resolveDrumKit(track.devices);
+        const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track.devices);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
         const liveYeastIterations: LiveYeastIteration[] = [];
         let activeYeastCarrierRouteId: string | undefined;
@@ -558,7 +595,8 @@ export async function scheduleMidiNotes(
             }
 
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
-            const synthParams = drumKit || drumKitDef ? null : getSynthParamsForTrack(track.id);
+            const synthParams =
+                drumKit || drumKitDef || withheldNoteVoicingDevice ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopProjection = projectClipLoopExpansion({
@@ -889,7 +927,7 @@ export async function scheduleMidiNotes(
                                 projectedNote.velocity,
                                 noteGain
                             );
-                        } else {
+                        } else if (!withheldNoteVoicingDevice) {
                             // The built-in synth holds no range of its own; it
                             // bends by the depth the note was recorded at
                             // (audit MD-8).

@@ -26,11 +26,20 @@ export type CreateWithheldDeviceStrategyInput = {
  * decision, and every project saved before it still carries the device, so the
  * substitution would be the *normal* outcome rather than an edge: opening such
  * a project and exporting it would ship a sawtooth lead where the instrument
- * was, while live playback of the same project stays silent and says so.
- * `createWebAudioEngine` adds no node for a withheld type and notifies that the
- * project data is preserved but the device will remain silent — so silence is
- * what playback contains, and silence is therefore what the render must
- * contain.
+ * was.
+ *
+ * Do not read the live notification as evidence that playback already does the
+ * right thing — it is not, and an earlier version of this comment claimed it
+ * was. `TrackNode.addDevice` returns `false` for a withheld type and
+ * `createWebAudioEngine` notifies that the project data is preserved but the
+ * device will remain silent, which is true of the device and false of the
+ * track: `scheduleMidiNotes` finds the worklet-synth device by *type*, fails to
+ * find its node, and falls through to the same builtin fallback. Live was
+ * substituting a sawtooth too. It is fixed there in the same change, by asking
+ * admission the same question this file answers.
+ *
+ * Silence is what both runtimes must contain, because silence is what a build
+ * without the device can honestly produce.
  *
  * This is the shape `runOfflineInstrumentSetup`'s catch already uses for a
  * device whose setup fails: keep the device *present* in the chain, unconfigured
@@ -43,10 +52,14 @@ export type CreateWithheldDeviceStrategyInput = {
  * silence the whole track over a withheld *insert*. An instrument has nothing
  * upstream, so pass-through and silence are the same thing for it.
  *
- * Freeze needs no separate refusal on top of this. A silent instrument with
- * notes scheduled into it is exactly the input `detectSilentBake` is built to
- * catch, so the bake is refused by the guard that already owns that decision
- * rather than by a second one that could disagree with it.
+ * Freeze does not get its protection from the silence alone. `detectSilentBake`
+ * catches an unautomated track this way, but `freezeTrack` passes
+ * `bakesAutomation: true` unconditionally and `classifyRenderSilence` abstains
+ * whenever the track owns one enabled lane with a point — so an automated
+ * instrument track, which is the ordinary case, would still bake. The entry
+ * this factory backs is therefore flagged `releaseWithheld`, and that flag
+ * travels to the guard on the render tally, where it is refused ahead of every
+ * abstention. See `detectSilentBake`.
  */
 export function createWithheldDeviceStrategy(
     ctx: BaseAudioContext,

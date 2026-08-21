@@ -276,6 +276,7 @@ describe('a withheld device renders silent in the offline render, and is reporte
 
     it('names the device on the warning channel instead of substituting for it', async () => {
         const warnings: string[] = [];
+        const tallies: { scheduledNotes: number; withheldDeviceTypes: string[] }[] = [];
 
         const buffer = await renderTrackSubgraphOffline({
             targetTrackId: 'gb-track',
@@ -283,6 +284,9 @@ describe('a withheld device renders silent in the offline render, and is reporte
             startBeat: 0,
             endBeat: 4,
             onWarning: (message) => warnings.push(message),
+            onScheduled: (reported) => {
+                tallies.push(reported);
+            },
         });
 
         expect(buffer).not.toBeNull();
@@ -314,11 +318,22 @@ describe('a withheld device renders silent in the offline render, and is reporte
             warningCount: warnings.length,
             firstNoteAudible: firstNote > 0.02,
             secondNoteAudible: secondNote > 0.02,
+            // Without this the file could pass while observing nothing about
+            // note routing: a fixture that stopped producing notes at all — a
+            // broken projection, an empty clip, a store the `beforeEach` failed
+            // to seed — renders silence AND emits the withholding warning, and
+            // every other field above would still read as expected.
+            scheduledNotes: tallies[0]?.scheduledNotes,
+            // The render's own record of what it replaced, which is what
+            // `detectSilentBake` refuses on.
+            withheldReportedOnTally: tallies[0]?.withheldDeviceTypes,
         }).toEqual({
             deviceReported: true,
             warningCount: 1,
             firstNoteAudible: false,
             secondNoteAudible: false,
+            scheduledNotes: 2,
+            withheldReportedOnTally: ['grand-boule'],
         });
     });
 });

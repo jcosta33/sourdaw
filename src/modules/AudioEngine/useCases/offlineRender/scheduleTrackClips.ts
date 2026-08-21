@@ -349,6 +349,19 @@ export async function scheduleTrackClips({
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
     }
 
+    // Reported off the chain this render actually built, not re-derived from
+    // `track.devices`: the tally must describe the graph, and a second reading
+    // of release admission here could disagree with the one that placed the
+    // stand-in. `detectSilentBake` reads this to refuse a bake that would
+    // otherwise be excused by an automation abstention.
+    if (tally) {
+        for (const entry of deviceEntries) {
+            if (entry.releaseWithheld && !tally.withheldDeviceTypes.includes(entry.deviceType)) {
+                tally.withheldDeviceTypes.push(entry.deviceType);
+            }
+        }
+    }
+
     const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
     const isToaster = instrumentEntry?.deviceType === 'toaster';

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { freezeTrack } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 
 import { createOfflineWorkletRenderHarness } from '../../../../helpers/__tests__/offlineWorkletRenderHarness';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -239,6 +240,7 @@ describe('freezing a track whose instrument did not build refuses the bake', () 
         );
         notification.notifyUser.mockClear();
         audioBufferCache.clear();
+        automationStore.set(null);
 
         const { configureOfflineMidiEventProjection } =
             await import('../../useCases/configureOfflineMidiEventProjection');
@@ -322,8 +324,12 @@ describe('freezing a track whose instrument did not build refuses the bake', () 
                     message.includes('withheld from this build') &&
                     level === 'warning'
             ),
-            silentBakeRefused: messages.some(
-                ({ message, level }) => message.includes('rendered as digital silence') && level === 'error'
+            bakeRefused: messages.some(
+                ({ message, level }) =>
+                    message.includes('grand-boule') &&
+                    message.includes('withheld from this build') &&
+                    message.includes('Freeze stopped') &&
+                    level === 'error'
             ),
         }).toEqual({
             froze: false,
@@ -331,7 +337,71 @@ describe('freezing a track whose instrument did not build refuses the bake', () 
             cachedBuffer: false,
             trackFrozen: false,
             deviceWithholdingReported: true,
-            silentBakeRefused: true,
+            bakeRefused: true,
+        });
+    });
+
+    it('refuses the same bake on a track carrying an automation lane', async () => {
+        // The ordinary case, and the one the test above cannot reach. An
+        // instrument track almost always carries a ride, and `freezeTrack`
+        // passes `bakesAutomation: true` unconditionally, so
+        // `classifyRenderSilence` abstains with `automation-not-modelled` for
+        // any track owning one enabled lane with one point. Behind that
+        // abstention the withheld device froze "successfully" over silence, and
+        // `flattenTrack` then set `devices: []` — deleting the Grand Boule
+        // reference ADR 0032 exists to preserve, from a project the user only
+        // clicked Freeze and Flatten on.
+        //
+        // A withheld verdict is a fact about the build, not a guess about the
+        // audio, so it is refused ahead of every abstention.
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'gb-volume-ride',
+                    trackId: 'gb-freeze-track',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ id: 'p1', beat: 0, value: 0.8, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        const froze = await freezeTrack('gb-freeze-track');
+
+        const frozen = trackStore.value?.tracks.find((track) => track.id === 'gb-freeze-track');
+        const messages = notification.notifyUser.mock.calls.map(([message, level]) => ({
+            message: String(message),
+            level: String(level),
+        }));
+
+        expect({
+            froze,
+            status: frozen?.freezeState.status,
+            trackFrozen: frozen?.frozen === true,
+            // The refusal must name the withholding, not digital silence. The
+            // silence message ends "Play the track back to confirm it sounds,
+            // then try again" — advice with no exit for a device that is gone
+            // from the build, because playback of it is silent too.
+            withheldRefusal: messages.some(
+                ({ message, level }) =>
+                    message.includes('grand-boule') &&
+                    message.includes('withheld from this build') &&
+                    message.includes('Freeze stopped') &&
+                    level === 'error'
+            ),
+            toldToPlayItBack: messages.some(({ message }) => message.includes('Play the track back')),
+        }).toEqual({
+            froze: false,
+            status: 'error',
+            trackFrozen: false,
+            withheldRefusal: true,
+            toldToPlayItBack: false,
         });
     });
 });

@@ -397,6 +397,53 @@ describe('scheduleMidiNotes', () => {
         expect(noteOff.mock.calls[0]).toEqual([62, 18000, 0]);
     });
 
+    // Release admission is deliberately NOT mocked in this file, so these two
+    // read the production withheld set (ADR 0032). A track whose instrument the
+    // build withholds reaches this scheduler with the device in `track.devices`
+    // and no node on the strip — indistinguishable, from `deviceNodes` alone,
+    // from an instrument whose node failed to construct. The scheduler used to
+    // treat both the same way and hand the part to the builtin sawtooth, which
+    // is the "plausible wrong instrument" failure: the project plays back as if
+    // it contained something it does not, and the user is never told.
+    describe('a device the build withholds', () => {
+        function givenNoteOnTrack(deviceType: string) {
+            const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'd-1', type: deviceType }] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 64, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+                },
+            };
+        }
+
+        it('routes the notes nowhere rather than onto the fallback synth', async () => {
+            // `grand-boule` is a worklet synth in this scheduler's own table, so
+            // without the admission question its notes land in the terminal
+            // `else` and are voiced on the builtin sawtooth.
+            givenNoteOnTrack('grand-boule');
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+            // The fallback's parameters are not even fetched: the substitution
+            // is refused before it is configured, not after.
+            expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+        });
+
+        it('leaves a device missing for an environment reason on its fallback', async () => {
+            // The control, and the reason admission is asked rather than
+            // `deviceNodes` inspected. Fermenter is admitted; its node is absent
+            // here the way a failed worklet construction leaves it absent. That
+            // device was supposed to work and the user can fix it, so its
+            // long-standing fallback behaviour must survive this change.
+            givenNoteOnTrack('fermenter');
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(64);
+        });
+    });
+
     it('does not schedule synth when MIDI store is uninitialized', async () => {
         await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
