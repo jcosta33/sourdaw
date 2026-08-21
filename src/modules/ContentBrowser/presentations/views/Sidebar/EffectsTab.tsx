@@ -6,7 +6,7 @@ import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Stack } from '#/components/layout';
 import { compileAddDeviceAction, compileLoadPresetActions, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -94,7 +94,14 @@ export const EffectsTab = ({
             afterApplied?.(null);
             return;
         }
-        void executeAppAction(action).then(() => afterApplied?.(action.payload.deviceId ?? null));
+        void executeAppAction(action).then(
+            () => afterApplied?.(action.payload.deviceId ?? null),
+            (error: unknown) => {
+                if (isAppActionCommittedError(error)) {
+                    afterApplied?.(action.payload.deviceId ?? null);
+                }
+            }
+        );
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -221,7 +228,7 @@ export const EffectsTab = ({
                         badge="MIDI FX"
                         description="Arpeggiator · Chord Generator · Scale Filter"
                         onClick={() => {
-                            addDeviceThroughAction('Yeast', () => panelActions?.showYeast(null));
+                            addDeviceThroughAction('yeast', () => panelActions?.showYeast(null));
                         }}
                         theme={YEAST_THEME}
                     />
