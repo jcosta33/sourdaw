@@ -1,0 +1,61 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_94181e88319ce0 6,149-181,203,205-209,211-235,243-247,249-258,266-268
+  s_a40848e8f8cca9::t_f56dbc328b43f0 183-192,196-202,236-242,259-265
+  s_a40848e8f8cca9::t_63d4bb0bfe8456 148,210,248,269
+  s_a40848e8f8cca9::t_808533edf40ed3 182,193-195,204
+src/modules/AiRuntime/useCases/reconcilePreparedStemImportRecovery.ts
+  s_a40848e8f8cca9::t_f56dbc328b43f0 1-2,6-9
+  s_a40848e8f8cca9::t_d6b04d5d6b4cc5 3-5,10
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_d6b04d5d6b4cc5 65
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_a5df6795d452ce 17,39,299-302,447-450
+src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_f56dbc328b43f0 1,107-109,120,141-143
+  s_a40848e8f8cca9::t_d6b04d5d6b4cc5 2,6,14-18,40-45,64-67,73-75,83-86,105-106,111-119,121-135,225
+  s_a40848e8f8cca9::t_808533edf40ed3 21-22,104,110,136-140,144-157
+  s_a40848e8f8cca9::t_3500a9883ed5c5 158
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_a40848e8f8cca9::t_eb62243bfa08aa 135,186
+  s_a40848e8f8cca9::t_16d7de6130e819 123-128,188
+  s_a40848e8f8cca9::t_5bda825a63e075 5,17,71,109-116,139,141,146-151,153-154,157,226
+  s_a40848e8f8cca9::t_1b7a21b085b4ee 138,142-145,162,173-175
+  s_a40848e8f8cca9::t_ce7cab9e17f0fc 140,152,155-156,158-159
+  s_a40848e8f8cca9::t_54d9a17996a325 214-217
+  s_a40848e8f8cca9::t_e667a3ce6e609f 1-2,8-16,18-29,32-44,49,51-54,67-70,72-108,117-120,129-134,136-137,160-161,163-172,176,178-182,184-185,187,189-190,194-211,213,219-225,227-236,239
+  s_a40848e8f8cca9::t_2559501780082c 3-4,6-7,177,183
+  s_a40848e8f8cca9::t_c27b7e3c3981af 31,45-48,122,218
+  s_a40848e8f8cca9::t_d4efa0a044dbed 30,50,55-66,121,191-193,212,237-238
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_d6b04d5d6b4cc5 277-281,307,321,379
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_d6b04d5d6b4cc5 810-813
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_a0e336d5193400 6,9
+  s_a40848e8f8cca9::t_d6b04d5d6b4cc5 7-8,17-18
+  s_27578aec2aab3b::t_85d2409e71e14e 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "599b49dfc79b2e929c0fca3d08764cf428d8b037",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
