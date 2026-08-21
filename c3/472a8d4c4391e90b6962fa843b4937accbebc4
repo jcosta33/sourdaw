@@ -1,0 +1,98 @@
+release/open-source-inventory.json
+  s_4529dc9c483abc::t_09ab7df52afd47 594,600
+  s_4529dc9c483abc::t_64f3ed7784a6c6 854
+  s_8e79c75e0aa665::t_01258df4f4bdb5 508-509
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_e84e8bc036b9cf::t_83f40829f8dc72 1
+  s_8e79c75e0aa665::t_2411bfc55b2ed3 54-70,191-209
+public/wasm/manifest.json
+  s_8e79c75e0aa665::t_d7409fd109814f 16
+  s_e84e8bc036b9cf::t_d561e408cef7f9 12,17-18,21
+crates/daw-dsp/src/grand_boule/coupled_strings.rs
+  s_8e79c75e0aa665::t_3e24a7bad741e4 220-222,235
+  s_8e79c75e0aa665::t_5e83aceb99b53a 148-150,157
+  s_e84e8bc036b9cf::t_69718db18d81ba 232-234
+  s_8e79c75e0aa665::t_ef10abae83456c 19,139,146-147,155-156
+  s_e84e8bc036b9cf::t_f59c4ca58abb15 223-231
+crates/daw-dsp/src/grand_boule/voice.rs
+  s_a40848e8f8cca9::t_697463d8fd6fe2 542
+  s_8e79c75e0aa665::t_3e24a7bad741e4 543-546
+.agents/decisions/README.md
+  s_8e79c75e0aa665::t_c064a32cb977af 49
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_e84e8bc036b9cf::t_83f40829f8dc72 1
+  s_8e79c75e0aa665::t_2411bfc55b2ed3 893-909,1030-1048
+crates/daw-dsp/src/grand_boule/soundboard.rs
+  s_8e79c75e0aa665::t_d00066f318e903 293,295
+  s_8e79c75e0aa665::t_5e83aceb99b53a 210,213-220,301
+  s_8e79c75e0aa665::t_ef10abae83456c 53-66,221
+  s_8e79c75e0aa665::t_3e24a7bad741e4 289-292,294,296-300
+.agents/decisions/0033-grand-boule-string-soundboard-boundary.md
+  s_8e79c75e0aa665::t_bf1661ff72faf9 31-34
+  s_8e79c75e0aa665::t_01258df4f4bdb5 1-30,35-45
+  s_5d486857292807::t_12e7caf2059411 46-48
+crates/daw-dsp/src/grand_boule/string.rs
+  s_8e79c75e0aa665::t_ef10abae83456c 35-67,178-179,185,214,228-229,278-280,284-285,291,308,310,314,327-329
+  s_8e79c75e0aa665::t_11b2e935dc8b9b 197-200,207-208,302-305
+  s_e84e8bc036b9cf::t_69718db18d81ba 478-479
+  s_8e79c75e0aa665::t_3e24a7bad741e4 458-477,480-481
+  s_8e79c75e0aa665::t_b8773fabb3a7c1 141-144,153-174,250-252,262-277
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_8e79c75e0aa665::t_5e83aceb99b53a 710
+  s_8e79c75e0aa665::t_bf1661ff72faf9 1043-1045
+  s_8e79c75e0aa665::t_3e24a7bad741e4 1037-1042,1046-1049,1058-1072
+  s_a40848e8f8cca9::t_81d458a7980b27 1036
+  s_e84e8bc036b9cf::t_69718db18d81ba 1050-1057
+  s_8e79c75e0aa665::t_ef10abae83456c 14,706-709
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_e84e8bc036b9cf::t_83f40829f8dc72 1
+  s_8e79c75e0aa665::t_2411bfc55b2ed3 893-909,1030-1048
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c3472a8d4c4391e90b6962fa843b4937accbebc4",
+  "prompts": {},
+  "sessions": {
+    "s_4529dc9c483abc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a024af-6194-7c22-9364-6e13719d523c",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": null
+    },
+    "s_5d486857292807": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0249f-0479-7dc1-bb4b-7ebe312e1fb4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_8e79c75e0aa665": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a02492-d817-76a1-91d9-44329a4dec2b",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e84e8bc036b9cf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a024a8-152b-7653-9c6b-1cce226706b5",
+        "model": "gpt-5.4"
+      },
+      "human_author": null
+    }
+  }
+}
