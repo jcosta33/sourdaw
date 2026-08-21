@@ -9,6 +9,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunPhase, type AgentRunWorkTerminalState } from '../models/AgentRun';
 
+import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -150,12 +151,18 @@ function rejectPreparedBatch(input: { runId: string; batchId: string; reason: st
 export async function executePromptActionGroup(
     input: ExecutePromptActionGroupInput
 ): Promise<ExecutePromptActionGroupResult> {
+    const importedStems = input.actions.flatMap((action) =>
+        action.type === 'importStemSet' ? action.payload.stems : []
+    );
+    const discardImportedStems = (): Promise<void> =>
+        preparedStemImportResources.discard({ runId: input.runId, stems: importedStems });
     const parsed = parseVersionedCommandBatchEnvelope(
         input.prepared.commandBatch.serialized,
         input.prepared.commandBatch.authority
     );
     if (parsed.status === 'invalid') {
         const trackedBatch = agentRunLifecycle.get(input.runId)?.batches.at(-1);
+        await discardImportedStems();
         rejectPreparedBatch({
             runId: input.runId,
             batchId: trackedBatch?.batchId ?? 'unavailable-batch',
@@ -165,19 +172,21 @@ export async function executePromptActionGroup(
 
     const { envelope } = parsed;
     const run = agentRunLifecycle.get(input.runId);
-    const trackedBatch = run?.batches.find((batch) => batch.batchId === envelope.batchId);
+    const trackedBatch = run?.batches.at(-1);
     const preparedCommandIds = envelope.commands.map((command) => command.commandId);
     const batchIdentityMatches =
         run !== null &&
         envelope.runId === input.runId &&
         run.plan?.serializedBatchIdentity === envelope.idempotencyKey &&
         trackedBatch !== undefined &&
+        trackedBatch.batchId === envelope.batchId &&
         trackedBatch.commandIds.length === preparedCommandIds.length &&
         trackedBatch.commandIds.every((commandId, index) => commandId === preparedCommandIds[index]);
     if (!batchIdentityMatches) {
+        await discardImportedStems();
         rejectPreparedBatch({
             runId: input.runId,
-            batchId: envelope.batchId,
+            batchId: trackedBatch?.batchId ?? 'unavailable-batch',
             reason: `Prepared command batch ${envelope.batchId} does not belong to admitted run ${input.runId}.`,
         });
     }
@@ -186,6 +195,7 @@ export async function executePromptActionGroup(
         const reason = 'one or more actions are not available through the approved command boundary.';
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
         transitionRunIfLive(input.runId, 'failed');
+        await discardImportedStems();
         notifyAiChange(`Command not executed: ${reason}`, []);
         return { status: 'failed' };
     }
@@ -207,6 +217,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
+        await discardImportedStems();
         notifyAiChange(`Command not executed: ${reason}`, []);
         throw new Error(reason);
     }
@@ -230,6 +241,7 @@ export async function executePromptActionGroup(
     input.signal?.addEventListener('abort', onAbort, { once: true });
 
     if (input.signal?.aborted) {
+        await discardImportedStems();
         await cancelCommand();
         notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
         input.signal.removeEventListener('abort', onAbort);
@@ -264,6 +276,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
+        await discardImportedStems();
         notifyAiChange(`Command not executed: ${reason}`, []);
         throw error;
     } finally {
@@ -281,6 +294,7 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
+            await discardImportedStems();
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -294,10 +308,12 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
+            await discardImportedStems();
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
         const leaseSettlement = settleCommittedCommandLease(commandLease);
+        preparedStemImportResources.release({ runId: input.runId, stems: importedStems });
         const receiptIdentity = getReceiptIdentity(execution.receipt);
         const receiptPersistenceWarning = recordCommittedCommandWarningSafe({
             runId: input.runId,
@@ -329,6 +345,7 @@ export async function executePromptActionGroup(
     }
 
     if (execution.status === 'cancelled') {
+        await discardImportedStems();
         await cancelCommand();
         notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
         return { status: 'cancelled' };
@@ -339,6 +356,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
+        await discardImportedStems();
         notifyAiChange(`Command not executed: ${execution.reason}`, []);
         return { status: 'failed' };
     }
@@ -348,6 +366,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'partially-completed');
         }
+        await discardImportedStems();
         notifyAiChange(`Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`, []);
         return { status: 'ambiguous' };
     }
@@ -356,6 +375,7 @@ export async function executePromptActionGroup(
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'no-op' });
         agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'completed' });
     }
+    await discardImportedStems();
     notifyAiChange('No project changes were needed.', []);
     return { status: 'no-op' };
 }

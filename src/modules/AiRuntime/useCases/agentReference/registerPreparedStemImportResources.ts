@@ -37,8 +37,13 @@ function releasePreparedStemImportResources(input: {
     stems: StemImportPromptScope['actionSeed']['stems'];
 }): void {
     for (const stem of input.stems) {
-        registrations.get(key(input.runId, stem.audioBufferId))?.();
-        registrations.delete(key(input.runId, stem.audioBufferId));
+        const registrationKey = key(input.runId, stem.audioBufferId);
+        const unregister = registrations.get(registrationKey);
+        if (!unregister) {
+            continue;
+        }
+        unregister();
+        registrations.delete(registrationKey);
         agentRunLifecycle.forgetTemporaryAsset({
             runId: input.runId,
             assetId: stem.audioBufferId,
@@ -47,7 +52,38 @@ function releasePreparedStemImportResources(input: {
     }
 }
 
+async function discardRegisteredPreparedStemImportResources(input: {
+    runId: string;
+    stems: StemImportPromptScope['actionSeed']['stems'];
+}): Promise<void> {
+    for (const stem of input.stems) {
+        const registrationKey = key(input.runId, stem.audioBufferId);
+        const asset = agentRunLifecycle
+            .get(input.runId)
+            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (!asset) {
+            registrations.get(registrationKey)?.();
+            registrations.delete(registrationKey);
+            continue;
+        }
+        if (asset.status !== 'released') {
+            await agentRunCancellation.cleanupTemporaryAsset({
+                runId: input.runId,
+                assetId: stem.audioBufferId,
+                cleanupOwner: CLEANUP_OWNER,
+            });
+        }
+        const currentAsset = agentRunLifecycle
+            .get(input.runId)
+            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (currentAsset?.status === 'released') {
+            releasePreparedStemImportResources({ runId: input.runId, stems: [stem] });
+        }
+    }
+}
+
 export const preparedStemImportResources = {
     register: registerPreparedStemImportResources,
     release: releasePreparedStemImportResources,
+    discard: discardRegisteredPreparedStemImportResources,
 };

@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     issueApprovalBinding: vi.fn(() => ({ token: 'exact-approval' })),
+    releasePreparedStemImportResources: vi.fn(),
+    discardPreparedStemImportResources: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -29,11 +31,44 @@ vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
 vi.mock('../issueAgentCommandApprovalBinding', () => ({
     issueAgentCommandApprovalBinding: mocks.issueApprovalBinding,
 }));
+vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
+    preparedStemImportResources: {
+        release: mocks.releasePreparedStemImportResources,
+        discard: mocks.discardPreparedStemImportResources,
+    },
+}));
 
 const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
 const action = { type: 'togglePlayback' } satisfies AppAction;
+const stemAction = {
+    type: 'importStemSet',
+    payload: {
+        selectionId: 'selection-1',
+        groupName: 'Imported Stems',
+        projectTempo: 120,
+        folderId: 'folder-1',
+        stems: [
+            {
+                stemId: 'stem-1',
+                sourceName: 'Drums.wav',
+                role: 'other',
+                sourceTempo: 120,
+                durationSeconds: 10,
+                sourceBytes: 100,
+                decodedBytes: 200,
+                audioBufferId: 'buffer-1',
+                assetLeaseId: 'asset-lease-1',
+                trackId: 'track-1',
+                trackName: 'Drums',
+                trackGain: 1,
+                trackPan: 0,
+                clipId: 'clip-1',
+            },
+        ],
+    },
+} satisfies AppAction;
 const commandBatch = { serialized: 'command-batch', authority: { projectId: 'revision-1' } } as never;
 
 const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
@@ -154,6 +189,62 @@ describe('executePromptActionGroup', () => {
             })
         );
     });
+
+    it.each(['committed', 'executed'] as const)(
+        'transfers prepared stem resources after an exact verified %s receipt without deleting media',
+        async (status) => {
+            seedRun();
+            mocks.executePlannedActions.mockResolvedValue({
+                status,
+                actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+                receipt: verifiedReceipt(status),
+            });
+
+            await expect(
+                executePromptActionGroup({
+                    actions: [stemAction],
+                    prompt: 'Import stems',
+                    projectRevision: 'revision-1',
+                    ...admitted(),
+                })
+            ).resolves.toEqual({ status });
+
+            expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+                runId: RUN_ID,
+                stems: stemAction.payload.stems,
+            });
+            expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([
+        { execution: { status: 'invalidated', reason: 'Revision changed' }, outcome: 'failed' },
+        { execution: { status: 'failed', reason: 'Execution failed' }, outcome: 'failed' },
+        { execution: { status: 'ambiguous', reason: 'Receipt missing' }, outcome: 'ambiguous' },
+        { execution: { status: 'cancelled' }, outcome: 'cancelled' },
+        { execution: { status: 'no-op' }, outcome: 'no-op' },
+    ] as const)(
+        'discards prepared stem resources after a non-committed $execution.status terminal',
+        async ({ execution, outcome }) => {
+            seedRun();
+            mocks.executePlannedActions.mockResolvedValue(execution);
+
+            await expect(
+                executePromptActionGroup({
+                    actions: [stemAction],
+                    prompt: 'Import stems',
+                    projectRevision: 'revision-1',
+                    ...admitted(),
+                })
+            ).resolves.toEqual({ status: outcome });
+
+            expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+                runId: RUN_ID,
+                stems: stemAction.payload.stems,
+            });
+            expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
+        }
+    );
 
     it.each([
         {
@@ -280,8 +371,8 @@ describe('executePromptActionGroup', () => {
 
         await expect(
             executePromptActionGroup({
-                actions: [action],
-                prompt: 'Play',
+                actions: [stemAction],
+                prompt: 'Import stems',
                 projectRevision: 'revision-1',
                 ...admitted(),
             })
@@ -295,6 +386,11 @@ describe('executePromptActionGroup', () => {
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(warning, []);
+        expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
     });
 
     it('reconciles a thrown execution before propagating the failure', async () => {
@@ -303,8 +399,8 @@ describe('executePromptActionGroup', () => {
 
         await expect(
             executePromptActionGroup({
-                actions: [action],
-                prompt: 'Play',
+                actions: [stemAction],
+                prompt: 'Import stems',
                 projectRevision: 'revision-1',
                 ...admitted(),
             })
@@ -316,6 +412,10 @@ describe('executePromptActionGroup', () => {
             workLeases: [{ workId: BATCH_ID, terminalState: 'failed' }],
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledWith('Command not executed: Executor crashed', []);
+        expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
     });
 
     it.each(['lease-settlement', 'receipt-persistence'] as const)(
@@ -438,6 +538,37 @@ describe('executePromptActionGroup', () => {
             phase: 'failed',
             batches: [{ batchId: BATCH_ID, status: 'failed' }],
             workLeases: [],
+        });
+    });
+
+    it('fails the admitted tracked batch when a prepared envelope supplies a different batch id', async () => {
+        seedRun();
+        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+            status: 'valid',
+            envelope: {
+                runId: RUN_ID,
+                batchId: 'untrusted-batch',
+                idempotencyKey: IDEMPOTENCY_KEY,
+                commands: [{ commandId: 'command-1' }],
+            },
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: [stemAction],
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).rejects.toThrow('does not belong to admitted run');
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'failed',
+            batches: [{ batchId: BATCH_ID, status: 'failed' }],
+        });
+        expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
         });
     });
 

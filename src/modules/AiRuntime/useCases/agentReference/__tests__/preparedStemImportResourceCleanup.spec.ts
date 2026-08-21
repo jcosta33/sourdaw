@@ -68,4 +68,20 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
     });
+
+    it('discards uncommitted stem resources and clears their run-owned records', async () => {
+        agentRunLifecycle.create({
+            runId: 'stem-discarded',
+            request: 'Import stems.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        preparedStemImportResources.register({ runId: 'stem-discarded', stems });
+
+        await preparedStemImportResources.discard({ runId: 'stem-discarded', stems });
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
+        expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
+    });
 });
