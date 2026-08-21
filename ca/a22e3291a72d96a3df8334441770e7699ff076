@@ -1,0 +1,19 @@
+tests/e2e/fermenterLevelPwTestId.spec.ts
+  s_24b1bdbc3c31ad::t_26b901094bc3d1 3,5,10,13-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "caa22e3291a72d96a3df8334441770e7699ff076",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
