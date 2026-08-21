@@ -245,7 +245,7 @@
                 "crates/sourdaw-native/Cargo.toml",
                 "crates/sourdaw-native/src/commands/speech.rs",
                 "src/infra/release/modelReleaseAdmission.ts",
-                "src/modules/AiRuntime/useCases/voiceDictation/ensureWhisperReady.ts"
+                "src/modules/AiRuntime/useCases/voiceDictation/loadCachedWhisperModel.ts"
             ],
             "sources": [
                 "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
