@@ -82,8 +82,15 @@ function isLiveNoteVoicingDeviceType(deviceType: string): boolean {
     return deviceType in WORKLET_SYNTH_DEVICES || deviceType === 'toaster' || isFaustInstrumentModule(deviceType);
 }
 
+type NoteVoicingLookupTrack = {
+    id: string;
+    parentId?: string | null;
+    devices: readonly { type: string }[];
+};
+
 /**
- * The track's instrument, when the build refuses to provide it.
+ * The device that would voice this track's notes, when the build refuses to
+ * provide it.
  *
  * Asked of release admission rather than of `strip.deviceNodes`, and the
  * difference is the whole point. A node can be missing because the device is
@@ -93,9 +100,43 @@ function isLiveNoteVoicingDeviceType(deviceType: string): boolean {
  * the fallback synth, because the device was supposed to work and the user can
  * fix it. A withheld device is never going to work in this build, so voicing
  * its part on a sawtooth misrepresents the project every time it is played.
+ *
+ * It takes the track rather than a device list because for one topology the
+ * voicing device is not on the track at all. A toaster child's notes are
+ * dispatched to the *parent's* toaster device — the note loop reassigns
+ * `toasterOwnerTrack` to `track.parentId` — so a lookup over `track.devices`
+ * alone would answer "nothing withheld" for a child under a withheld toaster
+ * and hand its part straight to the fallback synth. That is the defect this
+ * whole guard exists to close, so it must not survive in a corner of it.
+ *
+ * The track's own devices are asked first, and the parent only if they answer
+ * nothing, so a child that carries its own withheld instrument *and* sits under
+ * a toaster parent is still silenced — by its own device, which is the more
+ * specific answer. Either arm silencing the track is the point; which one
+ * reports it is not.
  */
-function findWithheldNoteVoicingDevice(devices: readonly { type: string }[]): { type: string } | undefined {
-    return devices.find((device) => !isDeviceReleaseAdmitted(device.type) && isLiveNoteVoicingDeviceType(device.type));
+function findWithheldNoteVoicingDevice(
+    track: NoteVoicingLookupTrack,
+    tracks: readonly NoteVoicingLookupTrack[]
+): { type: string } | undefined {
+    const own = track.devices.find(
+        (device) => !isDeviceReleaseAdmitted(device.type) && isLiveNoteVoicingDeviceType(device.type)
+    );
+    if (own) {
+        return own;
+    }
+    if (!track.parentId) {
+        return undefined;
+    }
+    // Mirrors the note loop's own parent resolution: a parent counts as the
+    // owner only when it actually carries a toaster device.
+    const parentToaster = tracks
+        .find((candidate) => candidate.id === track.parentId)
+        ?.devices.find((device) => device.type === 'toaster');
+    if (!parentToaster || isDeviceReleaseAdmitted(parentToaster.type)) {
+        return undefined;
+    }
+    return parentToaster;
 }
 
 export type SchedulerCancellation = {
@@ -439,7 +480,7 @@ export async function scheduleMidiNotes(
 
         const drumKitDef = resolveDrumKitDef(track.devices);
         const drumKit = drumKitDef ? null : resolveDrumKit(track.devices);
-        const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track.devices);
+        const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
         const liveYeastIterations: LiveYeastIteration[] = [];
         let activeYeastCarrierRouteId: string | undefined;
