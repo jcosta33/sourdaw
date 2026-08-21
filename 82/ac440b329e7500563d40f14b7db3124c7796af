@@ -1,0 +1,40 @@
+src/modules/BrowserAi/repositories/__tests__/publishDdspInstrumentGeneration.spec.ts
+  s_27578aec2aab3b::t_72af718c6b295c 10-27,51-77
+  s_27578aec2aab3b::t_955a8c3bb48ac4 78
+src/modules/BrowserAi/repositories/__tests__/cleanupUnpublishedDdspGeneration.spec.ts
+  s_27578aec2aab3b::t_e2921ed4c784e3 10,29-35,42-114
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_27578aec2aab3b::t_5bdac3e11781d0 266
+src/modules/BrowserAi/repositories/__tests__/checkDdspInstrumentReady.spec.ts
+  s_27578aec2aab3b::t_c089e6102031e8 20-63,88-127,138,165
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_f59e3cbbe9dad7 59,61,64-65,72-74,83,85-86
+src/modules/BrowserAi/repositories/__tests__/stageDdspInstrumentGeneration.spec.ts
+  s_27578aec2aab3b::t_b0f91085bc2ceb 10
+src/modules/BrowserAi/repositories/__tests__/withDdspInstrumentLock.spec.ts
+  s_27578aec2aab3b::t_b0f91085bc2ceb 139
+src/modules/BrowserAi/models/__tests__/DdspInstrumentCatalog.spec.ts
+  s_27578aec2aab3b::t_f59e3cbbe9dad7 3,9,101-106
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_ee7b658294ee2f 11-14,83-84,149-201
+  s_27578aec2aab3b::t_862d0391534c63 202
+src/modules/BrowserAi/repositories/__tests__/removeDdspInstrumentGenerations.spec.ts
+  s_27578aec2aab3b::t_28dbe32a80be4f 10-47,76,78-79,91-127
+  s_27578aec2aab3b::t_c428b1cce596b6 50,52,77,80-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "82ac440b329e7500563d40f14b7db3124c7796af",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
