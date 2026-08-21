@@ -1,0 +1,55 @@
+scripts/ui-restatement-census.json
+  s_a40848e8f8cca9::t_4c2af5685e8d55 356,1823,2282,2585-2593,2603-2611,2936-2944,3134-3142,3188-3196,3560,3947,4241-4249,4475-4483,4667,4907-4915,6158-6166,6467,6602,7688-7696,7931-7939,7958-7966,8192-8200,8456,8885-8893,9284,9884-9892,10343-10351,11543,11597,12029,12065,12080-12088,12110,12701-12709,12863-12871,13658,13703,13937,14576,14801,15710,16799,16958-16966,17318-17326,17393,17417-17425,17618,17627,17843,18293,18461-18469,18479-18487,18581,18851,19130,19334-19342,19775-19783,19892-19900,20027-20035,20282,20423-20431,21485-21493,22046,22082,22460,22520-22528,22835-22843,22865,22991,23558,23609-23617,23735-23752,24113-24121,24251,24683,25088
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  s_487e9aa1e46063::t_16d2947d470d5f 13,407-408,411,420,631-633,676,766,773,790,808,813,819,835,837,950,957,972,980,987-990,1000,1004,1006,1021,1023
+src/modules/Arrangement/presentations/views/ArrangementBar.tsx
+  s_2175fca1f07426::t_7331c8ac65151f 7,329,332,384,388,390,408,420
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_2175fca1f07426::t_e50f028b8863ba 7,366,376
+src/modules/Arrangement/presentations/views/MarkerLane.tsx
+  s_2175fca1f07426::t_abe295ce16e793 8,234-236,246-247,250-255,280-281,302,314
+src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx
+  s_2175fca1f07426::t_590c4e6ec24765 3,134,143
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_487e9aa1e46063::t_4f7e39f27c96a6 5,49-52,68,309,322,325-331,369-370,439,443
+src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx
+  s_2175fca1f07426::t_e78575d46ea2ad 6,52,63
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_487e9aa1e46063::t_3273d215fd75f5 3,392-396,402,405-407,411,416-417
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_487e9aa1e46063::t_14e09c3a2ebcef 21,138,145,149,155-158,161,166,214,333
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_487e9aa1e46063::t_89f9e7f27fc1e4 16,207-209,217-219,276,337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "362d2cf5e56e0c359956a880603cd0f74e20d71d",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
