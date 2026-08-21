@@ -100,7 +100,12 @@ describe('PluginBrowser', () => {
     });
 
     it('should show scanning state', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: [], isScanning: true, errors: [], notices: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: [],
+            isScanning: true,
+            errors: [],
+            notices: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getByText('Scanning for plugins...')).toBeInTheDocument();
     });
