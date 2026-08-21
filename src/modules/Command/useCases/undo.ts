@@ -1,3 +1,5 @@
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
@@ -11,6 +13,10 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
+}
+
+function undoEntryLabel(entry: UndoEntry): string {
+    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function commitUndoTransition(
@@ -148,6 +154,9 @@ async function undoImpl(): Promise<void> {
             if (isAtomicActionGroup) {
                 const outcome = await executeActionGroupUndo(groupEntries);
                 if (outcome.status === 'conflict') {
+                    const label = undoEntryLabel(lastEntry);
+                    notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
+                    commitUndoTransition(initial.past, past, []);
                     return;
                 }
 
@@ -170,12 +179,12 @@ async function undoImpl(): Promise<void> {
                 });
 
                 if (outcome.status === 'conflict') {
-                    // This entry was not undone, so it and every older entry
-                    // in the group stay on the stack. The newer entries that
-                    // were already undone must still leave `past`, or a
-                    // retry would apply their inverses a second time.
-                    retainedEntries = groupEntries.slice(0, groupIndex + 1);
-                    break;
+                    const label = undoEntryLabel(entry);
+                    notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
+                    // Conflicting entry cannot be undone; drop it and remaining un-undone
+                    // group entries from past so the stack does not wedge.
+                    commitUndoTransition(initial.past, past, undoneEntries);
+                    return;
                 }
                 if (outcome.status === 'inert') {
                     continue;
@@ -210,11 +219,10 @@ async function undoImpl(): Promise<void> {
         });
 
         if (outcome.status === 'conflict') {
-            // Nothing was written, so the entry stays undoable. Only a purge
-            // of inert entries made earlier in this scan needs persisting.
-            if (past.length !== initial.past.length) {
-                commitUndoTransition(initial.past, past, []);
-            }
+            const label = undoEntryLabel(lastEntry);
+            notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
+            past = past.slice(0, -1);
+            commitUndoTransition(initial.past, past, []);
             return;
         }
 

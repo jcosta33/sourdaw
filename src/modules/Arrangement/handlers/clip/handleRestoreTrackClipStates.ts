@@ -168,6 +168,7 @@ const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
     endBeat: (live, expected) => live.endBeat === expected.endBeat,
     type: (live, expected) => live.type === expected.type,
     audioBufferId: (live, expected) => live.audioBufferId === expected.audioBufferId,
+    fileId: (live, expected) => live.fileId === expected.fileId,
     assetHash: (live, expected) => live.assetHash === expected.assetHash,
     audioOffsetBeats: (live, expected) => live.audioOffsetBeats === expected.audioOffsetBeats,
     midiOffsetBeats: (live, expected) => live.midiOffsetBeats === expected.midiOffsetBeats,
