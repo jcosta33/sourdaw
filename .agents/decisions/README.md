@@ -46,6 +46,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0030](0030-exact-model-release-admission.md)                       | Exact model artifacts require release admission                                                                                         |
 | [0031](0031-native-plugin-format-strategy.md)                       | Sourdaw hosts CLAP and commits to VST3; VST2 and Audio Units are permanently out                                                        |
 | [0032](0032-withhold-grand-boule-from-release.md)                   | Preserve Grand Boule but withhold it from released product paths                                                                        |
+| [0033](0033-grand-boule-string-soundboard-boundary.md)              | Make Grand Boule string-modal derivation and soundboard resonance independently explicit                                                |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

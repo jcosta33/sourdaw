@@ -50,6 +50,20 @@ const PLATE_FRACTION: f32 = 0.32;
 /// resonant body that distinguishes a grand piano from an electric.
 const DRIVE: f32 = 0.18;
 
+/// The rendered bridge bus delivered to the independent soundboard stage.
+///
+/// This is intentionally a private-to-Grand-Boule boundary type rather than a
+/// synthesis control: voices render their string-derived bridge signal first,
+/// then the global soundboard consumes that completed signal.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RenderedBridgeSignal(f32);
+
+impl RenderedBridgeSignal {
+    pub(crate) const fn new(sample: f32) -> Self {
+        Self(sample)
+    }
+}
+
 #[repr(C, align(64))]
 #[derive(Clone, Debug)]
 pub struct Soundboard {
@@ -63,6 +77,8 @@ pub struct Soundboard {
     y1: [f32; SOUNDBOARD_MODES],
     y2: [f32; SOUNDBOARD_MODES],
     sample_rate: f32,
+    #[cfg(test)]
+    rendered_bridge_process_count: usize,
 }
 
 impl Soundboard {
@@ -80,6 +96,8 @@ impl Soundboard {
             y1: [0.0; SOUNDBOARD_MODES],
             y2: [0.0; SOUNDBOARD_MODES],
             sample_rate,
+            #[cfg(test)]
+            rendered_bridge_process_count: 0,
         };
         board.rebuild_modes();
         board
@@ -91,6 +109,10 @@ impl Soundboard {
         self.x2.fill(0.0);
         self.y1.fill(0.0);
         self.y2.fill(0.0);
+        #[cfg(test)]
+        {
+            self.rendered_bridge_process_count = 0;
+        }
     }
 
     /// Rebuild mode coefficients. Called from `new` and whenever the sample
@@ -193,9 +215,22 @@ impl Soundboard {
         }
     }
 
-    /// Process one sample of bridge input and return a stereo soundboard pair.
+    /// Process one bridge-input sample and return a stereo soundboard pair.
     #[inline]
     pub fn tick(&mut self, input: f32) -> (f32, f32) {
+        self.process_rendered_bridge(RenderedBridgeSignal::new(input))
+    }
+
+    /// Resonantly process the completed bridge bus at the Grand Boule stage
+    /// boundary. This keeps the global soundboard state distinct from voice
+    /// string state without changing the public scalar `tick` API.
+    #[inline]
+    pub(crate) fn process_rendered_bridge(&mut self, bridge: RenderedBridgeSignal) -> (f32, f32) {
+        #[cfg(test)]
+        {
+            self.rendered_bridge_process_count += 1;
+        }
+        let input = bridge.0;
         let mut left = 0.0_f32;
         let mut right = 0.0_f32;
         for index in 0..SOUNDBOARD_MODES {
@@ -210,6 +245,11 @@ impl Soundboard {
             right += self.gain_right[index] * y;
         }
         (left, right)
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn rendered_bridge_process_count(&self) -> usize {
+        self.rendered_bridge_process_count
     }
 }
 
@@ -262,5 +302,18 @@ mod tests {
             total_diff += (l - r).abs();
         }
         assert!(total_diff > 0.0, "L and R should decorrelate");
+    }
+
+    #[test]
+    fn rendered_bridge_signal_drives_an_independent_resonator_stage() {
+        let mut board = Soundboard::new(48_000.0);
+        let _ = board.process_rendered_bridge(RenderedBridgeSignal::new(1.0));
+
+        let (left, right) = board.process_rendered_bridge(RenderedBridgeSignal::new(0.0));
+
+        assert!(
+            left.abs() + right.abs() > 0.0,
+            "the soundboard must retain its own resonator state after bridge input ends"
+        );
     }
 }

@@ -172,6 +172,24 @@ function directorySha256(root: string, directory: string): string {
     return hash.digest('hex');
 }
 
+function trackedDirectorySha256(root: string, directory: string): string {
+    const files = execFileSync('git', ['ls-files', '-z', '--', directory], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .sort();
+    const hash = createHash('sha256');
+    for (const file of files) {
+        hash.update(file);
+        hash.update('\0');
+        hash.update(readFileSync(resolve(root, file)));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
 export const AUDIO_WORKLET_SOURCES = [
     'public/audio/worklets/native-plugin-bridge-processor.js',
     'public/audio/worklets/sidechain-compressor-processor.js',
@@ -185,6 +203,14 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
         revisions: ['not-applicable:direct-project-source'],
         digests: AUDIO_WORKLET_SOURCES.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
         licenses: ['pending:OS-10-project-grant'],
+    };
+}
+
+export function grandBouleReleaseInventoryContract(root: string): Pick<SurfaceContract, 'revisions' | 'digests'> {
+    const directory = 'crates/daw-dsp/src/grand_boule';
+    return {
+        revisions: ['current tracked source'],
+        digests: [`tree-sha256:${trackedDirectorySha256(root, directory)}:${directory}`],
     };
 }
 
@@ -243,7 +269,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
 }
 
 function assertSurfaceContract(
-    surface: ReleaseSurface | undefined,
+    surface: Partial<ReleaseSurface> | undefined,
     expected: Partial<SurfaceContract>,
     label: string
 ): void {
@@ -252,6 +278,13 @@ function assertSurfaceContract(
             throw new Error(`${label} release inventory ${field} does not match provenance`);
         }
     }
+}
+
+export function assertGrandBouleReleaseInventory(
+    root: string,
+    surface: Pick<ReleaseSurface, 'revisions' | 'digests'> | undefined
+): void {
+    assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
 
 function isScannedSource(path: string): boolean {
@@ -703,6 +736,8 @@ export function checkReleaseInventory(root: string): void {
     });
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
+    const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
+    assertGrandBouleReleaseInventory(root, grandBouleSurface);
     const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
