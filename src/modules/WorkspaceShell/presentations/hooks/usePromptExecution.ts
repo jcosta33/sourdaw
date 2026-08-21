@@ -16,6 +16,7 @@ import {
     notifyAiChange,
     isLlmAvailable,
     initEngine,
+    createVoicePromptDraftAdmission,
 } from '#/modules/AiRuntime/useCases';
 import {
     clipSelectionStore,
@@ -183,14 +184,16 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Voice injection (draft only; explicit submit remains required) ───
     useEffect(() => {
-        return onVoicePromptDraft((text) => {
-            if (previewRef.current || operationRef.current) {
-                notifyAiChange('Voice command not accepted while another AI command is pending or running.', []);
-                return;
-            }
-            setValue((prev) => (prev ? `${prev} ${text}` : text));
-            inputRef.current?.focus();
+        const admitVoiceDraft = createVoicePromptDraftAdmission({
+            isBusy: () => previewRef.current !== null || operationRef.current !== null,
+            appendDraft: (text) => {
+                setValue((prev) => (prev ? `${prev} ${text}` : text));
+                inputRef.current?.focus();
+            },
+            rejectBusyDraft: () =>
+                notifyAiChange('Voice command not accepted while another AI command is pending or running.', []),
         });
+        return onVoicePromptDraft(admitVoiceDraft);
     }, []);
 
     // ── Pending submit after value change ───────────────────────────────

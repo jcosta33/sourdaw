@@ -68,6 +68,13 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
         return () => executionUseCaseMocks.voicePromptDraftListeners.delete(listener);
     }),
     injectVoicePromptDraft: executionUseCaseMocks.injectVoicePromptDraft,
+    createVoicePromptDraftAdmission: vi.fn((port) => (text: string) => {
+        if (port.isBusy()) {
+            port.rejectBusyDraft();
+            return;
+        }
+        port.appendDraft(text);
+    }),
     notifyAiChange: executionUseCaseMocks.notifyAiChange,
     isLlmAvailable: vi.fn(() => false),
     initEngine: vi.fn().mockResolvedValue(undefined),

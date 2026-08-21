@@ -54,6 +54,7 @@ export { onPromptInjection } from './onPromptInjection';
 export { injectPromptCommand } from './promptInjection';
 export { injectVoicePromptDraft } from './injectVoicePromptDraft';
 export { onVoicePromptDraft } from './onVoicePromptDraft';
+export { createVoicePromptDraftAdmission } from './voicePromptDraftAdmission';
 
 export { runAiActionWithToast } from './runAiActionWithToast';
 
