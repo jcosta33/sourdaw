@@ -8,6 +8,7 @@ import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
+import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 
@@ -51,6 +52,8 @@ export async function saveProject(): Promise<boolean> {
     const recentKey = `${NAMED_PROJECT_KEY_PREFIX}${project.createdAt}`;
 
     try {
+        await migrateActiveProjectIdentity();
+
         // Capture each loaded native plugin's live state chunk into project truth
         // before serialization, so a reopened project restores editor-driven state
         // (presets, oversampling, internal routing) instead of plugin defaults

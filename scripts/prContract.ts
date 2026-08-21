@@ -58,6 +58,23 @@ function sectionContentEnd(body: string, contentStart: number): number {
     return boundaries.length === 0 ? body.length : Math.min(...boundaries);
 }
 
+export function howToTestFromBody(body: string): string {
+    const heading = REQUIRED_BODY_HEADINGS[1];
+    const headingIndex = body.indexOf(heading);
+    if (headingIndex < 0) {
+        fail(`pull-request body is missing: ${heading}`);
+    }
+    const contentStart = headingIndex + heading.length;
+    if (body.includes(heading, contentStart)) {
+        fail(`pull-request body duplicates: ${heading}`);
+    }
+    const content = body.slice(contentStart, sectionContentEnd(body, contentStart)).trim();
+    if (content === '') {
+        fail(`pull-request body section is empty: ${heading}`);
+    }
+    return content;
+}
+
 /**
  * A missing heading and an empty section are two different failures, so they are diagnosed in two
  * separate passes and never share a message. Deriving one section's end from the *next* heading's
@@ -308,15 +325,20 @@ export function issueRelationshipFromBody(
 export function composePublishBody(
     issue: number | undefined,
     subject: string,
+    testInstructions: string,
     relationship: IssueRelationship = 'closes'
 ): string {
+    const howToTest = testInstructions.trim();
+    if (howToTest === '') {
+        fail('pull-request How to test instructions are empty');
+    }
     const relatedTickets =
         issue === undefined ? NO_RELATED_TICKETS : `${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`;
     const body = `### 🎯 What does this PR do?
 ${subject}
 
 ### 🧪 How to test
-pnpm test:run on the named spec files in this change.
+${howToTest}
 
 ### 🖼️ Screenshots
 None.

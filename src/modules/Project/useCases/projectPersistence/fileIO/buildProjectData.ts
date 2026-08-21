@@ -23,6 +23,7 @@ import { yeastStore } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
+    isCanonicalProjectId,
     type ProjectData,
     type ProjectExportedAudioBuffer,
 } from '../../../models/ProjectData';
@@ -128,7 +129,16 @@ export async function buildProjectData({
     const arrState = arrangementStore.value;
     const yeastState = yeastStore.value;
 
-    if (!tracks || !transport || !automation || !midi || !project || !arrState) {
+    if (
+        !tracks ||
+        !transport ||
+        !automation ||
+        !midi ||
+        !project ||
+        !arrState ||
+        project.identityMigrationPending ||
+        !isCanonicalProjectId(project.projectId)
+    ) {
         return null;
     }
 
@@ -185,6 +195,7 @@ export async function buildProjectData({
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
         meta: {
+            projectId: project.projectId,
             name: project.name,
             createdAt: project.createdAt,
             updatedAt: Date.now(),

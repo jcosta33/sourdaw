@@ -25,6 +25,7 @@ vi.mock('#/modules/Project/stores/projectStore', () => ({
     projectStore: { set: mocks.projectSet },
 }));
 
+import { isCanonicalProjectId } from '../../../../models/ProjectData';
 import { initProject } from '../initProject';
 
 describe('initProject', () => {
@@ -48,5 +49,22 @@ describe('initProject', () => {
         expect(published.loading).toBe(true);
         // The project metadata IS published (name/tempo) — only the ready signal is withheld.
         expect(published).toMatchObject({ name: 'EDM' });
+    });
+
+    it('gives same-tick template projects distinct canonical identities', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_700_000_000_000);
+
+        initProject({ name: 'First', bpm: 120 });
+        initProject({ name: 'Second', bpm: 120 });
+
+        const first = mocks.projectSet.mock.calls[0]?.[0] as { createdAt: number; projectId?: string };
+        const second = mocks.projectSet.mock.calls[1]?.[0] as { createdAt: number; projectId?: string };
+        expect(first.createdAt).toBe(second.createdAt);
+        expect(isCanonicalProjectId(first.projectId)).toBe(true);
+        expect(isCanonicalProjectId(second.projectId)).toBe(true);
+        expect(first.projectId).not.toBe(second.projectId);
+
+        vi.useRealTimers();
     });
 });

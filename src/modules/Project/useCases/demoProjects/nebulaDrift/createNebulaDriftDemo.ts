@@ -30,8 +30,8 @@ import {
     ensureTrackStrips,
 } from '#/modules/Transport/useCases';
 
-import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { projectStore } from '../../../stores/projectStore';
+import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { note } from '../demoUtils/note';
@@ -2321,12 +2321,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     projectTrackToLiveStrip({ trackId: toasterFolder.id });
 
-    const createdAt = Date.now();
-    projectStore.set({
+    const projectMetadata = createFreshProjectMetadata({
         name: 'Nebula Drift (Demo)',
-        createdAt,
-        updatedAt: createdAt,
-        dirty: false,
         loading: true,
         // Ready is NOT latched here — same seam as initProject. This demo runs as
         // an app-action template inside executeAppAction; latching `initialized`
@@ -2334,14 +2330,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
         // clobber a user's early track click (CC-10). createFromTemplate publishes
         // the ready latch after the action completes.
         initialized: false,
-        keyRoot: 0,
-        scaleName: 'chromatic',
-        tuning: {
-            name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
-        },
-        productionBrief: createDefaultProductionBrief(createdAt),
     });
+    projectStore.set(projectMetadata);
 
     ensureTrackStrips();
     await waitForDevices();

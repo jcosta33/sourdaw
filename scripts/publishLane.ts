@@ -27,6 +27,7 @@ import {
     assertIssueNumber,
     composePublishBody,
     fail,
+    howToTestFromBody,
     issueRelationshipFromBody,
     type IssueRelationship,
 } from './prContract.ts';
@@ -40,7 +41,7 @@ export type PublishWorktree = {
 
 export type ExistingPullRequest = { number: number; body: unknown };
 
-export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number] [--relates]';
+export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number] [--relates] [--test <instructions>]';
 
 export type PublishLanePort = {
     fetchMain: () => void;
@@ -63,6 +64,7 @@ export type PublishLanePort = {
 export function parsePublishLaneArgs(args: string[]): {
     issue?: number;
     relationship?: IssueRelationship;
+    testInstructions?: string;
     help: boolean;
 } {
     if (args[0] === '--help') {
@@ -71,17 +73,38 @@ export function parsePublishLaneArgs(args: string[]): {
         }
         return { help: true };
     }
-    const relationship: IssueRelationship | undefined = args.includes('--relates') ? 'relates' : undefined;
-    const positional = args.filter((arg) => arg !== '--relates');
-    if (positional.length !== args.length - (relationship === undefined ? 0 : 1) || positional.length > 1) {
-        fail(PUBLISH_LANE_USAGE);
+    let issue: number | undefined;
+    let relationship: IssueRelationship | undefined;
+    let testInstructions: string | undefined;
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === '--relates') {
+            if (relationship !== undefined) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            relationship = 'relates';
+            continue;
+        }
+        if (arg === '--test') {
+            const value = args[index + 1];
+            if (testInstructions !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            testInstructions = value;
+            index += 1;
+            continue;
+        }
+        if (arg === undefined || issue !== undefined) {
+            fail(PUBLISH_LANE_USAGE);
+        }
+        issue = assertIssueNumber(arg, PUBLISH_LANE_USAGE);
     }
-    const issueArg = positional[0];
-    if (issueArg === undefined) {
-        return relationship === undefined ? { help: false } : { relationship, help: false };
-    }
-    const issue = assertIssueNumber(issueArg, PUBLISH_LANE_USAGE);
-    return relationship === undefined ? { issue, help: false } : { issue, relationship, help: false };
+    return {
+        ...(issue === undefined ? {} : { issue }),
+        ...(relationship === undefined ? {} : { relationship }),
+        ...(testInstructions === undefined ? {} : { testInstructions }),
+        help: false,
+    };
 }
 
 /**
@@ -335,7 +358,8 @@ export const NO_LANE_SUBJECT_FAILURE =
 export function publishLane(
     issue: number | undefined,
     port: PublishLanePort,
-    relationship?: IssueRelationship
+    relationship?: IssueRelationship,
+    testInstructions?: string
 ): number {
     port.fetchMain();
     const lane = resolveAuthorLane(
@@ -362,7 +386,7 @@ export function publishLane(
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
     }
-    const write = pullRequestWrite(issue, lane, port, relationship);
+    const write = pullRequestWrite(issue, lane, port, relationship, testInstructions);
     const headSha = port.headSha(lane.path);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
@@ -419,7 +443,8 @@ function pullRequestWrite(
     issue: number | undefined,
     lane: ResolvedLane,
     port: PublishLanePort,
-    relationship: IssueRelationship | undefined
+    relationship: IssueRelationship | undefined,
+    testInstructions: string | undefined
 ): PullRequestWrite | undefined {
     if (lane.legacy) {
         return undefined;
@@ -445,7 +470,21 @@ function pullRequestWrite(
             ? undefined
             : issueRelationshipFromBody(existing.body as string, laneIssue, REQUIRED_REPOSITORY);
     const resolvedRelationship = relationship ?? existingRelationship ?? 'closes';
-    return { title, body: composePublishBody(laneIssue, title, resolvedRelationship), existing };
+    if (existing === undefined && testInstructions === undefined) {
+        fail('opening a pull request requires --test <instructions>');
+    }
+    let resolvedTestInstructions = testInstructions;
+    if (resolvedTestInstructions === undefined) {
+        if (existing === undefined || typeof existing.body !== 'string') {
+            fail('existing pull-request body is unreadable');
+        }
+        resolvedTestInstructions = howToTestFromBody(existing.body);
+    }
+    return {
+        title,
+        body: composePublishBody(laneIssue, title, resolvedTestInstructions, resolvedRelationship),
+        existing,
+    };
 }
 
 /**
@@ -704,7 +743,7 @@ export function parsePublishWorktrees(value: string): PublishWorktree[] {
 async function main(): Promise<number> {
     const parsed = parsePublishLaneArgs(process.argv.slice(2));
     if (parsed.help) {
-        console.log('Usage: pnpm lane:publish [issue-number] [--relates]');
+        console.log(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
         return 0;
     }
     const executingFile = fileURLToPath(import.meta.url);
@@ -721,7 +760,7 @@ async function main(): Promise<number> {
         if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
             fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
         }
-        publishLane(parsed.issue, shellPort(auth.session), parsed.relationship);
+        publishLane(parsed.issue, shellPort(auth.session), parsed.relationship, parsed.testInstructions);
         return 0;
     } finally {
         auth.session.dispose();

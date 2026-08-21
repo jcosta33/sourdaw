@@ -2,6 +2,7 @@ import { isChordTrackState, isGrooveTemplateState } from '#/modules/MIDI/stores'
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
 import {
+    isCanonicalProjectId,
     isSupportedProjectVersion,
     type ProjectAdjustmentLayers,
     type ProjectArrangementSnapshot,
@@ -859,6 +860,9 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
         return false;
     }
     if (!isMeta(value.meta) || !isRecord(value.arrangement) || !isTracks(value.arrangement.tracks)) {
+        return false;
+    }
+    if (value.version >= 2 && !isCanonicalProjectId(value.meta.projectId)) {
         return false;
     }
     if (value.transport !== undefined && !isTransport(value.transport)) {

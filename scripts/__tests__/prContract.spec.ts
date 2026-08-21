@@ -21,6 +21,7 @@ const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
 const SCREENSHOTS_HEADING = '### 🖼️ Screenshots';
 const RELATED_HEADING = '### 📌 Related tickets & additional notes';
+const TEST_INSTRUCTIONS = 'Run the lane publisher contract test and confirm it passes.';
 
 /**
  * The refusal text, so a test can assert what a message must *not* say. `toThrow` only proves a
@@ -42,7 +43,7 @@ describe('pull-request contract', () => {
     });
 
     it('composes a body with Closes, every required heading, and the offered Screenshots one', () => {
-        const body = composePublishBody(2164, 'feat(vcs): add identities');
+        const body = composePublishBody(2164, 'feat(vcs): add identities', TEST_INSTRUCTIONS);
         expect(body).toContain('Closes #2164');
         // The old name of this test claimed four headings but asserted only that the body was
         // valid, so the count was never observed. Assert the list itself, and assert separately
@@ -52,11 +53,12 @@ describe('pull-request contract', () => {
         }
         expect(REQUIRED_BODY_HEADINGS).not.toContain(SCREENSHOTS_HEADING);
         expect(body).toContain(`${SCREENSHOTS_HEADING}\nNone.`);
+        expect(body).toContain(`${HOW_HEADING}\n${TEST_INSTRUCTIONS}`);
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
     });
 
     it('references an umbrella issue without closing it', () => {
-        const body = composePublishBody(2164, 'feat(vcs): add identities', 'relates');
+        const body = composePublishBody(2164, 'feat(vcs): add identities', TEST_INSTRUCTIONS, 'relates');
         expect(body).toContain('Related #2164');
         expect(body).not.toContain('Closes #2164');
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
@@ -153,23 +155,27 @@ describe('pull-request contract', () => {
     });
 
     it('rejects hidden GitHub closing references', () => {
-        expect(() => composePublishBody(2164, 'feat(vcs): fixes #99', 'relates')).toThrow(
+        expect(() => composePublishBody(2164, 'feat(vcs): fixes #99', TEST_INSTRUCTIONS, 'relates')).toThrow(
             /unexpected issue-closing references/
         );
-        expect(() => composePublishBody(2164, 'feat(vcs): closes owner/repo#99')).toThrow(
+        expect(() => composePublishBody(2164, 'feat(vcs): closes owner/repo#99', TEST_INSTRUCTIONS)).toThrow(
             /unexpected issue-closing references/
         );
-        expect(() => composePublishBody(2164, 'feat(vcs): closes: #99', 'relates')).toThrow(
+        expect(() => composePublishBody(2164, 'feat(vcs): closes: #99', TEST_INSTRUCTIONS, 'relates')).toThrow(
             /unexpected issue-closing references/
         );
-        expect(() => composePublishBody(2164, 'feat(vcs): closes : #99', 'relates')).not.toThrow();
+        expect(() => composePublishBody(2164, 'feat(vcs): closes : #99', TEST_INSTRUCTIONS, 'relates')).not.toThrow();
         expect(() =>
-            composePublishBody(undefined, 'feat(vcs): resolves https://github.com/owner/repo/issues/99')
+            composePublishBody(
+                undefined,
+                'feat(vcs): resolves https://github.com/owner/repo/issues/99',
+                TEST_INSTRUCTIONS
+            )
         ).not.toThrow();
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {
-        const body = composePublishBody(undefined, 'feat(vcs): add identities');
+        const body = composePublishBody(undefined, 'feat(vcs): add identities', TEST_INSTRUCTIONS);
         expect(body).not.toContain('Closes #');
         expect(body.slice(body.indexOf('### 📌 Related tickets & additional notes')).trim()).toBe(
             '### 📌 Related tickets & additional notes\nNone.'
@@ -181,11 +187,8 @@ describe('pull-request contract', () => {
         ['missing heading', '### 🎯 What does this PR do?\nChange.\n'],
         // Emptying Screenshots no longer proves anything, because Screenshots is no longer
         // required. This empties a required section instead, which is what the case is named for.
-        [
-            'empty section',
-            composePublishBody(1, 'feat: x').replace('pnpm test:run on the named spec files in this change.', ''),
-        ],
-        ['oversized', `${composePublishBody(1, 'feat: x')}${'a'.repeat(4000)}`],
+        ['empty section', composePublishBody(1, 'feat: x', TEST_INSTRUCTIONS).replace(TEST_INSTRUCTIONS, '')],
+        ['oversized', `${composePublishBody(1, 'feat: x', TEST_INSTRUCTIONS)}${'a'.repeat(4000)}`],
     ])('rejects a %s body', (_case, body) => {
         expect(() => assertPullRequestBody(body, 'body')).toThrow(/body/);
     });

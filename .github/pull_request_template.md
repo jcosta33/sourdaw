@@ -4,7 +4,7 @@
 
 ### 🧪 How to test
 
-(steps for testing this branch)
+(user/reviewer-observable steps and the expected result; automated author or CI checks are not a substitute. Developer-facing/internal changes may name their actual validation interface.)
 
 ### 🖼️ Screenshots
 
