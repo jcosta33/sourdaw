@@ -64,6 +64,8 @@ export const REQUIRED_MARKS = [
     'Yamaha',
 ] as const;
 
+export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
     'rave-models': [
         'src/modules/BrowserAi/handlers/rave/**',
@@ -93,6 +95,7 @@ type ReleaseSurface = {
 };
 
 type SurfaceContract = Pick<ReleaseSurface, 'kind' | 'paths' | 'sources' | 'revisions' | 'digests' | 'licenses'>;
+type TrademarkSurfaceContract = Omit<SurfaceContract, 'paths'>;
 
 type ExternalReference = {
     file: string;
@@ -151,6 +154,16 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
     };
 }
 
+export function trademarkReleaseInventoryContract(root: string): TrademarkSurfaceContract {
+    return {
+        kind: 'reference-map',
+        sources: [TRADEMARK_NOTICE_PATH, 'current source text'],
+        revisions: ['current release text'],
+        digests: [`sha256:${fileSha256(resolve(root, TRADEMARK_NOTICE_PATH))}:${TRADEMARK_NOTICE_PATH}`],
+        licenses: ['not-applicable:trademark-rights-not-granted'],
+    };
+}
+
 export function wasmReleaseInventoryContract(root: string, manifest: WasmManifest): SurfaceContract {
     const packages = Object.entries(manifest.packages).sort(([left], [right]) => left.localeCompare(right));
     return {
@@ -169,7 +182,11 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
     };
 }
 
-function assertSurfaceContract(surface: ReleaseSurface | undefined, expected: SurfaceContract, label: string): void {
+function assertSurfaceContract(
+    surface: ReleaseSurface | undefined,
+    expected: Partial<SurfaceContract>,
+    label: string
+): void {
     for (const [field, value] of Object.entries(expected)) {
         if (JSON.stringify(surface?.[field as keyof ReleaseSurface]) !== JSON.stringify(value)) {
             throw new Error(`${label} release inventory ${field} does not match provenance`);
@@ -531,6 +548,10 @@ export function validateReleaseInventory(
                 errors.push('required component surface missing: third-party-marks');
             } else {
                 const mappedPaths = sortedUnique(inventory.marks.flatMap((mark) => mark.paths));
+                const allowedPaths = sortedUnique([...mappedPaths, TRADEMARK_NOTICE_PATH]);
+                if (!markSurface.paths.includes(TRADEMARK_NOTICE_PATH)) {
+                    errors.push(`third-party-marks: required notice missing: ${TRADEMARK_NOTICE_PATH}`);
+                }
                 errors.push(
                     formatMissing(
                         'third-party-marks: candidate paths missing from surface',
@@ -540,7 +561,7 @@ export function validateReleaseInventory(
                 errors.push(
                     formatMissing(
                         'third-party-marks: stale surface paths',
-                        markSurface.paths.filter((path) => !mappedPaths.includes(path))
+                        markSurface.paths.filter((path) => !allowedPaths.includes(path))
                     )
                 );
             }
@@ -624,6 +645,8 @@ export function checkReleaseInventory(root: string): void {
     assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
     const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
+    const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
+    assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
