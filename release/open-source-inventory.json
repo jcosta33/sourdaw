@@ -648,10 +648,12 @@
             ],
             "revisions": ["live per-item sources"],
             "digests": ["not-applicable:linked-external-content"],
-            "licenses": ["per-item terms pending:OS-08"],
+            "licenses": ["external-item-terms:not-distributed"],
             "productSurfaces": ["online sample browser"],
-            "evidence": ["Current collection-level labels overstate item-level reuse rights."],
-            "obligations": ["Resolve and display the exact selected item's current terms before claiming reuse rights."]
+            "evidence": [
+                "No third-party sample is imported or redistributed; the browser links to source pages and makes no reuse claim."
+            ],
+            "obligations": ["Do not claim reuse rights without displaying the selected item's current terms."]
         },
         {
             "id": "owner-visual-assets",
