@@ -196,7 +196,10 @@ describe('EffectsTab', () => {
             type: 'addDevice',
             payload: { trackId: 'track-1', deviceType: 'yeast', deviceId: 'device-77', expectedDeviceIds: [] },
         });
-        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith(null));
+        // The committed device's own id, not `null`: rack state is per device
+        // instance (#2422), so the panel must open bound to the device the
+        // click just added.
+        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith('device-77'));
     });
 
     it('opens Yeast when addDevice commits but post-commit processing fails', async () => {
@@ -218,7 +221,7 @@ describe('EffectsTab', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
 
-        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith(null));
+        await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith('device-77'));
     });
 
     it('leaves the panel closed when the compiler rejects the add', () => {
