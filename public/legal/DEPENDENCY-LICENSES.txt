@@ -1,11 +1,11 @@
 Sourdaw third-party dependency licenses
 
-Generated from the exact installed production pnpm graph and the normal-dependency Cargo graph.
+Generated from the platform-neutral installed production pnpm graph and the normal-dependency Cargo graph.
 Each package keeps its own declared license expression and every root legal file shipped in its package archive.
 `metadata-only` means that exact archive declared a license but shipped no root license or notice file;
 this report does not synthesize or reattribute third-party terms.
 
-Package inventory: 354 npm, 308 Cargo
+Package inventory: 352 npm, 308 Cargo
 
 cargo:adler2@2.0.1 | 0BSD OR MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:861399f8c21c042b110517e76dc6b63a2b334276c8cf17412fc3c8908ca8dc17,sha256:8ada45cd9f843acf64e4722ae262c622a2b3b3007c7310ef36ac1061a30f6adb
 cargo:alsa@0.11.0 | Apache-2.0/MIT | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:3cc33f8e76680b9cba2e2a5bc94de5a92420045863ab2fadbef290a55b4d8530
@@ -126,12 +126,12 @@ cargo:mio@1.2.2 | MIT | sha256:07919255c7e04793d8ea760d6c2ce32d19f9ff02bdbdde3ce
 cargo:ndk@0.9.0 | MIT OR Apache-2.0 | metadata-only
 cargo:ndk-context@0.1.1 | MIT OR Apache-2.0 | metadata-only
 cargo:ndk-sys@0.6.0+11769913 | MIT OR Apache-2.0 | metadata-only
-cargo:num_enum@0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | sha256:0be96d891d00e0ae0df75d7f3289b12871c000a1f5ac744f3b570768d4bb277c,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
-cargo:num_enum_derive@0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | sha256:0be96d891d00e0ae0df75d7f3289b12871c000a1f5ac744f3b570768d4bb277c,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
 cargo:num-complex@0.4.6 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
 cargo:num-derive@0.4.2 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
 cargo:num-integer@0.1.47 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
 cargo:num-traits@0.2.19 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
+cargo:num_enum@0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | sha256:0be96d891d00e0ae0df75d7f3289b12871c000a1f5ac744f3b570768d4bb277c,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
+cargo:num_enum_derive@0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | sha256:0be96d891d00e0ae0df75d7f3289b12871c000a1f5ac744f3b570768d4bb277c,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
 cargo:objc2@0.6.4 | MIT | metadata-only
 cargo:objc2-audio-toolbox@0.3.2 | Zlib OR Apache-2.0 OR MIT | metadata-only
 cargo:objc2-avf-audio@0.3.2 | Zlib OR Apache-2.0 OR MIT | metadata-only
@@ -188,8 +188,8 @@ cargo:serde_core@1.0.229 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a761
 cargo:serde_derive@1.0.229 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
 cargo:serde_json@1.0.151 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
 cargo:sha2@0.11.0 | MIT OR Apache-2.0 | sha256:831e0f43ad0bf014c1c4fec5767aae470434c1d66d6e671be2d823e729063e25,sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5
-cargo:simd_cesu8@1.2.0 | Apache-2.0 OR MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
 cargo:simd-adler32@0.3.10 | MIT | sha256:42a35170233e83e18856792e748de4c1ce4a63b2afce9a370c89ef3fe23f9f2d
+cargo:simd_cesu8@1.2.0 | Apache-2.0 OR MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
 cargo:simdutf8@0.1.5 | MIT OR Apache-2.0 | sha256:0cec06e0e55fbc3dc5cee4fca9b607f66cb8f4e4dbcf3b3c013594dd156732e9,sha256:1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f
 cargo:slab@0.4.12 | MIT | sha256:8ce0830173fdac609dfb4ea603fdc002c2f4af0dc9b1a005653f5da9cf534b18
 cargo:smallvec@1.15.2 | MIT OR Apache-2.0 | sha256:0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2
@@ -272,21 +272,6 @@ cargo:winapi-i686-pc-windows-gnu@0.4.0 | MIT/Apache-2.0 | metadata-only
 cargo:winapi-x86_64-pc-windows-gnu@0.4.0 | MIT/Apache-2.0 | metadata-only
 cargo:windowfunctions@0.1.1 | MIT | sha256:5d17998baf4c4d77cbf52abe694cb428ac7e3858f87e31fa59f61bcb7d3bb0f6
 cargo:windows@0.62.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_aarch64_gnullvm@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_aarch64_gnullvm@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_aarch64_msvc@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_aarch64_msvc@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_i686_gnu@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_i686_gnu@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_i686_gnullvm@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_i686_msvc@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_i686_msvc@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_x86_64_gnu@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_x86_64_gnu@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_x86_64_gnullvm@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_x86_64_gnullvm@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_x86_64_msvc@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-cargo:windows_x86_64_msvc@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
 cargo:windows-collections@0.3.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
 cargo:windows-core@0.62.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
 cargo:windows-future@0.3.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
@@ -303,6 +288,21 @@ cargo:windows-sys@0.61.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea
 cargo:windows-targets@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
 cargo:windows-targets@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
 cargo:windows-threading@0.2.1 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_aarch64_gnullvm@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_aarch64_gnullvm@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_aarch64_msvc@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_aarch64_msvc@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_i686_gnu@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_i686_gnu@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_i686_gnullvm@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_i686_msvc@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_i686_msvc@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_x86_64_gnu@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_x86_64_gnu@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_x86_64_gnullvm@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_x86_64_gnullvm@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_x86_64_msvc@0.42.2 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+cargo:windows_x86_64_msvc@0.52.6 | MIT OR Apache-2.0 | sha256:c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b,sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
 cargo:winnow@1.0.4 | MIT | sha256:cb5aedb296c5246d1f22e9099f925a65146f9f0d6b4eebba97fd27a6cdbbab2d
 cargo:writeable@0.6.4 | Unicode-3.0 | sha256:f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2
 cargo:yoke@0.8.3 | Unicode-3.0 | sha256:f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2
@@ -394,7 +394,6 @@ npm:@radix-ui/react-visually-hidden@1.2.11 | MIT | sha256:0e80a2d229d2fd4fc7e863
 npm:@radix-ui/rect@1.1.3 | MIT | sha256:0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138
 npm:@rollup/plugin-node-resolve@15.3.1 | MIT | sha256:7b8136f76c483d03597500bfa991aae9be68d4629e1121cbf9b93aa727efe305
 npm:@rollup/pluginutils@5.4.0 | MIT | sha256:7b8136f76c483d03597500bfa991aae9be68d4629e1121cbf9b93aa727efe305
-npm:@rollup/rollup-darwin-arm64@4.60.1 | MIT | metadata-only
 npm:@spotify/basic-pitch@1.0.1 | Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4
 npm:@tanstack/history@1.162.1 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7
 npm:@tanstack/query-core@5.101.4 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7
@@ -500,7 +499,6 @@ npm:fftjs@0.0.4 | MIT | sha256:4b6621d64abd54d81c7434d96ba794b2f3966a6a543daddf3
 npm:find-up@4.1.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0
 npm:flatbuffers@25.9.23 | Apache-2.0 | sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
 npm:form-data@4.0.6 | MIT | sha256:e5b780d4f38d1d3328e3e53186c4e62d3fa149ea6f2bacd5de5ad0c30ac85343
-npm:fsevents@2.3.3 | MIT | sha256:2a8a5d6197bb97a018b8a190dd3ed853d750ca87c8e80c17aad41d6c6ff448e1
 npm:function-bind@1.1.2 | MIT | sha256:773e131a7684726005a7e4688a80b4620033bc08499bc1404dd1a1eb3bca725e
 npm:get-caller-file@2.0.5 | ISC | sha256:902dbb4154679fb2b8d7c33878183f45b268d01eae5e5033dddaa8852d45f213
 npm:get-intrinsic@1.3.0 | MIT | sha256:39c5ec504cf6bd5cd782a7c695828e09189df79f5d94840e4f08feb97b9fd416
@@ -628,9 +626,9 @@ npm:set-blocking@2.0.0 | ISC | sha256:365496ca1f56da40b23c9815fc40fa9005847b2f8f
 npm:space-separated-tokens@2.0.2 | MIT | sha256:ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d
 npm:sprintf-js@1.0.3 | BSD-3-Clause | sha256:a4cdda44b5adea4731d53dcae78fb5124f8fd853e994f01e25d8c33a7daf818b
 npm:stream-parser@0.3.1 | MIT | sha256:5fe787805ffedb6cc45b0962e6de294df5dec1b62f9fdf4a5d0e121819d11edc
+npm:string-width@4.2.3 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0
 npm:string_decoder@0.10.31 | MIT | sha256:21a82bbee91262a076c2e34533d51d73475d55e889f1c42cf884c86b2a0d5773
 npm:string_decoder@1.3.0 | MIT | sha256:11f2aafb37d06b3ee5bdaf06e9811141d0da05263c316f3d627f45c20d43261b
-npm:string-width@4.2.3 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0
 npm:stringify-entities@4.0.4 | MIT | sha256:9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10
 npm:strip-ansi@6.0.1 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0
 npm:style-to-js@1.1.21 | MIT | sha256:bbb380e5c1a717079378d6ea4d33c8a5a81655d4612b749f882e34e46712aab5
@@ -3942,35 +3940,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ===== end sha256:275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427 =====
-===== sha256:2a8a5d6197bb97a018b8a190dd3ed853d750ca87c8e80c17aad41d6c6ff448e1 =====
-Original filenames: LICENSE
-Packages:
-- npm:fsevents@2.3.3
-
-MIT License
------------
-
-Copyright (C) 2010-2020 by Philipp Dunkel, Ben Noordhuis, Elan Shankar, Paul Miller
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-===== end sha256:2a8a5d6197bb97a018b8a190dd3ed853d750ca87c8e80c17aad41d6c6ff448e1 =====
 ===== sha256:2b770a704c15de238c3f622b01b0044ddd60b49ee30608ea6991ebf19db7a7a1 =====
 Original filenames: LICENSE
 Packages:

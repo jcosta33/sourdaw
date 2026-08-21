@@ -15,6 +15,7 @@ import {
 } from '../checkProjectLicense';
 import {
     DEPENDENCY_LICENSE_REPORT_PATH,
+    isPlatformRestrictedPackage,
     renderDependencyLicenseReport,
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
@@ -151,6 +152,12 @@ describe('project license', () => {
         expect(report).toContain('cargo:alpha@2.0.0 | Apache-2.0 | sha256:');
         expect(report).toContain('npm:zeta@1.0.0 | MIT | metadata-only');
         expect(report.match(/exact terms/gu)).toHaveLength(1);
+    });
+
+    it('excludes host-selected package archives from the cross-platform dependency report', () => {
+        expect(isPlatformRestrictedPackage({ os: ['darwin'], cpu: ['arm64'] })).toBe(true);
+        expect(isPlatformRestrictedPackage({ libc: ['glibc'] })).toBe(true);
+        expect(isPlatformRestrictedPackage({})).toBe(false);
     });
 
     it('rejects dependency report drift and absence', () => {

@@ -37,11 +37,12 @@ See [SOURCES.json](./SOURCES.json) for exact package, source, and file identitie
 
 ## JavaScript and Rust dependencies
 
-[DEPENDENCY-LICENSES.txt](./DEPENDENCY-LICENSES.txt) binds the exact production pnpm graph and
-normal-dependency Cargo graph to each package's declared license expression and every root license
-or notice file included in its package archive. Entries marked `metadata-only` identify archives
-that declare a license but do not include a root legal file; no replacement text or attribution is
-invented for them.
+[DEPENDENCY-LICENSES.txt](./DEPENDENCY-LICENSES.txt) binds the platform-neutral production pnpm
+graph and normal-dependency Cargo graph to each package's declared license expression and every
+root license or notice file included in its package archive. Entries marked `metadata-only`
+identify archives that declare a license but do not include a root legal file; no replacement text
+or attribution is invented for them. Platform-restricted build auxiliaries are excluded; Electron's
+platform legal bundle remains authoritative for its shipped runtime.
 
 The report identifies exact registry packages and versions, including the MPL-2.0 Rust packages
 whose corresponding source is available from those same crates.io package versions. Dedicated

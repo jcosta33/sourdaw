@@ -90,6 +90,10 @@ function assertEquivalent(left: DependencyLicenseRecord, right: DependencyLicens
     }
 }
 
+export function isPlatformRestrictedPackage(packageJson: { os?: unknown; cpu?: unknown; libc?: unknown }): boolean {
+    return Array.isArray(packageJson.os) || Array.isArray(packageJson.cpu) || Array.isArray(packageJson.libc);
+}
+
 export function collectNpmDependencyLicenses(root: string): DependencyLicenseRecord[] {
     const report = JSON.parse(
         execFileSync('pnpm', ['licenses', 'list', '--prod', '--json'], {
@@ -110,9 +114,15 @@ export function collectNpmDependencyLicenses(root: string): DependencyLicenseRec
                     name?: unknown;
                     version?: unknown;
                     license?: unknown;
+                    os?: unknown;
+                    cpu?: unknown;
+                    libc?: unknown;
                 };
                 if (typeof packageJson.name !== 'string' || typeof packageJson.version !== 'string') {
-                    throw new Error(`${packageJsonPath}: package identity is incomplete`);
+                    throw new TypeError(`${packageJsonPath}: package identity is incomplete`);
+                }
+                if (isPlatformRestrictedPackage(packageJson)) {
+                    continue;
                 }
                 const record: DependencyLicenseRecord = {
                     ecosystem: 'npm',
@@ -182,10 +192,16 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
 }
 
 function compareRecords(left: DependencyLicenseRecord, right: DependencyLicenseRecord): number {
+    const compare = (leftValue: string, rightValue: string): number => {
+        if (leftValue === rightValue) {
+            return 0;
+        }
+        return leftValue < rightValue ? -1 : 1;
+    };
     return (
-        left.ecosystem.localeCompare(right.ecosystem) ||
-        left.name.localeCompare(right.name) ||
-        left.version.localeCompare(right.version)
+        compare(left.ecosystem, right.ecosystem) ||
+        compare(left.name, right.name) ||
+        compare(left.version, right.version)
     );
 }
 
@@ -232,7 +248,7 @@ export function renderDependencyLicenseReport(records: DependencyLicenseRecord[]
     return [
         'Sourdaw third-party dependency licenses',
         '',
-        'Generated from the exact installed production pnpm graph and the normal-dependency Cargo graph.',
+        'Generated from the platform-neutral installed production pnpm graph and the normal-dependency Cargo graph.',
         'Each package keeps its own declared license expression and every root legal file shipped in its package archive.',
         '`metadata-only` means that exact archive declared a license but shipped no root license or notice file;',
         'this report does not synthesize or reattribute third-party terms.',

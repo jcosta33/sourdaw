@@ -7,10 +7,10 @@ import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
-import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
+import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RETENTION_CLASSES = [

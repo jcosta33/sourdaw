@@ -209,12 +209,12 @@
             "digests": [
                 "sha256:fcb5d3d1ccc3093c4f934df7fd5a3dade0c867a63f0d9d97b5b09c0ca01e6f5a",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db",
-                "sha256:803edc2f9983301f1a7231e2d26ca7d23c57c27610fff291bcd74b5ae36f028c"
+                "sha256:2f939d24885aa69a23452b343447f525439b3e5e4f5767089de772a6fde6918f"
             ],
             "licenses": ["per-package declared terms and exact packaged legal files"],
             "productSurfaces": ["browser application", "desktop application", "collaboration server"],
             "evidence": [
-                "The lockfiles freeze both resolved JavaScript dependency graphs; the generated report binds every production package identity, declared license expression, and packaged legal file."
+                "The lockfiles freeze both resolved JavaScript dependency graphs; the generated report binds every platform-neutral production package identity, declared license expression, and packaged legal file, while Electron owns platform runtime notices."
             ],
             "obligations": ["Regenerate and ship the dependency report whenever either lock graph changes."]
         },
@@ -267,7 +267,7 @@
                 "sha256:5d7b38822c5c0a4b51559a39c08b39f5bbbf83df0df214c0a21771816966c9e2:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:9624f93a887841378b654a5d8470b4c130e6ee13aba775fed95360506db46fb2:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:5d99846ef5d59f77ac602301bda55533de2aa39d4bb01707754fa24d8cc3e6b4:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -303,7 +303,7 @@
             "revisions": ["exact Cargo lock graph"],
             "digests": [
                 "sha256:f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5",
-                "sha256:803edc2f9983301f1a7231e2d26ca7d23c57c27610fff291bcd74b5ae36f028c"
+                "sha256:2f939d24885aa69a23452b343447f525439b3e5e4f5767089de772a6fde6918f"
             ],
             "licenses": ["per-package declared terms and exact packaged legal files"],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],

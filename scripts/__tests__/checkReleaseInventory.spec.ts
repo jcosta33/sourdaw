@@ -31,8 +31,8 @@ import {
     validateReleaseInventory,
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
-import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
+import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
