@@ -5,12 +5,16 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    audioWorkletReleaseInventoryContract,
     loadRepositorySnapshot,
     REQUIRED_SNAPSHOT_PATHS,
     type ReleaseInventory,
     type RepositorySnapshot,
     validateReleaseInventory,
+    wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
+
+import type { WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
 
@@ -50,6 +54,62 @@ function snapshot(): RepositorySnapshot {
 }
 
 describe('release inventory', () => {
+    it('binds direct worklet source bytes without inventing a generator', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-worklet-provenance-'));
+        const worklets = join(root, 'public/audio/worklets');
+        mkdirSync(worklets, { recursive: true });
+        writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'native');
+        writeFileSync(join(worklets, 'sidechain-compressor-processor.js'), 'sidechain');
+
+        try {
+            const before = audioWorkletReleaseInventoryContract(root);
+            expect(before.kind).toBe('project-source');
+            expect(before.revisions).toEqual(['not-applicable:direct-project-source']);
+
+            writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'changed');
+            expect(audioWorkletReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('binds the WASM manifest to its toolchain and crate closures', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-wasm-provenance-'));
+        mkdirSync(join(root, 'public/wasm'), { recursive: true });
+        writeFileSync(join(root, 'public/wasm/manifest.json'), '{}');
+        const manifest: WasmManifest = {
+            comment: 'fixture',
+            toolchain: {
+                wasmPack: '1',
+                wasmBindgen: '2',
+                rustToolchain: '3',
+                wasmOpt: '4',
+            },
+            packages: {
+                beta: { crate: 'crates/beta', crateSourceHash: 'sha256:beta', schemaHash: 'beta', artifacts: {} },
+                alpha: { crate: 'crates/alpha', crateSourceHash: 'sha256:alpha', schemaHash: 'alpha', artifacts: {} },
+            },
+        };
+
+        try {
+            const contract = wasmReleaseInventoryContract(root, manifest);
+            expect(contract.sources).toEqual(['crates/alpha/', 'crates/beta/']);
+            expect(contract.revisions).toEqual([
+                'rust 3',
+                'wasm-pack 1',
+                'wasm-bindgen 2',
+                'wasm-opt 4',
+                'alpha sha256:alpha',
+                'beta sha256:beta',
+            ]);
+            expect(contract.digests).toEqual([
+                expect.stringMatching(/^sha256:[0-9a-f]{64}:public\/wasm\/manifest\.json$/),
+            ]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('accepts complete classified coverage', () => {
         expect(validateReleaseInventory(inventory(), snapshot())).toEqual([]);
     });
