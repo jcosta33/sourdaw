@@ -26,5 +26,5 @@ test('downloads verified Magenta artifacts then recreates a WebGPU worker offlin
     await testInfo.attach('ddsp-runtime-proof', { body: JSON.stringify(rendered), contentType: 'application/json' });
 
     expect(rendered).toMatchObject({ backend: 'webgpu', finite: true });
-    expect(rendered.pcmLength).toBe(80_000);
+    expect(rendered.pcmLength).toBe(22_050);
 });

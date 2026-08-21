@@ -2,7 +2,9 @@ import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from
 
 import type { GraphModel, NamedTensorMap, Tensor, io } from '@tensorflow/tfjs';
 
-const sessions = new Map<string, GraphModel>();
+type DdspSession = { model: GraphModel; maxFrameLength: number };
+
+const sessions = new Map<string, DdspSession>();
 let tfModule: typeof import('@tensorflow/tfjs') | undefined;
 type WeightSpec = {
     name: string;
@@ -114,7 +116,16 @@ async function createSession(
         convertedBy?: string;
     };
     const weightData = await readArtifact(shard);
-    await readArtifact(settings);
+    const modelSettings = JSON.parse(new TextDecoder().decode(await readArtifact(settings))) as {
+        modelMaxFrameLength?: unknown;
+    };
+    if (
+        typeof modelSettings.modelMaxFrameLength !== 'number' ||
+        !Number.isInteger(modelSettings.modelMaxFrameLength) ||
+        modelSettings.modelMaxFrameLength <= 0
+    ) {
+        throw new Error('DDSP settings omit a valid modelMaxFrameLength');
+    }
     const handler: io.IOHandler = {
         load: async () => ({
             modelTopology: modelJson.modelTopology,
@@ -125,7 +136,10 @@ async function createSession(
             convertedBy: modelJson.convertedBy,
         }),
     };
-    sessions.set(request.modelId, await tf.loadGraphModel(handler));
+    sessions.set(request.modelId, {
+        model: await tf.loadGraphModel(handler),
+        maxFrameLength: modelSettings.modelMaxFrameLength,
+    });
     post({ type: 'session-created', requestId: request.requestId, modelId: request.modelId, backend: tf.getBackend() });
 }
 
@@ -135,33 +149,44 @@ async function runInference(request: Extract<WorkerRequest, { type: 'run-ddsp-in
         throw new Error(`DDSP session not found: ${request.modelId}`);
     }
     const tf = await loadTfjs();
-    const pitch = tf.tensor1d(request.pitchHz);
-    const loudness = tf.tensor1d(request.loudnessDb);
-    let outputTensor: Tensor | undefined;
-    try {
-        outputTensor = firstTensor(session.predict({ f0_hz: pitch, loudness_db: loudness }));
-        const audio = Float32Array.from(await outputTensor.data());
-        post(
-            {
-                type: 'ddsp-result',
-                requestId: request.requestId,
-                audio,
-                nativeSampleRate: 16_000,
-                backend: tf.getBackend(),
-            },
-            [audio.buffer]
-        );
-    } finally {
-        pitch.dispose();
-        loudness.dispose();
-        outputTensor?.dispose();
+    const chunks: Float32Array[] = [];
+    for (let start = 0; start < request.pitchHz.length; start += session.maxFrameLength) {
+        const end = Math.min(start + session.maxFrameLength, request.pitchHz.length);
+        const pitch = tf.tensor1d(request.pitchHz.slice(start, end));
+        const loudness = tf.tensor1d(request.loudnessDb.slice(start, end));
+        let outputTensor: Tensor | undefined;
+        try {
+            outputTensor = firstTensor(session.model.predict({ f0_hz: pitch, loudness_db: loudness }));
+            const requestedSamples = Math.round(((end - start) / request.frameRate) * 16_000);
+            chunks.push(Float32Array.from(await outputTensor.data()).slice(0, requestedSamples));
+        } finally {
+            pitch.dispose();
+            loudness.dispose();
+            outputTensor?.dispose();
+        }
     }
+    const audio = new Float32Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+        audio.set(chunk, offset);
+        offset += chunk.length;
+    }
+    post(
+        {
+            type: 'ddsp-result',
+            requestId: request.requestId,
+            audio,
+            nativeSampleRate: 16_000,
+            backend: tf.getBackend(),
+        },
+        [audio.buffer]
+    );
 }
 
 self.onmessage = (event: MessageEvent<WorkerRequest>): void => {
     const request = event.data;
     if (request.type === 'release-session') {
-        sessions.get(request.modelId)?.dispose();
+        sessions.get(request.modelId)?.model.dispose();
         sessions.delete(request.modelId);
         return;
     }
