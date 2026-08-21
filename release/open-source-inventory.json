@@ -77,15 +77,52 @@
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "desktop"],
-            "paths": ["electron/**", "build/**", "electron-builder.yml"],
-            "sources": ["https://github.com/electron/electron", "package.json"],
-            "revisions": ["pnpm-lock.yaml"],
-            "digests": ["pending:OS-07-final-desktop-package"],
-            "licenses": ["pending:OS-07"],
+            "paths": [
+                "electron/**",
+                "build/**",
+                "electron-builder.yml",
+                "public/legal/ELECTRON-SOURCES.json",
+                "public/legal/RELINKING.md",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "scripts/checkElectronRuntimeProvenance.ts",
+                "scripts/electronRuntimeContract.ts",
+                "scripts/flipElectronFuses.ts"
+            ],
+            "sources": [
+                "https://github.com/electron/electron",
+                "https://chromium.googlesource.com/chromium/src",
+                "https://github.com/nodejs/node",
+                "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
+                "package.json",
+                "public/legal/ELECTRON-SOURCES.json"
+            ],
+            "revisions": [
+                "electron 43.4.1 340bae15aaef12b7e96f1c857be986aa9f65c21c",
+                "Chromium 150.0.7871.224 36bfd07adec25f5027aaecf2023b35821f30ee4e",
+                "Node v24.18.1 9623d9ad85d37d2f0610ec4a82b48182cf2c6061",
+                "FFmpeg ad41607c61898cf7150e0fb20fe4bbabd44922a3",
+                "pnpm-lock.yaml"
+            ],
+            "digests": [
+                "npm-integrity:sha512-5b+EuiwkgG5iRcsEL34rimgRpkYp15SsfZOa0pC5kXs0Tb82TH4n95rpQzTZa7yRCbA7tm0WoEbuBL6NaAhAcA==",
+                "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+                "public/legal/ELECTRON-SOURCES.json",
+                "pending:OS-12-final-desktop-package"
+            ],
+            "licenses": [
+                "MIT:Electron",
+                "LGPL-2.1-or-later:Electron-FFmpeg",
+                "bundled-notices:electron-LICENSES.chromium.html"
+            ],
             "productSurfaces": ["Electron shell"],
-            "evidence": ["package.json"],
+            "evidence": [
+                "Exact package, source, target archive, and legal-file identities are pinned and checked.",
+                "The packaging hook copies verified Electron legal bytes outside app.asar before signing."
+            ],
             "obligations": [
-                "Reconcile the Electron shell and every bundled runtime notice before the desktop package ships."
+                "Keep Electron's exact license and bundled notices beside every desktop package.",
+                "Keep FFmpeg's exact source route and replacement instructions with every desktop release.",
+                "Block desktop release until its complete corresponding Electron FFmpeg source and build material ships beside it."
             ]
         },
         {
@@ -726,7 +763,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "e25612b2560528fb8b0c6aee8023468052b044d586ef2379b6757449702144e7"
+            "sha256": "728835e50c1dc97634412728a7be672f458597e067c2e0121e4f095adf8dead2"
         },
         {
             "path": "server/package.json",
@@ -754,10 +791,92 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "55b8712577605f3841c3c4ef5de81d5fc68f7b1b599f838fd762b30918149d5a"
+            "sha256": "7de28ba843fa2780b77f635e8d133f26bf3add02ddadf5db6e1d69ab37a8d6fd"
         }
     ],
     "externalReferences": [
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://chromium.googlesource.com/chromium/src"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://chromium.googlesource.com/chromium/third_party/ffmpeg"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://github.com/electron/electron"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "public/legal/ELECTRON-SOURCES.json",
+            "value": "https://github.com/nodejs/node"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://api.github.com/repos/${slot}/git/ref/tags/${slot}",
+            "templateSha256": "06d7919ac5cb5e29bcd0d7a3b1fe8f6682ef8ffb9f468dfcecd4b0881005512d"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://chromium.googlesource.com/chromium/src/+/refs/tags/${slot}?format=JSON",
+            "templateSha256": "254cb082f18652a0938eb20052c5a83f8407af4c53db8f7eb887876f663bdfea"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://chromium.googlesource.com/chromium/src/+/${slot}/DEPS?format=TEXT",
+            "templateSha256": "3017f6722da4b287495058fc18ef2372a13d809b358c3ed483a2734cf8da6742"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/${slot}?format=JSON",
+            "templateSha256": "efd1b2b24038aa89a08dcfeca1feaee596bb97e1aee2b7b73091efbaced7dc13"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://github.com/electron/electron/releases/download/v${slot}/SHASUMS256.txt",
+            "templateSha256": "6fcfb82cfd4e50b3ee9c7897a04fea0432705b4e83b32bdb635666db0e656ae9"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://raw.githubusercontent.com/electron/electron/${slot}/DEPS",
+            "templateSha256": "3ad2f537ccb7e7bbf2d4eacd893b4f197bad3eb1acf1afe66285900edd864831"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/checkElectronRuntimeProvenance.ts",
+            "value": "https://registry.npmjs.org/electron/${slot}",
+            "templateSha256": "49c8146ce69424e645d7c1fc776f100568f688c4449640a18af71352000f7215"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://chromium.googlesource.com/chromium/src"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://chromium.googlesource.com/chromium/third_party/ffmpeg"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://github.com/electron/electron"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "scripts/electronRuntimeContract.ts",
+            "value": "https://github.com/nodejs/node"
+        },
         {
             "surface": "project-source",
             "file": "scripts/checkLgplRuntimeProvenance.ts",
@@ -951,6 +1070,12 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://x-access-token:${slot}@github.com/${slot}.git",
             "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/reconcileTrackerIssue.ts",
+            "value": "https://api.github.com/repos/${slot}",
+            "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
         },
         {
             "surface": "cloud-ai-providers",

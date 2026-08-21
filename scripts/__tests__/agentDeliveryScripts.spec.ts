@@ -207,7 +207,7 @@ describe('package scripts and gitignore', () => {
             },
         });
         const author = authentication('ghs_author', { contents: 'write', pull_requests: 'write' });
-        const tracker = authentication('ghs_tracker', { issues: 'write' });
+        const tracker = authentication('ghs_tracker', { pull_requests: 'write' });
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
@@ -257,7 +257,7 @@ describe('package scripts and gitignore', () => {
         await coordinateDelivery(2495, dependencies);
 
         expect(author.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
-        expect(tracker.minted.permissions).toEqual({ issues: 'write' });
+        expect(tracker.minted.permissions).toEqual({ pull_requests: 'write' });
         expect(seen).toEqual([
             'repository:ghs_author',
             'tracker:ghs_tracker',
