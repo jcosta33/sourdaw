@@ -135,6 +135,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-015a1b057d64a421",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 182,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-016033535dd324ff",
     "file": "src/modules/Levain/presentations/components/ArticulationList.tsx",
     "line": 32,
@@ -146,7 +155,7 @@
   {
     "id": "ui-01619aa95fdc02f8",
     "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 418,
+    "line": 419,
     "fingerprint": "div\tgrid grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 py-1",
     "kind": "layout",
     "mapping": "Grid",
@@ -227,7 +236,7 @@
   {
     "id": "ui-021fac22a304f590",
     "file": "src/modules/SampleLibrary/presentations/components/SampleRow.tsx",
-    "line": 163,
+    "line": 165,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -290,7 +299,7 @@
   {
     "id": "ui-02d61b76654d2db6",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 330,
+    "line": 331,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -371,7 +380,7 @@
   {
     "id": "ui-03363497d3183e44",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 335,
+    "line": 336,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -384,6 +393,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-03964df60cb581ab",
+    "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
+    "line": 246,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -576,6 +594,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-054693173f0028e1",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 464,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0554e04da6977030",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 748,
@@ -623,7 +650,7 @@
   {
     "id": "ui-059e1b3037c0c31b",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1811,
+    "line": 1803,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -659,7 +686,7 @@
   {
     "id": "ui-05bac782cf296705",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 277,
+    "line": 278,
     "fingerprint": "div\tgroup flex items-center gap-2 border-b border-border-hairline px-2 py-1.5 cursor-pointer bg-surface-overlay hover:bg-surface-panel border-t-2 border-t-ring",
     "kind": "layout",
     "mapping": "Row",
@@ -677,7 +704,7 @@
   {
     "id": "ui-05f81ccfa3a22e3c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1375,
+    "line": 1350,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -686,7 +713,7 @@
   {
     "id": "ui-063f37f7ae394473",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 444,
+    "line": 448,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -731,7 +758,7 @@
   {
     "id": "ui-06dcea363a08c094",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 159,
+    "line": 160,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -956,7 +983,7 @@
   {
     "id": "ui-0876f8777323c1b4",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 299,
+    "line": 300,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1064,7 +1091,7 @@
   {
     "id": "ui-09183de4226719cd",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 327,
+    "line": 331,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -1082,7 +1109,7 @@
   {
     "id": "ui-092a872b69891d2f",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 239,
+    "line": 240,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -1127,7 +1154,7 @@
   {
     "id": "ui-09e497e4bd5f1783",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 677,
+    "line": 675,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -1150,15 +1177,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0a1a609860f8b725",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 160,
-    "fingerprint": "div\tspace-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0a20d1a0145a18ab",
@@ -1278,15 +1296,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0b42f17b365de899",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 152,
-    "fingerprint": "div\tflex items-center gap-2 border-b border-border-hairline px-3 py-1.5 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0b7ec6e66310aa63",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
     "line": 580,
@@ -1312,15 +1321,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-0bd23d23675b9732",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 113,
-    "fingerprint": "div\tflex flex-col gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0beb2e34ff4f7cba",
@@ -1350,12 +1350,30 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-0c320cde359471da",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 349,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0c41c69d7663ffc2",
     "file": "src/modules/TimelineEditor/presentations/views/TempoEditor.tsx",
     "line": 126,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-0c691198f137b0be",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 161,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -1728,15 +1746,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0f56408ff7666cf6",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 207,
-    "fingerprint": "div\tflex flex-col gap-3 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0f610b883be8cede",
     "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
     "line": 80,
@@ -1771,15 +1780,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0fe002b8a82d2f00",
-    "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
-    "line": 31,
-    "fingerprint": "div\tmb-2 space-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0fe864462ac2a386",
@@ -1854,6 +1854,15 @@
     "disposition": "complex-grid"
   },
   {
+    "id": "ui-10c9d6d0c9ad2d82",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 208,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-10cc2ff26766472d",
     "file": "src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx",
     "line": 150,
@@ -1892,7 +1901,7 @@
   {
     "id": "ui-11028912cc57d0ff",
     "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
-    "line": 185,
+    "line": 186,
     "fingerprint": "DawMeterFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
@@ -1973,7 +1982,7 @@
   {
     "id": "ui-119d32fc8e12bfc9",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 201,
+    "line": 202,
     "fingerprint": "DawPickerCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerCard",
@@ -2189,7 +2198,7 @@
   {
     "id": "ui-13a1fa667beaa7f2",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 286,
+    "line": 287,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2324,7 +2333,7 @@
   {
     "id": "ui-148c430e034b454c",
     "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 55,
+    "line": 56,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2358,6 +2367,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-14ffd047006cbd79",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 147,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-14ffe6164785dd47",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 784,
@@ -2378,7 +2396,7 @@
   {
     "id": "ui-150d3e418300f023",
     "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
-    "line": 232,
+    "line": 233,
     "fingerprint": "DawMeterFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
@@ -2387,10 +2405,19 @@
   {
     "id": "ui-150f97091c816338",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 197,
+    "line": 198,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-15160bf9fec86127",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 43,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -2432,10 +2459,19 @@
   {
     "id": "ui-15e49f97e9238bc9",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 284,
+    "line": 285,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-15f6df2cebea6b85",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 400,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -2450,7 +2486,7 @@
   {
     "id": "ui-16128e942ac45ef0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 325,
+    "line": 326,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -2558,7 +2594,7 @@
   {
     "id": "ui-17a4296ae6c35ecf",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 307,
+    "line": 309,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2727,6 +2763,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-19141788d60cce32",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 87,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-191b54cc0b16fea4",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
     "line": 470,
@@ -2774,7 +2819,7 @@
   {
     "id": "ui-1980c3428a3ca513",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 90,
+    "line": 91,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -2801,7 +2846,7 @@
   {
     "id": "ui-19c7968944ae186d",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 69,
+    "line": 70,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2979,6 +3024,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-1c2804517312e831",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 546,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1c3841771172c437",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 764,
@@ -3017,7 +3071,7 @@
   {
     "id": "ui-1c752ccf46246b14",
     "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
-    "line": 32,
+    "line": 33,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -3044,7 +3098,7 @@
   {
     "id": "ui-1ca29948ace5219f",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 184,
+    "line": 185,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -3094,15 +3148,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-1d220615254365af",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 71,
-    "fingerprint": "div\tflex flex-wrap gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1d2596f97694ba22",
@@ -3193,15 +3238,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-1dce4838d485d0e4",
-    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 274,
-    "fingerprint": "div\tflex flex-col items-center justify-center py-14 gap-5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1dd026c29f916ed7",
@@ -3296,7 +3332,7 @@
   {
     "id": "ui-1e4b67278e16aa28",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 247,
+    "line": 254,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -3305,7 +3341,7 @@
   {
     "id": "ui-1e68be9f0ff5fbf0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 371,
+    "line": 372,
     "fingerprint": "div\tgrid grid-cols-2 gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -3386,7 +3422,7 @@
   {
     "id": "ui-1f20818feb965da3",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 149,
+    "line": 150,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -3458,20 +3494,11 @@
   {
     "id": "ui-1faa4a72509226f3",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 150,
+    "line": 151,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-1fab0d1c67bc1365",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 42,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1fc3c16ddfcecf2a",
@@ -3510,18 +3537,9 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-1ffb94ab6b7df1e6",
-    "file": "src/modules/SampleLibrary/presentations/components/SampleRow.tsx",
-    "line": 76,
-    "fingerprint": "div\tflex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/[0.06] focus:bg-white/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan/60 cursor-grab active:cursor-grabbing group",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2007e415609ebb5c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 290,
+    "line": 291,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3575,7 +3593,7 @@
   {
     "id": "ui-206a565d623b51ab",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 50,
+    "line": 51,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3620,7 +3638,7 @@
   {
     "id": "ui-20c7af590113078e",
     "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 236,
+    "line": 237,
     "fingerprint": "div\tshrink-0 size-9 rounded-lg flex items-center justify-center transition-colors",
     "kind": "layout",
     "mapping": "Row",
@@ -3816,15 +3834,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-24288e13ee03b954",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 264,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-243af7b7a8757114",
     "file": "src/modules/GrandBoule/presentations/components/MorphPanel.tsx",
     "line": 170,
@@ -3917,7 +3926,7 @@
   {
     "id": "ui-25765003287eb9bb",
     "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
-    "line": 24,
+    "line": 28,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -3996,6 +4005,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-263cead182a48896",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 66,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-2650e1c87a5e9fd2",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 278,
@@ -4025,7 +4043,7 @@
   {
     "id": "ui-26b3d1fadda9e8ce",
     "file": "src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx",
-    "line": 104,
+    "line": 105,
     "fingerprint": "DawTransportCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawTransportCluster",
@@ -4142,7 +4160,7 @@
   {
     "id": "ui-27ab7c60767fe2aa",
     "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 403,
+    "line": 404,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4151,7 +4169,7 @@
   {
     "id": "ui-27adaa1dc9410ef7",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 109,
+    "line": 110,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -4196,7 +4214,7 @@
   {
     "id": "ui-27e600f663579941",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 234,
+    "line": 235,
     "fingerprint": "DawKeycap\t",
     "kind": "daw-chrome",
     "mapping": "DawKeycap",
@@ -4286,7 +4304,7 @@
   {
     "id": "ui-28c063d06a1ed493",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 663,
+    "line": 646,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -4331,19 +4349,10 @@
   {
     "id": "ui-29656095658a4e1a",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 346,
+    "line": 350,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-296d41e60f1d2d53",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 412,
-    "fingerprint": "div\tflex flex-col items-center justify-center py-8 text-muted-foreground opacity-60",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -4430,7 +4439,7 @@
   {
     "id": "ui-29f73f36ec855299",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 346,
+    "line": 347,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -4476,6 +4485,15 @@
     "id": "ui-2a8d4b4988967c61",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 891,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2a9e742b9a18d88a",
+    "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
+    "line": 185,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -4862,20 +4880,11 @@
   {
     "id": "ui-2d8c67f8436dc431",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 204,
+    "line": 205,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-2da1ae2d8ba60bc1",
-    "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 230,
-    "fingerprint": "span\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-2dae88406bbba5b7",
@@ -4952,7 +4961,7 @@
   {
     "id": "ui-2e394513bc53ce7b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 59,
+    "line": 60,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -5159,7 +5168,7 @@
   {
     "id": "ui-315b2b0161e70ff4",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 242,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5202,15 +5211,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-31ed47356de4ccd9",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 84,
-    "fingerprint": "div\tspace-y-0.5 mt-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-31fa4c3eedc68b46",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 193,
@@ -5229,13 +5229,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3238801aaccf476f",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 378,
-    "fingerprint": "div\tflex gap-1 flex-wrap",
+    "id": "ui-32235bb2e6958edc",
+    "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
+    "line": 71,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-326424782dc29642",
@@ -5285,7 +5285,7 @@
   {
     "id": "ui-32f562e2f4e94177",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 196,
+    "line": 197,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -5321,7 +5321,7 @@
   {
     "id": "ui-336474f2a7266f9d",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 166,
+    "line": 167,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -5391,22 +5391,22 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3425701876d2d15d",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 181,
-    "fingerprint": "div\tflex items-center justify-between",
+    "id": "ui-341c8d33b904389b",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 242,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
-    "id": "ui-34350371f45157a2",
-    "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 245,
-    "fingerprint": "span\tflex items-center gap-2",
+    "id": "ui-34320dc250bbcd68",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 321,
+    "fingerprint": "Stack\t",
     "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-34528a32c8d523a3",
@@ -5465,7 +5465,7 @@
   {
     "id": "ui-35359b18240c037f",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 242,
+    "line": 243,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -5598,6 +5598,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-36b34dd96af11894",
+    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
+    "line": 60,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-36c4133c2551126b",
     "file": "src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx",
     "line": 44,
@@ -5616,6 +5625,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-36e249d6fe57dcae",
+    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
+    "line": 285,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-36eda779cfab8468",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1080,
@@ -5627,7 +5645,7 @@
   {
     "id": "ui-3706d12e9d10f7f1",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 191,
+    "line": 192,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -5699,7 +5717,7 @@
   {
     "id": "ui-37dcf6ef35eaa4ac",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 163,
+    "line": 164,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -5762,7 +5780,7 @@
   {
     "id": "ui-38b7e580ba937311",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 646,
+    "line": 609,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -5924,7 +5942,7 @@
   {
     "id": "ui-39e7e45b792c034e",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 428,
+    "line": 429,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5983,6 +6001,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityListRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-3b0f36ecc02a9a1f",
+    "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
+    "line": 149,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3b13e755da6374da",
@@ -6131,7 +6158,7 @@
   {
     "id": "ui-3bf5d5a42316b39a",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 235,
+    "line": 236,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -6185,7 +6212,7 @@
   {
     "id": "ui-3cec07342118e162",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 98,
+    "line": 99,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -6228,6 +6255,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-3d429daeedd675f2",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 114,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3d51eeac98057476",
     "file": "src/modules/Proof/presentations/components/ProofLimiterSection.tsx",
     "line": 41,
@@ -6239,7 +6275,7 @@
   {
     "id": "ui-3d5df341f7e95a98",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 254,
+    "line": 255,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6471,6 +6507,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-3fa7dee136ae925a",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 474,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3fbeb4d057401b77",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
     "line": 325,
@@ -6495,15 +6540,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-3fdf348bf1b489f2",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 106,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -6599,7 +6635,7 @@
   {
     "id": "ui-40bfe25e02b464c6",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 388,
+    "line": 390,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -6786,15 +6822,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-425279ddbd521538",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 272,
-    "fingerprint": "div\tflex items-center justify-end gap-2 pt-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4272020fbe7d3ef3",
     "file": "src/modules/TimelineEditor/presentations/views/ArrangeView.tsx",
     "line": 473,
@@ -6842,7 +6869,7 @@
   {
     "id": "ui-4292a50dcaf5931a",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 347,
+    "line": 348,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -6930,15 +6957,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-433431febe4f19d7",
-    "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 70,
-    "fingerprint": "div\tdaw-header-band flex items-center rounded-t-lg px-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4336f80fcb8c5b82",
     "file": "src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx",
     "line": 123,
@@ -6957,15 +6975,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-434289fe6def0dd8",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 463,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-434fa6e6d684a2e3",
     "file": "src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx",
     "line": 663,
@@ -6973,6 +6982,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-43542f8704af82e7",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 92,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-437a4e01f952e601",
@@ -7076,7 +7094,7 @@
   {
     "id": "ui-44f2ce06127b4370",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 169,
+    "line": 170,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -7090,15 +7108,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-45052481f5f7c71f",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 345,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-452946f43aa27f2b",
@@ -7193,7 +7202,7 @@
   {
     "id": "ui-45c2e45f1b9909dd",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 374,
+    "line": 376,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7326,6 +7335,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-47433fc14dc2aff4",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 413,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-474f58d6828ba7df",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 323,
@@ -7346,11 +7364,20 @@
   {
     "id": "ui-47827ebcacba14f3",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 220,
+    "line": 221,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-478476e1b40fe9b6",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 181,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-47894f6b6786d8a5",
@@ -7463,7 +7490,7 @@
   {
     "id": "ui-4881503d2b64c1d4",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 224,
+    "line": 225,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7497,13 +7524,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-48ee3267a6b93a00",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 238,
-    "fingerprint": "div\tflex h-full items-center justify-center p-4",
+    "id": "ui-48c343227effaa79",
+    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
+    "line": 370,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-48fbcf455e76d67d",
@@ -7535,7 +7562,7 @@
   {
     "id": "ui-49714abb7dfb6ce6",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 339,
+    "line": 340,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -7544,7 +7571,7 @@
   {
     "id": "ui-499187d2909eda5c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1350,
+    "line": 1278,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7715,7 +7742,7 @@
   {
     "id": "ui-4bf1f97acdd56199",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 299,
+    "line": 306,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7805,7 +7832,7 @@
   {
     "id": "ui-4cff677a48a9e262",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1476,
+    "line": 1460,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -7875,15 +7902,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-4dcf78ce010de01b",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 404,
-    "fingerprint": "label\tflex items-center gap-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4dd7167927ffcd03",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 263,
@@ -7904,7 +7922,7 @@
   {
     "id": "ui-4e160e9b0a1794fe",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 399,
+    "line": 406,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -7931,7 +7949,7 @@
   {
     "id": "ui-4e18fb0258d45fe3",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 70,
+    "line": 71,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -8282,7 +8300,7 @@
   {
     "id": "ui-517a0e01fe8a251c",
     "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 89,
+    "line": 90,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8399,7 +8417,7 @@
   {
     "id": "ui-52c9660092ce2abe",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 60,
+    "line": 61,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -8505,6 +8523,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-53c8186c69733445",
+    "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
+    "line": 231,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-53eb12764768b48f",
     "file": "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx",
     "line": 168,
@@ -8530,15 +8557,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-54035d12bda0d31f",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 421,
-    "fingerprint": "div\tml-auto flex items-center gap-2 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5422a26c4501cc0f",
@@ -8604,6 +8622,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-54d4a87ee9fa2f3f",
+    "file": "src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx",
+    "line": 66,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-54e00db97663830b",
     "file": "src/modules/Toaster/presentations/components/StepSequencer.tsx",
     "line": 77,
@@ -8646,15 +8673,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-559c0a9b26c69852",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 232,
-    "fingerprint": "div\tflex items-center gap-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -8714,7 +8732,7 @@
   {
     "id": "ui-5621a956611a52f7",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 114,
+    "line": 115,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -8802,15 +8820,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-57c6271936d16f5c",
-    "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 148,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-57cd1885d47eb36e",
     "file": "src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx",
     "line": 36,
@@ -8831,7 +8840,7 @@
   {
     "id": "ui-57cfbab0d9dc4f69",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 202,
+    "line": 203,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8858,7 +8867,7 @@
   {
     "id": "ui-57e0bfdc8a5b94bb",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 276,
+    "line": 277,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8876,7 +8885,7 @@
   {
     "id": "ui-58032a89e0c6df3b",
     "file": "src/modules/SampleLibrary/presentations/components/SampleRow.tsx",
-    "line": 104,
+    "line": 106,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8946,21 +8955,21 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-586cc46ac08e843c",
-    "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
-    "line": 14,
-    "fingerprint": "div\tflex items-center gap-2 rounded-md border border-white/8 bg-black/20 px-2 py-1.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-58b02f7aff2ba797",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
     "line": 810,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-58bd9bd9ab4d9147",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 463,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -9083,7 +9092,7 @@
   {
     "id": "ui-59a15428116956eb",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 174,
+    "line": 175,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -9189,15 +9198,6 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-5b07b1e99976a51c",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 157,
-    "fingerprint": "div\tflex flex-col gap-3 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5b081ebc7a54b4ce",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 196,
@@ -9227,7 +9227,7 @@
   {
     "id": "ui-5b3503873aea7aa0",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 434,
+    "line": 435,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9245,7 +9245,7 @@
   {
     "id": "ui-5b671385d9aec9d3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 252,
+    "line": 259,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -9297,15 +9297,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-5bc13fa549a4926b",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 424,
-    "fingerprint": "div\tflex items-center justify-between mb-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5bc256a7707f8041",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 837,
@@ -9317,7 +9308,7 @@
   {
     "id": "ui-5bc902c87824a987",
     "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 111,
+    "line": 112,
     "fingerprint": "DawKeycap\t",
     "kind": "daw-chrome",
     "mapping": "DawKeycap",
@@ -9336,6 +9327,15 @@
     "id": "ui-5c448a7a310b6a91",
     "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
     "line": 143,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5c46314c5b1f4642",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 152,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -9506,7 +9506,7 @@
   {
     "id": "ui-5e076ce323a81092",
     "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 31,
+    "line": 32,
     "fingerprint": "div\tflex flex-col gap-1 p-1.5 rounded-md border transition-colors cursor-pointer min-w-[70px]",
     "kind": "layout",
     "mapping": "Stack",
@@ -9621,15 +9621,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-5ec910a438c54d43",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 320,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5ecdacd71494efd8",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx",
     "line": 270,
@@ -9646,15 +9637,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-5eebf6d578a23980",
-    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 235,
-    "fingerprint": "div\tflex w-full items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5f08e28534e84d24",
@@ -9711,6 +9693,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-5fb6a0b75831e991",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 275,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5fe741e2d983cd53",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
     "line": 451,
@@ -9731,7 +9722,7 @@
   {
     "id": "ui-5ff148343f23432f",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 93,
+    "line": 94,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -9837,6 +9828,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-60d397eea0b51d9e",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 460,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6108ef66b22b7bbf",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 1251,
@@ -9848,7 +9848,7 @@
   {
     "id": "ui-6140db0930679672",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 221,
+    "line": 222,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
@@ -9875,7 +9875,7 @@
   {
     "id": "ui-6170a2c97928390b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 64,
+    "line": 65,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -9951,15 +9951,6 @@
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-620c4333f933423c",
-    "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 287,
-    "fingerprint": "div\tgroup flex items-center gap-2 px-3 py-1.5 hover:bg-accent/50 transition-colors cursor-pointer",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -10055,7 +10046,7 @@
   {
     "id": "ui-6315532570eb73ba",
     "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 72,
+    "line": 73,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -10100,7 +10091,7 @@
   {
     "id": "ui-6385303b4e854095",
     "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
-    "line": 206,
+    "line": 207,
     "fingerprint": "div\tflex gap-px",
     "kind": "layout",
     "mapping": "Row",
@@ -10136,7 +10127,7 @@
   {
     "id": "ui-63e832612868b55e",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 386,
+    "line": 387,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10208,7 +10199,7 @@
   {
     "id": "ui-65310a375bd0adb0",
     "file": "src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx",
-    "line": 67,
+    "line": 68,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -10352,7 +10343,7 @@
   {
     "id": "ui-666109db690ababc",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 331,
+    "line": 333,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10365,6 +10356,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-6689af3eb01c45ca",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 56,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -10429,15 +10429,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-674d284dfd382ea7",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 185,
-    "fingerprint": "div\tspace-y-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6788dd2553d7530f",
@@ -10541,7 +10532,7 @@
   {
     "id": "ui-6893f43d82621ca8",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 406,
+    "line": 408,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -10685,7 +10676,7 @@
   {
     "id": "ui-6a304883bc97c84f",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 107,
+    "line": 108,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -10773,6 +10764,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-6b0d39b1ddbc22b7",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 44,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6b14f3fcae8dfb1e",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
     "line": 191,
@@ -10838,7 +10838,7 @@
   {
     "id": "ui-6c104af92448306f",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 426,
+    "line": 433,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -10847,7 +10847,7 @@
   {
     "id": "ui-6c186771a9c46f15",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 154,
+    "line": 155,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -10944,15 +10944,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6db7e263ebd12bcd",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 48,
-    "fingerprint": "div\tflex flex-wrap gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6dc30ae34e96f605",
     "file": "src/modules/Preferences/presentations/views/preferencesShared.tsx",
     "line": 92,
@@ -11043,6 +11034,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-6e808b223aa50916",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 390,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6e87528533dc6c95",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx",
     "line": 233,
@@ -11059,15 +11059,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6ea1f58fe62b672c",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 386,
-    "fingerprint": "div\tflex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6ea84f1d41183c89",
@@ -11126,7 +11117,7 @@
   {
     "id": "ui-6f7f68130ac27791",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 152,
+    "line": 153,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -11315,7 +11306,7 @@
   {
     "id": "ui-71de7282b9076b0e",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 201,
+    "line": 202,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11419,15 +11410,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-72706b78304ac434",
-    "file": "src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx",
-    "line": 65,
-    "fingerprint": "label\tflex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-727945ab2c0487bf",
@@ -11585,7 +11567,7 @@
   {
     "id": "ui-74125deb5df2ae2e",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 454,
+    "line": 455,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11673,9 +11655,18 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-755635b0660c6b94",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 174,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7571cc8a26958aea",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1842,
+    "line": 1829,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -11720,7 +11711,7 @@
   {
     "id": "ui-75b26891ba192447",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 269,
+    "line": 276,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -11792,7 +11783,7 @@
   {
     "id": "ui-76328958a973a867",
     "file": "src/modules/SampleLibrary/presentations/components/SampleRow.tsx",
-    "line": 201,
+    "line": 203,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11815,15 +11806,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-76468a060be61535",
-    "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1402,
-    "fingerprint": "div\tflex flex-wrap gap-4",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-766bc26eb1004e50",
@@ -11954,7 +11936,7 @@
   {
     "id": "ui-77d0e080d72d3f26",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 739,
+    "line": 718,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -12107,7 +12089,7 @@
   {
     "id": "ui-78f185b849b936a8",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 257,
+    "line": 258,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12125,7 +12107,7 @@
   {
     "id": "ui-791dd85da6d18552",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 89,
+    "line": 90,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -12233,7 +12215,7 @@
   {
     "id": "ui-7a12b4ce2007730a",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 197,
+    "line": 198,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -12366,18 +12348,9 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-7b188dd5f0baedb0",
-    "file": "src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx",
-    "line": 135,
-    "fingerprint": "div\tflex items-center gap-1.5 px-1.5 py-1 rounded bg-surface-overlay/50 border border-border/20 cursor-grab active:cursor-grabbing",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7b1b26024f2233ae",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 148,
+    "line": 149,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -12485,7 +12458,7 @@
   {
     "id": "ui-7bbc9a44c51cb6d4",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 498,
+    "line": 499,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12683,7 +12656,7 @@
   {
     "id": "ui-7dc6d325eaec4fd1",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 365,
+    "line": 369,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12701,7 +12674,7 @@
   {
     "id": "ui-7dda8c8b93e7b1fe",
     "file": "src/modules/SampleLibrary/presentations/components/SampleRow.tsx",
-    "line": 178,
+    "line": 180,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12755,7 +12728,7 @@
   {
     "id": "ui-7e31d658c30accf5",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 211,
+    "line": 212,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12800,7 +12773,7 @@
   {
     "id": "ui-7e7ee294dd7fffdb",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1621,
+    "line": 1577,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -12895,24 +12868,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-7f68ee6559f66923",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 386,
-    "fingerprint": "label\tflex items-center gap-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-7f6ab6828b501242",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 323,
-    "fingerprint": "div\tflex h-full flex-col overflow-hidden",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7f96fba9fd139e61",
@@ -13016,7 +12971,7 @@
   {
     "id": "ui-80898068435ba561",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 80,
+    "line": 81,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -13039,15 +12994,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-80c85647b7771686",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 220,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-80da635f2555bd81",
@@ -13102,15 +13048,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-81481aeda3b77e88",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 255,
-    "fingerprint": "div\tflex flex-wrap items-center gap-4 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-814d8ed9d1637ceb",
@@ -13187,7 +13124,7 @@
   {
     "id": "ui-81e7104d39645904",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 334,
+    "line": 335,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -13403,7 +13340,7 @@
   {
     "id": "ui-8401b6648170b605",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 392,
+    "line": 393,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13518,15 +13455,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-8549c57430572277",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 417,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-854c49f1bf84afed",
     "file": "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx",
     "line": 216,
@@ -13587,6 +13515,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-85c8aa684e3b608d",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 223,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -13673,7 +13610,7 @@
   {
     "id": "ui-871237b0f33f6f6e",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 210,
+    "line": 211,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13695,15 +13632,6 @@
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-8795fe9be55fe1c4",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 65,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -13853,7 +13781,7 @@
   {
     "id": "ui-88f371ed5d8251d2",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 128,
+    "line": 129,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -13934,7 +13862,7 @@
   {
     "id": "ui-899699cfa915a56f",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 189,
+    "line": 190,
     "fingerprint": "div\tgrid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5",
     "kind": "layout",
     "mapping": "Grid",
@@ -14177,7 +14105,7 @@
   {
     "id": "ui-8c04f267d18d6be0",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 482,
+    "line": 483,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14240,7 +14168,7 @@
   {
     "id": "ui-8c971c797ea32f71",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1651,
+    "line": 1632,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14267,7 +14195,7 @@
   {
     "id": "ui-8cc31ca098e3247f",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 154,
+    "line": 155,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -14294,7 +14222,7 @@
   {
     "id": "ui-8cdf3c96b92a0af2",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1784,
+    "line": 1651,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14447,7 +14375,7 @@
   {
     "id": "ui-8e9b406577e23404",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 314,
+    "line": 315,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14461,6 +14389,15 @@
     "kind": "daw-chrome",
     "mapping": "DawContextMenuSurface",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-8ef2300e1e2ff139",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 465,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-8ef5c9de2572e72b",
@@ -14645,7 +14582,7 @@
   {
     "id": "ui-910914ceb614ac6b",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 365,
+    "line": 367,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14834,19 +14771,10 @@
   {
     "id": "ui-9353eb18cd40254e",
     "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 229,
+    "line": 230,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-937b5dd3d79b8383",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 338,
-    "fingerprint": "div\tflex flex-wrap items-center gap-2 rounded-sm bg-surface-inset px-2 py-1.5",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -15212,7 +15140,7 @@
   {
     "id": "ui-97ce611dab27810b",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 267,
+    "line": 268,
     "fingerprint": "DawUtilityNotice\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
@@ -15291,15 +15219,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-98b87e852f956a72",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 146,
-    "fingerprint": "div\tflex flex-col gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-98ef90bdc342b139",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
     "line": 79,
@@ -15316,15 +15235,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-990a9809743cbad2",
-    "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
-    "line": 184,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9968b80f0b2c93e9",
@@ -15365,7 +15275,7 @@
   {
     "id": "ui-99f47226746b70a5",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 118,
+    "line": 119,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -15374,7 +15284,7 @@
   {
     "id": "ui-9a073b31a4bcbc75",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 273,
+    "line": 274,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15410,7 +15320,7 @@
   {
     "id": "ui-9a2c485ad1d6e93a",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 45,
+    "line": 46,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -15419,7 +15329,7 @@
   {
     "id": "ui-9a3ebf4bc7848d3e",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 379,
+    "line": 380,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15480,6 +15390,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-9ae4b41118aff949",
+    "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
+    "line": 32,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9b0dbb15373f6390",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 245,
@@ -15513,6 +15432,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9b561aeb57a1c675",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 423,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -15581,7 +15509,16 @@
   {
     "id": "ui-9c8e68afe750bf86",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1577,
+    "line": 1551,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9ce24452eb1aac33",
+    "file": "src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx",
+    "line": 136,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15626,7 +15563,7 @@
   {
     "id": "ui-9d06a4c98b925410",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 165,
+    "line": 166,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -15635,7 +15572,7 @@
   {
     "id": "ui-9d31fdcea360d43b",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 464,
+    "line": 465,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -15644,20 +15581,11 @@
   {
     "id": "ui-9d433798816768de",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 261,
+    "line": 262,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-9d50ffeacce48d3b",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 54,
-    "fingerprint": "div\tflex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-medium border",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9d589f82e85456a0",
@@ -15734,7 +15662,7 @@
   {
     "id": "ui-9e89133f76e8caf1",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 249,
+    "line": 250,
     "fingerprint": "DawKeycap\t",
     "kind": "daw-chrome",
     "mapping": "DawKeycap",
@@ -15813,9 +15741,18 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-9eed31a43256ad3d",
+    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
+    "line": 236,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-9f0f22114d995fe6",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1460,
+    "line": 1402,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15858,18 +15795,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-9f5e25c7d0d63e1a",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 462,
-    "fingerprint": "div\tflex flex-col gap-1.5 rounded-sm border border-border-hairline bg-surface-base/50 p-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9f727c2ac5f14566",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 169,
+    "line": 170,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15882,6 +15810,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9fbe0ff6963ca25a",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 406,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -15923,7 +15860,7 @@
   {
     "id": "ui-9ff9a1366729c7b4",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1519,
+    "line": 1487,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15959,7 +15896,7 @@
   {
     "id": "ui-a03308da75020d4f",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1179,
+    "line": 1152,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -15986,7 +15923,7 @@
   {
     "id": "ui-a063ca6309e86a58",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 325,
+    "line": 326,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16036,15 +15973,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-a13cb912b123c161",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 89,
-    "fingerprint": "div\tflex items-center gap-1 text-[7px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a146d27c2875b169",
@@ -16220,7 +16148,7 @@
   {
     "id": "ui-a2647493ad7e5c06",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 486,
+    "line": 487,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16229,7 +16157,7 @@
   {
     "id": "ui-a294fc6a446423e5",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 187,
+    "line": 188,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16242,6 +16170,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a2a274e18743c75e",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 257,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -16364,7 +16301,7 @@
   {
     "id": "ui-a44577cfb0b595fd",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 133,
+    "line": 134,
     "fingerprint": "DawUtilitySection\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilitySection",
@@ -16398,13 +16335,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a4539a2383d289f1",
-    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 47,
-    "fingerprint": "div\tabsolute inset-0 flex items-center justify-center overflow-hidden",
+    "id": "ui-a454ad4106aaf6ec",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 323,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a46ae0bdbae9ae1d",
@@ -16418,7 +16355,7 @@
   {
     "id": "ui-a47afa9f4076aaa7",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 352,
+    "line": 353,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16452,6 +16389,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-a4abbd74b37039c1",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 72,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a4af90e42eee8875",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx",
     "line": 66,
@@ -16479,15 +16425,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a587a6f62f5043b0",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 322,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a59324bc153ad0f1",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar.tsx",
     "line": 262,
@@ -16503,6 +16440,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a5ae180a1234b71c",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 326,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -16524,18 +16470,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a66c047f1bddd132",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 458,
-    "fingerprint": "div\tflex items-center justify-between gap-3 border-t border-border/40 px-3 py-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a68cab625a6c662a",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1487,
+    "line": 1476,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16598,7 +16535,7 @@
   {
     "id": "ui-a72f30885739545c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 341,
+    "line": 342,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16641,9 +16578,18 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-a7c0c641aedbf8ab",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 339,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a7d536b0f6b875a6",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 423,
+    "line": 427,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16686,15 +16632,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a82c504200a5fd70",
-    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 389,
-    "fingerprint": "div\tflex gap-1.5 border-b border-border/50 pb-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a8397178b8106fd8",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 1055,
@@ -16715,7 +16652,7 @@
   {
     "id": "ui-a85b766cf34a5ca8",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 110,
+    "line": 111,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16839,18 +16776,18 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-a9af8a8df4619521",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 464,
-    "fingerprint": "span\tflex items-center gap-1",
+    "id": "ui-a9c7e4ce2442f34e",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 347,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-a9d51a17773eb23f",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1632,
+    "line": 1621,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16860,6 +16797,15 @@
     "id": "ui-a9dac6be658e8bb7",
     "file": "src/modules/Arrangement/presentations/views/ArrangementBar.tsx",
     "line": 408,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a9ebed5d8869c7bd",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 89,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17003,7 +16949,7 @@
   {
     "id": "ui-aaf912beff7a1a06",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 188,
+    "line": 189,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -17147,7 +17093,7 @@
   {
     "id": "ui-accda4ad64cfc488",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 123,
+    "line": 124,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17190,6 +17136,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-ad170548f88745b4",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 300,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ad186f307370386f",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
     "line": 117,
@@ -17197,15 +17152,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ad23f2e99c32a615",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 173,
-    "fingerprint": "div\tflex h-full items-center justify-center p-6 text-center",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ad6a9f24b2253387",
@@ -17255,7 +17201,7 @@
   {
     "id": "ui-adfc6b27d525a5d7",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1803,
+    "line": 1784,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17327,7 +17273,7 @@
   {
     "id": "ui-ae8499a49581cb96",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 267,
+    "line": 268,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17343,9 +17289,18 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-aee5eea80e0f2b3d",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 86,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-af0b36b9cc1e6f32",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 185,
+    "line": 186,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17379,6 +17334,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-af47453484e51b5a",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 158,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-af704e4573868969",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx",
     "line": 117,
@@ -17394,6 +17358,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-af81e70b3d882738",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 186,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -17516,7 +17489,7 @@
   {
     "id": "ui-b0a712e2487d17a2",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 250,
+    "line": 251,
     "fingerprint": "DawDiagramFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawDiagramFrame",
@@ -17544,6 +17517,15 @@
     "id": "ui-b0dca8845f3a8f71",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx",
     "line": 173,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b0ec8b3fa95b0d1c",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 418,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17604,6 +17586,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-b1389f361d70311c",
+    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
+    "line": 39,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b147ba7369e162a3",
     "file": "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
     "line": 188,
@@ -17622,13 +17613,13 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-b196027b2b9c0c53",
+    "id": "ui-b17b0073e8014df5",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 453,
-    "fingerprint": "div\tflex items-center gap-1 px-2 py-1 shrink-0 border-b border-border/10 flex-wrap",
+    "line": 425,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-b1a178235924728b",
@@ -17696,7 +17687,7 @@
   {
     "id": "ui-b1f108858ed7ebf2",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 755,
+    "line": 739,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -17712,13 +17703,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b2164b2509a0c08a",
-    "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
-    "line": 220,
-    "fingerprint": "div\tflex flex-col justify-between py-0.5 pr-px shrink-0",
+    "id": "ui-b22d6defae6926a3",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 273,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-b23f80aebc6939bc",
@@ -17804,7 +17795,7 @@
   {
     "id": "ui-b31733aaac096ac8",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 156,
+    "line": 157,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -17826,15 +17817,6 @@
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-b35d966672442fac",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 147,
-    "fingerprint": "div\tflex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -17910,6 +17892,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-b43545260f6fb8b4",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 333,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b43ed03165f8cc59",
     "file": "src/components/daw/DawChooserCard.tsx",
     "line": 31,
@@ -17930,7 +17921,7 @@
   {
     "id": "ui-b4854dfb37c81ebc",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 547,
+    "line": 548,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -18218,7 +18209,7 @@
   {
     "id": "ui-b70d306bb9fbe7e7",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 785,
+    "line": 757,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18434,7 +18425,7 @@
   {
     "id": "ui-b9787b88dac994d2",
     "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 237,
+    "line": 238,
     "fingerprint": "DawDiagramFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawDiagramFrame",
@@ -18695,7 +18686,7 @@
   {
     "id": "ui-bc287dc6c27dade7",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 179,
+    "line": 180,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -18709,15 +18700,6 @@
     "kind": "daw-chrome",
     "mapping": "DawSwatchButton",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-bc4830ae54107bf4",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 348,
-    "fingerprint": "div\tbg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-bc49cf17a171bae5",
@@ -18812,7 +18794,7 @@
   {
     "id": "ui-bd7d03e3a1c5bd1a",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 757,
+    "line": 755,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18830,7 +18812,7 @@
   {
     "id": "ui-bdaa4e3a7fd826b4",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 321,
+    "line": 328,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18884,7 +18866,7 @@
   {
     "id": "ui-be0c93bd901e38fe",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1551,
+    "line": 1549,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -18927,15 +18909,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-be67ba4f2390f33a",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 276,
-    "fingerprint": "div\tflex items-center gap-1 px-2 pb-1 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-be690339068bd141",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
     "line": 231,
@@ -18956,7 +18929,7 @@
   {
     "id": "ui-beb5edd93acf5160",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 115,
+    "line": 116,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -19024,24 +18997,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-bfeb3c0eee4cf624",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 85,
-    "fingerprint": "div\tflex flex-col items-center gap-0 mt-auto",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c00ee151dec3c1bd",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 241,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c02d784d96f06a7e",
@@ -19242,18 +19197,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c1b4ae761a23c870",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 222,
-    "fingerprint": "div\tflex items-center gap-1 flex-wrap",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c1c28768eb4dd8d6",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 417,
+    "line": 418,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -19266,6 +19212,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-c1e61d911c6e0b4c",
+    "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
+    "line": 1842,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -19393,15 +19348,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c39adf4e5d14b149",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 325,
-    "fingerprint": "div\tflex min-w-0 flex-1 items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c3c5c81f4310327a",
@@ -19537,6 +19483,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-c50dfd1a5899a43f",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 256,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c52a99a4eab4aae1",
@@ -19703,7 +19658,7 @@
   {
     "id": "ui-c73030a432e1a528",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 398,
+    "line": 405,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19717,15 +19672,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c7e7ff01fa18513e",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 260,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c7e99e0421f4bcad",
@@ -19755,15 +19701,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c84ebe948d76e215",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 399,
-    "fingerprint": "div\tpx-1 pb-1 space-y-0.5 shrink-0",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c84fc43730ecc82f",
     "file": "src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx",
     "line": 52,
@@ -19775,7 +19712,7 @@
   {
     "id": "ui-c8750fb146e93384",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 529,
+    "line": 530,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19829,7 +19766,7 @@
   {
     "id": "ui-c9462c9d49c3a3c1",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 228,
+    "line": 229,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -19856,7 +19793,7 @@
   {
     "id": "ui-c993f374321731af",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 609,
+    "line": 390,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19874,7 +19811,7 @@
   {
     "id": "ui-c9ac0c9adcc56dd0",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 675,
+    "line": 663,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19928,11 +19865,20 @@
   {
     "id": "ui-ca37007f0e32d08b",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 466,
+    "line": 467,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-ca40ae930938e9ac",
+    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
+    "line": 390,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ca5dc3d0abc3bde2",
@@ -19941,6 +19887,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ca73bc5a875432fc",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 329,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -20196,18 +20151,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-cbf4933983a1e65b",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 332,
-    "fingerprint": "div\tflex items-center gap-1 px-2 pb-1 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-cbfb0f82aad241d8",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 373,
+    "line": 374,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20216,7 +20162,7 @@
   {
     "id": "ui-cc05f52fe55b3619",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 242,
+    "line": 249,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20297,7 +20243,7 @@
   {
     "id": "ui-ccaba29a7cb847af",
     "file": "src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx",
-    "line": 141,
+    "line": 143,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20441,11 +20387,20 @@
   {
     "id": "ui-cdbe7a7758790c14",
     "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
-    "line": 194,
+    "line": 195,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-ce23ac746418df6b",
+    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
+    "line": 50,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ce5f679e5d055c6d",
@@ -20545,15 +20500,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-cf9cf663b2b58055",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 180,
-    "fingerprint": "div\tflex flex-col gap-2 border-b border-border-hairline bg-surface-inset p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-cfaa33a2158d1285",
@@ -20909,7 +20855,7 @@
   {
     "id": "ui-d3460f1cba12724c",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 418,
+    "line": 419,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -21006,15 +20952,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d41e963fc408ddc9",
-    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 325,
-    "fingerprint": "div\tflex items-center gap-0.5 rounded-md border border-border/40 p-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d42dcf896a809e86",
     "file": "src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx",
     "line": 171,
@@ -21078,6 +21015,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-d4d3d67757fd5aa8",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 233,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d4ea3e664df5e5aa",
     "file": "src/modules/Levain/presentations/components/ExpressionPanel.tsx",
     "line": 181,
@@ -21107,7 +21053,7 @@
   {
     "id": "ui-d541c407ad731944",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 379,
+    "line": 380,
     "fingerprint": "DawBlockedState\t",
     "kind": "daw-chrome",
     "mapping": "DawBlockedState",
@@ -21240,6 +21186,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-d6c436788f7916a7",
+    "file": "src/modules/SampleLibrary/presentations/components/SampleRow.tsx",
+    "line": 77,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d6ebeb2d3da784a8",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
     "line": 863,
@@ -21256,6 +21211,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-d6fdeab44685a876",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 324,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d72c483ddd3b5de8",
@@ -21348,9 +21312,18 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-d7d75ba8b5cd566a",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 379,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d7d9f1096315ee3e",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1152,
+    "line": 785,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21359,7 +21332,7 @@
   {
     "id": "ui-d7df5896726bd129",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 389,
+    "line": 393,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21393,15 +21366,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-d80a7f44fe73da46",
-    "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 42,
-    "fingerprint": "div\tflex flex-col gap-2 p-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d833376b9127c656",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
     "line": 957,
@@ -21413,7 +21377,7 @@
   {
     "id": "ui-d859a154b634dc9a",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 256,
+    "line": 257,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21519,13 +21483,13 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-d9866c8b8e6b9b4c",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 299,
-    "fingerprint": "span\tflex size-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100",
+    "id": "ui-d9797bb47f9aca94",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 454,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d9880b0e3c52766b",
@@ -21683,7 +21647,7 @@
   {
     "id": "ui-db4a2d56bcf5e9af",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 474,
+    "line": 475,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -21692,7 +21656,7 @@
   {
     "id": "ui-db63e37db0967397",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 57,
+    "line": 58,
     "fingerprint": "DawPanelSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
@@ -21726,15 +21690,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-dbc1c6298934b418",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 545,
-    "fingerprint": "div\tflex flex-col gap-2 p-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-dbd457d88216a574",
     "file": "src/modules/AiRuntime/presentations/views/AiChangeToast.tsx",
     "line": 54,
@@ -21759,6 +21714,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-dc1c44c83ddbc839",
+    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
+    "line": 275,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -21805,15 +21769,6 @@
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-dc9454025867476b",
-    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 284,
-    "fingerprint": "div\ttext-center space-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-dc9d9e6792bcc695",
@@ -21876,24 +21831,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-dd47f87d04cb24d2",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 274,
-    "fingerprint": "div\tflex flex-col h-full",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-dd4de4666dd878e7",
-    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 420,
-    "fingerprint": "div\tflex-1 min-h-0 flex flex-col overflow-hidden",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -21989,10 +21926,19 @@
   {
     "id": "ui-deab44da9e8cfd6c",
     "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 390,
+    "line": 391,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-deb62c01b35836ca",
+    "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
+    "line": 15,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -22025,7 +21971,7 @@
   {
     "id": "ui-def6332708bb9d0a",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 190,
+    "line": 191,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22070,7 +22016,7 @@
   {
     "id": "ui-df5f9bb9757208fe",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 212,
+    "line": 213,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -22093,6 +22039,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-df81747adfda2419",
+    "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
+    "line": 288,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-df8ac6a72c8a70ee",
@@ -22248,6 +22203,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e1ccf0a1f75f6643",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 239,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e1f4dabf76c236e2",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 320,
@@ -22259,7 +22223,7 @@
   {
     "id": "ui-e1f9b4b0179384f9",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1829,
+    "line": 1811,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -22401,6 +22365,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e3df04a80eaef2cc",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 421,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e3e0c553d62da093",
     "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
     "line": 515,
@@ -22500,6 +22473,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-e44b4f05e2eade3c",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 265,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e45c4aa85eeefac8",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 540,
@@ -22511,7 +22493,7 @@
   {
     "id": "ui-e46c0ca59410cf06",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 406,
+    "line": 410,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22547,7 +22529,7 @@
   {
     "id": "ui-e4a82c1c0b196059",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 218,
+    "line": 219,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22556,7 +22538,7 @@
   {
     "id": "ui-e4b27d7b136305a5",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
-    "line": 1549,
+    "line": 1519,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -22574,7 +22556,7 @@
   {
     "id": "ui-e4e9fc19eadea53e",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 161,
+    "line": 162,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -22599,6 +22581,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e50e4460679cc0ca",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 242,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e521ed6eca28d80f",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
     "line": 55,
@@ -22610,7 +22601,7 @@
   {
     "id": "ui-e5309d3b37355c5f",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1278,
+    "line": 1179,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -22680,15 +22671,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-e62f77723c13ba2b",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 184,
-    "fingerprint": "div\tml-auto flex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e6492ee23315db94",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 743,
@@ -22718,11 +22700,20 @@
   {
     "id": "ui-e67a968d724e7ac3",
     "file": "src/modules/Bacteria/presentations/components/ModulationDock.tsx",
-    "line": 99,
+    "line": 102,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e6892dee7316d44b",
+    "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
+    "line": 221,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e6a2c6b8662131ff",
@@ -22763,7 +22754,7 @@
   {
     "id": "ui-e6eea4402aed8f16",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 365,
+    "line": 372,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -22785,6 +22776,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-e788d7ea719f80d9",
+    "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
+    "line": 277,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -22848,15 +22848,6 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-e8794426aff0fc1d",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 473,
-    "fingerprint": "label\tml-2 flex items-center gap-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -23150,7 +23141,7 @@
   {
     "id": "ui-eaaa415d3a43cafd",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 1400,
+    "line": 1375,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -23177,7 +23168,7 @@
   {
     "id": "ui-ead8d90fb1545a4a",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 136,
+    "line": 137,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23213,7 +23204,7 @@
   {
     "id": "ui-eb569ae744a1093b",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
-    "line": 239,
+    "line": 240,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23222,7 +23213,7 @@
   {
     "id": "ui-eb76038a79fe6159",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 165,
+    "line": 166,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -23276,7 +23267,7 @@
   {
     "id": "ui-ebdddcc62ecaec71",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 349,
+    "line": 350,
     "fingerprint": "div\tgrid grid-cols-3 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -23330,7 +23321,7 @@
   {
     "id": "ui-ec46fe2a02e492b2",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 524,
+    "line": 525,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -23339,7 +23330,7 @@
   {
     "id": "ui-ec51e4aaa0c920d8",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 92,
+    "line": 93,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23412,6 +23403,15 @@
     "id": "ui-ecf6653dadd33808",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1476,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ed2788078fef6080",
+    "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
+    "line": 388,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -23573,7 +23573,7 @@
   {
     "id": "ui-eee71c0539ce3693",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 360,
+    "line": 361,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -23627,7 +23627,7 @@
   {
     "id": "ui-ef2e5ba5f9070600",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 448,
+    "line": 452,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23699,7 +23699,7 @@
   {
     "id": "ui-efaf6f9620188e25",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 344,
+    "line": 345,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23843,7 +23843,7 @@
   {
     "id": "ui-f179423460703a6c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 313,
+    "line": 314,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23931,15 +23931,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-f2446abf9badda8f",
-    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
-    "line": 256,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f24a6878bb1c9e5f",
     "file": "src/components/daw/DawPluginSectionHeader.tsx",
     "line": 31,
@@ -23987,7 +23978,7 @@
   {
     "id": "ui-f2969c9a19e6c011",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
-    "line": 149,
+    "line": 150,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -24001,15 +23992,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f2aaf57f90d19ceb",
-    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 59,
-    "fingerprint": "div\tp-2 flex flex-wrap gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f2ca0ea29520612b",
@@ -24068,7 +24050,7 @@
   {
     "id": "ui-f31b8bf2adcb794c",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 718,
+    "line": 677,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24203,7 +24185,7 @@
   {
     "id": "ui-f4d16fb98f30bbc9",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 223,
+    "line": 224,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -24264,9 +24246,36 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f59634ba991b31d1",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 153,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f5b93aaea5621af7",
+    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+    "line": 107,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f5d5f929054f4695",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx",
     "line": 113,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f60bba44fb1f4509",
+    "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
+    "line": 1400,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24284,7 +24293,7 @@
   {
     "id": "ui-f63af9cf24748e3e",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 346,
+    "line": 353,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24320,7 +24329,7 @@
   {
     "id": "ui-f67fb98bc4273ab7",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 376,
+    "line": 377,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24435,13 +24444,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-f77a0be7e20f3c08",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 241,
-    "fingerprint": "section\ttext-[9px] text-muted-foreground/55 border-t border-border/20 pt-2 space-y-0.5",
+    "id": "ui-f79751000cbc54f5",
+    "file": "src/modules/Routing/presentations/views/RoutingGraph.tsx",
+    "line": 261,
+    "fingerprint": "Row\t",
     "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f79bd4e5a4de8672",
@@ -24460,15 +24469,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f7ae52fdef253af4",
-    "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 38,
-    "fingerprint": "div\tflex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f7c914aa6a87b008",
@@ -24554,7 +24554,7 @@
   {
     "id": "ui-f8569d9215b085e0",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 324,
+    "line": 325,
     "fingerprint": "DawControlStrip\t",
     "kind": "daw-chrome",
     "mapping": "DawControlStrip",
@@ -24572,7 +24572,7 @@
   {
     "id": "ui-f894943709ce62cd",
     "file": "src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx",
-    "line": 160,
+    "line": 161,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24635,7 +24635,7 @@
   {
     "id": "ui-f93fdfc1cd4f881d",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 201,
+    "line": 202,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24663,6 +24663,24 @@
     "id": "ui-f9673e383be032f6",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
     "line": 368,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f98929ddd44060a1",
+    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
+    "line": 48,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f98ab3f4d7039a5b",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 185,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24716,20 +24734,11 @@
   {
     "id": "ui-f9db61ca5468b14f",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 191,
+    "line": 192,
     "fingerprint": "DawPickerRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-f9e3cbbd91c48b37",
-    "file": "src/modules/Project/presentations/views/TemplateChooser.tsx",
-    "line": 369,
-    "fingerprint": "div\tflex items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f9e632970b1b806f",
@@ -24779,7 +24788,7 @@
   {
     "id": "ui-fa5977bc451365b3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 275,
+    "line": 282,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24887,7 +24896,7 @@
   {
     "id": "ui-fbd6c972b6707319",
     "file": "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx",
-    "line": 277,
+    "line": 278,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24896,11 +24905,20 @@
   {
     "id": "ui-fbe8c0170a04250f",
     "file": "src/modules/Bacteria/presentations/components/BandStrip.tsx",
-    "line": 43,
+    "line": 44,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-fbf80dbfa0c2226e",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 148,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-fc494b71f1520c18",
@@ -24995,7 +25013,7 @@
   {
     "id": "ui-fcee26de2a637970",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 523,
+    "line": 524,
     "fingerprint": "DawPanelSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
@@ -25013,7 +25031,7 @@
   {
     "id": "ui-fd7e8f538cebf82b",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 96,
+    "line": 97,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -25054,15 +25072,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-fd94ede1d068db25",
-    "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
-    "line": 390,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fd9b51f8d48c6529",
@@ -25134,6 +25143,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-fe3aefea6cc283ef",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 221,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -25211,7 +25229,7 @@
   {
     "id": "ui-feb6c47382c2b674",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 169,
+    "line": 170,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25234,15 +25252,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ff51c733b87d9dc8",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 151,
-    "fingerprint": "div\tflex h-full flex-col bg-surface-base",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ff5b3ae1ed8de772",
@@ -25270,15 +25279,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ffcef303d8e63849",
-    "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-    "line": 88,
-    "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ffe72965d13b61a3",

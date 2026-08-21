@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { selectTrack } from '#/modules/Arrangement/useCases';
@@ -235,13 +236,13 @@ export const RoutingGraph = (): ReactElement => {
     if (tracks.length === 0) {
         return (
             <DawDiagramFrame title="Routing graph" className="h-full">
-                <div className="flex h-full items-center justify-center p-4">
+                <Row justify="center" className="h-full p-4">
                     <DawEmptyState
                         title="No routing to display"
                         description="Add tracks or buses to inspect the project signal graph."
                         className="max-w-xs"
                     />
-                </div>
+                </Row>
             </DawDiagramFrame>
         );
     }
@@ -252,20 +253,20 @@ export const RoutingGraph = (): ReactElement => {
             className="h-full"
             viewportClassName="p-3"
             footer={
-                <div className="flex flex-wrap items-center gap-4 text-[10px] text-muted-foreground">
-                    <div className="flex items-center gap-2">
+                <Row wrap gap={4} className="text-[10px] text-muted-foreground">
+                    <Row gap={2}>
                         <span className="h-px w-4 bg-muted-foreground/70" />
                         Output
-                    </div>
-                    <div className="flex items-center gap-2">
+                    </Row>
+                    <Row gap={2}>
                         <span className="h-px w-4 border-t border-dashed border-muted-foreground/70" />
                         Send
-                    </div>
-                    <div className="flex items-center gap-2">
+                    </Row>
+                    <Row gap={2}>
                         <span className="h-px w-4 border-t border-dashed border-[var(--color-state-record)]/80" />
                         Sidechain
-                    </div>
-                </div>
+                    </Row>
+                </Row>
             }
         >
             <div className="overflow-x-auto">

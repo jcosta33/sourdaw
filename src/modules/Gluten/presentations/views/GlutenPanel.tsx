@@ -13,7 +13,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Stack, Row, Grid } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 
@@ -387,7 +387,7 @@ const Knob = ({
     /** Selected-engine travel; `min`/`max` remain the persisted parameter domain. */
     activeRange?: GlutenControlRange;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <Stack align="center" gap={1}>
         <RotaryKnob
             value={value}
             onChange={(nextValue, isTransient) =>
@@ -413,7 +413,7 @@ const Knob = ({
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{formatValue(value, unit)}</div>
         </div>
-    </div>
+    </Stack>
 );
 
 const defaultGlutenInstances: Record<string, GlutenState> = {};
