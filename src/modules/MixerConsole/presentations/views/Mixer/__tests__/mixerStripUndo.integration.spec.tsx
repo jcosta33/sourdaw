@@ -59,45 +59,52 @@ import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.fn() }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: vi.fn(),
-    getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
-    getRuntimeGraphRevision: vi.fn(() => 0),
-    initializeTrackStripFromSnapshot: vi.fn(() => ({
-        acceptance: 'accepted' as const,
-        application: 'applied' as const,
-        correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
-        runtimeRevision: 1,
-    })),
-    getAudioDevices: vi.fn(() => Promise.resolve([])),
-    getTrackAnalyser: vi.fn(() => null),
-    getMasterAnalyser: vi.fn(() => null),
-    getTrackPeakLevel: vi.fn(() => 0),
-    getMasterPeakLevel: vi.fn(() => 0),
-    removeTrackStrip: vi.fn(),
-    ensureTrackStrip: vi.fn(),
-    addDeviceToStrip: vi.fn(),
-    updateDeviceBypass: vi.fn(),
-    reportLatency: vi.fn(),
-    resolveToasterPadBinding: vi.fn(() => null),
-    setTrackOutput: vi.fn(),
-    setTrackGain: vi.fn(),
-    setTrackPan: vi.fn(),
-    setTrackMute: vi.fn(),
-    setTrackSolo: vi.fn(),
-    setTrackSoloGate: vi.fn(),
-    // `LevelMeter` constructs one per strip on first render; it is never read by
-    // any assertion here, it only has to be constructible.
-    VUMeter: class {
-        update(): number {
-            return 0;
-        }
-        getPeakHold(): number {
-            return 0;
-        }
-        reset(): void {}
-    },
-}));
+vi.mock('#/modules/AudioEngine/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
+        '#/modules/AudioEngine/useCases'
+    );
+
+    return {
+        ...actual,
+        updateDeviceParam: vi.fn(),
+        getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
+        getRuntimeGraphRevision: vi.fn(() => 0),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+            runtimeRevision: 1,
+        })),
+        getAudioDevices: vi.fn(() => Promise.resolve([])),
+        getTrackAnalyser: vi.fn(() => null),
+        getMasterAnalyser: vi.fn(() => null),
+        getTrackPeakLevel: vi.fn(() => 0),
+        getMasterPeakLevel: vi.fn(() => 0),
+        removeTrackStrip: vi.fn(),
+        ensureTrackStrip: vi.fn(),
+        addDeviceToStrip: vi.fn(),
+        updateDeviceBypass: vi.fn(),
+        reportLatency: vi.fn(),
+        resolveToasterPadBinding: vi.fn(() => null),
+        setTrackOutput: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackMute: vi.fn(),
+        setTrackSolo: vi.fn(),
+        setTrackSoloGate: vi.fn(),
+        // `LevelMeter` constructs one per strip on first render; it is never read by
+        // any assertion here, it only has to be constructible.
+        VUMeter: class {
+            update(): number {
+                return 0;
+            }
+            getPeakHold(): number {
+                return 0;
+            }
+            reset(): void {}
+        },
+    };
+});
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: vi.fn(() => []),
     wireSidechainRoutes: vi.fn(),
@@ -108,6 +115,12 @@ vi.mock('#/modules/Routing/useCases', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: vi.fn(() => Promise.resolve()),
+    // Spreading the real AudioEngine/useCases barrel below pulls in its own
+    // engine internals (TrackNode -> wasmDeviceRegistry), which import this
+    // barrel at module scope to build its Faust device matcher. None of this
+    // spec's devices are Faust modules, so the matcher only has to resolve.
+    isFaustModule: vi.fn(() => false),
+    isFaustInstrumentModule: vi.fn(() => false),
 }));
 /**
  * The remove/restore handlers publish `track.removed` / `track.added` through
