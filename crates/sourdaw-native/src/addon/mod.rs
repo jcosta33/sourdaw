@@ -1060,6 +1060,17 @@ impl SourdawNative {
         reason(commands::crumbs::stop_recording(instance_id, &self.singletons.crumbs).await)
     }
 
+    /// Hand one block of the monitored input bus to every armed crumbs
+    /// sampler's record bridge. Interleaved stereo f32 LE bytes, one call per
+    /// render quantum from the input-monitor path.
+    #[napi]
+    pub async fn feed_crumbs_record_input(&self, audio_bytes: Buffer) -> Result<()> {
+        reason(
+            commands::crumbs::feed_record_input(audio_bytes.to_vec(), &self.singletons.app_state)
+                .await,
+        )
+    }
+
     // ── Pitch edit ─────────────────────────────────────────────────────
 
     #[napi]
