@@ -677,7 +677,7 @@
   {
     "id": "ui-05bac782cf296705",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 277,
+    "line": 278,
     "fingerprint": "div\tgroup flex items-center gap-2 border-b border-border-hairline px-2 py-1.5 cursor-pointer bg-surface-overlay hover:bg-surface-panel border-t-2 border-t-ring",
     "kind": "layout",
     "mapping": "Row",
@@ -704,7 +704,7 @@
   {
     "id": "ui-063f37f7ae394473",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 444,
+    "line": 448,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -1082,7 +1082,7 @@
   {
     "id": "ui-09183de4226719cd",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 327,
+    "line": 331,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -1276,15 +1276,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0b42f17b365de899",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 152,
-    "fingerprint": "div\tflex items-center gap-2 border-b border-border-hairline px-3 py-1.5 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0b7ec6e66310aa63",
@@ -4367,7 +4358,7 @@
   {
     "id": "ui-29656095658a4e1a",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 346,
+    "line": 350,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6194,7 +6185,7 @@
   {
     "id": "ui-3bf5d5a42316b39a",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 235,
+    "line": 236,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -6311,7 +6302,7 @@
   {
     "id": "ui-3d5df341f7e95a98",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 254,
+    "line": 255,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8703,15 +8694,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-559c0a9b26c69852",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 232,
-    "fingerprint": "div\tflex items-center gap-1 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-55c2536b2d07d157",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
     "line": 197,
@@ -9363,6 +9345,15 @@
     "id": "ui-5c448a7a310b6a91",
     "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
     "line": 143,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5c46314c5b1f4642",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 152,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -11097,6 +11088,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-6e808b223aa50916",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 390,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-6e87528533dc6c95",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx",
     "line": 233,
@@ -11113,15 +11113,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6ea1f58fe62b672c",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 386,
-    "fingerprint": "div\tflex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6ed7919d1120720d",
@@ -12728,7 +12719,7 @@
   {
     "id": "ui-7dc6d325eaec4fd1",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 365,
+    "line": 369,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14276,7 +14267,7 @@
   {
     "id": "ui-8cc31ca098e3247f",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 154,
+    "line": 155,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16247,7 +16238,7 @@
   {
     "id": "ui-a294fc6a446423e5",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 187,
+    "line": 188,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16679,7 +16670,7 @@
   {
     "id": "ui-a7d536b0f6b875a6",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 423,
+    "line": 427,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17220,6 +17211,15 @@
     "id": "ui-ad05ad646db24793",
     "file": "src/modules/Arrangement/presentations/views/TimelineSurface.tsx",
     "line": 411,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ad170548f88745b4",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 300,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -19449,15 +19449,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c39adf4e5d14b149",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 325,
-    "fingerprint": "div\tflex min-w-0 flex-1 items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c3c5c81f4310327a",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx",
     "line": 112,
@@ -19995,6 +19986,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ca73bc5a875432fc",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 329,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -21123,6 +21123,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-d4d3d67757fd5aa8",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 233,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d4ea3e664df5e5aa",
     "file": "src/modules/Levain/presentations/components/ExpressionPanel.tsx",
     "line": 181,
@@ -21431,7 +21440,7 @@
   {
     "id": "ui-d7df5896726bd129",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 389,
+    "line": 393,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21580,15 +21589,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-d9866c8b8e6b9b4c",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 299,
-    "fingerprint": "span\tflex size-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-d9880b0e3c52766b",
@@ -22565,7 +22565,7 @@
   {
     "id": "ui-e46c0ca59410cf06",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 406,
+    "line": 410,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22601,7 +22601,7 @@
   {
     "id": "ui-e4a82c1c0b196059",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 218,
+    "line": 219,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22732,15 +22732,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-e62f77723c13ba2b",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 184,
-    "fingerprint": "div\tml-auto flex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-e6492ee23315db94",
@@ -23681,7 +23672,7 @@
   {
     "id": "ui-ef2e5ba5f9070600",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 448,
+    "line": 452,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24291,6 +24282,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f59634ba991b31d1",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 153,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f5b93aaea5621af7",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
     "line": 107,
@@ -24653,7 +24653,7 @@
   {
     "id": "ui-f93fdfc1cd4f881d",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 201,
+    "line": 202,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24681,6 +24681,15 @@
     "id": "ui-f9673e383be032f6",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
     "line": 368,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f98ab3f4d7039a5b",
+    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
+    "line": 185,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -25211,7 +25220,7 @@
   {
     "id": "ui-feb6c47382c2b674",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 169,
+    "line": 170,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25242,15 +25251,6 @@
     "fingerprint": "div\tfixed inset-0 z-40 flex items-center justify-center bg-black/40",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-ff51c733b87d9dc8",
-    "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
-    "line": 151,
-    "fingerprint": "div\tflex h-full flex-col bg-surface-base",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
