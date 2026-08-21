@@ -4,6 +4,8 @@
  * regex patterns, preset matching, and recipe lookups.
  */
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { type PresetContext } from '../../models/PresetActions/Registry';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction } from '../../models/RuntimeAction';
@@ -128,7 +130,12 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
     if (gainMatch && selectedTrack) {
         const rawVal = parseInt(gainMatch[1]!, 10);
         const gain = rawVal > 1 ? rawVal / 100 : rawVal;
-        return [{ type: 'setTrackGain', payload: { trackId: selectedTrack.id, gain: Math.max(0, Math.min(1, gain)) } }];
+        return [
+            {
+                type: 'setTrackGain',
+                payload: { trackId: selectedTrack.id, gain: Math.max(0, Math.min(FADER_MAX_GAIN, gain)) },
+            },
+        ];
     }
 
     const panMatch = normalized.match(/^(?:set\s+)?pan\s+(?:to\s+)?(-?\d+)$/i);

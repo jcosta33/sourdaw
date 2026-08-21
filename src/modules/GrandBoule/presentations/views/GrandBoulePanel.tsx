@@ -8,6 +8,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
@@ -100,7 +101,7 @@ const Knob = ({
     onChange: (value: number, isTransient?: boolean) => void;
     readout: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <Stack align="center" gap={1}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -115,7 +116,7 @@ const Knob = ({
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
-    </div>
+    </Stack>
 );
 
 /**
@@ -313,9 +314,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     return (
         <div className="grand-boule-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3">
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Preset shelf" detail="Signature Grand Boule voicings.">
-                        <div className="flex flex-col gap-1">
+                        <Stack gap={1}>
                             {presets.map((preset) => {
                                 const active = config.activePresetId === preset.id;
                                 return (
@@ -336,7 +337,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     </button>
                                 );
                             })}
-                        </div>
+                        </Stack>
                     </SectionCard>
 
                     <SectionCard title="Morph" detail="Piano model blending (§3.1).">
@@ -447,7 +448,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 defaultValue={1}
                                 readout={`${Math.round(config.lidPosition * 100)}% open`}
                             />
-                            <label className="flex flex-col gap-1 text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                            <Stack
+                                as="label"
+                                gap={1}
+                                className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60"
+                            >
                                 Microphone
                                 <select
                                     aria-label="Microphone position"
@@ -469,7 +474,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         </option>
                                     ))}
                                 </select>
-                            </label>
+                            </Stack>
                         </div>
                     </SectionCard>
                     <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
@@ -554,25 +559,25 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onReset={() => resetMidiCalibration({ engine, store })}
                         />
                     </SectionCard>
-                </aside>
+                </Stack>
 
-                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
+                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
+                    <Row align="start" justify="between" gap={3}>
+                        <Stack gap={2}>
                             <div className="text-[8px] uppercase tracking-[0.26em] text-neutral-400/80">
                                 Grand Boule
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">Physical Modeling Piano</div>
-                        </div>
-                        <div className="flex flex-wrap justify-end gap-2">
+                        </Stack>
+                        <Row align="stretch" justify="end" wrap gap={2}>
                             <DawPluginMetricTile
                                 className="grand-boule-window min-w-[94px]"
                                 label="Engine"
                                 value={engine.isReady() ? 'ready' : 'idle'}
                                 detail="WASM"
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
 
                     <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 280 }}>
                         <PianoModel3D
@@ -596,11 +601,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             className="h-full w-full"
                         />
                     </div>
-                </section>
+                </Stack>
 
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Pedals" detail="Sustain, una corda, sostenuto.">
-                        <div className="flex flex-col gap-3">
+                        <Stack gap={3}>
                             <Knob
                                 value={pedals.sustain}
                                 onChange={(value) => setGrandBouleSustain({ engine, store, position: value })}
@@ -611,7 +616,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 defaultValue={0}
                                 readout={`${Math.round(pedals.sustain * 100)}%`}
                             />
-                            <div className="flex items-center justify-between gap-2">
+                            <Row justify="between" gap={2}>
                                 <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/60">
                                     Una corda
                                 </span>
@@ -626,8 +631,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         })
                                     }
                                 />
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
+                            </Row>
+                            <Row justify="between" gap={2}>
                                 <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/60">
                                     Sostenuto
                                 </span>
@@ -642,12 +647,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         })
                                     }
                                 />
-                            </div>
-                        </div>
+                            </Row>
+                        </Stack>
                     </SectionCard>
 
                     <SectionCard title="Tuning" detail="Historical temperament (§4).">
-                        <div className="flex flex-col gap-1">
+                        <Stack gap={1}>
                             {TEMPERAMENT_OPTIONS.map((option) => {
                                 const active = temperament === option.value;
                                 return (
@@ -671,7 +676,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     </button>
                                 );
                             })}
-                        </div>
+                        </Stack>
                     </SectionCard>
 
                     <SectionCard title="Touch" detail="Velocity curve shaping.">
@@ -688,7 +693,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     </SectionCard>
 
                     <SectionCard title="Transport" detail="Panic — silence every voice.">
-                        <div className="flex items-center gap-2">
+                        <Row gap={2}>
                             <DawPluginChip
                                 tone="danger"
                                 size="sm"
@@ -700,9 +705,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 <Power className="size-3.5" />
                                 Panic
                             </DawPluginChip>
-                        </div>
+                        </Row>
                     </SectionCard>
-                </aside>
+                </Stack>
             </div>
         </div>
     );

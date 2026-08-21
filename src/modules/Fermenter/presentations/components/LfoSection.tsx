@@ -7,6 +7,7 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { LFO_SHAPE_NAMES } from '../../models/FermenterPatch';
 
@@ -94,12 +95,12 @@ export const LfoSection = ({
     onPitchAmountChange,
     onFilterAmountChange,
 }: LfoSectionProps): ReactElement => (
-    <div className="space-y-2 w-full max-w-[260px]">
+    <Stack gap={2} className="w-full max-w-[260px]">
         <DawPluginSectionHeader
             title="LFO"
             titleClassName="text-muted-foreground"
             actions={
-                <div className="flex gap-0.5">
+                <Row align="stretch" gap={0.5}>
                     {LFO_SHAPE_NAMES.map((name, i) => (
                         <DawPluginChip
                             key={name}
@@ -111,7 +112,7 @@ export const LfoSection = ({
                             {name.slice(0, 3)}
                         </DawPluginChip>
                     ))}
-                </div>
+                </Row>
             }
         />
 
@@ -121,8 +122,8 @@ export const LfoSection = ({
         </div>
 
         {/* Knobs */}
-        <div className="flex items-end gap-2">
-            <div className="flex flex-col items-center gap-0">
+        <Row align="end" gap={2}>
+            <Stack align="center">
                 <Knob
                     paramId="lfoRate"
                     value={rate}
@@ -136,7 +137,7 @@ export const LfoSection = ({
                 />
                 <span className="text-[7px] text-muted-foreground">Rate</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{rate.toFixed(1)}Hz</span>
-            </div>
+            </Stack>
             <Knob
                 paramId="lfoPitchAmount"
                 value={pitchAmount}
@@ -161,6 +162,6 @@ export const LfoSection = ({
                 label="→ Filter"
                 tone="sage"
             />
-        </div>
-    </div>
+        </Row>
+    </Stack>
 );

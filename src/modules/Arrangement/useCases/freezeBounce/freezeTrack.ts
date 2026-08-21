@@ -107,7 +107,7 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
         }).seconds;
 
-        let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+        let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
             tailSeconds,
             onScheduled: (tally) => {

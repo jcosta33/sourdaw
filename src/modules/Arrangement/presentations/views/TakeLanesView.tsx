@@ -2,6 +2,7 @@ import { type ReactElement, type MouseEvent, useRef, useState } from 'react';
 
 import { Plus, Check, Trash2, Layers, Scissors } from 'lucide-react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -45,8 +46,10 @@ const CompRegionOverlay = ({
     const left = ((region.startBeat - minBeat) / span) * laneWidthPx;
     const width = ((region.endBeat - region.startBeat) / span) * laneWidthPx;
     return (
-        <div
-            className="absolute top-0 bottom-0 flex items-center justify-between gap-1 rounded-sm border border-[var(--color-accent-cyan)]/70 bg-[var(--color-accent-cyan)]/15 px-1.5 text-[9px] font-semibold text-[var(--color-accent-cyan)]"
+        <Row
+            justify="between"
+            gap={1}
+            className="absolute top-0 bottom-0 rounded-sm border border-[var(--color-accent-cyan)]/70 bg-[var(--color-accent-cyan)]/15 px-1.5 text-[9px] font-semibold text-[var(--color-accent-cyan)]"
             style={{ left, width: Math.max(8, width) }}
             title={`Comp: ${take.name} (${region.startBeat.toFixed(2)}–${region.endBeat.toFixed(2)})`}
         >
@@ -62,7 +65,7 @@ const CompRegionOverlay = ({
             >
                 <Trash2 className="size-2.5" aria-hidden="true" />
             </button>
-        </div>
+        </Row>
     );
 };
 
@@ -303,7 +306,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
 
     return (
         <div className="border-l-2 border-[var(--color-accent-mint)]/40 bg-surface-well/60 pb-1">
-            <div className="flex items-center gap-2 px-2 py-1 text-[10px]">
+            <Row gap={2} className="px-2 py-1 text-[10px]">
                 <Layers className="size-3 shrink-0 text-[var(--color-accent-mint)]" aria-hidden="true" />
                 <span
                     className="size-2 shrink-0 rounded-full"
@@ -316,10 +319,16 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                     {activeCompRegions.length === 1 ? '' : 's'}
                 </span>
 
-                <div className="ml-auto flex items-center gap-1">
+                <Row gap={1} className="ml-auto">
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="xs" aria-label="Add take" data-testid="take-lane-add" onClick={handleAddTakeFromClips}>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                aria-label="Add take"
+                                data-testid="take-lane-add"
+                                onClick={handleAddTakeFromClips}
+                            >
                                 <Plus className="size-3" aria-hidden="true" />
                                 <span className="ml-1">Take</span>
                             </Button>
@@ -357,8 +366,8 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                         </TooltipTrigger>
                         <TooltipContent>Flatten comp regions and remove take lane</TooltipContent>
                     </Tooltip>
-                </div>
-            </div>
+                </Row>
+            </Row>
 
             {takes.length === 0 ? (
                 <div className="px-3 pb-2 text-[10px] italic text-muted-foreground">
@@ -427,10 +436,10 @@ export const TakeLanesView = (): ReactElement => {
     }
 
     return (
-        <div className="flex h-full flex-col overflow-y-auto">
+        <Stack className="h-full overflow-y-auto">
             {activeTracks.map((track) => (
                 <TakeLanePanel key={track.id} trackId={track.id} trackName={track.name} trackColor={track.color} />
             ))}
-        </div>
+        </Stack>
     );
 };

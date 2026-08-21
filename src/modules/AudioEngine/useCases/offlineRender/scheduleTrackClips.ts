@@ -1,5 +1,6 @@
 import { type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
@@ -337,6 +338,9 @@ export async function scheduleTrackClips({
             compensationDelaySec: compensationDelay,
             clipBoundsById,
             vcaMultiplier,
+            // Automation's own law, read here rather than re-derived in the
+            // scheduler — the same reason `deviceParameterLaw` is injected.
+            resolveLaneCeiling: getAutomationLaneCeiling,
         });
     }
 
@@ -347,6 +351,19 @@ export async function scheduleTrackClips({
     const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
     for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
+    }
+
+    // Reported off the chain this render actually built, not re-derived from
+    // `track.devices`: the tally must describe the graph, and a second reading
+    // of release admission here could disagree with the one that placed the
+    // stand-in. `detectSilentBake` reads this to refuse a bake that would
+    // otherwise be excused by an automation abstention.
+    if (tally) {
+        for (const entry of deviceEntries) {
+            if (entry.releaseWithheld && !tally.withheldDeviceTypes.includes(entry.deviceType)) {
+                tally.withheldDeviceTypes.push(entry.deviceType);
+            }
+        }
     }
 
     const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);

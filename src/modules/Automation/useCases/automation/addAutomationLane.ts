@@ -1,3 +1,5 @@
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { createAutomationLane } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
@@ -22,7 +24,7 @@ export function addAutomationLane(trackId: string, parameterId: string, paramete
         parameterRange = resolveParameterRange?.({ trackId, parameterTargetId: parameterId }) ?? null;
     }
     const minValue = parameterRange?.minValue ?? (parameterId === 'pan' ? -1 : 0);
-    const maxValue = parameterRange?.maxValue ?? 1;
+    const maxValue = parameterRange?.maxValue ?? (parameterId === 'gain' ? FADER_MAX_GAIN : 1);
     const lane = createAutomationLane(trackId, parameterId, parameterName, minValue, maxValue);
     automationStore.set({
         lanes: [...state.lanes, laneId === undefined ? lane : { ...lane, id: laneId }],

@@ -119,6 +119,10 @@ function runOfflineSchedule(lanes: AutomationLane[]): ScheduledCall[] {
             clampValue: clampDeviceParameterValue,
             quantiseValue: quantiseDeviceParameterValue,
         },
+        // Every lane here rides a device parameter, so the gain-lane ceiling law
+        // never runs; the declared range keeps this spec about the waveform
+        // stream rather than about the fader's headroom.
+        resolveLaneCeiling: (lane) => lane.maxValue,
     });
     return calls;
 }

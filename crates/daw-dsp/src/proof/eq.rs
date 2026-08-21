@@ -119,7 +119,10 @@ impl MasteringEq {
             return;
         }
         if name == "eq_output_gain" {
-            self.output_gain = 10.0_f32.powf(value / 20.0);
+            // Same unclamped `powf` the chain trim carried: past ~+38 dB it
+            // answers `inf` and the poisoned factor multiplies every later
+            // sample until another message arrives.
+            self.output_gain = super::chain::gain_from_db(value);
             return;
         }
 

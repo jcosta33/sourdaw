@@ -5,6 +5,7 @@ import { Flag } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/ColorPalette';
@@ -230,9 +231,10 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                 const isEditing = editing?.markerId === marker.id;
 
                 return (
-                    <div
+                    <Row
+                        gap={1}
+                        className="absolute top-0 bottom-0 group"
                         key={marker.id}
-                        className="absolute top-0 bottom-0 flex items-center gap-1 group"
                         style={{
                             left: Math.max(0, left),
                             opacity: isDragging ? 0.7 : 1,
@@ -241,13 +243,16 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         title={marker.name}
                         onDoubleClick={() => setEditing({ markerId: marker.id, name: marker.name })}
                     >
-                        <div
-                            className="flex flex-col h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all"
+                        <Stack
+                            className="h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all"
                             style={{ backgroundColor: marker.color }}
                             onMouseDown={(event) => handleMarkerDragStartStable(event, marker)}
-                        />
-                        <div
-                            className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-white/10"
+                        >
+                            {null}
+                        </Stack>
+                        <Row
+                            gap={1}
+                            className="rounded-sm px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-white/10"
                             style={{ backgroundColor: `${marker.color}33`, color: marker.color }}
                             onMouseDown={(event) => handleMarkerDragStartStable(event, marker)}
                         >
@@ -272,8 +277,8 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                             ) : (
                                 <span className="text-[9px] font-medium truncate max-w-[120px]">{marker.name}</span>
                             )}
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
                 );
             })}
             {contextMenu.kind !== 'none' ? (
@@ -294,7 +299,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         <>
                             <DawMenuButton onClick={handleStartRename}>Rename Marker</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
-                            <div className="flex gap-1 px-2 pb-1">
+                            <Row align="stretch" gap={1} className="px-2 pb-1">
                                 {MARKER_COLORS.map((context) => (
                                     <DawSwatchButton
                                         key={context}
@@ -306,7 +311,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                         aria-label={`Set color ${context}`}
                                     />
                                 ))}
-                            </div>
+                            </Row>
                             <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
                             <DawMenuButton tone="danger" onClick={handleDeleteMarker}>
                                 Delete Marker

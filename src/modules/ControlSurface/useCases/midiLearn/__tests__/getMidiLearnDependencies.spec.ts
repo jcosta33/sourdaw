@@ -8,6 +8,7 @@ import {
 } from '../midiLearnDependencies';
 
 const stubDeps: MidiLearnDependencies = {
+    clampTrackGain: (_trackId, gain) => gain,
     setTrackGainArrangement: () => {},
     setTrackPanArrangement: () => {},
     setDeviceParameter: () => {},

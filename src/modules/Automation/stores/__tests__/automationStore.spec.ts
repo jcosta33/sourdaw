@@ -1,8 +1,10 @@
 import { afterEach, describe, it, expect, beforeEach } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { batchAddAutomationPoints } from '../../useCases/automation/batchAddAutomationPoints';
+import { getAutomationLaneCeiling } from '../../useCases/automation/getAutomationLaneCeiling';
 import { type AutomationStoreState } from '../automationStore';
 import { automationStore, sanitize_automation_store_state } from '../automationStore';
 
@@ -81,6 +83,50 @@ describe('automationStore', () => {
         expect(automationStore.value?.lanes[0]).toEqual(lane);
     });
 
+    /**
+     * `maxValue` is durable CRDT state written once, at lane creation, and the
+     * inbound sanitizer must hand it back exactly as the document holds it.
+     *
+     * A project authored before the fader gained its `+6 dB` of headroom keeps
+     * `maxValue: 1` on its gain lanes. Raising that here would look like an
+     * upgrade and read as corruption: `createStore` registers this function as
+     * the slot's inbound sanitizer, and `findAutomergeStorageRawProjectionLosses`
+     * runs it over the raw document demanding `Object.is` equality on every
+     * scalar, so `1` becoming `FADER_MAX_GAIN` is a projection loss by
+     * definition — `projectCrdtToStores` would then stall the whole project at
+     * repair-required rather than open it. The widened ceiling is derived at
+     * read time by `getAutomationLaneCeiling` instead.
+     *
+     * The legacy state is *well formed*, so it takes the sanitizer's exact
+     * early-return path; the assertion below holds on both paths.
+     */
+    it('should hydrate a legacy gain lane without rewriting its stored ceiling', () => {
+        const legacy_gain_lane = {
+            id: 'legacy-gain',
+            trackId: 'track-1',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: 0,
+            maxValue: 1,
+        } satisfies AutomationStoreState['lanes'][number];
+        const legacy_send_lane = { ...legacy_gain_lane, id: 'legacy-send', parameterId: 'send-bus-1' };
+
+        fake_doc.automation = { lanes: [legacy_gain_lane, legacy_send_lane] };
+
+        automationStore.hydrate();
+
+        expect(automationStore.value?.lanes[0]?.maxValue).toBe(1);
+        expect(automationStore.value?.lanes[1]?.maxValue).toBe(1);
+        // The drawable ceiling is the fader's; the *stored* one is untouched.
+        expect(getAutomationLaneCeiling(legacy_gain_lane)).toBe(FADER_MAX_GAIN);
+        expect(getAutomationLaneCeiling(legacy_send_lane)).toBe(1);
+    });
+
     it('should sanitize malformed CRDT hydration to an empty automation store without throwing', () => {
         fake_doc.automation = { lanes: 'not-an-array' };
 
@@ -123,7 +169,7 @@ describe('automationStore', () => {
             enabled: true,
             collapsed: false,
             minValue: 0,
-            maxValue: 1,
+            maxValue: FADER_MAX_GAIN,
         } satisfies AutomationStoreState['lanes'][number];
 
         fake_doc.automation = {
@@ -195,7 +241,7 @@ describe('automationStore', () => {
                     enabled: true,
                     collapsed: false,
                     minValue: 0,
-                    maxValue: 1,
+                    maxValue: FADER_MAX_GAIN,
                     trimPoints: 'bad-trim',
                     ghostPoints: [{ beat: 3, value: 0.4, curve: 'step', tension: 0 }],
                     linkedLaneId: null,
@@ -231,7 +277,7 @@ describe('automationStore', () => {
                     enabled: true,
                     collapsed: false,
                     minValue: 0,
-                    maxValue: 1,
+                    maxValue: FADER_MAX_GAIN,
                     ghostPoints: [{ beat: 3, value: 0.4, curve: 'step', tension: 0 }],
                     viewMaxValue: 2,
                 },
@@ -328,7 +374,7 @@ describe('automationStore', () => {
                     enabled: true,
                     collapsed: false,
                     minValue: 0,
-                    maxValue: 1,
+                    maxValue: FADER_MAX_GAIN,
                 },
             ],
         } satisfies AutomationStoreState;
