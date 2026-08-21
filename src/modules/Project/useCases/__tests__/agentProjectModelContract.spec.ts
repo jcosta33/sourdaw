@@ -441,6 +441,19 @@ describe('agent project model contract', () => {
         expect(JSON.stringify(contract)).not.toContain('channelData');
     });
 
+    it('refuses explicit version-1 data until the migration owner persists a canonical identity', async () => {
+        await expect(getAgentProjectModelContract({ projectData: legacyProject() })).resolves.toBeNull();
+        expect(buildProjectDataMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses explicit current-schema data with a malformed identity', async () => {
+        const malformed = projectData();
+        malformed.meta.projectId = 'not-a-uuid';
+
+        await expect(getAgentProjectModelContract({ projectData: malformed })).resolves.toBeNull();
+        expect(buildProjectDataMock).not.toHaveBeenCalled();
+    });
+
     function legacyProject(): ProjectData {
         const legacy = projectData();
         legacy.version = 1;

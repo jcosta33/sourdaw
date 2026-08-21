@@ -10,7 +10,8 @@ import {
     type AgentProjectTrack,
 } from '../models/AgentProjectModelContract';
 import {
-    getProjectId,
+    CURRENT_PROJECT_VERSION,
+    isCanonicalProjectId,
     type ProjectAutomationLane,
     type ProjectClip,
     type ProjectData,
@@ -20,10 +21,23 @@ import {
 } from '../models/ProjectData';
 
 import { buildProjectData } from './projectPersistence/fileIO/buildProjectData';
+import { isHydratableProjectData } from './projectPersistence/helpers/isHydratableProjectData';
 
 type GetAgentProjectModelContractInput = {
     projectData?: ProjectData;
 };
+
+type CanonicalProjectData = ProjectData & {
+    meta: ProjectData['meta'] & { projectId: string };
+};
+
+function isCanonicalProjectData(data: ProjectData): data is CanonicalProjectData {
+    return (
+        data.version === CURRENT_PROJECT_VERSION &&
+        isHydratableProjectData(data) &&
+        isCanonicalProjectId(data.meta.projectId)
+    );
+}
 
 function projectMidiNote(note: ProjectMidiNote): AgentProjectMidiNote {
     return {
@@ -264,7 +278,7 @@ function sampleRate(data: ProjectData): number | null {
     return null;
 }
 
-function projectContract(data: ProjectData): AgentProjectModelContract {
+function projectContract(data: CanonicalProjectData): AgentProjectModelContract {
     const activeArrangement = data.arrangements?.find((arrangement) => arrangement.id === data.activeArrangementId);
     const sections = activeArrangement?.markers?.sections ?? [];
     const endBeat = Math.max(
@@ -277,7 +291,7 @@ function projectContract(data: ProjectData): AgentProjectModelContract {
         schema: AGENT_PROJECT_MODEL_SCHEMA,
         schemaVersion: AGENT_PROJECT_MODEL_SCHEMA_VERSION,
         projectSchemaVersion: data.version,
-        identity: { projectId: getProjectId(data), legacyProjectId: String(data.meta.createdAt) },
+        identity: { projectId: data.meta.projectId, legacyProjectId: String(data.meta.createdAt) },
         metadata: {
             name: data.meta.name,
             createdAt: data.meta.createdAt,
@@ -352,5 +366,5 @@ export async function getAgentProjectModelContract(
     input: GetAgentProjectModelContractInput = {}
 ): Promise<AgentProjectModelContract | null> {
     const data = input.projectData ?? (await buildProjectData())?.data;
-    return data ? projectContract(data) : null;
+    return data && isCanonicalProjectData(data) ? projectContract(data) : null;
 }

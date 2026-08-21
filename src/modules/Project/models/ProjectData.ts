@@ -186,10 +186,6 @@ export function deriveProjectIdFromMeta(meta: ProjectMeta): string {
     return deriveDeterministicProjectId(String(meta.createdAt));
 }
 
-export function getProjectId(data: ProjectData): string {
-    return isCanonicalProjectId(data.meta.projectId) ? data.meta.projectId : deriveProjectIdFromMeta(data.meta);
-}
-
 export type ProjectTransport = {
     tempo: number;
     timeSignatureNumerator: number;

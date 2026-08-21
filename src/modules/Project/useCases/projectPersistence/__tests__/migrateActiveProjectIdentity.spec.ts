@@ -48,6 +48,8 @@ function legacyProject(projectId?: string): ProjectStoreState {
 describe('migrateActiveProjectIdentity', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.flushAutomergeStorageWrites.mockReset();
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.persistCrdtProject.mockReset();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.project.value = null;
@@ -127,6 +129,69 @@ describe('migrateActiveProjectIdentity', () => {
         finishPersistence?.();
 
         await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+        expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
+    });
+
+    it('starts a distinct migration when a successor legacy project supersedes a pending one', async () => {
+        const firstPersistence = Promise.withResolvers<void>();
+        const secondPersistence = Promise.withResolvers<void>();
+        mocks.persistCrdtProject
+            .mockReturnValueOnce(firstPersistence.promise)
+            .mockReturnValueOnce(secondPersistence.promise);
+        mocks.project.value = legacyProject('first-invalid-id');
+
+        const first = migrateActiveProjectIdentity();
+        const firstCandidate = mocks.project.value?.projectId;
+        expect(mocks.project.value).toMatchObject({ identityMigrationPending: true });
+
+        mocks.project.value = {
+            ...legacyProject('second-invalid-id'),
+            name: 'Successor Legacy Project',
+        };
+        const second = migrateActiveProjectIdentity();
+        const secondCandidate = mocks.project.value?.projectId;
+
+        firstPersistence.resolve();
+        await expect(first).resolves.toBe(true);
+        const successorAfterFirstSettles = structuredClone(mocks.project.value);
+
+        secondPersistence.resolve();
+        await expect(second).resolves.toBe(true);
+
+        expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(2);
+        expect(isCanonicalProjectId(firstCandidate)).toBe(true);
+        expect(isCanonicalProjectId(secondCandidate)).toBe(true);
+        expect(secondCandidate).not.toBe(firstCandidate);
+        expect(successorAfterFirstSettles).toMatchObject({
+            name: 'Successor Legacy Project',
+            projectId: secondCandidate,
+            identityMigrationPending: true,
+        });
+        expect(mocks.project.value).toMatchObject({
+            name: 'Successor Legacy Project',
+            projectId: secondCandidate,
+            identityMigrationPending: false,
+        });
+    });
+
+    it('restores the original projection when the first CRDT flush throws and permits retry', async () => {
+        const failure = new Error('CRDT flush failed');
+        mocks.project.value = legacyProject('not-a-uuid');
+        mocks.flushAutomergeStorageWrites.mockImplementationOnce(() => {
+            throw failure;
+        });
+
+        await expect(migrateActiveProjectIdentity()).rejects.toBe(failure);
+
+        expect(mocks.project.value).toMatchObject({
+            projectId: 'not-a-uuid',
+            identityMigrationPending: false,
+        });
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+
+        await expect(migrateActiveProjectIdentity()).resolves.toBe(true);
+        expect(isCanonicalProjectId(mocks.project.value?.projectId)).toBe(true);
+        expect(mocks.project.value).toMatchObject({ identityMigrationPending: false });
         expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
     });
 

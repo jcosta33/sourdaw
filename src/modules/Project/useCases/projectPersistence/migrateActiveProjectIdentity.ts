@@ -2,22 +2,26 @@ import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomer
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 
 import { createProjectId, isCanonicalProjectId } from '../../models/ProjectData';
-import { projectStore } from '../../stores/projectStore';
+import { projectStore, type ProjectStoreState } from '../../stores/projectStore';
 
-let activeIdentityMigration: Promise<boolean> | null = null;
+type ActiveIdentityMigration = {
+    candidateProjectId: string;
+    promise: Promise<boolean>;
+};
 
-async function persistIdentityMigration(): Promise<boolean> {
-    const project = projectStore.value;
-    if (!project || (isCanonicalProjectId(project.projectId) && !project.identityMigrationPending)) {
-        return false;
-    }
+let activeIdentityMigration: ActiveIdentityMigration | null = null;
 
-    const previousProjectId = project.identityMigrationPending ? undefined : project.projectId;
-    const candidateProjectId =
-        project.identityMigrationPending && isCanonicalProjectId(project.projectId)
-            ? project.projectId
-            : createProjectId();
+type PersistIdentityMigrationInput = {
+    project: ProjectStoreState;
+    previousProjectId: string | undefined;
+    candidateProjectId: string;
+};
 
+async function persistIdentityMigration({
+    project,
+    previousProjectId,
+    candidateProjectId,
+}: PersistIdentityMigrationInput): Promise<boolean> {
     projectStore.set({
         ...project,
         projectId: candidateProjectId,
@@ -62,16 +66,42 @@ async function persistIdentityMigration(): Promise<boolean> {
  * or canonical address can be published.
  */
 export function migrateActiveProjectIdentity(): Promise<boolean> {
-    if (activeIdentityMigration) {
-        return activeIdentityMigration;
+    const project = projectStore.value;
+    if (!project || (isCanonicalProjectId(project.projectId) && !project.identityMigrationPending)) {
+        return Promise.resolve(false);
     }
 
-    const migration = persistIdentityMigration();
-    const trackedMigration = migration.finally(() => {
-        if (activeIdentityMigration === trackedMigration) {
-            activeIdentityMigration = null;
+    if (
+        activeIdentityMigration &&
+        project.identityMigrationPending &&
+        project.projectId === activeIdentityMigration.candidateProjectId
+    ) {
+        return activeIdentityMigration.promise;
+    }
+
+    const previousProjectId = project.identityMigrationPending ? undefined : project.projectId;
+    const candidateProjectId =
+        project.identityMigrationPending && isCanonicalProjectId(project.projectId)
+            ? project.projectId
+            : createProjectId();
+    const deferred = Promise.withResolvers<boolean>();
+    const migration: ActiveIdentityMigration = {
+        candidateProjectId,
+        promise: deferred.promise,
+    };
+    activeIdentityMigration = migration;
+
+    void (async () => {
+        try {
+            deferred.resolve(await persistIdentityMigration({ project, previousProjectId, candidateProjectId }));
+        } catch (error) {
+            deferred.reject(error);
+        } finally {
+            if (activeIdentityMigration === migration) {
+                activeIdentityMigration = null;
+            }
         }
-    });
-    activeIdentityMigration = trackedMigration;
-    return trackedMigration;
+    })();
+
+    return migration.promise;
 }
