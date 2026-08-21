@@ -1,0 +1,35 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_faa14dd45783c6 689,833,2525,2738-2746,3809-3817,4604,4781-4789,4952-4960,5306,5492-5500,6203-6211,7400-7408,8447,8501,8588-8596,9785-9793,10229,10652,11525,11831,11882-11890,11993,12422-12430,12548-12556,13271,13316,13997-14005,14087-14095,16130-16138,16160,16175-16183,16238-16246,16331,16508-16516,16862,17462-17470,18626,18914,19589,19622-19630,20090-20098,20525,20774-20782,21065,21218,21233-21241,21947,22304-22312,22763-22771,22982,23096-23104,23747,24023-24031,24323,24521,25106
+src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx
+  s_2175fca1f07426::t_726f42172bd543 24,117,132,311,313,398,411
+src/modules/GrandBoule/presentations/components/MorphPanel.tsx
+  s_2175fca1f07426::t_10265e5346b21b 13,43,45,63-64,86,101,118-119,122,135,170,172,181,223
+src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx
+  s_2175fca1f07426::t_b24b96a2595b14 17,63,85,94,117
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_487e9aa1e46063::t_4ca2ec63f83d11 11,104,119,317,319,340,451-455,477,562,564-566,571-572,579-580,604,606,608,619,634-635,650-651,655,679,696,708,710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dc8c215d26612ee26b92f6518d6e813894f0fdfd",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
