@@ -1,0 +1,19 @@
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_a945a9c693b35e 167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "734cd6ff7c1022a7ef0aec1803ef2aa4ee99b880",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
