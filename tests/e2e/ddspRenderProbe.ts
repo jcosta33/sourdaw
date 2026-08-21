@@ -20,8 +20,12 @@ const admittedInstrument = instrument as typeof instrument & {
     artifacts: NonNullable<typeof instrument.artifacts>;
 };
 
-const downloadInstrument = downloadDdspInstrument as (input: typeof admittedInstrument) => Promise<void>;
-const removeInstrument = removeDdspInstrument as (input: typeof admittedInstrument) => Promise<void>;
+// `pnpm typecheck:e2e` resolves the application graph through tsconfig.e2e;
+// type-aware lint uses the root app project, where these E2E imports sit
+// outside the project. Keep the casts at the callable boundary and in sync
+// with the production catalog-ID contract.
+const downloadInstrument = downloadDdspInstrument as (instrumentId: DdspInstrumentId) => Promise<void>;
+const removeInstrument = removeDdspInstrument as (instrumentId: DdspInstrumentId) => Promise<void>;
 const renderInstrument = renderDdspInstrument as (input: {
     durationSec: number;
     instrumentId: DdspInstrumentId;
@@ -42,8 +46,8 @@ type DdspProbe = {
 };
 
 async function prepare(): Promise<{ ready: boolean; artifactCount: number }> {
-    await removeInstrument(admittedInstrument);
-    await downloadInstrument(admittedInstrument);
+    await removeInstrument(admittedInstrument.id);
+    await downloadInstrument(admittedInstrument.id);
     const ready = await storage.checkDdspInstrumentReady({
         id: admittedInstrument.id,
         version: admittedInstrument.artifactVersion,

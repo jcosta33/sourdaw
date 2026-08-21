@@ -69,6 +69,7 @@ export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
 export const DDSP_RELEASE_INVENTORY_PATHS = [
     'package.json',
     'pnpm-lock.yaml',
+    'vite.config.ts',
     'electron-builder.yml',
     'electron/main.ts',
     'electron/protocol.ts',

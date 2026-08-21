@@ -331,6 +331,7 @@
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
+                "vite.config.ts",
                 "electron-builder.yml",
                 "electron/main.ts",
                 "electron/protocol.ts",
