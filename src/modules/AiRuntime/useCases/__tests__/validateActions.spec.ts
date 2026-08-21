@@ -166,6 +166,25 @@ describe('validateActions', () => {
         }
     });
 
+    it.each([
+        { type: 'freezeTrack', payload: { trackId: 'track-1', freezeId: 'freeze-supplied-by-the-model' } },
+        { type: 'reverseClip', payload: { clipId: 'clip-1', reversedBufferId: 'buffer-supplied-by-the-model' } },
+    ] as const)('should reject an application-owned id smuggled into $type', (action) => {
+        // `materializeCommandApplicationIds` mints one of these only when the incoming
+        // value is absent or empty, so a supplied one is taken verbatim: the reversed
+        // buffer is cached under whatever key the model chose — colliding with an
+        // existing buffer id — and the freeze guard trusts an identity it did not mint.
+        expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(`Command-owned payload fields rejected for action ${action.type}`);
+    });
+
+    it.each([
+        { type: 'freezeTrack', payload: { trackId: 'track-1' } },
+        { type: 'reverseClip', payload: { clipId: 'clip-1' } },
+    ] as const)('should keep the initiating $type payload the tool declaration exposes', (action) => {
+        expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([action]);
+    });
+
     it('should reject hidden and symbol payload fields', () => {
         const hiddenPayload = Object.defineProperty({ clipId: 'clip-1' }, 'targetClipId', { value: 'clip-2' });
         const symbolPayload = { clipId: 'clip-1', [Symbol('targetClipId')]: 'clip-2' };

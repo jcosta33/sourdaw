@@ -70,6 +70,53 @@ function structuralValueMatches(live: unknown, expected: unknown): boolean {
 const notCompared = (): boolean => true;
 
 /**
+ * A `kneadState` reduced to the shape `ClipKneadState` declares, which is the only
+ * shape that survives a document round trip.
+ *
+ * The live value's key set is not stable, and that instability has nothing to do with
+ * the musician. `updateClipKneadState` writes the Knead module's own `KneadClipState`
+ * straight onto the clip — wider than the field's declared type, which the compiler
+ * misses because the value arrives as a variable rather than a fresh literal — while
+ * `normalize_clip_knead_state` in `trackStore` rebuilds exactly the declared keys on
+ * every document-origin projection: collaboration sync, merge-on-open, snapshot
+ * install. None of those clear the undo stack and nothing re-widens the value
+ * afterwards, so a snapshot taken before a projection and a live value taken after it
+ * disagree on key count alone, over fields no user authored.
+ *
+ * `structuralValueMatches` requires identical key sets, so that disagreement would
+ * refuse the undo — and `undo` leaves the conflicted entry on `past` reporting
+ * nothing, killing the stack for the rest of the session. Projecting both sides onto
+ * the declared contract makes the comparison depend only on what a user can author.
+ *
+ * `originalPitchCenterCents` is carried only when it is a finite number, mirroring
+ * `normalize_clip_knead_blob`: that is what makes this projection idempotent under the
+ * round trip it exists to survive.
+ */
+type DeclaredKneadState = NonNullable<ClipStateSnapshot['kneadState']>;
+
+function declaredKneadState(value: DeclaredKneadState | undefined): DeclaredKneadState | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    return {
+        blobs: value.blobs.map((blob) => ({
+            id: blob.id,
+            startTime: blob.startTime,
+            endTime: blob.endTime,
+            pitchCenterCents: blob.pitchCenterCents,
+            ...(typeof blob.originalPitchCenterCents === 'number' && Number.isFinite(blob.originalPitchCenterCents)
+                ? { originalPitchCenterCents: blob.originalPitchCenterCents }
+                : {}),
+            pitchCurveCents: [...blob.pitchCurveCents],
+            voicedConfidence: blob.voicedConfidence,
+        })),
+        retuneSpeedMs: value.retuneSpeedMs,
+        humanizePercent: value.humanizePercent,
+        formantPreserve: value.formantPreserve,
+    };
+}
+
+/**
  * One comparator per field `writeTrackClipState` replaces on a clip, keyed by `Clip`'s
  * own keys with `-?` so an added field does not compile until somebody decides how it
  * is compared. That gate is the entire reason this is a table rather than a deep
@@ -149,12 +196,11 @@ const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
     sourceKeyRoot: (live, expected) => live.sourceKeyRoot === expected.sourceKeyRoot,
     sourceScaleName: (live, expected) => live.sourceScaleName === expected.sourceScaleName,
     overrides: (live, expected) => structuralValueMatches(live.overrides, expected.overrides),
-    // Structural rather than field-by-field, because the live value is wider than the
-    // model declares: `updateClipKneadState` writes the Knead module's own
-    // `KneadClipState`, which carries tolerance and per-blob fields `ClipKneadState`
-    // does not name. Comparing only the declared fields would miss exactly the retune
-    // edits this is here to protect, since Knead's writes do not go through
-    // `executeAppAction` and file no undo entry of their own.
+    // Structural, over both sides projected onto the declared `ClipKneadState`
+    // contract — see `declaredKneadState` for why the raw live value's key set is not
+    // something a comparison may depend on. The retune edits this is here to protect
+    // all live on the declared fields, and Knead's writes do not go through
+    // `executeAppAction`, so nothing else files an undo entry for them.
     //
     // Compared only when the snapshot carries one, and that half-comparison is the
     // whole point. A clip acquires a `kneadState` merely by being *selected* while the
@@ -171,7 +217,8 @@ const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
     // rather than writing the absence back. A snapshot that *does* carry one is a
     // genuine retune the restore would throw away, and still conflicts.
     kneadState: (live, expected) =>
-        expected.kneadState === undefined || structuralValueMatches(live.kneadState, expected.kneadState),
+        expected.kneadState === undefined ||
+        structuralValueMatches(declaredKneadState(live.kneadState), declaredKneadState(expected.kneadState)),
 };
 
 /**
@@ -249,10 +296,18 @@ function deviceStateMatches(
  * churn, and restoring a stale pair would point a live device at the wrong plugin
  * instance.
  *
- * `externalStateChunk` is the one exclusion, and it is genuinely different: it is
- * refetched at save time from the still-live native plugin instance, so a stale value
- * written back here is overwritten before it can reach disk, while a deep compare on
- * it would conflict against churn no user authored.
+ * `externalStateChunk` is the one exclusion, and it is preserved rather than restored:
+ * `restoredDevices` keeps the live chunk on the written device, so this guard is not
+ * being asked about a value the write replaces. Comparing it instead would refuse
+ * undos against churn no user authored — a plugin's opaque chunk can change with no
+ * gesture behind it — and that trade is never worth making, because a refused undo is
+ * silent and costs the whole stack.
+ *
+ * Skipping the comparison is only sound *because* the write skips the field too. It
+ * cannot be made sound by the save path: `captureExternalPluginStates` compares each
+ * host read against `capturedNativePluginStateCache` — this peer's own last read —
+ * and skips before it ever looks at the store, so a chunk rolled back in the store
+ * alone is never re-committed and reaches disk stale.
  */
 function deviceMatches(live: Device, expected: DeviceSnapshot): boolean {
     return (
@@ -497,11 +552,16 @@ function liveClipsById(track: Track): Map<string, Clip> {
  * leaving the live value alone restores exactly as much as writing `undefined` would,
  * and destroys nothing.
  *
- * No other field may be handled this way, and the reason is the same one read backwards:
- * every other field is compared, so writing it back is authorised by the guard that just
- * ran. Skipping a comparison without also skipping the write is a silent overwrite;
- * skipping a write for a field the snapshot genuinely carries is a silent failure to
- * restore. Only a field that is both absent and uncompared belongs here.
+ * No other *clip* field may be handled this way, and the reason is the same one read
+ * backwards: every other one is compared, so writing it back is authorised by the guard
+ * that just ran. Skipping a comparison without also skipping the write is a silent
+ * overwrite; skipping a write for a field the guard did compare is a silent failure to
+ * restore. The two halves are one rule — a field this write replaces must be a field the
+ * guard compared — and `restoredDevices` is that rule applied to the only other
+ * uncompared field the write touches, `Device.externalStateChunk`. It differs only in
+ * which value survives: this one leaves live state alone because the snapshot has
+ * nothing there to restore, while that one leaves live state alone because the snapshot's
+ * value has no authority over a field nothing checked.
  */
 function restoredClips(
     clips: readonly ClipStateSnapshot[],
@@ -517,6 +577,54 @@ function restoredClips(
 }
 
 /**
+ * Every live device the track owns, keyed by id. Devices hang off the track itself —
+ * a take lane carries clips only — so this is the whole set the write can preserve
+ * from.
+ */
+function liveDevicesById(track: Track): Map<string, Device> {
+    const byId = new Map<string, Device>();
+    for (const device of track.devices) {
+        byId.set(device.id, device);
+    }
+    return byId;
+}
+
+/**
+ * The devices to write, which is the snapshot's devices except for
+ * `externalStateChunk`.
+ *
+ * Same asymmetry as `restoredClips`, reached from the other direction and for the same
+ * rule: `deviceMatches` does not compare this field, so the write must not replace it.
+ * Here the snapshot always carries a value rather than sometimes lacking one, so the
+ * live chunk wins outright — including when the live device has no chunk at all, which
+ * is why the key is dropped rather than left at the snapshot's value.
+ *
+ * A snapshot device with no live counterpart is a device this restore is reinstating.
+ * There is no live chunk to preserve, and the snapshot's is the only one in existence,
+ * so it is written as captured.
+ *
+ * Spread-and-override rather than a rebuilt literal, deliberately: the snapshot's
+ * elements are whole cloned `Device` objects that merely satisfy `DeviceSnapshot`, and
+ * naming the fields here would silently drop any field added to `Device` later — the
+ * exact loss the comparator tables above are shaped to make impossible.
+ */
+function restoredDevices(
+    devices: readonly DeviceSnapshot[],
+    liveByDeviceId: ReadonlyMap<string, Device>
+): DeviceSnapshot[] {
+    return devices.map((device) => {
+        const liveDevice = liveByDeviceId.get(device.id);
+        if (liveDevice === undefined) {
+            return device;
+        }
+        const { externalStateChunk: _capturedChunk, ...withoutChunk } = device;
+        return liveDevice.externalStateChunk === undefined
+            ? withoutChunk
+            : { ...withoutChunk, externalStateChunk: liveDevice.externalStateChunk };
+    });
+}
+
+/**
  * Restore one track. Writes `clips` together with every track-level field a
  * collection rewrite overwrites: restoring clips alone would hand back the right
  * clips on a track that had lost its kind, its device chain, its frozen take and
@@ -528,11 +636,12 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
     // same convention `handleRestoreClip` casts through for a single clip.
     updateTrack(entry.trackId, (track) => {
         const liveByClipId = liveClipsById(track);
+        const liveByDeviceId = liveDevicesById(track);
         return {
             ...track,
             clips: restoredClips(entry.clips, liveByClipId) as never,
             kind: entry.trackFields.kind,
-            devices: entry.trackFields.devices as never,
+            devices: restoredDevices(entry.trackFields.devices, liveByDeviceId),
             frozen: entry.trackFields.frozen,
             frozenBufferId: entry.trackFields.frozenBufferId,
             freezeState: entry.trackFields.freezeState,

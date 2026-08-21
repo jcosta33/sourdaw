@@ -370,6 +370,137 @@ describe('handleRestoreTrackClipStates', () => {
             expect(updater(track).clips[0]?.kneadState).toEqual(kneadState);
         });
 
+        it('still restores when a document projection narrowed a Knead state the snapshot captured wide', () => {
+            // `updateClipKneadState` writes Knead's own wider state onto the clip, and
+            // every document-origin projection — collaboration sync, merge-on-open,
+            // snapshot install — rebuilds it down to the fields `ClipKneadState`
+            // declares, none of which clears the undo stack. The two sides then hold the
+            // same authored retune in two shapes, and refusing on that difference kills
+            // undo for the rest of the session over a narrowing the app performed on
+            // itself.
+            const wideAtCapture = {
+                clipId: 'c2',
+                blobs: [
+                    {
+                        id: 'blob-1',
+                        startTime: 0,
+                        endTime: 1,
+                        pitchCenterCents: 100,
+                        originalPitchCenterCents: 90,
+                        pitchCurveCents: [100, 101],
+                        voicedConfidence: 0.9,
+                        driftPercent: 0,
+                        vibratoDepthPercent: 0,
+                        vibratoRateHz: 0,
+                        formantShiftCents: 0,
+                        gainDb: 0,
+                        muted: false,
+                    },
+                ],
+                retuneSpeedMs: 25,
+                toleranceCents: 25,
+                toleranceTimeMs: 30,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
+            const narrowedByProjection = {
+                blobs: [
+                    {
+                        id: 'blob-1',
+                        startTime: 0,
+                        endTime: 1,
+                        pitchCenterCents: 100,
+                        originalPitchCenterCents: 90,
+                        pitchCurveCents: [100, 101],
+                        voicedConfidence: 0.9,
+                    },
+                ],
+                retuneSpeedMs: 25,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
+            const [kept, retuned] = clipsFor('t1', ['c1', 'c2']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    TrackDummy.create({
+                        id: 't1',
+                        ...trackFields(),
+                        clips: [kept!, { ...retuned!, kneadState: narrowedByProjection }],
+                    }),
+                ],
+            });
+            const capturedSnapshot = snapshotFor('t1', ['c1', 'c2']);
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        {
+                            ...capturedSnapshot,
+                            clips: capturedSnapshot.clips.map((clip) =>
+                                clip.id === 'c2' ? { ...clip, kneadState: wideAtCapture } : clip
+                            ),
+                        },
+                    ],
+                    replacement: [snapshotFor('t1', ['c1', 'c2'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
+        });
+
+        it('still refuses when a retune changed a declared Knead field after a wide capture', () => {
+            // The counterpart of the case above, and what stops the projection tolerance
+            // from becoming a blanket exemption: the shapes differ in exactly the same
+            // way, but `retuneSpeedMs` is a field the musician authored and the restore
+            // would throw it away.
+            const wideAtCapture = {
+                clipId: 'c2',
+                blobs: [],
+                retuneSpeedMs: 25,
+                toleranceCents: 25,
+                toleranceTimeMs: 30,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
+            const retunedSinceCapture = {
+                blobs: [],
+                retuneSpeedMs: 5,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
+            const [kept, retuned] = clipsFor('t1', ['c1', 'c2']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    TrackDummy.create({
+                        id: 't1',
+                        ...trackFields(),
+                        clips: [kept!, { ...retuned!, kneadState: retunedSinceCapture }],
+                    }),
+                ],
+            });
+            const capturedSnapshot = snapshotFor('t1', ['c1', 'c2']);
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        {
+                            ...capturedSnapshot,
+                            clips: capturedSnapshot.clips.map((clip) =>
+                                clip.id === 'c2' ? { ...clip, kneadState: wideAtCapture } : clip
+                            ),
+                        },
+                    ],
+                    replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
         it('refuses when a take lane was renamed since capture', () => {
             // `renameTrackAlternative` writes only the lane's `name`, and the restore
             // puts the whole captured lane back. Left uncompared, undoing a cut reverts
@@ -416,6 +547,58 @@ describe('handleRestoreTrackClipStates', () => {
 
             expect(result).toEqual({ status: 'conflict' });
             expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
+        it('leaves a live plugin state chunk in place while restoring the rest of the device', () => {
+            // `externalStateChunk` is the one device field the guard does not compare, so
+            // the write must not replace it — and nothing downstream repairs a stale one.
+            // `captureExternalPluginStates` skips on its own cached host read before it
+            // ever looks at the store, so a chunk rolled back here is never re-committed:
+            // the project saves the pre-edit chunk and the musician's plugin edit is gone
+            // at the next reopen, with nothing on the undo stack that would bring it back.
+            const device = {
+                id: 'device-1',
+                name: 'Reverb',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'com.vendor.reverb',
+                externalInstanceId: 'com.vendor.reverb-instance-1',
+            };
+            const track = liveTrack('t1', ['c1'], {
+                devices: [{ ...device, bypassed: true, externalStateChunk: 'chunk-from-the-plugin-editor' }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: {
+                                ...trackFields(),
+                                devices: [{ ...device, bypassed: true, externalStateChunk: 'chunk-at-capture' }],
+                            },
+                        }),
+                    ],
+                    replacement: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: {
+                                ...trackFields(),
+                                devices: [{ ...device, externalStateChunk: 'chunk-at-capture' }],
+                            },
+                        }),
+                    ],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            const [, updater] = mocks.updateTrack.mock.calls[0]!;
+            const restoredDevice = updater(track).devices[0];
+            expect(restoredDevice.externalStateChunk).toBe('chunk-from-the-plugin-editor');
+            // The rest of the device still comes back, so preserving the chunk is not a
+            // licence to skip the device write.
+            expect(restoredDevice.bypassed).toBe(false);
         });
 
         it('refuses when MIDI notes on a clip the snapshot carries were edited since capture', () => {
