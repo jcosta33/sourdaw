@@ -1,0 +1,78 @@
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_705659bd1c5003 105-107
+  s_a40848e8f8cca9::t_8b24774fcb8f07 36,73-75,88,104
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_a40848e8f8cca9::t_4d9111ecb1c809 116-118
+  s_a40848e8f8cca9::t_e26a52a3788cfe 17,114-115,119-120
+src/modules/Project/useCases/projectPersistence/migrateActiveProjectIdentity.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 2-25
+  s_a40848e8f8cca9::t_4d9111ecb1c809 1
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_3a7ceaa5df6063 236
+  s_a40848e8f8cca9::t_e26a52a3788cfe 6,240,334,343,348
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_a40848e8f8cca9::t_8b24774fcb8f07 18,24-26,72,119-133
+  s_a40848e8f8cca9::t_e532fa7ec5feb4 134-135,177,189
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 11,55-56
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_a40848e8f8cca9::t_8b24774fcb8f07 311
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_a40848e8f8cca9::t_8b24774fcb8f07 65,133-141
+  s_a40848e8f8cca9::t_15d88bfb0043da 63,87-95
+  s_a40848e8f8cca9::t_bc0cdd01a34431 142-143
+src/modules/Project/models/ProjectData.ts
+  s_a40848e8f8cca9::t_4195bddc65b7ad 171
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_a40848e8f8cca9::t_e8f1ebc657f5e8 109-110,113,116
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_3a7ceaa5df6063 3-6,8,144,149-150
+  s_a40848e8f8cca9::t_e8f1ebc657f5e8 102,119,127,135
+src/modules/Project/useCases/__tests__/createFreshProjectMetadata.spec.ts
+  s_a40848e8f8cca9::t_e8f1ebc657f5e8 1-31
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/initProject.spec.ts
+  s_a40848e8f8cca9::t_f4ada910cd9900 28
+  s_a40848e8f8cca9::t_e8f1ebc657f5e8 53-68
+  s_0a3429e31e555d::t_09adb854b8acda 69
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 132
+  s_a40848e8f8cca9::t_08c62455ac34df 133-140,197
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.spec.ts
+  s_a40848e8f8cca9::t_10f447ffeb15b7 5
+  s_a40848e8f8cca9::t_4d9111ecb1c809 3,42
+  s_a40848e8f8cca9::t_705659bd1c5003 70-72
+  s_a40848e8f8cca9::t_e8f1ebc657f5e8 1-2,4,6-41,43-69,73-87
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 6,36-51
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 34,2324,2334
+src/modules/Project/useCases/createFreshProjectMetadata.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 1-32
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_e26a52a3788cfe 24,95-98
+  s_a40848e8f8cca9::t_0c44e5541dd797 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ce7d0208d864cc03691e4254cbd4f2f3bfef3aad",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
