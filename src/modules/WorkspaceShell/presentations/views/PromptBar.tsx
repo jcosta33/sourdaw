@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime/useCases';
@@ -126,16 +127,16 @@ export const PromptBar = (): ReactElement => {
     // ── Preview mode ────────────────────────────────────────────────────
     if (prompt.preview) {
         return (
-            <div className="flex items-center gap-2 max-w-lg">
+            <Row gap={2} className="max-w-lg">
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap gap-1">
+                    <Row align="stretch" wrap gap={1}>
                         {prompt.preview.actionLabels.map((label, index) => (
                             <DawMicroBadge key={index} className="text-[10px] text-foreground">
                                 {label}
                             </DawMicroBadge>
                         ))}
-                    </div>
+                    </Row>
                 </div>
                 <Button size="icon-xs" variant="ghost" onClick={prompt.confirmPreview} aria-label="Confirm actions">
                     <Check className="size-3 text-[var(--color-state-success)]" />
@@ -143,7 +144,7 @@ export const PromptBar = (): ReactElement => {
                 <Button size="icon-xs" variant="ghost" onClick={prompt.cancelPreview} aria-label="Cancel actions">
                     <X className="size-3 text-destructive-foreground" />
                 </Button>
-            </div>
+            </Row>
         );
     }
 
@@ -216,10 +217,12 @@ export const PromptBar = (): ReactElement => {
 
     return (
         <div className="relative flex-1 max-w-lg">
-            <form
+            <Row
+                as="form"
+                gap={1.5}
+                className="daw-readout-well rounded-sm px-2 py-0.5"
                 ref={prompt.formRef}
                 onSubmit={prompt.handleSubmit}
-                className="daw-readout-well flex items-center gap-1.5 rounded-sm px-2 py-0.5"
             >
                 {renderIife_4()}
                 {prompt.selectionTags.map((tag) => (
@@ -258,7 +261,7 @@ export const PromptBar = (): ReactElement => {
                     <History className="size-3.5" />
                 </Button>
                 <LlmStatusBadge status={prompt.llmStatus ?? { state: 'idle' }} onLoad={prompt.handleLoadModel} />
-            </form>
+            </Row>
             {renderIife_6()}
         </div>
     );

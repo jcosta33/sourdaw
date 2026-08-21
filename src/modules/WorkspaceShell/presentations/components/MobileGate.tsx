@@ -1,5 +1,7 @@
 import { type ReactElement, type ReactNode, useState, useEffect } from 'react';
 
+import { Stack } from '#/components/layout';
+
 import { SourdawLogo } from './SourdawLogo';
 
 // SVG Discord icon (same as AlphaNoticeDialog)
@@ -72,8 +74,10 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
     }
 
     return (
-        <div
-            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6"
+        <Stack
+            align="center"
+            justify="center"
+            className="fixed inset-0 z-[9999] p-6"
             style={{
                 background:
                     'radial-gradient(ellipse at 50% 40%, rgba(217,119,6,0.06) 0%, rgba(0,0,0,0) 60%), hsl(220,14%,8%)',
@@ -96,9 +100,13 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
             </div>
 
             {/* Card */}
-            <div className="relative flex flex-col items-center gap-6 rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] p-8 text-center max-w-[340px] w-full">
+            <Stack
+                align="center"
+                gap={6}
+                className="relative rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] p-8 text-center max-w-[340px] w-full"
+            >
                 {/* Logo & title */}
-                <div className="flex flex-col items-center gap-4">
+                <Stack align="center" gap={4}>
                     <div className="relative">
                         <div className="absolute inset-0 rounded-full bg-[var(--color-accent-orange)]/20 blur-2xl scale-[2]" />
                         <SourdawLogo className="relative h-20 drop-shadow-[0_6px_24px_rgba(217,119,6,0.45)]" />
@@ -113,10 +121,10 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
                             Desktop DAW
                         </p>
                     </div>
-                </div>
+                </Stack>
 
                 {/* Message */}
-                <div className="flex flex-col gap-2">
+                <Stack gap={2}>
                     <p className="text-sm font-semibold text-white/80 leading-snug">
                         This dough needs more room to rise.
                     </p>
@@ -124,7 +132,7 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
                         Sourdaw is crafted for desktop or tablet. Open it on a larger screen to start baking your next
                         track.
                     </p>
-                </div>
+                </Stack>
 
                 {/* Discord CTA */}
                 <button
@@ -135,7 +143,7 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
                     <DiscordIcon className="size-4" />
                     <span className="text-xs font-semibold">Join the Bakery on Discord</span>
                 </button>
-            </div>
-        </div>
+            </Stack>
+        </Stack>
     );
 };

@@ -63,6 +63,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-00a2cbb184b8b05b",
+    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
+    "line": 226,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-00b5df35e18f00e2",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 358,
@@ -79,15 +88,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-00ca3c67e932a2fd",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 675,
-    "fingerprint": "div\tsize-10 rounded-xl flex items-center justify-center transition-all duration-200",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-00e736aadc29a8e6",
@@ -306,6 +306,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-02ed2bebf2d746b4",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 346,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-02f5bb2eb814d026",
     "file": "src/modules/Command/presentations/views/UndoHistoryPanel.tsx",
     "line": 46,
@@ -360,15 +369,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-03309a45ddabbba2",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 510,
-    "fingerprint": "div\tanimate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0333b07281c41b15",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/AutomationLane.tsx",
     "line": 143,
@@ -416,7 +416,7 @@
   {
     "id": "ui-03a435799d65b7d4",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 116,
+    "line": 117,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -439,6 +439,15 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-03b5faf04a9b6902",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 102,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-03c322c5ee3c6b48",
@@ -803,7 +812,7 @@
   {
     "id": "ui-0747c2186647740a",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 179,
+    "line": 180,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -956,7 +965,7 @@
   {
     "id": "ui-085b5fa20d8347d4",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 143,
+    "line": 144,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1019,7 +1028,7 @@
   {
     "id": "ui-08bf6d5d3d8bff7e",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
-    "line": 49,
+    "line": 50,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1179,6 +1188,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-0a35643079434876",
+    "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
+    "line": 558,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-0a7174bc57246ba7",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx",
     "line": 128,
@@ -1305,18 +1323,9 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-0b9ccf6ec576fac0",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 157,
-    "fingerprint": "div\tflex items-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0beb2e34ff4f7cba",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 142,
+    "line": 143,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1440,15 +1449,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-0d283a60b338b36c",
-    "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadingOverlay.tsx",
-    "line": 42,
-    "fingerprint": "div\tfixed inset-0 z-[9999] flex flex-col items-center justify-center",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0d3d0dd2a1a702be",
     "file": "src/components/daw/DawChannelStripShell.tsx",
     "line": 18,
@@ -1500,15 +1500,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-0d7ca29c335f9457",
-    "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
-    "line": 50,
-    "fingerprint": "div\tflex flex-col items-center gap-4",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -1719,15 +1710,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0f1815abf62479b9",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 580,
-    "fingerprint": "div\tflex flex-1 overflow-hidden",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0f326b1ebb1cac7e",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1134,
@@ -1758,6 +1740,15 @@
     "id": "ui-0f4241dd82b2173c",
     "file": "src/modules/Fermenter/presentations/components/OscillatorSection.tsx",
     "line": 95,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-0f610b883be8cede",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 80,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -1843,6 +1834,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-10c0159c91a59a28",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 168,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-10c27e05fb47403a",
@@ -2036,7 +2036,7 @@
   {
     "id": "ui-12176c8cb87f12ce",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 145,
+    "line": 146,
     "fingerprint": "DawMetricCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawMetricCluster",
@@ -2160,6 +2160,15 @@
     "disposition": "responsive-or-dynamic"
   },
   {
+    "id": "ui-137cc70c46a86932",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 477,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-138ff80cd363a626",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 741,
@@ -2196,15 +2205,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-13a34ab6906a8003",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 77,
-    "fingerprint": "div\tdesktop-titlebar-region flex w-full flex-1 min-h-[40px] items-center px-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-13b035d50dbba810",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
     "line": 258,
@@ -2225,7 +2225,7 @@
   {
     "id": "ui-13d0968507758c93",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 535,
+    "line": 539,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2347,6 +2347,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-14ad71d22205ea85",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 341,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-14ca17b630985929",
@@ -2781,6 +2790,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-1961cfea9e81afc7",
+    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+    "line": 127,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-1967b45022884303",
     "file": "src/modules/TimelineEditor/presentations/views/TempoEditor.tsx",
     "line": 56,
@@ -2927,7 +2945,7 @@
   {
     "id": "ui-1af3a9130f20099e",
     "file": "src/modules/WorkspaceShell/presentations/components/ErrorBoundary.tsx",
-    "line": 56,
+    "line": 60,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3094,6 +3112,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-1ce566789acdef90",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 119,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1ceb46e95368dba6",
@@ -3476,7 +3503,7 @@
   {
     "id": "ui-1fc3c16ddfcecf2a",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 111,
+    "line": 112,
     "fingerprint": "DawMetricCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawMetricCluster",
@@ -3553,6 +3580,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-2056880f57b97489",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 596,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-206a565d623b51ab",
@@ -3753,15 +3789,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-235dcb7ac3448682",
-    "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
-    "line": 26,
-    "fingerprint": "div\tflex items-center gap-1.5 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-23701127f5fcbe75",
     "file": "src/modules/SessionLauncher/presentations/views/SessionView.tsx",
     "line": 71,
@@ -3816,15 +3843,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-245d28fbe22a8e4b",
-    "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
-    "line": 557,
-    "fingerprint": "div\tflex h-full w-full select-none flex-col overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2477b8940f7ea6f3",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 481,
@@ -3870,15 +3888,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-24d644a521d67f16",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 295,
-    "fingerprint": "div\tflex items-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-24f313ff839cdcff",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
     "line": 536,
@@ -3915,15 +3924,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2523f3a5346ce5df",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 141,
-    "fingerprint": "div\tflex shrink-0 justify-center items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-25765003287eb9bb",
     "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
     "line": 28,
@@ -3940,6 +3940,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-25f0a6fb8293c41f",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 602,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-25f8cd2734286a56",
@@ -3975,6 +3984,15 @@
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-260adca345858656",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 130,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -4020,15 +4038,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-26807cc21a1d9212",
-    "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadFailureOverlay.tsx",
-    "line": 49,
-    "fingerprint": "div\tfixed inset-0 z-[10000] flex flex-col items-center justify-center px-6 text-center",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -4083,15 +4092,6 @@
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-27226692f640e526",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 268,
-    "fingerprint": "div\tpx-3 py-2.5 space-y-2.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -4203,6 +4203,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-27d78acdda2a1416",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 157,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-27e600f663579941",
     "file": "src/modules/Project/presentations/views/RecentProjectsMenu.tsx",
     "line": 235,
@@ -4304,7 +4313,7 @@
   {
     "id": "ui-28c0930d234bf817",
     "file": "src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx",
-    "line": 37,
+    "line": 38,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4313,7 +4322,7 @@
   {
     "id": "ui-28eca55ce3c662cb",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx",
-    "line": 122,
+    "line": 123,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4509,18 +4518,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2b2bd2163ce12775",
-    "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
-    "line": 77,
-    "fingerprint": "div\tflex w-full gap-3 mt-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2b2e7c7123a4d11e",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 696,
+    "line": 698,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5031,24 +5031,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2f612f0d5c4bc713",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 269,
-    "fingerprint": "div\tflex items-center gap-1.5 text-[10px] text-primary",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-2f849f1780b64b0a",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 119,
-    "fingerprint": "div\tflex w-full flex-1 min-h-[46px] items-center px-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2f8e78fec8a99696",
     "file": "src/modules/MixerConsole/presentations/components/Mixer/MixerMicroReadout.tsx",
     "line": 22,
@@ -5265,15 +5247,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3276c07a28f19613",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 185,
-    "fingerprint": "span\tinline-flex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-329cc08594009bca",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1716,
@@ -5397,15 +5370,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-33f612ddf6160d6d",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 167,
-    "fingerprint": "div\tpx-2 py-2 space-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -5805,15 +5769,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-386559f43d6d86bc",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 807,
-    "fingerprint": "div\tflex items-center gap-0.5 px-2 py-0.5 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-38a488cbaef12203",
     "file": "src/modules/Levain/presentations/components/HumanizePanel.tsx",
     "line": 46,
@@ -5969,7 +5924,7 @@
   {
     "id": "ui-39b7a39dfae334ba",
     "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
-    "line": 78,
+    "line": 83,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5994,6 +5949,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-39eb38f3a9a20fb3",
+    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+    "line": 103,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3a76f1682687c7b2",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 768,
@@ -6001,15 +5965,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-3a9dfef9c5c75746",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 159,
-    "fingerprint": "div\tflex flex-1 basis-0 justify-end items-center gap-1 min-w-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-3ab243873fe6a596",
@@ -6167,7 +6122,7 @@
   {
     "id": "ui-3bcd119e0dd3d906",
     "file": "src/modules/WorkspaceShell/presentations/components/ErrorBoundary.tsx",
-    "line": 49,
+    "line": 53,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6219,18 +6174,9 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-3c55cc2d6d129244",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 530,
-    "fingerprint": "div\tflex gap-1.5 flex-wrap",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3c9d1371953bffcd",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 269,
+    "line": 270,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6279,6 +6225,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-3d073b6bbf5c0671",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 138,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -6334,6 +6289,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-3d753b549bab00d4",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 296,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3d879a56a4995cb7",
@@ -6399,6 +6363,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3e2bcec3328b6ce0",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 563,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3e5c5180e4c6bf38",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 200,
@@ -6424,15 +6397,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-3ec76919a534c23d",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 136,
-    "fingerprint": "div\tflex flex-col gap-3 rounded-md bg-surface-raised p-4 shadow-lg",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-3eddad5237d7e8f1",
@@ -6534,6 +6498,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3f88a3c0e6379d92",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 342,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3fa7dee136ae925a",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 474,
@@ -6630,6 +6603,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-4084310281943890",
+    "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadingOverlay.tsx",
+    "line": 44,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -7038,15 +7020,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-43f82197ebbe74b4",
-    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 189,
-    "fingerprint": "div\tfixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-442417d2d051acc0",
     "file": "src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx",
     "line": 86,
@@ -7054,15 +7027,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-442bb887879d10ea",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 340,
-    "fingerprint": "div\tflex gap-3 mt-1 text-[9px] text-muted-foreground/70",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-445b40b9da76a7ec",
@@ -7092,6 +7056,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-44a26e5889f1357d",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 269,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-44a463e2c5591f28",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx",
     "line": 187,
@@ -7112,7 +7085,7 @@
   {
     "id": "ui-44f04bcdf732854c",
     "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
-    "line": 87,
+    "line": 92,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7236,15 +7209,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-45d9c3a592dabad0",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 341,
-    "fingerprint": "span\tinline-flex items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-45e1a589c22cd421",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackClipsSection.tsx",
     "line": 47,
@@ -7301,7 +7265,7 @@
   {
     "id": "ui-463ac09a42699271",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 202,
+    "line": 204,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -7353,18 +7317,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-46fabff499bc3a9b",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 91,
-    "fingerprint": "div\tflex shrink-0 justify-center items-center gap-1 w-[40vw] max-w-[800px] min-w-[300px]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-472e6c1e682ad6f8",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 304,
+    "line": 305,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -7443,6 +7398,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-47aee108ba1c55ad",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 513,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-47cda7318fbb4087",
     "file": "src/components/daw/DawAnalysisCard.tsx",
     "line": 27,
@@ -7486,6 +7450,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-4837bdedcad3e71f",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 186,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-4843a98cfdd2b275",
@@ -7578,15 +7551,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-4924f3c471080c0b",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 414,
-    "fingerprint": "div\tflex items-center gap-1.5 px-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-493f918802ebd17c",
     "file": "src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx",
     "line": 111,
@@ -7666,15 +7630,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-4ad53d016f9e2d5e",
-    "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 219,
-    "fingerprint": "form\tdaw-readout-well flex items-center gap-1.5 rounded-sm px-2 py-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-4af4bdc2c59a63b5",
@@ -7929,6 +7884,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-4d75a9ae30ee48d8",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 82,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-4d8379c50ec4dd2e",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
     "line": 166,
@@ -8066,7 +8030,7 @@
   {
     "id": "ui-4ebb09baff0174c1",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 326,
+    "line": 327,
     "fingerprint": "DawChooserCard\t",
     "kind": "daw-chrome",
     "mapping": "DawChooserCard",
@@ -8163,6 +8127,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-4ff5451251ef4714",
+    "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
+    "line": 608,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-500594d6f54a7537",
     "file": "src/modules/Fermenter/presentations/components/AdditiveSection.tsx",
     "line": 26,
@@ -8235,6 +8208,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-50c9e564471057c4",
+    "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
+    "line": 220,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-50f3bd30c2095315",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 606,
@@ -8289,15 +8271,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-51549d201a2db5fc",
-    "file": "src/modules/WorkspaceShell/presentations/views/MonitorStatusBadge.tsx",
-    "line": 58,
-    "fingerprint": "span\tflex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-[var(--color-state-warning)]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5154ac8823980aac",
     "file": "src/modules/AiRuntime/presentations/views/ChatPanel.tsx",
     "line": 332,
@@ -8305,6 +8278,15 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-51567864c0dda505",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 160,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-51592cc23189cd47",
@@ -8388,15 +8370,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-5268bffd2962dffc",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 189,
-    "fingerprint": "span\tinline-flex items-center gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-526a85171772cbe0",
     "file": "src/modules/Crumbs/presentations/views/CrumbsPanel.tsx",
     "line": 324,
@@ -8404,6 +8377,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-5271a1230d0847c6",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 414,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-528ecec24700f040",
@@ -8444,7 +8426,7 @@
   {
     "id": "ui-5314900b4b17695b",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 243,
+    "line": 244,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8458,15 +8440,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-5338a64975a6d34c",
-    "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 129,
-    "fingerprint": "div\tflex items-center gap-2 max-w-lg",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-534c2c0f1d0b55ba",
@@ -8570,7 +8543,7 @@
   {
     "id": "ui-54009c6f78f64f14",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 67,
+    "line": 68,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8703,6 +8676,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-55b667f6e582059a",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 190,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-55c2536b2d07d157",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
     "line": 197,
@@ -8741,19 +8723,10 @@
   {
     "id": "ui-560c7c0916034826",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 94,
+    "line": 95,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-560d39c7a95cd828",
-    "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
-    "line": 681,
-    "fingerprint": "div\tabsolute inset-0 flex",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -8844,6 +8817,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-57cd1885d47eb36e",
+    "file": "src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx",
+    "line": 36,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -8946,6 +8928,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-5857ece969fd16d4",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 142,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5859d9f6a386b9ac",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 228,
@@ -8962,6 +8953,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-58b02f7aff2ba797",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 810,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-58bd9bd9ab4d9147",
@@ -8998,15 +8998,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-58fe96fac993ed9c",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 62,
-    "fingerprint": "header\tflex flex-col h-(--spacing-transport-height) shrink-0 border-b border-black transition-colors duration-300 relative z-50",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5915183ab21e09e3",
@@ -9144,15 +9135,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-5a1f57aebed93284",
-    "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
-    "line": 608,
-    "fingerprint": "div\tml-auto flex shrink-0 items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-5a265a155d68ef11",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
     "line": 168,
@@ -9209,7 +9191,7 @@
   {
     "id": "ui-5a85133d63fb6eaf",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 463,
+    "line": 466,
     "fingerprint": "div\tflex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center",
     "kind": "layout",
     "mapping": "Row",
@@ -9299,7 +9281,7 @@
   {
     "id": "ui-5bac70a41637933e",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
-    "line": 65,
+    "line": 66,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -9389,7 +9371,7 @@
   {
     "id": "ui-5c82c27cab611ab6",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 161,
+    "line": 162,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -9457,15 +9439,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-5d87c4dcaf0a8bb9",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 333,
-    "fingerprint": "div\tflex items-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5da4a26690720d27",
@@ -9576,6 +9549,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-5e583bc87b125d07",
+    "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+    "line": 55,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-5e5972aacadaa9a5",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 703,
@@ -9675,13 +9657,13 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-5f5f5297ec4d9669",
-    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 226,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
+    "id": "ui-5f529ed7db24a557",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 519,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-5f6ed7ef70a8cf7c",
@@ -9704,7 +9686,7 @@
   {
     "id": "ui-5fb4b2b6f065dfe6",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 230,
+    "line": 232,
     "fingerprint": "DawKeycap\t",
     "kind": "daw-chrome",
     "mapping": "DawKeycap",
@@ -9774,15 +9756,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-600082624f4a746b",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 609,
-    "fingerprint": "div\ttext-center space-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6005ca0d9821321f",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx",
     "line": 305,
@@ -9839,7 +9812,7 @@
   {
     "id": "ui-609158e66a261032",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 553,
+    "line": 557,
     "fingerprint": "div\tgrid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin",
     "kind": "layout",
     "mapping": "Grid",
@@ -9900,15 +9873,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-615f8a1cbdefa259",
-    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 219,
-    "fingerprint": "div\tflex items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6170a2c97928390b",
     "file": "src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx",
     "line": 65,
@@ -9920,7 +9884,7 @@
   {
     "id": "ui-617dcb1ef04e47f4",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 193,
+    "line": 195,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -10197,13 +10161,13 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-647bcbea69c2e9e4",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 594,
-    "fingerprint": "div\tflex-1 flex flex-col min-w-0 overflow-hidden",
+    "id": "ui-647a6cddf65e30fb",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 181,
+    "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-648cdd4df3b9e472",
@@ -10447,15 +10411,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6701a836f830344d",
-    "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
-    "line": 60,
-    "fingerprint": "div\tdaw-readout-well flex items-center gap-1 rounded-sm px-2 py-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-670e3a319fb4bf47",
@@ -10820,7 +10775,7 @@
   {
     "id": "ui-6b14f3fcae8dfb1e",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 190,
+    "line": 191,
     "fingerprint": "DawMetricCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawMetricCluster",
@@ -11070,15 +11025,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-6e460ca9d478c266",
-    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
-    "line": 101,
-    "fingerprint": "div\tflex flex-col items-center gap-4",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6e4e0f0795e5712c",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 2097,
@@ -11112,6 +11058,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-6ea84f1d41183c89",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 260,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -11158,15 +11113,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-6f44203890f0618f",
-    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 224,
-    "fingerprint": "div\tspace-y-1.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-6f7f68130ac27791",
@@ -11504,7 +11450,7 @@
   {
     "id": "ui-72e3ef7dc5719180",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 263,
+    "line": 264,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -11727,6 +11673,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7576ac4167657cde",
+    "file": "src/modules/WorkspaceShell/presentations/views/CvOutputStatusBadge.tsx",
+    "line": 25,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7585a50667d3ce6e",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 906,
@@ -11880,15 +11835,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-76ac2045e6d8581e",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 128,
-    "fingerprint": "div\tflex flex-1 basis-0 justify-start items-center gap-1 min-w-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-76bb81587da836d3",
     "file": "src/modules/Tuner/presentations/views/TunerPanel.tsx",
     "line": 270,
@@ -11918,7 +11864,7 @@
   {
     "id": "ui-76f718ac387dd73b",
     "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
-    "line": 130,
+    "line": 138,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -12078,6 +12024,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-78858e17c24da89b",
+    "file": "src/modules/WorkspaceShell/presentations/components/ErrorBoundary.tsx",
+    "line": 42,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7885b5e48fa6e936",
     "file": "src/modules/Fermenter/presentations/components/ModulationSection.tsx",
     "line": 64,
@@ -12233,7 +12188,7 @@
   {
     "id": "ui-79cbc361baeb2645",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 64,
+    "line": 65,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -12339,15 +12294,6 @@
     "disposition": "responsive-or-dynamic"
   },
   {
-    "id": "ui-7ac98d9edebcff7e",
-    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
-    "line": 75,
-    "fingerprint": "div\tfixed inset-0 z-[9999] flex flex-col items-center justify-center p-6",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7acacd04e3585443",
     "file": "src/modules/Proof/presentations/components/ProofEqSection.tsx",
     "line": 62,
@@ -12441,6 +12387,15 @@
     "id": "ui-7b305fd75f22c8be",
     "file": "src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx",
     "line": 589,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7b65c5f79bb8aee1",
+    "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
+    "line": 133,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -12636,15 +12591,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-7cbd3665bee701e3",
-    "file": "src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx",
-    "line": 35,
-    "fingerprint": "div\tflex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7d07d9d306ec18a7",
     "file": "src/modules/Levain/presentations/components/MicBlendSlider.tsx",
     "line": 43,
@@ -12760,6 +12706,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7dfd3ed75233fec9",
+    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
+    "line": 228,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7e26b2f563c3d36c",
@@ -12888,6 +12843,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7f46c1dbbb29bbb7",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 99,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7f472f2c8a94a358",
     "file": "src/modules/Fermenter/presentations/components/EnvelopeSection.tsx",
     "line": 108,
@@ -12971,7 +12935,7 @@
   {
     "id": "ui-8035ecde3459f5dc",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 208,
+    "line": 209,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13223,7 +13187,7 @@
   {
     "id": "ui-82c9aa35f49940aa",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
-    "line": 27,
+    "line": 28,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -13599,15 +13563,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-8689f93d8767f173",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 816,
-    "fingerprint": "div\tflex items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-86a989be507d878b",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackRoutingSection.tsx",
     "line": 34,
@@ -13943,7 +13898,7 @@
   {
     "id": "ui-89d07c8b2a613422",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 493,
+    "line": 496,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -14274,6 +14229,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-8cf83ed3344f2241",
+    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
+    "line": 190,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8d3b626691566185",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 130,
@@ -14290,15 +14254,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-8d5205b0d918e938",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 102,
-    "fingerprint": "div\tflex flex-1 basis-0 justify-end items-center gap-1 min-w-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8d65b68ea2ac4f28",
@@ -14427,15 +14382,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-8e9e663ce940b585",
-    "file": "src/modules/WorkspaceShell/presentations/views/CvOutputStatusBadge.tsx",
-    "line": 24,
-    "fingerprint": "span\tflex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-[var(--color-accent-cyan)]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-8ed04ba3b38f025a",
     "file": "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
     "line": 261,
@@ -14443,15 +14389,6 @@
     "kind": "daw-chrome",
     "mapping": "DawContextMenuSurface",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-8edbe63169c9256c",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 345,
-    "fingerprint": "span\tinline-flex items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-8ef2300e1e2ff139",
@@ -14564,7 +14501,7 @@
   {
     "id": "ui-8fa145d196f8b31a",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 402,
+    "line": 403,
     "fingerprint": "div\tanimate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300",
     "kind": "layout",
     "mapping": "Stack",
@@ -14667,6 +14604,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-914f93a57e97d502",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 270,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -15131,7 +15077,7 @@
   {
     "id": "ui-9727d5f71a585db8",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 516,
+    "line": 520,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15199,15 +15145,6 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-97e44cf5f4f82392",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 474,
-    "fingerprint": "div\tflex flex-wrap items-center justify-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-97f1f6b3d0368f85",
@@ -15464,7 +15401,7 @@
   {
     "id": "ui-9b0dbb15373f6390",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 244,
+    "line": 245,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16067,7 +16004,7 @@
   {
     "id": "ui-a1a4fcdd0fe1a676",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 218,
+    "line": 220,
     "fingerprint": "div\tgrid grid-cols-2 gap-6 overflow-y-auto px-4 py-4",
     "kind": "layout",
     "mapping": "Grid",
@@ -16116,6 +16053,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a1e98e284d35ce67",
+    "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadFailureOverlay.tsx",
+    "line": 51,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -16364,7 +16310,7 @@
   {
     "id": "ui-a445d229df7900fb",
     "file": "src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx",
-    "line": 31,
+    "line": 32,
     "fingerprint": "div\tcontain-strict flex flex-col bg-surface-base border-t overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200",
     "kind": "layout",
     "mapping": "Stack",
@@ -16485,6 +16431,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a59d7eb554d880b8",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 804,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -16623,15 +16578,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-a7b1d54b251f3cb2",
-    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
-    "line": 119,
-    "fingerprint": "div\tflex flex-col gap-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-a7c0c641aedbf8ab",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 339,
@@ -16670,7 +16616,7 @@
   {
     "id": "ui-a80367a44e5fe732",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 256,
+    "line": 257,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16783,15 +16729,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-a90b99bca6fc824c",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 156,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a947b2fdd2ecd40b",
@@ -16953,6 +16890,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-aa8e8faa08092fdb",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 534,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -17199,15 +17145,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-ad1706245cfd3f23",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 184,
-    "fingerprint": "div\tflex gap-3 mt-1.5 text-[10px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-ad186f307370386f",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
     "line": 117,
@@ -17233,15 +17170,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ad9a1283dfe142ef",
-    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
-    "line": 99,
-    "fingerprint": "div\trelative flex flex-col items-center gap-6 rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] p-8 text-center max-w-[340px] w-full",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-add156f04d753d99",
@@ -17301,6 +17229,15 @@
     "id": "ui-ae0bdf35f3ce4a4f",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
     "line": 49,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ae1e1dc93ec94cd1",
+    "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
+    "line": 61,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17462,7 +17399,7 @@
   {
     "id": "ui-afb654b29b1e7877",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 560,
+    "line": 564,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17575,15 +17512,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-b0cd424525813d79",
-    "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
-    "line": 48,
-    "fingerprint": "div\trelative flex flex-col items-center gap-6 rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] p-10 text-center",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b0dca8845f3a8f71",
@@ -17813,7 +17741,7 @@
   {
     "id": "ui-b29122f20faee558",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 273,
+    "line": 274,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17901,15 +17829,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b37aec6a55f95e97",
-    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 228,
-    "fingerprint": "div\tflex gap-0.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b39e9be77cc43187",
     "file": "src/modules/ContentBrowser/presentations/components/Sidebar/RailTabBar.tsx",
     "line": 66,
@@ -17991,15 +17910,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-b469a5f4ff14f916",
-    "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 132,
-    "fingerprint": "div\tflex flex-wrap gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b47d38e6721105ec",
     "file": "src/modules/Proof/presentations/components/ProofEqSection.tsx",
     "line": 56,
@@ -18054,6 +17964,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-b4aba4b92ef877d5",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 400,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b4ad9ff19eb338b2",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
     "line": 945,
@@ -18065,7 +17984,7 @@
   {
     "id": "ui-b4b208f31f1f7536",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 566,
+    "line": 570,
     "fingerprint": "div\tmt-0.5 shrink-0 size-8 rounded-lg flex items-center justify-center transition-colors group-hover:",
     "kind": "layout",
     "mapping": "Row",
@@ -18078,6 +17997,24 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b4d8ce7bd9f090f4",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 185,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-b4d8e939b9fd601e",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 220,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -18261,15 +18198,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-b6e5171d18172021",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 399,
-    "fingerprint": "div\tflex h-full items-center justify-center p-6",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b6f82957d65823db",
     "file": "src/modules/Levain/presentations/components/LevainMacroStrip.tsx",
     "line": 17,
@@ -18333,6 +18261,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-b7a34ece978fad7e",
+    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+    "line": 109,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-b7c0e3a6c3934ad0",
     "file": "src/modules/AiRuntime/presentations/views/MixAnalysisPanel.tsx",
     "line": 62,
@@ -18362,7 +18299,7 @@
   {
     "id": "ui-b81e63ad91ec21fb",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 270,
+    "line": 271,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -18470,7 +18407,7 @@
   {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 265,
+    "line": 266,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -18549,6 +18486,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-ba1d876d9ddc5662",
+    "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
+    "line": 130,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-ba4b5bd48bd6dc7a",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
     "line": 722,
@@ -18560,7 +18506,7 @@
   {
     "id": "ui-ba4de0dd94d8e93f",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 416,
+    "line": 418,
     "fingerprint": "div\tflex flex-col border-border-hairline bg-surface-tray overflow-hidden",
     "kind": "layout",
     "mapping": "Stack",
@@ -18654,6 +18600,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-bad4f92b5aa1c566",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 129,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -18956,10 +18911,19 @@
   {
     "id": "ui-be690339068bd141",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 228,
+    "line": 231,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-beb1239661c7687a",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 821,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -19044,15 +19008,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-c04898f57cbfbd81",
-    "file": "src/modules/WorkspaceShell/presentations/components/ErrorBoundary.tsx",
-    "line": 41,
-    "fingerprint": "div\tflex min-h-0 flex-col items-center justify-center gap-4 overflow-auto bg-background text-foreground",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c0532a553e9e5907",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
     "line": 590,
@@ -19086,15 +19041,6 @@
     "fingerprint": "div\tgrid grid-cols-3 gap-2",
     "kind": "layout",
     "mapping": "Grid",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c08662ff75d7ab91",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 802,
-    "fingerprint": "div\tcontain-strict flex flex-col bg-surface-base overflow-hidden shrink-0",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -19179,6 +19125,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-c1222ddb001a3d06",
+    "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+    "line": 49,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c13a385da5636aa6",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx",
     "line": 104,
@@ -19217,7 +19172,7 @@
   {
     "id": "ui-c188fb9aa23adb8f",
     "file": "src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx",
-    "line": 95,
+    "line": 96,
     "fingerprint": "DawTransportCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawTransportCluster",
@@ -19303,15 +19258,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c2b15faef13bb997",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 561,
-    "fingerprint": "div\tflex h-screen w-screen flex-col overflow-hidden bg-surface-app",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c2be19b09a5f5b1e",
@@ -19496,7 +19442,7 @@
   {
     "id": "ui-c4a4dfc1d3515086",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 134,
+    "line": 135,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -19611,15 +19557,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c623ef262ff16764",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 702,
-    "fingerprint": "div\tflex items-center gap-1.5 w-full min-w-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c6419d9004ad7087",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1256,
@@ -19672,6 +19609,15 @@
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-c696f13cc1a74737",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 232,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-c6ae5c9539cb5eac",
@@ -20079,15 +20025,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-cb613d7e15d0fe0b",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 598,
-    "fingerprint": "div\tanimate-in fade-in zoom-in-95 duration-400 flex flex-col items-center gap-6",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-cb62185fa4cdb406",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx",
     "line": 515,
@@ -20117,7 +20054,7 @@
   {
     "id": "ui-cb84e5c0d7c9933d",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 154,
+    "line": 155,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20126,7 +20063,7 @@
   {
     "id": "ui-cb88c87a966758e3",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 514,
+    "line": 516,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20378,7 +20315,7 @@
   {
     "id": "ui-cd4aac931355a0a7",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 228,
+    "line": 229,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20405,20 +20342,11 @@
   {
     "id": "ui-cd7f39e179257bf0",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 244,
+    "line": 246,
     "fingerprint": "DawKeycap\t",
     "kind": "daw-chrome",
     "mapping": "DawKeycap",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-cd7fa13cb8a8a1fd",
-    "file": "src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx",
-    "line": 224,
-    "fingerprint": "div\tflex items-center px-2 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-cd842c96b4557ecf",
@@ -20925,15 +20853,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d344c0f33d375fbd",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 259,
-    "fingerprint": "div\tflex items-center justify-between gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-d3460f1cba12724c",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
     "line": 419,
@@ -21024,6 +20943,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-d413f72e01544311",
+    "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+    "line": 77,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d42dcf896a809e86",
     "file": "src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx",
     "line": 171,
@@ -21075,6 +21003,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-d476fe8cbac1661b",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 334,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -21260,7 +21197,7 @@
   {
     "id": "ui-d6ebeb2d3da784a8",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 862,
+    "line": 863,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21368,7 +21305,7 @@
   {
     "id": "ui-d7befdd81345a763",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 436,
+    "line": 439,
     "fingerprint": "div\tgrid grid-cols-3 gap-3 w-full",
     "kind": "layout",
     "mapping": "Grid",
@@ -21480,6 +21417,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-d8a38108509bf607",
+    "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
+    "line": 230,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -21645,15 +21591,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-da89f594ccdd5191",
-    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
-    "line": 82,
-    "fingerprint": "div\tflex flex-1 basis-0 justify-start items-center gap-1 min-w-0",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-daae3e4c70cfa587",
     "file": "src/modules/Fermenter/presentations/components/EffectsSection.tsx",
     "line": 182,
@@ -21701,7 +21638,7 @@
   {
     "id": "ui-db46db3d2deeb525",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 166,
+    "line": 167,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -21798,6 +21735,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-dc24ee757ccf698a",
+    "file": "src/modules/WorkspaceShell/presentations/views/MonitorStatusBadge.tsx",
+    "line": 59,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-dc26d921de4e7da6",
     "file": "src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx",
     "line": 163,
@@ -21881,7 +21827,7 @@
   {
     "id": "ui-dd38281e5feb42b1",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 475,
+    "line": 478,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21908,7 +21854,7 @@
   {
     "id": "ui-dd8a18db9a20bec9",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 140,
+    "line": 141,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22158,13 +22104,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-e0c9b6eb148528f1",
+    "id": "ui-e0ac1625cbfd4c4a",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 420,
-    "fingerprint": "div\tflex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1",
+    "line": 415,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e0cc6ba3cb69a342",
@@ -22340,7 +22286,7 @@
   {
     "id": "ui-e2e96956ec9831ee",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 126,
+    "line": 127,
     "fingerprint": "DawMetricCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawMetricCluster",
@@ -22401,15 +22347,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-e3c28ddec87b728a",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 413,
-    "fingerprint": "div\tflex flex-col gap-2 w-full",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e3c5805b7d52025a",
     "file": "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
     "line": 106,
@@ -22444,6 +22381,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-e401e3f0d3e1572b",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 91,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e40739e303f53850",
@@ -22707,6 +22653,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e5c906f96ec29190",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 676,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e6248fea959cfc4b",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx",
     "line": 160,
@@ -22790,7 +22745,7 @@
   {
     "id": "ui-e6d189b213b56906",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 115,
+    "line": 116,
     "fingerprint": "DawMeterBar\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterBar",
@@ -22916,7 +22871,7 @@
   {
     "id": "ui-e8c3595a7a6e6de0",
     "file": "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx",
-    "line": 207,
+    "line": 209,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22984,6 +22939,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e97e94b0bf6d51aa",
+    "file": "src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx",
+    "line": 27,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e982ce6f60b94349",
@@ -23096,7 +23060,7 @@
   {
     "id": "ui-ea1f2d4d26e313a1",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 97,
+    "line": 98,
     "fingerprint": "DawControlStrip\t",
     "kind": "daw-chrome",
     "mapping": "DawControlStrip",
@@ -23208,15 +23172,6 @@
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-eae59b60fd0e33b6",
-    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
-    "line": 231,
-    "fingerprint": "div\tflex items-center gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -23406,6 +23361,15 @@
     "fingerprint": "DawCompactTextarea\t",
     "kind": "generic-control",
     "mapping": "DawCompactTextarea",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ecd319177b514063",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 421,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -23760,6 +23724,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-efd21b66fab6eb45",
+    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
+    "line": 582,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-efd78703d0d56aff",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
     "line": 121,
@@ -23832,6 +23805,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-f0da3d5c57107f88",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 610,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f11fc95326fe1d83",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
     "line": 222,
@@ -23852,7 +23834,7 @@
   {
     "id": "ui-f16fb8c38e42fcef",
     "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 659,
+    "line": 660,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23915,7 +23897,7 @@
   {
     "id": "ui-f1fe1af2efc47078",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 194,
+    "line": 195,
     "fingerprint": "DawMeterBar\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterBar",
@@ -24014,7 +23996,7 @@
   {
     "id": "ui-f2ca0ea29520612b",
     "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadFailureOverlay.tsx",
-    "line": 72,
+    "line": 76,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24024,6 +24006,15 @@
     "id": "ui-f2d17b51e62bd622",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
     "line": 572,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f2d40288774a9d12",
+    "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
+    "line": 681,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24183,6 +24174,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f4ba7835cec2b6c9",
+    "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+    "line": 158,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f4d16fb98f30bbc9",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
     "line": 224,
@@ -24190,15 +24190,6 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-f4dd2005ff303119",
-    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 98,
-    "fingerprint": "div\tflex items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f501e3c81e152f84",
@@ -24462,6 +24453,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f79bd4e5a4de8672",
+    "file": "src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx",
+    "line": 225,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f7a0d855867f20c8",
     "file": "src/modules/AiRuntime/presentations/views/ChatPanel.tsx",
     "line": 209,
@@ -24559,15 +24559,6 @@
     "kind": "daw-chrome",
     "mapping": "DawControlStrip",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-f85b7fd26b554afb",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 180,
-    "fingerprint": "div\tflex flex-col items-center gap-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f85bcbd74b09f3a1",
@@ -24690,6 +24681,15 @@
     "id": "ui-f98ab3f4d7039a5b",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
     "line": 185,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-f99ed2300e9374ed",
+    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
+    "line": 704,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24822,6 +24822,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-fadaaffbe52e44a3",
+    "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+    "line": 82,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fb09065d7f90e160",
     "file": "src/modules/Preferences/presentations/views/preferencesShared.tsx",
     "line": 25,
@@ -24878,7 +24887,7 @@
   {
     "id": "ui-fb8fc8a0bb306161",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 152,
+    "line": 153,
     "fingerprint": "DawMetricCluster\t",
     "kind": "daw-chrome",
     "mapping": "DawMetricCluster",
@@ -25038,6 +25047,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-fd8d3165bb190453",
+    "file": "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx",
+    "line": 63,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fd8e7f0e328e6cb2",
     "file": "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx",
     "line": 592,
@@ -25049,7 +25067,7 @@
   {
     "id": "ui-fd92db25a675089b",
     "file": "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx",
-    "line": 247,
+    "line": 250,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25126,15 +25144,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-fe357f6003451a7d",
-    "file": "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx",
-    "line": 515,
-    "fingerprint": "div\tflex items-center gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fe3aefea6cc283ef",
@@ -25243,15 +25252,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ff3d54007d41fe4c",
-    "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 129,
-    "fingerprint": "div\tfixed inset-0 z-40 flex items-center justify-center bg-black/40",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-ff5b3ae1ed8de772",

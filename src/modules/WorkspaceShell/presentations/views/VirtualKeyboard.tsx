@@ -26,6 +26,7 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawDisplaySurface } from '#/components/daw/DawDisplaySurface';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -554,10 +555,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const currentOctaveFirstWhite = octaveToFirstWhiteIdx(octave);
 
     return (
-        <div
-            ref={panelRef}
-            className="flex h-full w-full select-none flex-col overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none"
-            // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- application role requires programmatic focus for keyboard input
+        <Stack
+            className="h-full w-full select-none overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none"
+            ref={panelRef} // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- application role requires programmatic focus for keyboard input
             tabIndex={0}
             onKeyDown={onKeyDown}
             onKeyUp={onKeyUp}
@@ -605,7 +605,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             </DawHeaderBand>
 
             <DawControlStrip className="justify-end border-b border-white/[0.04] bg-black/[0.12] px-2.5 py-1.5">
-                <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                <Row gap={0.5} shrink={false} className="ml-auto">
                     <span className="text-[9px] uppercase tracking-wider text-white/40 mr-0.5">Oct</span>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -668,7 +668,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                     </span>
                     <Plus className="size-2.5 text-white/30 shrink-0" />
                     <span className="text-[9px] tabular-nums text-white/40 w-5 text-right">{velocity}</span>
-                </div>
+                </Row>
             </DawControlStrip>
 
             <DawDisplaySurface className="min-h-0 flex-1 items-stretch justify-start rounded-none border-t border-white/[0.03] bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.08))] p-0">
@@ -678,7 +678,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                     style={{ scrollbarWidth: 'none' }}
                 >
                     <div className="relative h-full" style={{ width: TOTAL_WIDTH_PX, minHeight: '100%' }}>
-                        <div className="absolute inset-0 flex">
+                        <Row align="stretch" className="absolute inset-0">
                             {Array.from({ length: TOTAL_WHITE_KEYS }, (_, whiteIdx) => {
                                 const midiNote = whiteIdxToMidi(whiteIdx);
                                 const semitone = ((midiNote % 12) + 12) % 12;
@@ -740,7 +740,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                     </div>
                                 );
                             })}
-                        </div>
+                        </Row>
 
                         {ALL_BLACK_KEYS.map(({ midi: midiNote, leftPx }) => {
                             const isPressed = pressedNotes.has(midiNote);
@@ -775,6 +775,6 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                     </div>
                 </div>
             </DawDisplaySurface>
-        </div>
+        </Stack>
     );
 };

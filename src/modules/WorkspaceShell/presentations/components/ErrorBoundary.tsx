@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react';
 
+import { Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 
 /**
@@ -38,8 +39,11 @@ export class ErrorBoundary extends Component<Props, State> {
         if (this.state.hasError) {
             const variant = this.props.variant ?? 'page';
             return (
-                <div
-                    className="flex min-h-0 flex-col items-center justify-center gap-4 overflow-auto bg-background text-foreground"
+                <Stack
+                    align="center"
+                    justify="center"
+                    gap={4}
+                    className="overflow-auto bg-background text-foreground"
                     style={{ height: FALLBACK_HEIGHT[variant] }}
                 >
                     <h1 className="text-xl font-bold">Something went wrong</h1>
@@ -60,7 +64,7 @@ export class ErrorBoundary extends Component<Props, State> {
                     >
                         Reload App
                     </button>
-                </div>
+                </Stack>
             );
         }
         return this.props.children;
