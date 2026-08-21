@@ -203,19 +203,36 @@ function normalizeDdspAudioFeatures(
     }
     const targetRange = settings.meanLoudness - SILENT_LOUDNESS_DB;
     const smoothedConfidences = smoothConfidences(confidences);
-    const normalizedLoudness = Float32Array.from(adjustedLoudness, (loudness, index) => {
-        const rescaled = ((loudness - oldMinimum) / oldRange) * targetRange + SILENT_LOUDNESS_DB;
+    const conditionedLoudness = adjustedLoudness.map(
+        (loudness) => ((loudness - oldMinimum) / oldRange) * targetRange + SILENT_LOUDNESS_DB
+    );
+    const normalizedLoudness = Float32Array.from(conditionedLoudness, (loudness, index) => {
         const confidenceAdjustment =
             smoothedConfidences[index]! <= CONFIDENCE_THRESHOLD ? LOUDNESS_CONFIDENCE_REDUCTION_DB : 0;
-        return Math.max(SILENT_LOUDNESS_DB, rescaled + confidenceAdjustment);
+        return Math.max(SILENT_LOUDNESS_DB, loudness + confidenceAdjustment);
     });
 
     const midiPitches = Array.from(pitchHz, (pitch) => (pitch > 0 ? 69 + 12 * Math.log2(pitch / 440) : 0));
+    // Magenta's source mask admits low-confidence frames because SPICE carries a
+    // pitch estimate through unvoiced audio. MIDI has the opposite contract:
+    // rests are explicit pitch=0/confidence=0 frames. Including those zeros makes
+    // phrase padding lower the mean and can shift a note several octaves. Select
+    // only voiced MIDI frames here, using loudness before confidence attenuation
+    // so rest-dependent smoothing cannot change the note's register.
     const selectedPitches = midiPitches.filter(
         (_pitch, index) =>
-            confidences[index]! <= CONFIDENCE_THRESHOLD || normalizedLoudness[index]! > settings.loudnessThreshold
+            Number.isFinite(pitchHz[index]) &&
+            pitchHz[index]! > 0 &&
+            confidences[index]! > CONFIDENCE_THRESHOLD &&
+            conditionedLoudness[index]! > settings.loudnessThreshold
     );
-    const pitchMean = average(selectedPitches.length > 0 ? selectedPitches : midiPitches);
+    if (selectedPitches.length === 0) {
+        return {
+            pitchHz: Float32Array.from(pitchHz, (pitch) => (pitch > 0 ? Math.min(HIGHEST_DDSP_PITCH_HZ, pitch) : 0)),
+            loudnessDb: normalizedLoudness,
+        };
+    }
+    const pitchMean = average(selectedPitches);
     const octaveShift = Math.round((settings.meanPitch - pitchMean) / 12);
     const octaveMultiplier = 2 ** octaveShift;
     const normalizedPitch = Float32Array.from(pitchHz, (pitch) =>

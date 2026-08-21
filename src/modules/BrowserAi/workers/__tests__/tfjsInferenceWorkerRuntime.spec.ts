@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../../models/InferenceRequest';
+import { midiToDdspInput } from '../../services/midiToDdspInput';
 import {
     createTfjsInferenceRequestHandler,
     parseDdspSettings,
@@ -209,6 +210,24 @@ function createHarness(
     return { backend, initializeTfjs, loadGraphModel, model, responses, runtime, tensor1d };
 }
 
+async function predictConditionedFeatures(
+    pitchHz: Float32Array,
+    loudnessDb: Float32Array,
+    settings = VIOLIN_SETTINGS
+): Promise<{ f0_hz: Float32Array; loudness_db: Float32Array }> {
+    const harness = createHarness();
+    await harness.runtime.handleRequest(createSessionRequest('load', artifacts({}, settingsBytes(settings))));
+    await harness.runtime.handleRequest(
+        exactInferenceRequest('condition', Array.from(pitchHz), Array.from(loudnessDb))
+    );
+    const feeds = harness.model.predict.mock.calls[0]?.[0] as
+        { f0_hz: FakeTensor; loudness_db: FakeTensor } | undefined;
+    if (!feeds) {
+        throw new Error('Expected conditioned DDSP prediction');
+    }
+    return { f0_hz: feeds.f0_hz.values, loudness_db: feeds.loudness_db.values };
+}
+
 const runtimes: Runtime[] = [];
 
 afterEach(() => {
@@ -245,13 +264,13 @@ describe('tfjsInferenceWorkerRuntime', () => {
         {
             name: 'violin',
             settings: VIOLIN_SETTINGS,
-            expectedPitch: [0, 440, 880, 1_760],
+            expectedPitch: [0, 110, 220, 440],
             expectedLoudness: [-120, -88.43872, -68.39981, -48.46109],
         },
         {
             name: 'trumpet',
             settings: TRUMPET_SETTINGS,
-            expectedPitch: [0, 880, 1_760, 3_520],
+            expectedPitch: [0, 110, 220, 440],
             expectedLoudness: [-120, -102.78986, -83.12112, -63.45238],
         },
     ])('normalizes fixed MIDI features for the $name checkpoint before prediction', async (example) => {
@@ -303,6 +322,65 @@ describe('tfjsInferenceWorkerRuntime', () => {
         }
         expect(response.audio[0]).toBeCloseTo(0.5, 6);
         expect(response.audio.at(-1)).toBeCloseTo(0.5, 6);
+    });
+
+    it('keeps the voiced register invariant when identical notes gain leading and trailing rests', async () => {
+        const voicedPitch = Float32Array.from([110, 110, 110, 110]);
+        const voicedLoudness = Float32Array.from([-80, -60, -50, -70]);
+        const bare = await predictConditionedFeatures(voicedPitch, voicedLoudness);
+        const paddedPitch = Float32Array.from([0, 0, 0, 0, ...voicedPitch, 0, 0, 0, 0, 0, 0]);
+        const paddedLoudness = Float32Array.from([
+            -120,
+            -120,
+            -120,
+            -120,
+            ...voicedLoudness,
+            -120,
+            -120,
+            -120,
+            -120,
+            -120,
+            -120,
+        ]);
+        const padded = await predictConditionedFeatures(paddedPitch, paddedLoudness);
+
+        expectArrayClose(bare.f0_hz.subarray(0, voicedPitch.length), [220, 220, 220, 220]);
+        expectArrayClose(padded.f0_hz.subarray(4, 8), Array.from(bare.f0_hz.subarray(0, 4)));
+    });
+
+    it('does not shift the reviewer A4 note to the pitch ceiling when the phrase contains rest padding', async () => {
+        const note = [{ pitch: 69, velocity: 100, startSec: 0, durationSec: 0.1 }];
+        const shortInput = midiToDdspInput({ notes: note, durationSec: 0.1 });
+        const paddedInput = midiToDdspInput({ notes: note, durationSec: 1 });
+        const short = await predictConditionedFeatures(shortInput.pitchHz, shortInput.loudnessDb);
+        const padded = await predictConditionedFeatures(paddedInput.pitchHz, paddedInput.loudnessDb);
+
+        expect(padded.f0_hz[1]).toBeCloseTo(short.f0_hz[1] ?? 0, 5);
+        expect(padded.f0_hz[1]).not.toBeCloseTo(4_698.64, 1);
+    });
+
+    it('leaves all-rest pitch at finite zero', async () => {
+        const conditioned = await predictConditionedFeatures(new Float32Array(250), new Float32Array(250).fill(-120));
+
+        expect(conditioned.f0_hz.subarray(0, 250).every((pitch) => pitch === 0 && Number.isFinite(pitch))).toBe(true);
+    });
+
+    it('computes pitch register from voiced frames only when two notes are separated by rests', async () => {
+        const conditioned = await predictConditionedFeatures(
+            Float32Array.from([0, 220, 220, 0, 440, 440, 0]),
+            Float32Array.from([-120, -60, -50, -120, -60, -50, -120])
+        );
+
+        expectArrayClose(conditioned.f0_hz.subarray(0, 7), [0, 220, 220, 0, 440, 440, 0]);
+    });
+
+    it('still applies a positive checkpoint octave shift to genuinely voiced notes', async () => {
+        const conditioned = await predictConditionedFeatures(
+            Float32Array.from([110, 110, 220]),
+            Float32Array.from([-80, -60, -50])
+        );
+
+        expectArrayClose(conditioned.f0_hz.subarray(0, 3), [220, 220, 440]);
     });
 
     it('coalesces TF.js initialization and concurrent identical model loads', async () => {
