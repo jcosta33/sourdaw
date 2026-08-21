@@ -9,5 +9,4 @@ export { applyDrumPatternToTrack } from './generateDrumPattern/applyToTrack';
 export { applyMelodyToTrack } from './generateMelody/applyToTrack';
 export { generateMidiVariations } from './generateMidiVariations';
 export { getGenerationHandlers } from './getGenerationHandlers';
-export { generateMidiAI } from './nativeAiBridge/generateMidiAI';
 export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
