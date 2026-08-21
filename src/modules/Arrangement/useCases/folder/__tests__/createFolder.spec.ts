@@ -32,7 +32,7 @@ describe('createFolder', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', name: 'Drums', kind: 'audio' }] });
         mocks.createTrack.mockReturnValue({ id: 'folder-9', name: 'Vocals', kind: 'folder' });
 
-        subject.createFolder('Vocals');
+        expect(subject.createFolder('Vocals')).toBe(true);
 
         expect(mocks.createTrack).toHaveBeenCalledWith({ name: 'Vocals', kind: 'folder' });
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
@@ -43,10 +43,12 @@ describe('createFolder', () => {
         ]);
     });
 
-    it('does nothing when the track store has not loaded', () => {
+    it('does nothing when the track store has not loaded, and says so', () => {
         mocks.getTrackState.mockReturnValue(null);
 
-        subject.createFolder('Vocals');
+        // The caller files an undo entry off this answer, so "nothing happened" has to
+        // be reported rather than swallowed.
+        expect(subject.createFolder('Vocals')).toBe(false);
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });

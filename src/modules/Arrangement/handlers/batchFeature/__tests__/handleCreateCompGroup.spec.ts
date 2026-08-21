@@ -26,12 +26,29 @@ describe('handleCreateCompGroup', () => {
     });
 
     it('executes createCompGroup with name, trackIds and the materialized group id', () => {
-        void handleCreateCompGroup.execute({
+        mocks.createCompGroup.mockReturnValue(true);
+
+        const result = handleCreateCompGroup.execute({
             type: 'createCompGroup',
             payload: { name: 'Drums', trackIds: ['t1', 't2'], groupId: 'grp-1' },
         });
 
         expect(mocks.createCompGroup).toHaveBeenCalledWith('Drums', ['t1', 't2'], 'grp-1');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when the comp-group store was unavailable and no group was created', () => {
+        // Reporting `written` here files an undo entry for a write that never happened.
+        // Its inverse can only ever conflict, and a conflicted entry stays at the top of
+        // the stack refusing every later undo press.
+        mocks.createCompGroup.mockReturnValue(false);
+
+        const result = handleCreateCompGroup.execute({
+            type: 'createCompGroup',
+            payload: { name: 'Drums', trackIds: ['t1'], groupId: 'grp-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

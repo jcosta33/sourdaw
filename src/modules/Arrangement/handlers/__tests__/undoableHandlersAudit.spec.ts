@@ -3,6 +3,8 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+
 import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 
 const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
@@ -17,41 +19,60 @@ const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
  */
 const UNCOVERED_UNDOABLE_HANDLERS = ['importStemSet'];
 
-/**
- * Inverse-action handlers introduced for issue #2365. Each unwinds a forward command,
- * so each must be registered — an unregistered inverse makes undo a silent no-op —
- * and none may be undoable, because a handler that records an undo entry while
- * unwinding the stack stops undo from converging.
- */
-const INVERSE_ACTION_HANDLERS = [
-    'restoreTrackDisabled',
-    'restoreMidiOutput',
-    'restoreTrackInput',
-    'restoreFreezeState',
-    'restoreReversedClip',
-    'restoreTrackGroupMemberships',
-    'restoreTrackHeights',
-    'restoreTracks',
-    'discardCreatedTracks',
-    'restoreTimeOperationState',
-    'restoreTrackClipStates',
-    'restoreScratchPadState',
-    'discardCreatedCompGroup',
-    'restoreTrackAlternativeState',
-];
+/** `importStemSet`'s inverse, uncovered for the same reason and tracked with it. */
+const UNCOVERED_INVERSE_ACTIONS = ['discardImportedStemSet'];
 
-function collectSpecFiles(directory: string, found: string[] = []): string[] {
+/**
+ * Every action type any Arrangement source names as an `inverseAction` or a
+ * `redoAction` object literal.
+ *
+ * Derived rather than listed. A written-down list only ever audits the names someone
+ * remembered to add to it, so the handler it would most want to catch — a new one
+ * whose author never touched this file — is exactly the one it misses. Reading the
+ * sources means a new inverse enters this audit the moment it is written.
+ *
+ * A `redoAction` that re-dispatches the forward action (`redoAction: action`) is not
+ * an object literal and is correctly absent: it names no separate handler.
+ */
+const INVERSE_ACTION_LITERAL = /(?:inverseAction|redoAction):\s*\{[^}]*?type:\s*'([A-Za-z][A-Za-z0-9]*)'/g;
+
+function collectFiles(directory: string, matches: (name: string) => boolean, found: string[] = []): string[] {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) {
-            collectSpecFiles(path, found);
+            collectFiles(path, matches, found);
             continue;
         }
-        if (entry.name.endsWith('.spec.ts') || entry.name.endsWith('.spec.tsx')) {
+        if (matches(entry.name)) {
             found.push(path);
         }
     }
     return found;
+}
+
+function isSpecFile(name: string): boolean {
+    return name.endsWith('.spec.ts') || name.endsWith('.spec.tsx');
+}
+
+function collectSpecFiles(directory: string, found: string[] = []): string[] {
+    return collectFiles(directory, isSpecFile, found);
+}
+
+function isSourceFile(name: string): boolean {
+    return (name.endsWith('.ts') || name.endsWith('.tsx')) && !isSpecFile(name);
+}
+
+/** Reads the set off the Arrangement sources, skipping specs — a spec quoting an
+ *  inverse in an assertion is describing a handler, not declaring one. */
+function readInverseActionTypes(): string[] {
+    const types = new Set<string>();
+    for (const path of collectFiles(ARRANGEMENT_ROOT, isSourceFile)) {
+        const source = readFileSync(path, 'utf8');
+        for (const match of source.matchAll(INVERSE_ACTION_LITERAL)) {
+            types.add(match[1]!);
+        }
+    }
+    return [...types].sort();
 }
 
 /** Every Arrangement spec, concatenated, so coverage is read off the corpus that
@@ -91,17 +112,37 @@ describe('Arrangement undoable handlers audit', () => {
         expect(uncovered).toEqual([...UNCOVERED_UNDOABLE_HANDLERS].sort());
     });
 
-    it('registers every inverse-action handler introduced for undo', () => {
-        const registered = new Set(handlerEntries().map(([type]) => type));
-        const missing = INVERSE_ACTION_HANDLERS.filter((type) => !registered.has(type)).sort();
+    it('reads inverse-action types off the Arrangement sources', () => {
+        // Guards the two audits below the same way the registry check guards the rest:
+        // a regex that stopped matching would leave them iterating an empty set and
+        // passing while observing nothing. The floor sits far below the live count so
+        // ordinary churn never touches it.
+        expect(readInverseActionTypes().length).toBeGreaterThan(5);
+    });
 
+    it('registers every action type named as an inverse or redo action', () => {
+        // An Arrangement command may unwind through another module's handler —
+        // `arpeggiate` restores through MIDI's `restoreMidiClipNotes` — so the registry
+        // this checks against is every registry an Arrangement inverse can name.
+        const registered = new Set([
+            ...handlerEntries().map(([type]) => type),
+            ...Object.keys(getMidiNoteTransformHandlers()),
+        ]);
+        const missing = readInverseActionTypes().filter((type) => !registered.has(type));
+
+        // An unregistered inverse makes undo a silent no-op: the entry is popped, the
+        // dispatch resolves to nothing, and the edit stays applied.
         expect(missing).toEqual([]);
     });
 
-    it('never marks an inverse-action handler undoable', () => {
-        const handlers = new Map(handlerEntries());
-        const undoableInverses = INVERSE_ACTION_HANDLERS.filter((type) => handlers.get(type)?.undoable === true).sort();
+    it('covers every action type named as an inverse or redo action with a spec', () => {
+        const corpus = readSpecCorpus();
+        const uncovered = readInverseActionTypes().filter((type) => !corpus.includes(`'${type}'`));
 
-        expect(undoableInverses).toEqual([]);
+        // The coverage floor above only sees handlers marked `undoable`, which is the
+        // forward half of every pair. An inverse is the half that runs when a musician
+        // is trying to get work back, and a dedicated one — `restoreTrackClipStates`,
+        // `discardCreatedTracks` — is not `undoable` and so is invisible there.
+        expect(uncovered).toEqual([...UNCOVERED_INVERSE_ACTIONS].sort());
     });
 });

@@ -4,7 +4,8 @@ import { createFolder } from '../../useCases/folder/createFolder';
 
 export const handleCreateFolder = createHandler<'createFolder'>({
     execute: (action) => {
-        createFolder(action.payload.name, action.payload.folderTrackId);
+        const created = createFolder(action.payload.name, action.payload.folderTrackId);
+        return { status: created ? 'written' : 'no-write' };
     },
     describe: (alpha) => {
         const label = `Create folder "${alpha.payload.name}"`;

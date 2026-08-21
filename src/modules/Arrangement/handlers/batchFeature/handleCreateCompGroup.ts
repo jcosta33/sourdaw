@@ -5,7 +5,8 @@ import { createCompGroup } from '../../useCases/groupComping/compGroupOperations
 
 export const handleCreateCompGroup = createHandler<'createCompGroup'>({
     execute: (alpha) => {
-        createCompGroup(alpha.payload.name, alpha.payload.trackIds, alpha.payload.groupId);
+        const created = createCompGroup(alpha.payload.name, alpha.payload.trackIds, alpha.payload.groupId);
+        return { status: created ? 'written' : 'no-write' };
     },
     describe: (alpha) => {
         const label = 'Create Comp Group';

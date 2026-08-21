@@ -7,6 +7,13 @@ import { setScratchPadSections } from '../../useCases/scratchPad/setScratchPadSe
 // Compares by id sequence, not deep equality: fields the store recomputes (e.g. derived
 // display state) would spuriously conflict under a deep compare, while an id-sequence
 // compare is exactly what detects a section being added, removed, or reordered since capture.
+//
+// The length equality comes first for a reason. `Array.every` is vacuously true on an
+// empty array, so without it an empty `expected` would admit any live state; with it,
+// an empty `expected` matches only an empty live collection. That case is real rather
+// than a sentinel — a null store is refused separately below — and it is exactly what
+// redoing the creation of the first section carries, so refusing it outright would make
+// that redo permanently impossible.
 function idSequenceMatches(liveIds: readonly string[], expected: readonly { readonly id: string }[]): boolean {
     return liveIds.length === expected.length && liveIds.every((id, index) => id === expected[index]?.id);
 }

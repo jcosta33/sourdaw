@@ -304,12 +304,38 @@ export type TrackHeightSnapshot = { readonly trackId: string; readonly height: n
  * edits that rewrite a whole track — cut, paste, strip silence, flatten, bounce —
  * cannot be inverted by replaying a counter-edit, so they carry this instead.
  */
+/**
+ * The track-level fields a collection rewrite overwrites alongside `clips`.
+ * `flattenTrack` replaces all eight; a `destination: 'replace'` bounce empties
+ * `devices`. Restoring `clips` without these hands back the right clips on a track
+ * that lost its kind, its instrument and insert chain, its frozen take, and its
+ * alternative lanes — a state the user never authored.
+ */
+export type TrackCollectionFieldsSnapshot = {
+    readonly kind: TrackKind;
+    readonly devices: readonly { readonly id: string }[];
+    readonly frozen: boolean;
+    readonly frozenBufferId?: string;
+    readonly freezeState: { readonly status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error' };
+    readonly activeAlternativeId: string;
+    readonly alternatives: readonly { readonly id: string }[];
+};
 export type TrackClipStateSnapshot = {
     readonly trackId: string;
     readonly clips: readonly ClipSnapshot[];
+    /** Everything the rewrite overwrites besides `clips`. See the type's own note. */
+    readonly trackFields: TrackCollectionFieldsSnapshot;
     readonly midiNotesByClipId: Record<string, MidiNotesSnapshot>;
     readonly midiCcByClipId: Record<string, MidiCcSnapshot>;
     readonly midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
+    /**
+     * Gain envelopes and warp markers hang off clip identity, so `removeClip` —
+     * reached by cut, and by whatever a paste displaces — deletes them outright.
+     * Carried here for the same reason `captureTrackRemovalSnapshot` carries them.
+     */
+    readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
+    /** Clip-scoped automation lanes, deleted by the same `removeClipSatelliteData` path. */
+    readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
 export type TrackAlternativeStateSnapshot = {
     readonly alternatives: readonly { readonly id: string }[];

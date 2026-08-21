@@ -19,6 +19,12 @@ function createMidiPitchBend(id: string, value: number) {
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     midiStoreValue: { value: null } as any,
+    readClipSatelliteEntry: vi.fn((clipId: string): { clipId: string; gainEnvelope: unknown; warpState: unknown } => ({
+        clipId,
+        gainEnvelope: null,
+        warpState: null,
+    })),
+    readClipScopedAutomationLanes: vi.fn(() => [] as unknown[]),
 }));
 
 vi.mock('../getTrackStoreState', () => ({
@@ -33,10 +39,34 @@ vi.mock('#/modules/MIDI/stores', () => ({
     },
 }));
 
+vi.mock('../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
+}));
+
+vi.mock('../clip/readClipScopedAutomationLanes', () => ({
+    readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
+}));
+
+/** `TrackDummy`'s track-level fields, as a collection rewrite would overwrite them. */
+const TRACK_FIELDS = {
+    kind: 'audio',
+    devices: [],
+    frozen: false,
+    freezeState: { status: 'unfrozen' },
+    activeAlternativeId: 'alt-1',
+    alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+};
+
 describe('captureTrackClipStates', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.midiStoreValue.value = null;
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        }));
+        mocks.readClipScopedAutomationLanes.mockReturnValue([]);
     });
 
     it('returns an empty array when the track store is unavailable', () => {
@@ -53,9 +83,12 @@ describe('captureTrackClipStates', () => {
             {
                 trackId: 't1',
                 clips: [],
+                trackFields: TRACK_FIELDS,
                 midiNotesByClipId: {},
                 midiCcByClipId: {},
                 midiPitchBendByClipId: {},
+                clipSatellites: [],
+                clipAutomationLanes: [],
             },
         ]);
     });
@@ -84,18 +117,91 @@ describe('captureTrackClipStates', () => {
             {
                 trackId: 't1',
                 clips: [clipC1],
+                trackFields: TRACK_FIELDS,
                 midiNotesByClipId: { c1: [noteC1] },
                 midiCcByClipId: { c1: [ccC1] },
                 midiPitchBendByClipId: { c1: [pitchBendC1] },
+                clipSatellites: [],
+                clipAutomationLanes: [],
             },
             {
                 trackId: 't2',
                 clips: [clipC2],
+                trackFields: TRACK_FIELDS,
                 midiNotesByClipId: { c2: [noteC2] },
                 midiCcByClipId: {},
                 midiPitchBendByClipId: {},
+                clipSatellites: [],
+                clipAutomationLanes: [],
             },
         ]);
+    });
+
+    it('captures the track-level fields a collection rewrite overwrites', () => {
+        // `flattenTrack` replaces all of these at once. Whatever stood here before the
+        // rewrite is the only place undo can read them back from.
+        const track = TrackDummy.create({
+            id: 't1',
+            kind: 'midi',
+            clips: [],
+            devices: [{ id: 'device-1' }] as never,
+            frozen: true,
+            frozenBufferId: 'buffer-1',
+            freezeState: { status: 'frozen' },
+            activeAlternativeId: 'alt-2',
+            alternatives: [{ id: 'alt-2', name: 'Alternative 2', clips: [] }],
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        const [snapshot] = captureTrackClipStates(['t1']);
+
+        expect(snapshot?.trackFields).toEqual({
+            kind: 'midi',
+            devices: [{ id: 'device-1' }],
+            frozen: true,
+            frozenBufferId: 'buffer-1',
+            freezeState: { status: 'frozen' },
+            activeAlternativeId: 'alt-2',
+            alternatives: [{ id: 'alt-2', name: 'Alternative 2', clips: [] }],
+        });
+    });
+
+    it('captures clip satellites and clip-scoped automation lanes for every clip on the track', () => {
+        // `removeClip` runs `removeClipSatelliteData`, which deletes a clip's gain
+        // envelope, its warp state and every automation lane keyed to it. Cut reaches
+        // that path directly, so undoing a cut without these hands back a clip whose
+        // drawn envelope and automation are gone for good.
+        const clip = ClipDummy.create({ id: 'c1', trackId: 't1' });
+        const track = TrackDummy.create({ id: 't1', clips: [clip] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        const gainEnvelope = { clipId: 'c1', points: [{ id: 'g1', beatOffset: 0, gainDb: -6 }], enabled: true };
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: clipId === 'c1' ? gainEnvelope : null,
+            warpState: null,
+        }));
+        const lane = { id: 'lane-1', trackId: 't1', clipId: 'c1' };
+        mocks.readClipScopedAutomationLanes.mockReturnValue([lane]);
+
+        const [snapshot] = captureTrackClipStates(['t1']);
+
+        expect(mocks.readClipScopedAutomationLanes).toHaveBeenCalledWith(['c1']);
+        expect(snapshot?.clipSatellites).toEqual([{ clipId: 'c1', gainEnvelope, warpState: null }]);
+        expect(snapshot?.clipAutomationLanes).toEqual([lane]);
+        // Cloned, not aliased: the snapshot must not move when the live lane does.
+        expect(snapshot?.clipAutomationLanes[0]).not.toBe(lane);
+    });
+
+    it('records no satellite entry for a clip that has none', () => {
+        // A stored empty entry is not the same as no entry: restoring one would give a
+        // clip an envelope it never had.
+        const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1', trackId: 't1' })] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        const [snapshot] = captureTrackClipStates(['t1']);
+
+        expect(snapshot?.clipSatellites).toEqual([]);
     });
 
     it('includes MIDI satellites owned by a hidden alternative lane, not just the active clips', () => {

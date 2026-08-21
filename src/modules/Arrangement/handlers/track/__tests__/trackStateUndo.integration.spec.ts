@@ -18,7 +18,10 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
+import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -92,8 +95,124 @@ describe('track-state guarded undo integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        clipSelectionStore.set(defaultClipSelectionState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    // The whole-track clip-collection rewrites — cut, paste, flatten, consolidate —
+    // share one guarded inverse, `restoreTrackClipStates`. What makes them worth an
+    // integration test rather than a handler unit test is that the state they destroy
+    // does not live on the clip: a clip's gain envelope hangs off clip identity in a
+    // separate store, and flatten overwrites seven track-level fields besides `clips`.
+    // A handler test that stubs those stores cannot observe either loss.
+    describe('clip-collection rewrites', () => {
+        const gainEnvelope = {
+            clipId: 'clip-1',
+            points: [
+                { id: 'gain-1', beatOffset: 0, gainDb: -12 },
+                { id: 'gain-2', beatOffset: 2, gainDb: 0 },
+            ],
+            enabled: true,
+        };
+
+        function seedClipWithEnvelope() {
+            const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            const state = trackStore.value!;
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((candidate) =>
+                    candidate.id === 'track-1' ? { ...candidate, clips: [clip] } : candidate
+                ),
+            });
+            writeClipSatelliteEntry({ clipId: 'clip-1', gainEnvelope, warpState: null });
+            clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'clip-1' });
+            return clip;
+        }
+
+        it('cut: gives back the clip and the gain envelope drawn on it', async () => {
+            const clip = seedClipWithEnvelope();
+            expect(readClipSatelliteEntry('clip-1').gainEnvelope).toMatchObject({ enabled: true });
+
+            await run({ type: 'cutClip' });
+            expect(track('track-1')?.clips).toEqual([]);
+            // `removeClip` runs `removeClipSatelliteData`, so the envelope is gone too.
+            expect(readClipSatelliteEntry('clip-1').gainEnvelope).toBeNull();
+
+            await undo();
+            expect(track('track-1')?.clips).toEqual([clip]);
+            // The decisive assertion: an inverse carrying only `clips` gives the clip
+            // back with a flat envelope, silently discarding the automation the musician
+            // drew on it.
+            expect(readClipSatelliteEntry('clip-1').gainEnvelope).toMatchObject({
+                clipId: 'clip-1',
+                enabled: true,
+                points: [
+                    { beatOffset: 0, gainDb: -12 },
+                    { beatOffset: 2, gainDb: 0 },
+                ],
+            });
+
+            await redo();
+            expect(track('track-1')?.clips).toEqual([]);
+        });
+
+        it('cut: conflicts rather than overwriting a clip added to the track after the cut', async () => {
+            seedClipWithEnvelope();
+            await run({ type: 'cutClip' });
+
+            const later = ClipDummy.create({ id: 'clip-later', trackId: 'track-1' });
+            divergeTrack('track-1', { clips: [later] });
+
+            await undo();
+
+            // Restoring here would delete a clip the undo entry knows nothing about.
+            expect(track('track-1')?.clips).toEqual([later]);
+        });
+
+        it('flatten: gives back the device chain, the track kind and the frozen take', async () => {
+            const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            const devices = [
+                { id: 'device-1', type: 'instrument', name: 'Synth', params: {}, bypassed: false },
+                { id: 'device-2', type: 'effect', name: 'Reverb', params: {}, bypassed: false },
+            ];
+            const freezeState = { status: 'frozen' as const, freezeId: 'freeze-1', frozenBufferId: 'buffer-1' };
+            divergeTrack('track-1', {
+                kind: 'midi',
+                clips: [clip],
+                devices,
+                frozen: true,
+                frozenBufferId: 'buffer-1',
+                freezeState,
+            });
+
+            await run({ type: 'flattenTrack', payload: { trackId: 'track-1' } });
+            expect(track('track-1')).toMatchObject({
+                kind: 'audio',
+                devices: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+            });
+            expect(track('track-1')?.clips).toHaveLength(1);
+            const flattenedClip = track('track-1')!.clips[0]!;
+
+            await undo();
+            // The decisive assertion: an inverse carrying only `clips` hands back the
+            // MIDI clips on an audio track with no instrument, no plugins and the frozen
+            // take gone — a state the musician never authored.
+            expect(track('track-1')).toMatchObject({
+                kind: 'midi',
+                devices,
+                frozen: true,
+                frozenBufferId: 'buffer-1',
+                freezeState,
+            });
+            expect(track('track-1')?.clips).toEqual([clip]);
+
+            await redo();
+            expect(track('track-1')).toMatchObject({ kind: 'audio', devices: [], frozen: false });
+            expect(track('track-1')?.clips).toEqual([flattenedClip]);
+        });
     });
 
     describe('disableTrack', () => {
