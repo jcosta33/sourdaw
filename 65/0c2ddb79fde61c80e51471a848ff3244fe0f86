@@ -1,0 +1,45 @@
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_2e72ff866c04f1 40-45
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_1f3a85e1feb039 212,270,306
+  s_0a3429e31e555d::t_2e72ff866c04f1 217
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_0a3429e31e555d::t_9af3540a824ce0 18,157-160
+  s_0a3429e31e555d::t_effde5b2ed9699 161-162
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_12c2a205f28736 13
+scripts/dependencyLicenseReport.ts
+  s_0a3429e31e555d::t_e7cb270ca7b5eb 122,195-200
+  s_0a3429e31e555d::t_9af3540a824ce0 93-96,124
+  s_0a3429e31e555d::t_2e72ff866c04f1 117-119,125,251
+  s_0a3429e31e555d::t_4b566fb87ef5e5 202-204
+  s_27578aec2aab3b::t_aed7172f61b158 123
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_12c2a205f28736 35
+public/legal/DEPENDENCY-LICENSES.txt
+  s_0a3429e31e555d::t_8142cd1a0f6f24 3,8,133-134,192,291-305,629
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "650c2ddb79fde61c80e51471a848ff3244fe0f86",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
