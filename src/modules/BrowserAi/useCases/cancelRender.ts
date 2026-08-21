@@ -25,6 +25,9 @@ export const cancelRender = inject({ logger })(
             // queue-only request may still be preparing, so cancelling it must not
             // send a request-level cancellation to a shared worker/session.
             const activeRender = inferenceProgressStore.value?.activeRenders[requestId];
+            if (activeRender && activeRender.phraseId !== phraseId) {
+                return;
+            }
             const ownsActiveRender = activeRender?.phraseId === phraseId;
             const pipeline = ownsActiveRender ? activeRender.pipeline : undefined;
 

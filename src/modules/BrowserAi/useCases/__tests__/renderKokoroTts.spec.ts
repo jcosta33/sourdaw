@@ -164,8 +164,11 @@ describe('renderKokoroTts', () => {
         await vi.waitFor(() => expect(readRenderCache).toHaveBeenCalledOnce());
         const requestId = renderQueueStore.value?.entries[0]?.requestId;
         expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
 
         cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).not.toHaveBeenCalled();
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
         pendingCache.resolve(null);
 
         await expect(render).rejects.toThrow(/cancelled or superseded/);
@@ -189,8 +192,15 @@ describe('renderKokoroTts', () => {
         await vi.waitFor(() => expect(runKokoroTts).toHaveBeenCalledOnce());
         const requestId = renderQueueStore.value?.entries[0]?.requestId;
         expect(requestId).toBeDefined();
+        expect(inferenceProgressStore.value?.activeRenders[requestId!]).toMatchObject({
+            phraseId: 'phrase-1',
+            pipeline: 'kokoro',
+        });
 
         cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        expect(cancelOnnxRequest).toHaveBeenCalledOnce();
+        expect(cancelOnnxRequest).toHaveBeenCalledWith(requestId);
+        expect(cancelTfjsRequest).not.toHaveBeenCalled();
         pendingInference.resolve({
             type: 'tts-result',
             requestId: requestId!,

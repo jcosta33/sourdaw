@@ -132,13 +132,36 @@ describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
     });
 
-    it('lets the current same-phrase failure update its own status', () => {
+    it('lets the current same-phrase failure become terminal', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
 
         updateRenderStatus('phrase-A', 'req-new', 'error');
 
-        expect(renderQueueStore.value?.entries[0]?.status).toBe('error');
+        expect(renderQueueStore.value?.entries).toEqual([]);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
+    });
+
+    it('removes a current error entry while retaining its terminal owner and status', () => {
+        enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-A' }));
+
+        updateRenderStatus('phrase-A', 'req-A', 'error');
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
+        expect(renderQueueStore.value?.phraseRequestIds?.['phrase-A']).toBe('req-A');
+    });
+
+    it('keeps the newer owner untouched when an older request reports an error', () => {
+        enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-old' }));
+        enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));
+
+        updateRenderStatus('phrase-A', 'req-old', 'error');
+
+        expect(renderQueueStore.value?.entries).toEqual([
+            expect.objectContaining({ phraseId: 'phrase-A', requestId: 'req-new', status: 'preparing' }),
+        ]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
+        expect(renderQueueStore.value?.phraseRequestIds?.['phrase-A']).toBe('req-new');
     });
 
     it('does not let an older cancellation remove the newer same-phrase request', () => {

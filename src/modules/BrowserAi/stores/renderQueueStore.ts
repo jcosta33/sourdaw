@@ -65,9 +65,12 @@ export function updateRenderStatus(phraseId: string, requestId: string, status: 
         if (!ownsPhrase) {
             return state;
         }
-        const entries = state.entries.map((event) =>
-            event.phraseId === phraseId && event.requestId === requestId ? { ...event, status } : event
-        );
+        const entries =
+            status === 'error'
+                ? state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId)
+                : state.entries.map((event) =>
+                      event.phraseId === phraseId && event.requestId === requestId ? { ...event, status } : event
+                  );
         return {
             ...state,
             entries,
