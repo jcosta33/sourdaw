@@ -7,6 +7,7 @@ import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
 import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
+import { type CompiledValueBound } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
@@ -113,42 +114,48 @@ export type ScheduleTrackAutomationInput = {
 };
 
 /**
- * The offline half of the live path's `clampToLaneRange`, resolved once per
- * lane instead of once per tick.
+ * The offline half of the live path's `clampToLaneRange` — the same function,
+ * evaluated on the same inputs.
  *
  * Live bounds an interpolated value by the source lane's declared range, raised
- * only as far as a stored point on the segment in play actually reaches, and
- * never past the derived ceiling. Offline can afford the lane-wide `Math.max`
- * live cannot, and the two agree wherever it matters: a legacy gain lane whose
- * points all sit at or below `1` bounds at `1` on both sides, and one carrying
- * a point at `1.5` bounds at `1.5` on both sides.
+ * only as far as the two stored points bracketing the segment in play actually
+ * reach, and never past the derived ceiling. This body is that arithmetic with
+ * the lane's floor, its declared ceiling and its derived ceiling closed over —
+ * all three are pure functions of the lane, so resolving them once per lane
+ * rather than once per value changes nothing about the result. The bracket
+ * stays a parameter, because it is the one input that varies per value, and
+ * `compileAutomationEvents` supplies the same pair live's binary search does.
+ *
+ * That the raise is segment-local is not an implementation detail either side
+ * may relax. A legacy gain lane with a peak in one segment and a plateau in
+ * another has a lane-wide maximum higher than any point bracketing the plateau,
+ * and a bound built from that maximum lets the plateau's Catmull-Rom overshoot
+ * through — the monitor holds it at the declared ceiling while the bounce
+ * prints the overshoot, at the same playhead position.
  *
  * Returns `undefined` when the lane declares no usable range, matching live's
  * non-finite guard — several specs build lanes with only the fields their
  * assertions touch, and a `NaN` bound would silence the render.
  */
 function resolveLaneValueBound(
-    sourceLane: AutomationLane,
+    sourceLane: Pick<AutomationLane, 'minValue' | 'maxValue'>,
     derivedCeiling: number
-): ((value: number) => number) | undefined {
+): CompiledValueBound | undefined {
     const floor = sourceLane.minValue;
     const declared = sourceLane.maxValue;
     if (!Number.isFinite(floor) || !Number.isFinite(declared)) {
         return undefined;
     }
-    let ceiling = declared;
-    if (derivedCeiling > declared) {
-        let highestStored = Number.NEGATIVE_INFINITY;
-        for (const point of sourceLane.points) {
-            if (point.value > highestStored) {
-                highestStored = point.value;
+    return (value, segmentFirstValue, segmentSecondValue) => {
+        let ceiling = declared;
+        if (derivedCeiling > declared) {
+            const highestStored = Math.max(segmentFirstValue, segmentSecondValue);
+            if (highestStored > declared) {
+                ceiling = Math.min(derivedCeiling, highestStored);
             }
         }
-        if (highestStored > declared) {
-            ceiling = Math.min(derivedCeiling, highestStored);
-        }
-    }
-    return (value) => Math.min(ceiling, Math.max(floor, value));
+        return Math.min(ceiling, Math.max(floor, value));
+    };
 }
 
 export function scheduleTrackAutomation({
@@ -237,14 +244,14 @@ export function scheduleTrackAutomation({
             // order (scale the dB scalar, then convert, then clamp).
             const isDecibelLane = lane.minValue < 0;
             // The lane's own declared range, applied where live applies it —
-            // to the interpolated scalar, before the link scale and before the
-            // fader law. `clampFaderGain` alone is not this bound and never
-            // was: it stops the strip at `FADER_MAX_GAIN`, which used to be `1`
-            // and so happened to coincide with a legacy gain lane's declared
-            // `1`. Once the fader widened, the two parted, and every smooth
-            // gain ride cresting near unity printed the spline's overshoot the
-            // monitor had clamped away — a bounce louder than the mix, on a
-            // project nobody edited.
+            // to the interpolated scalar, per segment, before the link scale
+            // and before the fader law. `clampFaderGain` alone is not this
+            // bound and never was: it stops the strip at `FADER_MAX_GAIN`,
+            // which used to be `1` and so happened to coincide with a legacy
+            // gain lane's declared `1`. Once the fader widened, the two parted,
+            // and every smooth gain ride cresting near unity printed the
+            // spline's overshoot the monitor had clamped away — a bounce louder
+            // than the mix, on a project nobody edited.
             const valueBound = resolveLaneValueBound(sourceLane, resolveLaneCeiling(sourceLane));
             scheduleAutomationOnParam(
                 trackGainNode.gain,

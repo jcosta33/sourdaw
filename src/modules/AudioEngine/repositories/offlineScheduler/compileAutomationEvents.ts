@@ -39,6 +39,22 @@ type SlewConfig = {
     quantiseEmit?: (value: number) => number;
 };
 type ActiveWindowSeconds = { startSeconds: number; endSeconds: number };
+/**
+ * The lane bound, evaluated against the two source points that bracket the
+ * segment the value came from.
+ *
+ * The bracket is a parameter rather than something the bound closes over
+ * because live's bound is segment-local: `clampToLaneRange` raises a legacy
+ * lane's ceiling only as far as the two points on either side of the beat it is
+ * evaluating actually reach. A bound handed one ceiling for the whole lane is a
+ * different function — on a lane whose peak sits in one segment and whose
+ * plateau sits in another, the lane-wide ceiling lets the plateau segment's
+ * Catmull-Rom overshoot through while the monitor clamps it.
+ *
+ * At a held value (before the first point, after the last) both arguments are
+ * that held value, which is what live passes there too.
+ */
+export type CompiledValueBound = (value: number, segmentFirstValue: number, segmentSecondValue: number) => number;
 export type CompileAutomationEventsOptions = {
     // Device-param control slew (AU-2). Omit for gain/pan — they are a-rate and
     // unslewed both live and offline.
@@ -48,16 +64,20 @@ export type CompileAutomationEventsOptions = {
     activeWindowSeconds?: ActiveWindowSeconds;
     /**
      * The point-holding lane's own declared range, applied to every
-     * interpolated value BEFORE `valueScale`/`valueOffset` and before
-     * `valueTransform`.
+     * interpolated value as it is compiled — BEFORE `valueScale`/`valueOffset`
+     * and before `valueTransform`, and against the two source points bracketing
+     * the segment that value came from.
      *
-     * That position is the whole of what this option is for, and it is the live
-     * path's: `getAutomationValueAtBeat` runs `clampToLaneRange(interpolated,
-     * lane, …)` and *then* multiplies by the resolved link scale, because
-     * `minValue`/`maxValue` describe the source lane's own points rather than
-     * the scaled result — a `linkScale: -1` lane may legitimately land outside
-     * them. Folding this into `valueTransform` would bound the scaled value and
-     * flatten exactly that case.
+     * Both of those positions are the whole of what this option is for, and
+     * both are the live path's. `getAutomationValueAtBeat` runs
+     * `clampToLaneRange(interpolated, lane, points[beforeIdx].value,
+     * points[beforeIdx + 1].value)` and *then* multiplies by the resolved link
+     * scale, because `minValue`/`maxValue` describe the source lane's own
+     * points rather than the scaled result — a `linkScale: -1` lane may
+     * legitimately land outside them. Folding this into `valueTransform` would
+     * bound the scaled value and flatten exactly that case; hoisting it out of
+     * the per-segment loop into one pass over the finished events would lose
+     * the bracket and bound a segment by a peak that is not in it.
      *
      * Non-linear interpolation is why it is needed at all offline: 'smooth'
      * (Catmull-Rom) overshoots between control points by construction, and this
@@ -65,7 +85,7 @@ export type CompileAutomationEventsOptions = {
      * monitor evaluates per tick. Without the bound the bounce prints the
      * overshoot the monitor clamped away. Omit for a lane with no declared range.
      */
-    valueBound?: (value: number) => number;
+    valueBound?: CompiledValueBound;
     // Affine post-transform on the interpolated values: value → value*valueScale
     // + valueOffset. This is how the live path applies a linked lane's linkScale
     // (and any device binding scale/offset) — it scales the *resolved scalar*
@@ -253,13 +273,25 @@ export function compileAutomationEvents(
     if (windowEnd < windowStart) {
         return [];
     }
+    // The lane bound is segment-local, so it is applied here — inside the loop
+    // that still knows which two source points bracket the value — rather than
+    // in the affine pass below, which sees only finished events.
+    const bound: CompiledValueBound = options?.valueBound ?? ((value) => value);
+
     let initialValue = timed[0]!.point.value;
+    // The bracket `initialValue` came out of. A held value (the window opens
+    // before the first point, or past the last) brackets itself, which is what
+    // live's held branches pass.
+    let initialFirstValue = initialValue;
+    let initialSecondValue = initialValue;
 
     for (let index = 0; index < timed.length - 1; index++) {
         const current = timed[index]!;
         const next = timed[index + 1]!;
         if (windowStart >= next.time) {
             initialValue = next.point.value;
+            initialFirstValue = next.point.value;
+            initialSecondValue = next.point.value;
             continue;
         }
         if (windowStart >= current.time) {
@@ -271,12 +303,18 @@ export function compileAutomationEvents(
                 timed[index - 1]?.point,
                 timed[index + 2]?.point
             );
+            initialFirstValue = current.point.value;
+            initialSecondValue = next.point.value;
         }
         break;
     }
 
     const events: CompiledAutomationEvent[] = [
-        { type: 'set', timeSeconds: windowStart - regionStartSeconds, value: initialValue },
+        {
+            type: 'set',
+            timeSeconds: windowStart - regionStartSeconds,
+            value: bound(initialValue, initialFirstValue, initialSecondValue),
+        },
     ];
     for (let index = 0; index < timed.length - 1; index++) {
         const current = timed[index]!;
@@ -294,6 +332,10 @@ export function compileAutomationEvents(
             continue;
         }
         const relativeStart = visibleStart - regionStartSeconds;
+        // This segment's own bracket — the pair live hands `clampToLaneRange`
+        // for every beat that resolves into it.
+        const segmentFirstValue = current.point.value;
+        const segmentSecondValue = next.point.value;
         const visibleStartBeat = beatAtTime(current.point.beat, next.point.beat, visibleStart, projectBeat);
         const visibleEndBeat = beatAtTime(current.point.beat, next.point.beat, visibleEnd, projectBeat);
         const startValue = interpolateValue(
@@ -303,14 +345,18 @@ export function compileAutomationEvents(
             timed[index - 1]?.point,
             timed[index + 2]?.point
         );
-        appendEvent(events, { type: 'set', timeSeconds: relativeStart, value: startValue });
+        appendEvent(events, {
+            type: 'set',
+            timeSeconds: relativeStart,
+            value: bound(startValue, segmentFirstValue, segmentSecondValue),
+        });
 
         if (current.point.curve === 'step') {
             if (next.time <= windowEnd) {
                 appendEvent(events, {
                     type: 'set',
                     timeSeconds: next.time - regionStartSeconds,
-                    value: next.point.value,
+                    value: bound(next.point.value, segmentFirstValue, segmentSecondValue),
                 });
             }
             continue;
@@ -323,7 +369,11 @@ export function compileAutomationEvents(
                 const time = projectBeat(beat);
                 if (time >= visibleStart && time <= visibleEnd) {
                     const value = current.point.value + ((next.point.value - current.point.value) * stair) / stairSteps;
-                    appendEvent(events, { type: 'set', timeSeconds: time - regionStartSeconds, value });
+                    appendEvent(events, {
+                        type: 'set',
+                        timeSeconds: time - regionStartSeconds,
+                        value: bound(value, segmentFirstValue, segmentSecondValue),
+                    });
                 }
             }
             continue;
@@ -357,25 +407,22 @@ export function compileAutomationEvents(
             appendEvent(events, {
                 type: 'linear',
                 timeSeconds: time - regionStartSeconds,
-                value: interpolateValue(
-                    current.point,
-                    next.point,
-                    beat,
-                    timed[index - 1]?.point,
-                    timed[index + 2]?.point
+                value: bound(
+                    interpolateValue(current.point, next.point, beat, timed[index - 1]?.point, timed[index + 2]?.point),
+                    segmentFirstValue,
+                    segmentSecondValue
                 ),
             });
         }
     }
-    const valueBound = options?.valueBound;
     const valueScale = options?.valueScale ?? 1;
     const valueOffset = options?.valueOffset ?? 0;
     const valueTransform = options?.valueTransform;
-    if (valueBound || valueScale !== 1 || valueOffset !== 0 || valueTransform) {
+    if (valueScale !== 1 || valueOffset !== 0 || valueTransform) {
         for (const event of events) {
-            // Lane range first, then the affine, then the law — the live order.
-            const bounded = valueBound ? valueBound(event.value) : event.value;
-            const scaled = bounded * valueScale + valueOffset;
+            // The lane range already ran, per segment, as each value was
+            // compiled. Then the affine, then the law — the live order.
+            const scaled = event.value * valueScale + valueOffset;
             event.value = valueTransform ? valueTransform(scaled) : scaled;
         }
     }
