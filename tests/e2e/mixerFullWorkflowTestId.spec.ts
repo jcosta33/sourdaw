@@ -3,7 +3,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 async function openMixer(page: Page): Promise<void> {
-    await page.getByRole('button', { name: 'Toggle bottom dock', exact: true }).click();
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock', exact: true });
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+        await dock.click();
+    }
     await expect(page.getByRole('region', { name: 'Mixer panel', exact: true })).toBeVisible();
 }
 
