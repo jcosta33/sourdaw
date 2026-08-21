@@ -561,6 +561,55 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         });
         await expect(second).resolves.toMatchObject({ requestId: 'second' });
     });
+
+    it('aborts a loaded session request while shared worker shutdown remains pending', async () => {
+        vi.useFakeTimers();
+        const first = inferenceWorkerBridge.loadDdspSession(violinLoad);
+        const worker = await waitForTfjsWorker();
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            sessionKey: violinSessionKey,
+            backend: 'webgpu',
+            modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
+        });
+        await first;
+        await vi.advanceTimersByTimeAsync(60_000);
+        const disposeRequestId = lastRequestId(worker);
+        expect(lastRequest(worker)).toMatchObject({ type: 'dispose-worker' });
+
+        const firstLateChannel = storageChannels.length;
+        const controller = new AbortController();
+        let settled = false;
+        const cancelled = inferenceWorkerBridge
+            .loadDdspSession({ ...violinLoad, requestId: 'cancelled-during-shutdown' }, controller.signal)
+            .catch((error: unknown) => error)
+            .then((result) => {
+                settled = true;
+                return result;
+            });
+        await vi.waitFor(() => expect(modelStorageWorkerBridge.readModel).toHaveBeenCalledTimes(6));
+        const lateCloses = storageChannels.slice(firstLateChannel).map((channel) => vi.spyOn(channel.port1, 'close'));
+
+        controller.abort();
+        await flush();
+        const settledBeforeShutdown = settled;
+        reply(worker, { type: 'worker-disposed', requestId: disposeRequestId });
+
+        await expect(cancelled).resolves.toMatchObject({ name: 'AbortError' });
+        await flush();
+        expect(settledBeforeShutdown).toBe(true);
+        expect(lateCloses).toHaveLength(3);
+        expect(lateCloses.every((close) => close.mock.calls.length === 1)).toBe(true);
+        expect(installedWorkers).toHaveLength(1);
+        expect(
+            worker.postMessage.mock.calls.some(
+                ([request]) =>
+                    request.type === 'create-ddsp-session' && request.requestId === 'cancelled-during-shutdown'
+            )
+        ).toBe(false);
+    });
 });
 
 describe('inferenceWorkerBridge — runKokoroTts', () => {

@@ -104,7 +104,7 @@ describe('renderDdspInstrument', () => {
             applyFades,
             checkDdspInstrumentReady,
             computeRenderCacheKey,
-            inferenceWorkerBridge: { loadDdspSession, runDdspInference },
+            inferenceWorkerBridge: { cancelTfjsRequest, loadDdspSession, runDdspInference },
             logger,
             readRenderCache,
             renderRequestCancellation,
@@ -150,6 +150,23 @@ describe('renderDdspInstrument', () => {
                 expect.stringContaining(`samples44100=${String(Math.round(0.102 * 44_100))}`),
             ])
         );
+    });
+
+    it('distinguishes cache entries with equal output samples but different native trim lengths', async () => {
+        const oneNativeSample = 0.000_093_650_793_650_793_64;
+        const twoNativeSamples = 0.000_093_877_551_020_408_16;
+
+        await render({ durationSec: oneNativeSample });
+        await render({ phraseId: 'phrase-2', durationSec: twoNativeSamples });
+
+        const qualities = computeRenderCacheKey.mock.calls.map((call) => call[0].qualityParams);
+        expect(qualities).toHaveLength(2);
+        expect(qualities[0]).not.toBe(qualities[1]);
+        expect(qualities).toEqual([
+            expect.stringContaining('samples16000=1'),
+            expect.stringContaining('samples16000=2'),
+        ]);
+        expect(qualities.every((quality) => quality.includes('frames=1:samples44100=4'))).toBe(true);
     });
 
     it('holds the shared verified-generation lock from readiness through inference', async () => {
@@ -246,7 +263,7 @@ describe('renderDdspInstrument', () => {
         expect(observedRequestId).toBe(requestId);
         expect(cancelTfjsRequest).toHaveBeenCalledWith(requestId);
         expect(runDdspInference).not.toHaveBeenCalled();
-        expect(renderRequestCancellation.cancel(requestId!)).toBe(false);
+        expect(renderRequestCancellation.cancel('phrase-1', requestId!)).toBe(false);
     });
 
     it('aborts while queued for the shared lock and leaves a sibling render usable', async () => {
@@ -276,10 +293,127 @@ describe('renderDdspInstrument', () => {
         expect(checkDdspInstrumentReady).not.toHaveBeenCalled();
         expect(loadDdspSession).not.toHaveBeenCalled();
         expect(runDdspInference).not.toHaveBeenCalled();
-        expect(renderRequestCancellation.cancel(requestId!)).toBe(false);
+        expect(renderRequestCancellation.cancel('phrase-1', requestId!)).toBe(false);
 
         const sibling = await render({ phraseId: 'phrase-2' });
         expect(sibling.backend).toBe('webgpu');
+        expect(runDdspInference).toHaveBeenCalledOnce();
+    });
+
+    it('supersedes the prior same-phrase owner while it is queued for the lock', async () => {
+        let firstSignal: AbortSignal | undefined;
+        let rejectFirst = (_error: unknown): void => undefined;
+        withDdspInstrumentLock.mockImplementationOnce(
+            (_id: string, _mode: string, _operation: () => Promise<unknown>, signal?: AbortSignal) =>
+                new Promise((_resolve, reject) => {
+                    firstSignal = signal;
+                    rejectFirst = reject;
+                    signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+                })
+        );
+        const first = render();
+        await vi.waitFor(() => expect(withDdspInstrumentLock).toHaveBeenCalledOnce());
+        const firstRequestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(firstRequestId).toBeDefined();
+
+        const replacement = render();
+        await vi.waitFor(() => expect(withDdspInstrumentLock).toHaveBeenCalledTimes(2));
+        const replacementRequestId = renderQueueStore.value?.entries[0]?.requestId;
+        const supersededPromptly = firstSignal?.aborted === true;
+        if (!supersededPromptly) {
+            rejectFirst(new DOMException('Red proof cleanup', 'AbortError'));
+        }
+
+        await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+        await expect(replacement).resolves.toMatchObject({ backend: 'webgpu' });
+        expect(supersededPromptly).toBe(true);
+        expect(replacementRequestId).not.toBe(firstRequestId);
+        expect(cancelTfjsRequest).toHaveBeenCalledWith(firstRequestId);
+        expect(cancelTfjsRequest).not.toHaveBeenCalledWith(replacementRequestId);
+    });
+
+    it('supersedes an in-flight same-phrase inference without cancelling the replacement', async () => {
+        let lockTail = Promise.resolve();
+        withDdspInstrumentLock.mockImplementation(
+            (_id: string, _mode: string, operation: () => Promise<unknown>, signal?: AbortSignal) => {
+                const locked = lockTail.then(async () => {
+                    if (signal?.aborted) {
+                        throw signal.reason;
+                    }
+                    lockHeld = true;
+                    try {
+                        return await operation();
+                    } finally {
+                        lockHeld = false;
+                    }
+                });
+                lockTail = locked.then(
+                    () => undefined,
+                    () => undefined
+                );
+                return locked;
+            }
+        );
+        let firstSignal: AbortSignal | undefined;
+        let rejectFirst = (_error: unknown): void => undefined;
+        runDdspInference.mockImplementationOnce(
+            (_input, signal?: AbortSignal) =>
+                new Promise((_resolve, reject) => {
+                    firstSignal = signal;
+                    rejectFirst = reject;
+                    signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+                })
+        );
+        const first = render().catch((error: unknown) => error);
+        await vi.waitFor(() => expect(runDdspInference).toHaveBeenCalledOnce());
+        const firstRequestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(firstRequestId).toBeDefined();
+
+        const replacement = render();
+        await vi.waitFor(() => expect(runDdspInference).toHaveBeenCalledTimes(2));
+        const replacementRequestId = renderQueueStore.value?.entries[0]?.requestId;
+        const supersededPromptly = firstSignal?.aborted === true;
+        if (!supersededPromptly) {
+            rejectFirst(new DOMException('Red proof cleanup', 'AbortError'));
+        }
+
+        await expect(first).resolves.toMatchObject({ name: 'AbortError' });
+        await expect(replacement).resolves.toMatchObject({ backend: 'webgpu' });
+        expect(supersededPromptly).toBe(true);
+        expect(replacementRequestId).not.toBe(firstRequestId);
+        expect(cancelTfjsRequest).toHaveBeenCalledWith(firstRequestId);
+        expect(cancelTfjsRequest).not.toHaveBeenCalledWith(replacementRequestId);
+    });
+
+    it('propagates caller abort into pending session work and releases only that request owner', async () => {
+        const controller = new AbortController();
+        let requestSignal: AbortSignal | undefined;
+        let rejectLoad = (_error: unknown): void => undefined;
+        loadDdspSession.mockImplementationOnce(
+            (_input, signal?: AbortSignal) =>
+                new Promise((_resolve, reject) => {
+                    requestSignal = signal;
+                    rejectLoad = reject;
+                    signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+                })
+        );
+        const pending = render({ signal: controller.signal });
+        await vi.waitFor(() => expect(loadDdspSession).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        controller.abort();
+        const propagatedPromptly = requestSignal?.aborted === true;
+        if (!propagatedPromptly) {
+            rejectLoad(new DOMException('Red proof cleanup', 'AbortError'));
+        }
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(propagatedPromptly).toBe(true);
+        expect(runDdspInference).not.toHaveBeenCalled();
+        expect(renderRequestCancellation.cancel('phrase-1', requestId!)).toBe(false);
+
+        await expect(render({ phraseId: 'phrase-2' })).resolves.toMatchObject({ backend: 'webgpu' });
         expect(runDdspInference).toHaveBeenCalledOnce();
     });
 

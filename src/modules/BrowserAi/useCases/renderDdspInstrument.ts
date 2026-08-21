@@ -24,6 +24,7 @@ import {
     enqueueRender,
     isCurrentRenderRequest,
     markRenderComplete,
+    renderQueueStore,
     updateRenderStatus,
 } from '../stores/renderQueueStore';
 
@@ -114,10 +115,15 @@ export const renderDdspInstrument = inject({
             const instrument = resolveDdspInstrument(instrumentId);
             const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);
             const requestId = crypto.randomUUID();
-            const cancellation = renderRequestCancellation.own(requestId, signal);
+            const cancellation = renderRequestCancellation.own(phraseId, requestId, signal);
             const requestSignal = cancellation.signal;
+            const supersededRequestId = renderQueueStore.value?.phraseRequestIds?.[phraseId];
 
             try {
+                if (supersededRequestId !== undefined && supersededRequestId !== requestId) {
+                    renderRequestCancellation.cancel(phraseId, supersededRequestId);
+                    inferenceWorkerBridge.cancelTfjsRequest(supersededRequestId);
+                }
                 enqueueRender({ phraseId, requestId, pipeline: 'ddsp', status: 'preparing', queuedAt: Date.now() });
                 const renderWithLock = async (): RenderDdspInstrumentOutput => {
                     assertRequestOwner(phraseId, requestId, requestSignal);
@@ -166,7 +172,8 @@ export const renderDdspInstrument = inject({
                         inputData: cacheInput(conditioned.f0Hz, conditioned.loudnessDb),
                         qualityParams:
                             `${DDSP_RENDER_REVISION}:frames=${String(raw.nFrames)}` +
-                            `:samples44100=${String(targetSamples)}`,
+                            `:samples44100=${String(targetSamples)}` +
+                            `:samples16000=${String(nativeTargetSamples)}`,
                     });
                     assertRequestOwner(phraseId, requestId, requestSignal);
                     const cached = await readRenderCache({ cacheKey });

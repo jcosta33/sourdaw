@@ -165,6 +165,31 @@ async function waitForAbortableModelRead(
     });
 }
 
+async function waitForAbortableShutdown(shutdown: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+    if (signal === undefined) {
+        await shutdown.catch(() => undefined);
+        return;
+    }
+    throwIfAborted(signal);
+    await new Promise<void>((resolve, reject) => {
+        const cancel = (): void => {
+            signal.removeEventListener('abort', cancel);
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', cancel, { once: true });
+        void shutdown.then(
+            () => {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            },
+            () => {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            }
+        );
+    });
+}
+
 function stopWorker(state: WorkerState, stoppedWorker: Worker): void {
     stoppedWorker.onmessage = null;
     stoppedWorker.onerror = null;
@@ -214,8 +239,7 @@ async function getOnnxWorker(): Promise<Worker> {
     return worker;
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await -- consistent async API; callers await this; worker creation is currently synchronous
-async function getTfjsWorker(): Promise<Worker> {
+async function getTfjsWorker(signal?: AbortSignal): Promise<Worker> {
     // Reset idle timer
     if (workerState.tfjsIdleTimer !== null) {
         clearTimeout(workerState.tfjsIdleTimer);
@@ -223,8 +247,9 @@ async function getTfjsWorker(): Promise<Worker> {
     }
 
     if (workerState.tfjsShutdownPromise !== null) {
-        await workerState.tfjsShutdownPromise.catch(() => undefined);
+        await waitForAbortableShutdown(workerState.tfjsShutdownPromise, signal);
     }
+    throwIfAborted(signal);
 
     if (workerState.tfjs.worker && workerState.tfjs.initialized) {
         return workerState.tfjs.worker;
@@ -463,7 +488,7 @@ export const inferenceWorkerBridge = {
         const artifacts = await readDdspArtifacts(input, signal);
         let handedOff = false;
         try {
-            const worker = await getTfjsWorker();
+            const worker = await getTfjsWorker(signal);
             throwIfAborted(signal);
             const requestId = input.requestId ?? crypto.randomUUID();
             const request: WorkerRequest = {
@@ -530,7 +555,7 @@ export const inferenceWorkerBridge = {
         signal?: AbortSignal
     ): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
         throwIfAborted(signal);
-        const worker = await getTfjsWorker();
+        const worker = await getTfjsWorker(signal);
         throwIfAborted(signal);
         try {
             const response = await waitForAbortableTfjsRequest(

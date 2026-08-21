@@ -36,7 +36,7 @@ export const cancelRender = inject({ logger, renderRequestCancellation })(
             const ownsActiveRender = activeRender?.phraseId === phraseId;
             const pipeline = ownsActiveRender ? activeRender.pipeline : undefined;
 
-            renderRequestCancellation.cancel(requestId);
+            renderRequestCancellation.cancel(phraseId, requestId);
 
             // Cancel only THIS request on its worker — sibling renders are untouched.
             if (pipeline === 'ddsp') {

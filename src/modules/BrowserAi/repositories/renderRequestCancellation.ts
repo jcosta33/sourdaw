@@ -6,6 +6,7 @@ type RenderRequestCancellationLease = {
 type RenderRequestCancellationOwner = {
     controller: AbortController;
     detachCaller: () => void;
+    phraseId: string;
 };
 
 const owners = new Map<string, RenderRequestCancellationOwner>();
@@ -16,7 +17,7 @@ function cancellationError(): DOMException {
 
 /** Owns render cancellation outside project state for exactly one request lifetime. */
 export const renderRequestCancellation = {
-    own(requestId: string, callerSignal?: AbortSignal): RenderRequestCancellationLease {
+    own(phraseId: string, requestId: string, callerSignal?: AbortSignal): RenderRequestCancellationLease {
         if (owners.has(requestId)) {
             throw new Error(`Render cancellation is already owned: ${requestId}`);
         }
@@ -34,6 +35,7 @@ export const renderRequestCancellation = {
         const owner: RenderRequestCancellationOwner = {
             controller,
             detachCaller: () => callerSignal?.removeEventListener('abort', abortFromCaller),
+            phraseId,
         };
         owners.set(requestId, owner);
         let disposed = false;
@@ -52,9 +54,9 @@ export const renderRequestCancellation = {
         };
     },
 
-    cancel(requestId: string): boolean {
+    cancel(phraseId: string, requestId: string): boolean {
         const owner = owners.get(requestId);
-        if (owner === undefined) {
+        if (owner === undefined || owner.phraseId !== phraseId) {
             return false;
         }
         if (!owner.controller.signal.aborted) {

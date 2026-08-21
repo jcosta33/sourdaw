@@ -275,7 +275,7 @@ describe('cancelRender', () => {
 
         expect(renderQueueStore.value?.entries).toEqual([]);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('not-rendered');
-        expect(cancelOwnedRequest).toHaveBeenCalledWith('req-current');
+        expect(cancelOwnedRequest).toHaveBeenCalledWith('phrase-A', 'req-current');
     });
 
     it('clears the cancelled render from the active-render store', () => {
