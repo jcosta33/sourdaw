@@ -196,6 +196,29 @@ export const Notes = () => <span>{hint}</span>;
         expect(scanUiRestatements(root)[0]?.disposition).toBe('renderer');
     });
 
+    it('marks daw hardware drawing shells as one-off', () => {
+        const root = tree({
+            'src/components/daw/Fader.tsx': `export const Fader = () => <div className="flex flex-col justify-between" />;
+`,
+            'src/components/daw/RotaryKnob.tsx': `export const RotaryKnob = () => <div className="flex items-center justify-center" />;
+`,
+            'src/components/daw/MechanicalSwitch.tsx': `export const MechanicalSwitch = () => (
+  <div className="flex flex-col items-center gap-[2px]" />
+);
+`,
+        });
+        const byFile = Object.fromEntries(scanUiRestatements(root).map((row) => [row.file, row]));
+        expect(byFile['src/components/daw/Fader.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Stack', disposition: 'one-off' })
+        );
+        expect(byFile['src/components/daw/RotaryKnob.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Row', disposition: 'one-off' })
+        );
+        expect(byFile['src/components/daw/MechanicalSwitch.tsx']).toEqual(
+            expect.objectContaining({ mapping: 'Stack', disposition: 'one-off' })
+        );
+    });
+
     it('marks className constructions with template slots as responsive-or-dynamic', () => {
         const root = tree({
             'src/modules/Demo/presentations/views/Dynamic.tsx': `export const Dynamic = ({ extra }: { extra: string }) => (
