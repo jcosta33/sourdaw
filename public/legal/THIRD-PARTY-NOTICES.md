@@ -35,6 +35,12 @@ that exact compiler commit produced the binary.
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
 [RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
 
+## Adapted DSP source
+
+`crates/daw-dsp/src/toaster/engines/kick_808.rs` adapts mi-plaits-dsp-rs at commit
+`6d3f7a5b84b25ec45d66c9f6be7109474690d795` under the MIT license. Copyright (c) 2022 Oliver
+Rockstedt. The exact upstream terms are in [MI-PLAITS-DSP-RS-MIT.txt](./MI-PLAITS-DSP-RS-MIT.txt).
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).

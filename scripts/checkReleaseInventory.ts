@@ -66,6 +66,14 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+export const ADAPTED_MIT_SOURCE_PATH = 'crates/daw-dsp/src/toaster/engines/kick_808.rs';
+export const ADAPTED_MIT_LICENSE_PATH = 'public/legal/MI-PLAITS-DSP-RS-MIT.txt';
+export const ADAPTED_MIT_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
+export const ADAPTED_MIT_COMMIT = '6d3f7a5b84b25ec45d66c9f6be7109474690d795';
+
+const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+    'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
+};
 
 export const OWNER_VISUAL_ASSET_PATHS = [
     'public/favicon.ico',
@@ -186,6 +194,20 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
         revisions: ['not-applicable:direct-project-source'],
         digests: AUDIO_WORKLET_SOURCES.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
         licenses: ['Apache-2.0'],
+    };
+}
+
+export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceContract {
+    return {
+        kind: 'adapted-source',
+        paths: [ADAPTED_MIT_SOURCE_PATH, ADAPTED_MIT_LICENSE_PATH, ADAPTED_MIT_NOTICE_PATH],
+        sources: [`git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}`, ADAPTED_MIT_SOURCE_PATH],
+        revisions: [ADAPTED_MIT_COMMIT],
+        digests: [
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_SOURCE_PATH))}:${ADAPTED_MIT_SOURCE_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
+        ],
+        licenses: ['MIT'],
     };
 }
 
@@ -539,6 +561,16 @@ export function validateReleaseInventory(
         }
     }
 
+    for (const [path, surfaceIdsForSnapshot] of Object.entries(SNAPSHOT_DIGEST_SURFACES)) {
+        const expected = `sha256:${snapshot.fileDigests[path] ?? 'missing'}`;
+        for (const surfaceId of surfaceIdsForSnapshot) {
+            const surface = inventory.surfaces.find((candidate) => candidate.id === surfaceId);
+            if (surface !== undefined && !surface.digests.includes(expected)) {
+                errors.push(`${surfaceId}: digest must match ${path} snapshot (${expected})`);
+            }
+        }
+    }
+
     const surfaceIds = new Set(ids);
     const surfacesById = new Map(inventory.surfaces.map((surface) => [surface.id, surface]));
     const assignedReferences = Array.isArray(inventory.externalReferences) ? inventory.externalReferences : [];
@@ -690,8 +722,8 @@ export function loadRepositorySnapshot(
     };
 }
 
-export function checkReleaseInventory(root: string): void {
-    checkProjectLicense(root);
+export function checkReleaseInventory(root: string, projectLicensePreflight = checkProjectLicense): void {
+    projectLicensePreflight(root);
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
     const snapshot = loadRepositorySnapshot(root, inventory);
@@ -707,6 +739,12 @@ export function checkReleaseInventory(root: string): void {
     assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM');
     const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet');
+    const adaptedMitSurface = inventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
+    assertSurfaceContract(
+        adaptedMitSurface,
+        adaptedMitSourceReleaseInventoryContract(root),
+        'mi-plaits-dsp-rs adaptation'
+    );
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark');
     const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');

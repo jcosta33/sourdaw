@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    adaptedMitSourceReleaseInventoryContract,
+    ADAPTED_MIT_LICENSE_PATH,
+    ADAPTED_MIT_SOURCE_PATH,
     audioWorkletReleaseInventoryContract,
+    checkReleaseInventory,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
     ownerVisualAssetReleaseInventoryContract,
@@ -126,6 +130,25 @@ describe('release inventory', () => {
         }
     });
 
+    it('binds the adapted MIT source and exact upstream license bytes', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-adapted-mit-'));
+        mkdirSync(join(root, 'crates/daw-dsp/src/toaster/engines'), { recursive: true });
+        mkdirSync(join(root, 'public/legal'), { recursive: true });
+        writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'adapted source');
+        writeFileSync(join(root, ADAPTED_MIT_LICENSE_PATH), 'upstream license');
+
+        try {
+            const before = adaptedMitSourceReleaseInventoryContract(root);
+            expect(before.licenses).toEqual(['MIT']);
+            expect(before.revisions).toEqual(['6d3f7a5b84b25ec45d66c9f6be7109474690d795']);
+
+            writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'changed');
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds the WASM manifest to its toolchain and crate closures', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-wasm-provenance-'));
         mkdirSync(join(root, 'public/wasm'), { recursive: true });
@@ -227,6 +250,32 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toContain(
             'required snapshots missing from inventory:\n- pnpm-lock.yaml'
         );
+    });
+
+    it('binds server lock digests on every owning surface to the snapshot', () => {
+        const value = inventory();
+        for (const id of ['javascript-dependencies', 'collaboration-server']) {
+            value.surfaces.push({ ...value.surfaces[0]!, id, digests: ['sha256:stale'] });
+        }
+
+        expect(validateReleaseInventory(value, snapshot())).toEqual(
+            expect.arrayContaining([
+                `javascript-dependencies: digest must match server/package-lock.json snapshot (sha256:${fixtureDigest})`,
+                `collaboration-server: digest must match server/package-lock.json snapshot (sha256:${fixtureDigest})`,
+            ])
+        );
+    });
+
+    it('runs the project-license preflight before loading the inventory', () => {
+        let called = false;
+
+        expect(() =>
+            checkReleaseInventory('/inventory-is-not-read', () => {
+                called = true;
+                throw new Error('project license preflight sentinel');
+            })
+        ).toThrow('project license preflight sentinel');
+        expect(called).toBe(true);
     });
 
     it('rejects snapshots outside the tracked repository', () => {

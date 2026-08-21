@@ -55,6 +55,7 @@
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
                 "public/legal/APACHE-2.0.txt",
+                "public/legal/MI-PLAITS-DSP-RS-MIT.txt",
                 "public/legal/SOURDAW-NOTICE.txt",
                 "rust-toolchain.toml",
                 "tsconfig.app.json",
@@ -87,6 +88,9 @@
                 "public/legal/APACHE-2.0.txt",
                 "public/legal/SOURDAW-NOTICE.txt",
                 "package.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md",
                 "server/package.json",
                 "Cargo.toml",
                 "crates/**"
@@ -97,6 +101,9 @@
                 "public/legal/APACHE-2.0.txt",
                 "public/legal/SOURDAW-NOTICE.txt",
                 "package.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md",
                 "server/package.json",
                 "Cargo.toml"
             ],
@@ -185,7 +192,7 @@
             "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
             "digests": [
                 "sha256:419dc35165521cd97f925fcb7ed27ca86300c5f77f7065e71d0c65c7a8772378",
-                "sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
+                "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": ["individual dependency terms pending OS-10 notice assembly"],
             "productSurfaces": ["browser application", "desktop application", "collaboration server"],
@@ -526,14 +533,52 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "server"],
-            "paths": ["server/collab-server.ts", "server/package.json", "server/package-lock.json"],
-            "sources": ["server/collab-server.ts", "server/package-lock.json"],
+            "paths": [
+                "server/collab-server.ts",
+                "server/package.json",
+                "server/package-lock.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md"
+            ],
+            "sources": [
+                "server/collab-server.ts",
+                "server/package-lock.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md"
+            ],
             "revisions": ["exact collaboration-server npm lock graph"],
-            "digests": ["sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"],
-            "licenses": ["Apache-2.0", "individual dependency terms pending OS-10 notice assembly"],
+            "digests": ["sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"],
+            "licenses": ["Apache-2.0", "MIT:ws"],
             "productSurfaces": ["self-hosted collaboration WebSocket server"],
             "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
-            "obligations": ["Publish accurate deployment, authentication, dependency, and notice requirements."]
+            "obligations": ["Ship the sibling project license, project notice, and ws notice with the server."]
+        },
+        {
+            "id": "mi-plaits-dsp-rs-adaptation",
+            "kind": "adapted-source",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "public/legal/MI-PLAITS-DSP-RS-MIT.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md"
+            ],
+            "sources": [
+                "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795",
+                "crates/daw-dsp/src/toaster/engines/kick_808.rs"
+            ],
+            "revisions": ["6d3f7a5b84b25ec45d66c9f6be7109474690d795"],
+            "digests": [
+                "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:public/legal/MI-PLAITS-DSP-RS-MIT.txt"
+            ],
+            "licenses": ["MIT"],
+            "productSurfaces": ["TR-808 kick DSP source and compiled distributions"],
+            "evidence": ["The source names the adaptation; the exact pinned upstream MIT terms ship beside it."],
+            "obligations": ["Preserve the upstream copyright and MIT permission notice."]
         },
         {
             "id": "grand-boule",
@@ -633,13 +678,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:149fd11bb4ca46645716adb590b122c3efb68c3e256b8fad55b74316fbc802dd",
+                "daw-dsp sha256:dec8c6facf69cf9fb7fc49997ef26df6916ae899a25852135567316c789d0220",
                 "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
                 "proof-chamber sha256:841d105f5cb3a8cebb3118c2c42d199e7895db9a325aa5a42278e251f570b07a",
                 "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:0971cfaf3c5884785a33832ef850b6fc9e2386179aab621dfbe7292a7662ab77:public/wasm/manifest.json"
+                "sha256:84beffcef7f88104fa208e30df21324cb44c94cee2e852f17391a95646a0bb15:public/wasm/manifest.json"
             ],
             "licenses": ["Apache-2.0", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -893,7 +938,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "0971cfaf3c5884785a33832ef850b6fc9e2386179aab621dfbe7292a7662ab77"
+            "sha256": "84beffcef7f88104fa208e30df21324cb44c94cee2e852f17391a95646a0bb15"
         }
     ],
     "externalReferences": [

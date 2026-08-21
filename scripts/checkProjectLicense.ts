@@ -9,9 +9,12 @@ import { fileURLToPath } from 'node:url';
 export const PROJECT_LICENSE_ID = 'Apache-2.0';
 export const PROJECT_OWNER = 'Jose Costa';
 export const PROJECT_NOTICE = `Sourdaw\nCopyright 2026 ${PROJECT_OWNER}\n\nThis product includes third-party software. See public/legal/THIRD-PARTY-NOTICES.md.\n`;
+export const DISTRIBUTION_PROJECT_NOTICE = `Sourdaw\nCopyright 2026 ${PROJECT_OWNER}\n\nThis product includes third-party software. See THIRD-PARTY-NOTICES.md.\n`;
 export const SPDX_OWNERSHIP_HEADER = `/* SPDX-FileCopyrightText: 2026 ${PROJECT_OWNER} */\n/* SPDX-License-Identifier: ${PROJECT_LICENSE_ID} */\n`;
 
 const APACHE_LICENSE_SHA256 = 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4';
+const MI_PLAITS_DSP_RS_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
+const SERVER_THIRD_PARTY_NOTICES_SHA256 = 'bb11963c27505bc6245fb22d61f04980318f87b4cdcbd19934e36ff9118660f1';
 const OWNERSHIP_FILES = [
     'src/infra/store/storage/LocalStorageKeys.ts',
     'src/modules/AiRuntime/models/ToolDefinitions.ts',
@@ -39,15 +42,24 @@ function readJson<TResult>(path: string): TResult {
 
 export function validateProjectLicense(root: string, cargo: CargoMetadata): string[] {
     const errors: string[] = [];
-    for (const path of ['LICENSE', 'public/legal/APACHE-2.0.txt']) {
+    for (const path of ['LICENSE', 'public/legal/APACHE-2.0.txt', 'server/LICENSE']) {
         if (sha256(resolve(root, path)) !== APACHE_LICENSE_SHA256) {
             errors.push(`${path}: Apache-2.0 text drifted`);
         }
     }
-    for (const path of ['NOTICE', 'public/legal/SOURDAW-NOTICE.txt']) {
-        if (readFileSync(resolve(root, path), 'utf8') !== PROJECT_NOTICE) {
+    if (readFileSync(resolve(root, 'NOTICE'), 'utf8') !== PROJECT_NOTICE) {
+        errors.push('NOTICE: project attribution drifted');
+    }
+    for (const path of ['public/legal/SOURDAW-NOTICE.txt', 'server/NOTICE']) {
+        if (readFileSync(resolve(root, path), 'utf8') !== DISTRIBUTION_PROJECT_NOTICE) {
             errors.push(`${path}: project attribution drifted`);
         }
+    }
+    if (sha256(resolve(root, 'server/THIRD-PARTY-NOTICES.md')) !== SERVER_THIRD_PARTY_NOTICES_SHA256) {
+        errors.push('server/THIRD-PARTY-NOTICES.md: third-party notices drifted');
+    }
+    if (sha256(resolve(root, 'public/legal/MI-PLAITS-DSP-RS-MIT.txt')) !== MI_PLAITS_DSP_RS_LICENSE_SHA256) {
+        errors.push('public/legal/MI-PLAITS-DSP-RS-MIT.txt: upstream MIT license drifted');
     }
 
     const packageFiles = ['package.json', 'server/package.json', 'server/package-lock.json'];
