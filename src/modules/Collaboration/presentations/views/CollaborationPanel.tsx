@@ -6,6 +6,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
@@ -204,7 +205,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                     </Button>
                 }
             />
-            <div className="flex flex-col gap-3 p-3">
+            <Stack gap={3} className="p-3">
                 {/* Status */}
                 <CollaborationStatusRow icon={statusIcon} label={statusLabel} />
 
@@ -217,7 +218,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 description="Everyone currently connected to the shared session."
                                 className="max-h-40 overflow-y-auto"
                             >
-                                <div className="flex flex-col gap-1">
+                                <Stack gap={1}>
                                     {state.peers.map((peer) => (
                                         <PeerPresenceRow
                                             key={peer.id}
@@ -227,7 +228,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                             isHost={peer.isHost}
                                         />
                                     ))}
-                                </div>
+                                </Stack>
                             </CollaborationBlock>
                         ) : null}
 
@@ -238,7 +239,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 description="Generate an invite, share it, then accept the join answer."
                                 className="flex flex-col gap-1.5"
                             >
-                                <div className="flex gap-1">
+                                <Row align="stretch" gap={1}>
                                     <Button
                                         variant="outline"
                                         size="xs"
@@ -263,7 +264,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                         <QrCode className="size-3" />
                                         QR
                                     </Button>
-                                </div>
+                                </Row>
                                 <DawUtilityNotice className="px-2.5 py-2 text-[10px] text-muted-foreground/60">
                                     Wait for each person to accept before inviting the next.
                                 </DawUtilityNotice>
@@ -378,7 +379,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                         tone="danger"
                     />
                 ) : null}
-            </div>
+            </Stack>
         </DawUtilityPanel>
     );
 };

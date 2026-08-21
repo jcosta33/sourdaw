@@ -1,70 +1,51 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function addFirstTrack(page: import('@playwright/test').Page): Promise<void> {
-    const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-    await emptyStateMidiButton.waitFor({ state: 'visible' });
-    await emptyStateMidiButton.click();
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.locator('#main-content').click();
+    await page.keyboard.press(`${MOD}+k`);
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor({ state: 'visible' });
-    // Select the track to show the inspector.
-    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().click();
-    await page.waitForTimeout(300);
+    await expect(trackList).toBeVisible();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
+    await trackList.getByRole('row').filter({ hasText: /^MIDI/ }).first().click();
 }
 
-test.describe('Inspector — test-id targeted', () => {
+test.describe('Inspector track notes and gain', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await addFirstTrack(page);
+        await addMidiTrack(page);
+        await expect(page.getByRole('complementary', { name: 'Inspector panel', exact: true })).toBeVisible();
     });
 
-    test('track notes input is visible and accepts typed text', async ({ page }) => {
-        const notes = page.getByTestId('inspector-track-notes');
-        // The notes section may not be visible if inspector is closed — open it.
-        const inspector = page.getByTestId('toggle-inspector');
-        const inspectorOpen = await inspector.getAttribute('aria-pressed');
-        if (inspectorOpen === 'false') {
-            await inspector.click();
-            await page.waitForTimeout(300);
-        }
+    test('track notes persist after blur', async ({ page }) => {
+        const notes = page.getByRole('textbox', { name: /^Notes for MIDI/ });
+        await expect(notes).toHaveValue('');
+        await notes.fill('This is a test note');
+        await notes.blur();
 
-        // Notes input may be present if the track is selected.
-        if (await notes.isVisible().catch(() => false)) {
-            await notes.fill('This is a test note');
-            await expect(notes).toHaveValue('This is a test note');
-        }
+        const toggle = page.getByRole('button', { name: 'Toggle inspector', exact: true });
+        const panel = page.getByRole('complementary', { name: 'Inspector panel', exact: true });
+        await toggle.click();
+        await expect(panel).toBeHidden();
+        await toggle.click();
+        await expect(panel).toBeVisible();
+        await expect(page.getByRole('textbox', { name: /^Notes for MIDI/ })).toHaveValue('This is a test note');
     });
 
-    test('track gain slider is present in the inspector', async ({ page }) => {
-        const inspector = page.getByTestId('toggle-inspector');
-        const inspectorOpen = await inspector.getAttribute('aria-pressed');
-        if (inspectorOpen === 'false') {
-            await inspector.click();
-            await page.waitForTimeout(300);
-        }
-
-        const gain = page.getByTestId('inspector-track-gain');
-        if (await gain.isVisible().catch(() => false)) {
-            // Verify it has rendered child elements (the slider track).
-            const childCount = await gain.evaluate((el) => el.children.length);
-            expect(childCount).toBeGreaterThan(0);
-        }
-    });
-
-    test('inspector opens and closes via test ID', async ({ page }) => {
-        const inspector = page.getByTestId('toggle-inspector');
-        await expect(inspector).toBeVisible();
-
-        const before = await inspector.getAttribute('aria-pressed');
-        await inspector.click();
-        await page.waitForTimeout(300);
-        await expect(inspector).not.toHaveAttribute('aria-pressed', before ?? '');
-
-        // Toggle back.
-        await inspector.click();
-        await page.waitForTimeout(300);
-        await expect(inspector).toHaveAttribute('aria-pressed', before ?? '');
+    test('MIDI gain starts at 80 and steps up', async ({ page }) => {
+        const gain = page.getByRole('slider', { name: /^MIDI(?: \d+)? gain$/ });
+        await expect(gain).toHaveAttribute('aria-valuenow', '80');
+        await gain.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(gain).toHaveAttribute('aria-valuenow', '81');
     });
 });

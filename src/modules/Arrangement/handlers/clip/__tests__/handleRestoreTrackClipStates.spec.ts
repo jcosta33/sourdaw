@@ -245,6 +245,33 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.updateTrack).not.toHaveBeenCalled();
         });
 
+        it('refuses when a clip fileId diverges between live and expected clip state', () => {
+            const [clip] = clipsFor('t1', ['c1']);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    TrackDummy.create({
+                        id: 't1',
+                        clips: [{ ...clip!, fileId: 'file-live' }],
+                    }),
+                ],
+            });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['c1'], {
+                            clips: [{ ...clip!, fileId: 'file-expected' }],
+                        }),
+                    ],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
         it('refuses when a sibling clip was retuned in place through the Knead editor', () => {
             // Knead writes `kneadState` through `updateClipInStore` without going through
             // `executeAppAction`, so a retune files no undo entry of its own to protect
