@@ -28,6 +28,7 @@ import {
     parseDotenv,
     parseGraphqlResponse,
     resolvePrimaryRoot,
+    spawnCapture,
     type FileReader,
     type GitHubJsonClient,
 } from '../githubAppIdentity.ts';
@@ -662,5 +663,16 @@ describe('repository and trusted blob', () => {
         expect(isAuthorBotLogin('jcosta33-reviewer[bot]')).toBe(false);
         expect(isAuthorBotLogin('jcosta33')).toBe(false);
         expect(isAuthorBotLogin(undefined)).toBe(false);
+    });
+});
+
+describe('spawnCapture output capacity', () => {
+    it('captures stdout larger than spawnSync 1 MiB default intact', () => {
+        const payload = `--capture-start--\n${'x'.repeat(4 * 1024 * 1024)}\n--capture-end--`;
+        const captured = spawnCapture(process.execPath, [
+            '-e',
+            `process.stdout.write("--capture-start--\\n" + "x".repeat(4 * 1024 * 1024) + "\\n--capture-end--")`,
+        ]);
+        expect(captured).toBe(payload);
     });
 });

@@ -339,6 +339,12 @@ export function spawnCapture(
         cwd: options.cwd ?? process.cwd(),
         env: options.env,
         encoding: 'utf8',
+        // Sized at 64 MiB: spawnSync's 1 MiB default kills any larger capture with ENOBUFS.
+        // The largest legitimate capture is `git show` of the biggest tracked blob (~5 MiB
+        // sample wav today); `git diff` captures stay textual because git elides binaries.
+        // 64 MiB covers that plus a whole-source-tree textual diff with headroom, and a
+        // capture exceeding even this bound still fails loudly through result.error below.
+        maxBuffer: 64 * 1024 * 1024,
         shell: false,
         input: options.input,
     });
