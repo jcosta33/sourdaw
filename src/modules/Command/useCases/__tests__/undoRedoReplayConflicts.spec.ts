@@ -31,6 +31,11 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
     executeAppActionBatch: vi.fn<typeof import('../executeAppActionBatch').executeAppActionBatch>(),
     undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 vi.mock('../../stores/undoStore', () => ({
@@ -91,21 +96,25 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [entry] });
         });
 
-        it('leaves a conflicting entry on the stack and does not reject', async () => {
-            const entry = actionEntry({ id: 'conflict-1' });
-            mocks.undoStoreValue.value = { past: [entry], future: [] };
+        it('notifies the user and un-wedges the stack when an entry conflicts', async () => {
+            const older = actionEntry({ id: 'older-1', label: 'First Action' });
+            const conflicting = actionEntry({ id: 'conflict-1', label: 'Cut Clip' });
+            mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
             mocks.executeAppAction.mockRejectedValue(new AppActionConflictError('toggleRecording'));
 
             await expect(undo()).resolves.toBeUndefined();
 
-            // Nothing was written, so the stack must be untouched — the entry
-            // stays undoable rather than being silently consumed.
-            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Cut Clip": project state has changed',
+                'warning'
+            );
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('older-1');
         });
 
-        it('keeps an entire action group unchanged when any inverse conflicts', async () => {
-            const first = actionEntry({ id: 'g-first', groupId: 'group-1' });
-            const second = actionEntry({ id: 'g-second', groupId: 'group-1' });
+        it('notifies the user and removes a conflicting action group from past', async () => {
+            const first = actionEntry({ id: 'g-first', groupId: 'group-1', groupLabel: 'Grouped Edit' });
+            const second = actionEntry({ id: 'g-second', groupId: 'group-1', groupLabel: 'Grouped Edit' });
             mocks.undoStoreValue.value = { past: [first, second], future: [] };
             mocks.executeAppActionBatch.mockResolvedValue({
                 status: 'conflicted',
@@ -121,7 +130,12 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
                 skipMacroRecording: true,
                 source: 'manual',
             });
-            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Grouped Edit": project state has changed',
+                'warning'
+            );
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
         });
     });
 
