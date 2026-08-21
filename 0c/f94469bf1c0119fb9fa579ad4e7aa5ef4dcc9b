@@ -1,0 +1,77 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_c6e5b92c9807b1::t_e39d439195f392 1602-1661
+crates/daw-dsp/src/levain/engine.rs
+  s_c6e5b92c9807b1::t_7b576cf9837310 2836-2937
+crates/daw-dsp/tests/crumbs_voice_steal.rs
+  s_c6e5b92c9807b1::t_657dbd8eba07ba 121-122,464-465,658-659,698-699
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_c6e5b92c9807b1::t_fb1852d7e87090 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_c6e5b92c9807b1::t_c899f48bb50aa9 1
+public/wasm/manifest.json
+  s_a40848e8f8cca9::t_031b046c2cb3a8 12,17-18,21
+scripts/ui-restatement-census.json
+  s_a40848e8f8cca9::t_6a18d46e3934f7 137-145,158,239,383,398-406,587-595,644,680,707,752,977,1085,1103,1343-1351,1361-1369,1985,2192,2336,2360-2368,2399,2405-2413,2459-2467,2480,2588,2756-2764,2831,3008-3016,3083,3317,3398,3470,3560,3605,3989-3997,4163,4208,4343,4874,4955,5333,5421-5424,5426-5427,5486,5636-5644,5657,5729,5963,6023-6031,6179,6242,6275-6283,6296,6509-6517,6629,6863,6986-6994,7106,7214,7364-7372,7394,7400-7408,7502,7536-7539,7542,7583,7862,8534-8542,8735,8861,8879,8939-8947,9077,9221,9326-9334,9509,9686-9694,9716,9830-9838,9851,9887,10139,10355,10370-10378,10553,10697,10785-10795,10868,11063-11071,11147,11336,11606,11693-11701,11705,11813,12119,12137,12245,12389,12488,12695,12713,12758,12803,13145,13361,13538-13546,13640,13892,14135,14198,14225,14252,14405,14438-14446,14630,14810,15341,15377,15386,15491-15499,15566-15575,15620,15629,15638,15719,15797-15805,15809,15854,15869-15877,15917,16196,16205,16220-16228,16349,16392-16402,16445-16453,16490-16498,16520,16634-16642,16646,16709,16842-16845,16848,16853,16868-16876,17150,17192-17200,17276,17339,17354-17362,17366,17399-17407,17426-17434,17555,17597-17605,17660-17668,17688,17690-17691,17694,17786-17794,17879,17984-17992,18023,18500,18743,18923,18977,19256,19271-19279,19550-19558,19778,19832,19931,19937-19945,19955-19963,20228,20318,20477-20485,20948,21089-21097,21128,21260-21268,21287-21295,21383-21393,21407,21549-21552,21555,21722,21791-21799,21992,22037,22082,22106-22114,22268-22276,22289,22439-22447,22538-22546,22559,22595,22604,22622,22646-22654,22757,22826-22834,23207,23252,23261,23315,23369,23378,23447-23455,23612,23666,23738,23999,24197,24266-24283,24341,24456-24459,24461-24462,24557,24647,24680-24688,24728,24881,24890,24896-24904,24998,25223
+src/modules/AiGeneration/presentations/views/PatternBrowser.tsx
+  s_a40848e8f8cca9::t_513b43aac1851f 10,114,129,147-148,151,166,223,231,321,323,346,349,376,379,410,413,416,429
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  s_a40848e8f8cca9::t_5f05cb23f46436 248-274
+src/modules/Arrangement/stores/__tests__/trackStore.spec.ts
+  s_a40848e8f8cca9::t_1c9a116317d3e7 7,323-347
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_126b568da78579 1
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  s_a40848e8f8cca9::t_3415469c5b8e78 10,181-182,189,273,281-282,339,380,418,432,463-464,474,481,495,499,546,558
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_a40848e8f8cca9::t_7e36956f5a9bb2 7,39,43,68-69,72,83,86,102
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  s_a40848e8f8cca9::t_8913505a8e3804 19-20,44,50,56-58,80,83,87,92,109,112,114
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_a40848e8f8cca9::t_89af21dcdad983 8,1402,1446
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_a40848e8f8cca9::t_f8dd2f9a003427 14,136-138,159
+src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx
+  s_a40848e8f8cca9::t_dd495fe9d8a2d0 8,149,175
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_a40848e8f8cca9::t_44e3a8577c21b8 7,66,83,89,101,107,119,158,161,181,186,216,242-245,252-253
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_a40848e8f8cca9::t_a434598cdb3174 4,174,181,324,326-328,345,347,365,388,402,406,420,423,438,460-463,470-471
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_a40848e8f8cca9::t_bce57ceb87ec8a 17,231,234,246,249,288-290,320
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_a40848e8f8cca9::t_c8140532dab35a 5,236,257,275,285,298,318,370,382,390,416
+src/modules/Routing/presentations/views/RoutingGraph.tsx
+  s_a40848e8f8cca9::t_4c9612c5b210fa 5,239,245,256-257,260-261,264-265,268-269
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_a40848e8f8cca9::t_6419cb6186266b 8,77-79,215
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_a40848e8f8cca9::t_95a0204b73fda4 17,275,277,329,333,353,400,416,421,425,438,454,465,478,481,561,563
+src/modules/Setlist/presentations/views/SetlistPanel.tsx
+  s_a40848e8f8cca9::t_e4abd8e6cc7354 18,152-153,185,233,249,268-269,300-304,308,329,361,390,441,461
+tests/e2e/inspectorTestId.spec.ts
+  s_a40848e8f8cca9::t_6fb50f527656c5 1,5-13,15-17,20,22,25-26,29-41,44-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0cf94469bf1c0119fb9fa579ad4e7aa5ef4dcc9b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c6e5b92c9807b1": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f19f44dd-f121-4ffd-ae5a-75b99f1cf711",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
