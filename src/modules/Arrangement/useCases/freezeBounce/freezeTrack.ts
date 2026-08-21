@@ -247,15 +247,18 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             return true;
         }
 
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        notifyUser(errorMessage, 'error');
         scope(() => {
             updateTrack(trackId, (time) => ({
                 ...time,
                 freezeState: {
                     status: 'error',
-                    errorMessage: error instanceof Error ? error.message : String(error),
+                    errorMessage,
                 },
             }));
         });
+        return false;
     }
 
     return true;
