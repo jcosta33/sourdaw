@@ -1,0 +1,31 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_73f01e3730f1cd 878,1478-1486,1982-1990,2828-2836,2858,2930,4091,4307,4406,4826-4834,6203-6211,6566,7484,7682,8465,8555,9851,10337,10445,11288-11296,11399,13991,14333,15251,16445-16453,16844,18581,19112,20153-20161,20255,22808-22816,22838,24824-24832,24923-24931,25220-25228
+src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx
+  s_27578aec2aab3b::t_5fa02eaf8881f9 7,111-113,136,143,154,156,178-179,181
+src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx
+  s_2175fca1f07426::t_2335e93d000e0f 7,26,34,38,42-43,45,50,58-59,80-81,85-86,88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e69b03e21c1a77a4fac5f75af0d4631c51458c2f",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
