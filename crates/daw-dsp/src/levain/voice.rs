@@ -1335,31 +1335,56 @@ mod tests {
         );
     }
 
+    /// The release-tail branch must be what decides this, so the fixture is
+    /// built to rank the *other* way under the generic tier alone. The tail is
+    /// the least stealable voice that tier can describe — zero energy, zero
+    /// age, so `2 + 1000 + 0 = 1002` — while the sounding voice is nearly the
+    /// most stealable one it can describe: quiet but plainly audible, and as
+    /// old as the age term ever counts, so `2 + 950 + 1000`. Delete the branch
+    /// and the ordering inverts and this reds.
+    ///
+    /// That also pins the two tiers apart from the low end, which nothing else
+    /// does: the tail tier's floor is `10000` at age zero, and the generic
+    /// tier's ceiling is `2 + 1000 + 1000 = 2002`, so no sounding voice however
+    /// quiet or old can outrank a tail past audibility.
     #[test]
     fn steal_priority_prefers_inaudible_release_tail_over_sounding_voice() {
-        let sample_rate = SAMPLE_RATE;
-        let mut sounding = LevainVoice::new(sample_rate);
+        let mut sounding = LevainVoice::new(SAMPLE_RATE);
         sounding.active = true;
-        sounding.energy = 0.5;
-        sounding.age = 100;
+        sounding.energy = 0.05;
+        sounding.age = 10_000;
 
-        let mut inaudible_releasing = LevainVoice::new(sample_rate);
-        inaudible_releasing.active = true;
-        inaudible_releasing.energy = 1e-5;
-        inaudible_releasing.age = 100;
-        inaudible_releasing.amp_env.trigger();
-        inaudible_releasing.amp_env.release();
+        // A real decayed tail, driven through the stage machine. Writing
+        // `level` by hand — or triggering and releasing with no `tick` between,
+        // which leaves the attack unrun at `level == 0.0` — would enter the
+        // tier as a voice that never sounded rather than as a spent tail.
+        let mut inaudible_releasing = releasing_at(5e-4);
+        inaudible_releasing.energy = 0.0;
+        inaudible_releasing.age = 0;
 
+        let tail = inaudible_releasing.steal_priority();
+        let audible = sounding.steal_priority();
         assert!(
-            inaudible_releasing.steal_priority() > sounding.steal_priority(),
-            "inaudible release tail score {} must exceed sounding voice score {}",
-            inaudible_releasing.steal_priority(),
-            sounding.steal_priority()
+            tail > audible,
+            "a tail at envelope level {} with zero energy and zero age scored \
+             {tail}, against {audible} for a voice still sounding at energy \
+             {} and age {} — the generic tier ranks these the other way \
+             round ({} against {audible}), so equal or below means the \
+             release-tail branch did not decide it",
+            inaudible_releasing.amp_env.current_level(),
+            sounding.energy,
+            sounding.age,
+            2 + ((1.0 - inaudible_releasing.energy) * 1000.0) as u32 + inaudible_releasing.age / 10
         );
 
         let mut pool = VoicePool {
             voices: vec![sounding, inaudible_releasing],
         };
-        assert_eq!(pool.allocate(), 1);
+        assert_eq!(
+            pool.allocate(),
+            1,
+            "`allocate` must take the spent tail at index 1, not the sounding \
+             voice at index 0 that the generic tier scores higher"
+        );
     }
 }
