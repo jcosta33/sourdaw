@@ -470,7 +470,7 @@
   {
     "id": "ui-03c322c5ee3c6b48",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 978,
+    "line": 983,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -549,15 +549,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-04b52cdf4d6c08a3",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1038,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-04baaaac75008518",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx",
     "line": 384,
@@ -578,7 +569,7 @@
   {
     "id": "ui-04c1dcd512a64afd",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 706,
+    "line": 711,
     "fingerprint": "DawPluginReadoutList\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginReadoutList",
@@ -1174,15 +1165,6 @@
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx",
     "line": 48,
     "fingerprint": "div\tflex items-center gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-0a418732c534ebf3",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 614,
-    "fingerprint": "header\tproof-chamber-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -1874,7 +1856,7 @@
   {
     "id": "ui-106770883e8459a7",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 725,
+    "line": 730,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -2493,6 +2475,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-15fc79847c970be9",
+    "file": "src/modules/ProofChamber/presentations/components/IrBrowser.tsx",
+    "line": 132,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-16109985424c876c",
     "file": "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx",
     "line": 147,
@@ -2788,15 +2779,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-196fe6e90ed92bac",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 545,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1980c3428a3ca513",
@@ -3116,7 +3098,7 @@
   {
     "id": "ui-1d6f58bb2b30b5ab",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 209,
+    "line": 210,
     "fingerprint": "DawPluginLed\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginLed",
@@ -3139,15 +3121,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionHeader",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-1d9c722f2fbb5ab3",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 270,
-    "fingerprint": "div\tflex min-w-[68px] flex-col items-center gap-1 rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-2 py-2 shadow-[var(--shadow-elevation-inset)]",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1da6315dab808f3f",
@@ -3211,6 +3184,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityListRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-1e008b9e4ed6bb5c",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 809,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-1e2a6ca34ccc066c",
@@ -3492,15 +3474,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-2046911253ef0dc8",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 786,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-204df23eb1456b1c",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1605,
@@ -3629,7 +3602,7 @@
   {
     "id": "ui-222cc39f66864d9a",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 205,
+    "line": 206,
     "fingerprint": "DawPluginChip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
@@ -3692,7 +3665,7 @@
   {
     "id": "ui-22df6f1b342db46c",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 704,
+    "line": 709,
     "fingerprint": "DawPluginRail\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginRail",
@@ -3809,7 +3782,7 @@
   {
     "id": "ui-2410c195107046e9",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 623,
+    "line": 628,
     "fingerprint": "DawPluginMetricStrip\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricStrip",
@@ -3840,6 +3813,24 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-24802b18c6fb0c87",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 620,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-24b3374a331deb82",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 1022,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -5301,15 +5292,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-33b2fb934f660669",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 507,
-    "fingerprint": "div\tproof-chamber-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-33b55a8a17fa6c65",
     "file": "src/infra/dialogService/ConfirmDialog.tsx",
     "line": 55,
@@ -5439,6 +5421,15 @@
     "id": "ui-34d85c5e7021340f",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 670,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-3515d017608887b3",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 271,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6183,6 +6174,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3c9d1371953bffcd",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 269,
+    "fingerprint": "Button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3ca469058b76bfd6",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 153,
@@ -6424,6 +6424,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-3f2ae61bcf1073db",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 739,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-3f3092be858ec929",
@@ -7146,15 +7155,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-456a1f3520b6f012",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 649,
-    "fingerprint": "div\tflex h-full min-h-0 flex-col",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-45967cb08625a049",
     "file": "src/components/daw/DawSwatchButton.tsx",
     "line": 19,
@@ -7578,15 +7578,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-49c72cb89fedc33e",
-    "file": "src/modules/ProofChamber/presentations/components/IrBrowser.tsx",
-    "line": 104,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-49fbe683124afd49",
     "file": "src/modules/MixerConsole/presentations/views/MixerPanel.tsx",
     "line": 175,
@@ -7904,7 +7895,7 @@
   {
     "id": "ui-4d8379c50ec4dd2e",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 165,
+    "line": 166,
     "fingerprint": "DawPluginMetricTile\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
@@ -8201,7 +8192,7 @@
   {
     "id": "ui-50b0410a741b0d54",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 758,
+    "line": 763,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -8233,6 +8224,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
+  },
+  {
+    "id": "ui-510d05bd0ea780eb",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 1061,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-5115ad83ea997cd9",
@@ -8444,7 +8444,7 @@
   {
     "id": "ui-5314900b4b17695b",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 241,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9101,7 +9101,7 @@
   {
     "id": "ui-596a019a8d495015",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 186,
+    "line": 187,
     "fingerprint": "DawPluginSectionCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginSectionCard",
@@ -9326,7 +9326,7 @@
   {
     "id": "ui-5b9c7dcc4aebc8d7",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 713,
+    "line": 718,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -9470,7 +9470,7 @@
   {
     "id": "ui-5cf51f663ad106dd",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1031,
+    "line": 1036,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -10676,7 +10676,7 @@
   {
     "id": "ui-68de4630470b5b63",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 815,
+    "line": 820,
     "fingerprint": "div\tgrid gap-3 xl:grid-cols-5 md:grid-cols-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -11547,6 +11547,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-72aedbf75ad857b8",
+    "file": "src/modules/ProofChamber/presentations/components/IrBrowser.tsx",
+    "line": 105,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-72cf78ea65cabc2c",
     "file": "src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx",
     "line": 139,
@@ -11970,15 +11979,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-7702aae370ee1abe",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 734,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-770bedc44456bcf7",
     "file": "src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx",
     "line": 165,
@@ -12076,15 +12076,6 @@
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-782bd03f926bd88a",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 535,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-7838a81ea88e04e6",
@@ -12699,6 +12690,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-7d39db5818770e69",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 1043,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7d77d016383a9823",
     "file": "src/modules/TimelineEditor/presentations/views/TempoEditor.tsx",
     "line": 226,
@@ -12879,6 +12879,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-7f22e7e491232198",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 814,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-7f3cccc03feef29b",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/TrackClipsSection.tsx",
     "line": 70,
@@ -12958,6 +12967,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-7fe78a25c4dc9102",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 618,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-80025f808d41bb11",
@@ -13300,15 +13318,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-833dead4fff0bafe",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 804,
-    "fingerprint": "div\tmb-3 flex items-center justify-between gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-834454e5e6c97522",
@@ -13705,6 +13714,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "responsive-or-dynamic"
+  },
+  {
+    "id": "ui-86b4562bd1a7d660",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 564,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-86b860bacdc293b1",
@@ -14132,7 +14150,7 @@
   {
     "id": "ui-8a89092b8eea06b8",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 516,
+    "line": 521,
     "fingerprint": "div\tgrid gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -14526,6 +14544,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-8e6ba0c11c5e7a02",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 655,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8e7b3aafd67f187f",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx",
     "line": 62,
@@ -14902,6 +14929,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-92a68a1266179650",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 619,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-92cd2aa3a80890c5",
@@ -15381,6 +15417,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-97f1f6b3d0368f85",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 512,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-97f718f365c81b0e",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
     "line": 426,
@@ -15415,15 +15460,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-9861e0f246aee24c",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 809,
-    "fingerprint": "div\tflex items-center gap-2 text-[10px] text-white/48",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-986ff512ba4a3ccf",
@@ -15504,15 +15540,6 @@
     "fingerprint": "div\tflex flex-col items-center gap-1",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-996015b2b131d4b9",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1056,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -15887,7 +15914,7 @@
   {
     "id": "ui-9d7af2d4685fe4a0",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 647,
+    "line": 652,
     "fingerprint": "div\tgrid min-h-0 shrink-0 grid-cols-[minmax(0,1.1fr)_280px] gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -15981,6 +16008,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9eb8e24284659220",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 550,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -16841,7 +16877,7 @@
   {
     "id": "ui-a80367a44e5fe732",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 254,
+    "line": 256,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16868,7 +16904,7 @@
   {
     "id": "ui-a8397178b8106fd8",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1050,
+    "line": 1055,
     "fingerprint": "DawPluginInsetCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginInsetCard",
@@ -17019,15 +17055,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-aa0522078b09b7dd",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 650,
-    "fingerprint": "div\tflex items-center justify-between px-3 py-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-aa1d5eac7f8dc527",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
     "line": 462,
@@ -17161,15 +17188,6 @@
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-ab62598db406e709",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1017,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-abcb62f755892f01",
@@ -17723,7 +17741,7 @@
   {
     "id": "ui-b0b615e435d7b9a3",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 707,
+    "line": 712,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -18146,7 +18164,7 @@
   {
     "id": "ui-b4a87a4de2d0c5c3",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 1032,
+    "line": 1037,
     "fingerprint": "DawPluginInsetCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginInsetCard",
@@ -18596,7 +18614,7 @@
   {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 250,
+    "line": 265,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -18893,7 +18911,7 @@
   {
     "id": "ui-bc60f44b4cdac40d",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 871,
+    "line": 876,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -20194,15 +20212,6 @@
     "kind": "generic-control",
     "mapping": "Separator",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-cb7bad2d4f482125",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 613,
-    "fingerprint": "section\tflex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-cb7fb7706c756310",
@@ -21609,6 +21618,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-d9d1d0edc4cb8712",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 654,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d9e6180b56fc398e",
     "file": "src/modules/Crust/presentations/views/CrustPanel.tsx",
     "line": 266,
@@ -22590,6 +22608,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-e45c4aa85eeefac8",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 540,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e46c0ca59410cf06",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
     "line": 406,
@@ -22959,15 +22986,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-e99a2e622514d2a5",
-    "file": "src/modules/ProofChamber/presentations/components/IrBrowser.tsx",
-    "line": 131,
-    "fingerprint": "div\tflex items-center justify-center gap-1 py-2 text-muted-foreground/40",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-e99ddff391d9c518",
     "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
     "line": 200,
@@ -23024,7 +23042,7 @@
   {
     "id": "ui-e9ff417972ad685b",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 817,
+    "line": 822,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -23231,7 +23249,7 @@
   {
     "id": "ui-ebbb1d7c6a53beaa",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 719,
+    "line": 724,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -23259,6 +23277,15 @@
     "id": "ui-ebdde52043705e3e",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 1542,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-ebf91b1fa29e55ea",
+    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
+    "line": 791,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -23429,7 +23456,7 @@
   {
     "id": "ui-ed9d679326d4877a",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 520,
+    "line": 525,
     "fingerprint": "DawPluginChoiceRow\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginChoiceRow",
@@ -23483,7 +23510,7 @@
   {
     "id": "ui-ee1a669fd98dbbf6",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 508,
+    "line": 513,
     "fingerprint": "DawPluginRail\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginRail",
@@ -24010,24 +24037,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f3024b2f811f0072",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 615,
-    "fingerprint": "div\tspace-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-f30cb13c67af01a9",
-    "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 559,
-    "fingerprint": "div\tflex flex-wrap gap-1.5",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-f3170957c302f554",
@@ -24644,7 +24653,7 @@
   {
     "id": "ui-f9492435db159ed8",
     "file": "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx",
-    "line": 925,
+    "line": 930,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
