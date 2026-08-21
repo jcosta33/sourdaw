@@ -31,7 +31,14 @@ test.describe('Inspector track notes and gain', () => {
         await expect(notes).toHaveValue('');
         await notes.fill('This is a test note');
         await notes.blur();
-        await expect(notes).toHaveValue('This is a test note');
+
+        const toggle = page.getByRole('button', { name: 'Toggle inspector', exact: true });
+        const panel = page.getByRole('complementary', { name: 'Inspector panel', exact: true });
+        await toggle.click();
+        await expect(panel).toBeHidden();
+        await toggle.click();
+        await expect(panel).toBeVisible();
+        await expect(page.getByRole('textbox', { name: /^Notes for MIDI/ })).toHaveValue('This is a test note');
     });
 
     test('MIDI gain starts at 80 and steps up', async ({ page }) => {
