@@ -196,6 +196,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw error;
             }
             storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
+            storage_transaction.validateCommit(() =>
+                productionBriefAdmissionPort.allows([action])
+                    ? null
+                    : `Action conflicts with current project state: ${action.type}`
+            );
             try {
                 execution_result = await storage_transaction.value;
             } catch (error) {

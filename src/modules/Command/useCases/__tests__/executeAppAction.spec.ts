@@ -6,6 +6,8 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import {
     AppActionCommittedError,
@@ -31,6 +33,7 @@ type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
+type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
     execute: Mock<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>;
@@ -152,6 +155,87 @@ describe('executeAppAction', () => {
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('aborts a singleton project write when a collaborator locks its target before commit', async () => {
+        const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const document: Record<string, unknown> = { trackGain: { value: 1 } };
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
+        const storage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(storage.hydrate?.()).toBe(true);
+        const action: SetTrackGainAction = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 1 },
+        };
+        const afterCommit = vi.fn();
+        const onCommitted = vi.fn();
+        const handler = create_mock_handler<SetTrackGainAction>({
+            execute: async () => {
+                storage.set({ value: 0.7 });
+                markHandlerStarted?.();
+                await handlerRelease;
+                return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+        expect(doesProductionBriefAllowActionBatch([action])).toBe(true);
+
+        try {
+            const execution = executeAppAction(action, { onCommitted });
+            await handlerStarted;
+            const currentProject = projectStore.value;
+            if (!currentProject) {
+                throw new Error('Expected a current project');
+            }
+            projectStore.set({
+                ...currentProject,
+                productionBrief: {
+                    ...currentProject.productionBrief,
+                    revision: currentProject.productionBrief.revision + 1,
+                    locks: [
+                        {
+                            id: 'collaborator-track-lock',
+                            scope: { kind: 'track', trackId: 'track-vocal' },
+                            statement: 'Keep the vocal gain fixed',
+                            createdAt: currentProject.productionBrief.updatedAt + 1,
+                        },
+                    ],
+                    updatedAt: currentProject.productionBrief.updatedAt + 1,
+                },
+            });
+            expect(doesProductionBriefAllowActionBatch([action])).toBe(false);
+            releaseHandler?.();
+
+            await expect(execution).rejects.toThrow('Action conflicts with current project state: setTrackGain');
+            expect(document.trackGain).toEqual({ value: 1 });
+            expect(storage.get()).toEqual({ value: 1 });
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(afterCommit).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            releaseHandler?.();
+            if (previousProject) {
+                projectStore.set(previousProject);
+            }
+        }
     });
 
     it('should reject as not dispatched and log when no handler is found', async () => {

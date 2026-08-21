@@ -6,6 +6,8 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -18,6 +20,7 @@ type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
+type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
 const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
@@ -274,6 +277,91 @@ describe('executeAppActionBatch', () => {
             actions: [],
             failureKind: 'verification',
         });
+    });
+
+    it('aborts a project batch when a collaborator locks its target before commit', async () => {
+        const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const document: Record<string, unknown> = { trackGain: { value: 1 } };
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
+        const storage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(storage.hydrate?.()).toBe(true);
+        const action: SetTrackGainAction = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 1 },
+        };
+        const afterCommit = vi.fn();
+        registerHandlerMap({
+            setTrackGain: createHandler<SetTrackGainAction>({
+                execute: async () => {
+                    storage.set({ value: 0.7 });
+                    markHandlerStarted?.();
+                    await handlerRelease;
+                    return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
+                },
+            }),
+        });
+        expect(doesProductionBriefAllowActionBatch([action])).toBe(true);
+
+        try {
+            const execution = executeAppActionBatch([action]);
+            await handlerStarted;
+            const currentProject = projectStore.value;
+            if (!currentProject) {
+                throw new Error('Expected a current project');
+            }
+            projectStore.set({
+                ...currentProject,
+                productionBrief: {
+                    ...currentProject.productionBrief,
+                    revision: currentProject.productionBrief.revision + 1,
+                    locks: [
+                        {
+                            id: 'collaborator-track-lock',
+                            scope: { kind: 'track', trackId: 'track-vocal' },
+                            statement: 'Keep the vocal gain fixed',
+                            createdAt: currentProject.productionBrief.updatedAt + 1,
+                        },
+                    ],
+                    updatedAt: currentProject.productionBrief.updatedAt + 1,
+                },
+            });
+            expect(doesProductionBriefAllowActionBatch([action])).toBe(false);
+            releaseHandler?.();
+
+            await expect(execution).resolves.toEqual({
+                status: 'conflicted',
+                reason: 'Action batch conflicts with locked production intent',
+                actions: [],
+                failureKind: 'verification',
+            });
+            expect(document.trackGain).toEqual({ value: 1 });
+            expect(storage.get()).toEqual({ value: 1 });
+            expect(afterCommit).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            releaseHandler?.();
+            if (previousProject) {
+                projectStore.set(previousProject);
+            }
+        }
     });
 
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {

@@ -710,6 +710,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
+            storageTransaction.validateCommit(() =>
+                productionBriefAdmissionPort.allows(validationActions)
+                    ? null
+                    : 'Action batch conflicts with locked production intent'
+            );
             if (storageTransaction.status === 'threw') {
                 storageTransaction.abort();
                 clearBatchSemanticContext();
