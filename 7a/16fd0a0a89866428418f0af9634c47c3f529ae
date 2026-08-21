@@ -1,0 +1,20 @@
+tests/e2e/toasterPadDriveTestId.spec.ts
+  s_24b1bdbc3c31ad::t_05e6eeca86f2d3 22-23,26
+  s_24b1bdbc3c31ad::t_f62daa6be2fbaa 3,5,10,13-17,19-20,24,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7a16fd0a0a89866428418f0af9634c47c3f529ae",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
