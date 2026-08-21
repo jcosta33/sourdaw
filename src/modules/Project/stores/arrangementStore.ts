@@ -38,6 +38,7 @@ export type ProjectClip = {
     endBeat: number;
     type: 'audio' | 'midi';
     audioBufferId?: string;
+    fileId?: string;
     assetHash?: string;
     audioOffsetBeats?: number;
     midiOffsetBeats?: number;
