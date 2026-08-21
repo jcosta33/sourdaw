@@ -39,18 +39,24 @@ export function enqueueRender(entry: RenderQueueEntry): void {
         }
         return {
             ...state,
-            entries: [...state.entries, entry],
+            entries: [...state.entries.filter((event) => event.phraseId !== entry.phraseId), entry],
             phraseStatusMap: { ...state.phraseStatusMap, [entry.phraseId]: 'queued' },
         };
     });
 }
 
-export function updateRenderStatus(phraseId: string, status: PhraseRenderStatus): void {
+export function updateRenderStatus(phraseId: string, requestId: string, status: PhraseRenderStatus): void {
     renderQueueStore.update((state) => {
         if (!state) {
             return state;
         }
-        const entries = state.entries.map((event) => (event.phraseId === phraseId ? { ...event, status } : event));
+        const ownsPhrase = state.entries.some((event) => event.phraseId === phraseId && event.requestId === requestId);
+        if (!ownsPhrase) {
+            return state;
+        }
+        const entries = state.entries.map((event) =>
+            event.phraseId === phraseId && event.requestId === requestId ? { ...event, status } : event
+        );
         return {
             ...state,
             entries,
@@ -59,16 +65,20 @@ export function updateRenderStatus(phraseId: string, status: PhraseRenderStatus)
     });
 }
 
-export function markRenderComplete(phraseId: string, cacheKey: string): void {
+export function markRenderComplete(phraseId: string, requestId: string, cacheKey: string): void {
     renderQueueStore.update((state) => {
         if (!state) {
+            return state;
+        }
+        const ownsPhrase = state.entries.some((event) => event.phraseId === phraseId && event.requestId === requestId);
+        if (!ownsPhrase) {
             return state;
         }
         // Drop the completed entry from the queue — its terminal state lives in
         // phraseStatusMap (which the StatusBar count and the stale-subscription read).
         // Keeping completed entries grew `entries` unbounded for the session, since
         // nothing in the module removes them on success.
-        const entries = state.entries.filter((event) => event.phraseId !== phraseId);
+        const entries = state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId);
         const cachedPhraseIds = state.cachedPhraseIds.includes(cacheKey)
             ? state.cachedPhraseIds
             : [...state.cachedPhraseIds, cacheKey];
@@ -93,14 +103,20 @@ export function markPhraseStale(phraseId: string): void {
     });
 }
 
-export function cancelQueuedRender(phraseId: string): void {
+export function cancelQueuedRender(phraseId: string, requestId: string): void {
     renderQueueStore.update((state) => {
         if (!state) {
             return state;
         }
-        const entries = state.entries.filter((event) => event.phraseId !== phraseId);
-        const phraseStatusMap = { ...state.phraseStatusMap };
-        delete phraseStatusMap[phraseId];
-        return { ...state, entries, phraseStatusMap };
+        const ownsPhrase = state.entries.some((event) => event.phraseId === phraseId && event.requestId === requestId);
+        if (!ownsPhrase) {
+            return state;
+        }
+        const entries = state.entries.filter((event) => event.phraseId !== phraseId || event.requestId !== requestId);
+        return {
+            ...state,
+            entries,
+            phraseStatusMap: { ...state.phraseStatusMap, [phraseId]: 'not-rendered' },
+        };
     });
 }
