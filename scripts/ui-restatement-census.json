@@ -18,6 +18,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-00659da04155028b",
+    "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
+    "line": 852,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-006c630d03736b40",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx",
     "line": 90,
@@ -740,7 +749,7 @@
   {
     "id": "ui-06a1a038d4d06c9d",
     "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
-    "line": 156,
+    "line": 158,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1098,6 +1107,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-09333d9caf823f02",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 134,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-09ba94f33f9818ac",
     "file": "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx",
     "line": 651,
@@ -1136,7 +1154,7 @@
   {
     "id": "ui-09fd050cd8be8b79",
     "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
-    "line": 152,
+    "line": 154,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1163,7 +1181,7 @@
   {
     "id": "ui-0a20d1a0145a18ab",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 493,
+    "line": 480,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -1262,7 +1280,7 @@
   {
     "id": "ui-0b33415042e96a13",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 607,
+    "line": 549,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -1402,6 +1420,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-0cb37b665a47cab6",
+    "file": "src/modules/Yeast/presentations/views/YeastPreviewSurface.tsx",
+    "line": 295,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-0cba1ccdd9c7a446",
@@ -1665,15 +1692,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0e96703bac148258",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 133,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0e9df11738446752",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 59,
@@ -1681,6 +1699,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-0ecd2343266d183d",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 283,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-0ed0e1eb328d3fd7",
@@ -1753,15 +1780,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0f4c7bd5fb9d9373",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 584,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0f56408ff7666cf6",
@@ -2115,6 +2133,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-12f312c6b3b25bb6",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 492,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-130f4692cbf08647",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 719,
@@ -2252,7 +2279,7 @@
   {
     "id": "ui-140a6b2cdb9cae12",
     "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 203,
+    "line": 204,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2266,6 +2293,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-14137b08f22e88a8",
+    "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
+    "line": 172,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-14140cc514f51e3d",
@@ -2563,15 +2599,6 @@
     "kind": "daw-chrome",
     "mapping": "DawInlineHint",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-16e0ac0086fafb62",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 909,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-170f585788610484",
@@ -2905,15 +2932,6 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-1af175510411a63d",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 684,
-    "fingerprint": "label\tflex flex-col items-center gap-0.5 text-[6px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-1af3a9130f20099e",
@@ -3557,7 +3575,7 @@
   {
     "id": "ui-20cebb14d6996732",
     "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 172,
+    "line": 173,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -3575,7 +3593,7 @@
   {
     "id": "ui-2101820a9cfd6d41",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 305,
+    "line": 256,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -3645,22 +3663,13 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-226874be6cc22c7f",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 491,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
+    "id": "ui-226c3bc608d81d90",
+    "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
+    "line": 168,
+    "fingerprint": "Stack\t",
     "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-226daa037b9d337a",
-    "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 89,
-    "fingerprint": "div\tflex gap-px overflow-x-auto pb-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-22812be99fa6d593",
@@ -3879,6 +3888,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-24f313ff839cdcff",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 536,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-24fc3496090c208b",
     "file": "src/modules/Proof/presentations/components/TonalBalance.tsx",
     "line": 281,
@@ -3958,6 +3976,15 @@
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-26028690f7a7944c",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 684,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-2603c2ea5e395007",
@@ -4536,15 +4563,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-2b6a8538f1a4fda3",
-    "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
-    "line": 142,
-    "fingerprint": "form\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-2b7b5a9c596517d0",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx",
     "line": 93,
@@ -4795,6 +4813,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginReadoutList",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-2d22a0f43e54d198",
+    "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
+    "line": 89,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-2d3708edbb30ea74",
@@ -5058,15 +5085,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-30b5f4d83267dec7",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 535,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-30e54fd26883be67",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 167,
@@ -5130,15 +5148,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-3171e5e056fa8bfa",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 786,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3178a0a7eeae8526",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 1513,
@@ -5150,7 +5159,7 @@
   {
     "id": "ui-31a9bde6a04766e0",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 862,
+    "line": 833,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -5400,18 +5409,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3464a18e645ae383",
-    "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
-    "line": 141,
-    "fingerprint": "div\tflex flex-col gap-1 px-1 pb-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-348325bc51eeb86f",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 237,
+    "line": 239,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5976,15 +5976,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-3aa58aa076e3b7e2",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 869,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3ab243873fe6a596",
     "file": "src/components/daw/DawEmptyState.tsx",
     "line": 23,
@@ -6021,9 +6012,18 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3b13e755da6374da",
+    "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
+    "line": 144,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3b35ba7f704c14e4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 761,
+    "line": 752,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6063,6 +6063,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-3b759e62dad017c5",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 787,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -6183,6 +6192,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3c9d1371953bffcd",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 269,
+    "fingerprint": "Button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3ca469058b76bfd6",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 153,
@@ -6262,15 +6280,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-3d74fd7598b74abe",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 642,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-3d751aed7fe336d0",
@@ -6500,7 +6509,7 @@
   {
     "id": "ui-3fd9ad2e17786d37",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 283,
+    "line": 284,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -6556,15 +6565,6 @@
     "file": "src/components/daw/RotaryKnob.tsx",
     "line": 464,
     "fingerprint": "div\trelative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-4061ac7c131566d5",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 683,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
@@ -6626,7 +6626,7 @@
   {
     "id": "ui-4112c72a840b668c",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 455,
+    "line": 305,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -6860,7 +6860,7 @@
   {
     "id": "ui-42e468964ee39a96",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 549,
+    "line": 540,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7333,6 +7333,15 @@
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-46d16c768126e04a",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 97,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-46d7a70f53638883",
@@ -8444,7 +8453,7 @@
   {
     "id": "ui-5314900b4b17695b",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 241,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8552,7 +8561,7 @@
   {
     "id": "ui-54021eefa0e316f9",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 137,
+    "line": 139,
     "fingerprint": "div\tflex flex-col items-center gap-0 cursor-pointer select-none",
     "kind": "layout",
     "mapping": "Stack",
@@ -8615,7 +8624,7 @@
   {
     "id": "ui-54c577802aeaa5a2",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 632,
+    "line": 607,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -8687,7 +8696,7 @@
   {
     "id": "ui-55c2536b2d07d157",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 195,
+    "line": 197,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9299,7 +9308,7 @@
   {
     "id": "ui-5b5b0e2d65e8b1d4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 805,
+    "line": 769,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9380,7 +9389,7 @@
   {
     "id": "ui-5bc256a7707f8041",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 852,
+    "line": 837,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9411,6 +9420,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5c448a7a310b6a91",
+    "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
+    "line": 143,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -9457,15 +9475,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-5cd03c4fde708b12",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 429,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5cf51f663ad106dd",
@@ -9582,6 +9591,15 @@
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5ddb07e3b51e2745",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 685,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -10053,15 +10071,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-61fcada0cfda25d4",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 310,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-62084b3746af111e",
     "file": "src/modules/Fermenter/presentations/views/FermenterPanel.tsx",
     "line": 637,
@@ -10217,7 +10226,7 @@
   {
     "id": "ui-63b7a85faf49ce9d",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 794,
+    "line": 792,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -10719,15 +10728,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-69564614cebb6de5",
-    "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 255,
-    "fingerprint": "div\tflex flex-col gap-1 px-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-69a0740b08d3a996",
     "file": "src/modules/TimelineEditor/presentations/views/AutomationView/AutomationControls.tsx",
     "line": 156,
@@ -10989,15 +10989,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-6d3248057996df4c",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 54,
-    "fingerprint": "div\tflex flex-col items-center gap-0",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-6d806cd3e606317f",
     "file": "src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx",
     "line": 150,
@@ -11099,7 +11090,7 @@
   {
     "id": "ui-6e14cd6771471fe4",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 222,
+    "line": 224,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11502,15 +11493,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-722987de3f85ac1a",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 227,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-7229b75475ccda4c",
     "file": "src/modules/Arrangement/presentations/views/BounceOptionsDialog.tsx",
     "line": 176,
@@ -11594,7 +11576,7 @@
   {
     "id": "ui-7323abb587988324",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 480,
+    "line": 455,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -11702,7 +11684,7 @@
   {
     "id": "ui-746b2dbb4958096f",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 298,
+    "line": 299,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11787,6 +11769,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-7585a50667d3ce6e",
+    "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
+    "line": 906,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -12337,6 +12328,15 @@
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-7a4b7ce242fd1e29",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 643,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-7a770f2d80c38c54",
@@ -13338,6 +13338,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-8373b7242f70f5ae",
+    "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
+    "line": 91,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-83764c8b0f76bb5c",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/MacrosPanel.tsx",
     "line": 165,
@@ -13797,15 +13806,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-8769e360385f1b62",
-    "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 87,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-8795fe9be55fe1c4",
     "file": "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
     "line": 65,
@@ -13826,7 +13826,7 @@
   {
     "id": "ui-87c77b7e2df2265f",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 752,
+    "line": 632,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -14780,7 +14780,7 @@
   {
     "id": "ui-90f77253aff340a5",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 906,
+    "line": 862,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -14821,15 +14821,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-91560539e3a7e12d",
-    "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 220,
-    "fingerprint": "div\tflex items-center gap-2 px-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9157a520cd20b4ba",
@@ -15707,7 +15698,7 @@
   {
     "id": "ui-9b454fd38e7ca03a",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 822,
+    "line": 805,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15811,15 +15802,6 @@
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-9cffec9ed8eed0e0",
-    "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 167,
-    "fingerprint": "div\tflex flex-col gap-1 px-1 pb-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-9d04f88a06e03823",
@@ -16589,7 +16571,7 @@
   {
     "id": "ui-a497d3d8f6a5452e",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 837,
+    "line": 822,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16841,7 +16823,7 @@
   {
     "id": "ui-a80367a44e5fe732",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 254,
+    "line": 256,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17111,7 +17093,7 @@
   {
     "id": "ui-aab4644af764247c",
     "file": "src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx",
-    "line": 146,
+    "line": 148,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -17336,7 +17318,7 @@
   {
     "id": "ui-acdf277f71a6b4ee",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 586,
+    "line": 543,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17449,6 +17431,15 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginChip",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-ae23c966d5d27c85",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 721,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-ae4d952721e0a5d1",
@@ -17773,15 +17764,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-b10d731eeb8837e0",
-    "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 171,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b127c95e4d20f1f4",
@@ -18596,7 +18578,7 @@
   {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 250,
+    "line": 265,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
@@ -18695,7 +18677,7 @@
   {
     "id": "ui-ba5c51dc23566068",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 302,
+    "line": 255,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18853,15 +18835,6 @@
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-bc2ea4b6e12d2cf4",
-    "file": "src/modules/Yeast/presentations/views/YeastPreviewSurface.tsx",
-    "line": 294,
-    "fingerprint": "div\tmb-2 flex items-start justify-between gap-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-bc4128c99053e58d",
@@ -19539,6 +19512,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-c348bd236dc4cf93",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 228,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c34946eab02726b7",
     "file": "src/modules/Proof/presentations/views/ProofPanel.tsx",
     "line": 827,
@@ -19640,7 +19622,7 @@
   {
     "id": "ui-c47ef962d22ce95b",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 685,
+    "line": 686,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -19683,9 +19665,18 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-c4ccc9c3815472cc",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 910,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-c50c60899ec7c362",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 229,
+    "line": 231,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19820,7 +19811,7 @@
   {
     "id": "ui-c6ae5c9539cb5eac",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 792,
+    "line": 761,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19905,15 +19896,6 @@
     "fingerprint": "div\tpx-1 pb-1 space-y-0.5 shrink-0",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-c858714bbfbe8d33",
-    "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 256,
-    "fingerprint": "label\tflex items-center justify-between gap-1 text-[7px] text-muted-foreground",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -20090,7 +20072,7 @@
   {
     "id": "ui-ca81d09616e26ee8",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 769,
+    "line": 676,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -20108,7 +20090,7 @@
   {
     "id": "ui-ca92cd5511afcc19",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 824,
+    "line": 794,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20520,6 +20502,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-cd944e1d74b04946",
+    "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
+    "line": 200,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-cdbc28382bdbbf33",
     "file": "src/modules/Arrangement/presentations/views/TakeLanesView.tsx",
     "line": 319,
@@ -20792,7 +20783,7 @@
   {
     "id": "ui-d144a6c20d58dee4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 543,
+    "line": 502,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -20918,7 +20909,7 @@
   {
     "id": "ui-d2be9a25f05983a1",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 491,
+    "line": 451,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21053,7 +21044,7 @@
   {
     "id": "ui-d3948a9c47343ddc",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 676,
+    "line": 586,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -21134,7 +21125,7 @@
   {
     "id": "ui-d44945b25c05b4ac",
     "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 180,
+    "line": 181,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21251,7 +21242,7 @@
   {
     "id": "ui-d5f32b0ec709c691",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 451,
+    "line": 446,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21264,15 +21255,6 @@
     "fingerprint": "div\tspace-y-1",
     "kind": "layout",
     "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-d61593e41773cc00",
-    "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 199,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
     "disposition": "eligible"
   },
   {
@@ -21341,7 +21323,7 @@
   {
     "id": "ui-d6c3002ff183ccdf",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 97,
+    "line": 98,
     "fingerprint": "select\t",
     "kind": "generic-control",
     "mapping": "Select",
@@ -21368,7 +21350,7 @@
   {
     "id": "ui-d72c483ddd3b5de8",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 210,
+    "line": 212,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21519,18 +21501,18 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-d8af935e7d5b83b1",
+    "id": "ui-d89bcc244a1d3287",
     "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 720,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
+    "line": 430,
+    "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-d8d9aef08d21fe89",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 833,
+    "line": 824,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21764,7 +21746,7 @@
   {
     "id": "ui-db65000e608a7e92",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 494,
+    "line": 491,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -22680,6 +22662,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-e521ed6eca28d80f",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 55,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-e5309d3b37355c5f",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 1278,
@@ -22795,6 +22786,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e6ccfe87ec14d09c",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 870,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e6d189b213b56906",
@@ -22970,7 +22970,7 @@
   {
     "id": "ui-e99ddff391d9c518",
     "file": "src/modules/Yeast/presentations/views/GrooveDropTarget.tsx",
-    "line": 200,
+    "line": 201,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23033,7 +23033,7 @@
   {
     "id": "ui-ea020ae829ba6f68",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 446,
+    "line": 302,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -23145,15 +23145,6 @@
     "fingerprint": "div\tflex items-center gap-1.5",
     "kind": "layout",
     "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
-    "id": "ui-eae6367cc844cc2d",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 96,
-    "fingerprint": "div\tflex flex-col items-center gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
     "disposition": "eligible"
   },
   {
@@ -23769,6 +23760,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f088a2ccac4b1b7f",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 311,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f0cfb76d7a51729d",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
     "line": 82,
@@ -23794,6 +23794,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-f11fc95326fe1d83",
+    "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
+    "line": 222,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-f13195c8aa55539c",
@@ -24005,7 +24014,7 @@
   {
     "id": "ui-f2ea212a6a21092f",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 502,
+    "line": 493,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24068,7 +24077,7 @@
   {
     "id": "ui-f336006f30f5d5d2",
     "file": "src/modules/Yeast/presentations/components/StepPatternEditor.tsx",
-    "line": 143,
+    "line": 145,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24212,7 +24221,7 @@
   {
     "id": "ui-f524c1b510dfc888",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 540,
+    "line": 494,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24480,15 +24489,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-f7c8cb445ef6ea98",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 282,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f7d13e60c900087c",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
     "line": 535,
@@ -24660,6 +24660,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f9673e383be032f6",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 368,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f9b1110adba48e93",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx",
     "line": 239,
@@ -24748,15 +24757,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-fa7d8c1730861b62",
-    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
-    "line": 367,
-    "fingerprint": "div\tflex flex-wrap gap-2 px-1 py-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-fa8313607c7482e3",
@@ -25135,6 +25135,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-fe43723e9ce197b6",
+    "file": "src/modules/Yeast/presentations/components/ProcessorParams.tsx",
+    "line": 585,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-fe45020766357593",
