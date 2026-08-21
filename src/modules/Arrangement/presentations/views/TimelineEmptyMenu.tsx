@@ -3,6 +3,7 @@ import { type ReactElement, useRef } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -48,7 +49,7 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
                 <div key={marker.id}>
                     <DawMenuSeparator className="border-border/50" />
                     <DawMenuMutedRow>Marker: {marker.name}</DawMenuMutedRow>
-                    <div className="flex gap-1 px-3 py-1">
+                    <Row align="stretch" gap={1} className="px-3 py-1">
                         {MARKER_COLOR_PRESETS.map((context) => (
                             <DawSwatchButton
                                 key={context}
@@ -59,7 +60,7 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
                                 aria-label="Set marker color"
                             />
                         ))}
-                    </div>
+                    </Row>
                     <DawMenuButton tone="danger" role="menuitem" onClick={act(() => removeMarkerUseCase(marker.id))}>
                         Remove Marker
                     </DawMenuButton>

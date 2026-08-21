@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    findAutomergeStorageRawProjectionLosses,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
@@ -133,11 +134,47 @@ describe('projection write freedom (audit CC-2 class guard)', () => {
     });
 
     /**
+     * A gain lane as a project authored before the fader gained its `+6 dB` of
+     * headroom stores one: `maxValue: 1`, and well formed, so it takes the
+     * automation sanitizer's exact early-return path.
+     *
+     * It is seeded here because an inbound sanitizer that *rewrites* this
+     * scalar is indistinguishable from document corruption:
+     * `findAutomergeStorageRawProjectionLosses` runs the slot's sanitizer over
+     * the raw document and compares with `Object.is`, so a raised ceiling is a
+     * projection loss, `inspectCurrentAgentProjectRepairState` returns non-null,
+     * and `projectCrdtToStores` returns before hydrating a single slot — every
+     * project holding a legacy gain lane stalls at repair-required instead of
+     * opening. Without a gain lane in the document no fixture here exercises
+     * that path, and the stall ships green.
+     */
+    function seedLegacyGainLane(): void {
+        doc.automation = {
+            lanes: [
+                {
+                    id: 'legacy-gain',
+                    trackId: 'track-knead',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        };
+    }
+
+    /**
      * Arms both known write temptations: an orphaned Yeast groove assignment
      * (the round-1 finding) and a clip whose Knead state the derived `knead`
      * projection copies across.
      */
     function armProjectionSideEffects(): void {
+        seedLegacyGainLane();
         const grooveState = grooveTemplateStore.value;
         if (!grooveState) {
             throw new Error('grooveTemplateStore must hold its seeded default');
@@ -195,6 +232,29 @@ describe('projection write freedom (audit CC-2 class guard)', () => {
         // trackStore clip state, so its own slot is written as a consequence.
         // Any other slot appearing here is an undeclared projection write.
         expect([...new Set(writtenSlots)]).toEqual(['knead']);
+    });
+
+    /**
+     * The read-only rule has a second edge: an inbound *sanitizer* that rewrites
+     * a scalar is a write in everything but name, and the repair path reads it
+     * as corruption rather than as an upgrade.
+     *
+     * `findAutomergeStorageRawProjectionLosses` runs each slot's registered
+     * sanitizer over the raw document and demands `Object.is` equality on every
+     * scalar. A gain-lane ceiling raised from `1` to `FADER_MAX_GAIN` is
+     * therefore a loss by definition, `inspectCurrentAgentProjectRepairState`
+     * returns non-null on it, and `projectCrdtToStores` returns before hydrating
+     * a single slot — every project holding a legacy gain lane stalls at
+     * repair-required instead of opening.
+     *
+     * This asserts the hinge directly, because the pass above cannot: it never
+     * configures `agentProjectInspectionPort`, so the repair check
+     * short-circuits to `null` before it ever consults the loss finder.
+     */
+    it('reports no projection loss for a document holding a legacy gain lane', () => {
+        seedLegacyGainLane();
+
+        expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document: doc })).toEqual([]);
     });
 
     it('never reconciles Yeast groove assignments from the yeast slot projection', () => {

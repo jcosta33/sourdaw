@@ -10,6 +10,7 @@ import {
 import { Layers, Plus, Power, Settings2, Trash2, X } from 'lucide-react';
 
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -403,14 +404,11 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             aria-label="Adjustment layers"
             data-onboarding="adjustment-layer-strip"
         >
-            <div
-                className="flex items-center justify-between border-b border-border/30 px-2"
-                style={{ height: ROW_HEIGHT }}
-            >
-                <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Row justify="between" className="border-b border-border/30 px-2" style={{ height: ROW_HEIGHT }}>
+                <Row gap={1.5} className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                     <Layers className="size-2.5" />
                     Adjustment Layers
-                </div>
+                </Row>
                 <button
                     type="button"
                     className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 hover:bg-white/10"
@@ -419,7 +417,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 >
                     <Plus className="size-3" />
                 </button>
-            </div>
+            </Row>
 
             {layers.map((layer, idx) => {
                 const yOffset = ROW_HEIGHT + idx * ROW_HEIGHT;
@@ -630,8 +628,9 @@ const AdjustmentLayerRow = ({
             onClick={(e) => onLaneClick(e, layer)}
             onContextMenu={(e) => onLayerContextMenu(e, layer)}
         >
-            <div
-                className="absolute left-0 top-0 z-10 flex items-center gap-1 border-r border-border/40 px-1 py-0.5"
+            <Row
+                gap={1}
+                className="absolute left-0 top-0 z-10 border-r border-border/40 px-1 py-0.5"
                 style={{ height: ROW_HEIGHT, backgroundColor: 'var(--color-surface-base)' }}
             >
                 <button
@@ -674,7 +673,7 @@ const AdjustmentLayerRow = ({
                 >
                     <X className="size-2.5" />
                 </button>
-            </div>
+            </Row>
             {regions.map((region) => {
                 const liveRegion =
                     dragPreview && dragPreview.regionId === region.id && region !== EMPTY_RANGE_SENTINEL
@@ -764,14 +763,14 @@ const AdjustmentLayerParamEditor = ({
     const paramByName = new Map(layer.parameters.map((p) => [p.name, p]));
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+        <Row justify="center" className="fixed inset-0 z-50 bg-black/40" onClick={onClose}>
             <div
                 className="daw-floating-surface w-[380px] rounded-md p-4"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-label={`Adjustment Layer: ${layer.name}`}
             >
-                <div className="mb-3 flex items-center justify-between">
+                <Row justify="between" className="mb-3">
                     <div>
                         <div className="text-xs font-semibold" style={{ color: layer.color }}>
                             {layer.name}
@@ -788,7 +787,7 @@ const AdjustmentLayerParamEditor = ({
                     >
                         <X className="size-3" />
                     </button>
-                </div>
+                </Row>
 
                 <div className="mb-3">
                     <div className="mb-1 text-[10px] font-medium text-muted-foreground">Mix</div>
@@ -806,18 +805,18 @@ const AdjustmentLayerParamEditor = ({
                     />
                 </div>
 
-                <div className="space-y-2">
+                <Stack gap={2}>
                     {presetParams.map((preset) => {
                         const current = paramByName.get(preset.name) ?? preset;
                         return (
                             <div key={preset.name}>
-                                <div className="mb-1 flex items-center justify-between text-[10px]">
+                                <Row justify="between" className="mb-1 text-[10px]">
                                     <span className="font-medium">{preset.name}</span>
                                     <span className="text-muted-foreground">
                                         {current.value.toFixed(2)}
                                         {preset.unit}
                                     </span>
-                                </div>
+                                </Row>
                                 <Slider
                                     min={preset.min}
                                     max={preset.max}
@@ -833,9 +832,9 @@ const AdjustmentLayerParamEditor = ({
                             </div>
                         );
                     })}
-                </div>
+                </Stack>
             </div>
-        </div>
+        </Row>
     );
 };
 
@@ -948,14 +947,14 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
     const clearAll = () => onChange([]);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+        <Row justify="center" className="fixed inset-0 z-50 bg-black/40" onClick={onClose}>
             <div
                 className="daw-floating-surface w-[320px] rounded-md p-4"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-label={`Affected tracks for ${layer.name}`}
             >
-                <div className="mb-3 flex items-center justify-between">
+                <Row justify="between" className="mb-3">
                     <div>
                         <div className="text-xs font-semibold" style={{ color: layer.color }}>
                             {layer.name}
@@ -970,7 +969,7 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                     >
                         <X className="size-3" />
                     </button>
-                </div>
+                </Row>
 
                 <p className="mb-2 text-[10px] text-muted-foreground">
                     {selected.size === 0
@@ -978,16 +977,18 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                         : `${String(selected.size)} track${selected.size === 1 ? '' : 's'} selected.`}
                 </p>
 
-                <div className="mb-3 max-h-[260px] space-y-1 overflow-y-auto pr-1">
+                <Stack gap={1} className="mb-3 max-h-[260px] overflow-y-auto pr-1">
                     {tracks.length === 0 ? (
                         <p className="text-[10px] text-muted-foreground">No tracks available.</p>
                     ) : (
                         tracks.map((track) => {
                             const active = selected.has(track.id);
                             return (
-                                <label
+                                <Row
+                                    as="label"
+                                    gap={2}
+                                    className="cursor-pointer rounded-sm px-2 py-1 text-[11px] hover:bg-white/5"
                                     key={track.id}
-                                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-[11px] hover:bg-white/5"
                                 >
                                     <input
                                         type="checkbox"
@@ -996,13 +997,13 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                                         className="accent-[var(--color-accent-orange)]"
                                     />
                                     <span className="truncate">{track.name || track.id}</span>
-                                </label>
+                                </Row>
                             );
                         })
                     )}
-                </div>
+                </Stack>
 
-                <div className="flex items-center justify-between">
+                <Row justify="between">
                     <button
                         type="button"
                         onClick={clearAll}
@@ -1017,8 +1018,8 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                     >
                         Done
                     </button>
-                </div>
+                </Row>
             </div>
-        </div>
+        </Row>
     );
 };

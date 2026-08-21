@@ -29,8 +29,8 @@ function makeTrack(id: string = 't1', name: string = 'Kick') {
     return { id, name } as never;
 }
 
-function makeTally(notes = 0, buffers: string[] = []) {
-    return { scheduledNotes: notes, scheduledBuffers: buffers } as never;
+function makeTally(notes = 0, buffers: string[] = [], withheldDeviceTypes: string[] = []) {
+    return { scheduledNotes: notes, scheduledBuffers: buffers, withheldDeviceTypes } as never;
 }
 
 function makeBuffer(silent: boolean) {
@@ -54,6 +54,35 @@ describe('detectSilentBake — early returns', () => {
         });
         expect(result).toEqual({ silentBake: false });
         expect(mockedIsSilent).not.toHaveBeenCalled();
+    });
+
+    it('refuses a withheld device ahead of every abstention', () => {
+        mockedIsSilent.mockReturnValue(true);
+        // The abstention that used to swallow this: `classifyRenderSilence`
+        // stands down for any track with an enabled lane while automation is
+        // baked, and `freezeTrack` always bakes automation. If the withheld
+        // verdict were read after it, this call would return silentBake=false.
+        mockedClassify.mockReturnValue({ unexpected: false, abstention: 'automation-not-modelled' });
+        mockAutomation = { lanes: [{ trackId: 't1', enabled: true, points: [{}] }] };
+
+        const result = detectSilentBake({
+            track: makeTrack(),
+            buffer: makeBuffer(true),
+            tally: makeTally(4, [], ['grand-boule']),
+            bakedFaderGain: 1,
+            bakesAutomation: true,
+            operation: 'Freeze',
+        });
+
+        expect(result).toMatchObject({ silentBake: true });
+        expect(result).toMatchObject({ message: expect.stringContaining('withheld from this build') });
+        // The silence advice must not appear: it tells the user to play the
+        // track back and try again, which can never succeed for a device the
+        // build does not contain.
+        expect(result).not.toMatchObject({ message: expect.stringContaining('Play the track back') });
+        // Decided without consulting the classifier at all — the verdict is a
+        // fact about the build, not a reading of the audio.
+        expect(mockedClassify).not.toHaveBeenCalled();
     });
 
     it('returns silentBake=false when buffer is not silent', () => {

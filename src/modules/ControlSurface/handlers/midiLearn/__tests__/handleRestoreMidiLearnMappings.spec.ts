@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 vi.mock('../../../stores/midiLearnStore', () => ({
     midiLearnStore: {
         get value() {
@@ -35,7 +37,7 @@ const mappingA: MidiMapping = {
     targetType: 'trackGain',
     trackId: 'track1',
     minValue: 0,
-    maxValue: 1,
+    maxValue: FADER_MAX_GAIN,
     scaleMode: 'log',
 };
 
@@ -78,12 +80,30 @@ describe('handleCompleteMidiLearn — execute', () => {
                 targetType: 'trackGain',
                 trackId: 'track1',
                 minValue: 0,
-                maxValue: 1,
+                maxValue: FADER_MAX_GAIN,
                 scaleMode: 'log',
             },
         ]);
         expect(written.isLearning).toBe(false);
         expect(written.learningTarget).toBeNull();
+    });
+
+    it('maps trackGain to the fader ceiling, not unity — a learned hardware fader must reach the same headroom the on-screen fader does (F-2)', () => {
+        setState({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: true,
+            learningTarget: { targetType: 'trackGain', trackId: 'track1' },
+        });
+
+        void handleCompleteMidiLearn.execute({
+            type: 'completeMidiLearn',
+            payload: { channel: 1, cc: 74, mappingId: 'new-id' },
+        });
+
+        const written = mockedSet.mock.calls[0]?.[0] as MidiLearnState;
+        expect(written.mappings[0]?.maxValue).toBe(FADER_MAX_GAIN);
+        expect(written.mappings[0]?.maxValue).toBeGreaterThan(1);
     });
 
     it('uses a linear range for trackPan', () => {

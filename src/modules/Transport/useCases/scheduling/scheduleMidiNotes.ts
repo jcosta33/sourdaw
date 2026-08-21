@@ -1,3 +1,4 @@
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
@@ -61,6 +62,128 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     // device's export refusal was hiding, just pointing the other way.
     'builtin-crumbs': { controlsKey: 'crumbsControls' },
 };
+
+// The three note-voicing categories, each a single first match. The note loop
+// below calls exactly these to pick the device it dispatches to, and
+// `resolveNoteVoicingDevice` calls them in the same order to name that device
+// without a node. Two copies of a priority order drift; one does not.
+function findToasterDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
+    return devices.find((device) => device.type === 'toaster');
+}
+
+function findWorkletSynthDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
+    return devices.find((device) => device.type in WORKLET_SYNTH_DEVICES);
+}
+
+function findFaustInstrumentDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
+    return devices.find((device) => isFaustInstrumentModule(device.type));
+}
+
+/**
+ * The one device on this rack that would voice the track's notes.
+ *
+ * A rack does not get scanned for "anything note-capable". The note loop
+ * resolves one candidate per category in a fixed order and dispatches to
+ * whichever resolves first, with no fall-through to a second candidate of the
+ * same category — so a rack of `[fermenter, grand-boule]` is a `fermenter`
+ * track, and the Grand Boule behind it is never in the note's signal path. A
+ * predicate that matched either one would let the device further back answer
+ * questions about a device it does not stand in for.
+ *
+ * Effects are not a category here, deliberately. A MIDI track whose rack holds
+ * only effects is *supposed* to reach the builtin fallback synth, so letting an
+ * effect answer would invent a new defect rather than fix one — the same MD-4
+ * shape `acceptsNotes` prevents offline.
+ *
+ * Drum kits are absent for a different reason: `resolveDrumKitDef` and
+ * `resolveDrumKit` read `track.devices` and need no node, so a kit voices its
+ * samples either way and its branch runs ahead of the fallback regardless.
+ * Whether admission should gate sample kits at all is a separate question about
+ * a separate mechanism.
+ *
+ * Resolved without consulting `strip.deviceNodes`, which is what keeps this
+ * answerable for a device that has no node. The note loop *does* cross from one
+ * category to the next when a node is missing; that crossing is exactly the
+ * environment-failure case, where reaching the fallback is the behaviour we
+ * intend to keep.
+ */
+function resolveNoteVoicingDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
+    return findToasterDevice(devices) ?? findWorkletSynthDevice(devices) ?? findFaustInstrumentDevice(devices);
+}
+
+type NoteVoicingLookupTrack = {
+    id: string;
+    parentId?: string | null;
+    devices: readonly { type: string }[];
+};
+
+/**
+ * The device that would voice this track's notes, when the build refuses to
+ * provide it.
+ *
+ * Asked of release admission rather than of `strip.deviceNodes`, and the
+ * difference is the whole point. A node can be missing because the device is
+ * withheld or because it failed to construct for an environment reason — a
+ * missing wasm asset, an unavailable worklet — and those two must not share an
+ * outcome. A runtime failure keeps the behaviour it has always had, including
+ * the fallback synth, because the device was supposed to work and the user can
+ * fix it. A withheld device is never going to work in this build, so voicing
+ * its part on a sawtooth misrepresents the project every time it is played.
+ *
+ * It takes the track rather than a device list because for one topology the
+ * voicing device is not on the track at all. A toaster child's notes are
+ * dispatched to the *parent's* toaster device — the note loop reassigns
+ * `toasterOwnerTrack` to `track.parentId` — so a lookup over `track.devices`
+ * alone would answer "nothing withheld" for a child under a withheld toaster
+ * and hand its part straight to the fallback synth. That is the defect this
+ * whole guard exists to close, so it must not survive in a corner of it.
+ *
+ * The track's own devices are asked first, and the parent only if they answer
+ * nothing.
+ *
+ * **A result here is not a claim that the track is silent.** It names the
+ * withheld device the track would otherwise have been voiced on, and its only
+ * sanctioned use is the terminal fallback branch: suppressing the builtin synth
+ * and the `getSynthParamsForTrack` call that configures it. Do not read it as
+ * audibility anywhere else, because for one topology the track sounds with this
+ * set — a child whose own rack holds a withheld instrument, under a parent
+ * carrying an *admitted* toaster with a live node. The own arm returns the
+ * child's device, but the dispatch gives the parent's toaster precedence over
+ * the child's whole rack: the parent branch reassigns `toasterDevice`, and both
+ * the worklet and Faust categories are gated on `!toasterRoute`. So the notes
+ * audibly reach the toaster while this reports a withheld device.
+ *
+ * That is the right sound — the toaster is what the dispatch selects — and it is
+ * harmless today only because both consumers sit on a branch the toaster route
+ * preempts. A second consumer that treats this as "the track is silent", a
+ * warning or a freeze refusal, would be wrong about exactly that track. Such a
+ * consumer needs the dispatch's precedence, not this flag.
+ */
+function findWithheldNoteVoicingDevice(
+    track: NoteVoicingLookupTrack,
+    tracks: readonly NoteVoicingLookupTrack[]
+): { type: string } | undefined {
+    // The device the dispatch would actually select — not whichever withheld
+    // device happens to be findable. Asking the second question suppresses the
+    // fallback over a device that was never going to be reached, which takes an
+    // admitted instrument that merely failed to construct and strips it of the
+    // fallback this guard exists to preserve for it.
+    const own = resolveNoteVoicingDevice(track.devices);
+    if (own && !isDeviceReleaseAdmitted(own.type)) {
+        return own;
+    }
+    if (!track.parentId) {
+        return undefined;
+    }
+    // Mirrors the note loop's own parent resolution: a parent counts as the
+    // owner only when it actually carries a toaster device.
+    const parentTrack = tracks.find((candidate) => candidate.id === track.parentId);
+    const parentToaster = parentTrack ? findToasterDevice(parentTrack.devices) : undefined;
+    if (!parentToaster || isDeviceReleaseAdmitted(parentToaster.type)) {
+        return undefined;
+    }
+    return parentToaster;
+}
 
 export type SchedulerCancellation = {
     generation: number;
@@ -403,6 +526,7 @@ export async function scheduleMidiNotes(
 
         const drumKitDef = resolveDrumKitDef(track.devices);
         const drumKit = drumKitDef ? null : resolveDrumKit(track.devices);
+        const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
         const liveYeastIterations: LiveYeastIteration[] = [];
         let activeYeastCarrierRouteId: string | undefined;
@@ -558,7 +682,8 @@ export async function scheduleMidiNotes(
             }
 
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
-            const synthParams = drumKit || drumKitDef ? null : getSynthParamsForTrack(track.id);
+            const synthParams =
+                drumKit || drumKitDef || withheldNoteVoicingDevice ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopProjection = projectClipLoopExpansion({
@@ -599,11 +724,13 @@ export async function scheduleMidiNotes(
                 getSwingOffsetBeats: (noteStartBeat: number) => number;
             } | null = null;
             let toasterOwnerTrack = track;
-            let toasterDevice = track.devices.find((data) => data.type === 'toaster');
+            let toasterDevice = findToasterDevice(track.devices);
             let toasterPad = -1;
             if (track.parentId) {
                 const toasterParentTrack = tracks.find((time1) => time1.id === track.parentId);
-                const parentToasterDevice = toasterParentTrack?.devices.find((data) => data.type === 'toaster');
+                const parentToasterDevice = toasterParentTrack
+                    ? findToasterDevice(toasterParentTrack.devices)
+                    : undefined;
                 if (toasterParentTrack && parentToasterDevice) {
                     toasterOwnerTrack = toasterParentTrack;
                     toasterDevice = parentToasterDevice;
@@ -647,9 +774,7 @@ export async function scheduleMidiNotes(
                 }
             }
 
-            const workletSynthDevice = toasterRoute
-                ? null
-                : track.devices.find((data) => data.type in WORKLET_SYNTH_DEVICES);
+            const workletSynthDevice = toasterRoute ? null : findWorkletSynthDevice(track.devices);
             const workletSynthEntry = workletSynthDevice
                 ? (WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null)
                 : null;
@@ -675,7 +800,7 @@ export async function scheduleMidiNotes(
             const faustDevice =
                 toasterRoute || drumKitDef || drumKit || workletSynthControls
                     ? null
-                    : track.devices.find((data) => isFaustInstrumentModule(data.type));
+                    : findFaustInstrumentDevice(track.devices);
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
                 if (!isCurrent()) {
@@ -889,7 +1014,7 @@ export async function scheduleMidiNotes(
                                 projectedNote.velocity,
                                 noteGain
                             );
-                        } else {
+                        } else if (!withheldNoteVoicingDevice) {
                             // The built-in synth holds no range of its own; it
                             // bends by the depth the note was recorded at
                             // (audit MD-8).

@@ -56,7 +56,7 @@ function createAudibleBuffer(): AudioBuffer {
  */
 function givenRender(buffer: AudioBuffer | null, tally: Partial<RenderScheduleTally> = {}): void {
     vi.mocked(renderTrackOffline).mockImplementation((_track, _start, _end, options) => {
-        options?.onScheduled?.({ scheduledNotes: 0, scheduledBuffers: [], ...tally });
+        options?.onScheduled?.({ scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [], ...tally });
         return Promise.resolve(buffer);
     });
 }

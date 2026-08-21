@@ -4,6 +4,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 type KarplusSectionProps = {
     damping: number;
@@ -18,13 +19,13 @@ export const KarplusSection = ({
     onDampingChange,
     onBrightnessChange,
 }: KarplusSectionProps): ReactElement => (
-    <div className="space-y-2">
+    <Stack gap={2}>
         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">String Model</div>
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Physical string — excitation filtered by damping. Low damping = bright sustained ring, high = dark pluck.
         </div>
-        <div className="flex items-end gap-3">
-            <div className="flex flex-col items-center gap-0.5">
+        <Row align="end" gap={3}>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={damping}
                     onChange={onDampingChange}
@@ -37,8 +38,8 @@ export const KarplusSection = ({
                 />
                 <span className="text-[8px] text-muted-foreground">Damping</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{(damping * 100).toFixed(0)}%</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={brightness}
                     onChange={onBrightnessChange}
@@ -51,7 +52,7 @@ export const KarplusSection = ({
                 />
                 <span className="text-[8px] text-muted-foreground">Brightness</span>
                 <span className="text-[7px] text-muted-foreground/60 font-mono">{(brightness * 100).toFixed(0)}%</span>
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Row>
+    </Stack>
 );

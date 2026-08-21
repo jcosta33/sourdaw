@@ -1,6 +1,7 @@
 # Documentation
 
-This documentation provides high-level overviews for implementing features in the Sourdaw application, from initial architectural design to testing.
+This directory states current architecture, engineering practice, and user-visible behavior. Legacy
+plans under `.agents/specs/` preserve intent and implementation history; they do not prove what ships.
 
 > **Note**: These files are meant for human reading. AI agents start at the root `AGENTS.md` and load task-specific rules from `.agents/skills/*/SKILL.md`; machine enforcement lives in `eslint.config.mjs` and `.dependency-cruiser*.cjs` (`pnpm deps:validate`).
 

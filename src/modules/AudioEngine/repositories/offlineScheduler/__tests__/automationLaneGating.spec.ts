@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { dbToGain } from '#/utils/audioLevelLaw';
+import { dbToGain, FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 
@@ -85,24 +85,49 @@ describe('offline lane.enabled gating', () => {
 });
 
 describe('offline gain automation obeys the fader level law', () => {
-    it('clamps gain automation above unity, as the live fader write does', () => {
+    it('clamps gain automation above the fader ceiling, as the live fader write does', () => {
         const { gain } = schedule(
             makeLane({
                 id: 'lane-hot',
                 maxValue: 4,
                 points: [
                     { beat: 0, value: 0.5, curve: 'linear', tension: 0 },
-                    { beat: 4, value: 2, curve: 'linear', tension: 0 },
+                    { beat: 4, value: 3, curve: 'linear', tension: 0 },
                 ],
             })
         );
 
-        // Live: TrackNode.scheduleGainAutomation clamps to [0, 1] before ramping,
-        // so a >unity automation point can never be heard during playback. The
-        // bounce must not exceed what playback can produce.
+        // Live: `TrackNode.scheduleGainAutomation` clamps to the fader's range
+        // before ramping, so an automation point above it can never be heard
+        // during playback. The bounce must not exceed what playback can produce.
+        // That range tops out at `FADER_MAX_GAIN` — the `+6 dB` of headroom the
+        // fader has — not at unity, and the lane here declares `maxValue: 4`, so
+        // its own range is not what stops the ramp.
         expect(gain.setValueAtTime).toHaveBeenCalledWith(0.5, 0);
-        expect(Math.max(...rampValues(gain))).toBeLessThanOrEqual(1);
-        expect(rampValues(gain).at(-1)).toBeCloseTo(1, 10);
+        expect(Math.max(...rampValues(gain))).toBeLessThanOrEqual(FADER_MAX_GAIN);
+        expect(rampValues(gain).at(-1)).toBeCloseTo(FADER_MAX_GAIN, 10);
+    });
+
+    /**
+     * The lane's own declared range stops the ramp first, before the fader ever
+     * gets a say — the offline half of live's `clampToLaneRange`.
+     */
+    it('bounds gain automation at the lane range even when the fader would allow more', () => {
+        const { gain } = schedule(
+            makeLane({
+                id: 'lane-bounded',
+                // Not the legacy `1`, so `resolveLaneCeiling` reads it straight
+                // and the bound under test is unambiguously the lane's own.
+                maxValue: 1.2,
+                points: [
+                    { beat: 0, value: 0.5, curve: 'linear', tension: 0 },
+                    { beat: 4, value: 3, curve: 'linear', tension: 0 },
+                ],
+            })
+        );
+
+        expect(Math.max(...rampValues(gain))).toBeCloseTo(1.2, 10);
+        expect(1.2).toBeLessThan(FADER_MAX_GAIN);
     });
 
     it('applies the law after linkScale, so an inverted gain link floors at silence', () => {

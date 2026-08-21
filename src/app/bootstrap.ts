@@ -20,6 +20,7 @@ import {
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
     runtimeGraphTopology,
+    clampTrackGain,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
@@ -341,6 +342,7 @@ setModulationDependencies({
 });
 
 setMidiLearnDependencies({
+    clampTrackGain,
     setTrackGainArrangement,
     setTrackPanArrangement,
     setDeviceParameter,

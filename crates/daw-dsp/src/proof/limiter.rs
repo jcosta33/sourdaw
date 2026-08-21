@@ -7,6 +7,7 @@
 //! takes `max(sample peak, reconstructed peak)` so the sample-domain ceiling
 //! is honoured even where the 4x reconstruction reads marginally low.
 
+use super::clamped_param;
 use super::true_peak::TruePeakUpsampler;
 use std::collections::VecDeque;
 
@@ -66,13 +67,6 @@ impl MonotonicPeakWindow {
         self.window_start = self.window_start.saturating_add(1);
     }
 
-    fn ensure_capacity(&mut self, lookahead_samples: usize) {
-        let required_capacity = lookahead_samples.saturating_add(1);
-        if self.peaks.capacity() < required_capacity {
-            self.peaks.reserve(required_capacity - self.peaks.len());
-        }
-    }
-
     /// Re-seed the window after a look-ahead resize. Only the delayed samples
     /// survive a resize, so the window restarts from their sample magnitudes;
     /// true-peak entries resume as soon as fresh samples arrive.
@@ -117,6 +111,29 @@ const TRANSIENT_DEADBAND: f32 = 0.05;
 /// the release back to the nominal setting.
 const GAIN_AVERAGE_MS: f32 = 250.0;
 
+/// Declared look-ahead range, in milliseconds. `MAX_LOOKAHEAD_MS` also sizes
+/// every buffer at construction: `lim_lookahead` is a live control that lands
+/// on the render thread, so the setter is only allowed to move indices, never
+/// to ask the allocator for room. Mirrored at the worklet wire boundary in
+/// `proofProcessor.ts`.
+const MIN_LOOKAHEAD_MS: f32 = 0.5;
+const MAX_LOOKAHEAD_MS: f32 = 10.0;
+const DEFAULT_LOOKAHEAD_MS: f32 = 5.0;
+
+/// Declared ceiling range, in dBTP, and the release range in milliseconds.
+/// Each carries the default its constructor uses, which is also the value a
+/// non-finite message falls back to — see [`clamped_param`].
+const MIN_CEILING_DB: f32 = -12.0;
+const MAX_CEILING_DB: f32 = 0.0;
+const DEFAULT_CEILING_DB: f32 = -1.0;
+const MIN_RELEASE_MS: f32 = 10.0;
+const MAX_RELEASE_MS: f32 = 500.0;
+const DEFAULT_RELEASE_MS: f32 = 100.0;
+
+fn lookahead_samples_for(ms: f32, sr: f32) -> usize {
+    (ms * 0.001 * sr) as usize
+}
+
 pub struct LookaheadLimiter {
     delay_l: VecDeque<f32>,
     delay_r: VecDeque<f32>,
@@ -136,6 +153,8 @@ pub struct LookaheadLimiter {
     gain_avg_coeff: f32,
     current_gain: f32,
     lookahead_samples: usize,
+    /// Look-ahead every buffer here has room for. Fixed at construction.
+    max_lookahead_samples: usize,
     sample_rate: f32,
     bypassed: bool,
     // Metering
@@ -145,14 +164,16 @@ pub struct LookaheadLimiter {
 
 impl LookaheadLimiter {
     pub fn new(sr: f32) -> Self {
-        let lookahead_ms = 5.0;
-        let lookahead_samples = (lookahead_ms * 0.001 * sr) as usize;
-        let release_ms = 100.0;
-        let mut delay_l = VecDeque::with_capacity(lookahead_samples.saturating_add(1));
-        let mut delay_r = VecDeque::with_capacity(lookahead_samples.saturating_add(1));
+        let lookahead_samples = lookahead_samples_for(DEFAULT_LOOKAHEAD_MS, sr);
+        // Room for the longest look-ahead the control can select, taken once
+        // here so `set_param` never allocates on the render thread.
+        let max_lookahead_samples = lookahead_samples_for(MAX_LOOKAHEAD_MS, sr);
+        let release_ms = DEFAULT_RELEASE_MS;
+        let mut delay_l = VecDeque::with_capacity(max_lookahead_samples.saturating_add(1));
+        let mut delay_r = VecDeque::with_capacity(max_lookahead_samples.saturating_add(1));
         delay_l.resize(lookahead_samples, 0.0);
         delay_r.resize(lookahead_samples, 0.0);
-        let mut max_peaks = MonotonicPeakWindow::new(lookahead_samples);
+        let mut max_peaks = MonotonicPeakWindow::new(max_lookahead_samples);
         max_peaks.rebuild_from_delays(&delay_l, &delay_r);
 
         Self {
@@ -161,14 +182,15 @@ impl LookaheadLimiter {
             max_peaks,
             true_peak_l: TruePeakUpsampler::new(),
             true_peak_r: TruePeakUpsampler::new(),
-            ceiling: 10.0_f32.powf(-1.0 / 20.0), // -1.0 dBTP default
-            ceiling_db: -1.0,
+            ceiling: 10.0_f32.powf(DEFAULT_CEILING_DB / 20.0),
+            ceiling_db: DEFAULT_CEILING_DB,
             release_coeff: release_coeff(release_ms, sr),
             release_coeff_fast: release_coeff(fast_release_ms(release_ms), sr),
             gain_avg: 1.0,
             gain_avg_coeff: release_coeff(GAIN_AVERAGE_MS, sr),
             current_gain: 1.0,
             lookahead_samples,
+            max_lookahead_samples,
             sample_rate: sr,
             bypassed: false,
             meter_gr_db: 0.0,
@@ -180,23 +202,44 @@ impl LookaheadLimiter {
         match name {
             "lim_bypass" => self.bypassed = value > 0.5,
             "lim_ceiling" => {
-                self.ceiling_db = value.clamp(-12.0, 0.0);
+                // A NaN ceiling makes `future_peak > self.ceiling` false for
+                // every sample, so the limiter silently stops limiting and the
+                // brickwall the ceiling advertises is simply gone.
+                self.ceiling_db =
+                    clamped_param(value, MIN_CEILING_DB, MAX_CEILING_DB, DEFAULT_CEILING_DB);
                 self.ceiling = 10.0_f32.powf(self.ceiling_db / 20.0);
             }
             "lim_release" => {
-                let ms = value.clamp(10.0, 500.0);
+                // A NaN release coefficient is the loud failure of the pair:
+                // `required_gain < self.current_gain` is false forever, so the
+                // release branch runs on the first sample, `current_gain` goes
+                // NaN and every output sample after it is NaN. The device is
+                // silent for the rest of the session while the gain-reduction
+                // meter reads zero, so nothing on the panel says why.
+                let ms = clamped_param(value, MIN_RELEASE_MS, MAX_RELEASE_MS, DEFAULT_RELEASE_MS);
                 self.release_coeff = release_coeff(ms, self.sample_rate);
                 self.release_coeff_fast = release_coeff(fast_release_ms(ms), self.sample_rate);
             }
             "lim_lookahead" => {
-                let ms = value.clamp(0.5, 10.0);
-                let new_size = (ms * 0.001 * self.sample_rate) as usize;
+                // Live control: this runs on the AudioWorklet render thread.
+                // Every buffer was built at construction with room for
+                // `max_lookahead_samples`, so `resize` only moves the logical
+                // length inside capacity already held and `rebuild_from_delays`
+                // refills a window that was never shrunk. Nothing here reaches
+                // the allocator. `min` is belt and braces: the clamp above
+                // already bounds `ms`, and exceeding capacity would reallocate
+                // and miss the deadline.
+                let ms = clamped_param(
+                    value,
+                    MIN_LOOKAHEAD_MS,
+                    MAX_LOOKAHEAD_MS,
+                    DEFAULT_LOOKAHEAD_MS,
+                );
+                let new_size =
+                    lookahead_samples_for(ms, self.sample_rate).min(self.max_lookahead_samples);
                 if new_size != self.lookahead_samples {
                     self.delay_l.resize(new_size, 0.0);
                     self.delay_r.resize(new_size, 0.0);
-                    self.delay_l.reserve(1);
-                    self.delay_r.reserve(1);
-                    self.max_peaks.ensure_capacity(new_size);
                     self.max_peaks
                         .rebuild_from_delays(&self.delay_l, &self.delay_r);
                     self.lookahead_samples = new_size;
@@ -326,7 +369,10 @@ impl LookaheadLimiter {
 
 #[cfg(test)]
 mod tests {
-    use super::{LookaheadLimiter, TruePeakUpsampler};
+    use super::{
+        LookaheadLimiter, TruePeakUpsampler, DEFAULT_CEILING_DB, MAX_CEILING_DB, MAX_RELEASE_MS,
+        MIN_CEILING_DB, MIN_RELEASE_MS,
+    };
     use assert_no_alloc::assert_no_alloc;
     #[cfg(debug_assertions)]
     use assert_no_alloc::AllocDisabler;
@@ -483,6 +529,151 @@ mod tests {
             limiter.max_peaks.peaks.capacity(),
         );
         assert_eq!(final_capacities, initial_capacities);
+    }
+
+    /// `lim_lookahead` sits in the live wire namespace, so this setter runs on
+    /// the AudioWorklet render thread during an ordinary parameter change. It
+    /// used to `resize` both delay lines, `reserve(1)` on each, grow the peak
+    /// window and rebuild it — allocator work between two render quanta, which
+    /// can miss the audio deadline and drop out audibly. Every buffer is now
+    /// sized for `MAX_LOOKAHEAD_MS` at construction and the setter only moves
+    /// logical indices.
+    #[test]
+    fn changing_the_lookahead_never_allocates() {
+        let mut limiter = LookaheadLimiter::new(48_000.0);
+        // Warm the render path so nothing lazy is left inside the guard.
+        let mut left = vec![0.5_f32; 128];
+        let mut right = vec![0.5_f32; 128];
+        limiter.process(&mut left, &mut right);
+        let capacities = (
+            limiter.delay_l.capacity(),
+            limiter.delay_r.capacity(),
+            limiter.max_peaks.peaks.capacity(),
+        );
+
+        assert_no_alloc(|| {
+            // Both directions and both ends of the declared range: growing is
+            // what used to reallocate, shrinking is what has to keep working
+            // afterwards, and interleaved render blocks are how the control
+            // actually arrives.
+            for ms in [10.0_f32, 0.5, 7.5, 5.0, 10.0, 0.5] {
+                limiter.set_param("lim_lookahead", ms);
+                limiter.process(&mut left, &mut right);
+            }
+        });
+
+        assert_eq!(
+            (
+                limiter.delay_l.capacity(),
+                limiter.delay_r.capacity(),
+                limiter.max_peaks.peaks.capacity(),
+            ),
+            capacities,
+            "capacity moved, so the preallocation is not covering the range"
+        );
+        assert_eq!(
+            limiter.latency_samples(),
+            24,
+            "the 0.5 ms look-ahead must still take effect — a setter that \
+             quietly stopped resizing would also allocate nothing"
+        );
+    }
+
+    /// `f32::clamp` returns NaN for a NaN input, so a clamp alone leaves the
+    /// NaN in the parameter — and every Proof parameter is stored rather than
+    /// recomputed per block, so it stays there for the life of the device.
+    ///
+    /// A NaN release is the loud one: `required_gain < self.current_gain` is
+    /// false forever, the release branch runs on the very first sample, and
+    /// `current_gain` goes NaN along with every output sample after it. The
+    /// device is silent for the rest of the session and the gain-reduction
+    /// meter still reads zero, so the panel gives the musician nothing to go
+    /// on.
+    #[test]
+    fn a_non_finite_release_leaves_the_output_finite() {
+        let mut limiter = LookaheadLimiter::new(48_000.0);
+        limiter.set_param("lim_release", f32::NAN);
+
+        let mut left = vec![0.5_f32; 512];
+        let mut right = vec![0.5_f32; 512];
+        limiter.process(&mut left, &mut right);
+
+        assert!(
+            left.iter().chain(right.iter()).all(|s| s.is_finite()),
+            "a NaN release poisoned the output: first non-finite sample at \
+             index {:?}",
+            left.iter().position(|s| !s.is_finite())
+        );
+        assert!(
+            limiter.get_gr_db().is_finite(),
+            "the gain-reduction meter went NaN too, so nothing on the panel \
+             would tell the musician where the silence came from"
+        );
+
+        // The fallback is the constructor default, so the limiter behaves as
+        // if the malformed message had never arrived.
+        let mut untouched = LookaheadLimiter::new(48_000.0);
+        let mut expected_left = vec![0.5_f32; 512];
+        let mut expected_right = vec![0.5_f32; 512];
+        untouched.process(&mut expected_left, &mut expected_right);
+        assert_eq!(
+            left, expected_left,
+            "a NaN release must leave the limiter on its default release"
+        );
+    }
+
+    /// The quiet twin: a NaN ceiling makes `future_peak > self.ceiling` false
+    /// for every sample, so the limiter stops limiting and material sails past
+    /// the brickwall the control advertises.
+    #[test]
+    fn a_non_finite_ceiling_keeps_limiting() {
+        let mut limiter = LookaheadLimiter::new(48_000.0);
+        limiter.set_param("lim_ceiling", f32::NAN);
+
+        // Well over the default −1 dBTP ceiling.
+        let mut left = vec![0.99_f32; 2_000];
+        let mut right = vec![0.99_f32; 2_000];
+        limiter.process(&mut left, &mut right);
+
+        let ceiling = 10.0_f32.powf(DEFAULT_CEILING_DB / 20.0);
+        let settled = left[1_000..]
+            .iter()
+            .fold(0.0_f32, |peak, &s| peak.max(s.abs()));
+        assert!(
+            settled <= ceiling,
+            "a NaN ceiling let {settled:.4} through against the {ceiling:.4} \
+             default — the limiter silently stopped limiting"
+        );
+        assert!(
+            limiter.get_gr_db() < 0.0,
+            "no gain reduction was applied at all, got {:.4} dB",
+            limiter.get_gr_db()
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_release_and_ceiling_are_clamped_not_dropped() {
+        // The counter-check for both: the NaN fallback must not be swallowing
+        // ordinary out-of-range values, which still have to land on the bound.
+        let mut low = LookaheadLimiter::new(48_000.0);
+        low.set_param("lim_ceiling", -100.0);
+        assert_eq!(low.ceiling_db, MIN_CEILING_DB);
+
+        let mut high = LookaheadLimiter::new(48_000.0);
+        high.set_param("lim_ceiling", 50.0);
+        assert_eq!(high.ceiling_db, MAX_CEILING_DB);
+
+        let mut fast = LookaheadLimiter::new(48_000.0);
+        fast.set_param("lim_release", 0.0);
+        let mut floor = LookaheadLimiter::new(48_000.0);
+        floor.set_param("lim_release", MIN_RELEASE_MS);
+        assert_eq!(fast.release_coeff, floor.release_coeff);
+
+        let mut slow = LookaheadLimiter::new(48_000.0);
+        slow.set_param("lim_release", 10_000.0);
+        let mut ceiling = LookaheadLimiter::new(48_000.0);
+        ceiling.set_param("lim_release", MAX_RELEASE_MS);
+        assert_eq!(slow.release_coeff, ceiling.release_coeff);
     }
 
     #[test]

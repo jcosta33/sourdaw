@@ -458,8 +458,11 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         const fader = screen.getByRole('slider', { name: 'Lead Vocal gain' });
         const cap = fader.querySelector('[data-role="fader-cap"]')!;
 
-        // Downward, so every sample stays inside `clampFaderGain`'s [0, 1] —
-        // a clamped sample would hide a lost intermediate value.
+        // Downward, so every sample stays inside `clampFaderGain`'s [0,
+        // FADER_MAX_GAIN] — a clamped sample would hide a lost intermediate
+        // value. The fader's `max` is now the +6 dB ceiling rather than 1.5,
+        // which changes how many gain units one pixel of drag covers — the
+        // values below are recalculated for that sensitivity, not the old one.
         fireEvent.pointerDown(cap, { button: 0, pointerId: 3, clientY: 50 });
         fireEvent.pointerMove(fader, { pointerId: 3, clientY: 60 });
         fireEvent.pointerMove(fader, { pointerId: 3, clientY: 70 });
@@ -467,13 +470,13 @@ describe('mixer strip writes reach the project through the recorded path', () =>
 
         // Mid-gesture, before release: project truth is still where the gesture
         // started, nothing is on the stack yet, and the strip's dB readout has
-        // nonetheless followed the thumb down to -18.0.
+        // nonetheless followed the thumb down to -14.0.
         expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
         expect(undoLabels()).toEqual([]);
-        expect(within(strip()).getByText('-18.0 dB')).toBeTruthy();
+        expect(within(strip()).getByText('-14.0 dB')).toBeTruthy();
         // The fader itself, not only the readout beside it: `aria-valuenow` is
         // what a screen reader is told the control is currently set to.
-        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.35, 5);
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.2, 5);
 
         fireEvent.pointerUp(fader, { pointerId: 3 });
 
@@ -485,12 +488,12 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         // sample, each carrying that sample's value, not one write at the end.
         const engineGains = vi.mocked(engineSetTrackGain).mock.calls.map((call) => call[1]);
         expect(engineGains.length).toBeGreaterThanOrEqual(4);
-        expect(engineGains[0]).toBeCloseTo(0.65, 5);
-        expect(engineGains[1]).toBeCloseTo(0.5, 5);
-        expect(engineGains[2]).toBeCloseTo(0.35, 5);
+        expect(engineGains[0]).toBeCloseTo(0.6, 5);
+        expect(engineGains[1]).toBeCloseTo(0.4, 5);
+        expect(engineGains[2]).toBeCloseTo(0.2, 5);
 
         // Project truth landed once, on the settled value.
-        expect(storedTrack()?.gain).toBeCloseTo(0.35, 5);
+        expect(storedTrack()?.gain).toBeCloseTo(0.2, 5);
 
         // And one press of undo returns the whole gesture to where it started,
         // not to the second-to-last pointer sample.
@@ -557,7 +560,10 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         // The vertex is the ride. A lane holding only the release value cannot
         // contain it, and RDP keeps it because it is the turn.
         const vertex = points.find((point) => point.beat === 3);
-        expect(vertex?.value).toBeCloseTo(0.35, 5);
+        // Beat 3 is the bottom of the V (clientY 80, the same deltaY the
+        // ceiling-sensitivity recalculation above uses), so the vertex lands
+        // at the same 0.2 the other drag test settles on.
+        expect(vertex?.value).toBeCloseTo(0.2, 5);
         // The ride spans the beats it was performed over rather than collapsing
         // onto the release beat.
         expect(points.filter((point) => point.beat >= 1 && point.beat <= 5).length).toBeGreaterThanOrEqual(3);
@@ -578,7 +584,10 @@ describe('mixer strip writes reach the project through the recorded path', () =>
 
         const points = recordedGainPoints();
         const vertex = points.find((point) => point.beat === 3);
-        expect(vertex?.value).toBeCloseTo(0.35, 5);
+        // Beat 3 is the bottom of the V (clientY 80, the same deltaY the
+        // ceiling-sensitivity recalculation above uses), so the vertex lands
+        // at the same 0.2 the other drag test settles on.
+        expect(vertex?.value).toBeCloseTo(0.2, 5);
         expect(points.filter((point) => point.beat >= 1 && point.beat <= 5).length).toBeGreaterThanOrEqual(3);
     });
 
@@ -615,20 +624,20 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         const cap = fader.querySelector('[data-role="fader-cap"]')!;
         fireEvent.pointerDown(cap, { button: 0, pointerId: 6, clientY: 50 });
         fireEvent.pointerMove(fader, { pointerId: 6, clientY: 70 });
-        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.4, 5);
 
         fireEvent.pointerUp(fader, { pointerId: 6 });
 
         // Read before awaiting anything: this is the frame the user sees between
         // releasing the fader and the write landing.
         expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
-        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
-        expect(within(strip()).getByText('-12.0 dB')).toBeTruthy();
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.4, 5);
+        expect(within(strip()).getByText('-8.0 dB')).toBeTruthy();
 
         await vi.waitFor(() => {
-            expect(storedTrack()?.gain).toBeCloseTo(0.5, 5);
+            expect(storedTrack()?.gain).toBeCloseTo(0.4, 5);
         });
-        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.4, 5);
     });
 
     /**

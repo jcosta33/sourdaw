@@ -1,12 +1,12 @@
 import { setTrackGain as engineSetTrackGain, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { transportStore } from '#/modules/Transport/stores';
-import { clampFaderGain } from '#/utils/audioLevelLaw';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getAllTracks } from '../getAllTracks';
 
+import { clampTrackGain } from './clampTrackGain';
 import { syncToasterPadParam } from './helpers';
 import { maybeRecordAutomation } from './maybeRecordAutomation';
 
@@ -37,9 +37,17 @@ import { maybeRecordAutomation } from './maybeRecordAutomation';
  * `padGain x oldTrackGain` while the thumb was down and `padGain x newTrackGain`
  * the instant it lifted: an audible step on release, about 6 dB for a
  * 0.8 -> 0.4 move. Only `updateTrack` belongs inside the guard.
+ *
+ * That series relationship is also why the ceiling is not unconditionally
+ * `FADER_MAX_GAIN`: on a pad-mirrored track the one written value lands on
+ * both nodes, so {@link clampTrackGain} holds it at unity, inside the range
+ * `pad.rs` honours, and keeps the two in the lockstep the mirror exists to
+ * maintain. That same function bounds the mixer strip's fader travel, the
+ * Inspector's, and the undo entry `handleSetTrackGain` records, so no caller
+ * can ask for or predict a value this writer refuses.
  */
 export function setTrackGain(trackId: string, gain: number, isTransient = false): void {
-    const clamped = clampFaderGain(gain);
+    const clamped = clampTrackGain(trackId, gain);
     engineSetTrackGain(trackId, clamped);
     syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
 

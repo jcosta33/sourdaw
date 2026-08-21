@@ -1,4 +1,5 @@
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -62,7 +63,7 @@ function currentStateMatches(payload: MaterializedPayload): boolean {
             track.gain === expected.gain &&
             Number.isFinite(track.gain) &&
             track.gain > 0 &&
-            track.gain * 10 ** (payload.gainDb / 20) <= 1 &&
+            track.gain * 10 ** (payload.gainDb / 20) <= FADER_MAX_GAIN &&
             track.automationMode === expected.automationMode &&
             track.frozen === expected.frozen &&
             !automationState.lanes.some(

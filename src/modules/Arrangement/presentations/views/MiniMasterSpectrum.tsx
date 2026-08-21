@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useId, useRef } from 'react';
 
+import { Stack } from '#/components/layout';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
@@ -130,7 +131,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
                 <canvas ref={canvasRef} className="w-full h-full block" width={180} height={80} />
             </div>
             <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_1px,rgba(0,0,0,0.1)_1px,rgba(0,0,0,0.1)_2px)] opacity-50" />
-            <div className="absolute inset-x-2 top-2 z-10 flex flex-col pointer-events-none">
+            <Stack className="absolute inset-x-2 top-2 z-10 pointer-events-none">
                 <span
                     className={cn(
                         'text-[10px] uppercase tracking-wider font-semibold drop-shadow-md transition-colors',
@@ -139,7 +140,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
                 >
                     Master
                 </span>
-            </div>
+            </Stack>
         </div>
     );
 };

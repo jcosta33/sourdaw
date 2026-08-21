@@ -10,6 +10,7 @@ vi.mock('#/infra/store/useStore', () => ({
         scannedPlugins: [],
         isScanning: false,
         errors: [],
+        notices: [],
         lastScanTime: null,
     })),
 }));
@@ -22,6 +23,7 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => ({
         scannedPlugins: [],
         isScanning: false,
         errors: [],
+        notices: [],
         lastScanTime: null,
     },
 }));
@@ -56,6 +58,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [],
             isScanning: false,
             errors: [],
+            notices: [],
             lastScanTime: null,
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasPluginScanning: true });
@@ -111,6 +114,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [],
             isScanning: true,
             errors: [],
+            notices: [],
             lastScanTime: null,
         });
         render(<PluginScanSettings />);
@@ -123,6 +127,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [{ id: 'p1' }, { id: 'p2' }],
             isScanning: false,
             errors: [],
+            notices: [],
             lastScanTime: null,
         });
         render(<PluginScanSettings />);
@@ -137,6 +142,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [],
             isScanning: false,
             errors: [],
+            notices: [],
             lastScanTime: now,
         });
         render(<PluginScanSettings />);
@@ -149,6 +155,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [],
             isScanning: false,
             errors: ['Failed to scan /invalid/path'],
+            notices: [],
             lastScanTime: null,
         });
         render(<PluginScanSettings />);
@@ -161,6 +168,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [{ id: 'p1' }],
             isScanning: false,
             errors: [],
+            notices: [],
             lastScanTime: Date.now(),
         });
         render(<PluginScanSettings />);
@@ -208,6 +216,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [{ id: 'p1' }],
             isScanning: false,
             errors: ['scan error'],
+            notices: [],
             lastScanTime: null,
         });
         render(<PluginScanSettings />);
@@ -220,6 +229,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [{ id: 'p1' }],
             isScanning: true,
             errors: [],
+            notices: [],
             lastScanTime: null,
         });
         render(<PluginScanSettings />);
@@ -232,6 +242,7 @@ describe('PluginScanSettings', () => {
             scannedPlugins: [],
             isScanning: false,
             errors: [],
+            notices: [],
             lastScanTime: null,
         });
         render(<PluginScanSettings />);

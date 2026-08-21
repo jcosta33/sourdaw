@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 const mocks = vi.hoisted(() => ({
     snapDrawBeatToGrid: vi.fn((beat: number) => beat),
     flushPendingDrawState: vi.fn(),
@@ -105,11 +107,39 @@ describe('paintDrawPoint', () => {
     it('paints a new point clamped to the lane min/max range', () => {
         startSession();
 
-        paintDrawPoint(1, 1.5); // above maxValue 1.0
+        paintDrawPoint(1, 2.5); // above the gain lane's ceiling
 
         const lane = automationDrawModeState.activeSession!.pendingState!.lanes.find((l) => l.id === 'lane-1')!;
         expect(lane.points).toHaveLength(1);
-        expect(lane.points[0]?.value).toBe(1.0); // clamped to max
+        expect(lane.points[0]?.value).toBe(FADER_MAX_GAIN); // clamped to max
+    });
+
+    /**
+     * `lane-1` is a *legacy* gain lane: `maxValue: 1`, as every gain lane
+     * authored before the fader gained its `+6 dB` of headroom stores it. The
+     * stored scalar is deliberately never rewritten — a sanitizer that raised
+     * it would read as document corruption and stall the project at
+     * repair-required — so `getAutomationLaneCeiling` reconciles it here, at
+     * read time. Without that, this lane could not be drawn into headroom its
+     * own track's fader reaches, while a lane created after the widening could.
+     */
+    it('draws a legacy gain lane into the headroom its own fader now reaches', () => {
+        startSession();
+
+        paintDrawPoint(1, 1.5);
+
+        const lane = automationDrawModeState.activeSession!.pendingState!.lanes.find((l) => l.id === 'lane-1')!;
+        expect(lane.maxValue).toBe(1); // stored ceiling untouched
+        expect(lane.points[0]?.value).toBe(1.5);
+    });
+
+    it('still holds a non-gain lane to its own stored ceiling', () => {
+        startSession({ laneId: 'lane-2' });
+
+        paintDrawPoint(1, 1.5); // pan lane, maxValue 1 and no headroom
+
+        const lane = automationDrawModeState.activeSession!.pendingState!.lanes.find((l) => l.id === 'lane-2')!;
+        expect(lane.points[0]?.value).toBe(1);
     });
 
     it('clamps below the lane minimum', () => {

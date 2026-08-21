@@ -5,6 +5,7 @@
 import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 type ModulationSectionProps = {
     msegToFilter: number;
@@ -19,14 +20,14 @@ export const ModulationSection = ({
     seqToPitch,
     onParam,
 }: ModulationSectionProps): ReactElement => (
-    <div className="space-y-2">
+    <Stack gap={2}>
         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Modulation</div>
 
         {/* MSEG */}
-        <div className="space-y-0.5">
+        <Stack gap={0.5}>
             <div className="text-[8px] text-muted-foreground/70 px-1">MSEG Envelope</div>
-            <div className="flex items-end gap-2 px-1">
-                <div className="flex flex-col items-center gap-0.5">
+            <Row align="end" gap={2} className="px-1">
+                <Stack align="center" gap={0.5}>
                     <RotaryKnob
                         value={msegToFilter}
                         onChange={(v) => onParam('msegToFilter', v)}
@@ -38,15 +39,15 @@ export const ModulationSection = ({
                         tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">→ Filter</span>
-                </div>
-            </div>
-        </div>
+                </Stack>
+            </Row>
+        </Stack>
 
         {/* Step Sequencer */}
-        <div className="space-y-0.5">
+        <Stack gap={0.5}>
             <div className="text-[8px] text-muted-foreground/70 px-1">Step Sequencer</div>
-            <div className="flex items-end gap-2 px-1">
-                <div className="flex flex-col items-center gap-0.5">
+            <Row align="end" gap={2} className="px-1">
+                <Stack align="center" gap={0.5}>
                     <RotaryKnob
                         value={seqRate}
                         onChange={(v) => onParam('seqRate', v)}
@@ -59,8 +60,8 @@ export const ModulationSection = ({
                     />
                     <span className="text-[7px] text-muted-foreground">Rate</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{seqRate.toFixed(1)}Hz</span>
-                </div>
-                <div className="flex flex-col items-center gap-0.5">
+                </Stack>
+                <Stack align="center" gap={0.5}>
                     <RotaryKnob
                         value={seqToPitch}
                         onChange={(v) => onParam('seqToPitch', v)}
@@ -72,8 +73,8 @@ export const ModulationSection = ({
                         tone="sage"
                     />
                     <span className="text-[7px] text-muted-foreground">→ Pitch</span>
-                </div>
-            </div>
-        </div>
-    </div>
+                </Stack>
+            </Row>
+        </Stack>
+    </Stack>
 );
