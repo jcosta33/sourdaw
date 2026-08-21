@@ -1,0 +1,32 @@
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_a40848e8f8cca9::t_af85765c423837 99,111-112,115,137-138
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_a40848e8f8cca9::t_34f33aa2d04d4c 405-415
+  s_a40848e8f8cca9::t_c6cc155995f339 363,367-404,416-487
+  s_a40848e8f8cca9::t_af85765c423837 27,98,122
+  s_0a3429e31e555d::t_4f72ac7c23b1be 123,364-366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "26549a4a98585edcab69755a063e2a353604f536",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
