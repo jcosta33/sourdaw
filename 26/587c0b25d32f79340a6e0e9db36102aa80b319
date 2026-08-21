@@ -1,0 +1,29 @@
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_0a3429e31e555d::t_ffacde84f6949b 2-154,156-229,231-295,297-361,363-1371
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_27578aec2aab3b::t_19e844fd74d47d 148-160,167-188,192-196,202,205-209,212,238-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "26587c0b25d32f79340a6e0e9db36102aa80b319",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
