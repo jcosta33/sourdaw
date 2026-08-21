@@ -44,8 +44,13 @@ const NUM_TAPS: usize = 6;
 /// `±inf` needs no special case: it is ordered, so `clamp` maps it to the
 /// nearer bound, which is the answer the caller wants.
 ///
-/// Every Proof setter that owns a range routes through here, so the NaN
-/// handling cannot be right in one of them and forgotten in the next.
+/// The chain trims (through `gain_from_db`) and the three limiter setters
+/// route through here today. The remaining ranged Proof setters — EQ, imager,
+/// multiband, dynamic EQ, match EQ — still clamp with bare `f32::clamp` and
+/// rely on the worklet wire boundary to refuse non-finite values before they
+/// reach the engine; that boundary, not this guard, is their NaN handling. A
+/// fifth caller here does not mean engine-side coverage is total — check the
+/// setter you are touching.
 #[inline]
 pub(crate) fn clamped_param(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
     if value.is_nan() {
