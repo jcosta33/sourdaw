@@ -1,0 +1,55 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_f182d3330369f4 65-73,299-307,401,425-433,788,878,941,1004,1172-1180,1328,1739-1747,1838-1846,2030,2153-2161,2219,2342-2350,2747-2755,2903,3062-3070,3479,3566-3574,3935-3943,3980-3988,4187-4195,4298,4307,4505,5891,5909,5934-5936,5943-5946,5948-5949,6098,6152,6203-6211,6257-6265,6329-6337,6464-6472,6572-6580,7040-7048,7070,7259,7313,7373-7381,7427-7435,7859-7867,8015,8111-8119,8192-8200,8264-8272,8346-8349,8352,8363-8371,8411,8519,8660-8668,8708,8813-8821,8921-8929,8933,8957-8965,9185,9203,9284,9374,9551-9559,9678-9681,9684,9707,9770,9824,9887,10173-10176,10179,10778,11072-11080,11201,11471,11684-11692,11885,12044-12052,12209,12422-12430,12737-12745,12776,12872-12880,12983,13253,13973,14303-14311,14567,14672-14680,15152,15485,15746,16079,16130-16138,16376,16499-16507,16673,16949-16957,17291-17299,17429,17753,17975-17983,17996,18011-18028,18272-18280,18311,18419,18497-18505,18518,18614-18622,18914,18941,18947-18955,19172-19180,19220,19499,19601-19602,19658-19666,20102,20111,20372,20399,20999-21007,21071-21079,21200,21245,21344,21458-21466,21677,21773-21781,21875,21920,21947,22152,22154-22155,22158,22253,22325,22412-22420,22664-22672,22757,22883,22952-22960,23072,23375-23383,23726-23734,23807-23815,23837,23900,24017,24032-24040,24194-24202,24377,24446-24454,24671-24679,24815-24823,24881,25031-25039,25052,25259
+src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx
+  s_2175fca1f07426::t_d26bf6fc08a2c1 3,49-53,55,71,82,101-102
+src/modules/WorkspaceShell/presentations/components/ErrorBoundary.tsx
+  s_2175fca1f07426::t_749ee81856c2c1 3,42-46,67
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_2175fca1f07426::t_fe3a51a464258a 5,36,41
+src/modules/WorkspaceShell/presentations/components/MobileGate.tsx
+  s_2175fca1f07426::t_a00ec20e70f64d 3-4,77-80,103-107,109,124,127,135,146-147
+src/modules/WorkspaceShell/presentations/components/ProjectLoadFailureOverlay.tsx
+  s_2175fca1f07426::t_fccd92534f71be 3-4,51-54,84
+src/modules/WorkspaceShell/presentations/components/ProjectLoadingOverlay.tsx
+  s_2175fca1f07426::t_c619141a9384ef 3-4,44-47,103
+src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx
+  s_2175fca1f07426::t_f3f11457e351a3 8,190-192,226,228,230,236-237,239,252
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_2175fca1f07426::t_2c69c32b55fade 5,130-132,138,142,144,563-564,582,596,804-806,810-813,821,859,871,882,901,914,957
+src/modules/WorkspaceShell/presentations/views/CvOutputStatusBadge.tsx
+  s_2175fca1f07426::t_8a2da610f76308 3,25-28,34
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_2175fca1f07426::t_038cb25dabcb62 21,181,192,400,414-415,420-424,435-436,477,505,513-515,519,531,534,554,597,602,610,629,641,643,676-678,682,704,707
+src/modules/WorkspaceShell/presentations/views/MonitorStatusBadge.tsx
+  s_2175fca1f07426::t_15372ca27f87c6 3,59-62,68
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_2175fca1f07426::t_2aa366bc6848cc 8,157-158,161,165,168,185-186,189-190,193-194,222,232,237,260,267,269-270,273,286,296,299,334,337,341-342,345-346,349-350
+src/modules/WorkspaceShell/presentations/views/PromptBar.tsx
+  s_2175fca1f07426::t_a2cd4495d3a655 27,130,133,139,147,220-223,264
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_2175fca1f07426::t_95f7ffc76857b2 10,99,214,220,282
+src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx
+  s_2175fca1f07426::t_f98a877fe9ed13 5,27,43,61,76
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_2175fca1f07426::t_58a388c473b70a 8,225,235
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_2175fca1f07426::t_c3b6cac3b281fb 3,63-66,80,82,88,91,99,102,112-113,119-121,129,139,142,157,160,168-170
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_2175fca1f07426::t_b0287a4db0b48b 29,558-560,608,671,681,743,778
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2765f2126aa98f4959e02f4b4bc40175eeeb9e34",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
