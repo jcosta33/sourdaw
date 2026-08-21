@@ -56,19 +56,14 @@ export const EXPOSED_COMMANDS = [
     'destroy_crumbs',
     'detect_onsets',
     'detect_smart_loop_points',
-    'disable_link',
-    'enable_link',
     'engine_rt_diagnostics',
     'ensure_whisper_ready',
     'get_crumbs_position',
     'get_default_plugin_paths',
-    'get_link_status',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
     'get_waveform_peaks',
     'is_plugin_gui_supported',
-    'link_start_playing',
-    'link_stop_playing',
     'list_directory',
     'list_midi_inputs',
     'load_plugin',
@@ -88,7 +83,6 @@ export const EXPOSED_COMMANDS = [
     'send_push_midi',
     'set_crumbs_mode',
     'set_crumbs_param',
-    'set_link_tempo',
     'set_plugin_bypass',
     'set_plugin_parameter',
     'set_plugin_state_bytes',
@@ -103,11 +97,32 @@ export const EXPOSED_COMMANDS = [
 /**
  * Commands with no handler and no preload path.
  *
- * Each was already withheld from the renderer under the Tauri shell, and for
- * a reason that survived the shell change: a bulk plugin-GUI operation belongs
- * to the exit cascade rather than to a page, LAN discovery is not
- * renderer-driven, and the raw audio-file and whisper-model paths are
- * reachable only through the narrower commands that wrap them.
+ * Every command here except the Link group was already withheld from the
+ * renderer under the Tauri shell, and for a reason that survived the shell
+ * change: a bulk plugin-GUI operation belongs to the exit cascade rather than
+ * to a page, LAN discovery is not renderer-driven, and the raw audio-file and
+ * whisper-model paths are reachable only through the narrower commands that
+ * wrap them.
+ *
+ * The Link transport commands (`enable_link`, `disable_link`,
+ * `set_link_tempo`, `get_link_status`, `link_start_playing`,
+ * `link_stop_playing`) are that exception, and are denied for a different
+ * reason: Tauri's `allow-sourdaw-commands` capability granted all of them to
+ * the main window (`src-tauri/permissions/sourdaw-commands.toml`), and they
+ * carried into `EXPOSED_COMMANDS` unchanged at the Tauri-to-Electron cutover.
+ * The callers that grant was written for were already gone by then. The
+ * transport UI's Link toggle went in jcosta33/sourdaw#1640, and `4497e0047`
+ * (jcosta33/sourdaw#2039) deleted the `linkBridge` repositories, the `link`
+ * use cases and `linkStatusStore` as orphaned — hours before `2b67adcd7`
+ * created this shell's surface, which is why the grants arrived callerless.
+ * Nothing in `src/` has invoked them since.
+ *
+ * The reason that outlasts any of that: Link is a declared-unsupported
+ * capability surface. `crates/sourdaw-native/src/commands/link.rs` answers
+ * every one of these with `supported: false` and a "not implemented in this
+ * build" message, and `crates/sourdaw-native/AGENTS.md` pins that no native
+ * Link library is linked. Exposing them would widen the renderer's reach onto
+ * stubs, so they stay denied until Link is implemented and a caller exists.
  *
  * The offline graph commands (`map_graph_batch`, `register_timeline_sample`,
  * `render_graph_offline`) are exposed as of the D3.c.2 cutover
@@ -128,12 +143,18 @@ export const DENIED_COMMANDS = [
     'collab_stop_advertising',
     'collab_stop_browsing',
     'detect_sample_pitch',
+    'disable_link',
+    'enable_link',
     'get_asr_status',
+    'get_link_status',
     'hide_all_plugin_guis',
+    'link_start_playing',
+    'link_stop_playing',
     'load_whisper_model',
     'post_process_audio',
     'read_audio_file',
     'send_plugin_midi',
+    'set_link_tempo',
     'show_all_plugin_guis',
     'write_audio_file',
 ] as const;
