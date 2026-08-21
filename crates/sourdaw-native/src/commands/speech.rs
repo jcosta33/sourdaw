@@ -2,8 +2,8 @@ use crate::events::{EventSink, EventSinkExt};
 use audioadapter_buffers::{direct::SequentialSliceOfVecs, owned::InterleavedOwned};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
-    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
-    WindowFunction,
+    audioadapter::Adapter, Async, FixedAsync, Resampler, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,51 +42,75 @@ impl Drop for SensitiveF64Buffers {
     }
 }
 
-struct SensitiveF64Buffer(Vec<f64>);
+/// Owns rubato's output allocation until every success, error, or panic path
+/// has erased it. `InterleavedOwned` otherwise drops an ordinary `Vec<f64>`.
+struct SensitiveResamplerOutput<T: EraseOwnedOutput>(Option<T>);
 
-impl Drop for SensitiveF64Buffer {
-    fn drop(&mut self) {
-        self.0.zeroize();
+trait EraseOwnedOutput {
+    fn erase_owned_output(self);
+}
+
+impl EraseOwnedOutput for InterleavedOwned<f64> {
+    fn erase_owned_output(self) {
+        let mut data = self.take_data();
+        data.zeroize();
     }
 }
 
-/// Owns rubato's output allocation until every success, error, or panic path
-/// has erased it. `InterleavedOwned` otherwise drops an ordinary `Vec<f64>`.
-struct SensitiveResamplerOutput(Option<InterleavedOwned<f64>>);
+impl<T: EraseOwnedOutput> SensitiveResamplerOutput<T> {
+    fn new(output: T) -> Self {
+        Self(Some(output))
+    }
+}
 
-impl SensitiveResamplerOutput {
+impl SensitiveResamplerOutput<InterleavedOwned<f64>> {
     fn buffer_mut(&mut self) -> &mut InterleavedOwned<f64> {
         self.0
             .as_mut()
-            .expect("resampler output is present until extracted")
+            .expect("resampler output is present until erased")
     }
 
-    fn take_data(&mut self) -> SensitiveF64Buffer {
-        SensitiveF64Buffer(
-            self.0
-                .take()
-                .expect("resampler output is present until extracted")
-                .take_data(),
-        )
+    fn copy_f32(&self, frames: usize) -> Vec<f32> {
+        let output = self
+            .0
+            .as_ref()
+            .expect("resampler output is present until erased");
+        (0..frames)
+            .map(|frame| {
+                output
+                    .read_sample(0, frame)
+                    .expect("rubato reported an output frame within its allocation")
+                    as f32
+            })
+            .collect()
     }
 }
 
-impl Drop for SensitiveResamplerOutput {
+impl<T: EraseOwnedOutput> Drop for SensitiveResamplerOutput<T> {
     fn drop(&mut self) {
         if let Some(output) = self.0.take() {
-            let mut data = output.take_data();
-            data.zeroize();
+            output.erase_owned_output();
         }
     }
 }
 
 /// `rubato::Async` retains f64 working/history buffers. Its documented reset
 /// clears those buffers, so Drop guarantees cleanup on all exit paths.
-struct SensitiveResampler(Async<f64>);
+struct SensitiveResampler<T: ResetRetainedState>(T);
 
-impl Drop for SensitiveResampler {
+trait ResetRetainedState {
+    fn reset_retained_state(&mut self);
+}
+
+impl ResetRetainedState for Async<f64> {
+    fn reset_retained_state(&mut self) {
+        self.reset();
+    }
+}
+
+impl<T: ResetRetainedState> Drop for SensitiveResampler<T> {
     fn drop(&mut self) {
-        self.0.reset();
+        self.0.reset_retained_state();
     }
 }
 
@@ -762,17 +786,6 @@ fn with_sensitive_resampler_input<T>(
     operation(&input.0)
 }
 
-/// Runs a fallible consumer while retaining rubato's f64 output under RAII
-/// erasure. This includes `take_data` allocations, which are derived speech
-/// data just as sensitive as capture samples.
-fn with_sensitive_resampler_output<T>(
-    output: Vec<f64>,
-    operation: impl FnOnce(&[f64]) -> Result<T, String>,
-) -> Result<T, String> {
-    let output = SensitiveF64Buffer(output);
-    operation(&output.0)
-}
-
 /// Resample mono audio from `src_rate` to 16 kHz using rubato.
 fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
     if input.is_empty() {
@@ -800,25 +813,16 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
         let adapter = SequentialSliceOfVecs::new(channels, 1, frames)
             .map_err(|error| format!("Resampler buffer error: {error}"))?;
         let needed = resampler.0.process_all_needed_output_len(frames);
-        let mut output = SensitiveResamplerOutput(Some(InterleavedOwned::new(0.0, 1, needed)));
+        let mut output = SensitiveResamplerOutput::new(InterleavedOwned::new(0.0, 1, needed));
         let result = resampler
             .0
             .process_all_into_buffer(&adapter, output.buffer_mut(), frames, None)
-            .map(|(_input, output_len)| {
-                let mut data = output.take_data();
-                data.0.truncate(output_len);
-                data
-            });
+            .map(|(_input, output_len)| output.copy_f32(output_len));
         drop(adapter);
         result.map_err(|error| format!("Resample error: {error}"))
     })?;
 
-    Ok(resampled
-        .0
-        .iter()
-        .copied()
-        .map(|sample| sample as f32)
-        .collect())
+    Ok(resampled)
 }
 
 /// Run Whisper inference on 16 kHz mono f32 audio.
@@ -850,6 +854,23 @@ fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::Cell, rc::Rc};
+
+    struct ResetProbe(Rc<Cell<bool>>);
+
+    impl ResetRetainedState for ResetProbe {
+        fn reset_retained_state(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    struct EraseOutputProbe(Rc<Cell<bool>>);
+
+    impl EraseOwnedOutput for EraseOutputProbe {
+        fn erase_owned_output(self) {
+            self.0.set(true);
+        }
+    }
 
     #[test]
     fn local_voice_loader_has_no_route_into_the_model_downloader_or_network_client() {
@@ -865,31 +886,55 @@ mod tests {
     }
 
     #[test]
-    fn production_resampler_raii_helpers_erase_f64_buffers_on_error_and_unwind() {
-        let error = with_sensitive_resampler_input(vec![0.25, -0.5], |_| {
-            Err::<(), _>("forced resampler error".to_string())
-        });
-        assert_eq!(error, Err("forced resampler error".to_string()));
+    fn resampler_guards_clean_up_on_success_error_and_unwind() {
+        let success_reset = Rc::new(Cell::new(false));
+        {
+            let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&success_reset)));
+        }
+        assert!(success_reset.get());
+
+        let error_reset = Rc::new(Cell::new(false));
+        let error = (|| {
+            let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&error_reset)));
+            Err::<(), _>("forced resampler error")
+        })();
+        assert_eq!(error, Err("forced resampler error"));
+        assert!(error_reset.get());
+
+        let unwind_reset = Rc::new(Cell::new(false));
         let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            with_sensitive_resampler_output(vec![0.75], |_| -> Result<(), String> {
-                panic!("forced resampler output unwind");
-            })
-            .unwrap();
+            let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&unwind_reset)));
+            panic!("forced resampler unwind");
         }));
         assert!(unwind.is_err());
-    }
+        assert!(unwind_reset.get());
 
-    #[test]
-    fn production_rubato_resampler_erases_its_derived_f64_output_after_success() {
+        let success_output = Rc::new(Cell::new(false));
+        {
+            let _output =
+                SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&success_output)));
+        }
+        assert!(success_output.get());
+
+        let error_output = Rc::new(Cell::new(false));
+        let error = (|| {
+            let _output = SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&error_output)));
+            Err::<(), _>("forced output error")
+        })();
+        assert_eq!(error, Err("forced output error"));
+        assert!(error_output.get());
+
+        let unwind_output = Rc::new(Cell::new(false));
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _output =
+                SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&unwind_output)));
+            panic!("forced output unwind");
+        }));
+        assert!(unwind.is_err());
+        assert!(unwind_output.get());
+
         let result = resample_to_16k(&vec![0.25; 4_800], 48_000).unwrap();
         assert!(!result.is_empty());
-        // The production path owns rubato's output in SensitiveResamplerOutput
-        // and transfers `take_data` into SensitiveF64Buffer, whose Drop zeros
-        // it after conversion to the returned f32 vector.
-        let source = include_str!("speech.rs");
-        assert!(source.contains("struct SensitiveResamplerOutput"));
-        assert!(source.contains("data.zeroize()"));
-        assert!(source.contains("self.0.reset()"));
     }
 
     #[test]
