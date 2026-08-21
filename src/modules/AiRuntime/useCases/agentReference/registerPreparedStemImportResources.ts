@@ -55,6 +55,26 @@ function protectPreparedStemImportResources(input: {
     }
 }
 
+function retainPreparedStemImportResourcesForRecovery(input: {
+    runId: string;
+    stems: StemImportPromptScope['actionSeed']['stems'];
+}): void {
+    protectPreparedStemImportResources(input);
+    for (const stem of input.stems) {
+        const asset = agentRunLifecycle
+            .get(input.runId)
+            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (!asset || asset.status === 'released') {
+            continue;
+        }
+        agentRunLifecycle.prepareTemporaryAssetCleanup({
+            runId: input.runId,
+            assetId: stem.audioBufferId,
+            cleanupOwner: CLEANUP_OWNER,
+        });
+    }
+}
+
 function releasePreparedStemImportResources(input: {
     runId: string;
     stems: StemImportPromptScope['actionSeed']['stems'];
@@ -120,6 +140,7 @@ async function discardRegisteredPreparedStemImportResources(input: {
 export const preparedStemImportResources = {
     register: registerPreparedStemImportResources,
     protect: protectPreparedStemImportResources,
+    retainForRecovery: retainPreparedStemImportResourcesForRecovery,
     release: releasePreparedStemImportResources,
     discard: discardRegisteredPreparedStemImportResources,
 };

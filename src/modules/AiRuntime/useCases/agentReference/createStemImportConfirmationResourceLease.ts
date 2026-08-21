@@ -1,22 +1,18 @@
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 
-import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
+import { preparedStemImportResources } from './registerPreparedStemImportResources';
 
-export function createStemImportConfirmationResourceLease(actions: readonly ExecutableRuntimeAction[]) {
+export function createStemImportConfirmationResourceLease(runId: string, actions: readonly ExecutableRuntimeAction[]) {
     const stems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
     if (stems.length === 0) {
         return undefined;
     }
 
-    let released = false;
     return {
         bytes: stems.reduce((total, stem) => total + stem.sourceBytes + stem.decodedBytes, 0),
-        release: () => {
-            if (released) {
-                return;
-            }
-            released = true;
-            discardPreparedStemImportResources(stems);
-        },
+        protect: () => preparedStemImportResources.protect({ runId, stems }),
+        retain: () => preparedStemImportResources.retainForRecovery({ runId, stems }),
+        transfer: () => preparedStemImportResources.release({ runId, stems }),
+        release: () => void preparedStemImportResources.discard({ runId, stems }),
     };
 }

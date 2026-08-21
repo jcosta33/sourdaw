@@ -466,7 +466,7 @@ export async function sendChatMessage(
                         requireProviderProposal: result.executionMode === 'atomic',
                     });
                     if (plannedRun.status === 'needs-user-decision') {
-                        createStemImportConfirmationResourceLease(result.actions)?.release();
+                        createStemImportConfirmationResourceLease(runId, result.actions)?.release();
                         agentRunLifecycle.requireManualResume({
                             runId,
                             reason: plannedRun.decision.reason,
@@ -516,7 +516,7 @@ export async function sendChatMessage(
                         plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    createStemImportConfirmationResourceLease(runId, result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
@@ -583,7 +583,7 @@ export async function sendChatMessage(
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();
-                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    createStemImportConfirmationResourceLease(runId, result.actions)?.release();
                     agentRunLifecycle.requireManualResume({
                         runId,
                         reason: plannedRun.decision.reason,
@@ -703,7 +703,7 @@ export async function sendChatMessage(
                         throw new Error(`Agent preview work could not be claimed: ${previewLeaseResult.status}`);
                     }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
-                    const resourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    const resourceLease = createStemImportConfirmationResourceLease(runId, result.actions);
                     const releasePreviewCancellation = agentRunCancellation.bindAbortController({
                         runId,
                         lease: previewLeaseResult.lease,
@@ -807,7 +807,7 @@ export async function sendChatMessage(
                         groupId: commandGroup.groupId,
                         groupLabel: commandGroup.groupLabel,
                         projectRevision,
-                        resourceLease: createStemImportConfirmationResourceLease(result.actions),
+                        resourceLease: createStemImportConfirmationResourceLease(runId, result.actions),
                     });
                     if (!confirmation) {
                         const reason = 'Prepared action resources exceed the live confirmation limit.';

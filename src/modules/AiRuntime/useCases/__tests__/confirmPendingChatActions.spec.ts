@@ -10,6 +10,7 @@ import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     commandBatchPreviewPort,
+    commandBatchPreflightPort,
     configureCommandBatchIdempotency,
     commandProjectDivergencePort,
     migrateLegacyAppActionToVersionedCommandEnvelope,
@@ -30,13 +31,17 @@ import {
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { chatStore } from '../../stores/chatStore';
+import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
+    settlePendingActionResourceLease,
 } from '../../stores/pendingActionConfirmationStore';
+import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
+import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
@@ -47,8 +52,52 @@ import {
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 
+const stemResourceMocks = vi.hoisted(() => ({
+    releasePreviewAudioBuffer: vi.fn(),
+    releaseStagedAsset: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    releasePreviewAudioBuffer: stemResourceMocks.releasePreviewAudioBuffer,
+}));
+vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
+    getAssetTransfer: () => ({ releaseStagedAsset: stemResourceMocks.releaseStagedAsset }),
+}));
+
+const stemAction = {
+    type: 'importStemSet',
+    payload: {
+        selectionId: 'selection-confirmed-stems',
+        groupName: 'Imported Stems',
+        projectTempo: 120,
+        folderId: 'folder-confirmed-stems',
+        stems: [
+            {
+                stemId: 'stem-confirmed-1',
+                sourceName: 'Drums.wav',
+                role: 'other',
+                sourceTempo: 120,
+                durationSeconds: 10,
+                sourceBytes: 100,
+                decodedBytes: 200,
+                audioBufferId: 'buffer-confirmed-1',
+                assetLeaseId: 'lease-confirmed-1',
+                trackId: 'track-confirmed-1',
+                trackName: 'Drums',
+                trackGain: 1,
+                trackPan: 0,
+                clipId: 'clip-confirmed-1',
+            },
+        ],
+    },
+} satisfies AppAction;
+
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
+        stemResourceMocks.releasePreviewAudioBuffer.mockClear();
+        stemResourceMocks.releaseStagedAsset.mockClear();
         vi.stubGlobal('navigator', {
             ...navigator,
             locks: {
@@ -361,6 +410,186 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(execute).toHaveBeenCalledTimes(1);
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
+    });
+
+    it.each([
+        { outcome: 'verified-after-abort', createsTargets: true },
+        { outcome: 'ambiguous', createsTargets: false },
+    ] as const)('settles confirmed stem resources for $outcome command truth', async ({ outcome, createsTargets }) => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        let targetsCreated = false;
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: ['buffer-confirmed-1'],
+            lockedRanges: [],
+            projectId: 'project-1',
+            projectInvariantsValid: true,
+            targetFingerprints: targetsCreated
+                ? Object.fromEntries(targetIds.map((targetId) => [targetId, targetId]))
+                : {},
+        }));
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ imported: boolean }>('owned', 'stemImport');
+        let markAfterCommitStarted!: () => void;
+        let releaseAfterCommit!: () => void;
+        const afterCommitStarted = new Promise<void>((resolve) => {
+            markAfterCommitStarted = resolve;
+        });
+        const afterCommitRelease = new Promise<void>((resolve) => {
+            releaseAfterCommit = resolve;
+        });
+        const afterCommit = () => {
+            markAfterCommitStarted();
+            return afterCommitRelease;
+        };
+        const discardStemAction = {
+            type: 'discardImportedStemSet',
+            payload: {
+                folderId: stemAction.payload.folderId,
+                stemTrackIds: stemAction.payload.stems.map((stem) => stem.trackId),
+                guards: [],
+            },
+        } satisfies AppAction;
+        registerHandlerMap({
+            importStemSet: {
+                execute: () => {
+                    targetsCreated = createsTargets;
+                    ownedStorage.set({ imported: true });
+                    return {
+                        status: 'written',
+                        afterCommit,
+                        afterAmbiguousCommit: () => undefined,
+                    };
+                },
+                canReapplyAfterDivergence: () => true,
+                describe: () => ({ label: 'Import confirmed stems', inverseAction: discardStemAction }),
+                requiresAbortCompensation: false,
+                undoable: true,
+                validate: () => true,
+            },
+            discardImportedStemSet: {
+                execute: () => ownedStorage.set({ imported: false }),
+                canReapplyAfterDivergence: () => true,
+                describe: () => ({ label: 'Discard confirmed stems', inverseAction: stemAction }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: stemAction,
+            expectedEffect: 'Import the exact confirmed stem set.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-confirmed-stems', groupLabel: 'Import confirmed stems', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-confirmed-stems',
+            batchId: 'group-confirmed-stems',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'Import confirmed stems',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        agentRunLifecycle.create({
+            runId: 'run-confirmed-stems',
+            request: 'Import confirmed stems',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'run-confirmed-stems', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'run-confirmed-stems', phase: 'waiting-for-approval' });
+        preparedStemImportResources.register({ runId: 'run-confirmed-stems', stems: stemAction.payload.stems });
+        proposePendingActionConfirmation({
+            id: 'confirmation-confirmed-stems',
+            runId: 'run-confirmed-stems',
+            prompt: 'Import confirmed stems',
+            assistantMessageId: 'assistant-1',
+            actions: [stemAction],
+            actionLabels: ['Import confirmed stems'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-confirmed-stems',
+            groupLabel: 'Import confirmed stems',
+            projectRevision,
+            resourceLease: createStemImportConfirmationResourceLease('run-confirmed-stems', [stemAction]),
+        });
+
+        const confirmation = confirmPendingChatActions({ confirmationId: 'confirmation-confirmed-stems' });
+        if (outcome === 'ambiguous') {
+            const result = await confirmation;
+            expect(result).toMatchObject({ status: 'failed' });
+            expect('reason' in result ? result.reason : '').toContain(
+                'Automerge storage transaction committed before a later document failed'
+            );
+            expect(agentRunLifecycle.get('run-confirmed-stems')?.temporaryAssets).toEqual([
+                expect.objectContaining({ assetId: 'buffer-confirmed-1', status: 'cleanup-pending' }),
+            ]);
+            expect(stemResourceMocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(stemResourceMocks.releaseStagedAsset).not.toHaveBeenCalled();
+            return;
+        }
+        await Promise.race([
+            afterCommitStarted,
+            confirmation.then((result) => {
+                throw new Error(`Confirmed stem command settled before post-commit effects: ${JSON.stringify(result)}`);
+            }),
+        ]);
+        stopGenerating();
+        await agentRunCancellation.cancel({
+            runId: 'run-confirmed-stems',
+            reason: 'Test observes cancellation during post-commit effects.',
+        });
+        let cancellationAssertionError: Error | null = null;
+        try {
+            expect(agentRunLifecycle.get('run-confirmed-stems')?.temporaryAssets).toEqual([
+                expect.objectContaining({ assetId: 'buffer-confirmed-1', status: 'cleanup-pending' }),
+            ]);
+            expect(stemResourceMocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(stemResourceMocks.releaseStagedAsset).not.toHaveBeenCalled();
+        } catch (error) {
+            cancellationAssertionError = error instanceof Error ? error : new Error(String(error));
+        } finally {
+            releaseAfterCommit();
+        }
+        await expect(confirmation).resolves.toEqual({ status: 'executed' });
+        if (cancellationAssertionError) {
+            throw cancellationAssertionError;
+        }
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
+        expect(stemResourceMocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(stemResourceMocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get('run-confirmed-stems')?.temporaryAssets).toEqual([]);
+    });
+
+    it('delegates proven non-commit settlement to the prepared-stem owner', async () => {
+        const runId = 'run-confirmed-stems-discard';
+        const confirmationId = 'confirmation-confirmed-stems-discard';
+        const projectRevision = captureProjectRevision();
+        agentRunLifecycle.create({
+            runId,
+            request: 'Import confirmed stems',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        proposePendingActionConfirmation({
+            id: confirmationId,
+            runId,
+            prompt: 'Import confirmed stems',
+            assistantMessageId: 'assistant-1',
+            actions: [stemAction],
+            actionLabels: ['Import confirmed stems'],
+            projectRevision,
+            resourceLease: createStemImportConfirmationResourceLease(runId, [stemAction]),
+        });
+
+        settlePendingActionResourceLease({ confirmationId, disposition: 'discard' });
+
+        await vi.waitFor(() => expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]));
+        expect(stemResourceMocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('buffer-confirmed-1');
+        expect(stemResourceMocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('lease-confirmed-1');
     });
 
     it('routes a partially committed confirmation retry through external-effect recovery', async () => {

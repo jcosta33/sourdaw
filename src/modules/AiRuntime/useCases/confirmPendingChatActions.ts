@@ -24,6 +24,7 @@ import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistory
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
+    protectPendingActionResourceLease,
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
@@ -35,7 +36,6 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
-import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
@@ -159,12 +159,6 @@ function recordTrackedAgentRunReceipt(
             committedRevision: captureProjectRevision(),
         });
         effectsPending = recorded.effectsPending;
-        const importedStems = confirmation.actions.flatMap((action) =>
-            action.type === 'importStemSet' ? action.payload.stems : []
-        );
-        if (importedStems.length > 0) {
-            preparedStemImportResources.release({ runId: confirmation.runId, stems: importedStems });
-        }
     });
     return { warning, effectsPending };
 }
@@ -211,7 +205,7 @@ function settleVerifiedBatchReplay(
             completesRun: leaseSettlement.accepted,
         });
         const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'transfer' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'executed',
@@ -242,7 +236,7 @@ function settleVerifiedBatchReplay(
             });
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -784,6 +778,7 @@ export async function confirmPendingChatActions(
             authority: commandBatch.authority,
             ...(approvalBinding ? { approvalBinding } : {}),
             serialized: commandBatch.serialized,
+            onProjectCommitPrepared: () => protectPendingActionResourceLease(confirmation.id),
             options: executionOptions,
         });
         const failedBeforeCommit =
@@ -899,7 +894,7 @@ export async function confirmPendingChatActions(
         ]
             .filter(Boolean)
             .join(' ');
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'transfer' });
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
@@ -1029,7 +1024,7 @@ export async function confirmPendingChatActions(
             }
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
