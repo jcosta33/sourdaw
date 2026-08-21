@@ -7,6 +7,7 @@ import { type ReactElement } from 'react';
 import { Plus, Minus } from 'lucide-react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 import { ENGINE_NAMES } from '../../models/FermenterPatch';
@@ -41,10 +42,10 @@ export const LayerStack = ({
     onLevelChange,
     onPanChange,
 }: LayerStackProps): ReactElement => (
-    <div className="space-y-1.5">
-        <div className="flex items-center justify-between px-1">
+    <Stack gap={1.5}>
+        <Row justify="between" className="px-1">
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Layers</div>
-            <div className="flex gap-0.5">
+            <Row align="stretch" gap={0.5}>
                 <Button
                     variant="ghost"
                     size="icon-xs"
@@ -63,11 +64,11 @@ export const LayerStack = ({
                 >
                     <Plus className="size-2.5" />
                 </Button>
-            </div>
-        </div>
+            </Row>
+        </Row>
 
         {/* Layer buttons */}
-        <div className="flex flex-col gap-0.5">
+        <Stack gap={0.5}>
             {Array.from({ length: numLayers }, (_, i) => (
                 <button
                     key={i}
@@ -94,11 +95,11 @@ export const LayerStack = ({
                     ) : null}
                 </button>
             ))}
-        </div>
+        </Stack>
 
         {/* Active layer level + pan */}
-        <div className="flex items-end gap-2 px-1 pt-1 border-t border-border/20">
-            <div className="flex flex-col items-center gap-0.5">
+        <Row align="end" gap={2} className="px-1 pt-1 border-t border-border/20">
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={layerLevel}
                     onChange={onLevelChange}
@@ -110,8 +111,8 @@ export const LayerStack = ({
                     tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Level</span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
+            </Stack>
+            <Stack align="center" gap={0.5}>
                 <RotaryKnob
                     value={layerPan}
                     onChange={onPanChange}
@@ -123,7 +124,7 @@ export const LayerStack = ({
                     tone="sage"
                 />
                 <span className="text-[7px] text-muted-foreground">Pan</span>
-            </div>
-        </div>
-    </div>
+            </Stack>
+        </Row>
+    </Stack>
 );

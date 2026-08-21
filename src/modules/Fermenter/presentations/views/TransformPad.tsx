@@ -1,5 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { Row, Stack } from '#/components/layout';
+
 import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
 import { applyMorphedPatch } from '../../useCases/presetMorph/applyMorphedPatch';
@@ -126,13 +128,13 @@ export const TransformPad = ({ deviceId }: TransformPadProps): ReactElement => {
     }, [corners, puck]);
 
     return (
-        <div className="space-y-1.5">
-            <div className="flex items-center justify-between px-1">
+        <Stack gap={1.5}>
+            <Row justify="between" className="px-1">
                 <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Scene morph
                 </div>
                 <div className="text-[8px] text-muted-foreground/55">Four corners</div>
-            </div>
+            </Row>
             <canvas
                 ref={canvasRef}
                 className="rounded-[16px] border border-white/8"
@@ -159,6 +161,6 @@ export const TransformPad = ({ deviceId }: TransformPadProps): ReactElement => {
                     setDragging(false);
                 }}
             />
-        </div>
+        </Stack>
     );
 };
