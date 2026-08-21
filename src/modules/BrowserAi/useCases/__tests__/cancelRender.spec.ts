@@ -194,10 +194,13 @@ describe('cancelRender', () => {
             expect.objectContaining({ phraseId: 'phrase-A', requestId: 'req-new' }),
         ]);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('queued');
+        expect(cancelTfjsRequest).toHaveBeenCalledOnce();
+        expect(cancelTfjsRequest).toHaveBeenCalledWith('req-old');
+        expect(cancelTfjsRequest).not.toHaveBeenCalledWith('req-new');
     });
 
     it('does not let an older active cancellation overwrite a newer completed phrase', () => {
-        seedActiveRender({ requestId: 'req-old', phraseId: 'phrase-A', pipeline: 'ddsp' });
+        seedActiveRender({ requestId: 'req-old', phraseId: 'phrase-A', pipeline: 'kokoro' });
         enqueueRender({
             phraseId: 'phrase-A',
             requestId: 'req-new',
@@ -212,6 +215,9 @@ describe('cancelRender', () => {
         expect(renderQueueStore.value?.entries).toEqual([]);
         expect(renderQueueStore.value?.cachedPhraseIds).toEqual(['cache-key-new']);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
+        expect(cancelOnnxRequest).toHaveBeenCalledOnce();
+        expect(cancelOnnxRequest).toHaveBeenCalledWith('req-old');
+        expect(cancelOnnxRequest).not.toHaveBeenCalledWith('req-new');
     });
 
     it('retains terminal and queued owners across different phrases', () => {

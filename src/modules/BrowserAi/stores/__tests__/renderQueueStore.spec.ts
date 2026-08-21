@@ -151,6 +151,29 @@ describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
         expect(renderQueueStore.value?.phraseRequestIds?.['phrase-A']).toBe('req-A');
     });
 
+    it('does not let a late same-id cancellation overwrite a completed preview', () => {
+        enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-A' }));
+        markRenderComplete('phrase-A', 'req-A', 'cache-key-A');
+
+        cancelQueuedRender('phrase-A', 'req-A');
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual(['cache-key-A']);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('preview');
+        expect(renderQueueStore.value?.phraseRequestIds?.['phrase-A']).toBe('req-A');
+    });
+
+    it('does not let a late same-id cancellation overwrite a terminal error', () => {
+        enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-A' }));
+        updateRenderStatus('phrase-A', 'req-A', 'error');
+
+        cancelQueuedRender('phrase-A', 'req-A');
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('error');
+        expect(renderQueueStore.value?.phraseRequestIds?.['phrase-A']).toBe('req-A');
+    });
+
     it('keeps the newer owner untouched when an older request reports an error', () => {
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-old' }));
         enqueueRender(makeEntry({ phraseId: 'phrase-A', requestId: 'req-new' }));

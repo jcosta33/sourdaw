@@ -206,6 +206,25 @@ describe('renderKokoroTts', () => {
         expect(runKokoroTts).not.toHaveBeenCalled();
     });
 
+    it('closes a model port returned after cancellation before it reaches the worker', async () => {
+        const pendingModel = deferred<MessagePort | null>();
+        const latePort = { close: vi.fn() } as unknown as MessagePort;
+        readVerifiedModel.mockReturnValue(pendingModel.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(readVerifiedModel).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingModel.resolve(latePort);
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(latePort.close).toHaveBeenCalledOnce();
+        expect(loadOnnxSession).not.toHaveBeenCalled();
+        expect(runKokoroTts).not.toHaveBeenCalled();
+    });
+
     it('does not publish audio after cancellation while inference is in flight', async () => {
         const pendingInference = deferred<{
             type: 'tts-result';

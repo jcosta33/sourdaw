@@ -128,7 +128,7 @@ export function cancelQueuedRender(phraseId: string, requestId: string, hasActiv
         if (currentRequestId !== undefined && currentRequestId !== requestId) {
             return state;
         }
-        if (!ownsPhrase && (phraseEntries.length > 0 || (!hasActiveRender && currentRequestId !== requestId))) {
+        if (!ownsPhrase && (phraseEntries.length > 0 || !hasActiveRender)) {
             return state;
         }
         const entries = ownsPhrase

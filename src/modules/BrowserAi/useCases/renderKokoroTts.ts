@@ -174,6 +174,9 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
                     sha256: KOKORO_MODEL_ARTIFACT.sha256,
                     sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
                 });
+                if (!isCurrentRenderRequest(phraseId, requestId)) {
+                    modelDataPort?.close();
+                }
                 assertCurrentRenderRequest(phraseId, requestId);
                 if (!modelDataPort) {
                     throw new Error('Kokoro model is absent or failed verification; download it in AI Settings');
