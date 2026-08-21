@@ -1901,7 +1901,7 @@
   {
     "id": "ui-11028912cc57d0ff",
     "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
-    "line": 185,
+    "line": 186,
     "fingerprint": "DawMeterFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
@@ -2387,7 +2387,7 @@
   {
     "id": "ui-150d3e418300f023",
     "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
-    "line": 232,
+    "line": 233,
     "fingerprint": "DawMeterFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
@@ -2801,7 +2801,7 @@
   {
     "id": "ui-1980c3428a3ca513",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 90,
+    "line": 91,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -4169,7 +4169,7 @@
   {
     "id": "ui-27adaa1dc9410ef7",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 109,
+    "line": 110,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -4476,6 +4476,15 @@
     "id": "ui-2a8d4b4988967c61",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 891,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-2a9e742b9a18d88a",
+    "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
+    "line": 185,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -5610,6 +5619,15 @@
     "id": "ui-36807f23665f0009",
     "file": "src/modules/Proof/presentations/components/ProofDynSection.tsx",
     "line": 91,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-36b34dd96af11894",
+    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
+    "line": 60,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -7967,7 +7985,7 @@
   {
     "id": "ui-4e18fb0258d45fe3",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 70,
+    "line": 71,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -8417,7 +8435,7 @@
   {
     "id": "ui-52c9660092ce2abe",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 60,
+    "line": 61,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -10100,7 +10118,7 @@
   {
     "id": "ui-6385303b4e854095",
     "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
-    "line": 206,
+    "line": 207,
     "fingerprint": "div\tflex gap-px",
     "kind": "layout",
     "mapping": "Row",
@@ -12989,7 +13007,7 @@
   {
     "id": "ui-80898068435ba561",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 80,
+    "line": 81,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -13808,7 +13826,7 @@
   {
     "id": "ui-88f371ed5d8251d2",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 128,
+    "line": 129,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -15282,15 +15300,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-990a9809743cbad2",
-    "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
-    "line": 184,
-    "fingerprint": "div\tflex flex-col items-center gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-9968b80f0b2c93e9",
     "file": "src/modules/Proof/presentations/components/ProofImagerSection.tsx",
     "line": 79,
@@ -15329,7 +15338,7 @@
   {
     "id": "ui-99f47226746b70a5",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 118,
+    "line": 119,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
@@ -16378,15 +16387,6 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-a4539a2383d289f1",
-    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 47,
-    "fingerprint": "div\tabsolute inset-0 flex items-center justify-center overflow-hidden",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a454ad4106aaf6ec",
@@ -17773,15 +17773,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-b2164b2509a0c08a",
-    "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
-    "line": 220,
-    "fingerprint": "div\tflex flex-col justify-between py-0.5 pr-px shrink-0",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-b22d6defae6926a3",
@@ -20468,7 +20459,7 @@
   {
     "id": "ui-cdbe7a7758790c14",
     "file": "src/modules/Metering/presentations/views/LUFSMeter.tsx",
-    "line": 194,
+    "line": 195,
     "fingerprint": "DawReadoutRow\t",
     "kind": "daw-chrome",
     "mapping": "DawReadoutRow",
@@ -21728,7 +21719,7 @@
   {
     "id": "ui-db63e37db0967397",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 57,
+    "line": 58,
     "fingerprint": "DawPanelSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
@@ -22759,6 +22750,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-e6892dee7316d44b",
+    "file": "src/modules/Metering/presentations/views/LevelMeter.tsx",
+    "line": 221,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-e6a2c6b8662131ff",
@@ -24012,15 +24012,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-f2aaf57f90d19ceb",
-    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 59,
-    "fingerprint": "div\tp-2 flex flex-wrap gap-2",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-f2ca0ea29520612b",
     "file": "src/modules/WorkspaceShell/presentations/components/ProjectLoadFailureOverlay.tsx",
     "line": 72,
@@ -24678,6 +24669,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f98929ddd44060a1",
+    "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
+    "line": 48,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-f98ab3f4d7039a5b",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
     "line": 185,
@@ -25013,7 +25013,7 @@
   {
     "id": "ui-fd7e8f538cebf82b",
     "file": "src/modules/Metering/presentations/views/AnalysisPanel.tsx",
-    "line": 96,
+    "line": 97,
     "fingerprint": "DawAnalysisCard\t",
     "kind": "daw-chrome",
     "mapping": "DawAnalysisCard",
