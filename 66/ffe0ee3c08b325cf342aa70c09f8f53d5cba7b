@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/voicePromptDraftAdmission.ts
+  s_a40848e8f8cca9::t_268feed5d193d4 1-18
+  s_a40848e8f8cca9::t_7c0d4740a71b5a 19-20
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_268feed5d193d4 19,187-194,196
+src/modules/Command/useCases/__tests__/agentControlBoundary.spec.ts
+  s_a40848e8f8cca9::t_268feed5d193d4 3-7,14-17,19
+  s_a40848e8f8cca9::t_bc9a3b63712ba6 21-23
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_37b4eb642282c6 71-77
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_268feed5d193d4 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "66ffe0ee3c08b325cf342aa70c09f8f53d5cba7b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
