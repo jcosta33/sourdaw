@@ -1,0 +1,34 @@
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_3316e6b0a6e8ef 199-203
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_cb655e9b28ed77 349
+  s_a40848e8f8cca9::t_3c4a7aa2865cc6 9-10,23,282-297,300-302,304-318,320-321,323-348,350-364
+  s_a40848e8f8cca9::t_4fc54cc98945d2 298-299,303
+  s_a40848e8f8cca9::t_1c6a523632ea7b 319
+  s_a40848e8f8cca9::t_a37cf176fd61ce 322
+  s_a40848e8f8cca9::t_5e416b22bf0a77 365-366
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_a40848e8f8cca9::t_4fc54cc98945d2 176-177,181
+  s_a40848e8f8cca9::t_1c6a523632ea7b 197
+  s_a40848e8f8cca9::t_3c4a7aa2865cc6 9-10,36,160-175,178-180,182-196,198-238
+  s_a40848e8f8cca9::t_e1c612241a9e43 239-240
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_3316e6b0a6e8ef 713,715-717
+  s_a40848e8f8cca9::t_cb655e9b28ed77 714
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2cfef6d72c5801c95d29a5f07b6cdeb23cac48cb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
