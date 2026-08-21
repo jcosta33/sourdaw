@@ -332,6 +332,7 @@
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts"
             ],
