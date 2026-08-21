@@ -1,0 +1,31 @@
+electron/__tests__/webviewSecurity.spec.ts
+  s_27578aec2aab3b::t_ba19a5e0b8ed77 45,106,128-129
+  s_27578aec2aab3b::t_c9a52267a9ded7 25
+  s_27578aec2aab3b::t_0434d4c5cfa781 130-131
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_8ace456488910c 664
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_8ace456488910c 341
+  s_27578aec2aab3b::t_ba19a5e0b8ed77 342
+.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md
+  s_27578aec2aab3b::t_30a4414689f91e 48-51
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_297cb21f20a209 431
+  s_27578aec2aab3b::t_8ace456488910c 458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e921de414f8f38708c288a433f286b6e30e52897",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
