@@ -299,7 +299,7 @@
   {
     "id": "ui-02d61b76654d2db6",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 330,
+    "line": 331,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1764,15 +1764,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-0f56408ff7666cf6",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 207,
-    "fingerprint": "div\tflex flex-col gap-3 p-3",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0fb342ac5d6b636c",
     "file": "src/components/ui/bipolar-slider.tsx",
     "line": 56,
@@ -1798,15 +1789,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-0fe002b8a82d2f00",
-    "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
-    "line": 31,
-    "fingerprint": "div\tmb-2 space-y-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-0fe864462ac2a386",
@@ -1870,6 +1852,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "complex-grid"
+  },
+  {
+    "id": "ui-10c9d6d0c9ad2d82",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 208,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-10cc2ff26766472d",
@@ -2459,7 +2450,7 @@
   {
     "id": "ui-15e49f97e9238bc9",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 284,
+    "line": 285,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -3062,7 +3053,7 @@
   {
     "id": "ui-1c752ccf46246b14",
     "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
-    "line": 32,
+    "line": 33,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -3521,7 +3512,7 @@
   {
     "id": "ui-2007e415609ebb5c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 290,
+    "line": 291,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -3935,7 +3926,7 @@
   {
     "id": "ui-25765003287eb9bb",
     "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
-    "line": 24,
+    "line": 28,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -4439,7 +4430,7 @@
   {
     "id": "ui-29f73f36ec855299",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 346,
+    "line": 347,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -5186,7 +5177,7 @@
   {
     "id": "ui-315b2b0161e70ff4",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 242,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -5303,7 +5294,7 @@
   {
     "id": "ui-32f562e2f4e94177",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 196,
+    "line": 197,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -5415,6 +5406,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-341c8d33b904389b",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 242,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -8831,7 +8831,7 @@
   {
     "id": "ui-57cfbab0d9dc4f69",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 202,
+    "line": 203,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8935,15 +8935,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "responsive-or-dynamic"
-  },
-  {
-    "id": "ui-586cc46ac08e843c",
-    "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
-    "line": 14,
-    "fingerprint": "div\tflex items-center gap-2 rounded-md border border-white/8 bg-black/20 px-2 py-1.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-58bd9bd9ab4d9147",
@@ -13023,15 +13014,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-80c85647b7771686",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 220,
-    "fingerprint": "div\tflex flex-col gap-1",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-80da635f2555bd81",
     "file": "src/modules/Toaster/presentations/components/PadGrid.tsx",
     "line": 128,
@@ -15194,7 +15176,7 @@
   {
     "id": "ui-97ce611dab27810b",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 267,
+    "line": 268,
     "fingerprint": "DawUtilityNotice\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityNotice",
@@ -15459,6 +15441,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-9ae4b41118aff949",
+    "file": "src/modules/Collaboration/presentations/components/CollaborationBlock.tsx",
+    "line": 32,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -15986,7 +15977,7 @@
   {
     "id": "ui-a063ca6309e86a58",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 325,
+    "line": 326,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16418,7 +16409,7 @@
   {
     "id": "ui-a47afa9f4076aaa7",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 352,
+    "line": 353,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16589,7 +16580,7 @@
   {
     "id": "ui-a72f30885739545c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 341,
+    "line": 342,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -17012,7 +17003,7 @@
   {
     "id": "ui-aaf912beff7a1a06",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 188,
+    "line": 189,
     "fingerprint": "DawUtilityPanel\t",
     "kind": "daw-chrome",
     "mapping": "DawUtilityPanel",
@@ -19051,15 +19042,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-c00ee151dec3c1bd",
-    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 241,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-c02d784d96f06a7e",
@@ -21467,7 +21449,7 @@
   {
     "id": "ui-d859a154b634dc9a",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 256,
+    "line": 257,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22011,6 +21993,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-deb62c01b35836ca",
+    "file": "src/modules/Collaboration/presentations/components/PeerPresenceRow.tsx",
+    "line": 15,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
     "disposition": "already-migrated"
   },
   {
@@ -23870,7 +23861,7 @@
   {
     "id": "ui-f179423460703a6c",
     "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
-    "line": 313,
+    "line": 314,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -25144,6 +25135,15 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-fe3aefea6cc283ef",
+    "file": "src/modules/Collaboration/presentations/views/CollaborationPanel.tsx",
+    "line": 221,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-fe43723e9ce197b6",
