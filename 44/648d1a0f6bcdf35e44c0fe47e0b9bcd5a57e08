@@ -1,0 +1,23 @@
+src/modules/BrowserAi/repositories/__tests__/ddspModelStorage.spec.ts
+  s_27578aec2aab3b::t_944ab76adc69bc 1-88,100,110-156
+  s_27578aec2aab3b::t_3b8b6545c34d43 89-99,101-109
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_a5924d3ca7101d 27-32,34,36-40,53-58,60-68,70,72-91
+  s_27578aec2aab3b::t_45803bf89edae7 92-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "44648d1a0f6bcdf35e44c0fe47e0b9bcd5a57e08",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
