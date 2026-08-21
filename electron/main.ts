@@ -48,6 +48,8 @@ registerAppScheme();
 
 /** Set by `pnpm desktop:dev`. Turns on renderer log forwarding and the isolation probe. */
 const isDevShell = process.env.SOURDAW_DESKTOP_DEV === '1';
+/** Test-only packaged-shell probe; it never enables a production capability. */
+const isProductionCspProbe = process.env.SOURDAW_DESKTOP_CSP_PROBE === '1';
 /** Optional: load the Vite dev server instead of the built `dist/`. It already sends COOP/COEP. */
 const devServerUrl = isDevShell ? process.env.SOURDAW_DEV_SERVER_URL : undefined;
 /** Verification aid: quit after the isolation probe instead of waiting for a human. */
@@ -99,8 +101,13 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
         window.webContents.on('console-message', (details) => {
             console.log(`[renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`);
         });
-        window.webContents.on('did-finish-load', () => {
-            void runIsolationProbe(window);
+        window.webContents.once('did-finish-load', () => {
+            if (isDevShell) {
+                void runIsolationProbe(window);
+            }
+            if (isProductionCspProbe) {
+                void runProductionCspProbe(window);
+            }
         });
     }
 };
@@ -224,6 +231,45 @@ const runIsolationProbe = async (window: BrowserWindow): Promise<void> => {
             console.log('[shell] probe-exit reached, quitting');
             app.quit();
         }, probeExitMs);
+    }
+};
+
+/**
+ * A finite packaged-shell proof for the path-scoped Magenta CSP admission.
+ *
+ * It runs only when the E2E harness explicitly opts in, after an `app://`
+ * response has loaded and Chromium has enforced its production headers. The
+ * renderer, rather than the main process, performs both requests: CSP is a
+ * renderer policy and a main-process fetch could not prove it.
+ */
+const runProductionCspProbe = async (window: BrowserWindow): Promise<void> => {
+    const probe = `(async () => {
+        const fetchOutcome = async (url) => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            try {
+                const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+                return { resolved: true, ok: response.ok, status: response.status };
+            } catch (error) {
+                return { resolved: false, message: String(error) };
+            } finally {
+                clearTimeout(timeout);
+            }
+        };
+        const [allowed, denied] = await Promise.all([
+            fetchOutcome('https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json'),
+            fetchOutcome('https://storage.googleapis.com/magentadata/not-ddsp/probe.json'),
+        ]);
+        return JSON.stringify({ allowed, denied });
+    })()`;
+
+    try {
+        const result: unknown = await window.webContents.executeJavaScript(probe, true);
+        console.log(`[shell] production-csp-probe ${String(result)}`);
+    } catch (error) {
+        console.error(`[shell] production-csp-probe failed: ${String(error)}`);
+    } finally {
+        app.quit();
     }
 };
 

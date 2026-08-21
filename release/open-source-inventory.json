@@ -286,9 +286,13 @@
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
+                "electron/protocol.ts",
                 "src/infra/release/modelReleaseAdmission.ts",
+                "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "src/modules/BrowserAi/repositories/ddspModelStorage.ts",
+                "src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "src/modules/BrowserAi/useCases/initBrowserAi.ts"
             ],
             "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
@@ -705,7 +709,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "3dff3e25cf2d460fad86c8eb91703ee27e55e553c6be3c462bb5c4f54d8db929"
+            "sha256": "f6d36ed60f282e9d82e493bd0598f0a19593adf880f474b90a93a6d848028bca"
         },
         {
             "path": "server/package.json",
@@ -717,7 +721,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "f4a793c9674e94f0f8928957a5d9b1521a86ed70892a679e7762f5983530293d"
+            "sha256": "771444595ee7766f334a3905d52a4ce1bdf15d8d54a5432bb140a36fd916c7ea"
         },
         {
             "path": "Cargo.toml",
@@ -733,7 +737,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "9ff9f519be41d2b0cb9d3252c4c6e018630cf766d0830b3081c1975d051fcca2"
+            "sha256": "55b8712577605f3841c3c4ef5de81d5fc68f7b1b599f838fd762b30918149d5a"
         }
     ],
     "externalReferences": [
@@ -893,7 +897,12 @@
         },
         {
             "surface": "ddsp-models",
-            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+            "file": "electron/protocol.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
         },
         {

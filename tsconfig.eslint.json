@@ -3,6 +3,6 @@
     "compilerOptions": {
         "types": ["@webgpu/types", "node"]
     },
-    "include": ["src", "scripts", "electron", "playwright.config.ts", "vite-env.d.ts", "vite.config.ts"],
+    "include": ["src", "scripts", "electron", "tests/e2e", "playwright.config.ts", "vite-env.d.ts", "vite.config.ts"],
     "exclude": ["dist", "build", "coverage", "storybook-static", "electron/out"]
 }
