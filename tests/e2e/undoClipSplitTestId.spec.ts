@@ -1,9 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-// A 4-second sine WAV (~8 beats at 120 BPM) so the clip body is wide enough to
-// split at a mid-clip cursor position.
 function buildSineWav(seconds = 4): Buffer {
     const sampleRate = 44100;
     const samples = Math.floor(sampleRate * seconds);
@@ -30,74 +28,95 @@ function buildSineWav(seconds = 4): Buffer {
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-async function setupAudioClip(page: import('@playwright/test').Page): Promise<import('@playwright/test').Locator> {
-    await page.keyboard.press(`${MOD}+K`);
-    const paletteInput = page.getByTestId('command-palette-input');
-    await paletteInput.fill('Add Audio Track');
-    await page.waitForTimeout(300);
-    await paletteInput.press('Enter');
-    await page.waitForTimeout(800);
-
-    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    await trackList.getByRole('row').first().click({ button: 'right' });
-    await page.getByRole('menu').waitFor({ state: 'visible' });
-    const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('menuitem', { name: /Import Audio/i }).click();
-    const fileChooser = await chooser;
-    await fileChooser.setFiles({ name: 'tone.wav', mimeType: 'audio/wav', buffer: buildSineWav() });
-    await page.waitForTimeout(2000);
-
-    const dockToggle = page.getByTestId('toggle-bottom-dock');
-    if ((await dockToggle.getAttribute('aria-pressed')) !== 'true') {
-        await dockToggle.click();
-        await page.waitForTimeout(400);
-    }
-    await page.getByRole('tab', { name: 'Editor' }).click();
-    await page.waitForTimeout(400);
-
-    const canvas = page.getByLabel('Timeline editor surface');
-    await canvas.click({ position: { x: 30, y: 20 } });
-    await page.waitForTimeout(300);
-    return canvas;
+function audioHeaderRow(page: Page): Locator {
+    return page
+        .getByRole('grid', { name: /Track list/i })
+        .first()
+        .getByRole('row')
+        .filter({ has: page.getByText('Audio', { exact: true }) })
+        .filter({ hasNot: page.getByRole('button', { name: 'Add take' }) });
 }
 
-// Undo/redo of a clip split: the split is an Automerge transaction (history
-// doubles as undo), so undo must restore the single clip and redo re-split.
-// Existing undo specs cover note-draw and a generic action; the split mutation
-// — a structural clip-count change — is uncovered for the undo round-trip.
+async function addAudioTrack(page: Page): Promise<void> {
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    const before = await trackList.getByRole('row').count();
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add Audio Track');
+    await page.getByRole('option', { name: 'Add Audio Track' }).click();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
+    await audioHeaderRow(page).getByText('Audio', { exact: true }).click();
+}
+
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+        await dock.click();
+    }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function importToneClip(page: Page): Promise<void> {
+    await audioHeaderRow(page).getByText('Audio', { exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: /Import Audio/i })).toBeVisible();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('menuitem', { name: /Import Audio/i }).click();
+    await (
+        await chooser
+    ).setFiles({
+        name: 'tone.wav',
+        mimeType: 'audio/wav',
+        buffer: buildSineWav(),
+    });
+
+    await openBottomTab(page, 'Editor');
+    await expect(page.getByTestId('selected-track-clip-count')).toHaveText('1 clip');
+}
+
+async function clipLaneY(page: Page): Promise<number> {
+    const canvas = page.getByLabel('Timeline editor surface');
+    const muteBox = await page.getByRole('button', { name: 'Mute Audio' }).boundingBox();
+    const canvasBox = await canvas.boundingBox();
+    if (!muteBox || !canvasBox) {
+        throw new Error('Mute Audio or timeline surface has no bounding box');
+    }
+    return muteBox.y - canvasBox.y + muteBox.height / 2;
+}
+
 test.describe('Undo/redo of clip split', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await setupAudioClip(page);
+        await addAudioTrack(page);
+        await importToneClip(page);
     });
 
     test('split → undo restores one clip → redo re-splits to two', async ({ page }) => {
         const clipCount = page.getByTestId('selected-track-clip-count');
-        const undo = page.getByTestId('transport-undo');
-        const redo = page.getByTestId('transport-redo');
-
-        await expect(clipCount).toHaveText(/1 clip/i);
-
-        // Split at a mid-clip cursor (x:60 lands inside the clip body).
+        const undo = page.getByRole('button', { name: 'Undo', exact: true });
+        const redo = page.getByRole('button', { name: 'Redo', exact: true });
         const canvas = page.getByLabel('Timeline editor surface');
-        await canvas.click({ button: 'right', position: { x: 60, y: 20 } });
-        await page.getByRole('menuitem', { name: 'Split at Cursor' }).click();
-        await page.waitForTimeout(500);
-        await expect(clipCount).toHaveText(/2 clips/i);
-        // The split is a transaction, so undo is now usable.
-        await expect(undo).toBeEnabled();
+        const y = await clipLaneY(page);
 
-        // Undo restores the pre-split state: one clip again.
+        await expect(clipCount).toHaveText('1 clip');
+
+        await canvas.click({ button: 'right', position: { x: 60, y } });
+        await page.getByRole('menuitem', { name: 'Split at Cursor' }).click();
+
+        await expect(clipCount).toHaveText('2 clips');
+        await expect(undo).toBeEnabled();
+        await expect(redo).toBeDisabled();
+
         await undo.click();
-        await page.waitForTimeout(500);
-        await expect(clipCount).toHaveText(/1 clip/i);
+
+        await expect(clipCount).toHaveText('1 clip');
         await expect(redo).toBeEnabled();
 
-        // Redo re-applies the split: back to two clips.
         await redo.click();
-        await page.waitForTimeout(500);
-        await expect(clipCount).toHaveText(/2 clips/i);
+
+        await expect(clipCount).toHaveText('2 clips');
     });
 });

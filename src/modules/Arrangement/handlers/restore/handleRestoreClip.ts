@@ -20,6 +20,8 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
                 trackId,
                 removedClips: ripplePlan.removedClips as never,
                 shiftedClips: ripplePlan.shiftedClips as never,
+                clipSatellites: ripplePlan.clipSatellites as never,
+                clipAutomationLanes: ripplePlan.clipAutomationLanes as never,
             });
         } else {
             updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot as never] }));

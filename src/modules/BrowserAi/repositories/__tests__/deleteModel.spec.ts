@@ -1,65 +1,35 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { deleteModel } from '../deleteModel';
 
-import { dir, installStorage, notFound } from './storageTestDoubles';
-
-afterEach(() => {
-    vi.restoreAllMocks();
-});
-
 describe('deleteModel', () => {
-    it('traverses nested family directories before deleting the model file', async () => {
-        const removeEntry = vi.fn(() => Promise.resolve());
-        const vocoderDirectory = { removeEntry } as unknown as FileSystemDirectoryHandle;
-        const diffsingerDirectory = {
-            getDirectoryHandle: vi.fn((name: string) =>
-                name === 'vocoder' ? Promise.resolve(vocoderDirectory) : Promise.reject(notFound())
-            ),
-        } as unknown as FileSystemDirectoryHandle;
-        const modelsDirectory = {
-            getDirectoryHandle: vi.fn((name: string) =>
-                name === 'diffsinger' ? Promise.resolve(diffsingerDirectory) : Promise.reject(notFound())
-            ),
-        } as unknown as FileSystemDirectoryHandle;
-        const root = {
-            getDirectoryHandle: vi.fn((name: string) =>
-                name === 'models' ? Promise.resolve(modelsDirectory) : Promise.reject(notFound())
-            ),
-        } as unknown as FileSystemDirectoryHandle;
-        installStorage(dir(), {
-            getDirectory: vi.fn(() => Promise.resolve(root)) as unknown as StorageManager['getDirectory'],
-        });
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const modelStorageWorkerBridge = { deleteModel: vi.fn() };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        injectDependencies(deleteModel, { logger, modelStorageWorkerBridge });
+    });
+
+    it('delegates nested model identity to the storage worker', async () => {
+        modelStorageWorkerBridge.deleteModel.mockResolvedValue(undefined);
 
         await deleteModel({ family: 'diffsinger/vocoder', modelId: 'test-vocoder' });
 
-        expect(removeEntry).toHaveBeenCalledWith('test-vocoder');
+        expect(modelStorageWorkerBridge.deleteModel).toHaveBeenCalledWith({
+            family: 'diffsinger/vocoder',
+            modelId: 'test-vocoder',
+        });
+        expect(logger.info).toHaveBeenCalledOnce();
     });
 
     it('rethrows a storage failure so callers do not clear registry state', async () => {
         const permissionError = new DOMException('denied', 'NotAllowedError');
-        installStorage(dir(), {
-            getDirectory: vi.fn(() => Promise.reject(permissionError)) as unknown as StorageManager['getDirectory'],
-        });
+        modelStorageWorkerBridge.deleteModel.mockRejectedValue(permissionError);
 
         await expect(deleteModel({ family: 'ddsp', modelId: 'violin' })).rejects.toBe(permissionError);
-    });
-
-    it('resolves silently when the model file is already gone', async () => {
-        const removeEntry = vi.fn(() => Promise.reject(notFound()));
-        const familyDirectory = { removeEntry } as unknown as FileSystemDirectoryHandle;
-        const modelsDirectory = {
-            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
-        } as unknown as FileSystemDirectoryHandle;
-        installStorage(dir(), {
-            getDirectory: vi.fn(() =>
-                Promise.resolve({
-                    getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
-                })
-            ) as unknown as StorageManager['getDirectory'],
-        });
-
-        await expect(deleteModel({ family: 'ddsp', modelId: 'violin' })).resolves.toBeUndefined();
-        expect(removeEntry).toHaveBeenCalledWith('violin');
+        expect(logger.warn).toHaveBeenCalledOnce();
     });
 });

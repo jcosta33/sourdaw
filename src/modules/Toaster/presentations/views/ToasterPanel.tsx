@@ -7,6 +7,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
@@ -89,7 +90,7 @@ const Knob = ({
     onChange: (value: number) => void;
     readout: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <Stack align="center" gap={1}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -104,7 +105,7 @@ const Knob = ({
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
             <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
         </div>
-    </div>
+    </Stack>
 );
 
 export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
@@ -157,14 +158,14 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const selectedPad: PadState | undefined = kit.pads[selectedPadIndex] ?? kit.pads[0];
     if (!selectedPad) {
         return (
-            <div className="toaster-faceplate flex h-full min-h-0 items-center justify-center rounded-[26px] p-6 text-center">
-                <div className="space-y-2">
+            <Row justify="center" className="toaster-faceplate h-full min-h-0 rounded-[26px] p-6 text-center">
+                <Stack gap={2}>
                     <div className="text-[12px] font-semibold text-foreground">This kit has no pads</div>
                     <div className="text-[10px] text-muted-foreground">
                         Load a kit from the shelf to restore the pad bay.
                     </div>
-                </div>
-            </div>
+                </Stack>
+            </Row>
         );
     }
 
@@ -281,9 +282,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     return (
         <div className="toaster-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Kit shelf" detail="Grab a kit, then keep the active pad right below it.">
-                        <label className="toaster-window flex items-center gap-2 px-3 py-2">
+                        <Row as="label" gap={2} className="toaster-window px-3 py-2">
                             <input
                                 value={presetQuery}
                                 onChange={(event) => setPresetQuery(event.target.value)}
@@ -291,8 +292,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
                                 aria-label="Search Toaster kits"
                             />
-                        </label>
-                        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                        </Row>
+                        <Stack grow gap={2} className="overflow-y-auto pr-1">
                             {visiblePresets.map((preset) => {
                                 const active = preset.name === kit.name;
                                 return (
@@ -308,21 +309,21 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         }`}
                                         onClick={() => handleLoadPreset(preset.id)}
                                     >
-                                        <div className="flex w-full items-center justify-between gap-2">
+                                        <Row justify="between" gap={2} className="w-full">
                                             <span className="text-[11px] font-medium text-foreground">
                                                 {preset.name}
                                             </span>
                                             <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/45">
                                                 {preset.tags[1] ?? 'kit'}
                                             </span>
-                                        </div>
+                                        </Row>
                                         <span className="text-[9px] leading-4 text-muted-foreground">
                                             {preset.description}
                                         </span>
                                     </button>
                                 );
                             })}
-                        </div>
+                        </Stack>
                     </SectionCard>
 
                     <SectionCard
@@ -336,9 +337,11 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             onTriggerPad={triggerPad}
                         />
 
-                        <div className="toaster-window flex items-center gap-3 px-3 py-3">
-                            <div
-                                className="flex size-12 shrink-0 items-center justify-center rounded-[16px] border"
+                        <Row gap={3} className="toaster-window px-3 py-3">
+                            <Row
+                                justify="center"
+                                shrink={false}
+                                className="size-12 rounded-[16px] border"
                                 style={{
                                     background: `linear-gradient(180deg, ${selectedPad.color}33, rgba(0,0,0,0.18))`,
                                     borderColor: `${selectedPad.color}66`,
@@ -346,7 +349,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 }}
                             >
                                 <span className="text-[11px] font-semibold text-white/82">{selectedPadIndex + 1}</span>
-                            </div>
+                            </Row>
                             <div className="min-w-0">
                                 <div className="truncate text-[12px] font-semibold text-foreground">
                                     {selectedPad.name}
@@ -355,7 +358,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     {selectedPad.engineType.replaceAll('-', ' ')}
                                 </div>
                             </div>
-                        </div>
+                        </Row>
 
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
@@ -426,28 +429,29 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             />
                         </div>
                     </SectionCard>
-                </aside>
+                </Stack>
 
-                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
+                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
+                    <Row align="start" justify="between" gap={3}>
+                        <Stack gap={2}>
                             <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
                                 Pattern story
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{kit.name}</div>
-                        </div>
+                        </Stack>
 
-                        <div className="flex flex-wrap justify-end gap-2">
+                        <Row align="stretch" justify="end" wrap gap={2}>
                             {kit.patterns.length > 1 ? (
-                                <div
-                                    className="toaster-window flex min-w-[94px] flex-col gap-1 px-3 py-2"
+                                <Stack
+                                    gap={1}
+                                    className="toaster-window min-w-[94px] px-3 py-2"
                                     role="group"
                                     aria-label="Active pattern"
                                 >
                                     <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
                                         Pattern
                                     </div>
-                                    <div className="flex flex-wrap gap-1">
+                                    <Row align="stretch" wrap gap={1}>
                                         {kit.patterns.map((pattern) => (
                                             <DawPluginChip
                                                 key={pattern.id}
@@ -460,8 +464,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                                 {pattern.name}
                                             </DawPluginChip>
                                         ))}
-                                    </div>
-                                </div>
+                                    </Row>
+                                </Stack>
                             ) : (
                                 <DawPluginMetricTile
                                     className="toaster-window min-w-[94px]"
@@ -488,8 +492,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 value={`${activeVoices}`}
                                 detail="Live hits"
                             />
-                        </div>
-                    </div>
+                        </Row>
+                    </Row>
 
                     <div className="toaster-window min-h-0 shrink-0 overflow-auto p-3">
                         {activePattern ? (
@@ -505,11 +509,11 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             />
                         ) : null}
                     </div>
-                </section>
+                </Stack>
 
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Transport" detail="Keep the rhythm tools tight and ready.">
-                        <div className="flex items-center gap-2">
+                        <Row gap={2}>
                             <DawPluginChip
                                 active={isPlaying}
                                 disabled={!isGrooveAvailable}
@@ -537,7 +541,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 <Send className="size-3.5" />
                                 To timeline
                             </DawPluginChip>
-                        </div>
+                        </Row>
                         <div role="status" className="text-[9px] leading-4 text-muted-foreground">
                             {grooveStatusMessage}
                         </div>
@@ -555,7 +559,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         title="Fill tools"
                         detail="Euclid stays playful instead of turning into a spreadsheet."
                     >
-                        <div className="flex items-center gap-2">
+                        <Row gap={2}>
                             <input
                                 type="number"
                                 value={eucHits}
@@ -577,11 +581,15 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             >
                                 Toast
                             </DawPluginChip>
-                        </div>
+                        </Row>
                     </SectionCard>
 
                     <SectionCard title="Groove" detail="Master motion and room live together on the right rail.">
-                        <label className="flex flex-col gap-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                        <Stack
+                            as="label"
+                            gap={1}
+                            className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                        >
                             Template
                             <select
                                 aria-label="Pattern groove template"
@@ -599,8 +607,12 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     </option>
                                 ))}
                             </select>
-                        </label>
-                        <label className="flex flex-col gap-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                        </Stack>
+                        <Stack
+                            as="label"
+                            gap={1}
+                            className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                        >
                             Amount {Math.round(displayedGrooveAmount * 100)}%
                             <input
                                 aria-label="Pattern groove amount"
@@ -616,7 +628,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 onKeyUp={commitGrooveAmount}
                                 onBlur={commitGrooveAmount}
                             />
-                        </label>
+                        </Stack>
                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                             <Knob
                                 value={kit.swing}
@@ -680,7 +692,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             />
                         </div>
                     </SectionCard>
-                </aside>
+                </Stack>
             </div>
         </div>
     );

@@ -1,75 +1,83 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openRoutingTab(page: import('@playwright/test').Page): Promise<void> {
-    const dock = page.getByTestId('toggle-bottom-dock');
-    const isOpen = await dock.getAttribute('aria-pressed');
-    if (isOpen === 'false') {
-        await dock.click();
-        await page.waitForTimeout(500);
-    }
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-    const routingTab = page.locator('#bottom-dock-tab-routing');
-    if (await routingTab.isVisible().catch(() => false)) {
-        await routingTab.click();
-        await page.waitForTimeout(500);
+async function addMidiTrack(page: Page): Promise<void> {
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    const before = await trackList.getByRole('row').count();
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
+}
+
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
+    if ((await dock.getAttribute('aria-pressed')) === 'false') {
+        await dock.click();
     }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function expandSignalFlow(page: Page): Promise<void> {
+    const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+    const toggle = inspector.getByRole('button', { name: /Signal Flow/ });
+    await expect(toggle).toBeVisible();
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+        await toggle.click();
+    }
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 }
 
 test.describe('Routing graph — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+        await addMidiTrack(page);
+        await openBottomTab(page, 'Routing');
+    });
 
-        // Add a track.
-        const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-        await emptyStateMidiButton.waitFor({ state: 'visible' });
-        await emptyStateMidiButton.click();
+    test('routing tab is selected in the bottom dock', async ({ page }) => {
+        const tab = page
+            .getByRole('tablist', { name: 'Bottom dock' })
+            .getByRole('tab', { name: 'Routing', exact: true });
+        await expect(tab).toBeVisible();
+        await expect(tab).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test('routing matrix shows the MIDI track output to Master', async ({ page }) => {
+        const output = page.getByRole('button', { name: 'MIDI output routed to Master' });
+        await expect(output).toBeVisible();
+        await expect(output).toBeDisabled();
+    });
+
+    test('expanding Signal Flow reveals the routing graph', async ({ page }) => {
+        await expandSignalFlow(page);
+        const graph = page.getByRole('img', { name: 'Signal routing graph' });
+        await expect(graph).toBeVisible();
+        await expect(graph).toHaveAttribute('data-testid', 'routing-graph');
+        await expect(page.getByRole('button', { name: 'Select MIDI' })).toBeVisible();
+    });
+
+    test('clicking a routing node selects that track in the track list', async ({ page }) => {
+        await expandSignalFlow(page);
+
         const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-        await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor({ state: 'visible' });
-        await openRoutingTab(page);
-    });
+        const midiRow = trackList
+            .getByRole('row')
+            .filter({ has: page.getByText('MIDI', { exact: true }) })
+            .first();
 
-    test('routing tab is accessible and renders content', async ({ page }) => {
-        // The routing tab should show some content (graph or empty state).
-        const routingTab = page.locator('#bottom-dock-tab-routing');
-        await expect(routingTab).toBeVisible({ timeout: 10_000 });
+        await page.getByRole('button', { name: 'Select Master' }).click();
+        await expect(midiRow).toHaveAttribute('aria-selected', 'false');
 
-        // Click it and verify the dock panel has content.
-        await routingTab.click();
-        await page.waitForTimeout(500);
-
-        // The bottom dock tabpanel should have rendered content.
-        const panel = page.locator('#bottom-dock-tabpanel');
-        if (await panel.isVisible().catch(() => false)) {
-            const text = (await panel.innerText()).trim();
-            expect(text.length).toBeGreaterThan(0);
-        }
-    });
-
-    test('routing graph has role=img when visible', async ({ page }) => {
-        const graph = page.getByTestId('routing-graph');
-        if (await graph.isVisible().catch(() => false)) {
-            const role = await graph.getAttribute('role');
-            expect(role).toBe('img');
-            const label = await graph.getAttribute('aria-label');
-            expect(label).toBe('Signal routing graph');
-        }
-    });
-
-    test('routing graph renders SVG content with paths', async ({ page }) => {
-        const graph = page.getByTestId('routing-graph');
-        if (await graph.isVisible().catch(() => false)) {
-            // The SVG should have child elements (paths, nodes).
-            const childCount = await graph.evaluate((el) => el.children.length);
-            expect(childCount).toBeGreaterThan(0);
-        }
-    });
-
-    test('routing tab is accessible in bottom dock', async ({ page }) => {
-        const routingTab = page.locator('#bottom-dock-tab-routing');
-        const hasTab = await routingTab.isVisible().catch(() => false);
-        expect(hasTab).toBe(true);
+        await page.getByRole('button', { name: 'Select MIDI' }).click();
+        await expect(midiRow).toHaveAttribute('aria-selected', 'true');
     });
 });

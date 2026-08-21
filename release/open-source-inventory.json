@@ -133,22 +133,28 @@
             "id": "mp3-encoder",
             "kind": "runtime-library",
             "retention": "keep-with-obligations",
-            "owner": "OS-10",
+            "owner": "OS-07",
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
+                "public/legal/LGPL-3.0-and-GPL-3.0.txt",
+                "public/legal/RELINKING.md",
+                "public/legal/SOURCES.json",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "public/legal/lamejs-NOTICE.txt",
                 "src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts"
             ],
-            "sources": ["https://github.com/shijinyu/lamejs", "node_modules/@breezystack/lamejs/package.json"],
-            "revisions": ["@breezystack/lamejs@1.2.7"],
+            "sources": ["https://github.com/gideonstele/lamejs", "public/legal/SOURCES.json"],
+            "revisions": ["@breezystack/lamejs@1.2.7", "1fb0ef5fa177413107e2e107d054a9b994e3f79c"],
             "digests": [
-                "pnpm-integrity:sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA=="
+                "pnpm-integrity:sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
+                "public/legal/SOURCES.json"
             ],
-            "licenses": ["LGPL-3.0"],
+            "licenses": ["LGPL-3.0-only"],
             "productSurfaces": ["MP3 export"],
-            "evidence": ["Installed package metadata declares LGPL-3.0."],
-            "obligations": ["Preserve LGPL notices and satisfy distribution obligations."]
+            "evidence": ["Exact package bytes, source revision, notice, license, and relink route are pinned."],
+            "obligations": ["Keep the source route, license, notice, and relink instructions beside every build."]
         },
         {
             "id": "webllm-qwen-artifacts",
@@ -476,17 +482,28 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "public/samples/levain/**",
+                "release/levain-CC0-1.0.txt",
+                "release/levain-upstream-commit.base64",
+                "release/levain-upstream-tree.tsv",
+                "scripts/checkLevainProvenance.ts",
+                "scripts/checkLevainUpstreamProof.ts",
                 "scripts/download-levain-samples-direct.ts",
-                "scripts/download-levain-samples.ts"
+                "scripts/download-levain-samples.ts",
+                "scripts/levainSource.ts"
             ],
             "sources": ["https://github.com/sgossner/VSCO-2-CE"],
-            "revisions": ["mutable master reference"],
-            "digests": ["pending:OS-06-file-level-reconciliation"],
-            "licenses": ["CC0-1.0 claim pending complete bank reconciliation"],
+            "revisions": ["440300901dfe9275fd84e0b7763af1f8443ae62e"],
+            "digests": [
+                "git-tree:0ecebcfca0c7e0fe501f71964027f8f59fa0e432",
+                "file-level:public/samples/levain/provenance.tsv"
+            ],
+            "licenses": ["CC0-1.0", "pending:OS-10-project-license"],
             "productSurfaces": ["bundled Levain orchestral sample bank"],
-            "evidence": ["One file matches CC0 VSCO-2-CE; the full bank lacks immutable file-level reconciliation."],
+            "evidence": [
+                "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
+            ],
             "obligations": [
-                "Pin one upstream revision and map every retained file by source path, hash, and license without relocating the bank."
+                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
             ]
         },
         {
@@ -495,15 +512,32 @@
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": ["public/faust/**"],
-            "sources": ["https://www.npmjs.com/package/@grame/faustwasm", "public/faust/"],
-            "revisions": ["checked files match @grame/faustwasm 0.15.7; package lock selects 0.16.7"],
-            "digests": ["pending:OS-07-version-matched-package-proof"],
-            "licenses": ["LGPL-3.0"],
+            "paths": [
+                "public/faust/**",
+                "public/legal/RELINKING.md",
+                "public/legal/SOURCES.json",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "public/legal/faustwasm-COPYING.txt"
+            ],
+            "sources": [
+                "https://github.com/grame-cncm/faustwasm",
+                "https://github.com/grame-cncm/faust",
+                "public/legal/SOURCES.json"
+            ],
+            "revisions": [
+                "@grame/faustwasm@0.16.7",
+                "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+                "libfaust 2.86.2 at 011423ab76674cd96009385af15cadcd281a3259"
+            ],
+            "digests": [
+                "pnpm-integrity:sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
+                "public/legal/SOURCES.json"
+            ],
+            "licenses": ["LGPL-2.1-or-later"],
             "productSurfaces": ["browser Faust compiler", "desktop Faust compiler"],
-            "evidence": ["Checked Faust binaries match an older LGPL dependency version and lack a source route."],
+            "evidence": ["Shipped compiler bytes match the pinned package and embedded compiler source version."],
             "obligations": [
-                "Supply version-matched source, LGPL text, attribution, and modification notice or replace the component."
+                "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build."
             ]
         },
         {
@@ -593,6 +627,7 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "docs/manual/devices/11-grinder.md",
+                "docs/manual/devices/17-fermenter.md",
                 "public/faust/libfaust-wasm.js",
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
@@ -691,7 +726,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "8fc7835b781dce7aed3d4ebb12b412124397d044a22be606ce85038a3b6dfe14"
+            "sha256": "e25612b2560528fb8b0c6aee8023468052b044d586ef2379b6757449702144e7"
         },
         {
             "path": "server/package.json",
@@ -703,7 +738,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "f4a793c9674e94f0f8928957a5d9b1521a86ed70892a679e7762f5983530293d"
+            "sha256": "131903d9fd1ca4d3d7dc9559020afce5dbfbea4e56f6d18385d8406d0ae7bcec"
         },
         {
             "path": "Cargo.toml",
@@ -719,10 +754,61 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "9ff9f519be41d2b0cb9d3252c4c6e018630cf766d0830b3081c1975d051fcca2"
+            "sha256": "55b8712577605f3841c3c4ef5de81d5fc68f7b1b599f838fd762b30918149d5a"
         }
     ],
     "externalReferences": [
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/gideonstele/lamejs"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faust"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faustwasm"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://registry.npmjs.org/${slot}/${slot}",
+            "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
+        },
+        {
+            "surface": "mp3-encoder",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/gideonstele/lamejs"
+        },
+        {
+            "surface": "mp3-encoder",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faust"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faust/archive/011423ab76674cd96009385af15cadcd281a3259.tar.gz"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustwasm"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustwasm/archive/a1ae243d885d6494409a2a4a227cbdd2a6833edf.tar.gz"
+        },
         {
             "surface": "community-links",
             "file": "crates/daw-plugin-host/src/clap_host.rs",
@@ -747,24 +833,31 @@
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples-direct.ts",
-            "value": "https://github.com/sgossner/VSCO-2-CE/tree/master/${slot}",
-            "templateSha256": "bb9f3d79c590a354d37c6e61662d04001e531eb3a197a0bbd247737e6a0bafc4"
+            "value": "https://github.com/sgossner/VSCO-2-CE/tree/${slot}/${slot}",
+            "templateSha256": "0312474d5e44993f94ca1d90679a5a5f67924856de7a333ef8dff4b0d13a8ee4"
         },
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples-direct.ts",
-            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master"
+            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${slot}",
+            "templateSha256": "c1c4dd6ac9e3b00c3d2e0db33c7ebbf5330e1b17263fc32709a93adec824c655"
         },
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples.ts",
-            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${slot}",
-            "templateSha256": "df50520b0bf9a8ca498d5d68931d9545f8e2dcce0ddf9cb3a08440d6847ef4d2"
+            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${slot}?ref=${slot}",
+            "templateSha256": "c39e3dc432711c375ed9ca9c7c71dda45fdb8af88adabab878d6d067fbee4b87"
         },
         {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples.ts",
-            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master"
+            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${slot}",
+            "templateSha256": "c1c4dd6ac9e3b00c3d2e0db33c7ebbf5330e1b17263fc32709a93adec824c655"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/levainSource.ts",
+            "value": "https://github.com/sgossner/VSCO-2-CE"
         },
         {
             "surface": "whisper-model",
@@ -1043,6 +1136,7 @@
             "value": "Moog",
             "paths": [
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
@@ -1167,6 +1261,7 @@
         {
             "value": "MS-20",
             "paths": [
+                "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts"
@@ -1187,6 +1282,7 @@
         {
             "value": "SEM",
             "paths": [
+                "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",

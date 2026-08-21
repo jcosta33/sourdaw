@@ -6,6 +6,7 @@ import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
@@ -85,7 +86,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     };
 
     return (
-        <div className="w-[320px] border-l border-border/40 bg-surface-base flex flex-col h-full shrink-0 animate-in slide-in-from-right-8 duration-200">
+        <Stack
+            shrink={false}
+            className="w-[320px] border-l border-border/40 bg-surface-base h-full animate-in slide-in-from-right-8 duration-200"
+        >
             {/* Header */}
             <DawHeaderBand
                 className="h-[38px] px-3"
@@ -99,7 +103,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 }
             />
             {/* MIDI Sub-tabs */}
-            <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
+            <Row align="stretch" gap={2} shrink={false} className="px-3 pt-2 pb-1">
                 <Button
                     variant={midiSubTab === 'patterns' ? 'secondary' : 'ghost'}
                     size="xs"
@@ -124,7 +128,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 >
                     <Sparkles className="size-3" /> AI
                 </Button>
-            </div>
+            </Row>
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
                 {midiSubTab === 'patterns' ? (
@@ -134,9 +138,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 ) : null}
 
                 {midiSubTab === 'ai' ? (
-                    <div className="p-3 space-y-4">
-                        <div className="space-y-3">
-                            <div className="space-y-1.5">
+                    <Stack gap={4} className="p-3">
+                        <Stack gap={3}>
+                            <Stack gap={1.5}>
                                 <DawEyebrowLabel size="sm" className="block text-foreground/80">
                                     Describe the Music
                                 </DawEyebrowLabel>
@@ -146,9 +150,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     placeholder="e.g. jazzy chord progression in D minor"
                                     className="h-12 border-border/60 bg-surface-base p-2 resize-none"
                                 />
-                            </div>
+                            </Stack>
 
-                            <div className="space-y-4 pt-1 pb-2">
+                            <Stack gap={4} className="pt-1 pb-2">
                                 <ParamSection label="Genre" value={midiGenre} onClear={() => setMidiGenre('')}>
                                     <GenreGrid value={midiGenre} onChange={setMidiGenre} />
                                 </ParamSection>
@@ -162,15 +166,15 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 >
                                     <InstrumentGrid value={midiInstrument} onChange={setMidiInstrument} />
                                 </ParamSection>
-                            </div>
+                            </Stack>
 
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center">
+                            <Stack gap={2}>
+                                <Row justify="between">
                                     <DawEyebrowLabel size="sm" className="text-foreground/80">
                                         Max Notes
                                     </DawEyebrowLabel>
                                     <span className="text-[10px] text-muted-foreground">{midiNotes}</span>
-                                </div>
+                                </Row>
                                 <Slider
                                     value={[midiNotes]}
                                     onValueChange={([value]) => setMidiNotes(value!)}
@@ -179,14 +183,14 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     step={4}
                                     className="pt-1"
                                 />
-                            </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center">
+                            </Stack>
+                            <Stack gap={2}>
+                                <Row justify="between">
                                     <DawEyebrowLabel size="sm" className="text-foreground/80">
                                         Creativity
                                     </DawEyebrowLabel>
                                     <span className="text-[10px] text-muted-foreground">{creativity}%</span>
-                                </div>
+                                </Row>
                                 <Slider
                                     value={[creativity]}
                                     onValueChange={([value]) => setCreativity(value!)}
@@ -195,10 +199,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     step={5}
                                     className="pt-1"
                                 />
-                            </div>
+                            </Stack>
 
                             {midiIsProcessing ? (
-                                <div className="flex gap-2">
+                                <Row align="stretch" gap={2}>
                                     <Button
                                         className="flex-1 h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white opacity-60"
                                         disabled
@@ -215,7 +219,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     >
                                         Stop
                                     </Button>
-                                </div>
+                                </Row>
                             ) : (
                                 <Button
                                     className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white"
@@ -225,8 +229,8 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     <Sparkles className="size-3.5 mr-2" /> Generate MIDI
                                 </Button>
                             )}
-                        </div>
-                    </div>
+                        </Stack>
+                    </Stack>
                 ) : null}
 
                 {/* Results */}
@@ -247,16 +251,16 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             detail="The latest generated clips and renders."
                             bodyClassName="px-2 py-2"
                         >
-                            <div className="space-y-1.5">
+                            <Stack gap={1.5}>
                                 {state.tasks.map((task: GenerativeTaskResult) => (
                                     <AiTaskResultCard key={task.id} task={task} onRemove={removeTask} />
                                 ))}
-                            </div>
+                            </Stack>
                         </DawUtilitySection>
                     </div>
                 ) : null}
             </div>
-        </div>
+        </Stack>
     );
 };
 
@@ -273,8 +277,8 @@ const ParamSection = ({
     onClear: () => void;
     children: ReactElement;
 }): ReactElement => (
-    <div className="space-y-2">
-        <div className="flex items-center justify-between">
+    <Stack gap={2}>
+        <Row justify="between">
             <DawEyebrowLabel size="sm" className="text-foreground/90">
                 {label}
             </DawEyebrowLabel>
@@ -288,7 +292,7 @@ const ParamSection = ({
                     Clear
                 </Button>
             ) : null}
-        </div>
+        </Row>
         {children}
-    </div>
+    </Stack>
 );

@@ -20,7 +20,7 @@ type DetectCapabilitiesRepo = (input?: {
     forceRefresh?: boolean;
     measureInference?: boolean;
 }) => Promise<CapabilityReport>;
-type ReadVerifiedModel = () => Promise<ArrayBuffer | null>;
+type CheckVerifiedModel = () => Promise<boolean>;
 
 function create_logger_mock(): { info: (m: string) => void; warn: (m: string) => void; debug: (m: string) => void } {
     return {
@@ -77,12 +77,12 @@ describe('BrowserAi capabilityColdStart', () => {
 
     it('forces a fresh capability probe on cold start rather than accepting a cached report', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(supported_report);
-        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            readVerifiedModel: read_verified_model,
+            checkVerifiedModel: check_verified_model,
         });
 
         await initBrowserAi();
@@ -96,12 +96,12 @@ describe('BrowserAi capabilityColdStart', () => {
             .fn<DetectCapabilitiesRepo>()
             .mockResolvedValueOnce(supported_report)
             .mockResolvedValueOnce(regressed_report);
-        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            readVerifiedModel: read_verified_model,
+            checkVerifiedModel: check_verified_model,
         });
 
         // First cold start: healthy runtime.

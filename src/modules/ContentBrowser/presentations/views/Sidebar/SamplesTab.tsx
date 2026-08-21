@@ -4,6 +4,7 @@ import { Folder, File, Star, Upload } from 'lucide-react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
+import { Row, Stack } from '#/components/layout';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -50,7 +51,7 @@ export const SamplesTab = ({
     };
 
     return (
-        <div className="space-y-2">
+        <Stack gap={2}>
             {samples.length === 0 ? (
                 <div className="px-3 py-4">
                     <DawEmptyState
@@ -63,10 +64,10 @@ export const SamplesTab = ({
             ) : null}
             {categories.map((cat) => (
                 <div key={cat}>
-                    <div className="flex items-center gap-1 px-1 py-0.5">
+                    <Row gap={1} className="px-1 py-0.5">
                         <Folder className="size-3 text-muted-foreground" />
                         <span className="text-[10px] font-medium text-muted-foreground uppercase">{cat}</span>
-                    </div>
+                    </Row>
                     {samples
                         .filter((state) => state.category === cat)
                         .map((sample) => (
@@ -92,7 +93,7 @@ export const SamplesTab = ({
                                 <DawPickerRow
                                     className="cursor-grab active:cursor-grabbing px-2 py-1"
                                     startSlot={
-                                        <div className="flex items-center gap-1">
+                                        <Row gap={1}>
                                             <PreviewButton
                                                 isPlaying={preview.playingId === sample.id}
                                                 onPlay={() => {
@@ -108,7 +109,7 @@ export const SamplesTab = ({
                                                 onStop={preview.stop}
                                             />
                                             <File className="size-3 text-muted-foreground" />
-                                        </div>
+                                        </Row>
                                     }
                                     heading={sample.name}
                                     description={sample.duration}
@@ -142,6 +143,6 @@ export const SamplesTab = ({
                         ))}
                 </div>
             ))}
-        </div>
+        </Stack>
     );
 };

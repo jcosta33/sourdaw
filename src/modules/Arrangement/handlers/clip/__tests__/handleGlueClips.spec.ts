@@ -53,6 +53,8 @@ describe('handleGlueClips', () => {
             clips: [],
             clipOrder: [],
             midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+            clipSatellites: [],
+            clipAutomationLanes: [],
         };
         const action = {
             type: 'glueClips' as const,
@@ -89,12 +91,16 @@ describe('handleGlueClips', () => {
             clips: [],
             clipOrder: [],
             midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+            clipSatellites: [],
+            clipAutomationLanes: [],
         };
         const next = {
             trackId: 'track-1',
             clips: [],
             clipOrder: [],
             midi: { clips: [], migratedAbsoluteNoteClipIds: { present: true, value: ['target'] } },
+            clipSatellites: [],
+            clipAutomationLanes: [],
         };
         mocks.prepareClipGlue.mockReturnValue({ previous, next, targetClipId: 'target' });
         const action = {

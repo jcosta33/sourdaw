@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Hoisted mocks for module-level collaborators ────────────────────────────
 const loadOnnxSession = vi.hoisted(() =>
-    vi.fn<(input: { modelId: string; modelData: ArrayBuffer }) => Promise<void>>()
+    vi.fn<(input: { modelId: string; modelDataPort: MessagePort }) => Promise<void>>()
 );
 const runKokoroTts = vi.hoisted(() =>
     vi.fn<
@@ -14,7 +14,7 @@ const runKokoroTts = vi.hoisted(() =>
         }>
     >()
 );
-const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
+const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<MessagePort | null>>());
 const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
 type ComputeRenderCacheKeyCall = Parameters<
@@ -81,6 +81,8 @@ function callRender(
 }
 
 describe('renderKokoroTts', () => {
+    let modelDataPort: MessagePort;
+
     beforeEach(() => {
         loadOnnxSession.mockReset().mockResolvedValue(undefined);
         runKokoroTts.mockReset().mockResolvedValue({
@@ -89,7 +91,8 @@ describe('renderKokoroTts', () => {
             audio: new Float32Array(2400),
             samplingRate: 24000,
         });
-        readVerifiedModel.mockReset().mockResolvedValue(new ArrayBuffer(8));
+        modelDataPort = new MessageChannel().port1;
+        readVerifiedModel.mockReset().mockResolvedValue(modelDataPort);
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
         computeRenderCacheKey.mockReset().mockResolvedValue('cache-key-1');
@@ -160,10 +163,9 @@ describe('renderKokoroTts', () => {
         sha256ArrayBuffer.mockResolvedValue(voice_hash('af_nicole'));
         const result = await callRender({ speakerId: 'af_nicole', speed: 1.5 });
 
-        expect(loadOnnxSession).toHaveBeenCalledWith({
-            modelId: KOKORO_MODEL_ARTIFACT.id,
-            modelData: expect.any(ArrayBuffer),
-        });
+        expect(loadOnnxSession).toHaveBeenCalledOnce();
+        expect(loadOnnxSession.mock.calls[0]?.[0]?.modelId).toBe(KOKORO_MODEL_ARTIFACT.id);
+        expect(loadOnnxSession.mock.calls[0]?.[0]?.modelDataPort).toBe(modelDataPort);
         expect(fetch).toHaveBeenCalledWith(
             expect.stringContaining('/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/af_nicole.bin'),
             { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }

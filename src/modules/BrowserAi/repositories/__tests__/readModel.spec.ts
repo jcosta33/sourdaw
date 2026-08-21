@@ -1,47 +1,49 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { readModel } from '../readModel';
 
-import { dir, installStorage } from './storageTestDoubles';
-
-afterEach(() => {
-    vi.restoreAllMocks();
-});
-
 describe('readModel', () => {
-    it('returns null when the model file is absent', async () => {
-        installStorage(dir({ models: dir({ ddsp: dir() }) }));
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const modelStorageWorkerBridge = { readModel: vi.fn() };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        injectDependencies(readModel, { logger, modelStorageWorkerBridge });
+    });
+
+    it('returns the worker-owned transfer port without opening OPFS in the renderer', async () => {
+        const port = new MessageChannel().port1;
+        modelStorageWorkerBridge.readModel.mockResolvedValue(port);
+
+        await expect(
+            readModel({
+                family: 'kokoro',
+                modelId: 'model.onnx',
+                expectedSizeBytes: 8,
+                expectedSha256: 'verified',
+            })
+        ).resolves.toBe(port);
+        expect(modelStorageWorkerBridge.readModel).toHaveBeenCalledWith({
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            expectedSizeBytes: 8,
+            expectedSha256: 'verified',
+        });
+    });
+
+    it('returns null when the storage worker reports the model absent', async () => {
+        modelStorageWorkerBridge.readModel.mockResolvedValue(null);
 
         await expect(readModel({ family: 'ddsp', modelId: 'missing' })).resolves.toBeNull();
     });
 
-    it('rethrows non-not-found storage failures', async () => {
+    it('logs and rethrows storage worker failures', async () => {
         const permissionError = new DOMException('denied', 'NotAllowedError');
-        installStorage(dir(), {
-            getDirectory: vi.fn(() => Promise.reject(permissionError)) as unknown as StorageManager['getDirectory'],
-        });
+        modelStorageWorkerBridge.readModel.mockRejectedValue(permissionError);
 
         await expect(readModel({ family: 'ddsp', modelId: 'violin' })).rejects.toBe(permissionError);
-    });
-
-    it('returns the model bytes when the file is present', async () => {
-        const buffer = new ArrayBuffer(4);
-        const fileHandle = {
-            getFile: vi.fn(() => Promise.resolve({ arrayBuffer: () => Promise.resolve(buffer) } as unknown as File)),
-        } as unknown as FileSystemFileHandle;
-        const familyDirectory = {
-            getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
-        } as unknown as FileSystemDirectoryHandle;
-        const modelsDirectory = {
-            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
-        } as unknown as FileSystemDirectoryHandle;
-        const root = {
-            getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
-        } as unknown as FileSystemDirectoryHandle;
-        installStorage(dir(), {
-            getDirectory: vi.fn(() => Promise.resolve(root)) as unknown as StorageManager['getDirectory'],
-        });
-
-        await expect(readModel({ family: 'ddsp', modelId: 'violin.onnx' })).resolves.toBe(buffer);
+        expect(logger.warn).toHaveBeenCalledOnce();
     });
 });
