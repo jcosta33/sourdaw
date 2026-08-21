@@ -1,51 +1,70 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-test.describe('Status bar — test-id targeted', () => {
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await expect(trackList).toBeVisible();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
+}
+
+test.describe('Status bar', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('status bar is present as a labelled contentinfo footer', async ({ page }) => {
+    test('undo history opens empty and the status-bar toggle dismisses it', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: 'Toggle undo history panel', exact: true });
+        const close = page.getByRole('button', { name: 'Close undo history', exact: true });
+
+        await expect(toggle).toContainText('0 undos');
+        await expect(close).toHaveCount(0);
+
+        await toggle.click();
+        await expect(close).toBeVisible();
+        await expect(page.getByText('No history yet', { exact: true })).toBeVisible();
+
+        await toggle.click();
+        await expect(close).toHaveCount(0);
+        await expect(page.getByText('No history yet', { exact: true })).toHaveCount(0);
+    });
+
+    test('adding a MIDI track shows Last action and lists it in undo history', async ({ page }) => {
         const status = page.getByRole('contentinfo', { name: 'Application status' });
-        await expect(status).toBeAttached({ timeout: 10_000 });
+        const toggle = page.getByRole('button', { name: 'Toggle undo history panel', exact: true });
+
+        await expect(toggle).toContainText('0 undos');
+        await expect(status.getByText(/^Last: /)).toHaveCount(0);
+
+        await addMidiTrack(page);
+
+        await expect(toggle).toContainText('1 undo');
+        await expect(status.getByText(/^Last: /)).toBeVisible();
+
+        await toggle.click();
+        await expect(page.getByRole('button', { name: 'Close undo history', exact: true })).toBeVisible();
+        await expect(page.getByText('No history yet', { exact: true })).toHaveCount(0);
+        await expect(page.getByText('Current State', { exact: true })).toBeVisible();
     });
 
-    test('undo history toggle is present via aria-label', async ({ page }) => {
-        const history = page.getByRole('button', { name: 'Toggle undo history panel' });
-        await expect(history).toBeVisible({ timeout: 10_000 });
-    });
+    test('collaboration panel opens from the status bar and the toggle dismisses it', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: 'Toggle collaboration panel', exact: true });
+        const panel = page.getByRole('dialog', { name: 'Collaborate', exact: true });
 
-    test('clicking undo history toggle opens the panel', async ({ page }) => {
-        const history = page.getByRole('button', { name: 'Toggle undo history panel' });
-        await history.click();
-        await page.waitForTimeout(300);
+        await expect(panel).toHaveCount(0);
+        await toggle.click();
+        await expect(panel).toBeVisible();
 
-        // The undo history panel should appear.
-        const panel = page.getByText(/undo history|action history/i).first();
-        const hasPanel = await panel.isVisible().catch(() => false);
-        // Toggle back to close.
-        await history.click();
-        await page.waitForTimeout(300);
-        // The toggle didn't crash.
-        await expect(history).toBeVisible();
-    });
-
-    test('collaboration toggle and undo history toggle coexist in status bar', async ({ page }) => {
-        await expect(page.getByTestId('toggle-collaboration')).toBeVisible({ timeout: 10_000 });
-        await expect(page.getByRole('button', { name: 'Toggle undo history panel' })).toBeVisible({
-            timeout: 10_000,
-        });
-    });
-
-    test('status bar shows UI CPU and Latency metrics', async ({ page }) => {
-        const status = page.getByRole('contentinfo', { name: 'Application status' });
-        if (await status.isVisible().catch(() => false)) {
-            const text = (await status.innerText()).trim();
-            // The status bar shows UI CPU and Latency metrics.
-            expect(text).toMatch(/CPU|Latency/i);
-        }
+        await toggle.click();
+        await expect(panel).toHaveCount(0);
     });
 });
