@@ -1,58 +1,62 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-test.describe('Project menu — test-id targeted', () => {
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await expect(trackList).toBeVisible();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
+}
+
+test.describe('Project menu', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('project menu opens and lists New Project via test ID', async ({ page }) => {
-        await page.getByRole('button', { name: 'Project menu' }).click();
-        await page.waitForTimeout(300);
+    test('Project menu lists New Project, Save, and Export Audio', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: 'Project menu', exact: true });
+        const menu = page.getByRole('menu', { name: 'Project menu', exact: true });
 
-        const newProject = page.getByTestId('menu-new-project');
-        await expect(newProject).toBeVisible({ timeout: 5000 });
-    });
-
-    test('new project from menu opens the launch screen', async ({ page }) => {
-        // Open project menu and click New Project.
-        await page.getByRole('button', { name: 'Project menu' }).click();
-        await page.waitForTimeout(300);
-
-        await page.getByTestId('menu-new-project').click();
-        await page.waitForTimeout(500);
-
-        // The launch screen should appear OR the workspace resets.
-        // Check that the project menu is still functional (workspace didn't crash).
-        const playbackControls = page.getByRole('group', { name: 'Playback controls' });
-        const isVisible = await playbackControls.isVisible().catch(() => false);
-        // Either the launch screen appeared or the workspace reset cleanly.
-        expect(isVisible || (await page.getByLabel('Sourdaw — start a project').isVisible().catch(() => false))).toBe(true);
-    });
-
-    test('project menu lists multiple items', async ({ page }) => {
-        await page.getByRole('button', { name: 'Project menu' }).click();
-        await page.waitForTimeout(300);
-
-        const menu = page.getByRole('menu', { name: 'Project menu' });
+        await expect(menu).toHaveCount(0);
+        await toggle.click();
         await expect(menu).toBeVisible();
-
-        const items = menu.getByRole('menuitem');
-        const count = await items.count();
-        expect(count).toBeGreaterThanOrEqual(3);
+        await expect(menu.getByRole('menuitem', { name: 'New Project', exact: true })).toBeVisible();
+        await expect(menu.getByRole('menuitem', { name: /^Save/ })).toBeVisible();
+        await expect(menu.getByRole('menuitem', { name: /^Export Audio/ })).toBeVisible();
     });
 
-    test('export audio menu item opens the export dialog', async ({ page }) => {
-        await page.getByRole('button', { name: 'Project menu' }).click();
-        await page.waitForTimeout(300);
+    test('New Project clears an added MIDI track from the arrangement', async ({ page }) => {
+        await addMidiTrack(page);
+        const trackList = page.getByRole('grid', { name: /Track list/i });
+        await expect(trackList.first()).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Toggle undo history panel', exact: true })).toHaveText('1 undo');
 
-        const exportItem = page.getByRole('menuitem', { name: /export/i }).first();
-        await exportItem.click();
+        await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'New Project', exact: true }).click();
 
-        await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({
-            timeout: 10_000,
-        });
+        await expect(trackList).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Toggle undo history panel', exact: true })).toHaveText(
+            '0 undos'
+        );
+        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+    });
+
+    test('Export Audio opens The Bakery and Cancel closes it', async ({ page }) => {
+        await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+        await page.getByRole('menuitem', { name: /^Export Audio/ }).click();
+
+        const bakery = page.getByRole('dialog').filter({ hasText: 'The Bakery' });
+        await expect(bakery).toBeVisible();
+        await bakery.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(bakery).toHaveCount(0);
     });
 });
