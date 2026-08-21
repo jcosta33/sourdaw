@@ -170,6 +170,51 @@ describe('track-state guarded undo integration', () => {
             expect(track('track-1')?.clips).toEqual([later]);
         });
 
+        it('cut: conflicts rather than clobbering a device chain added to the track after the cut', async () => {
+            seedClipWithEnvelope();
+            await run({ type: 'cutClip' });
+
+            const collaboratorDevices = [
+                { id: 'device-late', type: 'reverb', name: 'Reverb', bypassed: false, parameterValues: { mix: 0.4 } },
+            ];
+            divergeTrack('track-1', { devices: collaboratorDevices });
+
+            await undo();
+
+            // The decisive assertion: `cutClip` never touched `devices`, but its snapshot
+            // carries them and the restore writes them back unconditionally. A guard that
+            // reads only the clip id sequence authorises that write, and the plugin a
+            // collaborator added after the cut disappears with no conflict reported.
+            expect(track('track-1')?.devices).toEqual(collaboratorDevices);
+            // Nothing is written at all — the whole batch is refused, so the cut clip
+            // stays cut rather than half-restoring the track.
+            expect(track('track-1')?.clips).toEqual([]);
+            expect(readClipSatelliteEntry('clip-1').gainEnvelope).toBeNull();
+        });
+
+        it('cut: conflicts rather than clobbering an edit inside a non-active alternative', async () => {
+            seedClipWithEnvelope();
+            await run({ type: 'cutClip' });
+
+            // An alternative the user is not looking at: its clips never appear in
+            // `track.clips`, so a clip-id-sequence guard is blind to every edit in it
+            // while the restore replaces the whole `alternatives` array.
+            const alternatives = [
+                { id: 'alt-1', name: 'Alternative 1', clips: [] },
+                {
+                    id: 'alt-2',
+                    name: 'Alternative 2',
+                    clips: [ClipDummy.create({ id: 'clip-in-alt', trackId: 'track-1' })],
+                },
+            ];
+            divergeTrack('track-1', { alternatives });
+
+            await undo();
+
+            expect(track('track-1')?.alternatives).toEqual(alternatives);
+            expect(track('track-1')?.clips).toEqual([]);
+        });
+
         it('flatten: gives back the device chain, the track kind and the frozen take', async () => {
             const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 });
             const devices = [

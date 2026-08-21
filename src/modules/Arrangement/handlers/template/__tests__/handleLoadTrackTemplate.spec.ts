@@ -5,6 +5,7 @@ import { handleLoadTrackTemplate } from '../handleLoadTrackTemplate';
 const mocks = vi.hoisted(() => ({
     loadTrackTemplate: vi.fn(),
     getTrackStoreState: vi.fn(),
+    captureTrackRemovalSnapshot: vi.fn(),
 }));
 
 vi.mock('../../../useCases/loadTrackTemplate', () => ({
@@ -15,10 +16,15 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
+vi.mock('../../../useCases/captureTrackRemovalSnapshot', () => ({
+    captureTrackRemovalSnapshot: mocks.captureTrackRemovalSnapshot,
+}));
+
 describe('handleLoadTrackTemplate', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.captureTrackRemovalSnapshot.mockImplementation((trackId: string) => ({ trackId }));
     });
 
     it('executes loadTrackTemplate', () => {
@@ -53,6 +59,27 @@ describe('handleLoadTrackTemplate', () => {
             type: 'discardCreatedTracks',
             payload: { trackIds: ['created-1', 'created-2'] },
         });
+        // Redo restores those exact ids instead of replaying the template, which mints
+        // fresh ones and would strand the inverse above on ids nothing holds.
+        expect(desc.redoAction).toEqual({
+            type: 'restoreTracks',
+            payload: { restores: [{ trackId: 'created-1' }, { trackId: 'created-2' }] },
+        });
+    });
+
+    it('emits neither inverse nor redo when a created track could not be snapshotted', () => {
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'existing' }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'existing' }, { id: 'created-1' }] });
+        mocks.captureTrackRemovalSnapshot.mockReturnValue(null);
+
+        const action = { type: 'loadTrackTemplate' as const, payload: { templateId: 'tmpl-1' } };
+
+        const desc = handleLoadTrackTemplate.describe(action);
+        handleLoadTrackTemplate.execute(action);
+
+        expect(desc.inverseAction).toBeNull();
+        expect(desc.redoAction).toBeUndefined();
     });
 
     it('emits no inverse and reports no-write when the template appends nothing', () => {

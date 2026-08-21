@@ -45,7 +45,7 @@ const TRACK_FIELDS = {
     frozen: false,
     freezeState: { status: 'unfrozen' },
     activeAlternativeId: 'alt-1',
-    alternatives: [{ id: 'alt-1' }],
+    alternatives: [{ id: 'alt-1', clips: [] }],
 } as const satisfies TrackClipStateSnapshot['trackFields'];
 
 function snapshotFor(
@@ -187,15 +187,30 @@ describe('handleRestoreTrackClipStates', () => {
             const cc = { id: 'cc-1', controller: 1, value: 10, beat: 0, channel: 0 };
             const pitchBend = { id: 'pb-1', value: 0, beat: 0, channel: 0 };
             const restoredClip = ClipDummy.create({ id: 'restored-c1' });
+            // What the live track holds now — `flattenTrack`'s own output. `expected` is
+            // always the post-write state, so the guard compares these against live.
+            const postFlattenFields = {
+                kind: 'audio' as const,
+                devices: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' as const },
+                activeAlternativeId: 'alt-2',
+                alternatives: [{ id: 'alt-2', clips: [] }],
+            } satisfies TrackClipStateSnapshot['trackFields'];
             const preFlattenFields = {
                 kind: 'midi' as const,
-                devices: [{ id: 'device-1' }],
+                devices: [
+                    { id: 'device-1', name: 'Synth', type: 'builtin-synth', bypassed: false, parameterValues: {} },
+                ],
                 frozen: true,
                 frozenBufferId: 'buffer-1',
                 freezeState: { status: 'frozen' as const },
                 activeAlternativeId: 'alt-1',
-                alternatives: [{ id: 'alt-1' }, { id: 'alt-9' }],
-            };
+                alternatives: [
+                    { id: 'alt-1', clips: [] },
+                    { id: 'alt-9', clips: [] },
+                ],
+            } satisfies TrackClipStateSnapshot['trackFields'];
             const satellite: ClipSatelliteEntrySnapshot = {
                 clipId: 'restored-c1',
                 gainEnvelope: {
@@ -223,7 +238,7 @@ describe('handleRestoreTrackClipStates', () => {
             const result = handleRestoreTrackClipStates.execute({
                 type: 'restoreTrackClipStates',
                 payload: {
-                    expected: [snapshotFor('t1', ['c1'])],
+                    expected: [snapshotFor('t1', ['c1'], { trackFields: postFlattenFields })],
                     replacement: [
                         {
                             trackId: 't1',
@@ -246,13 +261,7 @@ describe('handleRestoreTrackClipStates', () => {
             expect(updater(track)).toEqual({
                 ...track,
                 clips: [restoredClip],
-                kind: 'midi',
-                devices: [{ id: 'device-1' }],
-                frozen: true,
-                frozenBufferId: 'buffer-1',
-                freezeState: { status: 'frozen' },
-                activeAlternativeId: 'alt-1',
-                alternatives: [{ id: 'alt-1' }, { id: 'alt-9' }],
+                ...preFlattenFields,
             });
             expect(mocks.restoreMidiClipData).toHaveBeenCalledWith({
                 clipId: 'restored-c1',

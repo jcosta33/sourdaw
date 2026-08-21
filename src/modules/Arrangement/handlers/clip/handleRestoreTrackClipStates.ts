@@ -1,29 +1,156 @@
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
+import {
+    type DeviceSnapshot,
+    type TrackClipStateSnapshot,
+    type TrackCollectionAlternativeSnapshot,
+    type TrackCollectionFieldsSnapshot,
+} from '#/utils/handlerContract';
 
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
+import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
 
 /**
- * A snapshot's clip id sequence still matches the live track: same clips, same
- * order. Compared by id sequence rather than deep equality — a deep compare
- * would spuriously conflict on recomputed fields, while an id-sequence
- * compare is what actually detects a clip added, removed, split or reordered
- * since the snapshot was captured.
+ * Two clip collections hold the same clips in the same order. Compared by id
+ * sequence rather than deep equality — a deep compare would spuriously conflict on
+ * recomputed fields, while an id-sequence compare is what actually detects a clip
+ * added, removed, split or reordered since the snapshot was captured.
  */
-function clipIdSequenceMatches(trackId: string, expectedClipIds: readonly string[]): boolean {
-    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
+function clipIdSequenceMatches(
+    liveClips: readonly { readonly id: string }[] | undefined,
+    expectedClips: readonly { readonly id: string }[] | undefined
+): boolean {
+    const live = liveClips ?? [];
+    const expected = expectedClips ?? [];
+    if (live.length !== expected.length) {
+        return false;
+    }
+    return live.every((clip, index) => clip.id === expected[index]?.id);
+}
+
+/**
+ * `undefined` is admitted on both sides on purpose. `normalizeTrack` passes `devices`
+ * and `alternatives` through untouched, so a row loaded from an older project can be
+ * missing `parameterValues` or an alternative's `clips` entirely. Throwing on that
+ * inside a guard would turn a divergence check into a crash in the middle of undo;
+ * treating an absent map as empty compares it against the equally absent snapshot.
+ */
+function parameterValuesMatch(
+    live: Readonly<Record<string, number>> | undefined,
+    expected: Readonly<Record<string, number>> | undefined
+): boolean {
+    const liveValues = live ?? {};
+    const expectedValues = expected ?? {};
+    const liveKeys = Object.keys(liveValues);
+    if (liveKeys.length !== Object.keys(expectedValues).length) {
+        return false;
+    }
+    return liveKeys.every((key) => Object.is(liveValues[key], expectedValues[key]));
+}
+
+/**
+ * Identity comparison for one device, in the shape `freezeStateSnapshotMatches` uses:
+ * compare what the user authored — which device, whether it is bypassed, what its
+ * parameters read — and not the opaque host-owned blobs. `externalStateChunk` and
+ * `deviceState` are refetched from a live plugin instance without any user edit, so a
+ * deep compare on them would report a conflict against state nothing meaningfully
+ * changed, exactly the way a deep clip compare would.
+ */
+function deviceMatches(live: Device, expected: DeviceSnapshot): boolean {
+    return (
+        live.id === expected.id &&
+        live.type === expected.type &&
+        live.bypassed === expected.bypassed &&
+        parameterValuesMatch(live.parameterValues, expected.parameterValues)
+    );
+}
+
+function devicesMatch(live: readonly Device[], expected: readonly DeviceSnapshot[]): boolean {
+    if (live.length !== expected.length) {
+        return false;
+    }
+    // Positional, so a reorder of the same devices conflicts: chain order is the
+    // signal path, and restoring a stale order is as destructive as dropping a device.
+    return live.every((device, index) => {
+        const expectedDevice = expected[index];
+        return expectedDevice !== undefined && deviceMatches(device, expectedDevice);
+    });
+}
+
+function alternativesMatch(
+    live: readonly TrackAlternative[],
+    expected: readonly TrackCollectionAlternativeSnapshot[]
+): boolean {
+    if (live.length !== expected.length) {
+        return false;
+    }
+    return live.every((alternative, index) => {
+        const expectedAlternative = expected[index];
+        return (
+            expectedAlternative !== undefined &&
+            alternative.id === expectedAlternative.id &&
+            clipIdSequenceMatches(alternative.clips, expectedAlternative.clips)
+        );
+    });
+}
+
+function freezeAggregateMatches(track: Track, expected: TrackCollectionFieldsSnapshot): boolean {
+    return freezeStateSnapshotMatches(track, {
+        frozen: expected.frozen,
+        ...(expected.frozenBufferId === undefined ? {} : { frozenBufferId: expected.frozenBufferId }),
+        freezeState: expected.freezeState,
+    });
+}
+
+/**
+ * One comparator per field `writeTrackClipState` overwrites, keyed by
+ * `TrackCollectionFieldsSnapshot`'s own keys with `-?` so every optional one is
+ * required here too. This mapping is the point: a field added to the snapshot — and
+ * therefore to the write — does not compile until it is compared, which is what stops
+ * the guard from silently falling behind what it authorises. `frozen`,
+ * `frozenBufferId` and `freezeState` share one comparator because the freeze state is
+ * only meaningful as an aggregate.
+ */
+type TrackFieldComparators = {
+    readonly [Key in keyof TrackCollectionFieldsSnapshot]-?: (
+        track: Track,
+        expected: TrackCollectionFieldsSnapshot
+    ) => boolean;
+};
+
+const TRACK_FIELD_COMPARATORS: TrackFieldComparators = {
+    kind: (track, expected) => track.kind === expected.kind,
+    devices: (track, expected) => devicesMatch(track.devices, expected.devices),
+    frozen: freezeAggregateMatches,
+    frozenBufferId: freezeAggregateMatches,
+    freezeState: freezeAggregateMatches,
+    activeAlternativeId: (track, expected) => track.activeAlternativeId === expected.activeAlternativeId,
+    alternatives: (track, expected) => alternativesMatch(track.alternatives, expected.alternatives),
+};
+
+/**
+ * The live track still holds everything this snapshot is about to overwrite: the
+ * clip id sequence *and* every track-level field. Both halves are load-bearing.
+ * `cutClip` and `pasteClip` touch only clips, so their snapshots carry track fields
+ * the forward path never rewrote — guarding on clips alone would let undo silently
+ * hand back a stale device chain, freeze take or alternative set that a collaborator
+ * changed in between. The four callers all capture `expected` as the post-write
+ * state, so on an undivergent undo these fields already agree and the stricter
+ * comparison costs them nothing.
+ */
+function entryMatchesLiveState(entry: TrackClipStateSnapshot): boolean {
+    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === entry.trackId);
     if (!track) {
         return false;
     }
-    const liveClipIds = track.clips.map((clip) => clip.id);
-    if (liveClipIds.length !== expectedClipIds.length) {
+    if (!clipIdSequenceMatches(track.clips, entry.clips)) {
         return false;
     }
-    return liveClipIds.every((clipId, index) => clipId === expectedClipIds[index]);
+    return Object.values(TRACK_FIELD_COMPARATORS).every((matches) => matches(track, entry.trackFields));
 }
 
 /**
@@ -34,12 +161,7 @@ function clipIdSequenceMatches(trackId: string, expectedClipIds: readonly string
  * stops an empty or partial `expected` from authorising anything.
  */
 function everyEntryMatchesLiveState(entries: readonly TrackClipStateSnapshot[]): boolean {
-    return entries.every((entry) =>
-        clipIdSequenceMatches(
-            entry.trackId,
-            entry.clips.map((clip) => clip.id)
-        )
-    );
+    return entries.every((entry) => entryMatchesLiveState(entry));
 }
 
 function clipIdsOf(entry: TrackClipStateSnapshot): string[] {
@@ -98,10 +220,11 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
 
 /**
  * General guarded restore for whole-track clip-collection rewrites (cut, paste,
- * flatten, consolidate). Every named track's live clip id sequence must still
- * match `expected` before anything is written — a single divergent track refuses
- * the entire batch, because a partial restore is exactly the lost update this
- * handler exists to prevent.
+ * flatten, consolidate). Every named track must still match `expected` on
+ * everything the write replaces — its clip id sequence and every track-level field
+ * `writeTrackClipState` overwrites — before anything is written. A single divergent
+ * track refuses the entire batch, because a partial restore is exactly the lost
+ * update this handler exists to prevent.
  *
  * The guard is two halves and needs both: every `expected` entry matches live state,
  * and every `replacement` entry is named by `expected`. The second is what makes an

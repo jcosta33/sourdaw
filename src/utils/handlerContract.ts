@@ -311,14 +311,24 @@ export type TrackHeightSnapshot = { readonly trackId: string; readonly height: n
  * that lost its kind, its instrument and insert chain, its frozen take, and its
  * alternative lanes — a state the user never authored.
  */
+export type TrackCollectionAlternativeSnapshot = {
+    readonly id: string;
+    readonly clips: readonly ClipSnapshot[];
+};
 export type TrackCollectionFieldsSnapshot = {
     readonly kind: TrackKind;
-    readonly devices: readonly { readonly id: string }[];
+    /** Declared wide enough to be *compared*, not just written back: the guarded
+     *  restore refuses when a device was added, removed, reordered, bypassed or
+     *  reparameterised since capture, and it can only see that through these fields. */
+    readonly devices: readonly DeviceSnapshot[];
     readonly frozen: boolean;
     readonly frozenBufferId?: string;
-    readonly freezeState: { readonly status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error' };
+    readonly freezeState: FreezeStateSnapshot['freezeState'];
     readonly activeAlternativeId: string;
-    readonly alternatives: readonly { readonly id: string }[];
+    /** Each alternative's clips travel with it for the same reason: the restore
+     *  replaces the whole alternative list, so an edit inside a non-active
+     *  alternative has to be visible to the guard that authorises that write. */
+    readonly alternatives: readonly TrackCollectionAlternativeSnapshot[];
 };
 export type TrackClipStateSnapshot = {
     readonly trackId: string;
