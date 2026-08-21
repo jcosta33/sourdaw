@@ -48,9 +48,17 @@
  * named export before falling back to a default one, so `afterPack` below is
  * the entry point.
  */
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { flipFuses, getCurrentFuseWire, FuseState, FuseV1Options, FuseVersion } from '@electron/fuses';
+
+import {
+    ELECTRON_RUNTIME_CONTRACT,
+    electronReleaseTarget,
+    type ElectronRuntimeContract,
+} from './electronRuntimeContract.ts';
 
 /**
  * The slice of electron-builder's `AfterPackContext` this hook reads.
@@ -63,12 +71,101 @@ import { flipFuses, getCurrentFuseWire, FuseState, FuseV1Options, FuseVersion } 
 export type AfterPackContext = {
     readonly appOutDir: string;
     readonly electronPlatformName: string;
+    readonly arch: number;
     readonly packager: {
         readonly appInfo: {
             readonly productFilename: string;
         };
         readonly executableName?: string;
     };
+};
+
+export const ELECTRON_LEGAL_FILES = {
+    LICENSE: 'electron-LICENSE.txt',
+    'LICENSES.chromium.html': 'electron-LICENSES.chromium.html',
+} as const;
+
+export const resolveExtractedResourcesPath = (context: AfterPackContext): string => {
+    if (context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas') {
+        return join(context.appOutDir, 'Electron.app', 'Contents', 'Resources');
+    }
+    return join(context.appOutDir, 'resources');
+};
+
+export const resolvePackagedResourcesPath = (context: AfterPackContext): string => {
+    if (context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas') {
+        return join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources');
+    }
+    return join(context.appOutDir, 'resources');
+};
+
+function electronLicenseSourceName(context: AfterPackContext): string {
+    return context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas'
+        ? 'LICENSE'
+        : 'LICENSE.electron.txt';
+}
+
+export const stageElectronLegalFiles = async (
+    context: AfterPackContext,
+    sourceRoot = context.appOutDir,
+    contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT
+): Promise<void> => {
+    const target = electronReleaseTarget(context.electronPlatformName, context.arch, contract);
+    if (target === undefined) {
+        throw new Error(
+            `Electron legal-file contract has no ${context.electronPlatformName}/${String(context.arch)} target`
+        );
+    }
+    const expected = {
+        LICENSE: contract.licenseSha256,
+        'LICENSES.chromium.html': target.noticesSha256,
+    } as const;
+    const destinationRoot = join(resolveExtractedResourcesPath(context), 'legal');
+    await mkdir(destinationRoot, { recursive: true });
+    const sources = {
+        [electronLicenseSourceName(context)]: ELECTRON_LEGAL_FILES.LICENSE,
+        'LICENSES.chromium.html': ELECTRON_LEGAL_FILES['LICENSES.chromium.html'],
+    };
+    for (const [sourceName, destinationName] of Object.entries(sources)) {
+        const source = join(sourceRoot, sourceName);
+        const bytes = await readFile(source);
+        const expectedDigest =
+            destinationName === ELECTRON_LEGAL_FILES.LICENSE ? expected.LICENSE : expected['LICENSES.chromium.html'];
+        if (createHash('sha256').update(bytes).digest('hex') !== expectedDigest) {
+            throw new Error(`${sourceName} does not match Electron ${contract.version}`);
+        }
+        await writeFile(join(destinationRoot, destinationName), bytes);
+    }
+};
+
+export const createAfterExtract =
+    (contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT) =>
+    (context: AfterPackContext): Promise<void> =>
+        stageElectronLegalFiles(context, context.appOutDir, contract);
+
+export const afterExtract = createAfterExtract();
+
+export const verifyStagedElectronLegalFiles = async (
+    context: AfterPackContext,
+    contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT
+): Promise<void> => {
+    const target = electronReleaseTarget(context.electronPlatformName, context.arch, contract);
+    if (target === undefined) {
+        throw new Error(
+            `Electron legal-file contract has no ${context.electronPlatformName}/${String(context.arch)} target`
+        );
+    }
+    const root = join(resolvePackagedResourcesPath(context), 'legal');
+    const expected = {
+        [ELECTRON_LEGAL_FILES.LICENSE]: contract.licenseSha256,
+        [ELECTRON_LEGAL_FILES['LICENSES.chromium.html']]: target.noticesSha256,
+    };
+    for (const [name, digest] of Object.entries(expected)) {
+        const bytes = await readFile(join(root, name));
+        if (createHash('sha256').update(bytes).digest('hex') !== digest) {
+            throw new Error(`${name} changed after Electron extraction`);
+        }
+    }
 };
 
 /** Fuse states this build refuses to ship without. */
@@ -125,6 +222,7 @@ export const findFuseMismatches = (wire: Partial<Record<FuseV1Options, FuseState
 export const afterPack = async (context: AfterPackContext): Promise<void> => {
     const binaryPath = resolveElectronBinaryPath(context);
 
+    await verifyStagedElectronLegalFiles(context);
     await flipFuses(binaryPath, {
         version: FuseVersion.V1,
         [FuseV1Options.RunAsNode]: false,
