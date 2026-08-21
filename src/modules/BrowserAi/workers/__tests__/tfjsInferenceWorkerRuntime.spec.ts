@@ -267,6 +267,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
             sessionKey: 'ddsp-violin:v1:fingerprint',
             backend: 'webgpu',
             modelFrameLength: MODEL_FRAME_LENGTH,
+            settings: SETTINGS_VALUES,
         });
         for (const artifact of transferred) {
             expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();

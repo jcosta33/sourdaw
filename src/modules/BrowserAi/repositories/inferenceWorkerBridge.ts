@@ -16,7 +16,12 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { type DdspArtifact } from '../models/DdspArtifactManifest';
-import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
+import {
+    type DdspSettings,
+    type DdspStoredArtifact,
+    type WorkerRequest,
+    type WorkerResponse,
+} from '../models/InferenceRequest';
 import { computeDdspSessionKey } from '../services/computeDdspSessionKey';
 import { updateActiveRenderProgress } from '../stores/inferenceProgressStore';
 
@@ -407,7 +412,7 @@ export const inferenceWorkerBridge = {
     async loadDdspSession(
         input: LoadDdspSessionInput,
         signal?: AbortSignal
-    ): Promise<{ sessionKey: string; backend: 'webgpu'; modelFrameLength: number }> {
+    ): Promise<{ sessionKey: string; backend: 'webgpu'; modelFrameLength: number; settings: DdspSettings }> {
         throwIfAborted(signal);
         const sessionKey = await computeDdspSessionKey(input);
         logger.info(`[WorkerBridge] Loading verified DDSP session: ${sessionKey}`);
@@ -436,7 +441,8 @@ export const inferenceWorkerBridge = {
                 response.sessionKey !== sessionKey ||
                 response.backend !== 'webgpu' ||
                 !Number.isSafeInteger(response.modelFrameLength) ||
-                response.modelFrameLength <= 0
+                response.modelFrameLength <= 0 ||
+                response.settings.modelMaxFrameLength !== response.modelFrameLength
             ) {
                 throw new Error(`Unexpected DDSP session response: ${response.type}`);
             }
@@ -444,6 +450,7 @@ export const inferenceWorkerBridge = {
                 sessionKey: response.sessionKey,
                 backend: response.backend,
                 modelFrameLength: response.modelFrameLength,
+                settings: response.settings,
             };
         } finally {
             if (!handedOff) {

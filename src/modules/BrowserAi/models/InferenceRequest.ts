@@ -27,6 +27,16 @@ export type DdspStoredArtifact = {
     modelDataPort: MessagePort;
 };
 
+/** Validated checkpoint conditioning values read from the pinned settings artifact. */
+export type DdspSettings = {
+    averageMaxLoudness: number;
+    loudnessThreshold: number;
+    meanLoudness: number;
+    meanPitch: number;
+    modelMaxFrameLength: number;
+    postGain: number;
+};
+
 // Main thread → Worker
 export type WorkerRequest =
     | {
@@ -144,6 +154,7 @@ export type WorkerResponse =
           sessionKey: string;
           backend: 'webgpu';
           modelFrameLength: number;
+          settings: DdspSettings;
       }
     | {
           type: 'inference-result';

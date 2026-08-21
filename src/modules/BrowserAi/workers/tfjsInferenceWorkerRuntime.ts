@@ -1,4 +1,9 @@
-import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
+import {
+    type DdspSettings,
+    type DdspStoredArtifact,
+    type WorkerRequest,
+    type WorkerResponse,
+} from '../models/InferenceRequest';
 
 export type TfjsWorkerTensor = {
     data: () => Promise<ArrayLike<number>>;
@@ -32,15 +37,6 @@ export type TfjsWorkerRuntime = {
 type CreateTfjsInferenceRequestHandlerInput = {
     initializeTfjs: () => Promise<TfjsWorkerRuntime>;
     postResponse: (response: WorkerResponse, transfer?: Transferable[]) => void;
-};
-
-type DdspSettings = {
-    averageMaxLoudness: number;
-    loudnessThreshold: number;
-    meanLoudness: number;
-    meanPitch: number;
-    modelMaxFrameLength: number;
-    postGain: number;
 };
 
 type DdspSession = {
@@ -534,6 +530,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 sessionKey: request.sessionKey,
                 backend,
                 modelFrameLength: existing.settings.modelMaxFrameLength,
+                settings: existing.settings,
             });
             return;
         }
@@ -556,6 +553,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             sessionKey: request.sessionKey,
             backend: requireWebgpu(await getTfjs()),
             modelFrameLength: session.settings.modelMaxFrameLength,
+            settings: session.settings,
         });
     }
 

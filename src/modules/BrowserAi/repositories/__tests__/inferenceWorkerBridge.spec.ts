@@ -42,6 +42,14 @@ const violinLoad = {
     artifacts: violin.artifacts,
 };
 let violinSessionKey = '';
+const VIOLIN_SETTINGS = {
+    averageMaxLoudness: -48.6,
+    loudnessThreshold: -100,
+    meanLoudness: -68.5,
+    meanPitch: 62,
+    modelMaxFrameLength: 1000,
+    postGain: 2,
+} as const;
 
 beforeEach(async () => {
     installedWorkers = [];
@@ -407,11 +415,13 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
         await expect(ddspLoad).resolves.toEqual({
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
     });
 
@@ -642,6 +652,7 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
         await load;
 
@@ -758,6 +769,7 @@ describe('inferenceWorkerBridge — TF.js cancellation', () => {
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
         await load;
 
