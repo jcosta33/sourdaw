@@ -1,0 +1,23 @@
+scripts/ui-restatement-census.json
+  s_2175fca1f07426::t_e9bfcd27413eac 4268-4276,4604,4952-4960,5150-5158,5531,5558,6203-6211,6350,6368,6602,6872,7772,8384,8447,9023,9623-9631,11360-11368,11750,13163,13793,14933-14941,16643-16651,16853,16949-16957,18599,18968,19425-19428,19431,19434-19436,21047,21101,21305-21313,22061-22069,22982,23060-23068
+src/modules/Crumbs/presentations/components/CrumbsControls.tsx
+  s_2175fca1f07426::t_6d66a8d00114e0 9,67,83,107,109,121,285
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_2175fca1f07426::t_be86b86604eedb 14,180-183,185,189,191,238,256-257,264-265,313-314,319,331,333,336,382,385,404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d22402a777847113d102b743078d7f20667c9841",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
