@@ -761,11 +761,14 @@ fn bandlimited_tap_count(speed: f64) -> usize {
 ///
 /// A wide budget carries the sharper window (beta 9), whose passband stays
 /// flat enough that a read landing on whole source frames returns them to
-/// within 2e-5 — the accuracy chromatic octaves are measured against. A tight
-/// budget (the radius clamp binds past 13x speed) cannot afford a wide main
-/// lobe and drops to beta 5, which still meets the 42 dB stop-band but gives
-/// up passband flatness no measurement at those ratios pins. In between, beta
-/// 7 is the widest window that keeps both contracts from 4x up.
+/// within 2e-5 — the accuracy chromatic octaves are measured against. It
+/// holds while the budget is at least 10: unity through roughly 2.8x
+/// (+18 st). A budget of at least 6 still carries beta 7, the widest window
+/// that keeps both that passband and the 42 dB stop-band from 4x up, through
+/// 8x (+36 st). Past that the growth rule's budget has fallen below 6 — not
+/// the radius cap, which first binds at the 16x pitch ceiling itself — and
+/// the window drops to beta 5, which still meets the stop-band but gives up
+/// passband flatness no measurement at those ratios pins.
 fn kaiser_beta(tap_count: usize, cutoff: f32) -> f32 {
     let budget = (tap_count as f64 / 2.0) * f64::from(cutoff);
     if budget >= 10.0 {
