@@ -5247,6 +5247,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-32235bb2e6958edc",
+    "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
+    "line": 71,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-326424782dc29642",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 247,
@@ -6966,15 +6975,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-433431febe4f19d7",
-    "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 70,
-    "fingerprint": "div\tdaw-header-band flex items-center rounded-t-lg px-3",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-4336f80fcb8c5b82",
     "file": "src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx",
     "line": 123,
@@ -8318,7 +8318,7 @@
   {
     "id": "ui-517a0e01fe8a251c",
     "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 89,
+    "line": 90,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9326,7 +9326,7 @@
   {
     "id": "ui-5bc902c87824a987",
     "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 111,
+    "line": 112,
     "fingerprint": "DawKeycap\t",
     "kind": "daw-chrome",
     "mapping": "DawKeycap",
@@ -10082,7 +10082,7 @@
   {
     "id": "ui-6315532570eb73ba",
     "file": "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
-    "line": 72,
+    "line": 73,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
