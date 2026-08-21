@@ -1,0 +1,35 @@
+src/modules/BrowserAi/repositories/__tests__/withDdspInstrumentLock.spec.ts
+  s_27578aec2aab3b::t_64d1317c82492d 63-66,70-71,74-75,78-91,159-199
+  s_27578aec2aab3b::t_781ddd1ad9749f 200
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_9d58f0fc863df9 22,98
+  s_27578aec2aab3b::t_ebde8f47088fbb 127-129,150,204-226
+  s_27578aec2aab3b::t_c1d03683fab452 3,6,12-21,78-88,90,93-95,99-106
+  s_27578aec2aab3b::t_3704029460b296 23,96-97,122-126,232
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_897cb9ebe92a16 763-776
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_3997427d2c6564 288,425
+src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts
+  s_27578aec2aab3b::t_3997427d2c6564 11-12,17-18
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_3997427d2c6564 82,88,93,99,112,141
+  s_27578aec2aab3b::t_0e68efdd16f6d5 117
+  s_27578aec2aab3b::t_e5828a0a097db7 249-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0f6905828660b60a8e8f0ae4cc99270d12c84dfb",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
