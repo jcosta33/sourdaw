@@ -334,6 +334,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     };
                 },
                 processYeastMidi: null,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 evaluateAutomationValue: null,
             } satisfies OfflineRenderContext;
         });
