@@ -1,0 +1,20 @@
+tests/e2e/toasterEuclidTestId.spec.ts
+  s_24b1bdbc3c31ad::t_3fc97ba246b5af 3,5,10,13,16-18,22-28
+  s_24b1bdbc3c31ad::t_178d15b336791c 14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f992ce99939481f07b3e5d4c129ec38d1f804aa9",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
