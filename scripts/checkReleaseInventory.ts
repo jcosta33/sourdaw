@@ -164,7 +164,7 @@ function directorySha256(root: string, directory: string): string {
     visit(absoluteRoot);
     const hash = createHash('sha256');
     for (const file of files.sort()) {
-        hash.update(relative(absoluteRoot, file));
+        hash.update(relative(absoluteRoot, file).replaceAll('\\', '/'));
         hash.update('\0');
         hash.update(readFileSync(file));
         hash.update('\0');
