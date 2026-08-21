@@ -41,6 +41,7 @@ test.describe('Status bar', () => {
     test('adding a MIDI track shows Last action and lists it in undo history', async ({ page }) => {
         const status = page.getByRole('contentinfo', { name: 'Application status' });
         const toggle = page.getByRole('button', { name: 'Toggle undo history panel', exact: true });
+        const lastAction = 'Add midi track "MIDI"';
 
         await expect(toggle).toContainText('0 undos');
         await expect(status.getByText(/^Last: /)).toHaveCount(0);
@@ -48,12 +49,12 @@ test.describe('Status bar', () => {
         await addMidiTrack(page);
 
         await expect(toggle).toContainText('1 undo');
-        await expect(status.getByText(/^Last: /)).toBeVisible();
+        await expect(status.getByText(`Last: ${lastAction}`, { exact: true })).toBeVisible();
 
         await toggle.click();
         await expect(page.getByRole('button', { name: 'Close undo history', exact: true })).toBeVisible();
         await expect(page.getByText('No history yet', { exact: true })).toHaveCount(0);
-        await expect(page.getByText('Current State', { exact: true })).toBeVisible();
+        await expect(page.getByText(lastAction, { exact: true })).toBeVisible();
     });
 
     test('collaboration panel opens from the status bar and the toggle dismisses it', async ({ page }) => {
