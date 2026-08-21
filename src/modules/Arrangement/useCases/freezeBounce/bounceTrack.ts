@@ -51,7 +51,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         finalEndBeat += (5 * tempo) / 60; // 5 seconds fixed tail
     }
 
-    let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+    let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
     const renderedBuffer = await renderTrackOffline(track, startBeat, finalEndBeat, {
         onScheduled: (tally) => {
             scheduleTally = tally;
