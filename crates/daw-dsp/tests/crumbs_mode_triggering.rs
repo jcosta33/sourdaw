@@ -664,10 +664,17 @@ fn a_saturated_pool_takes_the_choke_group_rather_than_an_unrelated_voice() {
          does not touch — and it faded the closed hat a moment later anyway, \
          so this costs two voices where one was free"
     );
+    // Every note-36 voice in this fixture is `active` whether it is live or
+    // mid-fade, so this count cannot name *which* one went: it says a note-36
+    // voice left the pool, and read with the note-38 assertion above, that the
+    // slot the open hat took was a group-mate's rather than an outsider's.
+    // Which group-mate — the live one rather than a fade — is what
+    // `a_choked_voice_is_not_stolen_again_while_its_fade_is_running` covers.
     assert_eq!(
         engine.active_voices_with_note(36),
         MAX_VOICES - UNRELATED - 1,
-        "the voice taken was not the live group-mate"
+        "no note-36 voice left the pool, so the open hat's slot came from \
+         somewhere other than its own choke group"
     );
 }
 

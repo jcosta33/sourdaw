@@ -2,8 +2,8 @@
 ///
 /// Each voice handles:
 ///   - Fractional-position playback with 8-point Hann-windowed sinc
-///     interpolation, widening to a 49–161-tap Kaiser-windowed bandlimited
-///     kernel when pitched up (`bandlimited_stereo_sample`)
+///     interpolation, widening to a Kaiser-windowed bandlimited kernel when
+///     pitched up (`bandlimited_stereo_sample`)
 ///   - Per-voice AHDSR amplitude envelope
 ///   - Per-voice TPT SVF filter
 ///   - Loop handling (Forward, PingPong, Reverse) with linear seam crossfade
@@ -23,10 +23,20 @@ use super::types::{
 const MIN_PLAYBACK_SPEED: f64 = 1.0 / 16.0;
 const MAX_PLAYBACK_SPEED: f64 = 16.0;
 const UNITY_RESAMPLING_WORK_UNITS: usize = 8;
+/// Narrowest odd tap count, and the kernel every voice inside an octave up
+/// runs. Also the unit `bandlimited_work_units` charges growth against.
 const MIN_BANDLIMITED_TAPS: usize = 49;
-/// Widest kernel the audio thread may run: radius 80 source frames at the 16x
-/// pitch cap. Sizes the per-voice window table.
-const MAX_BANDLIMITED_TAPS: usize = 161;
+/// Widest kernel radius, in source frames, the audio thread may run. Past this
+/// the per-sample loop would break the work budget, which is also why the
+/// supported pitch range caps at `MAX_PLAYBACK_SPEED`.
+const MAX_BANDLIMITED_RADIUS: usize = 80;
+/// Tap count of that widest kernel, and so the length of the per-voice window
+/// table. Derived rather than written down: the render path indexes the table
+/// by tap, so a table shorter than the kernel is an out-of-bounds read on the
+/// audio thread. `bandlimited_tap_count` clamps to the same radius, and
+/// `bandlimited_stereo_sample` takes the table as a fixed-size array, so the
+/// two agree by construction rather than by two literals matching.
+const MAX_BANDLIMITED_TAPS: usize = MAX_BANDLIMITED_RADIUS * 2 + 1;
 
 // ── Crumbs Voice ──────────────────────────────────────────────────────
 
@@ -115,7 +125,7 @@ impl CrumbsVoice {
             anti_alias_cutoff: 1.0,
             anti_alias_step_sin: 0.0,
             anti_alias_step_cos: -1.0,
-            anti_alias_taps: BANDLIMITED_SINC_TAPS,
+            anti_alias_taps: MIN_BANDLIMITED_TAPS,
             anti_alias_window: [0.0; MAX_BANDLIMITED_TAPS],
             anti_alias_window_key: (0, 0),
             playback_mode: PlaybackMode::Sustain,
@@ -739,43 +749,51 @@ fn bounded_playback_speed(semitone_diff: f32) -> Option<f64> {
     )
 }
 
-/// Kernel radius in source frames for a playback speed, as tap count.
+/// Kernel radius in source frames for a playback speed, as an odd tap count.
 ///
-/// The floor of 24 carries an octave up; beyond that the radius grows four
-/// source samples per playback step, which holds the Kaiser window's
-/// transition inside the gap between the destination Nyquist and the first
-/// foldback frequency the 42 dB stop-band contract covers — at 4x and above
-/// it is also what keeps the kernel long enough for beta 7's passband
-/// flatness. The radius caps at 80: past that the per-sample loop would break
-/// the audio-thread work budget, which is also why the supported pitch range
-/// caps at 16x.
+/// The floor carries the baseline kernel through an octave up, so ordinary
+/// transposition costs no extra work units; beyond that the radius grows with
+/// the ratio, and caps at `MAX_BANDLIMITED_RADIUS`.
+///
+/// Growth is what buys passband flatness at the wide ratios: the accuracy
+/// `crumbs_render_signal`'s `+24 st` reads are measured against needs more
+/// kernel than the floor supplies, and that test is the one that reddens if
+/// this rule shrinks. What growth does *not* reliably buy is stop-band
+/// attenuation. The tap count sets the transition budget `kaiser_beta` reads,
+/// and that budget picks a window from a step function, so a longer kernel can
+/// land in a wider, less-attenuating tier than a shorter one at the same
+/// ratio — and measured foldback across the ratio range is not monotonic in
+/// kernel length even inside one tier. Treat this rule and `kaiser_beta` as
+/// one surface: change either, and measure delivered foldback at several
+/// ratios rather than reasoning from tap count. The 42 dB contract clears with
+/// room to spare on both sides of that step and will not show the difference.
+///
+/// The tap count also feeds `bandlimited_work_units`, so growth is paid for a
+/// second time in polyphony.
 fn bandlimited_tap_count(speed: f64) -> usize {
     let grown = 24.0 + 4.0 * (speed - 2.0);
-    let radius = grown.ceil().clamp(24.0, 80.0) as usize;
+    let radius = grown.ceil().clamp(24.0, MAX_BANDLIMITED_RADIUS as f64) as usize;
     radius * 2 + 1
 }
 
 /// Kaiser beta for the anti-alias window, from the transition budget the
-/// kernel radius leaves. The budget is computed exactly as below —
-/// `(tap_count / 2) · cutoff` on the odd tap count, so half a sample more
-/// than `radius · cutoff` — and `bandlimited_tap_count` ceils the grown
-/// radius, so within one radius step the budget falls as speed rises and
-/// jumps back up at the next step. Those steps are why a tier boundary is a
-/// small band rather than a point.
+/// kernel leaves: `(tap_count / 2) · cutoff`, in source samples.
 ///
-/// A wide budget carries the sharper window (beta 9), whose passband stays
-/// flat enough that a read landing on whole source frames returns them to
-/// within 2e-5 — the accuracy chromatic octaves are measured against. It
-/// holds while the budget is at least 10: unity through 2.85x (+18.13 st).
-/// A budget of at least 6 still carries beta 7, the widest window that keeps
-/// both that passband and the 42 dB stop-band from 4x up — through 8.4167x
-/// (+36.88 st). Past that the growth rule's budget has fallen below 6 — not
-/// the radius cap, which first binds at the 16x pitch ceiling itself — and
-/// the window drops to beta 5, which still meets the stop-band but gives up
-/// passband flatness no measurement at those ratios pins. The ceil staircase
-/// flips that drop once: the step beginning at 8.50x lifts the budget back
-/// over 6, so beta 7 returns for 8.50–8.58x (+37.05–37.22 st) before beta 5
-/// holds for good.
+/// A wider budget carries a sharper window. Beta 9 needs the widest, and earns
+/// it with a passband flat enough that a read landing on whole source frames
+/// returns them essentially unchanged — the accuracy the chromatic-octave
+/// tests measure against. Beta 7 is the widest window that still holds both
+/// that passband and the 42 dB stop-band. Beta 5 gives up the passband and
+/// keeps the stop-band.
+///
+/// Two things about the shape, because both mislead. It is a step function, so
+/// a small change in tap count or cutoff either does nothing or moves a whole
+/// tier. And the budget itself steps, because `bandlimited_tap_count` ceils
+/// its radius: inside one radius step the budget *falls* as speed rises, then
+/// jumps back at the next step — so the tier is not monotonic in speed and a
+/// boundary is a band rather than a point. Read the boundaries off the two
+/// thresholds below rather than restating them here, and pin any ratio whose
+/// tier is load-bearing with a measurement that fails when the tier moves.
 fn kaiser_beta(tap_count: usize, cutoff: f32) -> f32 {
     let budget = (tap_count as f64 / 2.0) * f64::from(cutoff);
     if budget >= 10.0 {
@@ -821,19 +839,20 @@ fn bessel_i0(x: f64) -> f64 {
 
 fn bandlimited_work_units(tap_count: usize) -> usize {
     // Longer sinc kernels also raise the surrounding per-voice loop cost, so
-    // growth above the 49-tap baseline is weighted rather than charged tap for
-    // tap — enough that a pool of 161-tap voices cannot reach a
+    // growth above the baseline kernel is weighted rather than charged tap for
+    // tap — enough that a pool of widest-kernel voices cannot reach a
     // deadline-breaking count.
     //
     // What `MAX_RESAMPLING_WORK_UNITS` then admits follows from this weight,
-    // and it is not a flat `MAX_VOICES` at every pitch-up. The budget is
-    // `49 · MAX_VOICES`, and 49 units is the baseline kernel, which the radius
-    // floor holds through exactly one octave up — so the full pool fits only
-    // while every voice sits at or below +12 st. Above that the weight rises
-    // and the pool that fits shrinks with it: a voice at +24 st weighs 73
-    // units, so 85 of them fit and the 86th is refused. Raising the ceiling to
-    // restore the full pool at wider ratios is a real-time tradeoff against
-    // worst-case render cost, not a constant to nudge.
+    // and it is not a flat `MAX_VOICES` at every pitch-up. That budget is the
+    // baseline kernel times the pool size, and `bandlimited_tap_count`'s
+    // radius floor holds the baseline through an octave up — so the whole pool
+    // fits only while every voice stays inside that octave. Above it the
+    // weight rises and the pool that fits shrinks with it, and the loss reaches
+    // the player as note-ons that never sound rather than as anything visible.
+    // Raising the ceiling to restore the full pool at wider ratios is a
+    // real-time tradeoff against worst-case render cost, not a constant to
+    // nudge — and widening the tap rule spends that pool without saying so.
     tap_count.saturating_add(tap_count.saturating_sub(MIN_BANDLIMITED_TAPS) / 2)
 }
 
@@ -919,9 +938,6 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     sum
 }
 
-/// Minimum odd tap count; higher pitch ratios scale this to at most 161 taps.
-const BANDLIMITED_SINC_TAPS: usize = 49;
-
 /// Where a kernel tap reads when its index falls outside the playable region.
 ///
 /// Taps that land in-range wrap for looping voices exactly as the playhead
@@ -954,7 +970,7 @@ fn bandlimited_stereo_sample(
     sinc_step_sin: f32,
     sinc_step_cos: f32,
     tap_count: usize,
-    window: &[f32],
+    window: &[f32; MAX_BANDLIMITED_TAPS],
     region_start: u32,
     loop_start: u32,
     loop_end: u32,
@@ -1247,51 +1263,63 @@ mod tests {
         }
     }
 
+    /// One voice rendered at `ratio`x, reached by `note` plus `tune_cents`.
+    fn render_at_ratio(source_frequency: f32, ratio: usize, note: u8, tune_cents: f32) -> Vec<f32> {
+        let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
+        let source = (0..source_frames)
+            .map(|frame| {
+                let phase =
+                    2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
+                phase.sin()
+            })
+            .collect();
+        let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams {
+            note,
+            root_note: 60,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+        voice.set_tune(tune_cents);
+
+        let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
+        for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
+            let mut left = 0.0;
+            let mut right = 0.0;
+            voice.render_sample(&sample, &mut left, &mut right);
+            if frame >= SETTLE_SAMPLES {
+                output.push(left);
+            }
+        }
+        output
+    }
+
+    /// Foldback-to-passband ratio in dB at `ratio`x, and the passband reference
+    /// it is stated against so a caller can reject an inaudible measurement.
+    ///
+    /// Both tones are chosen in the source so that playback puts one squarely
+    /// in the passband and folds the other back to 16 kHz. The returned number
+    /// is therefore the stop-band attenuation the kernel actually delivers at
+    /// this ratio, not a proxy for it.
+    fn foldback_margin_db(ratio: usize, note: u8, tune_cents: f32) -> (f32, f32) {
+        let passband = bin_magnitude(
+            &render_at_ratio(8_000.0 / ratio as f32, ratio, note, tune_cents),
+            8_000.0,
+            SAMPLE_RATE,
+        );
+        let foldback = bin_magnitude(
+            &render_at_ratio(32_000.0 / ratio as f32, ratio, note, tune_cents),
+            16_000.0,
+            SAMPLE_RATE,
+        );
+        (20.0 * (foldback / passband.max(1.0e-12)).log10(), passband)
+    }
+
     #[test]
     fn high_ratio_playback_suppresses_foldback_by_at_least_42_db() {
-        let render = |source_frequency: f32, ratio: usize, note: u8, tune_cents: f32| {
-            let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
-            let source = (0..source_frames)
-                .map(|frame| {
-                    let phase =
-                        2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
-                    phase.sin()
-                })
-                .collect();
-            let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
-            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
-            voice.trigger(&VoiceTriggerParams {
-                note,
-                root_note: 60,
-                playback_mode: PlaybackMode::OneShot,
-                ..VoiceTriggerParams::default()
-            });
-            voice.set_tune(tune_cents);
-
-            let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
-            for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
-                let mut left = 0.0;
-                let mut right = 0.0;
-                voice.render_sample(&sample, &mut left, &mut right);
-                if frame >= SETTLE_SAMPLES {
-                    output.push(left);
-                }
-            }
-            output
-        };
-
         for (ratio, note, tune_cents) in [(4, 84, 0.0), (8, 96, 0.0), (16, 84, 2_400.0)] {
-            let passband = bin_magnitude(
-                &render(8_000.0 / ratio as f32, ratio, note, tune_cents),
-                8_000.0,
-                SAMPLE_RATE,
-            );
-            let foldback = bin_magnitude(
-                &render(32_000.0 / ratio as f32, ratio, note, tune_cents),
-                16_000.0,
-                SAMPLE_RATE,
-            );
-            let alias_to_signal_db = 20.0 * (foldback / passband.max(1.0e-12)).log10();
+            let (alias_to_signal_db, passband) = foldback_margin_db(ratio, note, tune_cents);
 
             assert!(passband > 0.1, "{ratio}x passband reference was inaudible");
             assert!(
@@ -1308,7 +1336,7 @@ mod tests {
         let step = core::f32::consts::PI * 0.5;
         let (step_sin, step_cos) = step.sin_cos();
         let mut window = [0.0_f32; MAX_BANDLIMITED_TAPS];
-        fill_kaiser_window(&mut window, BANDLIMITED_SINC_TAPS, 9.0);
+        fill_kaiser_window(&mut window, MIN_BANDLIMITED_TAPS, 9.0);
 
         let (left, right) = bandlimited_stereo_sample(
             &sample,
@@ -1317,7 +1345,7 @@ mod tests {
             0.5,
             step_sin,
             step_cos,
-            BANDLIMITED_SINC_TAPS,
+            MIN_BANDLIMITED_TAPS,
             &window,
             0,
             0,
