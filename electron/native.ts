@@ -36,7 +36,7 @@ export type NativeHost = {
     /** Dedicated dictation controls stay outside generic renderer command routing. */
     readonly startDictation: (sessionId: string) => Promise<string>;
     readonly stopDictation: (sessionId: string) => void;
-    readonly cancelDictation: (sessionId: string) => void;
+    readonly cancelDictation: (sessionId: string) => Promise<void>;
 } & Record<string, NativeCommand>;
 
 export type NativeAddon = {

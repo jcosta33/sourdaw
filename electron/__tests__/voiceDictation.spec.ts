@@ -16,7 +16,7 @@ describe('registerVoiceDictation', () => {
         const native = {
             startDictation: vi.fn(async (sessionId: string) => sessionId),
             stopDictation: vi.fn(),
-            cancelDictation: vi.fn(),
+            cancelDictation: vi.fn().mockResolvedValue(undefined),
         };
         registerVoiceDictation({
             ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
@@ -42,7 +42,7 @@ describe('registerVoiceDictation', () => {
         const native = {
             startDictation: vi.fn(async (sessionId: string) => sessionId),
             stopDictation: vi.fn(),
-            cancelDictation: vi.fn(),
+            cancelDictation: vi.fn().mockResolvedValue(undefined),
         };
         registerVoiceDictation({
             ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
@@ -55,5 +55,39 @@ describe('registerVoiceDictation', () => {
 
         expect(native.stopDictation).toHaveBeenCalledWith('session-1');
         expect(native.cancelDictation).toHaveBeenCalledWith('session-1');
+    });
+
+    it('keeps Electron responsive while native cancellation awaits worker cleanup', async () => {
+        const handlers = new Map<string, (event: typeof trustedEvent, ...args: readonly unknown[]) => unknown>();
+        let finishCleanup: (() => void) | undefined;
+        const native = {
+            startDictation: vi.fn(async (sessionId: string) => sessionId),
+            stopDictation: vi.fn(),
+            cancelDictation: vi.fn(
+                () =>
+                    new Promise<void>((resolve) => {
+                        finishCleanup = resolve;
+                    })
+            ),
+        };
+        registerVoiceDictation({
+            ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+            native: () => native,
+            isTrustedFrameUrl: () => true,
+        });
+
+        const cancellation = handlers.get(VOICE_DICTATION_CANCEL_CHANNEL)!(trustedEvent, 'session-1');
+        let eventLoopTicked = false;
+        await new Promise<void>((resolve) =>
+            setImmediate(() => {
+                eventLoopTicked = true;
+                resolve();
+            })
+        );
+
+        expect(eventLoopTicked).toBe(true);
+        expect(native.cancelDictation).toHaveBeenCalledOnce();
+        finishCleanup?.();
+        await expect(cancellation).resolves.toBeUndefined();
     });
 });

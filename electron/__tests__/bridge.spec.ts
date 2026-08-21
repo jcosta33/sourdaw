@@ -17,6 +17,7 @@ import {
     DIALOG_MESSAGE_CHANNEL,
     DIALOG_OPEN_CHANNEL,
     DIALOG_SAVE_CHANNEL,
+    VOICE_DICTATION_ARM_CHANNEL,
     VOICE_DICTATION_DISARM_CHANNEL,
     VOICE_DICTATION_START_CHANNEL,
     VOICE_DICTATION_STOP_CHANNEL,
@@ -129,10 +130,15 @@ describe('voice activation admission', () => {
 
         click?.({
             isTrusted: true,
-            target: { closest: () => null },
+            // This is a real voice control, but specifically its stop half:
+            // it matched the old broad selector and must not arm a start.
+            target: {
+                closest: (selector: string) => (selector === '[data-voice-command-control="true"]' ? {} : null),
+            },
         });
 
         await expect(bridge.voiceDictation.start('new-session')).rejects.toThrow(/activation/u);
+        expect(fake.invoke).not.toHaveBeenCalledWith(VOICE_DICTATION_ARM_CHANNEL, expect.any(String));
         expect(fake.invoke).not.toHaveBeenCalledWith(VOICE_DICTATION_START_CHANNEL, 'new-session', expect.anything());
     });
 

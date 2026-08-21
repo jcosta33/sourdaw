@@ -16,10 +16,11 @@ import { dirname, join, resolve } from 'node:path';
 import { app, BaseWindow, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron';
 
 import { registerDialogChannels, registerPathChannels, registerScanCommand, SCAN_COMMAND } from './appIpc.js';
-import { EVENT_CHANNEL, STREAM_CHANNEL, VOICE_DICTATION_TERMINAL_CHANNEL } from './channels.js';
+import { EVENT_CHANNEL, STREAM_CHANNEL } from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
+import { forwardNativeEvent } from './nativeEventRouter.js';
 import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
@@ -336,18 +337,7 @@ const startNativeSurface = (): void => {
     try {
         const addon = loadNativeAddon({ path: addonPath, load: createRequire(import.meta.url) });
         nativeHost = new addon.SourdawNative((event, payload) => {
-            if (event === 'dictation-result' || event === 'dictation-error') {
-                try {
-                    const target = rendererTarget();
-                    if (target !== undefined && !target.isDestroyed()) {
-                        target.send(VOICE_DICTATION_TERMINAL_CHANNEL, event, payload);
-                    }
-                } catch {
-                    // Terminal dictation data is fire-and-forget when the renderer exited.
-                }
-                return;
-            }
-            events.emit(event, payload);
+            forwardNativeEvent(event, payload, events, rendererTarget);
         });
     } catch (error) {
         console.error(

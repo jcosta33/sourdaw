@@ -328,11 +328,18 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub fn cancel_dictation(&self, session_id: String) -> Result<()> {
-        reason(commands::speech::cancel_dictation(
-            session_id,
-            &self.singletons.dictation,
-        ))
+    pub async fn cancel_dictation(&self, session_id: String) -> Result<()> {
+        // Cancellation waits for the recording worker to drop every sensitive
+        // buffer. Keep that wait off Node's event loop so Electron remains
+        // responsive while the terminal cleanup completes.
+        let singletons = Arc::clone(&self.singletons);
+        reason(
+            tokio::task::spawn_blocking(move || {
+                commands::speech::cancel_dictation(session_id, &singletons.dictation)
+            })
+            .await
+            .map_err(|error| format!("Dictation cancellation worker failed: {error}"))?,
+        )
     }
 
     #[napi]

@@ -10,7 +10,7 @@ import { withTrustedSender, type IpcMainLike } from './router.js';
 type VoiceDictationHost = {
     readonly startDictation: (sessionId: string) => Promise<string>;
     readonly stopDictation: (sessionId: string) => void;
-    readonly cancelDictation: (sessionId: string) => void;
+    readonly cancelDictation: (sessionId: string) => Promise<void>;
 };
 
 type RegisterVoiceDictationInput = {
@@ -77,7 +77,7 @@ export const registerVoiceDictation = ({ ipcMain, native, isTrustedFrameUrl }: R
     );
     ipcMain.handle(
         VOICE_DICTATION_CANCEL_CHANNEL,
-        withTrustedSender('voice-dictation.cancel', isTrustedFrameUrl, (sessionId) => {
+        withTrustedSender('voice-dictation.cancel', isTrustedFrameUrl, async (sessionId) => {
             if (!validSessionId(sessionId)) {
                 throw new Error('voice-dictation.cancel rejected: invalid session');
             }
@@ -86,7 +86,7 @@ export const registerVoiceDictation = ({ ipcMain, native, isTrustedFrameUrl }: R
             if (host === undefined) {
                 throw new Error('voice-dictation.cancel rejected: the native host is not available');
             }
-            host.cancelDictation(sessionId);
+            await host.cancelDictation(sessionId);
         })
     );
 };
