@@ -173,11 +173,22 @@ export const trustedFrameGuard =
 export type WindowOpenDecision = {
     readonly action: 'deny';
     readonly openExternally: boolean;
+    readonly legalDocument?: 'THIRD-PARTY-NOTICES.md';
 };
 
 export const decideWindowOpen = (url: string): WindowOpenDecision => {
     try {
-        return { action: 'deny', openExternally: /^https?:$/u.test(new URL(url).protocol) };
+        const target = new URL(url);
+        if (
+            target.protocol === 'app:' &&
+            target.host === 'sourdaw' &&
+            target.pathname === '/legal/THIRD-PARTY-NOTICES.md' &&
+            target.search === '' &&
+            target.hash === ''
+        ) {
+            return { action: 'deny', openExternally: false, legalDocument: 'THIRD-PARTY-NOTICES.md' };
+        }
+        return { action: 'deny', openExternally: /^https?:$/u.test(target.protocol) };
     } catch {
         return { action: 'deny', openExternally: false };
     }

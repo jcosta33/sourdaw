@@ -8,6 +8,7 @@ import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityMetric } from '#/components/daw/DawUtilityMetric';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { Row, Stack } from '#/components/layout';
 
 import { type MixAnalysis, type MixIssue } from '../../../models/MixAnalysis';
 
@@ -97,11 +98,11 @@ type FrequencyBalanceProps = { bands: MixAnalysis['frequencyBalance'] };
 
 export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement => (
     <DawUtilitySection title="Frequency Balance" detail="Broad-spectrum energy by band.">
-        <div className="space-y-1.5">
+        <Stack gap={1.5}>
             {BAND_LABELS.map(({ key, label, range }) => (
                 <FrequencyBar key={key} label={label} range={range} db={bands[key]} />
             ))}
-        </div>
+        </Stack>
     </DawUtilitySection>
 );
 
@@ -115,7 +116,7 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
         detail={`${trackLevels.length} track${trackLevels.length === 1 ? '' : 's'} in the current scan.`}
     >
         {trackLevels.length > 0 ? (
-            <div className="space-y-1">
+            <Stack gap={1}>
                 {trackLevels.map((tl) => (
                     <DawUtilityListRow
                         key={tl.trackId}
@@ -124,7 +125,7 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
                         startSlot={<Volume2 className="size-3 text-muted-foreground" />}
                         title={tl.trackName}
                         endSlot={
-                            <div className="flex items-center gap-2">
+                            <Row gap={2}>
                                 {tl.isMuted ? (
                                     <DawMicroBadge className="px-1" tone="muted">
                                         M
@@ -141,11 +142,11 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
                                     {tl.peakDb.toFixed(1)} dB
                                 </span>
                                 <DawStatusDot className={levelColor(tl.peakDb)} />
-                            </div>
+                            </Row>
                         }
                     />
                 ))}
-            </div>
+            </Stack>
         ) : (
             <p className="text-[10px] text-muted-foreground">No tracks to analyze.</p>
         )}
@@ -165,14 +166,14 @@ export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => 
             title="Issues"
             detail={`${issues.length} item${issues.length === 1 ? '' : 's'} need attention.`}
         >
-            <div className="space-y-1">
+            <Stack gap={1}>
                 {issues.map((issue, index) => (
-                    <div key={index} className="flex items-start gap-1.5 rounded bg-surface-overlay px-2 py-1.5">
+                    <Row align="start" gap={1.5} className="rounded bg-surface-overlay px-2 py-1.5" key={index}>
                         {severityIcon(issue.severity)}
                         <span className="text-[10px] text-foreground leading-tight">{issue.message}</span>
-                    </div>
+                    </Row>
                 ))}
-            </div>
+            </Stack>
         </DawUtilitySection>
     );
 };
@@ -187,17 +188,20 @@ export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactEle
     }
     return (
         <DawUtilitySection title="Suggestions" detail="Quick next moves suggested by the current analysis.">
-            <ul className="space-y-1">
+            <Stack as="ul" gap={1}>
                 {suggestions.map((state, index) => (
-                    <li
+                    <Row
+                        as="li"
+                        align="start"
+                        gap={1.5}
+                        className="text-[10px] text-muted-foreground leading-tight"
                         key={index}
-                        className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight"
                     >
                         <span className="shrink-0 mt-0.5">•</span>
                         <span>{state}</span>
-                    </li>
+                    </Row>
                 ))}
-            </ul>
+            </Stack>
         </DawUtilitySection>
     );
 };

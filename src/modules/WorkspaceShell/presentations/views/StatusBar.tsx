@@ -1,6 +1,6 @@
 import { type ReactElement, useRef } from 'react';
 
-import { History, Users } from 'lucide-react';
+import { History, Scale, Users } from 'lucide-react';
 
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
@@ -223,6 +223,21 @@ export const StatusBar = (): ReactElement => {
                     <MidiStatusBadge />
                     <MonitorStatusBadge />
                     <CvOutputStatusBadge />
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                                onClick={() => window.open('/legal/THIRD-PARTY-NOTICES.md', '_blank')}
+                                aria-label="Third-party licenses"
+                            >
+                                <Scale className="size-3" aria-hidden="true" />
+                                Legal
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Third-party licenses and source</TooltipContent>
+                    </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button

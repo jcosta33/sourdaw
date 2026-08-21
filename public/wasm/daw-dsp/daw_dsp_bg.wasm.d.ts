@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:f22618938a0b0830388d8607ed6a39ce96c73e53613628e2ef7fc8a8b5ba7148
+// @wasm-bindgen-dts crate-source: sha256:30bae04c9adc9380ed4fe4461b129de1401d9bd8cf38dcfff8fc055bfa1a8bd9
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -70,6 +70,23 @@ export const kneadinstance_process: (a: number, b: number) => number;
 export const kneadinstance_set_formant_preserve: (a: number, b: number) => void;
 export const kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
 export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+export const __wbg_gluteninstance_free: (a: number, b: number) => void;
+export const gluteninstance_get_crest: (a: number) => number;
+export const gluteninstance_get_gr_db: (a: number) => number;
+export const gluteninstance_get_input_db: (a: number) => number;
+export const gluteninstance_get_input_left_ptr: (a: number) => number;
+export const gluteninstance_get_input_right_ptr: (a: number) => number;
+export const gluteninstance_get_latency_samples: (a: number) => number;
+export const gluteninstance_get_nan_flush_count: (a: number) => number;
+export const gluteninstance_get_output_db: (a: number) => number;
+export const gluteninstance_get_phase_corr: (a: number) => number;
+export const gluteninstance_get_right_ptr: (a: number) => number;
+export const gluteninstance_get_sc_left_ptr: (a: number) => number;
+export const gluteninstance_get_sc_right_ptr: (a: number) => number;
+export const gluteninstance_new: (a: number) => number;
+export const gluteninstance_process: (a: number, b: number) => number;
+export const gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const init_panic_hook: () => void;
 export const __wbg_fermenterinstance_free: (a: number, b: number) => void;
 export const __wbg_grinderinstance_free: (a: number, b: number) => void;
 export const fermenterinstance_active_voices: (a: number) => number;
@@ -111,7 +128,6 @@ export const grinderinstance_process: (a: number, b: number) => number;
 export const grinderinstance_process_automated: (a: number, b: number) => number;
 export const grinderinstance_reset: (a: number) => void;
 export const grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
 export const __wbg_proofinstance_free: (a: number, b: number) => void;
@@ -191,22 +207,6 @@ export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: numbe
 export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-export const __wbg_gluteninstance_free: (a: number, b: number) => void;
-export const gluteninstance_get_crest: (a: number) => number;
-export const gluteninstance_get_gr_db: (a: number) => number;
-export const gluteninstance_get_input_db: (a: number) => number;
-export const gluteninstance_get_input_left_ptr: (a: number) => number;
-export const gluteninstance_get_input_right_ptr: (a: number) => number;
-export const gluteninstance_get_latency_samples: (a: number) => number;
-export const gluteninstance_get_nan_flush_count: (a: number) => number;
-export const gluteninstance_get_output_db: (a: number) => number;
-export const gluteninstance_get_phase_corr: (a: number) => number;
-export const gluteninstance_get_right_ptr: (a: number) => number;
-export const gluteninstance_get_sc_left_ptr: (a: number) => number;
-export const gluteninstance_get_sc_right_ptr: (a: number) => number;
-export const gluteninstance_new: (a: number) => number;
-export const gluteninstance_process: (a: number, b: number) => number;
-export const gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
