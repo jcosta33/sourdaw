@@ -381,8 +381,11 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             vocoder: null,
             storageUsedBytes: 0,
         });
+        const nonzeroTimelineClip = { ...clipA, startBeat: 8, endBeat: 12 };
         midiStoreMock.state = {
-            notesByClipId: { [clipA.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] },
+            notesByClipId: {
+                [nonzeroTimelineClip.id]: [{ id: 'n', pitch: 60, velocity: 100, startBeat: 1, duration: 1 }],
+            },
         };
         vi.mocked(renderDdspInstrument).mockResolvedValue({
             audio: new Float32Array([0.1, 0.2]),
@@ -390,12 +393,16 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
             provenance: { modelId: instrument.id, renderQuality: 'standard', renderedAt: 1, tier: 'browser-preview' },
         });
 
-        render(<ClipMidiAiSection clip={clipA} />);
+        render(<ClipMidiAiSection clip={nonzeroTimelineClip} />);
         fireEvent.click(screen.getByRole('button', { name: /Render Instrument/ }));
 
         await screen.findByTestId('ai-render-preview');
         expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
-            expect.objectContaining({ phraseId: `${clipA.id}-ddsp`, instrument })
+            expect.objectContaining({
+                phraseId: `${nonzeroTimelineClip.id}-ddsp`,
+                instrument,
+                notes: [expect.objectContaining({ startSec: 0.5 })],
+            })
         );
     });
 

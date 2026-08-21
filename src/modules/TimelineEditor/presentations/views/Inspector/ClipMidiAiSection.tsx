@@ -111,6 +111,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     //     re-enables a button whose first job is still in flight.
     const renderedClipIdRef = useRef(clip.id);
     const variationsLaunchRef = useRef<AbortController | null>(null);
+    const ddspLaunchRef = useRef<AbortController | null>(null);
     const ttsLaunchRef = useRef<AbortController | null>(null);
     const svsLaunchRef = useRef<AbortController | null>(null);
 
@@ -210,6 +211,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         const secondsPerBeat = 60 / bpm;
         setIsRenderingDdsp(true);
         setDdspResult(null);
+        ddspLaunchRef.current?.abort();
+        const launch = new AbortController();
+        ddspLaunchRef.current = launch;
+        const { signal } = launch;
+        const launchClipId = clip.id;
         try {
             const result = await renderDdspInstrument({
                 phraseId: `${clip.id}-ddsp`,
@@ -218,16 +224,24 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 notes: notes.map((note) => ({
                     pitch: note.pitch,
                     velocity: note.velocity,
-                    startSec: (note.startBeat - clip.startBeat) * secondsPerBeat,
+                    startSec: note.startBeat * secondsPerBeat,
                     durationSec: note.duration * secondsPerBeat,
                 })),
             });
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                return;
+            }
             setDdspResult({ audio: result.audio, sampleRate: result.sampleRate, label: 'DDSP', name: instrument.name });
             notifyAiChange('Instrument render complete', [`${instrument.name} rendered — drag it onto an audio track`]);
         } catch (error) {
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                return;
+            }
             notifyUser(error instanceof Error ? error.message : 'DDSP render failed', 'error');
         } finally {
-            setIsRenderingDdsp(false);
+            if (stillOwnsPanel({ signal, launchClipId })) {
+                setIsRenderingDdsp(false);
+            }
         }
     };
 
