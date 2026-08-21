@@ -28,9 +28,10 @@ const isPreviewCaptureEnabled = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('../../../stores/yeastStore', () => ({
     yeastStore,
-    getYeastRack: vi.fn(() => {
-        throw new Error('main-thread MidiRack must not be requested');
-    }),
+    // Rack reads are per device instance (issue #2422): a named rack resolves
+    // to that device's stored state. The old guard name (`getYeastRack`, a
+    // main-thread MidiRack request) is gone with the engine isolation work.
+    readYeastRack: () => yeastStore.value,
 }));
 
 vi.mock('../../../engine/yeastRuntime', () => ({

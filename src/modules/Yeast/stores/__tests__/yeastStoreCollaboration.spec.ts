@@ -44,17 +44,25 @@ function createPeer(initialDoc: Doc<RootDocument>): {
 
 function createStorage() {
     let localState: YeastState | null = null;
-    const storage = createYeastAutomergeStorage(() => localState);
+    // One device id for every peer in this suite: these tests exercise the
+    // per-rack merge semantics, which are per device since issue #2422 scoped
+    // the slot into `racks[deviceId]`.
+    const deviceId = 'device-collab';
+    const storage = createYeastAutomergeStorage({
+        getLocalState: () => localState,
+        getActiveDeviceId: () => deviceId,
+        resolveFirstYeastDeviceId: () => deviceId,
+    });
     return {
-        get: () => storage.get(),
+        get: () => storage.storage.get(),
         hydrate: () => {
-            const hydrated = storage.hydrate?.() ?? false;
-            localState = storage.get();
+            const hydrated = storage.storage.hydrate?.() ?? false;
+            localState = storage.storage.get();
             return hydrated;
         },
         set: (state: YeastState) => {
             localState = state;
-            storage.set(state);
+            storage.storage.set(state);
         },
     };
 }

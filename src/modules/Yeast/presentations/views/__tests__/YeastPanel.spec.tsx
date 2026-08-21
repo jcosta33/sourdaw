@@ -64,6 +64,9 @@ vi.mock('../../../stores/yeastStore', () => ({
         },
         set: storeMock.setYeastState,
     },
+    // The panel pins its device on mount (issue #2422); these tests drive the
+    // store mock directly, so the pin is an observed no-op.
+    setActiveYeastDevice: vi.fn(),
 }));
 
 vi.mock('../../../engine/yeastRuntime', async (importOriginal) => ({

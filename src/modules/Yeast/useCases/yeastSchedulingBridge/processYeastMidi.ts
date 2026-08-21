@@ -1,6 +1,6 @@
 import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
 import { processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
-import { yeastStore } from '../../stores/yeastStore';
+import { readYeastRack, yeastStore } from '../../stores/yeastStore';
 import { createYeastRuntimeProjection } from '../createYeastRuntimeProjection';
 import { publishYeastRuntimeStatus } from '../publishYeastRuntimeStatus';
 
@@ -19,7 +19,10 @@ type ProcessYeastMidiInput = {
 };
 
 export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<MidiEvent[]> {
-    const state = yeastStore.value;
+    // Racks are per device instance (issue #2422): a caller that names its
+    // rack processes that device's rack; one that does not keeps the legacy
+    // behaviour of processing the active rack.
+    const state = input.rackId !== undefined ? readYeastRack(input.rackId) : yeastStore.value;
     if (!state) {
         return [...input.events];
     }
