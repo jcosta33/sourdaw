@@ -1,0 +1,90 @@
+src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts
+  s_27578aec2aab3b::t_0b0cc5e9ef49e0 3,5,12,18
+  s_27578aec2aab3b::t_7118970870860a 7
+docs/architecture/09-ai-stack.md
+  s_27578aec2aab3b::t_06c86b0db5b550 35-41
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_444c52531612f6 12-19,80-84,97,135-139,159-168,203,214-223
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_de3025f1a917e8 120-128
+.agents/decisions/open-decision-docket.md
+  s_27578aec2aab3b::t_06c86b0db5b550 158,1138,1175-1176
+src/modules/BrowserAi/models/InferenceRequest.ts
+  s_27578aec2aab3b::t_ea5d5476596c94 66-67,147-150
+  s_487e9aa1e46063::t_6bd1a3b25e37e9 151
+src/modules/BrowserAi/useCases/downloadModel.ts
+  s_27578aec2aab3b::t_0b0cc5e9ef49e0 38
+src/modules/BrowserAi/workers/__tests__/tfjsInferenceWorkerRuntime.spec.ts
+  s_27578aec2aab3b::t_1e662e84d32f40 248-252,254-258
+src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts
+  s_27578aec2aab3b::t_ea5d5476596c94 538-544
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_27578aec2aab3b::t_ea5d5476596c94 424-425,428-437
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_27578aec2aab3b::t_1e662e84d32f40 606,623-635
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_27578aec2aab3b::t_444c52531612f6 248-294
+  s_27578aec2aab3b::t_8bb78e9bb9ed1e 295
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_27578aec2aab3b::t_0f885d3d41a2e3 8,11,44-52,73-86,88-157,160-161,170
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_7c5151a537f281 522-523,525-529,540-541,549-575
+src/modules/BrowserAi/useCases/__tests__/removeDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_f3eb825310de02 41-51,54-55,62-64,79-84,97-116
+  s_487e9aa1e46063::t_cb1dc4d424cd7a 117
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_aea80b70f13a96 78-108
+src/modules/BrowserAi/useCases/downloadDdspInstrument.ts
+  s_27578aec2aab3b::t_0b0cc5e9ef49e0 30,57
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_27578aec2aab3b::t_8993219fc4a9dc 1,140,142-145,147-152,201-215,219-226,231-233,237,239
+  s_27578aec2aab3b::t_7118970870860a 146,155,216-218,234-236
+  s_27578aec2aab3b::t_475ea9a7bbf938 12
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_8882b20d919bc0 111-144,152
+  s_27578aec2aab3b::t_f3eb825310de02 48-51,72-73,78-85,95-100,145-151
+  s_487e9aa1e46063::t_d2a6ae7d6041dd 153
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_00be4887f1aa1b 390-391
+src/modules/BrowserAi/repositories/__tests__/withDdspInstrumentLock.spec.ts
+  s_27578aec2aab3b::t_db970c095594f2 1-8,10-26,31-35,63-65,67,69-112,121-122
+  s_27578aec2aab3b::t_0d1be2c9b67c27 9,27-30,36-62,66,68,113-120
+src/modules/BrowserAi/useCases/__tests__/downloadModel.spec.ts
+  s_27578aec2aab3b::t_444c52531612f6 10-17,85,117
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_00be4887f1aa1b 130-131
+src/modules/BrowserAi/useCases/removeDdspInstrument.ts
+  s_27578aec2aab3b::t_ea5d5476596c94 6,10-16,19-20
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_27578aec2aab3b::t_7118970870860a 103,117-135,161
+  s_27578aec2aab3b::t_db0ae6d550e038 79,88-95,136-137,139-145,148,150-153
+  s_27578aec2aab3b::t_b0f924f12bcedf 96-97
+src/modules/BrowserAi/repositories/modelDownloadManager.ts
+  s_27578aec2aab3b::t_6832d931bf48d8 38
+  s_27578aec2aab3b::t_12f2243545436c 103-104,154
+  s_27578aec2aab3b::t_0b0cc5e9ef49e0 39,153,155-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2f84c7eae4cf67204228c971dff14655ff6fbf6e",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
