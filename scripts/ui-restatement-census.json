@@ -380,7 +380,7 @@
   {
     "id": "ui-03363497d3183e44",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 335,
+    "line": 336,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -1323,15 +1323,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-0bd23d23675b9732",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 113,
-    "fingerprint": "div\tflex flex-col gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-0beb2e34ff4f7cba",
     "file": "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
     "line": 142,
@@ -1357,6 +1348,15 @@
     "kind": "layout",
     "mapping": "Grid",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-0c320cde359471da",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 349,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-0c41c69d7663ffc2",
@@ -1991,7 +1991,7 @@
   {
     "id": "ui-119d32fc8e12bfc9",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 201,
+    "line": 202,
     "fingerprint": "DawPickerCard\t",
     "kind": "daw-chrome",
     "mapping": "DawPickerCard",
@@ -2367,6 +2367,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-14ffd047006cbd79",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 147,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-14ffe6164785dd47",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 784,
@@ -2477,7 +2486,7 @@
   {
     "id": "ui-16128e942ac45ef0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 325,
+    "line": 326,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -3323,7 +3332,7 @@
   {
     "id": "ui-1e68be9f0ff5fbf0",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 371,
+    "line": 372,
     "fingerprint": "div\tgrid grid-cols-2 gap-3",
     "kind": "layout",
     "mapping": "Grid",
@@ -4356,15 +4365,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-296d41e60f1d2d53",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 412,
-    "fingerprint": "div\tflex flex-col items-center justify-center py-8 text-muted-foreground opacity-60",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-299b7e74638ccaf2",
     "file": "src/components/daw/DawMenuParts.tsx",
     "line": 36,
@@ -5265,15 +5265,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-3238801aaccf476f",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 378,
-    "fingerprint": "div\tflex gap-1 flex-wrap",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-326424782dc29642",
     "file": "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx",
     "line": 247,
@@ -5439,6 +5430,15 @@
     "id": "ui-34037cfdbe19018b",
     "file": "src/modules/Bacteria/presentations/views/BacteriaPanel.tsx",
     "line": 790,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-34320dc250bbcd68",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 321,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6276,6 +6276,15 @@
     "id": "ui-3d359604e292a2b5",
     "file": "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
     "line": 604,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-3d429daeedd675f2",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 114,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7378,6 +7387,15 @@
     "kind": "daw-chrome",
     "mapping": "DawUtilityListRow",
     "disposition": "semantic-wrapper"
+  },
+  {
+    "id": "ui-47433fc14dc2aff4",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 413,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-474f58d6828ba7df",
@@ -8759,7 +8777,7 @@
   {
     "id": "ui-5621a956611a52f7",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 114,
+    "line": 115,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -9655,15 +9673,6 @@
     "kind": "daw-chrome",
     "mapping": "DawPluginMetricTile",
     "disposition": "semantic-wrapper"
-  },
-  {
-    "id": "ui-5ec910a438c54d43",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 320,
-    "fingerprint": "div\tspace-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
   },
   {
     "id": "ui-5ecdacd71494efd8",
@@ -12458,7 +12467,7 @@
   {
     "id": "ui-7b1b26024f2233ae",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 148,
+    "line": 149,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -13466,7 +13475,7 @@
   {
     "id": "ui-8401b6648170b605",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 392,
+    "line": 393,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -13644,6 +13653,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-85c8aa684e3b608d",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 223,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-85f7264a399680ce",
     "file": "src/modules/Arrangement/presentations/views/BounceOptionsDialog.tsx",
     "line": 158,
@@ -13736,7 +13754,7 @@
   {
     "id": "ui-871237b0f33f6f6e",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 210,
+    "line": 211,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15372,15 +15390,6 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-98b87e852f956a72",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 146,
-    "fingerprint": "div\tflex flex-col gap-0.5",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-98ef90bdc342b139",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
     "line": 79,
@@ -15500,7 +15509,7 @@
   {
     "id": "ui-9a3ebf4bc7848d3e",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 379,
+    "line": 380,
     "fingerprint": "button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16452,6 +16461,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-a454ad4106aaf6ec",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 323,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-a46ae0bdbae9ae1d",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 1246,
@@ -16531,15 +16549,6 @@
     "kind": "layout",
     "mapping": "Row",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-a587a6f62f5043b0",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 322,
-    "fingerprint": "div\tflex gap-1",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
   },
   {
     "id": "ui-a59324bc153ad0f1",
@@ -17937,15 +17946,6 @@
     "disposition": "eligible"
   },
   {
-    "id": "ui-b35d966672442fac",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 147,
-    "fingerprint": "div\tflex items-center justify-between",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-b36ad14d23605b15",
     "file": "src/modules/Levain/presentations/components/ExpressionPanel.tsx",
     "line": 180,
@@ -18801,15 +18801,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-bc4830ae54107bf4",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 348,
-    "fingerprint": "div\tbg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-bc49cf17a171bae5",
     "file": "src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx",
     "line": 431,
@@ -19028,7 +19019,7 @@
   {
     "id": "ui-beb5edd93acf5160",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 115,
+    "line": 116,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -19314,18 +19305,9 @@
     "disposition": "already-migrated"
   },
   {
-    "id": "ui-c1b4ae761a23c870",
-    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 222,
-    "fingerprint": "div\tflex items-center gap-1 flex-wrap",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-c1c28768eb4dd8d6",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 417,
+    "line": 418,
     "fingerprint": "div\tgrid grid-cols-2 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -21438,6 +21420,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-d7d75ba8b5cd566a",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 379,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-d7d9f1096315ee3e",
     "file": "src/modules/Gluten/presentations/views/GlutenPanel.tsx",
     "line": 1152,
@@ -23330,7 +23321,7 @@
   {
     "id": "ui-ebdddcc62ecaec71",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 349,
+    "line": 350,
     "fingerprint": "div\tgrid grid-cols-3 gap-2",
     "kind": "layout",
     "mapping": "Grid",
@@ -24212,7 +24203,7 @@
   {
     "id": "ui-f4d16fb98f30bbc9",
     "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
-    "line": 223,
+    "line": 224,
     "fingerprint": "DawMicroBadge\t",
     "kind": "daw-chrome",
     "mapping": "DawMicroBadge",
@@ -24892,6 +24883,15 @@
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "eligible"
+  },
+  {
+    "id": "ui-fbf80dbfa0c2226e",
+    "file": "src/modules/AiGeneration/presentations/views/PatternBrowser.tsx",
+    "line": 148,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
   },
   {
     "id": "ui-fc494b71f1520c18",
