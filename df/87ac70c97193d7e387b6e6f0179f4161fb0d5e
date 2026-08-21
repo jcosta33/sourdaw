@@ -1,0 +1,20 @@
+tests/e2e/statusBarTestId.spec.ts
+  s_24b1bdbc3c31ad::t_2607c3df0885ef 29,46
+  s_24b1bdbc3c31ad::t_040534b337ce5a 51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "df87ac70c97193d7e387b6e6f0179f4161fb0d5e",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
