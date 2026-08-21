@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const notifyUserMock = vi.hoisted(() => vi.fn());
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: notifyUserMock,
+}));
+
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -659,7 +664,8 @@ describe('track-state guarded undo integration', () => {
             expect(track('track-1')).toMatchObject({ frozen: true, freezeState: { status: 'frozen' } });
         });
 
-        it('conflicts rather than overwriting a take re-frozen after the unfreeze', async () => {
+        it('conflicts rather than overwriting a take re-frozen after the unfreeze and allows older undo', async () => {
+            await run({ type: 'disableTrack', payload: { trackId: 'track-1', disabled: true } });
             divergeTrack('track-1', frozenState);
             await run({ type: 'unfreezeTrack', payload: { trackId: 'track-1' } });
             divergeTrack('track-1', {
@@ -668,12 +674,20 @@ describe('track-state guarded undo integration', () => {
                 freezeState: { status: 'frozen', freezeId: 'freeze-9', frozenBufferId: 'freeze-buffer-9' },
             });
 
+            notifyUserMock.mockClear();
+
+            // 1. Undo the unfreeze — conflicts and warns user
             await undo();
 
+            expect(notifyUserMock).toHaveBeenCalledWith(expect.stringContaining('Cannot undo'), 'warning');
             expect(track('track-1')).toMatchObject({
                 frozenBufferId: 'freeze-buffer-9',
                 freezeState: { freezeId: 'freeze-9' },
             });
+
+            // 2. Subsequent undo reaches the older disableTrack edit underneath
+            await undo();
+            expect(track('track-1')?.disabled).toBe(false);
         });
     });
 });
