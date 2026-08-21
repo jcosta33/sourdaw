@@ -268,6 +268,19 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
     };
 
+    const captureLaunchAbort = () => {
+        const abort = AbortController.prototype.abort;
+        let abortedSignal: AbortSignal | undefined;
+        const spy = vi.spyOn(AbortController.prototype, 'abort').mockImplementation(function captureSignal(
+            this: AbortController,
+            reason?: unknown
+        ): void {
+            abortedSignal = this.signal;
+            abort.call(this, reason);
+        });
+        return { spy, signal: () => abortedSignal };
+    };
+
     const makeRenderOutput = () => ({
         audio: new Float32Array([0.25, -0.25]),
         sampleRate: 44100,
@@ -376,6 +389,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
         tempoMapStore.set({ changes: [] });
         transportStore.set({ ...defaultTransportState });
+        vi.restoreAllMocks();
     });
 
     // ADR 0015 — a launch stops owning the panel two independent ways, and both are driven in
@@ -703,6 +717,43 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(3);
     });
 
+    it('aborts the owned TTS render on unmount and ignores its late completion', async () => {
+        setKokoroReadyRegistry();
+        installTtsMock();
+        const pending = hold(ttsCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        launchTtsRender('hello world');
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.open());
+        expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(1);
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
+    it('aborts the owned TTS render on unmount and ignores its late failure', async () => {
+        setKokoroReadyRegistry();
+        installTtsMock();
+        const pending = hold(ttsCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        launchTtsRender('hello world');
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.fail(new Error('late TTS failure')));
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
     it('does not report a TTS failure that arrives after a clip switch (audit M-250)', async () => {
         setKokoroReadyRegistry();
         installTtsMock();
@@ -813,6 +864,38 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('MIDI variations generated', [
             '3 variations created as alternative clips',
         ]);
+    });
+
+    it('aborts the owned variation generation on unmount and ignores its late completion', async () => {
+        installVariationsMock();
+        const pending = hold(variationCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(variationsButton());
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.open());
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
+    it('aborts the owned variation generation on unmount and ignores its late failure', async () => {
+        installVariationsMock();
+        const pending = hold(variationCalls, 1);
+        const abort = captureLaunchAbort();
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(variationsButton());
+
+        unmount();
+
+        expect(abort.spy).toHaveBeenCalledTimes(1);
+        expect(abort.signal()?.aborted).toBe(true);
+        await settleJobs(() => pending.fail(new Error('late variation failure')));
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
 
     it("keeps an abandoned generation out of the new clip's streaming readout (audit M-250)", async () => {

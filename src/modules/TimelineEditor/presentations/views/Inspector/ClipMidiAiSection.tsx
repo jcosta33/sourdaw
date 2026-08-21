@@ -120,8 +120,19 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     useEffect(
         () => () => {
             // A committed selection change or unmount ends this panel's ownership.
-            // Cancelling here also stops worker work instead of merely dropping its UI result.
-            ddspLaunchRef.current?.abort();
+            // Clear before aborting so a later cleanup cannot cancel the same launch twice.
+            const activeVariationsLaunch = variationsLaunchRef.current;
+            const activeDdspLaunch = ddspLaunchRef.current;
+            const activeTtsLaunch = ttsLaunchRef.current;
+            const activeSvsLaunch = svsLaunchRef.current;
+            variationsLaunchRef.current = null;
+            ddspLaunchRef.current = null;
+            ttsLaunchRef.current = null;
+            svsLaunchRef.current = null;
+            activeVariationsLaunch?.abort();
+            activeDdspLaunch?.abort();
+            activeTtsLaunch?.abort();
+            activeSvsLaunch?.abort();
         },
         [clip.id]
     );
@@ -170,7 +181,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'Variation generation failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (variationsLaunchRef.current === launch) {
+                variationsLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 // Only the launch that still owns the panel may clear its spinner. An abandoned
                 // launch would otherwise stop the spinner of the job running right now.
                 setIsGeneratingVariations(false);
@@ -263,7 +278,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'DDSP render failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (ddspLaunchRef.current === launch) {
+                ddspLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 setIsRenderingDdsp(false);
             }
         }
@@ -333,7 +352,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'TTS render failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (ttsLaunchRef.current === launch) {
+                ttsLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 // Only the launch that still owns the panel may clear its spinner. An
                 // abandoned launch would otherwise stop the spinner of the render running now.
                 setIsRenderingTts(false);
@@ -448,7 +471,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             }
             notifyUser(error instanceof Error ? error.message : 'Singing render failed', 'error');
         } finally {
-            if (stillOwnsPanel({ signal, launchClipId })) {
+            const ownsPanel = stillOwnsPanel({ signal, launchClipId });
+            if (svsLaunchRef.current === launch) {
+                svsLaunchRef.current = null;
+            }
+            if (ownsPanel) {
                 // Only the launch that still owns the panel may clear its spinner. An
                 // abandoned launch would otherwise stop the spinner of the render running now.
                 setIsRenderingSvs(false);
