@@ -23,7 +23,7 @@ function makeEntry(over: Partial<RenderQueueEntry> = {}): RenderQueueEntry {
 
 describe('markRenderComplete', () => {
     beforeEach(() => {
-        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
     });
 
     it('removes the completed entry from the queue so it does not grow unbounded', () => {
@@ -69,6 +69,7 @@ describe('markRenderComplete', () => {
             entries: [expect.objectContaining({ phraseId: 'phrase-A', requestId: 'req-new', status: 'preparing' })],
             cachedPhraseIds: [],
             phraseStatusMap: { 'phrase-A': 'queued' },
+            phraseRequestIds: { 'phrase-A': 'req-new' },
         });
     });
 
@@ -83,13 +84,14 @@ describe('markRenderComplete', () => {
             entries: [],
             cachedPhraseIds: ['cache-key-new'],
             phraseStatusMap: { 'phrase-A': 'preview' },
+            phraseRequestIds: { 'phrase-A': 'req-new' },
         });
     });
 });
 
 describe('updateRenderStatus / markPhraseStale / cancelQueuedRender', () => {
     beforeEach(() => {
-        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
     });
 
     it('updates the status of the matching queue entry and the status map', () => {

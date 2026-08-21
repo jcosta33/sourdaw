@@ -22,6 +22,8 @@ export type RenderQueueState = {
     cachedPhraseIds: string[];
     /** Map of phraseId → render status for the canvas stale badge */
     phraseStatusMap: Record<string, PhraseRenderStatus>;
+    /** Current or terminal request owner for each phrase. */
+    phraseRequestIds?: Record<string, string>;
 };
 
 export const renderQueueStore = createStore<RenderQueueState>({
@@ -29,6 +31,7 @@ export const renderQueueStore = createStore<RenderQueueState>({
         entries: [],
         cachedPhraseIds: [],
         phraseStatusMap: {},
+        phraseRequestIds: {},
     },
 });
 
@@ -48,6 +51,7 @@ export function enqueueRender(entry: RenderQueueEntry): void {
             ...state,
             entries: [...state.entries.filter((event) => event.phraseId !== entry.phraseId), entry],
             phraseStatusMap: { ...state.phraseStatusMap, [entry.phraseId]: 'queued' },
+            phraseRequestIds: { ...(state.phraseRequestIds ?? {}), [entry.phraseId]: entry.requestId },
         };
     });
 }
@@ -117,7 +121,11 @@ export function cancelQueuedRender(phraseId: string, requestId: string, hasActiv
         }
         const phraseEntries = state.entries.filter((event) => event.phraseId === phraseId);
         const ownsPhrase = phraseEntries.some((event) => event.requestId === requestId);
-        if (!ownsPhrase && (phraseEntries.length > 0 || !hasActiveRender)) {
+        const currentRequestId = state.phraseRequestIds?.[phraseId];
+        if (currentRequestId !== undefined && currentRequestId !== requestId) {
+            return state;
+        }
+        if (!ownsPhrase && (phraseEntries.length > 0 || (!hasActiveRender && currentRequestId !== requestId))) {
             return state;
         }
         const entries = ownsPhrase

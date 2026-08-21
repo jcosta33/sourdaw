@@ -120,7 +120,7 @@ describe('renderKokoroTts', () => {
         cancelOnnxRequest.mockReset();
         cancelTfjsRequest.mockReset();
         releaseGate.kokoro = true;
-        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
         inferenceProgressStore.set({ activeRenders: {} });
         stub_fetch_ok(voice_embedding_buffer());
     });
@@ -173,6 +173,51 @@ describe('renderKokoroTts', () => {
         expect(loadOnnxSession).not.toHaveBeenCalled();
         expect(runKokoroTts).not.toHaveBeenCalled();
         expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not publish audio after cancellation while inference is in flight', async () => {
+        const pendingInference = deferred<{
+            type: 'tts-result';
+            requestId: string;
+            audio: Float32Array;
+            samplingRate: number;
+        }>();
+        runKokoroTts.mockReturnValue(pendingInference.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(runKokoroTts).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingInference.resolve({
+            type: 'tts-result',
+            requestId: requestId!,
+            audio: new Float32Array(2400),
+            samplingRate: 24000,
+        });
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
+    });
+
+    it('does not publish completion after cancellation while the cache write is in flight', async () => {
+        const pendingWrite = deferred<void>();
+        writeRenderCache.mockReturnValue(pendingWrite.promise);
+
+        const render = callRender();
+        await vi.waitFor(() => expect(writeRenderCache).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        pendingWrite.resolve();
+
+        await expect(render).rejects.toThrow(/cancelled or superseded/);
+        expect(renderQueueStore.value?.cachedPhraseIds).toEqual([]);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('not-rendered');
     });
 
