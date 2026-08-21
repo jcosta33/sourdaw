@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_LOCK_REASON, resolvePrimaryRoot, type GhSession } from '../githubAppIdentity.ts';
+import { composePublishBody } from '../prContract.ts';
 import {
     existingOpenPullRequestArgs,
     issueExistsFromLookup,
@@ -25,6 +26,7 @@ import {
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
+const TEST_INSTRUCTIONS = 'Run the focused publisher specs and confirm they pass.';
 const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
@@ -102,7 +104,7 @@ function fakePort(input: FakeInput = {}) {
                       number,
                       body:
                           input.existingBody === undefined
-                              ? '### 📌 Related tickets & additional notes\nCloses #12'
+                              ? composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS)
                               : input.existingBody,
                   };
         },
@@ -158,7 +160,7 @@ describe('lane publish', () => {
     it('pushes without force, opens one PR, and prints the number', () => {
         const { port, calls, logs } = fakePort();
 
-        expect(publishLane(12, port)).toBe(88);
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
         expect(calls.some((call) => call.includes('--force'))).toBe(false);
         expect(calls.some((call) => call.includes('merge --auto'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(true);
@@ -172,6 +174,14 @@ describe('lane publish', () => {
         expect(publishLane(12, port)).toBe(41);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
         expect(calls).toContain('edit:41:feat(vcs): add identities');
+    });
+
+    it('refuses to open a pull request without explicit test instructions', () => {
+        const { port, calls } = fakePort();
+
+        expect(() => publishLane(12, port)).toThrow(/requires --test <instructions>/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
     it('refuses a dirty lane instead of committing it under an earlier commit subject', () => {
@@ -188,7 +198,7 @@ describe('lane publish', () => {
     it('publishes a clean lane', () => {
         const { port, calls } = fakePort({ dirty: false });
 
-        publishLane(12, port);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
 
         expect(calls).toContain('push:agent/12/work');
     });
@@ -206,7 +216,7 @@ describe('lane publish', () => {
     it('names the resolved lane before it pushes or opens a pull request', () => {
         const { port, calls } = fakePort();
 
-        publishLane(12, port);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
 
         const receipt = calls.indexOf(`log:publishing ${ISSUE_LANE} on agent/12/work`);
         expect(receipt).toBeGreaterThanOrEqual(0);
@@ -217,9 +227,10 @@ describe('lane publish', () => {
     it('writes Closes #<issue> into the body when an issue is given', () => {
         const { port, bodies } = fakePort();
 
-        publishLane(12, port);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
 
         expect(bodies.at(-1)).toContain('Closes #12');
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${TEST_INSTRUCTIONS}`);
     });
 
     it('takes Closes #<issue> from the lane branch when no issue argument is given', () => {
@@ -228,7 +239,7 @@ describe('lane publish', () => {
             cwd: `${ISSUE_LANE}/scripts`,
         });
 
-        expect(publishLane(undefined, port)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
         expect(calls).toContain('push:agent/12/work');
         expect(bodies.at(-1)).toContain('Closes #12');
     });
@@ -236,7 +247,7 @@ describe('lane publish', () => {
     it('references a campaign issue without closing it', () => {
         const { port, bodies } = fakePort();
 
-        publishLane(12, port, 'relates');
+        publishLane(12, port, 'relates', TEST_INSTRUCTIONS);
 
         expect(bodies.at(-1)).toContain('Related #12');
         expect(bodies.at(-1)).not.toContain('Closes #12');
@@ -248,7 +259,7 @@ describe('lane publish', () => {
             cwd: `${ISSUE_LANE}/scripts`,
         });
 
-        publishLane(undefined, port, 'relates');
+        publishLane(undefined, port, 'relates', TEST_INSTRUCTIONS);
 
         expect(bodies.at(-1)).toContain('Related #12');
     });
@@ -256,7 +267,7 @@ describe('lane publish', () => {
     it('preserves Related on a later flagless update', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: '### 📌 Related tickets & additional notes\nRelated #12',
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS, 'relates'),
         });
 
         publishLane(12, port);
@@ -268,7 +279,7 @@ describe('lane publish', () => {
     it('preserves Closes on a later flagless update', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port);
@@ -277,10 +288,35 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain('Related #12');
     });
 
+    it('preserves valid existing test instructions when --test is omitted', () => {
+        const existingInstructions = 'Open the settings panel and confirm the new control is visible.';
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, existingInstructions),
+        });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${existingInstructions}`);
+    });
+
+    it('updates existing test instructions when --test is supplied', () => {
+        const updatedInstructions = 'Run the publisher CLI and confirm the updated instructions appear.';
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+        });
+
+        publishLane(12, port, undefined, updatedInstructions);
+
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${updatedInstructions}`);
+        expect(bodies.at(-1)).not.toContain(TEST_INSTRUCTIONS);
+    });
+
     it('changes a valid existing relationship only when requested', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port, 'relates');
@@ -334,7 +370,7 @@ describe('lane publish', () => {
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
             cwd: CLEANUP_LANE,
             existing: 41,
-            existingBody: '### 📌 Related tickets & additional notes\nNone.',
+            existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
         });
 
         publishLane(undefined, port);
@@ -359,7 +395,7 @@ describe('lane publish', () => {
             cwd: CLEANUP_LANE,
         });
 
-        expect(publishLane(undefined, port)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
         expect(calls).toContain('push:agent/cleanup');
         expect(calls.some((call) => call.startsWith('issueExists:'))).toBe(false);
         expect(bodies.at(-1)).not.toContain('Closes #');
@@ -373,7 +409,7 @@ describe('lane publish', () => {
             cwd: `${CLEANUP_LANE}/scripts/__tests__`,
         });
 
-        expect(publishLane(undefined, port)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
         expect(calls).toContain('push:agent/cleanup');
     });
 
@@ -563,7 +599,7 @@ describe('lane publish', () => {
     it('uses the lane subject as the pull-request title', () => {
         const { port, calls } = fakePort({ subject: 'feat(foo): bar' });
 
-        publishLane(12, port);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
 
         expect(calls.some((call) => call.includes('feat(foo): bar'))).toBe(true);
     });
@@ -571,7 +607,7 @@ describe('lane publish', () => {
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
-        expect(() => publishLane(12, port)).toThrow(message);
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toThrow(message);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -588,11 +624,19 @@ describe('lane publish', () => {
         });
         expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, help: false });
         expect(parsePublishLaneArgs(['12', '--relates'])).toEqual({ issue: 12, relationship: 'relates', help: false });
+        expect(parsePublishLaneArgs(['--test', TEST_INSTRUCTIONS, '12', '--relates'])).toEqual({
+            issue: 12,
+            relationship: 'relates',
+            testInstructions: TEST_INSTRUCTIONS,
+            help: false,
+        });
         expect(parsePublishLaneArgs(['--relates'])).toEqual({ relationship: 'relates', help: false });
         expect(parsePublishLaneArgs([])).toEqual({ help: false });
         expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
         expect(() => parsePublishLaneArgs(['12', '13'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--test'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--test', TEST_INSTRUCTIONS, '--test', TEST_INSTRUCTIONS])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
     });
 
