@@ -19,6 +19,7 @@ import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -55,11 +56,11 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
 
     if (!hasNativePlugins) {
         return (
-            <div className="space-y-1">
-                <div className="flex items-center gap-1 px-1 py-0.5 pt-2">
+            <Stack gap={1}>
+                <Row gap={1} className="px-1 py-0.5 pt-2">
                     <Plug className="size-3 text-muted-foreground" aria-hidden="true" />
                     <DawEyebrowLabel size="sm">External Plugins</DawEyebrowLabel>
-                </div>
+                </Row>
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <DawEmptyState
@@ -74,7 +75,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         {DISABLED_REASONS.nativePlugins}
                     </TooltipContent>
                 </Tooltip>
-            </div>
+            </Stack>
         );
     }
 
@@ -121,12 +122,12 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
     };
 
     return (
-        <div className="space-y-1">
-            <div className="flex items-center gap-1 px-1 py-0.5 pt-2">
+        <Stack gap={1}>
+            <Row gap={1} className="px-1 py-0.5 pt-2">
                 <Plug className="size-3 text-muted-foreground" aria-hidden="true" />
                 <DawEyebrowLabel size="sm">External Plugins</DawEyebrowLabel>
                 <span className="ml-auto text-[9px] text-muted-foreground">{supportedPlugins.length}</span>
-            </div>
+            </Row>
             {supportedPlugins.length === 0 && !state.isScanning ? (
                 <div className="px-2 py-3">
                     <DawEmptyState
@@ -143,17 +144,17 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                 </div>
             ) : null}
             {state.isScanning ? (
-                <div className="flex items-center gap-2 px-2 py-2">
+                <Row gap={2} className="px-2 py-2">
                     <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
                     <DawInlineHint className="animate-pulse px-0 py-0 text-[10px] text-muted-foreground">
                         Scanning for plugins...
                     </DawInlineHint>
-                </div>
+                </Row>
             ) : null}
             {supportedPlugins.length > 0 ? (
                 <>
-                    <div className="flex items-center gap-1 px-1">
-                        <div className="flex-1 flex items-center gap-1">
+                    <Row gap={1} className="px-1">
+                        <Row grow gap={1}>
                             <Search className="size-3 text-muted-foreground" aria-hidden="true" />
                             <DawCompactInput
                                 type="search"
@@ -166,7 +167,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                                 className="h-5 border-0 bg-transparent p-0 text-[10px] shadow-none focus-visible:ring-0"
                                 aria-label="Filter external plugins"
                             />
-                        </div>
+                        </Row>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -177,7 +178,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         >
                             <RefreshCw className={cn('size-3', state.isScanning && 'animate-spin')} />
                         </Button>
-                    </div>
+                    </Row>
 
                     {pluginsByFormat.map(({ format, plugins }) => {
                         const isCollapsed = collapsedFormats.has(format);
@@ -228,10 +229,10 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
             {state.errors.length > 0 && !state.isScanning ? (
                 <div className="px-2 py-1">
                     {state.errors.map((err, index) => (
-                        <div key={index} className="flex items-start gap-1 text-[9px] text-destructive">
+                        <Row align="start" gap={1} className="text-[9px] text-destructive" key={index}>
                             <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                             <span>{err}</span>
-                        </div>
+                        </Row>
                     ))}
                 </div>
             ) : null}
@@ -243,14 +244,14 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
             {state.notices.length > 0 && !state.isScanning ? (
                 <div className="px-2 py-1">
                     {state.notices.map((notice) => (
-                        <div key={notice} className="flex items-start gap-1 text-[9px] text-muted-foreground">
+                        <Row align="start" gap={1} className="text-[9px] text-muted-foreground" key={notice}>
                             <Info className="size-3 shrink-0 mt-px" aria-hidden="true" />
                             <span>{notice}</span>
-                        </div>
+                        </Row>
                     ))}
                 </div>
             ) : null}
-        </div>
+        </Stack>
     );
 };
 
@@ -266,7 +267,7 @@ const PluginRow = ({
     return (
         <DawPickerRow
             heading={
-                <div className="flex items-center gap-1">
+                <Row gap={1}>
                     <span className="truncate">{plugin.name}</span>
                     <DawMicroBadge
                         className={cn(
@@ -276,16 +277,16 @@ const PluginRow = ({
                     >
                         {plugin.format}
                     </DawMicroBadge>
-                </div>
+                </Row>
             }
             description={
-                <div className="flex items-center gap-1">
+                <Row gap={1}>
                     <span className="truncate">{plugin.vendor}</span>
                     {plugin.category ? <span className="capitalize">· {plugin.category}</span> : null}
-                </div>
+                </Row>
             }
             endSlot={
-                <div className="flex items-center gap-1 shrink-0">
+                <Row gap={1} shrink={false}>
                     {/*
                      * No parameter count here. CLAP exposes parameters per
                      * instance, so a scan cannot know the number without
@@ -295,7 +296,7 @@ const PluginRow = ({
                      * listed, which is worse than showing nothing.
                      */}
                     {selectedTrackId ? <Plus className="size-3 text-muted-foreground" /> : null}
-                </div>
+                </Row>
             }
             onClick={() => {
                 onLoad(plugin);

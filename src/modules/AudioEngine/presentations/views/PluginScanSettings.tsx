@@ -18,6 +18,7 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
@@ -34,10 +35,10 @@ export const PluginScanSettings = (): ReactElement | null => {
     if (!hasPluginScanning) {
         return (
             <section>
-                <div className="mb-2 flex items-center gap-1">
+                <Row gap={1} className="mb-2">
                     <Plug className="size-3" aria-hidden="true" />
                     <DawEyebrowLabel size="sm">Plugin Paths</DawEyebrowLabel>
-                </div>
+                </Row>
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <DawEmptyState
@@ -72,15 +73,15 @@ export const PluginScanSettings = (): ReactElement | null => {
 
     return (
         <section>
-            <div className="mb-2 flex items-center gap-1">
+            <Row gap={1} className="mb-2">
                 <Plug className="size-3" aria-hidden="true" />
                 <DawEyebrowLabel size="sm">Plugin Paths</DawEyebrowLabel>
-            </div>
-            <div className="space-y-2">
+            </Row>
+            <Stack gap={2}>
                 {state.scanPaths.length > 0 ? (
-                    <div className="space-y-1">
+                    <Stack gap={1}>
                         {state.scanPaths.map((path) => (
-                            <div key={path} className="flex items-center gap-1.5 group">
+                            <Row gap={1.5} className="group" key={path}>
                                 <FolderOpen className="size-3 text-muted-foreground shrink-0" aria-hidden="true" />
                                 <span className="flex-1 text-[10px] text-foreground truncate font-mono" title={path}>
                                     {path}
@@ -96,12 +97,12 @@ export const PluginScanSettings = (): ReactElement | null => {
                                 >
                                     <Trash2 className="size-3 text-destructive" />
                                 </Button>
-                            </div>
+                            </Row>
                         ))}
-                    </div>
+                    </Stack>
                 ) : null}
 
-                <div className="flex items-center gap-1">
+                <Row gap={1}>
                     <DawCompactInput
                         type="text"
                         placeholder="/path/to/plugins..."
@@ -126,9 +127,9 @@ export const PluginScanSettings = (): ReactElement | null => {
                     >
                         <Plus className="size-3" />
                     </Button>
-                </div>
+                </Row>
 
-                <div className="flex items-center gap-2">
+                <Row gap={2}>
                     <Button
                         variant="outline"
                         size="sm"
@@ -145,9 +146,9 @@ export const PluginScanSettings = (): ReactElement | null => {
                     </Button>
 
                     <div className="flex-1" />
-                </div>
+                </Row>
 
-                <div className="space-y-1">
+                <Stack gap={1}>
                     <DawReadoutRow label="Plugins Found" value={state.scannedPlugins.length} className="gap-2" />
                     <DawReadoutRow
                         label="Last Scan"
@@ -155,17 +156,17 @@ export const PluginScanSettings = (): ReactElement | null => {
                         className="gap-2"
                         valueClassName="truncate text-right"
                     />
-                </div>
+                </Stack>
 
                 {state.errors.length > 0 ? (
-                    <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                    <Stack gap={1} className="rounded-md border border-destructive/30 bg-destructive/5 p-2">
                         {state.errors.map((err, index) => (
-                            <div key={index} className="flex items-start gap-1 text-[10px] text-destructive">
+                            <Row align="start" gap={1} className="text-[10px] text-destructive" key={index}>
                                 <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                                 <span>{err}</span>
-                            </div>
+                            </Row>
                         ))}
-                    </div>
+                    </Stack>
                 ) : null}
 
                 {/*
@@ -175,14 +176,14 @@ export const PluginScanSettings = (): ReactElement | null => {
                  * icon, and they do not gate the success badge below.
                  */}
                 {state.notices.length > 0 ? (
-                    <div className="space-y-1 rounded-md border border-border/60 bg-surface-overlay/40 p-2">
+                    <Stack gap={1} className="rounded-md border border-border/60 bg-surface-overlay/40 p-2">
                         {state.notices.map((notice) => (
-                            <div key={notice} className="flex items-start gap-1 text-[10px] text-muted-foreground">
+                            <Row align="start" gap={1} className="text-[10px] text-muted-foreground" key={notice}>
                                 <Info className="size-3 shrink-0 mt-px" aria-hidden="true" />
                                 <span>{notice}</span>
-                            </div>
+                            </Row>
                         ))}
-                    </div>
+                    </Stack>
                 ) : null}
 
                 {state.scannedPlugins.length > 0 && state.errors.length === 0 && !state.isScanning ? (
@@ -191,7 +192,7 @@ export const PluginScanSettings = (): ReactElement | null => {
                         <span>All plugins scanned successfully</span>
                     </DawMicroBadge>
                 ) : null}
-            </div>
+            </Stack>
         </section>
     );
 };
