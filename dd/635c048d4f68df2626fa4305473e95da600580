@@ -1,0 +1,20 @@
+tests/e2e/clipTrimStartTestId.spec.ts
+  s_24b1bdbc3c31ad::t_14ca638b4d7bc6 1-2,7-8,10-15,17-18,21-27,30,35,38,41-44
+  s_24b1bdbc3c31ad::t_52fb1416ab957c 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dd635c048d4f68df2626fa4305473e95da600580",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
