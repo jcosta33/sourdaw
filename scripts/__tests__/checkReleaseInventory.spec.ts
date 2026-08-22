@@ -335,6 +335,36 @@ describe('release inventory', () => {
         }
     });
 
+    it('should reject nested tvm-ffi legal byte drift', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const absolutePath = join(repositoryRoot, path);
+        const original = readFileSync(absolutePath);
+
+        try {
+            writeFileSync(absolutePath, Buffer.concat([original, Buffer.from('\nchanged')]));
+
+            expect(() => checkReleaseInventory(repositoryRoot)).toThrow(
+                `webllm-qwen-artifacts: path-addressed digest drifted: ${path}`
+            );
+        } finally {
+            writeFileSync(absolutePath, original);
+        }
+    });
+
+    it('should ignore semantic and remote artifact digest labels', () => {
+        const value = inventory();
+        value.surfaces[0]!.digests = [
+            `sha256:${fixtureDigest}:5566554:public/icon.png`,
+            `sha256:${fixtureDigest}:@runtime-license`,
+        ];
+        const changed = snapshot();
+        changed.fileDigests['public/icon.png'] = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed).filter((error) => error.includes('path-addressed'))).toEqual(
+            []
+        );
+    });
+
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
         for (const path of DDSP_TFJS_RUNTIME_PATHS) {
