@@ -1,0 +1,122 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_84966e17cfc1ab 312
+  s_0a3429e31e555d::t_0a6830d69d87c2 81-83,87,349-377
+  s_0a3429e31e555d::t_5a71508be5bb2e 76-80,84-86,88-91,98,145-161,167-181,288-311,333-348,378-381,397-410,413
+  s_0a3429e31e555d::t_1d4acd4fdfe9d7 411-412
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_0a3429e31e555d::t_6b817ae4dfea1c 36-37,270-277,362,377
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_0a3429e31e555d::t_673792ddd133b6 28-29,46,50
+.agents/decisions/0033-grand-boule-string-soundboard-boundary.md
+  s_0a3429e31e555d::t_cd219008bb34e9 5
+.agents/decisions/0035-readmit-grand-boule.md
+  s_0a3429e31e555d::t_cd219008bb34e9 10,16,65-70,84
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMorphPosition.spec.ts
+  s_0a3429e31e555d::t_67dde9599e1f3a 147
+  s_0a3429e31e555d::t_189a7028371aa1 47-54,75-78,123
+  s_0a3429e31e555d::t_6b817ae4dfea1c 8-9,79-81,124-126,134-146,148-172
+  s_0a3429e31e555d::t_b5b2274d516bcb 120-122
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_0a3429e31e555d::t_673792ddd133b6 43-44,53-55,146,202-215
+  s_0a3429e31e555d::t_59c2e506d392e7 216-217
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRenderBudget.spec.ts
+  s_0a3429e31e555d::t_d5eb8a1c06163f 17,26-27,50-51,54,57,60-69,72,78,80-84,86-89,91-101,103-112,114,118-123
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_0a3429e31e555d::t_e02ec2c12f4abb 20,44,73,144,150,152,254,338,390,412-413,468,480-481
+src/modules/GrandBoule/models/__tests__/GrandBouleMorphState.spec.ts
+  s_0a3429e31e555d::t_cd219008bb34e9 29-34,40-43,48-50
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_0a3429e31e555d::t_e02ec2c12f4abb 95-99,108,311,316,318-319,325,333,382-394,407,412,436
+crates/daw-dsp/src/grand_boule/coupled_strings.rs
+  s_0a3429e31e555d::t_84966e17cfc1ab 47-48
+  s_0a3429e31e555d::t_242fa80e804497 39-42,45,51,78,173-179,213
+  s_0a3429e31e555d::t_cd219008bb34e9 3-4,6-7,9-11,22-25,28-37,43,49,54-55,62-63,69-70,131-133,144-147,149-154,172,180-186,190-191,193-195,203-207,209,219,230-231,313-325
+  s_0a3429e31e555d::t_0604433589bf28 326
+src/modules/GrandBoule/useCases/setGrandBouleMorphBalance.ts
+  s_0a3429e31e555d::t_18cc1f5cc37af6 5-6
+  s_0a3429e31e555d::t_6b817ae4dfea1c 1-4,7-26
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_0a3429e31e555d::t_673792ddd133b6 1533,1536
+src/modules/GrandBoule/useCases/setGrandBouleMorphEnabled.ts
+  s_0a3429e31e555d::t_18cc1f5cc37af6 5-6
+  s_0a3429e31e555d::t_6b817ae4dfea1c 1-4,7-26
+src/modules/GrandBoule/models/GrandBouleMorphState.ts
+  s_0a3429e31e555d::t_cd219008bb34e9 29,43-48,53-58,63-68,73-78,82,104
+src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts
+  s_0a3429e31e555d::t_18cc1f5cc37af6 14-15
+  s_0a3429e31e555d::t_6b817ae4dfea1c 30-31,37
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_0a3429e31e555d::t_c572a02fe44f22 113-114,131
+crates/daw-dsp/src/grand_boule/parameters.rs
+  s_0a3429e31e555d::t_cd219008bb34e9 94-95,97-98,290-299
+  s_a40848e8f8cca9::t_01b6c02514bcbf 300-301
+crates/daw-dsp/src/grand_boule/voice.rs
+  s_0a3429e31e555d::t_a9bea4d4a9d318 377-379
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_0a3429e31e555d::t_673792ddd133b6 46,73,525-530,623,625
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_0a3429e31e555d::t_cd219008bb34e9 1801-1803
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0a3429e31e555d::t_2d197cd2b13913 325
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_0a3429e31e555d::t_673792ddd133b6 805,809,813-818,825-843
+  s_0a3429e31e555d::t_c68ae8c1c8abc5 844-845
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0a3429e31e555d::t_67dde9599e1f3a 1593,1639,1660-1661
+  s_0a3429e31e555d::t_109011f6111237 1638
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/nativeDspDeviceTypeWeld.spec.ts
+  s_0a3429e31e555d::t_673792ddd133b6 55,57
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_0a3429e31e555d::t_e02ec2c12f4abb 4,56,66,84,87,133,146,160,186,200
+  s_0a3429e31e555d::t_673792ddd133b6 105-130
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_0a3429e31e555d::t_e02ec2c12f4abb 46,48,171,262-265
+src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts
+  s_0a3429e31e555d::t_18cc1f5cc37af6 1-66
+src/modules/GrandBoule/useCases/index.ts
+  s_0a3429e31e555d::t_6b817ae4dfea1c 2-4
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_0a6830d69d87c2 256-278,281-283,285-288,290,294-295
+  s_0a3429e31e555d::t_84966e17cfc1ab 504-506
+  s_0a3429e31e555d::t_5a71508be5bb2e 279-280,284,289,291-293,296-300,446-473,477-499,502-503,507-515,522-530,544-547
+  s_0a3429e31e555d::t_e0040b3a6e57c2 553-559
+.agents/decisions/README.md
+  s_0a3429e31e555d::t_cd219008bb34e9 49,51
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_cd219008bb34e9 607,609
+  s_0a3429e31e555d::t_54e866d58172d4 595,692,698,950
+  s_0a3429e31e555d::t_b2cf3e30b355ad 599,601-602
+  s_0a3429e31e555d::t_60c3ed8dc865c4 596
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0a3429e31e555d::t_948de69151faf2 1,900-913,945
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0a3429e31e555d::t_480309f8c2eb39 1,61-74,106
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_e80cd8a32a24a3 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0a3429e31e555d::t_7024e807e3ef64 1,900-913,945
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c13a2272fa6835d71e8f23e82b5ce93254db5bfd",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
