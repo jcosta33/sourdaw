@@ -15,7 +15,7 @@ import { leaveSession } from '../leaveSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     cleanup: vi.fn<() => void>(),
-    initialize: vi.fn<() => PeerConnectionManager>(),
+    initialize: vi.fn<(assetOwnerId: string) => PeerConnectionManager>(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -26,6 +26,9 @@ const mockRuntime = vi.hoisted(() => ({
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
+vi.mock('../getCollaborationAssetOwnerId', () => ({
+    getCollaborationAssetOwnerId: () => 'project-owner-1',
+}));
 
 type Offer = Extract<SignalingMessage, { type: 'offer' }>;
 

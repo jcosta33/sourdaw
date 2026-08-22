@@ -359,7 +359,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     describe('initialize()', () => {
         it('constructs and wires every subsystem, and returns the peer manager', () => {
-            const peerManager = sessionRuntimePrimitives.initialize();
+            const peerManager = sessionRuntimePrimitives.initialize('project-owner-1');
 
             expect(peerConnectionMock.instances).toHaveLength(1);
             expect(peerManager).toBe(latestPeerManager());
@@ -372,7 +372,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     describe('cleanup()', () => {
         it('tears down every subsystem and clears session state', () => {
-            const peerManager = sessionRuntimePrimitives.initialize();
+            const peerManager = sessionRuntimePrimitives.initialize('project-owner-1');
             const automergeSync = latestAutomergeSync();
 
             sessionRuntimePrimitives.cleanup();
@@ -390,7 +390,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // partial chunk buffers and armed stall timers that fire against a
         // torn-down session.
         it('disposes transport state without releasing durable staged ownership', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const assetTransfer = latestAssetTransfer();
 
             sessionRuntimePrimitives.cleanup();
@@ -406,7 +406,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     describe('canApplySync (AutomergeSync hooks built at initialize())', () => {
         it('always allows syncs sent by the host, even for branch metadata', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'host-1', isHost: true })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
@@ -414,7 +414,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('rejects branch-metadata syncs from a non-host sender', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
@@ -422,7 +422,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('applies a non-host peer sync to the root doc — an invite is unconditional write access', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
@@ -430,7 +430,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('applies a non-host peer sync to a branch content doc (only __branches__ is host-only)', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
@@ -438,7 +438,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('applies a sync from a peer the store has never seen (no join-time gate)', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
@@ -446,7 +446,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('surfaces a store error when a received sync fails to persist', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState());
 
             latestAutomergeSync().hooks.onPersistError?.(new Error('boom'));
@@ -461,7 +461,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * which every transient writer overwrites.
          */
         it('records a quarantined peer in durable state rather than the transient error slot', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState());
 
             latestAutomergeSync().hooks.onSyncQuarantine?.({
@@ -474,7 +474,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('lists a peer once however many of its documents are quarantined', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState());
 
             const { onSyncQuarantine } = latestAutomergeSync().hooks;
@@ -490,7 +490,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * quarantine, or it outlives the peer it describes.
          */
         it('retires the durable record when the quarantine is lifted', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ quarantinedPeerIds: ['peer-2'] }));
 
             latestAutomergeSync().hooks.onSyncQuarantineLifted?.({ peerId: 'peer-2' });
@@ -501,7 +501,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     describe('handlePeerMessage (routed through the captured onMessage callback)', () => {
         it('routes an asset crdt-sync message to the asset transfer subsystem', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: DOC_ID_ASSET, data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
@@ -511,7 +511,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('no longer special-cases __permissions__ — it falls through to automerge sync, which drops it as an unknown doc', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: '__permissions__', data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
@@ -520,7 +520,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('routes every other crdt-sync message to automerge sync', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: 'root', data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
@@ -529,7 +529,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('sanitizes and forwards presence from a peer already known to the store', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1', lastSeen: 0 })] }));
             const listener = vi.fn();
             sessionRuntimePrimitives.presenceListeners.add(listener);
@@ -550,7 +550,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('ignores presence from a peer the store does not know', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [] }));
             const listener = vi.fn();
             sessionRuntimePrimitives.presenceListeners.add(listener);
@@ -570,12 +570,12 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const unsubscribe = onPresence(listener);
 
             // Session 1 ends: leave/create/join all run cleanup().
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             sessionRuntimePrimitives.cleanup();
 
             // Session 2: the overlay hook never re-subscribes — the same
             // registration must still receive presence.
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1' })] }));
             latestPeerManager().callbacks.onMessage({
                 peerId: 'peer-1',
@@ -594,7 +594,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('adds a newly seen peer from a peer-info message without trusting its self-claimed host flag', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -607,7 +607,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('bounds sender-controlled identity fields from a peer-info message with the presence limits', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -623,7 +623,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('rejects a peer-info carrying an over-length peer id instead of storing it', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -635,7 +635,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('adopts a host-assigned color from a peer-info message describing ourselves', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -655,7 +655,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('sanitizes a host-assigned color before adopting it as localColor', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -674,7 +674,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('removes a peer on a self-issued peer-leave message', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -687,7 +687,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('ignores a peer-leave message impersonating a different peer', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -701,7 +701,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     describe('handlePeerConnected (routed through the captured onConnected callback)', () => {
         it('registers the peer with automerge sync and marks it connected (no role is granted)', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -722,7 +722,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('re-announces the host-assigned color to a joiner once connected', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'host-1',
@@ -741,7 +741,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does not re-announce a color for a peer we have no record of yet', () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'host-1', isHost: true, peers: [] }));
 
             latestPeerManager().callbacks.onConnected('peer-1');
@@ -751,7 +751,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('cancels a pending disconnect cleanup when the peer reconnects in time', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -765,7 +765,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     describe('handlePeerDisconnected (routed through the captured onDisconnected callback)', () => {
         it('marks the peer disconnected immediately and removes it after the grace period', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -782,7 +782,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('keeps connectionStatus connected while another peer is still connected', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     connectionStatus: 'connected',
@@ -797,7 +797,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         /** A joiner whose only peer is the host, mid-session with a live broadcast. */
         function startJoinerWithHost(): void {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['host-1']);
             collaborationStore.set(
                 makeState({
@@ -885,7 +885,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          */
         it('does not forget a peer on the immediate, transient disconnect path', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -902,7 +902,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          */
         it('forgets the peer once the durable cleanup timer elapses', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -913,7 +913,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not declare the session ended when a non-host peer disconnects', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     isHost: false,
@@ -1186,7 +1186,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // signal anywhere in the panel.
         it('surfaces an abandoned transfer on the store error row', () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
 
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
 
@@ -1200,7 +1200,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // stopped, nothing re-asks for the asset.
         it('states the condition under which the asset is asked for again', () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
 
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
 
@@ -1210,7 +1210,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('leaves the live session state alone — a failed asset is not a failed session', () => {
             collaborationStore.set(makeState({ connectionStatus: 'connected', isEnabled: true }));
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
 
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
 
@@ -1225,7 +1225,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         }
 
         it('does nothing when the transferred asset is not yet available', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue(undefined);
             trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
 
@@ -1237,7 +1237,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does nothing when the audio context is unavailable', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn() });
             audioEngineMock.getAudioContext.mockImplementation(() => {
                 throw new Error('no context yet');
@@ -1252,7 +1252,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('decodes and caches the buffer for a matching, uncached clip', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const arrayBuffer = new ArrayBuffer(8);
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(arrayBuffer) };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
@@ -1276,7 +1276,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // arrived outlived its own successful retry for the whole session.
         it('clears a previous transfer failure once the asset resolves', async () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
             expect(collaborationStore.value?.error).not.toBeNull();
 
@@ -1303,7 +1303,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          */
         it('leaves a live quarantine visible after an unrelated asset resolves', async () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestAutomergeSync().hooks.onSyncQuarantine?.({
                 peerId: 'peer-2',
                 docId: 'root',
@@ -1331,7 +1331,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('skips a clip whose asset hash does not match', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn() });
             audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn() });
             trackStoreMock.value = {
@@ -1346,7 +1346,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('skips a matching clip that has no audioBufferId', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn() });
             audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn() });
             trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1' }] }] };
@@ -1359,7 +1359,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('skips decoding a clip whose buffer is already cached', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const blob = { arrayBuffer: vi.fn() };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
             const decodeAudioData = vi.fn();
@@ -1376,7 +1376,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('logs a warning and continues when decoding fails for a clip', async () => {
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)) };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
             const decodeAudioData = vi.fn().mockRejectedValue(new Error('bad codec'));
@@ -1397,7 +1397,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     describe('startPlayheadBroadcast / stopPlayheadBroadcast', () => {
         it('does not broadcast while no peers are connected', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1' }));
             latestPeerManager().getConnectedPeerIds.mockReturnValue([]);
 
@@ -1409,7 +1409,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not broadcast when there is no active collaboration state', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(null);
 
@@ -1421,7 +1421,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('broadcasts the local playhead position at ~4 Hz once peers are connected', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(makeState({ localPeerId: 'local-1', localName: 'Me', localColor: '#3b82f6' }));
             transportStoreMock.value = { playheadPosition: 42 };
@@ -1441,7 +1441,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('defaults the playhead beat to null when the transport has no position yet', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(makeState({ localPeerId: 'local-1' }));
             transportStoreMock.value = null;
@@ -1455,7 +1455,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('stops broadcasting once cleanup() clears the interval', () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(makeState({ localPeerId: 'local-1' }));
 

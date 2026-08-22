@@ -5,67 +5,65 @@ const LEASE_STORE = 'leases';
 const RECORD_SCHEMA_VERSION = 1;
 
 type LeaseState = 'staged' | 'promoted' | 'released';
-
+type ActiveLease = { leaseId: string; ownerId: string };
 type AssetRecord = {
     schemaVersion: typeof RECORD_SCHEMA_VERSION;
     hash: string;
     blob: Blob;
     name: string;
-    durable: boolean;
-    activeLeaseIds: string[];
+    ownerIds: string[];
+    activeLeases: ActiveLease[];
 };
-
 type LeaseRecord = {
     schemaVersion: typeof RECORD_SCHEMA_VERSION;
     leaseId: string;
+    ownerId: string;
     hash: string;
     state: LeaseState;
-    releaseRemovedAsset?: boolean;
 };
 
-export type DurableAsset = {
-    hash: string;
-    blob: Blob;
-    name: string;
-};
-
+export type DurableAsset = { hash: string; blob: Blob; name: string };
 export type DurableAssetFailure = {
     status: 'failed';
     reason:
         | 'unknown-lease'
+        | 'lease-owner-mismatch'
         | 'lease-hash-mismatch'
         | 'missing-asset'
         | 'stored-hash-mismatch'
         | 'corrupt-record'
         | 'lease-terminal-conflict'
-        | 'asset-not-promoted';
+        | 'asset-not-owned';
 };
-
 export type ReopenStagedAssetResult =
     | ({ status: 'opened'; leaseId: string; leaseState: Exclude<LeaseState, 'released'> } & DurableAsset)
     | DurableAssetFailure;
-
 export type ReopenDurableAssetResult = ({ status: 'opened' } & DurableAsset) | DurableAssetFailure;
-
 export type PromoteStagedAssetResult =
     ({ status: 'promoted' | 'already-promoted'; leaseId: string } & DurableAsset) | DurableAssetFailure;
-
 export type ReleaseStagedAssetResult =
     | {
           status: 'released' | 'already-released';
           leaseId: string;
           hash: string;
           assetRemoved: boolean;
+          ownerRetained: boolean;
       }
     | DurableAssetFailure;
+export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetRemoved: boolean } | DurableAssetFailure;
+
+type AssetInvalidation = { hash: string; ownerId?: string };
+const invalidationListeners = new Set<(event: AssetInvalidation) => void>();
 
 export type DurableAssetRepository = {
     storeDurableAsset: (blob: Blob, name: string, verifiedHash?: string) => Promise<DurableAsset>;
-    stageAsset: (blob: Blob, name: string) => Promise<DurableAsset & { leaseId: string }>;
+    stageAsset: (leaseId: string, blob: Blob, name: string) => Promise<DurableAsset & { leaseId: string }>;
     reopenStagedAsset: (leaseId: string, expectedHash: string) => Promise<ReopenStagedAssetResult>;
     reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>;
-    promoteStagedAsset: (leaseId: string, expectedHash?: string) => Promise<PromoteStagedAssetResult>;
-    releaseStagedAsset: (leaseId: string, expectedHash?: string) => Promise<ReleaseStagedAssetResult>;
+    promoteStagedAsset: (leaseId: string, expectedHash: string) => Promise<PromoteStagedAssetResult>;
+    releaseStagedAsset: (leaseId: string, expectedHash: string) => Promise<ReleaseStagedAssetResult>;
+    releaseOwnedAsset: (hash: string) => Promise<ReleaseOwnedAssetResult>;
+    subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };
 
 let databasePromise: Promise<IDBDatabase> | null = null;
@@ -142,6 +140,15 @@ function awaitTransaction(transaction: IDBTransaction): Promise<void> {
     });
 }
 
+function isActiveLease(value: unknown): value is ActiveLease {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        typeof (value as ActiveLease).leaseId === 'string' &&
+        typeof (value as ActiveLease).ownerId === 'string'
+    );
+}
+
 function isAssetRecord(value: unknown): value is AssetRecord {
     if (typeof value !== 'object' || value === null) {
         return false;
@@ -152,9 +159,10 @@ function isAssetRecord(value: unknown): value is AssetRecord {
         typeof record.hash === 'string' &&
         record.blob instanceof Blob &&
         typeof record.name === 'string' &&
-        typeof record.durable === 'boolean' &&
-        Array.isArray(record.activeLeaseIds) &&
-        record.activeLeaseIds.every((leaseId) => typeof leaseId === 'string')
+        Array.isArray(record.ownerIds) &&
+        record.ownerIds.every((ownerId) => typeof ownerId === 'string') &&
+        Array.isArray(record.activeLeases) &&
+        record.activeLeases.every(isActiveLease)
     );
 }
 
@@ -166,17 +174,15 @@ function isLeaseRecord(value: unknown): value is LeaseRecord {
     return (
         record.schemaVersion === RECORD_SCHEMA_VERSION &&
         typeof record.leaseId === 'string' &&
+        typeof record.ownerId === 'string' &&
         typeof record.hash === 'string' &&
-        (record.state === 'staged' || record.state === 'promoted' || record.state === 'released') &&
-        (record.releaseRemovedAsset === undefined || typeof record.releaseRemovedAsset === 'boolean')
+        (record.state === 'staged' || record.state === 'promoted' || record.state === 'released')
     );
 }
 
 async function hashBlob(blob: Blob): Promise<string> {
-    const buffer = await blob.arrayBuffer();
-    const digest = await crypto.subtle.digest('SHA-256', buffer);
-    const bytes = Array.from(new Uint8Array(digest));
-    return `sha256:${bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
 async function readLease(leaseId: string): Promise<LeaseRecord | DurableAssetFailure> {
@@ -216,11 +222,21 @@ function asDurableAsset(record: AssetRecord): DurableAsset {
     return { hash: record.hash, blob: record.blob, name: record.name };
 }
 
-/**
- * Own content-addressed original bytes and their staging leases in IndexedDB.
- * AssetTransfer is a disposable transport/cache consumer of this owner.
- */
-export function createDurableAssetRepository(): DurableAssetRepository {
+function ownerRetained(record: AssetRecord, ownerId: string): boolean {
+    return record.ownerIds.includes(ownerId) || record.activeLeases.some((lease) => lease.ownerId === ownerId);
+}
+
+function notifyInvalidation(event: AssetInvalidation): void {
+    for (const listener of invalidationListeners) {
+        listener(event);
+    }
+}
+
+/** Own content-addressed originals for one opaque Collaboration project identity. */
+export function createDurableAssetRepository(ownerId: string): DurableAssetRepository {
+    if (ownerId.length === 0) {
+        throw new Error('Collaboration asset owner identity is required');
+    }
     return {
         async storeDurableAsset(blob, name, verifiedHash) {
             const hash = verifiedHash ?? (await hashBlob(blob));
@@ -233,23 +249,21 @@ export function createDurableAssetRepository(): DurableAssetRepository {
                 await completion;
                 throw new Error(`Collaboration asset record is corrupt: ${hash}`);
             }
-            const activeLeaseIds = isAssetRecord(existing) ? existing.activeLeaseIds : [];
             const record: AssetRecord = {
                 schemaVersion: RECORD_SCHEMA_VERSION,
                 hash,
                 blob,
                 name,
-                durable: true,
-                activeLeaseIds,
+                ownerIds: [...new Set([...(existing?.ownerIds ?? []), ownerId])],
+                activeLeases: existing?.activeLeases ?? [],
             };
             store.put(record);
             await completion;
             return asDurableAsset(record);
         },
 
-        async stageAsset(blob, name) {
+        async stageAsset(leaseId, blob, name) {
             const hash = await hashBlob(blob);
-            const leaseId = `asset-stage-${crypto.randomUUID()}`;
             const database = await openDatabase();
             const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
             const completion = awaitTransaction(transaction);
@@ -259,31 +273,41 @@ export function createDurableAssetRepository(): DurableAssetRepository {
                 readStoredValue(assetStore, hash),
                 readStoredValue(leaseStore, leaseId),
             ]);
-            if (existingLease !== undefined) {
-                await completion;
-                throw new Error(`Collaboration staging lease collision: ${leaseId}`);
-            }
             if (existingAsset !== undefined && !isAssetRecord(existingAsset)) {
                 await completion;
                 throw new Error(`Collaboration asset record is corrupt: ${hash}`);
             }
-            const activeLeaseIds = existingAsset?.activeLeaseIds ?? [];
+            if (
+                existingLease !== undefined &&
+                (!isLeaseRecord(existingLease) ||
+                    existingLease.ownerId !== ownerId ||
+                    existingLease.hash !== hash ||
+                    existingLease.state !== 'staged')
+            ) {
+                await completion;
+                throw new Error(`Collaboration staging lease conflict: ${leaseId}`);
+            }
+            const activeLeases = existingAsset?.activeLeases ?? [];
             const record: AssetRecord = {
                 schemaVersion: RECORD_SCHEMA_VERSION,
                 hash,
-                blob: existingAsset?.blob ?? blob,
-                name: existingAsset?.name ?? name,
-                durable: existingAsset?.durable ?? false,
-                activeLeaseIds: [...activeLeaseIds, leaseId],
-            };
-            const lease: LeaseRecord = {
-                schemaVersion: RECORD_SCHEMA_VERSION,
-                leaseId,
-                hash,
-                state: 'staged',
+                blob,
+                name,
+                ownerIds: existingAsset?.ownerIds ?? [],
+                activeLeases: activeLeases.some((lease) => lease.leaseId === leaseId)
+                    ? activeLeases
+                    : [...activeLeases, { leaseId, ownerId }],
             };
             assetStore.put(record);
-            leaseStore.put(lease);
+            if (existingLease === undefined) {
+                leaseStore.put({
+                    schemaVersion: RECORD_SCHEMA_VERSION,
+                    leaseId,
+                    ownerId,
+                    hash,
+                    state: 'staged',
+                } satisfies LeaseRecord);
+            }
             await completion;
             return { ...asDurableAsset(record), leaseId };
         },
@@ -292,6 +316,9 @@ export function createDurableAssetRepository(): DurableAssetRepository {
             const lease = await readLease(leaseId);
             if ('status' in lease) {
                 return lease;
+            }
+            if (lease.ownerId !== ownerId) {
+                return { status: 'failed', reason: 'lease-owner-mismatch' };
             }
             if (lease.hash !== expectedHash) {
                 return { status: 'failed', reason: 'lease-hash-mismatch' };
@@ -303,15 +330,16 @@ export function createDurableAssetRepository(): DurableAssetRepository {
             if ('status' in asset) {
                 return asset;
             }
-            if (!asset.activeLeaseIds.includes(leaseId) && lease.state === 'staged') {
+            if (
+                lease.state === 'staged' &&
+                !asset.activeLeases.some((entry) => entry.leaseId === leaseId && entry.ownerId === ownerId)
+            ) {
                 return { status: 'failed', reason: 'corrupt-record' };
             }
-            return {
-                status: 'opened',
-                leaseId,
-                leaseState: lease.state,
-                ...asDurableAsset(asset),
-            };
+            if (lease.state === 'promoted' && !asset.ownerIds.includes(ownerId)) {
+                return { status: 'failed', reason: 'corrupt-record' };
+            }
+            return { status: 'opened', leaseId, leaseState: lease.state, ...asDurableAsset(asset) };
         },
 
         async reopenDurableAsset(hash) {
@@ -319,8 +347,8 @@ export function createDurableAssetRepository(): DurableAssetRepository {
             if ('status' in asset) {
                 return asset;
             }
-            if (!asset.durable) {
-                return { status: 'failed', reason: 'asset-not-promoted' };
+            if (!ownerRetained(asset, ownerId)) {
+                return { status: 'failed', reason: 'asset-not-owned' };
             }
             return { status: 'opened', ...asDurableAsset(asset) };
         },
@@ -330,7 +358,10 @@ export function createDurableAssetRepository(): DurableAssetRepository {
             if ('status' in lease) {
                 return lease;
             }
-            if (expectedHash !== undefined && lease.hash !== expectedHash) {
+            if (lease.ownerId !== ownerId) {
+                return { status: 'failed', reason: 'lease-owner-mismatch' };
+            }
+            if (lease.hash !== expectedHash) {
                 return { status: 'failed', reason: 'lease-hash-mismatch' };
             }
             if (lease.state === 'released') {
@@ -341,65 +372,50 @@ export function createDurableAssetRepository(): DurableAssetRepository {
                 return verified;
             }
             if (lease.state === 'promoted') {
+                if (!verified.ownerIds.includes(ownerId)) {
+                    return { status: 'failed', reason: 'corrupt-record' };
+                }
                 return { status: 'already-promoted', leaseId, ...asDurableAsset(verified) };
             }
-            if (!verified.activeLeaseIds.includes(leaseId)) {
-                return { status: 'failed', reason: 'corrupt-record' };
-            }
-
             const database = await openDatabase();
             const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
-            const completion = awaitTransaction(transaction);
             const assetStore = transaction.objectStore(ASSET_STORE);
             const leaseStore = transaction.objectStore(LEASE_STORE);
+            const completion = awaitTransaction(transaction);
             const [currentAsset, currentLease] = await Promise.all([
                 readStoredValue(assetStore, lease.hash),
                 readStoredValue(leaseStore, leaseId),
             ]);
             if (!isAssetRecord(currentAsset) || !isLeaseRecord(currentLease)) {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
+                await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'corrupt-record' };
             }
-            if (currentLease.hash !== lease.hash) {
+            if (currentLease.ownerId !== ownerId) {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'lease-owner-mismatch' };
+            }
+            if (currentLease.hash !== expectedHash) {
+                transaction.abort();
+                await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'lease-hash-mismatch' };
             }
-            if (currentLease.state === 'released') {
+            if (
+                currentLease.state !== 'staged' ||
+                !currentAsset.activeLeases.some((entry) => entry.leaseId === leaseId && entry.ownerId === ownerId)
+            ) {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
-                return { status: 'failed', reason: 'lease-terminal-conflict' };
-            }
-            if (currentLease.state === 'promoted') {
-                await completion;
-                return { status: 'already-promoted', leaseId, ...asDurableAsset(currentAsset) };
-            }
-            if (!currentAsset.activeLeaseIds.includes(leaseId)) {
-                transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
-                return { status: 'failed', reason: 'corrupt-record' };
+                await completion.catch(() => undefined);
+                return {
+                    status: 'failed',
+                    reason: currentLease.state === 'released' ? 'lease-terminal-conflict' : 'corrupt-record',
+                };
             }
             assetStore.put({
                 ...currentAsset,
-                durable: true,
-                activeLeaseIds: currentAsset.activeLeaseIds.filter((id) => id !== leaseId),
+                ownerIds: [...new Set([...currentAsset.ownerIds, ownerId])],
+                activeLeases: currentAsset.activeLeases.filter((entry) => entry.leaseId !== leaseId),
             } satisfies AssetRecord);
             leaseStore.put({ ...currentLease, state: 'promoted' } satisfies LeaseRecord);
             await completion;
@@ -411,96 +427,129 @@ export function createDurableAssetRepository(): DurableAssetRepository {
             if ('status' in lease) {
                 return lease;
             }
-            if (expectedHash !== undefined && lease.hash !== expectedHash) {
+            if (lease.ownerId !== ownerId) {
+                return { status: 'failed', reason: 'lease-owner-mismatch' };
+            }
+            if (lease.hash !== expectedHash) {
                 return { status: 'failed', reason: 'lease-hash-mismatch' };
             }
             if (lease.state === 'promoted') {
                 return { status: 'failed', reason: 'lease-terminal-conflict' };
             }
             if (lease.state === 'released') {
+                const current = await readAsset(lease.hash);
+                if ('status' in current) {
+                    if (current.reason === 'missing-asset') {
+                        return {
+                            status: 'already-released',
+                            leaseId,
+                            hash: lease.hash,
+                            assetRemoved: true,
+                            ownerRetained: false,
+                        };
+                    }
+                    return current;
+                }
                 return {
                     status: 'already-released',
                     leaseId,
                     hash: lease.hash,
-                    assetRemoved: lease.releaseRemovedAsset ?? false,
+                    assetRemoved: false,
+                    ownerRetained: ownerRetained(current, ownerId),
                 };
             }
             const verified = await readAsset(lease.hash);
             if ('status' in verified) {
                 return verified;
             }
-            if (!verified.activeLeaseIds.includes(leaseId)) {
-                return { status: 'failed', reason: 'corrupt-record' };
-            }
-
             const database = await openDatabase();
             const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
-            const completion = awaitTransaction(transaction);
             const assetStore = transaction.objectStore(ASSET_STORE);
             const leaseStore = transaction.objectStore(LEASE_STORE);
+            const completion = awaitTransaction(transaction);
             const [currentAsset, currentLease] = await Promise.all([
                 readStoredValue(assetStore, lease.hash),
                 readStoredValue(leaseStore, leaseId),
             ]);
             if (!isAssetRecord(currentAsset) || !isLeaseRecord(currentLease)) {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
+                await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'corrupt-record' };
             }
-            if (currentLease.hash !== lease.hash) {
+            if (currentLease.ownerId !== ownerId) {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'lease-owner-mismatch' };
+            }
+            if (currentLease.hash !== expectedHash) {
+                transaction.abort();
+                await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'lease-hash-mismatch' };
             }
-            if (currentLease.state === 'promoted') {
+            if (currentLease.state !== 'staged') {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
+                await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'lease-terminal-conflict' };
             }
-            if (currentLease.state === 'released') {
-                await completion;
-                return {
-                    status: 'already-released',
-                    leaseId,
-                    hash: lease.hash,
-                    assetRemoved: currentLease.releaseRemovedAsset ?? false,
-                };
-            }
-            if (!currentAsset.activeLeaseIds.includes(leaseId)) {
+            if (!currentAsset.activeLeases.some((entry) => entry.leaseId === leaseId && entry.ownerId === ownerId)) {
                 transaction.abort();
-                try {
-                    await completion;
-                } catch {
-                    // The typed failure below owns this expected abort.
-                }
+                await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'corrupt-record' };
             }
-            const activeLeaseIds = currentAsset.activeLeaseIds.filter((id) => id !== leaseId);
-            const assetRemoved = !currentAsset.durable && activeLeaseIds.length === 0;
+            const next: AssetRecord = {
+                ...currentAsset,
+                activeLeases: currentAsset.activeLeases.filter((entry) => entry.leaseId !== leaseId),
+            };
+            const assetRemoved = next.ownerIds.length === 0 && next.activeLeases.length === 0;
             if (assetRemoved) {
                 assetStore.delete(lease.hash);
             } else {
-                assetStore.put({ ...currentAsset, activeLeaseIds } satisfies AssetRecord);
+                assetStore.put(next);
             }
-            leaseStore.put({
-                ...currentLease,
-                state: 'released',
-                releaseRemovedAsset: assetRemoved,
-            } satisfies LeaseRecord);
+            leaseStore.put({ ...currentLease, state: 'released' } satisfies LeaseRecord);
             await completion;
-            return { status: 'released', leaseId, hash: lease.hash, assetRemoved };
+            const retained = !assetRemoved && ownerRetained(next, ownerId);
+            if (!retained) {
+                notifyInvalidation(assetRemoved ? { hash: lease.hash } : { hash: lease.hash, ownerId });
+            }
+            return { status: 'released', leaseId, hash: lease.hash, assetRemoved, ownerRetained: retained };
+        },
+
+        async releaseOwnedAsset(hash) {
+            const verified = await readAsset(hash);
+            if ('status' in verified) {
+                return verified;
+            }
+            if (!verified.ownerIds.includes(ownerId)) {
+                return { status: 'failed', reason: 'asset-not-owned' };
+            }
+            const database = await openDatabase();
+            const transaction = database.transaction(ASSET_STORE, 'readwrite');
+            const completion = awaitTransaction(transaction);
+            const store = transaction.objectStore(ASSET_STORE);
+            const current = await readStoredValue(store, hash);
+            if (!isAssetRecord(current) || !current.ownerIds.includes(ownerId)) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'corrupt-record' };
+            }
+            const next: AssetRecord = { ...current, ownerIds: current.ownerIds.filter((id) => id !== ownerId) };
+            const assetRemoved = next.ownerIds.length === 0 && next.activeLeases.length === 0;
+            if (assetRemoved) {
+                store.delete(hash);
+            } else {
+                store.put(next);
+            }
+            await completion;
+            if (!ownerRetained(next, ownerId)) {
+                notifyInvalidation(assetRemoved ? { hash } : { hash, ownerId });
+            }
+            return { status: 'released', hash, assetRemoved };
+        },
+
+        subscribeInvalidation(listener) {
+            invalidationListeners.add(listener);
+            return () => invalidationListeners.delete(listener);
         },
     };
 }

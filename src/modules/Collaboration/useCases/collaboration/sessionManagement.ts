@@ -433,7 +433,7 @@ function getLocalPeerInfo(): CollaborationPeer {
     };
 }
 
-function initializeSessionRuntime(): PeerConnectionManager {
+function initializeSessionRuntime(assetOwnerId: string): PeerConnectionManager {
     const peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
@@ -449,28 +449,32 @@ function initializeSessionRuntime(): PeerConnectionManager {
     sessionState.automergeSync.start();
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
-    sessionState.assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (hash) => {
-            void resolveAssetForClips(hash);
+    sessionState.assetTransfer = new AssetTransfer(
+        peerManager,
+        {
+            onAssetAvailable: (hash) => {
+                void resolveAssetForClips(hash);
+            },
+            onProgress: (_hash, _received, _total) => {
+                // Could update a UI progress indicator.
+            },
+            // An abandoned asset transfer is not a session failure — peers stay
+            // connected and the hash becomes requestable again — but it does mean
+            // clips referencing it stay silent, which the user otherwise has no way
+            // to see. Surface it on the panel's error row.
+            // The message names the retry condition rather than promising a retry:
+            // the only thing that re-asks for an asset is the scheduler tick, so a
+            // request is re-issued when playback next runs over a clip that needs
+            // it — and only until AssetTransfer's attempt bound is spent.
+            onTransferFailed: (hash, reason) => {
+                logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
+                setCollaborationError(
+                    `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
+                );
+            },
         },
-        onProgress: (_hash, _received, _total) => {
-            // Could update a UI progress indicator.
-        },
-        // An abandoned asset transfer is not a session failure — peers stay
-        // connected and the hash becomes requestable again — but it does mean
-        // clips referencing it stay silent, which the user otherwise has no way
-        // to see. Surface it on the panel's error row.
-        // The message names the retry condition rather than promising a retry:
-        // the only thing that re-asks for an asset is the scheduler tick, so a
-        // request is re-issued when playback next runs over a clip that needs
-        // it — and only until AssetTransfer's attempt bound is spent.
-        onTransferFailed: (hash, reason) => {
-            logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
-            setCollaborationError(
-                `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
-            );
-        },
-    });
+        assetOwnerId
+    );
 
     return peerManager;
 }

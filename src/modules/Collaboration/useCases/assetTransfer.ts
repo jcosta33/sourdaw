@@ -19,6 +19,7 @@ import {
     createDurableAssetRepository,
     type DurableAssetRepository,
     type PromoteStagedAssetResult,
+    type ReleaseOwnedAssetResult,
     type ReleaseStagedAssetResult,
     type ReopenDurableAssetResult,
     type ReopenStagedAssetResult,
@@ -78,6 +79,8 @@ export class AssetTransfer {
     private peerManager: PeerConnectionManager;
     private callbacks: AssetTransferCallbacks;
     private durableAssets: DurableAssetRepository;
+    private ownerId: string;
+    private unsubscribeInvalidation: () => void;
 
     /** Disposable resident cache; IndexedDB owns durable bytes and leases. */
     private localAssets = new Map<string, LocalAssetEntry>();
@@ -147,11 +150,18 @@ export class AssetTransfer {
     constructor(
         peerManager: PeerConnectionManager,
         callbacks: AssetTransferCallbacks,
-        durableAssets: DurableAssetRepository = createDurableAssetRepository()
+        ownerId: string,
+        durableAssets: DurableAssetRepository = createDurableAssetRepository(ownerId)
     ) {
         this.peerManager = peerManager;
         this.callbacks = callbacks;
+        this.ownerId = ownerId;
         this.durableAssets = durableAssets;
+        this.unsubscribeInvalidation = durableAssets.subscribeInvalidation((event) => {
+            if (event.ownerId === undefined || event.ownerId === this.ownerId) {
+                this.localAssets.delete(event.hash);
+            }
+        });
     }
 
     /**
@@ -173,6 +183,7 @@ export class AssetTransfer {
         this.abandonedHashes.clear();
         this.servingHashesByPeer.clear();
         this.localAssets.clear();
+        this.unsubscribeInvalidation();
     }
 
     /** Register a local asset (e.g. after recording or importing). */
@@ -183,8 +194,8 @@ export class AssetTransfer {
     }
 
     /** Stage an import asset under a unique lease until project commit or cancellation. */
-    async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; leaseId: string }> {
-        const staged = await this.durableAssets.stageAsset(blob, name);
+    async stageLocalAsset(blob: Blob, name: string, leaseId: string): Promise<{ hash: string; leaseId: string }> {
+        const staged = await this.durableAssets.stageAsset(leaseId, blob, name);
         this.localAssets.set(staged.hash, { blob: staged.blob, name: staged.name });
         return { hash: staged.hash, leaseId: staged.leaseId };
     }
@@ -208,21 +219,26 @@ export class AssetTransfer {
     }
 
     /** Release one hash-bound staging reference exactly once. */
-    async releaseStagedAsset(leaseId: string, expectedHash?: string): Promise<ReleaseStagedAssetResult> {
+    async releaseStagedAsset(leaseId: string, expectedHash: string): Promise<ReleaseStagedAssetResult> {
         const result = await this.durableAssets.releaseStagedAsset(leaseId, expectedHash);
-        if (result.status !== 'failed' && result.assetRemoved) {
+        if (result.status === 'released' && !result.ownerRetained) {
             this.localAssets.delete(result.hash);
         }
         return result;
     }
 
     /** Promote one hash-bound staging reference exactly once. */
-    async promoteStagedAsset(leaseId: string, expectedHash?: string): Promise<PromoteStagedAssetResult> {
+    async promoteStagedAsset(leaseId: string, expectedHash: string): Promise<PromoteStagedAssetResult> {
         const result = await this.durableAssets.promoteStagedAsset(leaseId, expectedHash);
         if (result.status !== 'failed') {
             this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
         }
         return result;
+    }
+
+    /** Release this project identity's durable reference without affecting another project. */
+    async releaseLocalAsset(hash: string): Promise<ReleaseOwnedAssetResult> {
+        return this.durableAssets.releaseOwnedAsset(hash);
     }
 
     /** Check if an asset is available locally. */
@@ -356,8 +372,7 @@ export class AssetTransfer {
     }
 
     private async handleAssetRequest(peerId: PeerId, hash: string, missingChunks: unknown): Promise<void> {
-        const entry = this.localAssets.get(hash);
-        if (!entry) {
+        if (!this.localAssets.has(hash)) {
             return;
         }
 
@@ -374,6 +389,13 @@ export class AssetTransfer {
         serving.add(hash);
         this.servingHashesByPeer.set(peerId, serving);
         try {
+            const durable = await this.durableAssets.reopenDurableAsset(hash);
+            if (durable.status === 'failed') {
+                this.localAssets.delete(hash);
+                return;
+            }
+            const entry = { blob: durable.blob, name: durable.name };
+            this.localAssets.set(hash, entry);
             await this.sendAssetResponse(peerId, hash, entry, missingChunks);
         } finally {
             serving.delete(hash);

@@ -193,10 +193,12 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
         unlinkLeaseFromAsset: (leaseId, hash) => {
             const assetStore = stores.get('assets');
             const asset = assetStore?.get(hash);
-            if (asset && Array.isArray(asset.activeLeaseIds)) {
+            if (asset && Array.isArray(asset.activeLeases)) {
                 assetStore?.set(hash, {
                     ...asset,
-                    activeLeaseIds: asset.activeLeaseIds.filter((value) => value !== leaseId),
+                    activeLeases: asset.activeLeases.filter(
+                        (value) => typeof value !== 'object' || value === null || value.leaseId !== leaseId
+                    ),
                 });
             }
         },
