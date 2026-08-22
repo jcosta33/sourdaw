@@ -1,0 +1,25 @@
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_ba5a84e4069998 61,65,68-69,92
+src/infra/release/modelReleaseAdmission.ts
+  s_a40848e8f8cca9::t_2f5e007d002694 7
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts
+  s_a40848e8f8cca9::t_ba5a84e4069998 24,29-30
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_a40848e8f8cca9::t_ba5a84e4069998 46,53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "652a8ccd6a7a973e918b4001163d3b43aac4178a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
