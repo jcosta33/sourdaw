@@ -23,6 +23,8 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
+    /** Compiler-verified provider proposal scope for a structured selector list, before app-computed action expansion. */
+    verifiedProviderProposalScope?: AgentRunScope;
     /** Provider-originated actions cannot reach plan persistence without semantic evidence. */
     requireProviderProposal?: boolean;
     readyAssetIds?: readonly string[];
@@ -124,7 +126,10 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     ) {
         return { status: 'rejected', reason: 'Provider proposed an unsupported application capability.' };
     }
-    if (input.providerProposal?.scope && !sameScope(input.providerProposal.scope, input.scope)) {
+    if (
+        input.providerProposal?.scope &&
+        !sameScope(input.providerProposal.scope, input.verifiedProviderProposalScope ?? input.scope)
+    ) {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };
     }
     const capabilities = deriveCapabilities(input);

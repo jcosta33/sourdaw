@@ -17,6 +17,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -33,6 +34,10 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    createHostedSemanticListPlanningResponder,
+    createProviderSemanticListPlanningResponder,
+} from './providerToolPlanningFixture';
 
 const PROMPT = 'Insert a compressor after EQ on every bass track, excluding frozen tracks.';
 const BASS_DI_DEVICE_IDS = ['device-bass-di-eq', 'device-bass-di-saturator'];
@@ -59,6 +64,38 @@ const providerPlan = [
         arguments: { trackId: 'track-bass-amp', deviceType: 'Compressor', afterDeviceId: 'device-bass-amp-eq' },
     },
 ] as const;
+
+const providerScope = {
+    targetIds: ['track-bass-di', 'track-bass-amp'],
+    targetRanges: [],
+    protectedTargetIds: ['track-bass-frozen'],
+    protectedRanges: [],
+};
+
+const providerList = [
+    {
+        id: 'add-bass-di-compressor',
+        name: 'addDevice',
+        arguments: { deviceType: 'Compressor', afterDeviceId: 'device-bass-di-eq' },
+        selector: {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Bass DI' },
+            quantity: { unit: 'targets', exactly: 1 },
+        },
+    },
+    {
+        id: 'add-bass-amp-compressor',
+        name: 'addDevice',
+        arguments: { deviceType: 'Compressor', afterDeviceId: 'device-bass-amp-eq' },
+        selector: {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Bass Amp' },
+            quantity: { unit: 'targets', exactly: 1 },
+        },
+    },
+];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -160,11 +197,23 @@ function getConfirmation() {
 }
 
 function getHostedRequestBody(): string {
-    const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
+    const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
     if (typeof body !== 'string') {
         throw new TypeError('Expected one hosted provider request body');
     }
     return body;
+}
+
+function getHostedUserMessage(init: RequestInit | undefined): string {
+    if (typeof init?.body !== 'string') {
+        throw new TypeError('Expected hosted provider request body');
+    }
+    const request = JSON.parse(init.body) as { messages?: Array<{ role?: string; content?: string }> };
+    const userMessage = request.messages?.at(-1);
+    if (userMessage?.role !== 'user' || typeof userMessage.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return userMessage.content;
 }
 
 describe('bass compressor prompt workflow', () => {
@@ -173,24 +222,12 @@ describe('bass compressor prompt workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.removeDeviceFromStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+        const webLlmResponder = createProviderSemanticListPlanningResponder(providerList, providerScope);
+        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+            Promise.resolve(webLlmResponder(userMessage))
         );
+        const hostedResponder = createHostedSemanticListPlanningResponder(providerList, providerScope);
+        runtimeMocks.fetch.mockImplementation(async (_input, init) => hostedResponder(getHostedUserMessage(init)));
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -212,6 +249,7 @@ describe('bass compressor prompt workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const bassDi = createTrack({ id: 'track-bass-di', name: 'Bass DI' });
         bassDi.devices.push({
@@ -258,8 +296,6 @@ describe('bass compressor prompt workflow', () => {
 
         const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
         expect(providerRequest).toContain(PROMPT);
-        expect(providerRequest).toContain('device-bass-di-eq');
-        expect(providerRequest).toContain('device-bass-amp-eq');
         expect(providerRequest).toContain('"frozen":true');
 
         const confirmation = getConfirmation();
@@ -468,6 +504,25 @@ describe('bass compressor prompt workflow', () => {
                 return { ...track, devices: [] };
             }),
         });
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmation()).toBeNull();
+        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+    });
+
+    it('rejects an undiscoverable provider anchor even though selector scope remains exact', async () => {
+        const responder = createProviderSemanticListPlanningResponder(
+            providerList.map((item) =>
+                item.id === 'add-bass-di-compressor'
+                    ? { ...item, arguments: { ...item.arguments, afterDeviceId: 'device-bass-di-missing' } }
+                    : item
+            ),
+            providerScope
+        );
+        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+            Promise.resolve(responder(userMessage))
+        );
 
         await sendChatMessage(PROMPT);
 

@@ -5,6 +5,7 @@ import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/st
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -57,6 +58,73 @@ describe('agent tool catalog', () => {
 
     afterEach(() => {
         pluginScanStore.set(defaultPluginScanState);
+    });
+
+    it('discovers registered device insertion commands', () => {
+        expect(getAgentToolCatalogEntries({ category: 'command', names: ['addDevice'] }).items).toEqual([
+            expect.objectContaining({ function: expect.objectContaining({ name: 'addDevice' }) }),
+        ]);
+    });
+
+    it('admits a catalog-disclosed semantic device proposal', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['addDevice'] } },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'add-compressor',
+                                        name: 'addDevice',
+                                        arguments: { deviceType: 'builtin-compressor' },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Bass' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Insert compressor.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: ['track-bass'],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['addDevice'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        await expect(
+            runApplicationOwnedToolLoop({
+                loopId: 'semantic-device-proposal',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn,
+            })
+        ).resolves.toMatchObject({ status: 'complete' });
     });
 
     it('keeps provider planning on a compact catalog, discovers command schemas dynamically, and returns only a proposal', async () => {

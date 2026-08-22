@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProviderToolPlanningFixture } from './providerToolPlanningFixture';
+import {
+    createProviderSemanticListPlanningResponder,
+    createProviderToolPlanningFixture,
+} from './providerToolPlanningFixture';
 
 describe('provider tool planning fixture', () => {
     it('discovers exactly the proposed commands before returning a scope-preserving batch proposal', () => {
@@ -45,5 +48,48 @@ describe('provider tool planning fixture', () => {
                 { name: 'setTrackPan', arguments: { trackId: 'track-right', pan: 20 } },
             ])
         ).toThrow('Repeated commands require an explicit workflow fixture with bounded semantic selectors.');
+    });
+
+    it('restarts catalog discovery for a retried semantic planning attempt', () => {
+        const respond = createProviderSemanticListPlanningResponder(
+            [
+                {
+                    id: 'insert-left-compressor',
+                    name: 'addDevice',
+                    arguments: { deviceType: 'Compressor', afterDeviceId: 'device-left-eq' },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { name: 'Bass Left' },
+                        quantity: { unit: 'targets', exactly: 1 },
+                    },
+                },
+                {
+                    id: 'insert-right-compressor',
+                    name: 'addDevice',
+                    arguments: { deviceType: 'Compressor', afterDeviceId: 'device-right-eq' },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { name: 'Bass Right' },
+                        quantity: { unit: 'targets', exactly: 1 },
+                    },
+                },
+            ],
+            { targetIds: ['track-left', 'track-right'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] }
+        );
+
+        expect(JSON.parse(respond('new planning attempt'))).toEqual([
+            { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['addDevice'] } },
+        ]);
+        expect(JSON.parse(respond('Application-owned tool receipts from turn 1'))).toMatchObject([
+            {
+                name: 'command.batch.propose',
+                arguments: { list: { items: [{ name: 'addDevice' }, { name: 'addDevice' }] } },
+            },
+        ]);
+        expect(JSON.parse(respond('new planning attempt after provider retry'))).toEqual([
+            { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['addDevice'] } },
+        ]);
     });
 });

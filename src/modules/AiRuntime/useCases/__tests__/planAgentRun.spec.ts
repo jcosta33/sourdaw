@@ -231,6 +231,78 @@ describe('planAgentRun', () => {
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('capability') }));
     });
 
+    it('accepts app-computed action expansion only when compiler evidence verifies the narrower provider proposal scope', () => {
+        const verifiedProviderProposalScope = {
+            targetIds: ['track-bass'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        const result = planAgentRun({
+            request: 'Insert a compressor after the bass EQ.',
+            revision: 'heads-structured-1',
+            actions: [{ type: 'addDevice' }],
+            actionLabels: ['Insert compressor after Bass EQ'],
+            scope: {
+                targetIds: ['track-bass', 'device-bass-eq'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            grants: {
+                allowedOperationPrefixes: ['addDevice'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({ scope: verifiedProviderProposalScope, capabilityIds: ['addDevice'] }),
+            verifiedProviderProposalScope,
+        });
+
+        expect(result).toEqual(expect.objectContaining({ status: 'planned' }));
+        expect(
+            planAgentRun({
+                request: 'Insert a compressor after the bass EQ.',
+                revision: 'heads-structured-1',
+                actions: [{ type: 'addDevice' }],
+                actionLabels: ['Insert compressor after Bass EQ'],
+                scope: {
+                    targetIds: ['track-bass', 'device-bass-eq'],
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+                grants: {
+                    allowedOperationPrefixes: ['addDevice'],
+                    create: false,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: false,
+                },
+                budgets: { limits: {}, consumed: {} },
+                requiresConfirmation: true,
+                providerProposal: providerProposal({
+                    scope: verifiedProviderProposalScope,
+                    capabilityIds: ['addDevice'],
+                }),
+                verifiedProviderProposalScope: { ...verifiedProviderProposalScope, targetIds: ['track-other'] },
+            })
+        ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') }));
+    });
+
     it('persists and hydrates a canonical revision-bound plan rather than resume prose', () => {
         const planned = planAgentRun({
             request: 'Raise Bass by 1 dB.',

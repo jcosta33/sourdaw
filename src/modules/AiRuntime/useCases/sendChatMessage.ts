@@ -512,6 +512,7 @@ export async function sendChatMessage(
                         requiresConfirmation: false,
                         applicationToolReceipts: result.applicationToolReceipts,
                         providerProposal: result.providerProposal,
+                        verifiedProviderProposalScope: result.verifiedProviderProposalScope,
                         requireProviderProposal: result.executionMode === 'atomic',
                     });
                     if (plannedRun.status === 'needs-user-decision') {
@@ -628,6 +629,7 @@ export async function sendChatMessage(
                     requiresConfirmation: compiledActionExecution.requiresConfirmation,
                     applicationToolReceipts: result.applicationToolReceipts,
                     providerProposal: result.providerProposal,
+                    verifiedProviderProposalScope: result.verifiedProviderProposalScope,
                     requireProviderProposal: result.executionMode === 'atomic',
                 });
                 if (plannedRun.status === 'needs-user-decision') {

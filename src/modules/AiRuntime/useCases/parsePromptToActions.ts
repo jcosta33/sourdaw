@@ -629,6 +629,9 @@ export const parsePromptToActions = inject({ logger })(
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
+                        ...(compiledList.compilerEvidence === undefined
+                            ? {}
+                            : { verifiedProviderProposalScope: compiledList.compilerEvidence.proposalScope }),
                     };
                 }
 
