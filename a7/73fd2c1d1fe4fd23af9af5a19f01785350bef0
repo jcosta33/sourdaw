@@ -1,0 +1,31 @@
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_8dacb2355a130f 194
+  s_27578aec2aab3b::t_c904611d2f8482 3,23-26,28-30,65-103,108-110,131-133,142-152,169,173-193,195-209,217-222
+  s_27578aec2aab3b::t_5144001a5d1f15 282,284
+  s_27578aec2aab3b::t_4c8250ae795aec 944-1010
+  s_27578aec2aab3b::t_05f4c9464a97fe 223,299-369
+  s_27578aec2aab3b::t_b92f114f61c3f4 224,1011
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_6f6d6a491cb261 15,67-71,197-203
+  s_27578aec2aab3b::t_f91624ec67d3fb 204,625-671,678-791,801-803,820-832,836-901,918-919,922-923
+  s_27578aec2aab3b::t_44e09031e9a35d 833-835,902-917,920-921
+  s_27578aec2aab3b::t_6bb7b4bc116dff 672-677,792-800,804-819
+  s_27578aec2aab3b::t_2f6c73dd0f6cc7 7-14,85-86,121,133-136
+  s_27578aec2aab3b::t_a8b7fec97fb94f 137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a773fd2c1d1fe4fd23af9af5a19f01785350bef0",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
