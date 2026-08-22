@@ -5,6 +5,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleLoadPreset } from '../handleLoadPreset';
 
 const mocks = vi.hoisted(() => ({
@@ -58,6 +59,17 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededPresetDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track track-1 left project truth before its replace-device-chain delta was submitted',
+};
 
 const oldDevice: DeviceSnapshot = {
     id: 'old-device',
@@ -375,11 +387,7 @@ describe('handleLoadPreset', () => {
     it('returns clean Command success when the same commit superseded the replacement delta', async () => {
         // The host track left project truth later in this commit, so the chain
         // this preset would install is gone with it.
-        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
-            acceptance: 'superseded',
-            application: 'not-applied',
-            reason: 'Track track-1 left project truth before its replace-device-chain delta was submitted',
-        });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededPresetDelta);
         registerHandlerMap({ loadPreset: handleLoadPreset });
 
         await expect(executeAppAction(action())).resolves.toBeUndefined();

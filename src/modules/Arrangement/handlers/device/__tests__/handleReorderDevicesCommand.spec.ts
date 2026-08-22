@@ -9,6 +9,7 @@ import { clearUndoHistory, executeAppAction, isAppActionCommittedError, redo, un
 
 import { createTrack } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
+import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { compileReorderDevicesAction } from '../../../useCases/device/compileReorderDevicesAction';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -19,6 +20,17 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededReorderDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track audio-1 left project truth before its reorder-device delta was submitted',
+};
 
 function seedAudioTrack(): void {
     const track = createTrack({ id: 'audio-1', kind: 'audio', name: 'Audio' });
@@ -224,11 +236,7 @@ describe('handleReorderDevices Command path', () => {
         // this reorder describes is gone and the strip it would reorder is
         // being torn down by whatever removed the track.
         configureStoragePort(() => undefined);
-        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
-            acceptance: 'superseded',
-            application: 'not-applied',
-            reason: 'Track audio-1 left project truth before its reorder-device delta was submitted',
-        });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededReorderDelta);
 
         await expect(executeAppAction(compileRackDrop())).resolves.toBeUndefined();
 

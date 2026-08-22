@@ -8,6 +8,7 @@ import type { Device, Track } from '../../../models/Track';
 import type { getTrackState } from '../../../repositories/track/getTrackState';
 import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
 import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
+import type { DeviceChainRuntimeDeltaSuperseded } from '../applyDeviceChainRuntimeDelta';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof getTrackState>(),
@@ -19,8 +20,12 @@ const mocks = vi.hoisted(() => ({
     projectTrackToLiveStrip: vi.fn<typeof projectTrackToLiveStrip>(),
 }));
 
-/** What the delta reports once its host track left project truth mid-commit. */
-const SUPERSEDED_DELTA = {
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const SUPERSEDED_DELTA: DeviceChainRuntimeDeltaSuperseded = {
     acceptance: 'superseded',
     application: 'not-applied',
     reason: 'Track t1 left project truth before its remove-device delta was submitted',

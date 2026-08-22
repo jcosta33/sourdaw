@@ -9,6 +9,7 @@ import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#
 
 import { createTrack } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
+import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleLoadExternalPlugin } from '../handleLoadExternalPlugin';
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +29,17 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLa
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededPluginDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track audio-1 left project truth before its add-device delta was submitted',
+};
 
 function seedAudioTrack(): void {
     const track = createTrack({ id: 'audio-1', kind: 'audio', name: 'Audio' });
@@ -145,11 +157,7 @@ describe('handleLoadExternalPlugin command path', () => {
         // leak the instance, so the whole runtime effect is void — not a
         // failure demanding manual repair.
         configureStoragePort(() => undefined);
-        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
-            acceptance: 'superseded',
-            application: 'not-applied',
-            reason: 'Track audio-1 left project truth before its add-device delta was submitted',
-        });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededPluginDelta);
 
         await expect(
             executeAppAction({ type: 'loadExternalPlugin', payload: { pluginId: 'plugin-1', trackId: 'audio-1' } })

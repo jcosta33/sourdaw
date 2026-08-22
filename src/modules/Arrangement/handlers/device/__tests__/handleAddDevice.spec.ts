@@ -4,6 +4,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 
+import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +34,17 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededAddDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track t1 left project truth before its add-device delta was submitted',
+};
 
 describe('handleAddDevice', () => {
     beforeEach(() => {
@@ -372,11 +384,7 @@ describe('handleAddDevice', () => {
         // it wedges any batch that adds a device and then drops its track.
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
-        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
-            acceptance: 'superseded',
-            application: 'not-applied',
-            reason: 'Track t1 left project truth before its add-device delta was submitted',
-        });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededAddDelta);
         registerHandlerMap({ addDevice: handleAddDevice });
 
         await expect(
