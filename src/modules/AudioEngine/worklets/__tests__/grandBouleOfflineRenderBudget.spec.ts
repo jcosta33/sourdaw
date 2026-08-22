@@ -14,6 +14,7 @@ const MEASUREMENT_TIMEOUT_MS = 120_000;
 const WASM_PATH = resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm');
 
 type ProcessorLike = { process: (inputs: Float32Array[][], outputs: Float32Array[][]) => boolean };
+type ProcessorConstructor = new (...args: unknown[]) => ProcessorLike;
 type HarnessPort = {
     onmessage: ((event: MessageEvent) => void) | null;
     postMessage: (message: unknown) => void;
@@ -22,6 +23,8 @@ type HarnessPort = {
 const processorRegistry = new Map<string, new (...args: unknown[]) => ProcessorLike>();
 let pendingProcessorPort: HarnessPort | null = null;
 let harnessFrame = 0;
+let Processor: ProcessorConstructor;
+let wasmModule: WebAssembly.Module;
 
 class AudioWorkletProcessorShim {
     readonly port: HarnessPort;
@@ -35,9 +38,6 @@ class AudioWorkletProcessorShim {
 }
 
 describe('Grand Boule offline render budget', () => {
-    let processor: ProcessorLike;
-    let port: HarnessPort;
-
     beforeAll(async () => {
         Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => harnessFrame });
         Object.defineProperty(globalThis, 'sampleRate', { configurable: true, get: () => HOST_SAMPLE_RATE });
@@ -47,60 +47,80 @@ describe('Grand Boule offline render budget', () => {
         });
 
         await import('../grandBouleOfflineProcessor');
-        const Processor = processorRegistry.get('grand-boule-offline-processor');
-        if (!Processor) {
+        const registeredProcessor = processorRegistry.get('grand-boule-offline-processor');
+        if (!registeredProcessor) {
             throw new Error('grand-boule-offline-processor was not registered');
         }
+        Processor = registeredProcessor;
 
         const wasmBytes = readFileSync(WASM_PATH);
-        const wasmModule = new WebAssembly.Module(
+        wasmModule = new WebAssembly.Module(
             wasmBytes.buffer.slice(wasmBytes.byteOffset, wasmBytes.byteOffset + wasmBytes.byteLength)
         );
+    });
+
+    function renderVoiceCount(voiceCount: number): {
+        elapsedSeconds: number;
+        energy: number;
+        fingerprint: number;
+        peak: number;
+        realtimeRatio: number;
+    } {
+        harnessFrame = 0;
         const inner: HarnessPort = { onmessage: null, postMessage: vi.fn() };
         pendingProcessorPort = inner;
+        let processor: ProcessorLike;
         try {
             processor = new Processor({ processorOptions: { wasmModule } });
         } finally {
             pendingProcessorPort = null;
         }
-        port = inner;
-        port.onmessage?.({ data: { type: 'init' } } as MessageEvent);
-    });
+        inner.onmessage?.({ data: { type: 'init' } } as MessageEvent);
+
+        for (let voice = 0; voice < voiceCount; voice += 1) {
+            inner.onmessage?.({
+                data: { type: 'noteOn', midiNote: LOWEST_PIANO_NOTE + voice, velocity: 0.9 },
+            } as MessageEvent);
+        }
+
+        const quanta = Math.round((AUDIO_SECONDS * HOST_SAMPLE_RATE) / QUANTUM_FRAMES);
+        const left = new Float32Array(QUANTUM_FRAMES);
+        const right = new Float32Array(QUANTUM_FRAMES);
+        processor.process([], [[left, right]]);
+
+        let energy = 0;
+        let fingerprint = 2_166_136_261;
+        let peak = 0;
+        const startedAt = performance.now();
+        for (let quantum = 0; quantum < quanta; quantum += 1) {
+            harnessFrame = quantum * QUANTUM_FRAMES;
+            processor.process([], [[left, right]]);
+            for (const sample of left) {
+                peak = Math.max(peak, Math.abs(sample));
+                energy += sample * sample;
+                fingerprint = Math.imul(fingerprint ^ Math.round(sample * 1_000_000), 16_777_619) >>> 0;
+            }
+        }
+        const elapsedSeconds = (performance.now() - startedAt) / 1000;
+        return { elapsedSeconds, energy, fingerprint, peak, realtimeRatio: elapsedSeconds / AUDIO_SECONDS };
+    }
 
     it(
-        'renders 64 sounding voices inside the export timeout ratio',
+        'renders 64 sounding voices with more work and energy than the one-voice control inside the export timeout ratio',
         async ({ annotate }) => {
-            for (let voice = 0; voice < VOICE_COUNT; voice += 1) {
-                port.onmessage?.({
-                    data: { type: 'noteOn', midiNote: LOWEST_PIANO_NOTE + voice, velocity: 0.9 },
-                } as MessageEvent);
-            }
-
-            const quanta = Math.round((AUDIO_SECONDS * HOST_SAMPLE_RATE) / QUANTUM_FRAMES);
-            const left = new Float32Array(QUANTUM_FRAMES);
-            const right = new Float32Array(QUANTUM_FRAMES);
-            processor.process([], [[left, right]]);
-
-            let peak = 0;
-            const startedAt = performance.now();
-            for (let quantum = 0; quantum < quanta; quantum += 1) {
-                harnessFrame = quantum * QUANTUM_FRAMES;
-                processor.process([], [[left, right]]);
-                for (const sample of left) {
-                    peak = Math.max(peak, Math.abs(sample));
-                }
-            }
-            const elapsedSeconds = (performance.now() - startedAt) / 1000;
-            const realtimeRatio = elapsedSeconds / AUDIO_SECONDS;
+            const oneVoice = renderVoiceCount(1);
+            const sixtyFourVoices = renderVoiceCount(VOICE_COUNT);
             await annotate(
-                `${VOICE_COUNT} voices, ${AUDIO_SECONDS}s audio in ${elapsedSeconds.toFixed(3)}s = ${realtimeRatio.toFixed(3)}x realtime`,
+                `1 voice in ${oneVoice.elapsedSeconds.toFixed(3)}s; ${VOICE_COUNT} voices in ${sixtyFourVoices.elapsedSeconds.toFixed(3)}s = ${sixtyFourVoices.realtimeRatio.toFixed(3)}x realtime`,
                 'notice'
             );
 
-            expect({ producedAudio: peak > 0.001, withinBudget: realtimeRatio < RENDER_TIMEOUT_MULTIPLIER }).toEqual({
-                producedAudio: true,
-                withinBudget: true,
-            });
+            expect(oneVoice.peak).toBeGreaterThan(0.001);
+            expect(sixtyFourVoices.peak).toBeGreaterThan(0.001);
+            expect(sixtyFourVoices.energy).toBeGreaterThan(oneVoice.energy * 1.25);
+            expect(sixtyFourVoices.fingerprint).not.toBe(oneVoice.fingerprint);
+            expect(sixtyFourVoices.elapsedSeconds).toBeGreaterThan(oneVoice.elapsedSeconds);
+            expect(sixtyFourVoices.realtimeRatio).toBeLessThan(RENDER_TIMEOUT_MULTIPLIER);
         },
         MEASUREMENT_TIMEOUT_MS
     );

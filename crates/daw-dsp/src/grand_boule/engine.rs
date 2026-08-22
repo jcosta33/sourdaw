@@ -1798,9 +1798,9 @@ mod tests {
                 (peak, energy)
             };
 
-        let (peak_balanced, energy_balanced) = measure(1.0, 1.0, 0.55, 0.6, 0.0);
-        let (peak_mellow, energy_mellow) = measure(0.6, 1.4, 0.25, 0.9, -0.7);
-        let (peak_clear, energy_clear) = measure(1.5, 0.7, 0.85, 0.35, 0.7);
+        let (peak_balanced, energy_balanced) = measure(0.92, 1.08, 0.48, 0.52, -0.08);
+        let (peak_mellow, energy_mellow) = measure(0.72, 1.25, 0.32, 0.82, -0.58);
+        let (peak_clear, energy_clear) = measure(1.34, 0.82, 0.78, 0.42, 0.56);
 
         eprintln!("\n--- Product voicing comparison (C4, v=0.8, 1s) ---");
         eprintln!("  Balanced: peak={peak_balanced:.6} energy={energy_balanced:.4}");

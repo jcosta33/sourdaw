@@ -592,21 +592,21 @@
                 "current tracked AudioEngine host boundary"
             ],
             "digests": [
-                "tracked-set-sha256:5e9f07ead65214b142e549a2131791ff35dacb7cecad771356ade5e1c51166d7:grand-boule-native-rust",
-                "tracked-set-sha256:d0d3f0e8a966009ee8506e1a6217739fa84859c226f035741cd08aa623208638:grand-boule-product-module",
+                "tracked-set-sha256:05a64f2633366b7242112ac9b38cad7c33bfcfa464dddf35b918bd9ccb46c9e4:grand-boule-native-rust",
+                "tracked-set-sha256:6ba93e12791725de4b9ba6e1ad5cb80790cf394bb0df268850b79545fead7715:grand-boule-product-module",
                 "tracked-set-sha256:440ad6ef75e3ef532b9b1b7a3a7d55e8cbed6240d7784c42ca7461b3bc9d8a2c:grand-boule-product-descriptor",
                 "tracked-set-sha256:2c8c7dc7fac16bded7121cdd5a8de8cb8e8a42b2da6b45548e4e69ed64362260:grand-boule-release-admission",
-                "tracked-set-sha256:e88b521ae47d43f39cdad5784ed79b8e372045da8e8a2d433ac267ff0d783305:grand-boule-node-host",
+                "tracked-set-sha256:30c4c04f2067310ebb5c6c6f0ce9fb17b66f544aa26938bd6e50700bf0a48439:grand-boule-node-host",
                 "tracked-set-sha256:d2028fb5c96872cd29e93fc1599982d63f67b84aca679d031e46aca04825d935:grand-boule-ring-protocol",
-                "tracked-set-sha256:d5c6fb9a5b34beefbcee8fc240a90154f03c45dc86ab72f326997e8d2efaca66:grand-boule-worker-host",
-                "tracked-set-sha256:011c431d67eb00918e164e77667083a6afbf6509cf3dd5a5cbbf6f24bfe2f0b3:grand-boule-worklet-hosts"
+                "tracked-set-sha256:25f57025374da4f8ae71288048f8e644e45c4da3bfa1d681b4304f268e0e3556:grand-boule-worker-host",
+                "tracked-set-sha256:ec66314b0c35cf9ae51a0bae6fa2e145ce6a9609a8611ac17a9233771e440717:grand-boule-worklet-hosts"
             ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADR 0035 records the system-level claim map, finite FIR body design-around, independently revoiced project parameters, and engineering-not-legal-certainty boundary.",
+                "ADR 0035 records the system-level claim map, finite FIR body design-around, frequency-only prompt/aftersound decay curves, independently revoiced project parameters, and engineering-not-legal-certainty boundary.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
-                "The release checker pins the FIR source shape, project-tuning and neutral-voicing provenance, Rust wasm32 graph, generated surfaces, binary exports, and exact source digests."
+                "The release checker rejects the legacy decay, stiffness, and voicing sources while pinning the new project-authored curves, neutral voicings, Rust wasm32 graph, exact generated constructors, binary constructor exports, and source digests."
             ],
             "obligations": ["Complete the OS-10 project grant before public release."]
         },
@@ -689,13 +689,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:f2f00a28dd4f2d4a850b2986604aca1081c43278494186e75100c92383be726a",
+                "daw-dsp sha256:85707e299233b71706e1170f0b9c8e717b6b83b238322e883cdcb6bea7fa3e78",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
                 "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:933dcbef11e70cd19582a224d307405edb6c8fb6e016db0aa57d9d9fcbd2d2b1:public/wasm/manifest.json"
+                "sha256:409bd0f30ee4d81474913a896a926e89a46055fa99c93b846e8301424956038b:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -947,7 +947,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "933dcbef11e70cd19582a224d307405edb6c8fb6e016db0aa57d9d9fcbd2d2b1"
+            "sha256": "409bd0f30ee4d81474913a896a926e89a46055fa99c93b846e8301424956038b"
         }
     ],
     "externalReferences": [

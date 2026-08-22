@@ -374,12 +374,9 @@ impl PianoVoice {
             contact_lp_alpha,
         };
 
-        // Base partial bandwidth controls the T60 of the note (intrinsic
-        // string damping σ_string). The formula produces ~0.06 Hz for bass
-        // (T60 ≈ 23 s) ramping to ~0.9 Hz for treble (T60 ≈ 2.4 s). The
-        // bridge coupling constant SIGMA_BRIDGE_HZ (4 Hz) in CoupledStringAssembly
-        // separately drives the fast prompt-sound decay; this value only governs
-        // the slow aftersound tail.
+        // Base partial bandwidth controls the modal string tail. The coupled
+        // assembly adds its separate project-authored prompt and aftersound
+        // decay bandwidths from each detuned string frequency.
         let base_bandwidth = 0.05 + 0.0002 * fundamental;
         self.attack_key = 0;
         self.attack_position = 0;

@@ -5,6 +5,8 @@ import { type Store } from '#/infra/store/types';
 
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState, createDefaultGrandBouleState } from '../../stores/grandBouleStore';
+import { setGrandBouleMorphBalance } from '../setGrandBouleMorphBalance';
+import { setGrandBouleMorphEnabled } from '../setGrandBouleMorphEnabled';
 import { setGrandBouleMorphPosition } from '../setGrandBouleMorphPosition';
 
 function fakeEngine(): { handle: GrandBouleEngineHandle; setParam: Mock<GrandBouleEngineHandle['setParam']> } {
@@ -42,6 +44,14 @@ function paramsByName(setParam: Mock<GrandBouleEngineHandle['setParam']>): Recor
     return result;
 }
 
+function expectParamsClose(setParam: Mock<GrandBouleEngineHandle['setParam']>, expected: Record<string, number>): void {
+    const actual = paramsByName(setParam);
+    expect(Object.keys(actual)).toEqual(Object.keys(expected));
+    for (const [name, value] of Object.entries(expected)) {
+        expect(actual[name]).toBeCloseTo(value, 12);
+    }
+}
+
 describe('setGrandBouleMorphPosition', () => {
     it('does nothing when state is null', () => {
         const { handle, setParam } = fakeEngine();
@@ -62,13 +72,13 @@ describe('setGrandBouleMorphPosition', () => {
         setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.9 });
 
         // Disabled morph always plays modelA's raw parameters, regardless of position.
-        expect(paramsByName(setParam)).toEqual({
-            hammer_hardness_scale: 1.0,
-            hammer_mass_scale: 1.0,
-            soundboard_brightness: 0.55,
-            sympathetic_level: 0.5,
-            body_resonance: 0.6,
-            tone_color: 0.0,
+        expectParamsClose(setParam, {
+            hammer_hardness_scale: 0.92,
+            hammer_mass_scale: 1.08,
+            soundboard_brightness: 0.48,
+            sympathetic_level: 0.58,
+            body_resonance: 0.52,
+            tone_color: -0.08,
         });
         expect(set).toHaveBeenCalledWith({
             ...state,
@@ -107,18 +117,57 @@ describe('setGrandBouleMorphPosition', () => {
         // balanced-grand to clear-grand at t = 0.5.
         setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.5 });
 
-        expect(paramsByName(setParam)).toEqual({
-            hammer_hardness_scale: 1.25, // lerp(1.0, 1.5, 0.5)
-            hammer_mass_scale: 0.85, // lerp(1.0, 0.7, 0.5)
-            soundboard_brightness: 0.7, // lerp(0.55, 0.85, 0.5)
-            sympathetic_level: 0.4, // lerp(0.5, 0.3, 0.5)
-            body_resonance: 0.475, // lerp(0.6, 0.35, 0.5)
-            tone_color: 0.35, // lerp(0.0, 0.7, 0.5)
+        expectParamsClose(setParam, {
+            hammer_hardness_scale: 1.13,
+            hammer_mass_scale: 0.95,
+            soundboard_brightness: 0.63,
+            sympathetic_level: 0.47,
+            body_resonance: 0.47,
+            tone_color: 0.24,
         });
         expect(set).toHaveBeenCalledWith({
             ...state,
             morph: { ...state.morph, morphPosition: 0.5 },
         });
+    });
+
+    it('reapplies the current morph position immediately when morph is enabled', () => {
+        const { handle, setParam } = fakeEngine();
+        const state = {
+            ...createDefaultGrandBouleState(),
+            morph: { ...createDefaultGrandBouleState().morph, morphPosition: 0.25 },
+        };
+        const { store, set } = storeWith(state);
+
+        setGrandBouleMorphEnabled({ store, engine: handle, enabled: true });
+
+        expectParamsClose(setParam, {
+            hammer_hardness_scale: 1.025,
+            hammer_mass_scale: 1.0150000000000001,
+            soundboard_brightness: 0.555,
+            sympathetic_level: 0.525,
+            body_resonance: 0.495,
+            tone_color: 0.08,
+        });
+        expect(set).toHaveBeenCalledWith({ ...state, morph: { ...state.morph, enabled: true } });
+    });
+
+    it.each([
+        [-1, 0.92],
+        [0, 1.025],
+        [1, 1.34],
+    ])('maps layer balance %s to the documented A/current/B interpolation', (balance, hardness) => {
+        const { handle, setParam } = fakeEngine();
+        const state = {
+            ...createDefaultGrandBouleState(),
+            morph: { ...createDefaultGrandBouleState().morph, enabled: true, morphPosition: 0.25 },
+        };
+        const { store, set } = storeWith(state);
+
+        setGrandBouleMorphBalance({ store, engine: handle, balance });
+
+        expect(paramsByName(setParam).hammer_hardness_scale).toBeCloseTo(hardness, 10);
+        expect(set).toHaveBeenCalledWith({ ...state, morph: { ...state.morph, layerBalance: balance } });
     });
 
     it('warns and does nothing when model A is unknown, without touching the store or engine', () => {

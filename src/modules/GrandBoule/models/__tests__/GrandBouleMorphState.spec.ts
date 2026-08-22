@@ -26,28 +26,28 @@ describe('findPianoModelById', () => {
         expect(findPianoModelById('balanced-grand')).toEqual({
             id: 'balanced-grand',
             name: 'Balanced Grand',
-            hammerHardnessScale: 1.0,
-            hammerMassScale: 1.0,
-            soundboardBrightness: 0.55,
-            sympatheticLevel: 0.5,
-            bodyResonance: 0.6,
-            toneColor: 0.0,
+            hammerHardnessScale: 0.92,
+            hammerMassScale: 1.08,
+            soundboardBrightness: 0.48,
+            sympatheticLevel: 0.58,
+            bodyResonance: 0.52,
+            toneColor: -0.08,
         });
     });
 
     it('returns the mellow voicing with its exact dark-toned parameters', () => {
         const model = findPianoModelById('mellow-grand');
-        expect(model?.toneColor).toBe(-0.7);
-        expect(model?.hammerMassScale).toBe(1.4);
-        expect(model?.hammerHardnessScale).toBe(0.6);
-        expect(model?.sympatheticLevel).toBe(0.8);
+        expect(model?.toneColor).toBe(-0.58);
+        expect(model?.hammerMassScale).toBe(1.25);
+        expect(model?.hammerHardnessScale).toBe(0.72);
+        expect(model?.sympatheticLevel).toBe(0.74);
     });
 
     it('returns the clear voicing with its exact bright-toned parameters', () => {
         const model = findPianoModelById('clear-grand');
-        expect(model?.toneColor).toBe(0.7);
-        expect(model?.hammerHardnessScale).toBe(1.5);
-        expect(model?.soundboardBrightness).toBe(0.85);
+        expect(model?.toneColor).toBe(0.56);
+        expect(model?.hammerHardnessScale).toBe(1.34);
+        expect(model?.soundboardBrightness).toBe(0.78);
     });
 
     it('returns undefined for an unknown model id', () => {

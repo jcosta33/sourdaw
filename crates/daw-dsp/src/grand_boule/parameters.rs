@@ -91,12 +91,11 @@ pub fn midi_to_hz_equal_tempered(midi_note: u8) -> f32 {
     A4_HZ * (2.0_f32).powf(semitones / 12.0)
 }
 
-/// Project hammer-stiffness curve:
-/// `log10(K(key)) ≈ 8.0 + 0.020·(key-1)`.
-///
-/// Ranges from ~10⁸ in the bass to ~5.5×10⁹ in the treble.
+/// Project-authored hammer-stiffness curve. It rises non-linearly through the
+/// keyboard rather than retaining the legacy measured-data fit.
 pub fn hammer_stiffness_k(key: u32) -> f32 {
-    let exponent = 8.0_f32 + 0.020 * (key as f32 - 1.0);
+    let t = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+    let exponent = 7.86_f32 + 1.88 * t.powf(1.32) + 0.14 * t * (1.0 - t);
     (10.0_f32).powf(exponent)
 }
 
@@ -286,6 +285,18 @@ mod tests {
     #[test]
     fn hammer_mass_decreases_with_pitch() {
         assert!(hammer_mass_kg(1) > hammer_mass_kg(88));
+    }
+
+    #[test]
+    fn project_hammer_stiffness_curve_is_non_linear_and_pinned() {
+        let bass = hammer_stiffness_k(1);
+        let middle = hammer_stiffness_k(49);
+        let treble = hammer_stiffness_k(88);
+
+        assert!((bass - 72_443_600.0).abs() < 64.0);
+        assert!((middle - 565_092_000.0).abs() < 1_024.0);
+        assert!((treble - 5_495_409_000.0).abs() < 16_384.0);
+        assert!(middle / bass < treble / middle);
     }
 
     #[test]

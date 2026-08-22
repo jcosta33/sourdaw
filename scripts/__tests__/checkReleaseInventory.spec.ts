@@ -73,13 +73,29 @@ function wasmWithFunctionExport(name: string): Uint8Array {
     ]);
 }
 
+function grandBouleTextConstructorFixture(path: string): string {
+    if (path.endsWith('_bg.wasm.d.ts')) {
+        return 'export const grandbouleinstance_new: (a: number, b: number) => number;';
+    }
+    if (path.endsWith('.d.ts')) {
+        return `export class GrandBouleInstance {
+            constructor(sample_rate: number, voice_count: number);
+        }`;
+    }
+    return `export class GrandBouleInstance {
+        constructor(sample_rate, voice_count) {
+            const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);
+        }
+    }`;
+}
+
 function writeDistributedWasmFixture(root: string, binaryExport = 'allowed_instance_new'): void {
     for (const path of repositoryDistributedArtifacts.textArtifacts) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(
             join(root, path),
             repositoryDawDspArtifacts.has(path) && !path.endsWith('/package.json')
-                ? 'export class GrandBouleInstance {}'
+                ? grandBouleTextConstructorFixture(path)
                 : 'export class AllowedInstance {}'
         );
     }
@@ -126,17 +142,43 @@ fn tick() { input + delayed * self.delayed_gain; }`,
         ],
         [
             'crates/daw-dsp/src/grand_boule/parameters.rs',
-            '//! Project tuning curves and standard piano mappings for Grand Boule.',
+            `//! Project tuning curves and standard piano mappings for Grand Boule.
+fn curve(key: u32) {
+    let t = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+    let exponent = 7.86_f32 + 1.88 * t.powf(1.32) + 0.14 * t * (1.0 - t);
+}`,
+        ],
+        [
+            'crates/daw-dsp/src/grand_boule/coupled_strings.rs',
+            `//! No body or soundboard property enters string coefficient derivation.
+struct PolarizationDecay { prompt_hz: f32, aftersound_hz: f32 }
+fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
+    let register = note_frequency_hz;
+    PolarizationDecay {
+        prompt_hz: 0.58 + 0.72 * register + 7.2 * register.powf(2.4),
+        aftersound_hz: 0.012 + 0.025 * register + 0.105 * register * register,
+    }
+}`,
         ],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
         [
             'src/modules/GrandBoule/models/GrandBouleMorphState.ts',
             `export const voicings = [
-                { id: 'balanced-grand', name: 'Balanced Grand' },
-                { id: 'mellow-grand', name: 'Mellow Grand' },
-                { id: 'clear-grand', name: 'Clear Grand' },
-                { id: 'singing-grand', name: 'Singing Grand' },
-            ];`,
+                { id: 'balanced-grand', name: 'Balanced Grand', hammerHardnessScale: 0.92, hammerMassScale: 1.08, soundboardBrightness: 0.48, sympatheticLevel: 0.58, bodyResonance: 0.52, toneColor: -0.08
+                },
+                { id: 'mellow-grand', name: 'Mellow Grand', hammerHardnessScale: 0.72, hammerMassScale: 1.25, soundboardBrightness: 0.32, sympatheticLevel: 0.74, bodyResonance: 0.82, toneColor: -0.58
+                },
+                { id: 'clear-grand', name: 'Clear Grand', hammerHardnessScale: 1.34, hammerMassScale: 0.82, soundboardBrightness: 0.78, sympatheticLevel: 0.36, bodyResonance: 0.42, toneColor: 0.56
+                },
+                { id: 'singing-grand', name: 'Singing Grand', hammerHardnessScale: 1.12, hammerMassScale: 0.94, soundboardBrightness: 0.68, sympatheticLevel: 0.66, bodyResonance: 0.57, toneColor: 0.28
+                },
+            ];
+            const LEGACY_LOAD_ALIASES = {
+                'steinway-d': 'balanced-grand',
+                'bosendorfer-imperial': 'mellow-grand',
+                'yamaha-cfx': 'clear-grand',
+                'fazioli-f308': 'singing-grand',
+            };`,
         ],
         [
             'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
@@ -243,6 +285,31 @@ describe('release inventory', () => {
                 `export const model = { id: 'balanced-grand', name: 'Steinway Model D' };`
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('product voicing contract');
+
+            writeGrandBouleReleaseFixture(root);
+            writeFileSync(
+                join(root, 'crates/daw-dsp/src/grand_boule/coupled_strings.rs'),
+                'fn sigma_bridge_hz(fundamental_hz: f32) -> f32 { 0.8 + fundamental_hz * 0.004 }'
+            );
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('polarization-decay');
+
+            writeGrandBouleReleaseFixture(root);
+            writeFileSync(
+                join(root, 'crates/daw-dsp/src/grand_boule/parameters.rs'),
+                '//! Project tuning curves and standard piano mappings\nfn curve(key: u32) { let exponent = 8.0_f32 + 0.020 * (key as f32 - 1.0); }'
+            );
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('hammer-stiffness');
+
+            writeGrandBouleReleaseFixture(root);
+            const voicingsPath = join(root, 'src/modules/GrandBoule/models/GrandBouleMorphState.ts');
+            writeFileSync(
+                voicingsPath,
+                readFileSync(voicingsPath, 'utf8').replace(
+                    'hammerHardnessScale: 0.92, hammerMassScale: 1.08, soundboardBrightness: 0.48, sympatheticLevel: 0.58, bodyResonance: 0.52, toneColor: -0.08',
+                    'hammerHardnessScale: 1, hammerMassScale: 1, soundboardBrightness: 0.55, sympatheticLevel: 0.5, bodyResonance: 0.6, toneColor: 0'
+                )
+            );
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('legacy branded tuple');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -263,7 +330,55 @@ describe('release inventory', () => {
             writeDistributedWasmFixture(root);
             writeFileSync(join(root, path), 'export class AllowedInstance {}');
             expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
-                `Grand Boule must be exposed by distributed daw-dsp WASM surface ${path}`
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(
+        repositoryDistributedArtifacts.textArtifacts.filter(
+            (path) => repositoryDawDspArtifacts.has(path) && !path.endsWith('/package.json')
+        )
+    )('rejects a Grand Boule marker without the exact constructor in %s', (path) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-marker-'));
+        try {
+            writeDistributedWasmFixture(root);
+            writeFileSync(join(root, path), 'export const marker = "GrandBouleInstance grandbouleinstance_new";');
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(
+        repositoryDistributedArtifacts.textArtifacts.filter(
+            (path) =>
+                repositoryDawDspArtifacts.has(path) &&
+                !path.endsWith('/package.json') &&
+                !path.endsWith('_bg.wasm.d.ts')
+        )
+    )('rejects a Grand Boule class whose constructor text belongs to a decoy class in %s', (path) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-decoy-'));
+        try {
+            writeDistributedWasmFixture(root);
+            writeFileSync(
+                join(root, path),
+                path.endsWith('.d.ts')
+                    ? `export class GrandBouleInstance {}
+                       export class Decoy { constructor(sample_rate: number, voice_count: number); }`
+                    : `export class GrandBouleInstance {}
+                       export class Decoy {
+                           constructor(sample_rate, voice_count) {
+                               const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);
+                           }
+                       }`
+            );
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
@@ -279,7 +394,23 @@ describe('release inventory', () => {
                 writeDistributedWasmFixture(root);
                 writeFileSync(join(root, path), wasmWithFunctionExport('allowed_instance_new'));
                 expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
-                    `Grand Boule must be exposed by distributed daw-dsp WASM binary ${path}`
+                    `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
+                );
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it.each(repositoryDistributedArtifacts.wasmArtifacts.filter((path) => repositoryDawDspArtifacts.has(path)))(
+        'rejects a marker-only Grand Boule binary export in %s',
+        (path) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-binary-marker-'));
+            try {
+                writeDistributedWasmFixture(root);
+                writeFileSync(join(root, path), wasmWithFunctionExport('grandbouleinstance_marker'));
+                expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
+                    `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
                 );
             } finally {
                 rmSync(root, { recursive: true, force: true });

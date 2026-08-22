@@ -33,6 +33,8 @@ import { releaseGrandBouleNote } from '../../useCases/releaseGrandBouleNote';
 import { resolveGrandBouleEngine, type ResolvedGrandBouleEngine } from '../../useCases/resolveGrandBouleEngine';
 import { setGrandBouleAttackBite } from '../../useCases/setGrandBouleAttackBite';
 import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
+import { setGrandBouleMorphBalance } from '../../useCases/setGrandBouleMorphBalance';
+import { setGrandBouleMorphEnabled } from '../../useCases/setGrandBouleMorphEnabled';
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
 import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
@@ -265,7 +267,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         if (!engineReady) {
             return;
         }
-        setGrandBouleMorphPosition({ engine: engineRef.current, store: storeRef.current, morphPosition: 0 });
+        const currentMorphPosition = storeRef.current.value?.morph.morphPosition;
+        if (currentMorphPosition !== undefined) {
+            setGrandBouleMorphPosition({
+                engine: engineRef.current,
+                store: storeRef.current,
+                morphPosition: currentMorphPosition,
+            });
+        }
         // The two engine-consumed calibration values live on the store, which
         // outlives any one engine instance (`storesByDevice` is a module Map).
         // A device node rebuilt underneath a calibrated panel comes up on the
@@ -350,12 +359,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onMorphPositionChange={(position) =>
                                 setGrandBouleMorphPosition({ engine, store, morphPosition: position })
                             }
-                            onLayerBalanceChange={(balance) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, layerBalance: balance } });
-                                }
-                            }}
+                            onLayerBalanceChange={(balance) => setGrandBouleMorphBalance({ engine, store, balance })}
                             onModelAChange={(modelId) => {
                                 const s = store.value;
                                 if (s !== null) {
@@ -370,12 +374,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                     setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
                                 }
                             }}
-                            onEnabledChange={(enabled) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, enabled } });
-                                }
-                            }}
+                            onEnabledChange={(enabled) => setGrandBouleMorphEnabled({ engine, store, enabled })}
                         />
                     </SectionCard>
 

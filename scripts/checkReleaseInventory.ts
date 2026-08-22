@@ -253,11 +253,51 @@ export type DistributedWasmArtifactCensus = {
     wasmArtifacts: string[];
 };
 
-function namesGrandBoule(value: string): boolean {
-    return value
-        .replaceAll(/[^A-Za-z0-9]/g, '')
-        .toLowerCase()
-        .includes('grandboule');
+function exportedClassBody(source: string, declaration: string): string | undefined {
+    const declarationIndex = source.indexOf(declaration);
+    if (declarationIndex < 0) {
+        return undefined;
+    }
+    const openBrace = source.indexOf('{', declarationIndex + declaration.length);
+    if (openBrace < 0) {
+        return undefined;
+    }
+    let depth = 0;
+    for (let index = openBrace; index < source.length; index += 1) {
+        if (source[index] === '{') {
+            depth += 1;
+        } else if (source[index] === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return source.slice(openBrace + 1, index);
+            }
+        }
+    }
+    return undefined;
+}
+
+function hasGrandBouleConstructorText(path: string, source: string): boolean {
+    if (path.endsWith('_bg.wasm.d.ts')) {
+        return source
+            .split(/\r?\n/u)
+            .includes('export const grandbouleinstance_new: (a: number, b: number) => number;');
+    }
+    const classBody = exportedClassBody(source, 'export class GrandBouleInstance');
+    if (classBody === undefined) {
+        return false;
+    }
+    if (path.endsWith('.d.ts')) {
+        return classBody
+            .split(/\r?\n/u)
+            .some((line) => line.trim() === 'constructor(sample_rate: number, voice_count: number);');
+    }
+    if (path.endsWith('.js')) {
+        return (
+            classBody.includes('constructor(sample_rate, voice_count) {') &&
+            classBody.includes('const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);')
+        );
+    }
+    return false;
 }
 
 function filesRecursively(root: string, directory: string): string[] {
@@ -403,18 +443,90 @@ export function assertGrandBouleDesignAroundSource(root: string): void {
     if (/(?:Jaatinen|Pätynen|Hinrichsen|Steinway D|HAL RT|patent)/iu.test(parameters)) {
         throw new Error(`Grand Boule parameter provenance contains an unsupported source claim in ${parametersPath}`);
     }
+    if (!parameters.includes('let exponent = 7.86_f32 + 1.88 * t.powf(1.32) + 0.14 * t * (1.0 - t);')) {
+        throw new Error(`Grand Boule project hammer-stiffness curve is missing in ${parametersPath}`);
+    }
+    if (/8\.0_f32\s*\+\s*0\.020\s*\*\s*\(key as f32 - 1\.0\)/u.test(parameters)) {
+        throw new Error(`Grand Boule rejects the legacy hammer-stiffness formula in ${parametersPath}`);
+    }
+
+    const coupledStringsPath = 'crates/daw-dsp/src/grand_boule/coupled_strings.rs';
+    const coupledStrings = readFileSync(resolve(root, coupledStringsPath), 'utf8');
+    for (const required of [
+        'fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay',
+        'prompt_hz: 0.58 + 0.72 * register + 7.2 * register.powf(2.4)',
+        'aftersound_hz: 0.012 + 0.025 * register + 0.105 * register * register',
+        'No body or soundboard property enters string coefficient',
+    ]) {
+        if (!coupledStrings.includes(required)) {
+            throw new Error(
+                `Grand Boule project polarization-decay source is missing ${required} in ${coupledStringsPath}`
+            );
+        }
+    }
+    if (
+        /(?:sigma_bridge|bridge[- ]admittance|SIGMA_SLOW_SCALE|BRIDGE_COUPLING_GAIN|0\.8\s*\+\s*fundamental_hz\s*\*\s*0\.004)/iu.test(
+            coupledStrings
+        )
+    ) {
+        throw new Error(`Grand Boule rejects the legacy bridge-derived decay source in ${coupledStringsPath}`);
+    }
 
     const voicingsPath = 'src/modules/GrandBoule/models/GrandBouleMorphState.ts';
     const voicings = readFileSync(resolve(root, voicingsPath), 'utf8');
-    for (const id of ['balanced-grand', 'mellow-grand', 'clear-grand', 'singing-grand']) {
-        if (!voicings.includes(`id: '${id}'`)) {
+    const productVoicings = {
+        'balanced-grand': [0.92, 1.08, 0.48, 0.58, 0.52, -0.08],
+        'mellow-grand': [0.72, 1.25, 0.32, 0.74, 0.82, -0.58],
+        'clear-grand': [1.34, 0.82, 0.78, 0.36, 0.42, 0.56],
+        'singing-grand': [1.12, 0.94, 0.68, 0.66, 0.57, 0.28],
+    } as const;
+    const legacyVoicingTuples = [
+        [1, 1, 0.55, 0.5, 0.6, 0],
+        [0.6, 1.4, 0.25, 0.8, 0.9, -0.7],
+        [1.5, 0.7, 0.85, 0.3, 0.35, 0.7],
+        [1.2, 0.85, 0.75, 0.6, 0.5, 0.4],
+    ] as const;
+    const tupleFields = [
+        'hammerHardnessScale',
+        'hammerMassScale',
+        'soundboardBrightness',
+        'sympatheticLevel',
+        'bodyResonance',
+        'toneColor',
+    ] as const;
+    for (const [id, expectedTuple] of Object.entries(productVoicings)) {
+        const block = voicings.match(new RegExp(String.raw`\{\s*id:\s*['"]${id}['"][\s\S]*?\n\s*\}`, 'u'))?.[0];
+        if (block === undefined) {
             throw new Error(`Grand Boule product voicing contract is missing neutral id ${id} in ${voicingsPath}`);
+        }
+        const tuple = tupleFields.map((field) => {
+            const value = block.match(new RegExp(String.raw`${field}:\s*(-?\d+(?:\.\d+)?)`, 'u'))?.[1];
+            return value === undefined ? Number.NaN : Number(value);
+        });
+        if (legacyVoicingTuples.some((legacyTuple) => JSON.stringify(tuple) === JSON.stringify(legacyTuple))) {
+            throw new Error(
+                `Grand Boule product voicing contract rejects a legacy branded tuple for ${id} in ${voicingsPath}`
+            );
+        }
+        if (JSON.stringify(tuple) !== JSON.stringify(expectedTuple)) {
+            throw new Error(
+                `Grand Boule product voicing contract does not pin the project tuple for ${id} in ${voicingsPath}`
+            );
         }
     }
     if (/name:\s*['"](?:Steinway|Bösendorfer|Bosendorfer|Yamaha|Fazioli)/u.test(voicings)) {
         throw new Error(
             `Grand Boule product voicing contract rejects brand-specific display labels in ${voicingsPath}`
         );
+    }
+    const aliases = voicings.indexOf('const LEGACY_LOAD_ALIASES');
+    if (aliases < 0) {
+        throw new Error(`Grand Boule product voicing contract is missing legacy load aliases in ${voicingsPath}`);
+    }
+    for (const legacyId of ['steinway-d', 'bosendorfer-imperial', 'yamaha-cfx', 'fazioli-f308']) {
+        if (voicings.slice(0, aliases).includes(legacyId) || !voicings.slice(aliases).includes(`'${legacyId}'`)) {
+            throw new Error(`Grand Boule legacy id ${legacyId} must exist only as a load alias in ${voicingsPath}`);
+        }
     }
 }
 
@@ -429,16 +541,22 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
     for (const path of census.textArtifacts.filter(
         (artifact) => dawDspArtifacts.has(artifact) && !artifact.endsWith('/package.json')
     )) {
-        if (!namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
-            throw new Error(`Grand Boule must be exposed by distributed daw-dsp WASM surface ${path}`);
+        if (!hasGrandBouleConstructorText(path, readFileSync(resolve(root, path), 'utf8'))) {
+            throw new Error(
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
+            );
         }
     }
 
     for (const path of census.wasmArtifacts.filter((artifact) => dawDspArtifacts.has(artifact))) {
         const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
-        const grandBouleExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
-        if (grandBouleExport === undefined) {
-            throw new Error(`Grand Boule must be exposed by distributed daw-dsp WASM binary ${path}`);
+        const constructorExport = WebAssembly.Module.exports(module).find(
+            ({ name, kind }) => name === 'grandbouleinstance_new' && kind === 'function'
+        );
+        if (constructorExport === undefined) {
+            throw new Error(
+                `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
+            );
         }
     }
 }

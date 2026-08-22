@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:f2f00a28dd4f2d4a850b2986604aca1081c43278494186e75100c92383be726a
+// @wasm-bindgen-dts crate-source: sha256:85707e299233b71706e1170f0b9c8e717b6b83b238322e883cdcb6bea7fa3e78
 /* tslint:disable */
 /* eslint-disable */
 
@@ -897,7 +897,20 @@ export interface InitOutput {
     readonly crustinstance_process: (a: number, b: number) => number;
     readonly crustinstance_reset_true_peak: (a: number) => void;
     readonly crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
+    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
+    readonly kneadinstance_get_f0: (a: number) => number;
+    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
+    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
+    readonly kneadinstance_get_latency_samples: (a: number) => number;
+    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
+    readonly kneadinstance_get_periodicity: (a: number) => number;
+    readonly kneadinstance_get_right_ptr: (a: number) => number;
+    readonly kneadinstance_is_voiced: (a: number) => number;
+    readonly kneadinstance_new: (a: number) => number;
+    readonly kneadinstance_process: (a: number, b: number) => number;
+    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
+    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
+    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
     readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
     readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
@@ -929,6 +942,7 @@ export interface InitOutput {
     readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
     readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
     readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly levaininstance_abort_sample_bank: (a: number) => void;
     readonly levaininstance_active_voices: (a: number) => number;
     readonly levaininstance_add_legato_transition: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
@@ -991,20 +1005,6 @@ export interface InitOutput {
     readonly toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
-    readonly kneadinstance_get_f0: (a: number) => number;
-    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
-    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
-    readonly kneadinstance_get_latency_samples: (a: number) => number;
-    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
-    readonly kneadinstance_get_periodicity: (a: number) => number;
-    readonly kneadinstance_get_right_ptr: (a: number) => number;
-    readonly kneadinstance_is_voiced: (a: number) => number;
-    readonly kneadinstance_new: (a: number) => number;
-    readonly kneadinstance_process: (a: number, b: number) => number;
-    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
-    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
-    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly fermenterinstance_active_voices: (a: number) => number;

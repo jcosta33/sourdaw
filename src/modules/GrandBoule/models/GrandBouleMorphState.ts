@@ -26,7 +26,7 @@ export type GrandBouleMorphState = {
     modelB: string;
     /** Morph position: 0.0 = pure A, 1.0 = pure B. */
     morphPosition: number;
-    /** Layer balance: -1.0 = A only, 0 = equal, 1.0 = B only. */
+    /** Balance override: -1 = A, 0 = current morph position, +1 = B. */
     layerBalance: number;
     /** Whether the morph engine is active. */
     enabled: boolean;
@@ -40,46 +40,46 @@ export const BUILTIN_PIANO_MODELS = [
     {
         id: 'balanced-grand',
         name: 'Balanced Grand',
-        hammerHardnessScale: 1.0,
-        hammerMassScale: 1.0,
-        soundboardBrightness: 0.55,
-        sympatheticLevel: 0.5,
-        bodyResonance: 0.6,
-        toneColor: 0.0,
+        hammerHardnessScale: 0.92,
+        hammerMassScale: 1.08,
+        soundboardBrightness: 0.48,
+        sympatheticLevel: 0.58,
+        bodyResonance: 0.52,
+        toneColor: -0.08,
     },
     {
         id: 'mellow-grand',
         name: 'Mellow Grand',
-        hammerHardnessScale: 0.6,
-        hammerMassScale: 1.4,
-        soundboardBrightness: 0.25,
-        sympatheticLevel: 0.8,
-        bodyResonance: 0.9,
-        toneColor: -0.7,
+        hammerHardnessScale: 0.72,
+        hammerMassScale: 1.25,
+        soundboardBrightness: 0.32,
+        sympatheticLevel: 0.74,
+        bodyResonance: 0.82,
+        toneColor: -0.58,
     },
     {
         id: 'clear-grand',
         name: 'Clear Grand',
-        hammerHardnessScale: 1.5,
-        hammerMassScale: 0.7,
-        soundboardBrightness: 0.85,
-        sympatheticLevel: 0.3,
-        bodyResonance: 0.35,
-        toneColor: 0.7,
+        hammerHardnessScale: 1.34,
+        hammerMassScale: 0.82,
+        soundboardBrightness: 0.78,
+        sympatheticLevel: 0.36,
+        bodyResonance: 0.42,
+        toneColor: 0.56,
     },
     {
         id: 'singing-grand',
         name: 'Singing Grand',
-        hammerHardnessScale: 1.2,
-        hammerMassScale: 0.85,
-        soundboardBrightness: 0.75,
-        sympatheticLevel: 0.6,
-        bodyResonance: 0.5,
-        toneColor: 0.4,
+        hammerHardnessScale: 1.12,
+        hammerMassScale: 0.94,
+        soundboardBrightness: 0.68,
+        sympatheticLevel: 0.66,
+        bodyResonance: 0.57,
+        toneColor: 0.28,
     },
 ] as const satisfies readonly GrandBoulePianoModel[];
 
-const LEGACY_PRODUCT_VOICING_IDS: Readonly<Record<string, string>> = Object.freeze({
+const LEGACY_LOAD_ALIASES: Readonly<Record<string, string>> = Object.freeze({
     'steinway-d': 'balanced-grand',
     'bosendorfer-imperial': 'mellow-grand',
     'yamaha-cfx': 'clear-grand',
@@ -101,6 +101,6 @@ export function createDefaultMorphState(): GrandBouleMorphState {
  * existing serialized projects resolve to the corresponding neutral voicing.
  */
 export function findPianoModelById(id: string): GrandBoulePianoModel | undefined {
-    const canonicalId = LEGACY_PRODUCT_VOICING_IDS[id] ?? id;
+    const canonicalId = LEGACY_LOAD_ALIASES[id] ?? id;
     return BUILTIN_PIANO_MODELS.find((model) => model.id === canonicalId);
 }

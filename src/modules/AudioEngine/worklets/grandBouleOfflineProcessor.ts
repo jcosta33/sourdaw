@@ -43,8 +43,9 @@ import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
-    createGrandBouleNoteQueue,
+    createGrandBouleFrameQueue,
     dispatch,
+    isFramedGrandBouleMsg,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
@@ -167,7 +168,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _faultMessage: string | null = null;
     _pendingMessages: GrandBouleControlMessage[] = [];
     _paramAutomation: ScheduledParam[][] = [[], [], [], [], []];
-    _queue = createGrandBouleNoteQueue();
+    _queue = createGrandBouleFrameQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
     // identity change (audit RT-7). In steady state `update` performs four
     // primitive comparisons and allocates nothing.
@@ -258,12 +259,10 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             return;
         }
         // Offline scheduling posts the complete part before rendering starts.
-        // Hold a note exactly on the next frame so frame-zero automation reaches
-        // the sleeping engine first; preserve the shared host behavior for notes
-        // already inside the remainder of the current quantum and for late notes.
-        const holdAtCurrentFrame =
-            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
-            msg.sampleFrame === currentFrame;
+        // Hold a framed event exactly on the next frame so frame-zero automation
+        // reaches the sleeping engine first; preserve shared behavior for events
+        // already inside the remainder of the current quantum and for late ones.
+        const holdAtCurrentFrame = isFramedGrandBouleMsg(msg) && msg.sampleFrame === currentFrame;
         receiveGrandBouleMessage({
             instance,
             queue: this._queue,

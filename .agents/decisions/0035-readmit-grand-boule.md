@@ -7,11 +7,13 @@ date: 2026-08-22
 owner: The Sourdaw team
 supersedes:
     - 0032
+    - 0033
     - 0034
 sources:
     - https://patents.google.com/patent/US7915515B2/en#claims
     - crates/daw-dsp/src/grand_boule/mod.rs
     - crates/daw-dsp/src/grand_boule/parameters.rs
+    - crates/daw-dsp/src/grand_boule/coupled_strings.rs
     - crates/daw-dsp/src/grand_boule/string.rs
     - crates/daw-dsp/src/grand_boule/engine.rs
     - crates/daw-dsp/src/grand_boule/soundboard.rs
@@ -60,9 +62,12 @@ Control changes select existing data and never rebuild kernels or alter string s
 owns all allocation; processing and control updates allocate nothing.
 
 Independently revoice the ambiguous project parameter families: hammer mass and exponent,
-inharmonicity `B`, and the smooth and note-varying Railsback-style tuning curves. They are labelled
-as project tuning rather than measurements or published instrument data. Standard temperament,
-MIDI, equal-temperament, and ordinary piano-range facts remain ordinary engineering inputs.
+hammer stiffness, inharmonicity `B`, and the smooth and note-varying Railsback-style tuning curves.
+The prompt and aftersound polarization decay curves are likewise project-authored and derive only
+from each string's frequency; they receive no soundboard or body input and represent no measurable
+soundboard property. These families are labelled as project tuning rather than measurements or
+published instrument data. Standard temperament, MIDI, equal-temperament, and ordinary piano-range
+facts remain ordinary engineering inputs.
 
 Replace unmeasured brand-specific morph labels and newly written IDs with neutral product voicings.
 Legacy IDs remain accepted only to load existing serialized projects and resolve immediately to the
@@ -76,8 +81,7 @@ from string coefficients, output level, and allocation freedom with the FIR tail
 ## Consequences
 
 - ADR 0032's withholding decision and ADR 0034's native-only WASM decision are superseded.
-- ADR 0033 remains historical architecture context; the new FIR body preserves its aggregate
-  bridge boundary while replacing the resonator implementation it described.
+- ADR 0033 is superseded; its historical body remains as context for the architecture it described.
 - Grand Boule is release-reachable on web and desktop under the project-source grant recorded by
   the release inventory.
 - This is an engineering design-around record for the exact implementation and claim text reviewed.

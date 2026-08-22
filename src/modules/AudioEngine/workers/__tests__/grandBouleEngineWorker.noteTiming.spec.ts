@@ -40,6 +40,8 @@ const RIGHT_PTR = BLOCK_FRAMES * Float32Array.BYTES_PER_ELEMENT;
 /** Engine block the worker is about to produce when a note is voiced. */
 type Voiced = { note: number; block: number };
 const voiced: Voiced[] = [];
+type FramedParam = { name: string; value: number; block: number };
+const framedParams: FramedParam[] = [];
 
 class GrandBouleInstanceMock {
     note_on_with_channel(note: number, _velocity: number, _channel: number): void {
@@ -48,7 +50,9 @@ class GrandBouleInstanceMock {
     note_off(_note: number): void {}
     note_off_on_channel(_note: number, _channel: number): void {}
     note_expression(): void {}
-    set_param(): void {}
+    set_param(name: string, value: number): void {
+        framedParams.push({ name, value, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES });
+    }
     set_sustain(): void {}
     set_una_corda(): void {}
     set_sostenuto(): void {}
@@ -139,6 +143,7 @@ function runEngineTo(blocks: number): void {
 describe('Grand Boule engine worker note placement', () => {
     beforeEach(async () => {
         voiced.length = 0;
+        framedParams.length = 0;
         new Int32Array(syncSab).fill(0);
         await import('../grandBouleEngineWorker');
         await import('../../worklets/grandBouleProcessor');
@@ -192,6 +197,22 @@ describe('Grand Boule engine worker note placement', () => {
         }
 
         expect(voiced).toEqual([{ note: 60, block: 7 }]);
+    });
+
+    it('holds a live parameter until the producer block mapped to its context frame', () => {
+        renderTick();
+        const contextStart = 5_000 * BLOCK_FRAMES;
+        consumeBlock(contextStart);
+
+        send({ type: 'param', name: 'toneColor', value: 0.35, sampleFrame: contextStart + 900 });
+        expect(framedParams).toEqual([]);
+
+        for (let block = 1; block <= 8; block++) {
+            renderTick();
+            consumeBlock(contextStart + block * BLOCK_FRAMES);
+        }
+
+        expect(framedParams).toEqual([{ name: 'tone_color', value: 0.35, block: 7 }]);
     });
 
     it('voices the first recovered block against the next audible frame after an underrun', () => {
