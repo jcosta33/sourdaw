@@ -113,6 +113,15 @@ const DDSP_MODEL_ENFORCEMENT_PATHS = [
     'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
     'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
     'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+    'src/modules/BrowserAi/useCases/downloadModel.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/removeModel.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
 
 export const DDSP_MODEL_PATHS = [
@@ -120,17 +129,8 @@ export const DDSP_MODEL_PATHS = [
     'electron/protocol.ts',
     'public/legal/THIRD-PARTY-NOTICES.md',
     'scripts/checkReleaseInventory.ts',
-    'src/infra/release/modelReleaseAdmission.ts',
     'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
-    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
-    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
     ...DDSP_MODEL_ENFORCEMENT_PATHS,
-    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
-    'src/modules/BrowserAi/useCases/downloadModel.ts',
-    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
-    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
-    'src/modules/BrowserAi/useCases/removeModel.ts',
-    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {

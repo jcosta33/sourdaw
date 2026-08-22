@@ -48,6 +48,15 @@ const ddspModelEnforcementPaths = [
     'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
     'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
     'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+    'src/modules/BrowserAi/useCases/downloadModel.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/removeModel.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
 
 function sha256(value: string): string {
@@ -402,14 +411,20 @@ describe('release inventory', () => {
         }
     );
 
-    it('rejects drift in the DDSP storage verification enforcement chain', () => {
+    it.each([
+        'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+        'src/infra/release/modelReleaseAdmission.ts',
+        'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+        'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+        'src/modules/BrowserAi/useCases/downloadModel.ts',
+        'src/modules/BrowserAi/useCases/removeModel.ts',
+    ])('rejects drift in admitted DDSP enforcement %s', (changedPath) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-enforcement-'));
-        const changedPath = 'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts';
         writeDdspModelContractFixture(root, 'admitted manifest');
 
         try {
             const admitted = ddspModelsReleaseInventoryContract(root);
-            writeFileSync(join(root, changedPath), 'changed storage verification enforcement');
+            writeFileSync(join(root, changedPath), `changed enforcement:${changedPath}`);
 
             expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
                 'DDSP models release inventory digests does not match provenance'
