@@ -1,7 +1,7 @@
 /**
- * Morph/layer panel for the Grand Boule piano plugin (spec §3.1).
+ * Morph/layer panel for the Grand Boule piano plugin.
  *
- * Lets the user pick two piano models, blend between them with a morph
+ * Lets the user pick two product voicings, blend between them with a morph
  * knob, adjust layer balance, and toggle the morph engine on/off.
  */
 
@@ -17,12 +17,13 @@ import {
     type GrandBouleMorphState,
     type GrandBoulePianoModel,
     BUILTIN_PIANO_MODELS,
+    findPianoModelById,
 } from '../../models/GrandBouleMorphState';
 
 type MorphPanelProps = {
     morph: GrandBouleMorphState;
-    onMorphPositionChange: (value: number) => void;
-    onLayerBalanceChange: (value: number) => void;
+    onMorphPositionChange: (value: number, isTransient?: boolean) => void;
+    onLayerBalanceChange: (value: number, isTransient?: boolean) => void;
     onModelAChange: (modelId: string) => void;
     onModelBChange: (modelId: string) => void;
     onEnabledChange: (enabled: boolean) => void;
@@ -83,7 +84,7 @@ const MorphKnob = ({
     max: number;
     step: number;
     defaultValue: number;
-    onChange: (value: number) => void;
+    onChange: (value: number, isTransient?: boolean) => void;
     readout: string;
 }): ReactElement => (
     <Stack align="center" gap={1}>
@@ -160,14 +161,14 @@ export const MorphPanel = ({
     onModelBChange,
     onEnabledChange,
 }: MorphPanelProps): ReactElement => {
-    const modelA = BUILTIN_PIANO_MODELS.find((m) => m.id === morph.modelA);
-    const modelB = BUILTIN_PIANO_MODELS.find((m) => m.id === morph.modelB);
+    const modelA = findPianoModelById(morph.modelA);
+    const modelB = findPianoModelById(morph.modelB);
 
     return (
         <DawPluginSectionCard
             className="grand-boule-window"
             title="Morph"
-            detail="Blend between piano models (§3.1)."
+            detail="Blend between piano models."
             titleClassName="text-neutral-400/80"
         >
             <Stack gap={3}>
@@ -185,8 +186,8 @@ export const MorphPanel = ({
 
                 {/* Model selectors */}
                 <Grid cols={2} gap={2}>
-                    <ModelSelector label="Model A" selectedId={morph.modelA} onSelect={onModelAChange} />
-                    <ModelSelector label="Model B" selectedId={morph.modelB} onSelect={onModelBChange} />
+                    <ModelSelector label="Model A" selectedId={modelA?.id ?? morph.modelA} onSelect={onModelAChange} />
+                    <ModelSelector label="Model B" selectedId={modelB?.id ?? morph.modelB} onSelect={onModelBChange} />
                 </Grid>
 
                 {/* Blend indicator */}

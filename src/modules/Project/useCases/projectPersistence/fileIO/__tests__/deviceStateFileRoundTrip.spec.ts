@@ -53,6 +53,9 @@ describe('device state through the project file', () => {
             JSON.stringify({
                 version: CURRENT_PROJECT_VERSION,
                 meta: {
+                    // Required by isHydratableProjectData; this fixture
+                    // predates that hardening.
+                    projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
                     name: 'Round trip',
                     createdAt: 0,
                     updatedAt: 0,

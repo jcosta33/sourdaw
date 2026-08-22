@@ -1,19 +1,20 @@
 version: 2
 updates:
-  # Keep npm metadata for security updates; routine version PRs are disabled.
+  # Version pull requests are open again: hosted checks verify an update now,
+  # which is what made them not worth opening before.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     labels:
       - "security"
 
-  # Keep Cargo metadata for security updates; routine version PRs are disabled.
+  # Same for the Cargo tree.
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     labels:
       - "security"

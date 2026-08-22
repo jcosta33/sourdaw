@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 const cancelOnnxRequest = vi.hoisted(() => vi.fn());
 const cancelTfjsRequest = vi.hoisted(() => vi.fn());
 const terminateOnnxWorker = vi.hoisted(() => vi.fn());
@@ -15,9 +17,13 @@ vi.mock('../../repositories/inferenceWorkerBridge', () => ({
 }));
 
 import { type ActiveRender } from '../../models/RenderProgress';
+import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';
 import { inferenceProgressStore, startActiveRender } from '../../stores/inferenceProgressStore';
 import { enqueueRender, markRenderComplete, renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
+
+const cancelOwnedRequest = vi.fn();
+const logger = { info: vi.fn() };
 
 function seedActiveRender(over: Partial<ActiveRender> = {}): ActiveRender {
     const render: ActiveRender = {
@@ -40,6 +46,12 @@ describe('cancelRender', () => {
         cancelTfjsRequest.mockClear();
         terminateOnnxWorker.mockClear();
         terminateTfjsWorker.mockClear();
+        cancelOwnedRequest.mockReset();
+        logger.info.mockReset();
+        injectDependencies(cancelRender, {
+            logger,
+            renderRequestCancellation: { ...renderRequestCancellation, cancel: cancelOwnedRequest },
+        });
         // Reset stores to a clean slate between cases.
         inferenceProgressStore.set({ activeRenders: {} });
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
@@ -263,6 +275,7 @@ describe('cancelRender', () => {
 
         expect(renderQueueStore.value?.entries).toEqual([]);
         expect(renderQueueStore.value?.phraseStatusMap['phrase-A']).toBe('not-rendered');
+        expect(cancelOwnedRequest).toHaveBeenCalledWith('phrase-A', 'req-current');
     });
 
     it('clears the cancelled render from the active-render store', () => {

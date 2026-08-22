@@ -28,15 +28,7 @@ import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
-/**
- * Types withheld *on top of* the production set, never instead of it. The real
- * `isDeviceReleaseAdmitted` still answers for everything this set does not name,
- * so the tests below that use `grand-boule` keep reading the shipped admission
- * list and still go red if it is emptied. This exists only so a topology can be
- * covered for a type the build does not withhold today — the mechanism is meant
- * to generalise past `grand-boule`, and a topology it structurally cannot reach
- * is a defect whether or not it is reachable right now.
- */
+/** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
 
 vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
@@ -418,16 +410,11 @@ describe('scheduleMidiNotes', () => {
         expect(noteOff.mock.calls[0]).toEqual([62, 18000, 0]);
     });
 
-    // The first two here name `grand-boule` and so read the production withheld
-    // set (ADR 0032); only the toaster case injects a type. A track whose
-    // instrument the build withholds reaches this scheduler with the device in
-    // `track.devices` and no node on the strip — indistinguishable, from
-    // `deviceNodes` alone, from an instrument whose node failed to construct.
-    // The scheduler used to treat both the same way and hand the part to the
-    // builtin sawtooth, which is the "plausible wrong instrument" failure: the
-    // project plays back as if it contained something it does not, and the user
-    // is never told.
     describe('a device the build withholds', () => {
+        beforeEach(() => {
+            injectedWithheldDeviceTypes.add('grand-boule');
+        });
+
         function givenNoteOnTrack(deviceType: string) {
             const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'd-1', type: deviceType }] });
             (trackStore as { value: unknown }).value = { tracks: [track] };

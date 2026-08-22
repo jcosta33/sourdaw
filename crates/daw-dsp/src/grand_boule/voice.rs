@@ -55,11 +55,11 @@ pub enum VoiceStage {
     Idle,
     Active,
     Releasing,
-    /// A ~1 ms fast fade-out applied when the voice is stolen (§4.2).
+    /// A ~1 ms fade-out applied when the voice is stolen.
     Stealing,
 }
 
-/// Voice rendering quality. Drives progressive simplification (§4.1).
+/// Voice rendering quality. Drives progressive simplification.
 /// * `High` — Stulov hysteresis hammer + full modal bank.
 /// * `Standard` — power-law hammer + full modal bank.
 /// * `Simplified` — power-law hammer + half-partials modal bank (cheapest).
@@ -115,7 +115,7 @@ pub struct PianoVoice {
     fundamental_hz: f32,
     /// Steady-state fundamental, after the pitch-glide settles. The voice
     /// is configured at a slightly higher frequency on attack and retuned
-    /// down to this value once the glide countdown expires (§A5.2).
+    /// down to this value once the glide countdown expires.
     nominal_fundamental_hz: f32,
     /// Samples remaining until the pitch-glide retune fires. Zero ⇒ done.
     pitch_glide_samples_remaining: u32,
@@ -273,7 +273,7 @@ impl PianoVoice {
         self.release_coefficient = STEAL_SILENCE_GAIN.powf(1.0 / fade_samples);
     }
 
-    /// Voice-stealing priority per spec §4.2. Higher tuples are better
+    /// Voice-stealing priority. Higher tuples are better
     /// victims. The first field ranks lifecycle and key ownership; the second
     /// chooses the oldest voice within that class without converting the
     /// sample clock to an imprecise loudness proxy.
@@ -326,7 +326,7 @@ impl PianoVoice {
         let nominal_fundamental = key_fundamental_hz(key) * pitch_ratio;
         let strike_ratio = hammer_strike_ratio(key);
 
-        // Pitch glide from tension modulation (§A5.2). Large-amplitude
+        // Pitch glide from tension modulation. Large-amplitude
         // transverse vibration raises mean tension, sharping the partials
         // by a few cents on attack; the offset decays with τ ≈ 100 ms as
         // energy bleeds out. We approximate this with a one-shot retune:
@@ -345,19 +345,16 @@ impl PianoVoice {
             0
         };
 
-        // Stulov asymmetry coefficient `a`. Stulov (2005) reports a ≈ 310 µs
-        // for note 49; the felt becomes stiffer and slightly more lossy on
-        // short treble hammers. We linearly interpolate around the published
-        // anchor and disable it on the cheaper quality tiers.
+        // Project asymmetry voicing: short treble hammers are slightly more
+        // lossy. Disabled on the cheaper quality tiers.
         let stulov_a = if self.quality == VoiceQuality::High {
             (0.000_25 + 0.000_002 * (key as f32 - 49.0)).max(0.0)
         } else {
             0.0
         };
 
-        // Velocity-dependent contact lowpass (§A2.4 — the #1 perceptual
-        // priority per the realism appendix). The min/max cutoff is set per
-        // register from Russell & Rossing (1998) anchor data:
+        // Velocity-dependent contact low-pass. The min/max cutoff follows
+        // register anchors from Russell & Rossing (1998):
         //   bass  v=1 m/s ⇒ ~200 Hz, v=5 m/s ⇒ ~500 Hz
         //   treble v=1 m/s ⇒ ~2 kHz, v=5 m/s ⇒ ~6 kHz
         let key_norm = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
@@ -377,12 +374,9 @@ impl PianoVoice {
             contact_lp_alpha,
         };
 
-        // Base partial bandwidth controls the T60 of the note (intrinsic
-        // string damping σ_string). The formula produces ~0.06 Hz for bass
-        // (T60 ≈ 23 s) ramping to ~0.9 Hz for treble (T60 ≈ 2.4 s). The
-        // bridge coupling constant SIGMA_BRIDGE_HZ (4 Hz) in CoupledStringAssembly
-        // separately drives the fast prompt-sound decay; this value only governs
-        // the slow aftersound tail.
+        // Base partial bandwidth controls the modal string tail. The coupled
+        // assembly adds its separate project-authored prompt and aftersound
+        // decay bandwidths from each detuned string frequency.
         let base_bandwidth = 0.05 + 0.0002 * fundamental;
         self.attack_key = 0;
         self.attack_position = 0;
@@ -407,7 +401,7 @@ impl PianoVoice {
         self.duplex.reset();
 
         // Strike velocity scales with MIDI velocity. A velocity of 1.0 maps to
-        // ~4 m/s, matching measurements from Askenfelt/Jansson.
+        // ~4 m/s at the top of the project velocity range.
         self.hammer.strike(0.8 + 4.0 * self.velocity);
         self.arm_attack(key, attack_length);
     }
@@ -552,7 +546,7 @@ impl PianoVoice {
             return 0.0;
         }
 
-        // One-shot pitch-glide retune (§A5.2). The voice was configured at
+        // One-shot pitch-glide retune. The voice was configured at
         // a sharped fundamental on attack; once the countdown expires we
         // re-tune the resonator decay coefficients to the nominal frequency
         // to model the tension settling back as energy radiates away. Only
@@ -636,7 +630,7 @@ impl PianoVoice {
             }
         }
 
-        // Progressive simplification (§4.1): as the voice ages and quiets
+        // Progressive simplification: as the voice ages and quiets
         // down, downgrade it through the quality tiers.
         //
         // The first step reads the follower, as a fraction of this note's own

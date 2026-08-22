@@ -17,6 +17,7 @@ use daw_dsp::crumbs::analysis::pitch::detect_pitch;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
+use daw_engine::audio_bridge::MAX_BLOCK_FRAMES;
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -209,11 +210,11 @@ pub async fn create_crumbs(
         };
         engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
 
-        let mut bridges = app_state
+        let mut feed = app_state
             .audio_bridges
             .lock()
             .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-        bridges.insert(id, bridge_handle);
+        feed.bridges.insert(id, bridge_handle);
 
         id
     } else {
@@ -267,11 +268,11 @@ pub async fn destroy_crumbs(
             Ok(())
         })(&app_state);
 
-        let mut bridges = app_state
+        let mut feed = app_state
             .audio_bridges
             .lock()
             .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-        bridges.remove(&instance.engine_plugin_id);
+        feed.bridges.remove(&instance.engine_plugin_id);
 
         removal_result?;
     }
@@ -717,6 +718,81 @@ pub async fn stop_recording(instance_id: String, state: &CrumbsState) -> Result<
     Ok(())
 }
 
+/// Push one block of monitored input audio into every registered crumbs
+/// record bridge — the record feed's producer, the counterpart of the CLAP
+/// worklet relay (`process_plugin_audio`).
+///
+/// The feed carries the app's monitored input bus: the stereo stream input
+/// monitoring plays, handed in once per render quantum as interleaved
+/// little-endian f32 bytes (L0,R0,L1,R1,...) by the caller that owns that
+/// bus. Every registered sampler hears the same block, because an armed pad
+/// records exactly what the musician hears on the monitored input, and the
+/// map holds only crumbs bridges. The audio thread pops the far end of each
+/// ring through the scheduler and feeds the blocks to the engine's record
+/// input before rendering, so without this push an armed capture records
+/// silence end-to-end.
+///
+/// Real-time discipline mirrors the CLAP relay: the command runs on the
+/// command side, takes exactly one lock (map and scratch live under it), and
+/// touches each bridge only through its lock-free SPSC ring — the native
+/// render callback never takes this lock. The scratch is preallocated and
+/// refilled in place, so the path allocates nothing per block, and a block
+/// larger than `MAX_BLOCK_FRAMES` is refused before the de-interleave.
+///
+/// A refused push means the input ring was full — a hole in the take, not a
+/// dropped frame of monitoring — so it is counted in
+/// `bridge_input_blocks_refused` rather than failing the caller, which is
+/// already running behind when this happens.
+///
+/// The crumbs bridge is one-way by design: the sampler's audible output
+/// travels the wasm device graph, not this ring. Processed blocks are popped
+/// and dropped so the return ring cannot wedge at capacity and inflate the
+/// drop counters for the whole session.
+pub async fn feed_record_input(audio_bytes: Vec<u8>, app_state: &AppState) -> Result<(), String> {
+    let mut feed = app_state
+        .audio_bridges
+        .lock()
+        .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
+
+    // Interleaved stereo f32: two samples, four bytes each, per frame.
+    const BYTES_PER_FRAME: usize = 2 * std::mem::size_of::<f32>();
+    let frames = audio_bytes.len() / BYTES_PER_FRAME;
+
+    if frames > MAX_BLOCK_FRAMES {
+        state_refused_block(app_state);
+        return Ok(());
+    }
+
+    // Split borrows so the scratch feeds every bridge without cloning: the
+    // map and the scratch live under one lock but bind to distinct fields.
+    let crate::state::CrumbsRecordFeed { bridges, scratch } = &mut *feed;
+    scratch.left.clear();
+    scratch.right.clear();
+    for frame in audio_bytes.chunks_exact(BYTES_PER_FRAME) {
+        scratch
+            .left
+            .push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
+        scratch
+            .right
+            .push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
+    }
+
+    for bridge in bridges.values_mut() {
+        if !bridge.push_input(&scratch.left, &scratch.right) {
+            state_refused_block(app_state);
+        }
+        while bridge.pop_output().is_some() {}
+    }
+    Ok(())
+}
+
+/// Count one input block the record feed could not hand to a bridge.
+fn state_refused_block(app_state: &AppState) {
+    app_state
+        .bridge_input_blocks_refused
+        .fetch_add(1, Ordering::Relaxed);
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /// The name table lives in `daw_dsp::crumbs::types` so this command and the
@@ -920,5 +996,124 @@ mod tests {
         // Mirrors destroy_crumbs: the instance (and its ring endpoints) is
         // removed/dropped without draining.
         drop(instance);
+    }
+
+    /// Issue #2231 (live defect): the crumbs record feed had a consumer — the
+    /// audio thread's bridge drain feeding the slot's record input — but no
+    /// producer, so an armed capture recorded silence end-to-end. This drives
+    /// the producer end to end: the `audio_bridges` registration
+    /// `create_crumbs` performs, the real `feed_record_input` command, and
+    /// the same `drain_process` pass the render callback runs per device
+    /// period, joined to a real `CrumbsPluginSlot`. (`create_crumbs` itself
+    /// cannot run here — it boots a real output device — so the test wires
+    /// its seam by hand.) Remove the producer and the committed take holds
+    /// silence instead of the input.
+    #[test]
+    fn record_feed_command_pushes_monitored_input_into_the_armed_take() {
+        use daw_engine::audio_bridge::create_audio_bridge;
+        use daw_engine::plugin_slot::NativePlugin;
+
+        let app_state = AppState::default();
+        let state = CrumbsState::default();
+
+        // The seam create_crumbs wires in production: a scheduler slot
+        // paired with a bridge, the handle registered in the shared record
+        // feed under the reserved engine plugin id.
+        let (command_tx, command_rx) = rtrb::RingBuffer::new(8);
+        let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
+        let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
+        let mut engine = CrumbsEngine::new(48_000.0);
+        engine.enable_commit_handoff();
+        let mut slot = CrumbsPluginSlot {
+            engine,
+            command_rx,
+            commit_tx,
+            recycle_rx,
+        };
+        let instance = CrumbsInstanceData {
+            command_tx,
+            samples: HashMap::new(),
+            metering: Arc::new(CrumbsMetering::default()),
+            engine_plugin_id: 1000,
+            next_sample_id: 1,
+            commit_rx,
+            recycle_tx,
+            pending_mirror: Vec::new(),
+        };
+        let (mut bridge, bridge_handle) = create_audio_bridge(1000);
+        app_state
+            .audio_bridges
+            .lock()
+            .unwrap()
+            .bridges
+            .insert(1000, bridge_handle);
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .insert("sampler".to_string(), instance);
+
+        // The napi command surface: mode, arm, feed, stop.
+        crate::block_on_test(set_crumbs_mode(
+            "sampler".to_string(),
+            "record".to_string(),
+            &state,
+        ))
+        .unwrap();
+        crate::block_on_test(arm_recording("sampler".to_string(), 0.01, 0, 10.0, &state)).unwrap();
+
+        let interleaved = |left: f32, right: f32, frames: usize| {
+            let mut bytes = Vec::with_capacity(frames * 8);
+            for _ in 0..frames {
+                bytes.extend_from_slice(&left.to_le_bytes());
+                bytes.extend_from_slice(&right.to_le_bytes());
+            }
+            bytes
+        };
+
+        // Four quanta of monitored input (L=0.5, R=0.25 — the channels are
+        // distinct so a swap cannot pass), each followed by the render
+        // callback's per-period pass: budget = a 512-frame period plus one
+        // quantum of catch-up, target depth two periods plus slack, exactly
+        // as the scheduler computes them.
+        for _ in 0..4 {
+            crate::block_on_test(feed_record_input(interleaved(0.5, 0.25, 128), &app_state))
+                .unwrap();
+            bridge.drain_process(512 + 128, 10, |left, right, frames| {
+                slot.process_bridged_audio(left, right, frames)
+            });
+        }
+
+        crate::block_on_test(stop_recording("sampler".to_string(), &state)).unwrap();
+        // One more fed (silent) block so a drain pass consumes the stop and
+        // the engine hands the commit to the ring — the flush the slot
+        // tests perform with a bare process call.
+        crate::block_on_test(feed_record_input(interleaved(0.0, 0.0, 128), &app_state)).unwrap();
+        bridge.drain_process(512 + 128, 10, |left, right, frames| {
+            slot.process_bridged_audio(left, right, frames)
+        });
+
+        let mut instances = state.instances.lock().unwrap();
+        let instance = instances.get_mut("sampler").unwrap();
+        drain_pending_recording_commits(instance);
+        let sample = instance.samples.get(&1).expect("armed take registered");
+        assert_eq!(sample.meta.frame_count as usize, 512);
+        assert!(
+            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "the take must hold the fed monitored input, not silence"
+        );
+        assert!(
+            sample.right.iter().all(|&s| (s - 0.25).abs() < 1.0e-6),
+            "the take must hold the fed monitored input on the right channel too"
+        );
+        drop(instances);
+
+        // The happy path refuses nothing: every block found ring capacity.
+        assert_eq!(
+            app_state
+                .bridge_input_blocks_refused
+                .load(Ordering::Relaxed),
+            0
+        );
     }
 }

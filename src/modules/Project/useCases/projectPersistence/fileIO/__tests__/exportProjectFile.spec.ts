@@ -19,7 +19,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { tracks: [] } },
+    // `subscribe` is required: loading the real Yeast stores module (via
+    // buildProjectData) subscribes to the track store at import time.
+    trackStore: { value: { tracks: [] }, subscribe: () => () => undefined },
     markerStore: { value: { markers: [] } },
     takeLaneStore: { value: undefined },
     adjustmentLayerStore: { value: { layers: [] } },
@@ -46,6 +48,9 @@ vi.mock('../../../../stores/arrangementStore', () => ({
 vi.mock('../../../../stores/projectStore', () => ({
     projectStore: {
         value: {
+            // buildProjectData refuses to serialize without a canonical
+            // project id; this fixture predates that guard.
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             name: 'P',
             createdAt: 1,
             keyRoot: 0,

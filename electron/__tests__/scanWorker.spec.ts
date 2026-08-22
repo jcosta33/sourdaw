@@ -86,9 +86,23 @@ describe('the supervisor request', () => {
     });
 });
 
+// Dictation is not reachable through `nativeCommand`; these satisfy the host
+// shape and throw so a test that somehow routes into one fails loudly.
+const dictationStubs = {
+    startDictation: () => {
+        throw new Error('Unexpected dictation call: startDictation');
+    },
+    stopDictation: () => {
+        throw new Error('Unexpected dictation call: stopDictation');
+    },
+    cancelDictation: () => {
+        throw new Error('Unexpected dictation call: cancelDictation');
+    },
+} satisfies Pick<NativeHost, 'startDictation' | 'stopDictation' | 'cancelDictation'>;
+
 describe('reading a method off the addon', () => {
     it('returns the implementation the host publishes', () => {
-        const host: NativeHost = { shutdown: () => undefined, scanPlugins: () => ['a'] };
+        const host: NativeHost = { shutdown: () => undefined, ...dictationStubs, scanPlugins: () => ['a'] };
 
         expect(nativeCommand(host, 'scanPlugins')([])).toEqual(['a']);
     });
@@ -96,7 +110,7 @@ describe('reading a method off the addon', () => {
     it('fails by name when an addon build does not publish it', () => {
         // `undefined is not a function`, thrown from inside a message handler,
         // gives no way to tell which method a stale addon is missing.
-        expect(() => nativeCommand({ shutdown: () => undefined }, 'scanPlugins')).toThrow(
+        expect(() => nativeCommand({ shutdown: () => undefined, ...dictationStubs }, 'scanPlugins')).toThrow(
             /does not implement scanPlugins/u
         );
     });

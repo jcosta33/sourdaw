@@ -184,10 +184,8 @@ export type BuildDeviceChainContext = {
  * Device failures split three ways, and the split is about what the user loses,
  * not about which line threw:
  *
- * - Release admission refuses the device (ADR 0032). This is decided *before*
- *   construction and never reaches the catch below, because a withheld device
- *   is not a device that failed: withholding is permanent, and the projects
- *   that carry the device are the ordinary case rather than an edge. The device
+ * - Release admission refuses the device before construction. A withheld device
+ *   is not a device that failed. The device
  *   stays in the chain as a silent stand-in, so the offline scheduler still
  *   sees an instrument and does not substitute the fallback synth for it. See
  *   `createWithheldDeviceStrategy`.

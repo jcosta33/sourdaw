@@ -17,9 +17,10 @@
  *
  * # Where a cost is charged
  *
- * Rows are separated by **cost site** rather than lumped into one budget. Grand
- * Boule has no browser-WASM DSP row or constructor. Its retained ring-consumer
- * row measures host transport only. See `COST_SITE` in `deviceRecipes.js`.
+ * Rows are separated by production **cost site** rather than lumped into one
+ * budget. Grand Boule renders on a Worker; this harness times the same kernel
+ * in its worklet realm, while the ring consumer carries the audio-thread cost.
+ * See `COST_SITE` in `deviceRecipes.js`.
  *
  * # The clock
  *
@@ -88,7 +89,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,6 +102,25 @@ import { startServer } from './server.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
+
+const MEASUREMENT_SOURCE_PATHS = [
+    'crates/daw-dsp/benches/quantum.rs',
+    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+    'public/wasm/manifest.json',
+];
+
+function measurementSourceDigests() {
+    return Object.fromEntries(
+        MEASUREMENT_SOURCE_PATHS.map((path) => [
+            path,
+            createHash('sha256')
+                .update(readFileSync(resolve(repoRoot, path)))
+                .digest('hex'),
+        ])
+    );
+}
 
 /** 128 frames at 48 kHz, in milliseconds — the deadline every figure is read against. */
 const BUDGET_MS = (128 / 48_000) * 1000;
@@ -357,6 +378,8 @@ const REFERENCE_PROJECT_AUDIO_THREAD = [
     ['gluten', 3],
     ['proof_chamber_plate', 1],
 ];
+const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]];
+
 async function main() {
     const options = parseArgs(process.argv.slice(2));
     const loadBefore = os.loadavg()[0];
@@ -428,9 +451,7 @@ async function main() {
         const sortedRates = [...rates].sort((a, b) => a - b);
         const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
         const rateSpreadPct =
-            sortedRates.length > 1
-                ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100
-                : 0;
+            sortedRates.length > 1 ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100 : 0;
 
         // Each sample is converted with the rate of the segment it was taken
         // in, not with one rate for the whole run.
@@ -469,9 +490,7 @@ async function main() {
             lateVerify: result.lateVerify,
             stats,
             harnessFloor: summarise(floorMs),
-            dutyCycle: DUTY_CYCLE[result.id]
-                ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta)
-                : null,
+            dutyCycle: DUTY_CYCLE[result.id] ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta) : null,
             dutyCycleSource: DUTY_CYCLE[result.id]?.source ?? null,
             calibration: {
                 segments: rates.length,
@@ -589,7 +608,7 @@ async function main() {
     console.log('That makes the upper bound the decisive one here: if the contaminated total already fits the');
     console.log('budget, the true total certainly fits, and no quiet machine is needed to establish it.');
     console.log('');
-    console.log('Neither bounds the DEADLINE. They bound compute. Whether quanta are actually missed is AC-3\'s');
+    console.log("Neither bounds the DEADLINE. They bound compute. Whether quanta are actually missed is AC-3's");
     console.log('observation, which reads genuine underruns from AudioContext.playbackStats on a live context.');
     console.log('');
     console.log('A floor is only reported where the clock was awake often enough to catch the cheapest render:');
@@ -672,7 +691,7 @@ async function main() {
     // not have them, and inventing a total from the rows that happen to be
     // present is exactly the kind of number this instrument exists to refuse:
     // it would read as a project figure while silently omitting devices.
-    const referenceMemberIds = REFERENCE_PROJECT_AUDIO_THREAD.map(([id]) => id);
+    const referenceMemberIds = [...REFERENCE_PROJECT_AUDIO_THREAD, ...REFERENCE_PROJECT_WORKER].map(([id]) => id);
     const referenceMissing = [...new Set(referenceMemberIds.filter((id) => byId[id] === undefined))];
     let referenceProjectJson = null;
     if (referenceMissing.length > 0) {
@@ -700,6 +719,8 @@ async function main() {
         const audioMean = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
             row.dutyCycle ? row.dutyCycle.amortisedMeanMs : row.stats.median
         );
+        const workerFloor = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.floor);
+        const workerMedian = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.median);
         // The defensible worst quantum: everyone at their median, plus the single
         // largest duty-cycle spike landing in that quantum. Summing every row's p95
         // assumes every device spikes in the same quantum, which nothing makes true
@@ -718,16 +739,28 @@ async function main() {
         for (const [id, count] of REFERENCE_PROJECT_AUDIO_THREAD) {
             console.log(`    ${count} x ${id}`);
         }
+        console.log('  worker:');
+        for (const [id, count] of REFERENCE_PROJECT_WORKER) {
+            console.log(`    ${count} x ${id}`);
+        }
         console.log('');
         const meanLoad = meanOf(rows.map((row) => row.load.mean));
-        console.log(`  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`);
+        console.log(
+            `  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`
+        );
         console.log('');
         console.log(`  AUDIO THREAD >= ${sig2(audioFloor)} ms  (${pct(audioFloor)} of budget)   lower bound`);
         if (floorRowsMissing.length > 0) {
-            console.log(`               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`);
+            console.log(
+                `               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`
+            );
         }
-        console.log(`  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`);
-        console.log(`  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`);
+        console.log(
+            `  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`
+        );
+        console.log(
+            `  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`
+        );
         console.log('');
         const verdict =
             audioWorstUpper < BUDGET_MS
@@ -740,16 +773,24 @@ async function main() {
                     '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
         console.log(verdict);
         console.log('');
+        console.log(
+            `  WORKER, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`
+        );
+        console.log('                       quantum of audio, on its own thread with its own ring.');
+        console.log('');
         console.log('  Neither bound is a deadline claim. They bound compute. AC-3 owns the deadline question.');
         console.log('');
         referenceProjectJson = {
             audioThread: REFERENCE_PROJECT_AUDIO_THREAD,
+            worker: REFERENCE_PROJECT_WORKER,
             audioFloorMs: audioFloor,
             audioFloorPartialFrom: floorRowsMissing,
             audioUpperBoundMs: audioMean,
             audioWorstQuantumUpperMs: audioWorstUpper,
             audioMedianMs: audioMedian,
             meanLoad: meanOf(rows.map((row) => row.load.mean)),
+            workerFloorMs: workerFloor,
+            workerMedianMs: workerMedian,
         };
     }
 
@@ -785,6 +826,8 @@ async function main() {
             `${JSON.stringify(
                 {
                     machine,
+                    sourceRevision: machine.gitSha,
+                    sourceDigests: measurementSourceDigests(),
                     browser: payload.browser,
                     userAgent: payload.userAgent,
                     budgetMs: BUDGET_MS,

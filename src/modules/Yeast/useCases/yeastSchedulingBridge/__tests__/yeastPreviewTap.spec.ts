@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { YeastPreviewTap, yeastPreviewTap } from '../../../engine/yeastPreviewTap';
 import { yeastStore } from '../../../stores/yeastStore';
@@ -104,9 +107,19 @@ function setProcessorBypass(bypassed: boolean): void {
 describe('AC-001 — Yeast scheduled-event preview tap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // `rackId` names the Yeast DEVICE whose rack is processed (production
+        // passes `yeastDevice.id` from scheduleMidiNotes; issue #2422 made the
+        // rack per device), so the project must hold a device with that id.
+        const track = createTrack({ id: 'track-a', name: 'Rack A', kind: 'midi' });
+        track.devices.push({ id: 'rack-a', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
+        trackStore.set({ ...defaultTrackState, tracks: [track], selectedTrackId: 'track-a' });
         setYeastPreviewCaptureEnabled({ rackId: 'rack-a', trackId: 'track-a', enabled: false });
         setYeastPreviewCaptureEnabled({ rackId: 'rack-a', trackId: 'track-a', enabled: true });
         setProcessorBypass(false);
+    });
+
+    afterEach(() => {
+        trackStore.set(defaultTrackState);
     });
 
     it('publishes an ordered 512-event read-only ring without changing scheduler output or progress', async () => {

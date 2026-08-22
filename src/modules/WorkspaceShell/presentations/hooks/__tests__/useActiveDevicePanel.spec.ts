@@ -28,7 +28,10 @@ function createFakeEventBus(): WorkspaceEventBus & { fire: (event: string, paylo
     };
 }
 
-type TrackStoreValue = { selectedTrackId: string | null } | null;
+type TrackStoreValue = {
+    selectedTrackId: string | null;
+    tracks: readonly { id: string; devices: readonly { id: string; type: string }[] }[];
+} | null;
 
 const trackStoreState = vi.hoisted(() => ({ value: null as TrackStoreValue }));
 const trackStoreSubscribers = vi.hoisted(() => new Set<(value: TrackStoreValue) => void>());
@@ -48,7 +51,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 function setSelectedTrack(trackId: string | null): void {
-    trackStoreState.value = { selectedTrackId: trackId };
+    // `tracks` is present but empty: the yeast open path looks for the
+    // selected track's Yeast device (issue #2422) and must find none.
+    trackStoreState.value = { selectedTrackId: trackId, tracks: [] };
     for (const callback of trackStoreSubscribers) {
         callback(trackStoreState.value);
     }
@@ -101,15 +106,28 @@ describe('useActiveDevicePanel', () => {
         expect(result.current.activePanel).toBeNull();
     });
 
-    it('opens the yeast panel with no deviceId, only the captured trackId', () => {
+    it('opens the yeast panel with a null deviceId, only the captured trackId', () => {
         setSelectedTrack('track-yeast');
         const { result } = renderHook(() => useActiveDevicePanel());
 
         act(() => {
-            bus.fire('panel.showYeast', undefined);
+            bus.fire('panel.showYeast', { deviceId: null });
         });
 
-        expect(result.current.activePanel).toEqual({ kind: 'yeast', trackId: 'track-yeast' });
+        // The mock track store carries no devices, so a null deviceId cannot
+        // resolve to an instance — the panel falls back to selection itself.
+        expect(result.current.activePanel).toEqual({ kind: 'yeast', deviceId: null, trackId: 'track-yeast' });
+    });
+
+    it('opens the yeast panel bound to the deviceId the event carried', () => {
+        setSelectedTrack('track-yeast');
+        const { result } = renderHook(() => useActiveDevicePanel());
+
+        act(() => {
+            bus.fire('panel.showYeast', { deviceId: 'yeast-9' });
+        });
+
+        expect(result.current.activePanel).toEqual({ kind: 'yeast', deviceId: 'yeast-9', trackId: 'track-yeast' });
     });
 
     it('opens a grinder panel through the generic onShowDevicePanel event', () => {

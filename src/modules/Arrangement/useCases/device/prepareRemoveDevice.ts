@@ -107,10 +107,16 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
                     after: afterTrack,
                     operation: 'remove-device',
                 });
+                // A superseded delta is void, not stale: a later action in this
+                // same commit removed the host track, so the runtime end state
+                // for it is no strip at all and that action's own teardown owns
+                // it. The graph obligation is discharged; every other
+                // obligation of this removal still runs below, and a host track
+                // that is still present but no longer matches stays loud.
                 if (result.acceptance === 'rejected') {
                     throw new Error(result.reason);
                 }
-                if (result.application === 'needs-reconcile') {
+                if (result.acceptance === 'accepted' && result.application === 'needs-reconcile') {
                     throw new Error(result.reason);
                 }
                 deviceRemovalFinalized = true;

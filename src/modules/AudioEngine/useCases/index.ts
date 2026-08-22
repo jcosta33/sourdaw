@@ -13,8 +13,10 @@ export { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 export { getFactoryDrumKitByIndex } from './audioEngineQueries/getFactoryDrumKitByIndex';
 
 export { startAudioRecording } from './audioRecorder/startAudioRecording';
+export { startCrumbsRecordFeed } from './audioRecorder/startCrumbsRecordFeed';
 export { startInputMonitoring } from './audioRecorder/startInputMonitoring';
 export { stopAudioRecording } from './audioRecorder/stopAudioRecording';
+export { stopCrumbsRecordFeed } from './audioRecorder/stopCrumbsRecordFeed';
 export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 

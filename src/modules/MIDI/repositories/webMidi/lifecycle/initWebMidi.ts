@@ -6,8 +6,8 @@ import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
 import { readPersistedInputId } from '../readPersistedInputId';
 import { setMidiAccess } from '../setMidiAccess';
-import { setState } from '../setState';
 import { setNativeMode } from '../setNativeMode';
+import { setState } from '../setState';
 // Side-effect: registers the store sync subscription before any setState below.
 import '../store';
 

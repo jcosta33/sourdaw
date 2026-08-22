@@ -779,10 +779,23 @@ function boundedPositiveInteger(value: string | undefined, cap: number): string 
     return String(Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, cap) : cap);
 }
 
-function boundedNodeOptions(value: string | undefined): string {
+/**
+ * The heap ceiling tracks this run's RSS budget rather than a constant.
+ *
+ * A fixed ceiling below the budget cannot make the run safer: the RSS monitor
+ * already kills anything that exceeds `--max-rss-mib`, so that is the limit
+ * that binds. What a lower fixed ceiling does instead is abort commands whose
+ * legitimate peak sits between the two — V8 aborts on an OOM mark-compact
+ * rather than failing the check the caller asked for, and the caller cannot
+ * raise it, because a second `--max-old-space-size` appended by a child wins
+ * over this one and silently defeats the guard entirely.
+ *
+ * A caller asking for less than the budget still gets what it asked for.
+ */
+function boundedNodeOptions(value: string | undefined, ceilingMib: number): string {
     const pattern = /--max[-_]old[-_]space[-_]size(?:=|\s+)(\d+)/g;
     const limits = [...(value ?? '').matchAll(pattern)].map((match) => Number(match[1]));
-    const heapLimit = Math.min(2_048, ...limits.filter((limit) => Number.isFinite(limit) && limit > 0));
+    const heapLimit = Math.min(ceilingMib, ...limits.filter((limit) => Number.isFinite(limit) && limit > 0));
     const retained = (value ?? '').replaceAll(pattern, '').trim();
     return `${retained} --max-old-space-size=${heapLimit}`.trim();
 }
@@ -790,14 +803,15 @@ function boundedNodeOptions(value: string | undefined): string {
 function boundedEnvironment(
     session: ResourceSession,
     source: NodeJS.ProcessEnv,
-    processToken: string
+    processToken: string,
+    heapCeilingMib: number
 ): NodeJS.ProcessEnv {
     return {
         ...source,
         [RESOURCE_SESSION_ENV]: session.token,
         [RESOURCE_ROOT_ENV]: session.root,
         [PROCESS_SESSION_ENV]: processToken,
-        NODE_OPTIONS: boundedNodeOptions(source.NODE_OPTIONS),
+        NODE_OPTIONS: boundedNodeOptions(source.NODE_OPTIONS, heapCeilingMib),
         CARGO_BUILD_JOBS: boundedPositiveInteger(source.CARGO_BUILD_JOBS, 2),
         RUST_TEST_THREADS: boundedPositiveInteger(source.RUST_TEST_THREADS, 2),
     };
@@ -946,7 +960,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     const tracked = new Map<number, string>();
     const child = spawn(input.command, input.args, {
         cwd: input.cwd ?? process.cwd(),
-        env: boundedEnvironment(session, input.env ?? process.env, processToken),
+        env: boundedEnvironment(session, input.env ?? process.env, processToken, Math.floor(maxRssBytes / 1024 ** 2)),
         detached: platform() !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
     });

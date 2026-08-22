@@ -31,8 +31,8 @@
                 ".dependency-cruiser.tests.cjs",
                 ".dependency-cruiser.types.cjs",
                 ".editorconfig",
-                ".gitattributes",
                 ".gitignore",
+                ".gitleaks.toml",
                 ".node-version",
                 ".oxlintrc.json",
                 ".prettierignore",
@@ -43,8 +43,6 @@
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
-                "LICENSE",
-                "NOTICE",
                 "README.md",
                 "SECURITY.md",
                 "components.json",
@@ -55,10 +53,6 @@
                 "playwright.config.ts",
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
-                "public/legal/Apache-2.0.txt",
-                "public/legal/DEPENDENCY-LICENSES.txt",
-                "public/legal/MI-PLAITS-DSP-RS-MIT.txt",
-                "public/legal/SOURDAW-NOTICE.txt",
                 "rust-toolchain.toml",
                 "tsconfig.app.json",
                 "tsconfig.e2e.json",
@@ -123,9 +117,9 @@
                 "server distribution"
             ],
             "evidence": [
-                "Canonical Apache-2.0 text, project notices, and SPDX metadata bind project-owned release surfaces."
+                "Project license files, package metadata, Cargo metadata, and generated dependency notices are checked together."
             ],
-            "obligations": ["Preserve component-specific licenses and third-party notices."]
+            "obligations": ["Keep third-party components under their own terms and ship their notices."]
         },
         {
             "id": "desktop-shell",
@@ -192,37 +186,20 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "pnpm-workspace.yaml",
-                "public/legal/DEPENDENCY-LICENSES.txt",
-                "public/legal/THIRD-PARTY-NOTICES.md",
-                "server/THIRD-PARTY-NOTICES.md",
-                "release/dependency-license-proofs.json",
-                "release/dependency-license-proofs/**"
+                "pnpm-workspace.yaml"
             ],
-            "sources": [
-                "package.json",
-                "server/package.json",
-                "server/package-lock.json",
-                "pnpm-lock.yaml",
-                "public/legal/DEPENDENCY-LICENSES.txt",
-                "server/THIRD-PARTY-NOTICES.md",
-                "release/dependency-license-proofs.json",
-                "release/dependency-license-proofs/**"
-            ],
+            "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
             "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
             "digests": [
-                "sha256:fcb5d3d1ccc3093c4f934df7fd5a3dade0c867a63f0d9d97b5b09c0ca01e6f5a",
-                "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db",
-                "sha256:8e6c8ca55f8e3eb33168c391fc6449bc7c5731f2981cc2135eebb5f6b1651f9d"
+                "sha256:419dc35165521cd97f925fcb7ed27ca86300c5f77f7065e71d0c65c7a8772378",
+                "sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
             ],
             "licenses": ["per-package declared terms and exact archive or pinned-upstream legal files"],
             "productSurfaces": ["browser application", "desktop application", "collaboration server"],
             "evidence": [
-                "Both JavaScript lock graphs and every dependency proof digest are rendered into the generated report; the standalone server notice is rendered from the same server production closure."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
             ],
-            "obligations": [
-                "Regenerate and ship the dependency report whenever either JavaScript lock graph or a pinned legal proof changes."
-            ]
+            "obligations": ["Reconcile every distributed dependency license and notice before release."]
         },
         {
             "id": "ddsp-tfjs-runtime",
@@ -269,11 +246,16 @@
                 "npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0",
                 "npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0",
                 "npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5",
+                "sha256:45259c508c8dad298d975a2559fc2f8e0b0d707a18ccc501e74f3aa889cd281d:src/modules/BrowserAi/models/InferenceRequest.ts",
+                "sha256:c4e4e5ba9ceb16f7da586195bbc498d4235fefaae49f068f934234bf5fbb723b:src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
+                "sha256:7e5f06c67a7824cf43f307d7e1c92d8de1c1396759c52f43d7564f05c17a8848:src/modules/BrowserAi/services/computeDdspSessionKey.ts",
+                "sha256:08c788a4bde41fa1248ede289e1381137bce202196315dcbd2837d158ce92469:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
+                "sha256:036c6cc37096f5042a69f12a865fd36afb792f537f407a96f5e8f372f50e0a47:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
-                "sha256:5d7b38822c5c0a4b51559a39c08b39f5bbbf83df0df214c0a21771816966c9e2:public/legal/Magenta.js-NOTICE.txt",
+                "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:fc93dd82f8b7435b19ff6e194c67de4b8ebc92d00e98be3f1bea0f1e83420d58:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -281,11 +263,12 @@
                 "Apache-2.0:Magenta.js-Roll-adaptation",
                 "MIT:seedrandom-and-Alea"
             ],
-            "productSurfaces": ["release-withheld browser and desktop DDSP WebGPU worker runtime"],
+            "productSurfaces": ["browser and desktop DDSP hardware-WebGPU worker runtime"],
             "evidence": [
-                "Exact package versions and npm integrity digests are pinned in the install graph.",
-                "The existing release validator binds this complete runtime and legal-file closure.",
-                "The false model release-admission gate keeps the runtime unreachable from product flows."
+                "Exact package versions and npm integrity digests are pinned in the install graph; package and lock file contents are not independently content-digested here.",
+                "The release validator content-digests the application runtime sources and legal files listed by this surface.",
+                "Together these records bind the dependency integrity, application runtime, and legal-file obligations represented here without claiming a self-referential complete closure.",
+                "The runtime accepts only locally verified checkpoint artifact transfers and registers no CPU or WebGL fallback."
             ],
             "obligations": [
                 "Keep the Apache-2.0 and MIT texts and exact component notices with every distribution.",
@@ -298,35 +281,14 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": [
-                "Cargo.toml",
-                "Cargo.lock",
-                "crates/**",
-                "public/legal/DEPENDENCY-LICENSES.txt",
-                "public/legal/THIRD-PARTY-NOTICES.md",
-                "release/dependency-license-proofs.json",
-                "release/dependency-license-proofs/**"
-            ],
-            "sources": [
-                "Cargo.toml",
-                "Cargo.lock",
-                "public/legal/DEPENDENCY-LICENSES.txt",
-                "release/dependency-license-proofs.json",
-                "release/dependency-license-proofs/**"
-            ],
+            "paths": ["Cargo.toml", "Cargo.lock", "crates/**"],
+            "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
-            "digests": [
-                "sha256:f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5",
-                "sha256:8e6c8ca55f8e3eb33168c391fc6449bc7c5731f2981cc2135eebb5f6b1651f9d"
-            ],
+            "digests": ["sha256:e3b3d4ad90a892b92acf9a72c701a99d5ef4f1f9ecc04254cd19283d81f7c88a"],
             "licenses": ["per-package declared terms and exact archive or pinned-upstream legal files"],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
-            "evidence": [
-                "Cargo.lock and every dependency proof digest are rendered into the generated report; generation fails when exact legal evidence is unavailable."
-            ],
-            "obligations": [
-                "Regenerate and ship the dependency report whenever Cargo.lock or a pinned legal proof changes."
-            ]
+            "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
+            "obligations": ["Reconcile every distributed dependency license and notice before release."]
         },
         {
             "id": "mp3-encoder",
@@ -487,26 +449,97 @@
         {
             "id": "ddsp-models",
             "kind": "model-stack",
-            "retention": "defer-behind-admission",
+            "retention": "keep-with-obligations",
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
-                "src/infra/release/modelReleaseAdmission.ts",
+                ".agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
+                "electron/protocol.ts",
+                "public/legal/THIRD-PARTY-NOTICES.md",
                 "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
+                "src/modules/BrowserAi/repositories/modelDownloadManager.ts",
+                "src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
+                "src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
+                "src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts",
+                "src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts",
+                "src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts",
+                "src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",
+                "src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
+                "src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
+                "src/modules/BrowserAi/workers/modelStorageWorker.ts",
+                "src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
-                "src/modules/BrowserAi/useCases/initBrowserAi.ts"
+                "src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts",
+                "src/modules/BrowserAi/useCases/downloadModel.ts",
+                "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "src/modules/BrowserAi/useCases/removeDdspInstrument.ts",
+                "src/modules/BrowserAi/useCases/removeModel.ts",
+                "src/modules/BrowserAi/useCases/renderDdspInstrument.ts"
             ],
-            "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
-            "revisions": ["mutable checkpoint directories"],
-            "digests": ["pending:OS-04-checkpoint-hashes"],
+            "sources": [
+                "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md",
+                "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts",
+                "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp",
+                "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
+                ".agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md"
+            ],
+            "revisions": [
+                "magenta-js-ddsp-2020-01-05",
+                "Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa",
+                "12 exact artifacts"
+            ],
+            "digests": [
+                "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
+                "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
+                "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
+                "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
+                "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
+                "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
+                "sha256:7a6960f30b3f7778d1821d1420c88355ec1ed27791a5776b6ca38009d7ae4b68:src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts",
+                "sha256:1fc46a75c0a7ac07cddd2ffbdfc405e4bff96afb018c0df63e96d7ea21d1d74f:src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts",
+                "sha256:dcff9ac063ca5a3d40fd064be346187526d17fb847c1fb8b9855c0542db3da91:src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts",
+                "sha256:56a0ef9c5e5b22f27289e01b1a5e792de520ac43d9e3c1de9675281cc6f87a52:src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",
+                "sha256:360d7385f8450d219e77a7ae373a9a67f3bc02c213a0e25a8a25bb9630adf540:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
+                "sha256:2eda85bf62b8b8b63bef3a86f7b10009ab0e4c6a1e17cac7e1897943d3ca1ca0:src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
+                "sha256:6c7d4d4b94518787ed0d28ccaef0e60019cd71c0305cc513e344fe049fc8a9b2:src/modules/BrowserAi/workers/modelStorageWorker.ts",
+                "sha256:2c7c2b09e316033b878869ec0e4a801e7499e3485f1cebe57931ccb6d614528f:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "sha256:dd052e9448b7ba5951037e69ef7979996beafb94992618c144c346a217c3b73c:src/infra/release/modelReleaseAdmission.ts",
+                "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "sha256:0767b7a7072eac7e5463e97e88ae8ca9d358e3f56757e140c7084046239a74af:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "sha256:ff966a7faa3d3dd4869be77f717af0f0b237a442b6d992af386eb5f69b3baf0e:src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts",
+                "sha256:abbe466881490518b4665e3937e63cfe8b00866720f36af51e0af7423dc4f2da:src/modules/BrowserAi/useCases/downloadModel.ts",
+                "sha256:eb095c7190a8030f264e7e8c29f510b27b4692811726b35152467d99d38ea1d8:src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "sha256:a320fa6f542de69d260c1fab0ec6c6de78493f724461a148c12c3678efef8019:src/modules/BrowserAi/useCases/removeDdspInstrument.ts",
+                "sha256:e255c65348b8fd18a1bdc230c2688ee5667cba4ec56d3355a942d6fdc033fd17:src/modules/BrowserAi/useCases/removeModel.ts",
+                "sha256:0aab87014023a08b11385f296dc893e60cd88a0ba5cfa7490009b996e7d7870a:src/modules/BrowserAi/useCases/renderDdspInstrument.ts",
+                "sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json",
+                "sha256:e2df331d82cf56ed58c202c7af545b305f6794c655897dfc45535620a0d2fc12:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/group1-shard1of1.bin",
+                "sha256:9cfae64cf6e36007192a479f6f74e26356ed0e6d4521d242498bcb4e04723269:bytes:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/settings.json",
+                "sha256:81a2187d58ca5d02e30b755aaa9abed171b0269a7cf2207f445a177af9add434:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/model.json",
+                "sha256:1ce83914040927c5713ad80131c9bfa7eed960b696ca8f17176392b7287ad745:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/group1-shard1of1.bin",
+                "sha256:d4b754db5cd6fe4937de3bd205c4db1aa6d824b8a35571f62047b7a546628fc3:bytes:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/flute/settings.json",
+                "sha256:20cf69198fc87decefce850fc5315562f2d72c01da89cd16581dc868f1daa5b5:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/model.json",
+                "sha256:4785eff16aef6d5e620f70866b865e3cb6462f0670edeeb9711603a354170538:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/group1-shard1of1.bin",
+                "sha256:60e26d8fd06c963b2828c112f70d4e5667fc9cd328fe6a65977fe839d6393e93:bytes:173:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/trumpet/settings.json",
+                "sha256:1b334b0639c2dd7f19e904a977339c7e4b53fe7fde4f56cc7c9797c99789787e:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/model.json",
+                "sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin",
+                "sha256:4632398ffae90dc12dccf6bb9480102c6947f5c5eb5829415108f25d8cf0a7fe:bytes:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json"
+            ],
             "licenses": ["unverified:exact-GCS-checkpoint-artifacts"],
-            "productSurfaces": ["withheld browser DDSP instruments", "withheld desktop DDSP instruments"],
+            "productSurfaces": ["explicit browser and desktop downloads of four pinned Magenta DDSP instruments"],
             "evidence": [
-                "The framework is Apache-2.0, but the mutable checkpoint directories publish no exact artifact grant or digest.",
-                "The false release-admission gate keeps checkpoints out of the registry and model manager."
+                "DdspArtifactManifest pins the exact URL, byte size, and SHA-256 for all twelve admitted artifacts.",
+                "Each user-requested direct Magenta download is staged and verified before its local generation is published or used.",
+                "Sourdaw does not bundle or redistribute the checkpoint bytes."
             ],
-            "obligations": ["Pin, hash, and verify each exact checkpoint and transitive runtime before admission."]
+            "obligations": [
+                "Keep the checkpoint license explicitly unverified; runtime licenses and notices do not cover the weights.",
+                "Keep all checkpoint bytes out of Sourdaw distributions and fetch only the admitted identities directly from Magenta until issue #2595 is resolved.",
+                "Rollback requires all of: set MODEL_RELEASE_ADMISSION.ddsp to false; remove the exact Magenta DDSP source from electron/protocol.ts connect-src; and remove its release inventory egress assignment from release/open-source-inventory.json."
+            ]
         },
         {
             "id": "rave-models",
@@ -646,6 +679,10 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "server"],
+            "paths": ["server/collab-server.ts", "server/package.json", "server/package-lock.json"],
+            "sources": ["server/collab-server.ts", "server/package-lock.json"],
+            "revisions": ["exact collaboration-server npm lock graph"],
+            "digests": ["sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"],
             "paths": [
                 "server/collab-server.ts",
                 "server/package.json",
@@ -661,8 +698,6 @@
                 "server/NOTICE",
                 "server/THIRD-PARTY-NOTICES.md"
             ],
-            "revisions": ["exact collaboration-server npm lock graph"],
-            "digests": ["sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"],
             "licenses": ["Apache-2.0", "MIT:ws"],
             "productSurfaces": ["self-hosted collaboration WebSocket server"],
             "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
@@ -688,7 +723,7 @@
             "revisions": ["6d3f7a5b84b25ec45d66c9f6be7109474690d795", "99432f2bf443219b3eb77e65e1a18583faad422e"],
             "digests": [
                 "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
-                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:public/legal/MI-PLAITS-DSP-RS-MIT.txt",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c4:public/legal/MI-PLAITS-DSP-RS-MIT.txt",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
                 "sha256:fc93dd82f8b7435b19ff6e194c67de4b8ebc92d00e98be3f1bea0f1e83420d58:public/legal/THIRD-PARTY-NOTICES.md"
@@ -704,53 +739,83 @@
         },
         {
             "id": "grand-boule",
-            "kind": "patent-directed-component",
-            "retention": "defer-behind-admission",
-            "owner": "OS-05",
+            "kind": "project-source",
+            "retention": "keep",
+            "owner": "OS-10",
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "crates/daw-dsp/src/grand_boule/**",
-                "src/modules/GrandBoule/**",
+                ".agents/decisions/0036-readmit-grand-boule.md",
                 "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
+                "src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts",
+                "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
                 "src/infra/release/deviceReleaseAdmission.ts",
+                "src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts",
+                "src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts",
+                "src/utils/nativeDspDeviceTypes.ts",
                 "src/modules/AudioEngine/engine/GrandBouleNode.ts",
+                "src/modules/AudioEngine/engine/wasmDeviceRegistry.ts",
+                "src/modules/AudioEngine/models/AudioEngineState.ts",
                 "src/modules/AudioEngine/models/GrandBouleRingProtocol.ts",
+                "src/modules/AudioEngine/repositories/createWebAudioEngine.ts",
                 "src/modules/AudioEngine/workers/grandBouleEngineWorker.ts",
-                "src/modules/AudioEngine/worklets/grandBoule*.ts"
+                "src/modules/AudioEngine/worklets/grandBoule*.ts",
+                "src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts",
+                "src/modules/GrandBoule/**",
+                "src/modules/Command/useCases/versionedCommandArgumentKeys.ts",
+                "src/modules/Arrangement/useCases/index.ts",
+                "src/modules/Arrangement/useCases/device/setDeviceState.ts",
+                "src/app/bootstrap.ts",
+                "src/app/getProductionCommandHandlerMaps.ts",
+                "src/utils/handlerContract.ts",
+                "src/app/prepareOfflineDeviceSetup.ts",
+                "src/modules/AudioEngine/useCases/buildDeviceChain.ts",
+                "src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts",
+                "crates/daw-dsp/benches/quantum.rs",
+                "crates/daw-dsp/benches/wasm/deviceRecipes.js",
+                "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
+                "crates/daw-dsp/benches/wasm/run.mjs",
+                "crates/daw-dsp/benches/wasm/renderTable.mjs",
+                "crates/daw-dsp/benches/wasm/renderTable.d.mts",
+                "crates/daw-dsp/benches/quantum-cost-table.json",
+                "crates/daw-dsp/benches/quantum-cost-table.md",
+                "crates/daw-dsp/tests/quantum_bench_census.rs",
+                "scripts/checkReleaseInventory.ts"
             ],
             "sources": [
                 "crates/daw-dsp/src/grand_boule/",
-                "src/modules/GrandBoule/",
-                "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
-                "src/infra/release/deviceReleaseAdmission.ts",
-                "retained Grand Boule AudioEngine host, worker, and worklet source",
-                "active patent sources recorded in the readiness audit"
+                ".agents/decisions/0036-readmit-grand-boule.md",
+                "Grand Boule discovery, catalog, factory, and release-admission source",
+                "Grand Boule AudioEngine live host, registry, scheduling, worker, and worklet source",
+                "Grand Boule project-state action, hydration, and offline-composition source",
+                "Grand Boule browser runner, gates, reference population, processor, recipe, renderer, native benchmark, census, retained JSON/Markdown evidence, and release-checker source",
+                "distributed daw-dsp WASM glue, declarations, mirrors, and binary"
             ],
             "revisions": [
                 "current tracked Rust source",
-                "current tracked Grand Boule product source",
-                "current tracked Grand Boule descriptor and release-admission boundary",
-                "current tracked AudioEngine host boundary"
+                "current tracked ADR 0036 source-admission record",
+                "current tracked discovery, factory, and release-admission boundaries",
+                "current tracked live host, scheduling, action, hydration, and offline boundaries",
+                "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:3565ddf142d69dbc650cf3795df819b4be5d42ec6adc8b6885a31a33847a3f07:grand-boule-native-rust",
-                "tracked-set-sha256:9d6db6ed66261fc35777ee1b7285a692ea4e2de732c13523269a7f5d1768fa73:grand-boule-product-module",
-                "tracked-set-sha256:e3dcbf65cd71fe13596e6c0119c99ea6d82084085a0acd6636f61fc3ada560e1:grand-boule-product-descriptor",
-                "tracked-set-sha256:d81a023a3cc73d6c357998ba97fd73aa452b0f848dafdb247dca5ccf6465ac1d:grand-boule-release-admission",
-                "tracked-set-sha256:47a8669a605c554a9ace4001d4a3f647e0ddb4ae28703567dd90d77257adde2d:grand-boule-node-host",
-                "tracked-set-sha256:d2028fb5c96872cd29e93fc1599982d63f67b84aca679d031e46aca04825d935:grand-boule-ring-protocol",
-                "tracked-set-sha256:44e47a67b95ec9fb6bc518aa127db036ad405b16b2b7165c114fa793d66da170:grand-boule-worker-host",
-                "tracked-set-sha256:af5770faf2d09655c0494bae51e1b93d62e4e4c130e6f83c8d92ed0e9bbd5bc1:grand-boule-worklet-hosts"
+                "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
+                "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
+                "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
+                "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
+                "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
+                "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
+                "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
+                "tracked-set-sha256:2a911b54d17f832becc35fecfad22b0d14239a9778c7a104a83904b97ef912e7:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0", "unverified:HAL-parameter-source-reuse-terms"],
-            "productSurfaces": ["Preserved Grand Boule source and project schema"],
+            "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADRs 0032 and 0034 retain the complete implementation while withholding Grand Boule from released discovery, runtime, generated WASM glue, declarations, and binary exports; the release checker inspects every artifact boundary.",
-                "ADR 0033 and focused Grand Boule Rust regressions cover the current engine's initial string configuration and pedal-driven mid-note decay reset: string-modal coefficients derive without soundboard controls or soundboard resonator state, and the rendered-bridge soundboard stage runs once per output frame after multiple voices render."
+                "ADR 0036 records the dated source-admission record, finite FIR body design-around, frequency-only prompt/aftersound decay curves, retained Weinreich aftersound inputs, independently authored project parameters, and engineering-not-legal-certainty boundary.",
+                "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
+                "The release checker pins admitted bytes and rejects legacy literals, including branded morph aliases; this constrains source identity and does not prove authorship."
             ],
-            "obligations": [
-                "Re-admit only after current patent-family, claim-element, design-around, and parameter-source proof."
-            ]
+            "obligations": ["Complete the OS-10 project grant before public release."]
         },
         {
             "id": "levain-sample-bank",
@@ -781,7 +846,7 @@
                 "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
             ],
             "obligations": [
-                "Preserve the pinned source proof, CC0 sample classification, and Apache-2.0 metadata for generated files."
+                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
             ]
         },
         {
@@ -831,13 +896,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:bc486e716f7a625c7baf00ffd9285a92760a68ff3d3bf2a6c4f5214da1949fb2",
-                "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
-                "proof-chamber sha256:841d105f5cb3a8cebb3118c2c42d199e7895db9a325aa5a42278e251f570b07a",
-                "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
+                "daw-dsp sha256:7f25881db3c02d2131533e8447e0ab8e8518ab2e74d30ba37a074112db25fcef",
+                "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
+                "proof-chamber sha256:3d5c8eb0168f12bc9503c5d3b74ca788d19e462b2beb6d05251cfae19207f386",
+                "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:6f7c62bb4a263be8f6e36c4fb1eb49ffce36ac00640ecab3fbe3ce045e11a266:public/wasm/manifest.json"
+                "sha256:a105bd9a3329326902535f1e2ff29cc62852c6870e572ad4c0339b825f16c8a3:public/wasm/manifest.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -929,7 +994,7 @@
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
             "evidence": ["Owner attested authorship on 2026-08-21; repository history binds every rendition."],
-            "obligations": ["Preserve the project license and attribution."]
+            "obligations": ["Apply the project license in OS-10 and preserve attribution."]
         },
         {
             "id": "third-party-marks",
@@ -961,9 +1026,6 @@
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
                 "src/modules/Gluten/models/GlutenPatch.ts",
                 "src/modules/Gluten/models/GlutenTopologyGating.ts",
-                "src/modules/GrandBoule/models/GrandBouleConfig.ts",
-                "src/modules/GrandBoule/models/GrandBouleMorphState.ts",
-                "src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts",
                 "src/modules/Grinder/models/GrinderPatch.ts",
                 "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
                 "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
@@ -1063,15 +1125,15 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "c04c55ffdf75172d66d34b3b6b4c8d114ac0feaa808550980281fbf8f88c7545"
+            "sha256": "e5d65b2903c66c64813567216f3b042e407ac5ca46c61bab732eb14f6cb48a2e"
         },
         {
             "path": "server/package.json",
-            "sha256": "e52537024fa9b3cff993a31fc552f600584b0d0d77f67607744a8135ec674ed0"
+            "sha256": "ef552b98b85918dff58d7af933b26cc97eea053a84ee638fd2741d3ee9a5402e"
         },
         {
             "path": "server/package-lock.json",
-            "sha256": "1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
+            "sha256": "485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
         },
         {
             "path": "pnpm-lock.yaml",
@@ -1079,7 +1141,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
+            "sha256": "b262f0a313e3396fc0376799364b947775f05832f8c4b7a8d3f7858ab8db2f45"
         },
         {
             "path": "Cargo.lock",
@@ -1091,7 +1153,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "6f7c62bb4a263be8f6e36c4fb1eb49ffce36ac00640ecab3fbe3ce045e11a266"
+            "sha256": "a105bd9a3329326902535f1e2ff29cc62852c6870e572ad4c0339b825f16c8a3"
         }
     ],
     "externalReferences": [
@@ -1197,26 +1259,6 @@
             "file": "scripts/checkLgplRuntimeProvenance.ts",
             "value": "https://registry.npmjs.org/${slot}/${slot}",
             "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/daw-dsp/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/daw-wasm-decoder/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/proof-chamber/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/scoring/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
         },
         {
             "surface": "mp3-encoder",
@@ -1414,6 +1456,26 @@
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
         },
         {
+            "surface": "ddsp-models",
+            "file": "electron/protocol.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
+        },
+        {
             "surface": "collaboration-stun",
             "file": "src/modules/Collaboration/repositories/peerConnection.ts",
             "value": "stun:stun.l.google.com:19302"
@@ -1547,10 +1609,7 @@
             "value": "Steinway",
             "paths": [
                 "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
-                "src/modules/Fermenter/repositories/fermenterPresets.ts",
-                "src/modules/GrandBoule/models/GrandBouleConfig.ts",
-                "src/modules/GrandBoule/models/GrandBouleMorphState.ts",
-                "src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts"
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
             ]
         },
         {
@@ -1764,10 +1823,7 @@
         },
         {
             "value": "Yamaha",
-            "paths": [
-                "src/modules/Fermenter/repositories/fermenterPresets.ts",
-                "src/modules/GrandBoule/models/GrandBouleMorphState.ts"
-            ]
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
         },
         {
             "value": "SSL",

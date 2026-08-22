@@ -8,7 +8,7 @@ import { useStoreSelector } from '../useStoreSelector';
 vi.unmock('#/infra/store/useStoreSelector');
 
 let selectorRenderCount = 0;
-let closureSwitchRenders = 0;
+let closureSelectorRuns = 0;
 
 const selectorStore = createStore({ initialData: { count: 0, label: 'init' } });
 const switchStore = createStore({ initialData: { a: 5, b: 2 } });
@@ -43,8 +43,10 @@ const ReadonlySelectorTestComponent = () => {
 // Regression for the stale-cache defect: a NEW selector closure capturing a
 // different key must re-run even when the store snapshot is unchanged.
 const ClosureSwitchTestComponent = () => {
-    const selection = useStoreSelector(switchStore, (state) => state?.[switchTarget] ?? 0);
-    closureSwitchRenders++;
+    const selection = useStoreSelector(switchStore, (state) => {
+        closureSelectorRuns++;
+        return state?.[switchTarget] ?? 0;
+    });
     return <div data-testid="switch-selection">{selection}</div>;
 };
 
@@ -71,15 +73,21 @@ describe('useStoreSelector', () => {
     });
 
     it('re-runs a changed selector closure against an unchanged snapshot', () => {
-        closureSwitchRenders = 0;
+        closureSelectorRuns = 0;
         switchTarget = 'a';
         const { getByTestId, rerender } = render(<ClosureSwitchTestComponent />);
         expect(getByTestId('switch-selection').textContent).toBe('5');
+        const runsAfterMount = closureSelectorRuns;
 
         // Same store snapshot, new closure target: the selection must follow
         // the closure, not the stale cache.
         switchTarget = 'b';
         rerender(<ClosureSwitchTestComponent />);
         expect(getByTestId('switch-selection').textContent).toBe('2');
+        // Counting selector runs rather than renders: `rerender` re-invokes the
+        // component either way, so a render count cannot tell the cache being
+        // discarded from the cache being returned. Reaching the selector at all
+        // is the thing the stale-cache defect prevented.
+        expect(closureSelectorRuns).toBeGreaterThan(runsAfterMount);
     });
 });

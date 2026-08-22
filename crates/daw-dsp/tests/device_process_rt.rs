@@ -1200,6 +1200,38 @@ fn grand_boule_process_does_not_allocate_with_notes_held() {
 }
 
 #[test]
+fn grand_boule_fir_body_tail_and_control_updates_do_not_allocate() {
+    use daw_dsp::grand_boule::GrandBouleInstance;
+
+    let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 4);
+    instance.set_param("soundboard_send", 1.0);
+    instance.set_param("soundboard_brightness", 0.2);
+    instance.set_param("body_resonance", 1.0);
+    instance.set_param("tone_color", 1.0);
+    instance.note_on(48, 0.9);
+    for _ in 0..16 {
+        instance.process(BLOCK as u32);
+    }
+    instance.note_off(48);
+
+    assert_no_alloc(|| {
+        instance.set_param("soundboard_brightness", 0.8);
+        instance.set_param("body_resonance", 0.7);
+        instance.set_param("tone_color", -0.3);
+        for _ in 0..GUARDED_BLOCKS {
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&output, "grand_boule FIR body tail");
+    assert!(
+        peak(&output) > 1e-7,
+        "grand_boule FIR body tail was inactive during the allocation guard"
+    );
+}
+
+#[test]
 fn grand_boule_voice_steal_crossfade_does_not_allocate() {
     use daw_dsp::grand_boule::GrandBouleInstance;
 

@@ -1,4 +1,13 @@
-export { yeastStore } from './yeastStore';
+export {
+    getPinnedYeastDevice,
+    readAllYeastRacks,
+    readYeastRack,
+    readYeastRackForTrack,
+    setActiveYeastDevice,
+    yeastDeviceIdsInProjectOrder,
+    yeastStore,
+    LEGACY_SHARED_RACK_DEVICE_ID,
+} from './yeastStore';
 export { setYeastEventBus } from './yeastEventBus';
 // `YeastProcessorType` is re-exported deliberately: `YeastState.processors[].type`
 // carries it, so the store's public contract names the processor-kind union

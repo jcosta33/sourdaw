@@ -404,7 +404,7 @@ export class PeerConnectionManager {
         if (!peer || oldPeerId === newPeerId) {
             return false;
         }
-        if (this.peers.has(newPeerId) || (localPeerId != null && newPeerId === localPeerId)) {
+        if (this.peers.has(newPeerId) || newPeerId === localPeerId) {
             return false;
         }
         this.peers.delete(oldPeerId);

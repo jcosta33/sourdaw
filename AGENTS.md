@@ -96,6 +96,12 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 ## Resource Safety
 
+The machine is shared by every lane at once. Verification that costs real resources belongs to the
+pipeline, which has a runner per job; running it here takes the machine away from every other lane
+and returns an answer the pipeline was going to give anyway.
+
+- Locally, run only what is cheap and narrow: the spec you wrote or changed, lint on the files you
+  touched. Push for everything else.
 - Run repository commands sequentially within your lane. Other lanes may validate concurrently only
   when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
@@ -259,12 +265,34 @@ the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
 
-Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
-account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually
-does: it blocks deletion and non-fast-forward, forces a squashed pull request, and demands resolved
-threads — it requires no status check and no approving review, so it constrains how a change lands
-and judges nothing about the change itself. The affected local checks and the review below are the
-only gate a change passes, so a check you skipped is a check nobody ran.
+`deliver` and `issue:reconcile` enforce that for the scripts they execute: the command's whole
+script closure is read from `origin/main` and run from a snapshot, so a lane's copy of any of them
+never runs. A lane that is merely behind `main` therefore delivers without merging first — the code
+that runs is main's either way, and forcing a merge to prove it only risks staling generated
+artifacts. Their loader, `scripts/trustedGithubWriteBootstrap.ts`, is the exception: `package.json`
+resolves it from the working tree, and nothing in the snapshot imports it, so it is the one file in
+the closure that runs as the lane holds it.
+
+Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
+`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
+when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
+reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
+`gate`.
+
+Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
+several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
+other — which is the cost the resource guard was invented to ration and CI removes outright.
+
+So run locally only what is genuinely cheap and genuinely yours: the spec you just wrote or changed,
+lint on the files you touched. Push, and let the pipeline run the rest. Do not run `lint:full`,
+`typecheck`, `deps:validate`, the unit suite, cargo, wasm, or end-to-end locally to satisfy a gate —
+the pipeline runs all of them on every push, and a second copy on this machine buys nothing but
+contention.
+
+`main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
+forces a squashed pull request, and demands resolved threads. Whether it also requires `gate` is
+repository configuration, not something this file can promise.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it carries each package's build script because that name is not derivable from the
@@ -342,23 +370,19 @@ current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
-there, and run the checks this diff can break. What that run leaves out, `main` absorbs. Name it
-instead of gesturing at it: the tests covering the changed files, the typecheck for every surface
-the diff touches, lint on the changed files, `pnpm deps:validate` whenever the change crosses a
-module boundary, and any other check this diff can turn red. Formatting belongs to the run but is
-not one of those checks — it rewrites rather than reports, so run it on the changed files and stage
-what it rewrote instead of reading it as a pass. The `Checks` table holds the commands.
+there, and read the pipeline's result for that head. The checks are the pipeline's job, not a second
+local run of the same commands — that is what `Gate` reports, and a green `Gate` on this head is the
+evidence. Formatting is the exception worth doing locally, because it rewrites rather than reports:
+run it on the changed files and stage what it rewrote.
 
-Affected-only is the shape of that run, not a discount on it. Resource Safety already sets the
-outer edge, and the one condition that moves it; the obligation here is everything that can fail
-because of these changed files. They are one boundary read from both sides: a check this diff can
-break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
-lane, on the head being merged. Unrelated `origin/main` movement does not by itself stale feature
-review or affected-only evidence, and a lane may publish while behind when it still has lane
-commits to push. Re-run checks and review when the feature head changes in a way that touches the
-reviewed or tested surface, when you resolve conflicts, or when the affected surfaces changed. Base
+What the orchestrator still owns is the judgement no check makes. A green pipeline says the gates
+passed, not that the change does what it was specified to do, that a test observes what its name
+claims, or that a finding was addressed rather than silenced. Read the diff for those.
+
+Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
+changes in a way that touches the reviewed surface, and when you resolve conflicts. Base
 compatibility is GitHub's ordinary mergeability gate: if the pull request is no longer `CLEAN` or
-its base branch changes, refresh the evidence on the head that will actually merge.
+its base branch changes, the pipeline runs again on the head that will actually merge.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That

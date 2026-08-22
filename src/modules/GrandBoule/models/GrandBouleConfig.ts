@@ -4,7 +4,7 @@
  */
 
 export type GrandBouleConfig = {
-    /** Master output gain (0.0 – 2.0, 1.0 = unity). */
+    /** Master output gain (0.0 - 1.0, 1.0 = the engine safety ceiling). */
     masterGain: number;
     /** Currently loaded preset id, or null if default. */
     activePresetId: string | null;
@@ -19,25 +19,22 @@ export type GrandBouleConfig = {
     /** Whether the hybrid sampled-attack pathway is active. */
     sampledAttackEnabled: boolean;
     /**
-     * Stretched-tuning amount (0.0 – 2.0). Scales the smooth Steinway D
-     * Railsback curve baked into the engine. 0 = equal temperament (with
-     * per-note jitter still applied), 1 = full Jaatinen & Pätynen 2022
-     * Steinway D measurement (default), 2 = exaggerated stretch.
-     * Realism appendix §A8.
+     * Stretched-tuning amount (0.0 – 2.0). Scales the project-authored smooth
+     * stretch curve. 0 = equal temperament with project note variation,
+     * 1 = the default project curve, and 2 = exaggerated stretch.
      */
     stretchAmount: number;
     /**
      * Attack bite (0.0 – 2.0). Velocity multiplier for the longitudinal
-     * "string precursor" noise burst that gives the attack its bright
-     * chirp. 0 = no bite, 1 = neutral, 2 = exaggerated. Realism appendix
-     * §A6.
+     * "string precursor" noise burst that gives the attack its bright chirp.
+     * 0 = no bite, 1 = neutral, and 2 = exaggerated.
      */
     attackBite: number;
 };
 
 export function createDefaultGrandBouleConfig(): GrandBouleConfig {
     return {
-        masterGain: 0.7,
+        masterGain: 0.1,
         activePresetId: null,
         soundboardSend: 0.6,
         sympatheticSend: 0.25,

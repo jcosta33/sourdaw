@@ -62,3 +62,7 @@ export { TOOL_SHORTCUTS } from './workspaceQueries/helpers';
 
 export { toggleRippleEditing } from './rippleEditing';
 export { updateWorkspaceState } from './workspaceState';
+
+// ── Window Chrome ─────────────────────────────────────────────────────────────
+
+export { windowChromeControls } from './windowChrome';

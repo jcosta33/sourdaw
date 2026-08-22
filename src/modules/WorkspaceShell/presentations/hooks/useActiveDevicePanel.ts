@@ -42,7 +42,7 @@ export type ActiveDevicePanel =
     | { kind: 'grinder'; deviceId: string; trackId: string | null }
     | { kind: 'scoring'; deviceId: string; trackId: string | null }
     | { kind: 'proof'; deviceId: string; trackId: string | null }
-    | { kind: 'yeast'; trackId: string | null }
+    | { kind: 'yeast'; deviceId: string | null; trackId: string | null }
     | { kind: 'crust'; deviceId: string; trackId: string | null }
     | { kind: 'sampler'; deviceId: string; trackId: string | null }
     | { kind: 'grandBoule'; deviceId: string; trackId: string | null };
@@ -59,6 +59,18 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
         type NeedsDeviceId = Exclude<ActiveDevicePanel, { kind: 'yeast' }>['kind'];
         type DeviceVariant<Kind extends NeedsDeviceId> = Extract<ActiveDevicePanel, { kind: Kind }>;
         const currentTrackId = (): string | null => trackStore.value?.selectedTrackId ?? null;
+        // Yeast rack state is per device instance (issue #2422), so the panel
+        // must name its device: the event payload's deviceId when the opener
+        // knows it, otherwise the selected track's Yeast device. `null` means
+        // no instance to bind — the panel falls back to selection itself.
+        const yeastDeviceIdForOpen = (deviceId: string | null): string | null => {
+            if (deviceId !== null) {
+                return deviceId;
+            }
+            const state = trackStore.value;
+            const track = state?.tracks.find((candidate) => candidate.id === state?.selectedTrackId);
+            return track?.devices.find((device) => device.type === 'yeast')?.id ?? null;
+        };
         // One builder per device-bearing kind. The mapped type forces an entry for
         // every `NeedsDeviceId` (add a kind → missing-key error here), and the
         // `satisfies` on each literal pins it to that kind's exact member shape, so
@@ -114,7 +126,13 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
                 }
             }),
             onPanelShowProof(openForKind('proof')),
-            onPanelShowYeast(() => setActivePanel({ kind: 'yeast', trackId: currentTrackId() })),
+            onPanelShowYeast((payload) =>
+                setActivePanel({
+                    kind: 'yeast',
+                    deviceId: yeastDeviceIdForOpen(payload.deviceId),
+                    trackId: currentTrackId(),
+                })
+            ),
             onPanelShowScoring(openForKind('scoring')),
             onPanelShowCrust(openForKind('crust')),
             onPanelShowCrumbs(openForKind('sampler')),

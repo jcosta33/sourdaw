@@ -6,40 +6,12 @@ import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { addTrack } from '../../useCases/addTrack';
 import { addExternalDevice } from '../../useCases/device/addExternalDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import {
+    getRuntimeDeviceDeltaPostCommitFailure,
+    type RuntimeDeviceDeltaPostCommitError,
+} from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
-
-type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
-type RuntimeDeviceDeltaFailure = Exclude<
-    RuntimeDeviceDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
->;
-
-class RuntimeDeviceDeltaPostCommitError extends Error {
-    public readonly outcome: RuntimeDeviceDeltaFailure;
-    public readonly remediation: 'retry' | 'repair';
-
-    constructor(outcome: RuntimeDeviceDeltaFailure) {
-        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
-        super(
-            outcome.acceptance === 'rejected'
-                ? `Device runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
-                : `Device runtime delta requires ${remediation} after project commit: ${outcome.reason}`
-        );
-        this.name = 'RuntimeDeviceDeltaPostCommitError';
-        this.outcome = outcome;
-        this.remediation = remediation;
-    }
-}
-
-function getRuntimeDeviceDeltaPostCommitFailure(
-    result: RuntimeDeviceDeltaResult
-): RuntimeDeviceDeltaPostCommitError | undefined {
-    if (result.acceptance === 'accepted' && result.application === 'applied') {
-        return undefined;
-    }
-    return new RuntimeDeviceDeltaPostCommitError(result);
-}
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
     execute: (alpha) => {
@@ -93,6 +65,13 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                     after,
                     operation: 'add-device',
                 });
+                // A later action in this same commit removed the host track.
+                // The chain delta is void, and so is the plugin activation
+                // below: activating a native instance onto a strip that is
+                // being torn down would leak the instance.
+                if (result.acceptance === 'superseded') {
+                    return;
+                }
                 const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
                 if (runtimeFailure) {
                     postCommitFailure = runtimeFailure;

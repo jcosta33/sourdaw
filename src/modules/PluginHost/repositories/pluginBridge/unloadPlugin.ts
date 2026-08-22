@@ -14,5 +14,7 @@ export async function unloadPlugin(instanceId?: string): Promise<PluginUnloadRes
     if (!isDesktopRuntime()) {
         return [instanceId ? [instanceId] : [], []];
     }
-    return parsePluginUnloadResult(await desktopInvoke('unload_plugin', instanceId === undefined ? {} : { instanceId }));
+    return parsePluginUnloadResult(
+        await desktopInvoke('unload_plugin', instanceId === undefined ? {} : { instanceId })
+    );
 }

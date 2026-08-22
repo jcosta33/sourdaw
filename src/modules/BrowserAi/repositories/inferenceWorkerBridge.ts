@@ -16,7 +16,12 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { type DdspArtifact } from '../models/DdspArtifactManifest';
-import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
+import {
+    type DdspSettings,
+    type DdspStoredArtifact,
+    type WorkerRequest,
+    type WorkerResponse,
+} from '../models/InferenceRequest';
 import { computeDdspSessionKey } from '../services/computeDdspSessionKey';
 import { updateActiveRenderProgress } from '../stores/inferenceProgressStore';
 
@@ -120,6 +125,71 @@ async function waitForAbortableTfjsRequest<TResult>(
     }
 }
 
+async function waitForAbortableModelRead(
+    read: Promise<MessagePort | null>,
+    signal: AbortSignal | undefined
+): Promise<MessagePort | null> {
+    if (signal === undefined) {
+        return read;
+    }
+    if (signal.aborted) {
+        void read.then(
+            (port) => port?.close(),
+            () => undefined
+        );
+        throw createAbortError();
+    }
+    return new Promise((resolve, reject) => {
+        let aborted = false;
+        const cancel = (): void => {
+            aborted = true;
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', cancel, { once: true });
+        void read.then(
+            (port) => {
+                signal.removeEventListener('abort', cancel);
+                if (aborted) {
+                    port?.close();
+                    return;
+                }
+                resolve(port);
+            },
+            (error: unknown) => {
+                signal.removeEventListener('abort', cancel);
+                if (!aborted) {
+                    reject(error);
+                }
+            }
+        );
+    });
+}
+
+async function waitForAbortableShutdown(shutdown: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+    if (signal === undefined) {
+        await shutdown.catch(() => undefined);
+        return;
+    }
+    throwIfAborted(signal);
+    await new Promise<void>((resolve, reject) => {
+        const cancel = (): void => {
+            signal.removeEventListener('abort', cancel);
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', cancel, { once: true });
+        void shutdown.then(
+            () => {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            },
+            () => {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            }
+        );
+    });
+}
+
 function stopWorker(state: WorkerState, stoppedWorker: Worker): void {
     stoppedWorker.onmessage = null;
     stoppedWorker.onerror = null;
@@ -169,8 +239,7 @@ async function getOnnxWorker(): Promise<Worker> {
     return worker;
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await -- consistent async API; callers await this; worker creation is currently synchronous
-async function getTfjsWorker(): Promise<Worker> {
+async function getTfjsWorker(signal?: AbortSignal): Promise<Worker> {
     // Reset idle timer
     if (workerState.tfjsIdleTimer !== null) {
         clearTimeout(workerState.tfjsIdleTimer);
@@ -178,8 +247,9 @@ async function getTfjsWorker(): Promise<Worker> {
     }
 
     if (workerState.tfjsShutdownPromise !== null) {
-        await workerState.tfjsShutdownPromise.catch(() => undefined);
+        await waitForAbortableShutdown(workerState.tfjsShutdownPromise, signal);
     }
+    throwIfAborted(signal);
 
     if (workerState.tfjs.worker && workerState.tfjs.initialized) {
         return workerState.tfjs.worker;
@@ -280,6 +350,7 @@ type LoadDdspSessionInput = {
     artifactVersion: string;
     artifacts: readonly DdspArtifact[];
     instrumentId: string;
+    requestId?: string;
 };
 
 const DDSP_ARTIFACT_PATHS = ['model.json', 'group1-shard1of1.bin', 'settings.json'] as const;
@@ -304,12 +375,15 @@ async function readDdspArtifacts(
     try {
         for (const artifact of artifacts) {
             throwIfAborted(signal);
-            const modelDataPort = await modelStorageWorkerBridge.readModel({
-                family: 'ddsp',
-                modelId: `${instrumentId}/${artifactVersion}/${artifact.path}`,
-                expectedSizeBytes: artifact.sizeBytes,
-                expectedSha256: artifact.sha256,
-            });
+            const modelDataPort = await waitForAbortableModelRead(
+                modelStorageWorkerBridge.readModel({
+                    family: 'ddsp',
+                    modelId: `${instrumentId}/${artifactVersion}/${artifact.path}`,
+                    expectedSizeBytes: artifact.sizeBytes,
+                    expectedSha256: artifact.sha256,
+                }),
+                signal
+            );
             if (modelDataPort === null) {
                 throw new Error(`Verified DDSP artifact is missing: ${artifact.path}`);
             }
@@ -407,16 +481,16 @@ export const inferenceWorkerBridge = {
     async loadDdspSession(
         input: LoadDdspSessionInput,
         signal?: AbortSignal
-    ): Promise<{ sessionKey: string; backend: 'webgpu'; modelFrameLength: number }> {
+    ): Promise<{ sessionKey: string; backend: 'webgpu'; modelFrameLength: number; settings: DdspSettings }> {
         throwIfAborted(signal);
         const sessionKey = await computeDdspSessionKey(input);
         logger.info(`[WorkerBridge] Loading verified DDSP session: ${sessionKey}`);
         const artifacts = await readDdspArtifacts(input, signal);
         let handedOff = false;
         try {
-            const worker = await getTfjsWorker();
+            const worker = await getTfjsWorker(signal);
             throwIfAborted(signal);
-            const requestId = crypto.randomUUID();
+            const requestId = input.requestId ?? crypto.randomUUID();
             const request: WorkerRequest = {
                 type: 'create-ddsp-session',
                 requestId,
@@ -436,7 +510,8 @@ export const inferenceWorkerBridge = {
                 response.sessionKey !== sessionKey ||
                 response.backend !== 'webgpu' ||
                 !Number.isSafeInteger(response.modelFrameLength) ||
-                response.modelFrameLength <= 0
+                response.modelFrameLength <= 0 ||
+                response.settings.modelMaxFrameLength !== response.modelFrameLength
             ) {
                 throw new Error(`Unexpected DDSP session response: ${response.type}`);
             }
@@ -444,6 +519,7 @@ export const inferenceWorkerBridge = {
                 sessionKey: response.sessionKey,
                 backend: response.backend,
                 modelFrameLength: response.modelFrameLength,
+                settings: response.settings,
             };
         } finally {
             if (!handedOff) {
@@ -479,7 +555,7 @@ export const inferenceWorkerBridge = {
         signal?: AbortSignal
     ): Promise<Extract<WorkerResponse, { type: 'ddsp-result' }>> {
         throwIfAborted(signal);
-        const worker = await getTfjsWorker();
+        const worker = await getTfjsWorker(signal);
         throwIfAborted(signal);
         try {
             const response = await waitForAbortableTfjsRequest(
