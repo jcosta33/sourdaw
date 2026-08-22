@@ -216,6 +216,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
+        # The longest single check in the fast lane, and the local default runs
+        # it on one worker for the resource guard's sake rather than the work's.
+        env:
+          SOURDAW_LINT_CONCURRENCY: auto
+          SOURDAW_LINT_THREADS: '0'
         run: pnpm lint:full
 
   boundaries:
