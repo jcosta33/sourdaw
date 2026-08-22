@@ -510,9 +510,12 @@ export async function sendChatMessage(
                         grants: planGrants,
                         budgets: admittedRun.budgets,
                         requiresConfirmation: false,
+                        readyAssetIds: result.actions.some((action) => action.type === 'importStemSet')
+                            ? ['selected-stem-assets']
+                            : [],
                         applicationToolReceipts: result.applicationToolReceipts,
                         providerProposal: result.providerProposal,
-                        requireProviderProposal: result.executionMode === 'atomic',
+                        requireProviderProposal: Boolean(result.providerProposal),
                     });
                     if (plannedRun.status === 'needs-user-decision') {
                         createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -626,9 +629,12 @@ export async function sendChatMessage(
                     },
                     budgets: { limits: { ...commandBatch.authority.budgets }, consumed: {} },
                     requiresConfirmation: compiledActionExecution.requiresConfirmation,
+                    readyAssetIds: result.actions.some((action) => action.type === 'importStemSet')
+                        ? ['selected-stem-assets']
+                        : [],
                     applicationToolReceipts: result.applicationToolReceipts,
                     providerProposal: result.providerProposal,
-                    requireProviderProposal: result.executionMode === 'atomic',
+                    requireProviderProposal: Boolean(result.providerProposal),
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();

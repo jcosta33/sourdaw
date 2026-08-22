@@ -27,6 +27,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -298,10 +299,12 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             }),
         ];
         trackStore.set({ tracks: [bassDi, bassAmp], selectedTrackId: null, ghostClips: [] });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

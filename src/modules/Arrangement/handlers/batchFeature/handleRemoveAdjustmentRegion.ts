@@ -33,6 +33,7 @@ function currentStateMatches(action: Extract<AppAction, { type: 'removeAdjustmen
 }
 
 export const handleRemoveAdjustmentRegion = createHandler<'removeAdjustmentRegion'>({
+    canReapplyAfterDivergence: (action) => action.payload.expectedRegion !== undefined,
     validate: (action) => currentStateMatches(action),
     execute: (a) => {
         if (!currentStateMatches(a)) {

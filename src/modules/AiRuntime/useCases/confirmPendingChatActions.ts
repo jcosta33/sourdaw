@@ -566,10 +566,12 @@ async function retryCommittedSectionRenders(
         return { status: 'failed', reason };
     } finally {
         if (renderRetryBudget?.reservation.status === 'reserved') {
+            const remainingJobs = getIncompleteSectionRenderJobs(confirmation);
+            const completedJobsCount = Math.max(0, followUp.jobs.length - (remainingJobs?.missingJobIds.length ?? 0));
             agentRunLifecycle.reconcileBudgetAttempt({
                 runId: confirmation.runId,
                 attemptId: renderRetryBudget.attemptId,
-                consumed: followUp.jobs.length,
+                consumed: completedJobsCount,
                 mode: 'final',
                 provenance: 'versioned-estimate',
             });
@@ -836,7 +838,20 @@ export async function confirmPendingChatActions(
 
     const budgetPersistenceWarning = commandBudget
         ? updateTrackedAgentRun(confirmation, () => {
-              agentWorkBudget.reconcileCommandWork({ runId: confirmation.runId, ...commandBudget });
+              const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation);
+              const actualRenderJobs =
+                  incompleteSectionRenders
+                      ? Math.max(
+                            0,
+                            (commandBatch.authority.budgets.maxRenderJobs ?? 0) -
+                                incompleteSectionRenders.missingJobIds.length
+                        )
+                      : undefined;
+              agentWorkBudget.reconcileCommandWork({
+                  runId: confirmation.runId,
+                  ...commandBudget,
+                  ...(actualRenderJobs !== undefined ? { actualRenderJobs } : {}),
+              });
           })
         : null;
 

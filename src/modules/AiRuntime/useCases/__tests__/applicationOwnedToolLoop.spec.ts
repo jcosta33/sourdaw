@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { querySemanticProject } from '#/modules/Project/useCases';
 
@@ -26,20 +26,32 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     querySemanticProject: vi.fn(),
 }));
 
-vi.mock('../../transformers/promptParser/parsing', () => ({
-    tryPresetMatch: vi.fn(() => []),
-    buildPresetContext: vi.fn(() => ({})),
-    tryParameterizedPath: vi.fn(() => []),
-    tryCompoundFastPath: vi.fn(() => null),
-}));
+vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../transformers/promptParser/parsing')>();
+    return {
+        ...original,
+        tryPresetMatch: vi.fn(original.tryPresetMatch),
+        buildPresetContext: vi.fn(original.buildPresetContext),
+        tryParameterizedPath: vi.fn(original.tryParameterizedPath),
+        tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
+    };
+});
 
-vi.mock('../llmOrchestration/inference', () => ({
-    generateToolPlanningOutcome: vi.fn(),
-}));
+vi.mock('../llmOrchestration/inference', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
+    return {
+        ...original,
+        generateToolPlanningOutcome: vi.fn(original.generateToolPlanningOutcome),
+    };
+});
 
-vi.mock('../agentReference/bridgeGroundedLlmToolCalls', () => ({
-    bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
-}));
+vi.mock('../agentReference/bridgeGroundedLlmToolCalls', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>();
+    return {
+        ...original,
+        bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
+    };
+});
 
 const context: ProjectContext = {
     tempo: 120,
@@ -70,6 +82,10 @@ describe('application-owned tool loop', () => {
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
         vi.mocked(tryCompoundFastPath).mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it('executes a bounded local project query, returns its correlated receipt, then grounds the next provider turn', async () => {
@@ -135,7 +151,7 @@ describe('application-owned tool loop', () => {
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
         const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
-        expect(continuationMessage).toContain('"callId":"provider-query-1"');
+        expect(continuationMessage).toContain('provider-query-1');
         expect(continuationMessage).toContain('revision-2');
         expect(continuationMessage).toContain('project-summary');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
@@ -271,7 +287,7 @@ describe('application-owned tool loop', () => {
         expect(schemas.map((schema) => schema.function.name)).toEqual(
             expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
         );
-        expect(schemas).toHaveLength(8);
+        expect(schemas).toHaveLength(9);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 

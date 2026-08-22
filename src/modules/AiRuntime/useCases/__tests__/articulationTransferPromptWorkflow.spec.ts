@@ -18,6 +18,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -335,10 +336,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();

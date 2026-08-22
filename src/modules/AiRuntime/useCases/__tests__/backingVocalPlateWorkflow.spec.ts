@@ -4,6 +4,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getPluginById, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 import {
     clearAgentSectionRenderArtifacts,
     getAgentSectionRenderArtifacts,
@@ -117,12 +118,18 @@ const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         addDeviceToStrip: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' })),
         backend,
         clearReportedLatency: vi.fn(),
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
         getAllSidechainRoutes: vi.fn(() => []),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            accepted: true,
+            acceptance: 'accepted',
+            initialization: 'initialized',
+        })),
         removeDeviceFromStrip: vi.fn(),
         removeSend: vi.fn(),
         renderOffline: vi.fn<RenderOfflineMock>(),
@@ -157,8 +164,10 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: runtimeMocks.initializeTrackStripFromSnapshot,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
     renderOffline: runtimeMocks.renderOffline,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
@@ -441,10 +450,12 @@ describe('backing-vocal plate workflow', () => {
             timeSignatureNumerator: 4,
             timeSignatureDenominator: 4,
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();

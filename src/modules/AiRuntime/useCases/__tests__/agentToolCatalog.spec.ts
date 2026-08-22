@@ -12,20 +12,32 @@ const { mockBridgeGroundedLlmToolCalls } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
 }));
 
-vi.mock('../../transformers/promptParser/parsing', () => ({
-    tryPresetMatch: vi.fn(() => []),
-    buildPresetContext: vi.fn(() => ({})),
-    tryParameterizedPath: vi.fn(() => []),
-    tryCompoundFastPath: vi.fn(() => null),
-}));
+vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../transformers/promptParser/parsing')>();
+    return {
+        ...original,
+        tryPresetMatch: vi.fn(original.tryPresetMatch),
+        buildPresetContext: vi.fn(original.buildPresetContext),
+        tryParameterizedPath: vi.fn(original.tryParameterizedPath),
+        tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
+    };
+});
 
-vi.mock('../llmOrchestration/inference', () => ({
-    generateToolPlanningOutcome: vi.fn(),
-}));
+vi.mock('../llmOrchestration/inference', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
+    return {
+        ...original,
+        generateToolPlanningOutcome: vi.fn(original.generateToolPlanningOutcome),
+    };
+});
 
-vi.mock('../agentReference/bridgeGroundedLlmToolCalls', () => ({
-    bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
-}));
+vi.mock('../agentReference/bridgeGroundedLlmToolCalls', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>();
+    return {
+        ...original,
+        bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
+    };
+});
 
 const context: ProjectContext = {
     tempo: 120,
@@ -57,6 +69,7 @@ describe('agent tool catalog', () => {
 
     afterEach(() => {
         pluginScanStore.set(defaultPluginScanState);
+        vi.restoreAllMocks();
     });
 
     it('keeps provider planning on a compact catalog, discovers command schemas dynamically, and returns only a proposal', async () => {

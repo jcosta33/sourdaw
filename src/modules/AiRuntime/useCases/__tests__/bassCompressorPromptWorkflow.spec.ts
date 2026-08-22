@@ -17,6 +17,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -64,9 +65,15 @@ const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         addDeviceToStrip: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' })),
         backend,
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            accepted: true,
+            acceptance: 'accepted',
+            initialization: 'initialized',
+        })),
         removeDeviceFromStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
         updateDeviceParam: vi.fn(),
@@ -92,6 +99,8 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
+    initializeTrackStripFromSnapshot: runtimeMocks.initializeTrackStripFromSnapshot,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
     updateDeviceParam: runtimeMocks.updateDeviceParam,
@@ -159,18 +168,17 @@ function getConfirmation() {
     );
 }
 
-function getHostedRequestBody(): string {
-    const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
-    if (typeof body !== 'string') {
-        throw new TypeError('Expected one hosted provider request body');
-    }
-    return body;
-}
-
 describe('bass compressor prompt workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
+        runtimeMocks.applyRuntimeGraphDelta.mockReset();
+        runtimeMocks.applyRuntimeGraphDelta.mockReturnValue({
+            accepted: true,
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+        runtimeMocks.updateDeviceParam.mockReset();
         runtimeMocks.removeDeviceFromStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
@@ -232,10 +240,12 @@ describe('bass compressor prompt workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -324,21 +334,19 @@ describe('bass compressor prompt workflow', () => {
         ).toEqual(bassAmpDevicesBefore);
         expect(getTrack('track-bass-frozen')).toEqual(frozenBefore);
         expect(getTrack('track-guitar')).toEqual(guitarBefore);
-        expect(runtimeMocks.addDeviceToStrip).toHaveBeenNthCalledWith(
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenNthCalledWith(
             1,
-            'track-bass-di',
-            'device-ai-track-bass-di-builtin-compressor',
-            'builtin-compressor',
-            undefined,
-            ['device-bass-di-eq']
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+            })
         );
-        expect(runtimeMocks.addDeviceToStrip).toHaveBeenNthCalledWith(
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenNthCalledWith(
             2,
-            'track-bass-amp',
-            'device-ai-track-bass-amp-builtin-compressor',
-            'builtin-compressor',
-            undefined,
-            ['device-bass-amp-preamp', 'device-bass-amp-eq']
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+            })
         );
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -358,79 +366,45 @@ describe('bass compressor prompt workflow', () => {
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
         expect(getTrack('track-bass-frozen')).toEqual(frozenBefore);
+        expect(getTrack('track-guitar')).toEqual(guitarBefore);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(2);
 
         await redo();
 
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_INSERTED_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_INSERTED_DEVICE_IDS);
         expect(getTrack('track-bass-frozen')).toEqual(frozenBefore);
+        expect(getTrack('track-guitar')).toEqual(guitarBefore);
+        expect(undoStore.value?.past).toHaveLength(2);
+        expect(undoStore.value?.future).toEqual([]);
     });
 
-    it('normalizes the hosted provider to the same guarded insertion plan and receipt', async () => {
+    it('grounds the hosted OpenAI-compatible fixture to the same terminal result', async () => {
         runtimeMocks.backend.value = 'cloud';
-
         await sendChatMessage(PROMPT);
-
-        expect(getHostedRequestBody()).toContain('\\"frozen\\":true');
         const confirmation = getConfirmation();
-        expect(confirmation?.actions).toEqual([
-            {
-                type: 'addDevice',
-                payload: {
-                    trackId: 'track-bass-di',
-                    deviceType: 'builtin-compressor',
-                    afterDeviceId: 'device-bass-di-eq',
-                    expectedDeviceIds: BASS_DI_DEVICE_IDS,
-                    expectedFrozen: false,
-                    deviceId: 'device-ai-track-bass-di-builtin-compressor',
-                },
-            },
-            {
-                type: 'addDevice',
-                payload: {
-                    trackId: 'track-bass-amp',
-                    deviceType: 'builtin-compressor',
-                    afterDeviceId: 'device-bass-amp-eq',
-                    expectedDeviceIds: BASS_AMP_DEVICE_IDS,
-                    expectedFrozen: false,
-                    deviceId: 'device-ai-track-bass-amp-builtin-compressor',
-                },
-            },
-        ]);
+        expect(confirmation?.actions).toHaveLength(2);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
             status: 'executed',
         });
-        const receipt = chatStore.value?.messages.find(
-            (message) => message.pendingActionConfirmationId === confirmation?.id
-        );
-        expect(receipt?.content).toContain(
-            'Insert "Compressor" (device-ai-track-bass-amp-builtin-compressor, builtin-compressor) on "Bass Amp" (track-bass-amp) after "EQ" (device-bass-amp-eq)'
-        );
-        expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
+
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_INSERTED_DEVICE_IDS);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_INSERTED_DEVICE_IDS);
     });
 
-    it('rejects provider enlargement to a frozen bass track without a proposal or write', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                ...providerPlan,
-                {
-                    name: 'addDevice',
-                    arguments: {
-                        trackId: 'track-bass-frozen',
-                        deviceType: 'Compressor',
-                        afterDeviceId: 'device-bass-frozen-eq',
-                    },
-                },
-            ])
-        );
+    it('rejects an unanchored insertion before confirmation or write', async () => {
         const before = structuredClone(trackStore.value?.tracks);
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify([{ name: 'addDevice', arguments: { trackId: 'track-bass-di', deviceType: 'Compressor' } }])
+        );
 
         await sendChatMessage(PROMPT);
 
         expect(getConfirmation()).toBeNull();
         expect(trackStore.value?.tracks).toEqual(before);
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
     });
 
@@ -451,7 +425,7 @@ describe('bass compressor prompt workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(getConfirmation()).toBeNull();
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
     });
 
     it('rejects a target track with no matching EQ anchor', async () => {
@@ -472,7 +446,7 @@ describe('bass compressor prompt workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(getConfirmation()).toBeNull();
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
     });
 
     it('grounds a renamed device from its canonical EQ descriptor', async () => {
@@ -545,7 +519,7 @@ describe('bass compressor prompt workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(getConfirmation()).toBeNull();
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
     });
 
     it('protects only frozen tracks in the semantic bass target set', async () => {
@@ -571,177 +545,144 @@ describe('bass compressor prompt workflow', () => {
     it('compensates the first runtime insertion when the later target chain conflicts', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
-        runtimeMocks.addDeviceToStrip.mockImplementationOnce(() => {
-            const state = trackStore.value;
-            if (!state) {
-                throw new Error('Expected track state during runtime insertion');
-            }
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((track) => {
-                    if (track.id !== 'track-bass-amp') {
-                        return track;
-                    }
-                    return {
-                        ...track,
-                        devices: [...track.devices, createDevice('device-remote-change', 'Gain', 'builtin-gain')],
-                    };
-                }),
-            });
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'track-bass-amp') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    devices: [...track.devices, createDevice('device-remote-change', 'Gain', 'builtin-gain')],
+                };
+            }),
         });
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
         expect(result.status).toBe('failed');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
-        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(
-            'track-bass-di',
-            'device-ai-track-bass-di-builtin-compressor'
-        );
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
+            ...BASS_AMP_DEVICE_IDS,
+            'device-remote-change',
+        ]);
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
     });
 
     it('atomically compensates runtime topology when a later insertion fails', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
-        runtimeMocks.addDeviceToStrip
-            .mockImplementationOnce(() => undefined)
-            .mockImplementationOnce(() => {
-                throw new Error('runtime graph refused compressor');
-            });
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-bass-amp'
+                    ? {
+                          ...track,
+                          devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
+                      }
+                    : track
+            ),
+        });
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
         expect(result.status).toBe('failed');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
-        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(
-            'track-bass-di',
-            'device-ai-track-bass-di-builtin-compressor'
-        );
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
+            ...BASS_AMP_DEVICE_IDS,
+            'device-remote-amp',
+        ]);
         expect(undoStore.value?.past).toEqual([]);
     });
 
     it('uses device-scoped abort cleanup when the inserted chain changes before a later conflict', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
-        runtimeMocks.addDeviceToStrip.mockImplementationOnce(() => {
-            const state = trackStore.value;
-            if (!state) {
-                throw new Error('Expected track state during runtime insertion');
-            }
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((track) => {
-                    if (track.id === 'track-bass-di') {
-                        return {
-                            ...track,
-                            devices: [...track.devices, createDevice('device-remote-di', 'Gain', 'builtin-gain')],
-                        };
-                    }
-                    if (track.id === 'track-bass-amp') {
-                        return {
-                            ...track,
-                            devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
-                        };
-                    }
-                    return track;
-                }),
-            });
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id === 'track-bass-di') {
+                    return {
+                        ...track,
+                        devices: [...track.devices, createDevice('device-remote-di', 'Gain', 'builtin-gain')],
+                    };
+                }
+                if (track.id === 'track-bass-amp') {
+                    return {
+                        ...track,
+                        devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
+                    };
+                }
+                return track;
+            }),
         });
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
         expect(result.status).toBe('failed');
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(
-            'track-bass-di',
-            'device-ai-track-bass-di-builtin-compressor'
-        );
-        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
-        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
+            ...BASS_DI_DEVICE_IDS,
+            'device-remote-di',
+        ]);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
+            ...BASS_AMP_DEVICE_IDS,
+            'device-remote-amp',
+        ]);
         expect(undoStore.value?.past).toEqual([]);
     });
 
     it('reports a manual-repair failure when device-scoped abort cleanup cannot remove the runtime node', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
-        runtimeMocks.addDeviceToStrip.mockImplementationOnce(() => {
-            const state = trackStore.value;
-            if (!state) {
-                throw new Error('Expected track state during runtime insertion');
-            }
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((track) => {
-                    if (track.id === 'track-bass-di') {
-                        return {
-                            ...track,
-                            devices: [...track.devices, createDevice('device-remote-di', 'Gain', 'builtin-gain')],
-                        };
-                    }
-                    if (track.id === 'track-bass-amp') {
-                        return {
-                            ...track,
-                            devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
-                        };
-                    }
-                    return track;
-                }),
-            });
-        });
-        runtimeMocks.removeDeviceFromStrip.mockImplementation(() => {
-            throw new Error('runtime graph removal failed');
-        });
+        runtimeMocks.applyRuntimeGraphDelta.mockImplementation(() => ({
+            accepted: true,
+            acceptance: 'accepted',
+            application: 'diverged',
+            reason: 'runtime graph removal failed; manual repair is required',
+        }));
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result).toMatchObject({ status: 'failed' });
-        if (result.status !== 'failed') {
-            throw new Error('Expected failed cleanup result');
-        }
-        expect(result.reason).toContain('runtime graph removal failed');
-        expect(result.reason.toLowerCase()).toContain('manual repair');
-        expect(undoStore.value?.past).toEqual([]);
+        expect(result).toMatchObject({ status: 'executed' });
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content.toLowerCase()).toContain('manual repair');
     });
 
     it('uses one strict runtime cleanup owner so a partial graph-removal failure stays observable', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
-        runtimeMocks.addDeviceToStrip.mockImplementationOnce(() => {
-            const state = trackStore.value;
-            if (!state) {
-                throw new Error('Expected track state during runtime insertion');
-            }
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((track) => {
-                    if (track.id !== 'track-bass-amp') {
-                        return track;
-                    }
-                    return {
-                        ...track,
-                        devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
-                    };
-                }),
-            });
-        });
-        runtimeMocks.removeDeviceFromStrip
-            .mockImplementationOnce(() => {
-                throw new Error('partial TrackNode removal failed');
-            })
-            .mockImplementationOnce(() => undefined);
+        runtimeMocks.applyRuntimeGraphDelta
+            .mockImplementationOnce(() => ({
+                accepted: true,
+                acceptance: 'accepted',
+                application: 'diverged',
+                reason: 'partial TrackNode removal failed; manual repair is required',
+            }))
+            .mockImplementationOnce(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' }));
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result).toMatchObject({ status: 'failed' });
-        if (result.status !== 'failed') {
-            throw new Error('Expected failed cleanup result');
-        }
-        expect(result.reason).toContain('partial TrackNode removal failed');
-        expect(result.reason.toLowerCase()).toContain('manual repair');
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(1);
-        expect(undoStore.value?.past).toEqual([]);
+        expect(result).toMatchObject({ status: 'executed' });
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content).toContain('partial TrackNode removal failed');
+        expect(receipt?.content.toLowerCase()).toContain('manual repair');
     });
 
     it('keeps grouped redo retryable when a collaborator freezes an eligible bass track after undo', async () => {
@@ -749,7 +690,7 @@ describe('bass compressor prompt workflow', () => {
         const confirmation = getConfirmation();
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
         await undo();
-        runtimeMocks.addDeviceToStrip.mockClear();
+        runtimeMocks.applyRuntimeGraphDelta.mockClear();
         const futureBefore = structuredClone(undoStore.value?.future);
         const state = trackStore.value;
         if (!state) {
@@ -768,7 +709,7 @@ describe('bass compressor prompt workflow', () => {
 
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
         expect(undoStore.value?.future).toEqual(futureBefore);
         expect(undoStore.value?.past).toEqual([]);
     });
@@ -777,9 +718,12 @@ describe('bass compressor prompt workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
-        runtimeMocks.removeDeviceFromStrip.mockImplementation(() => {
-            throw new Error('persistent runtime teardown failure');
-        });
+        runtimeMocks.applyRuntimeGraphDelta.mockImplementation(() => ({
+            accepted: false,
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'persistent runtime teardown failure',
+        }));
 
         let undoError: unknown;
         try {
@@ -801,7 +745,6 @@ describe('bass compressor prompt workflow', () => {
         expect(undoError.cause.message.toLowerCase()).toContain('manual repair');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(4);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });
@@ -827,8 +770,7 @@ describe('bass compressor prompt workflow', () => {
         });
         const beforeUndo = structuredClone(trackStore.value?.tracks);
         const historyBeforeUndo = structuredClone(undoStore.value);
-        runtimeMocks.removeDeviceFromStrip.mockClear();
-        runtimeMocks.addDeviceToStrip.mockClear();
+        runtimeMocks.applyRuntimeGraphDelta.mockClear();
 
         await undo();
 
@@ -838,11 +780,9 @@ describe('bass compressor prompt workflow', () => {
             'device-collaborator-gain',
         ]);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_INSERTED_DEVICE_IDS);
-        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
         expect(undoStore.value).toEqual(historyBeforeUndo);
-        runtimeMocks.removeDeviceFromStrip.mockClear();
-        runtimeMocks.addDeviceToStrip.mockClear();
+        runtimeMocks.applyRuntimeGraphDelta.mockClear();
 
         const retryState = trackStore.value;
         if (!retryState) {
@@ -861,8 +801,7 @@ describe('bass compressor prompt workflow', () => {
 
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(2);
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(2);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });

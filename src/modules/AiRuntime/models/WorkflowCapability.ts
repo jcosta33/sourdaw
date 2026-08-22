@@ -32,6 +32,8 @@ export const WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES = [
     'arpeggiate',
     'setTrackGain',
     'importStemSet',
+    'addSidechainRoute',
+    'removeSidechainRoute',
 ] as const;
 
 const workflowCapabilityDescriptions: Readonly<Record<WorkflowCapabilityId, string>> = {

@@ -26,6 +26,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -272,6 +273,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({
             tracks: [
                 createTrack('track-chords', 'Chords', 'clip-chords'),

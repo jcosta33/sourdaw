@@ -571,6 +571,21 @@ function isExplicitTrackDeletionScope({ context, text, trackId }: ExplicitTrackD
         return false;
     }
 
+    const hasTrackNameCollision = context.tracks.some(
+        (candidateTrack) =>
+            candidateTrack.id !== track.id &&
+            normalizePromptText(candidateTrack.name) === normalizePromptText(track.name)
+    );
+    if (hasTrackNameCollision) {
+        const normalizedText = normalizePromptText(text);
+        const hasLiteralId = normalizedText.includes(normalizePromptText(track.id));
+        const hasSelection = /\b(?:selected|current|this)\b/u.test(normalizedText);
+        const hasKind = new RegExp(`\\b${escapeRegExp(track.kind)}\\b`, 'u').test(normalizedText);
+        if (!hasLiteralId && !hasSelection && !hasKind) {
+            return false;
+        }
+    }
+
     let commandText = text;
     const targetReferences = [track.id, track.name].sort((left, right) => right.length - left.length);
     for (const reference of targetReferences) {
@@ -4485,7 +4500,8 @@ export function bridgeGroundedLlmToolCalls({
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
-            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches')
+            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches') ||
+            (wholeProjectVibeMixScope && call.name === 'automateTrackGainRange')
         ) {
             grounded = call;
         } else {
