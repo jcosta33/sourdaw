@@ -1,48 +1,47 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-async function add_track(page: import('@playwright/test').Page, kind: string): Promise<void> {
+async function addMidiClipAndOpenInspector(page: Page): Promise<void> {
+    await page.locator('#main-content').click();
     await page.keyboard.press(`${MOD}+k`);
-    await page.getByPlaceholder('Type a command...', { exact: true }).fill(`Add ${kind} Track`);
-    await page.getByRole('option', { name: `Add ${kind} Track` }).click();
-}
+    const input = page.getByPlaceholder('Type a command...', { exact: true });
+    await expect(input).toBeVisible();
+    await input.fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    const trackList = page.getByRole('grid', { name: /Track list/i }).first();
+    await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
 
-async function create_and_select_clip(page: import('@playwright/test').Page): Promise<void> {
-    await add_track(page, 'MIDI');
-    const timeline = page.getByLabel('Timeline editor surface');
-    await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
+    const canvas = page.getByLabel('Timeline editor surface');
+    await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
     await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
-    await page.waitForTimeout(500);
     const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-    const clip_content = inspector.getByText(/Clip Gain|Trim Start/i);
-    for (let attempt = 0; attempt < 5; attempt++) {
-        await timeline.click({ position: { x: 300, y: 30 } });
-        if (await clip_content.first().isVisible().catch(() => false)) { return; }
-        await page.waitForTimeout(300);
-    }
-    await expect(clip_content.first()).toBeVisible({ timeout: 5000 });
+    const grooveSource = inspector.getByRole('button', {
+        name: 'Select or drag New midi clip as groove source',
+        exact: true,
+    });
+    await expect(grooveSource).toBeVisible();
+    await grooveSource.click();
+    await expect(inspector.getByRole('slider', { name: 'Trim clip start' })).toBeVisible();
 }
 
-// Clip inspector Trim start — the last uncovered slider in the 5-slider matrix.
-// #1817: Fade in + Clip gain. #1818: Trim end + Fade out. This: Trim start.
-test.describe('Clip inspector Trim start — keyboard response', () => {
+test.describe('Clip inspector Trim start', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await create_and_select_clip(page);
+        await addMidiClipAndOpenInspector(page);
     });
 
-    test('Trim clip start slider responds to keyboard', async ({ page }) => {
+    test('ArrowUp steps Trim clip start by 0.25', async ({ page }) => {
         const trimStart = page.getByRole('slider', { name: 'Trim clip start' });
-        await expect(trimStart).toBeVisible({ timeout: 5000 });
-        await trimStart.focus();
         const before = Number(await trimStart.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await trimStart.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        expect(Number.isFinite(before)).toBe(true);
+
+        await trimStart.scrollIntoViewIfNeeded();
+        await trimStart.press('ArrowUp');
+        await expect.poll(async () => Number(await trimStart.getAttribute('aria-valuenow'))).toBe(before + 0.25);
     });
 });
