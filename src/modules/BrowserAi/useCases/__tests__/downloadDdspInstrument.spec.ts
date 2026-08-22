@@ -7,12 +7,14 @@ const releaseGate = vi.hoisted(() => ({ ddsp: true }));
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
 import { DDSP_INSTRUMENT_CATALOG, type DdspInstrumentId } from '../../models/DdspInstrumentCatalog';
+import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
 import { type StorageStatus } from '../../models/StorageStatus';
 import { type ModelRegistryState, modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadDdspInstrument } from '../downloadDdspInstrument';
 import { isDdspInstrumentId } from '../isDdspInstrumentId';
 
 type DownloadModelRepo = (input: {
+    onProgress?: (payload: ModelDownloadProgressPayload) => void;
     signal?: AbortSignal;
     spec: {
         family: 'ddsp';
@@ -133,6 +135,93 @@ describe('downloadDdspInstrument', () => {
             expect(modelRegistryStore.value?.storageUsedBytes).toBe(storageStatus.usedBytes);
         }
     );
+
+    it('reports monotonic byte-weighted progress across unequal artifacts and retry stage events', async () => {
+        const total_bytes = instrument.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
+        const observed_progress: number[] = [];
+        const downloadModelRepo = vi.fn<DownloadModelRepo>().mockImplementation(async ({ onProgress, spec }) => {
+            if (downloadModelRepo.mock.calls.length === 1) {
+                const events: Array<Pick<ModelDownloadProgressPayload, 'bytesDownloaded' | 'stage'>> = [
+                    { bytesDownloaded: spec.sizeBytes / 2, stage: 'downloading' },
+                    { bytesDownloaded: spec.sizeBytes / 4, stage: 'downloading' },
+                    { bytesDownloaded: spec.sizeBytes * 2, stage: 'verifying' },
+                    { bytesDownloaded: -1, stage: 'downloading' },
+                ];
+                for (const { bytesDownloaded, stage } of events) {
+                    onProgress?.({
+                        modelId: spec.modelId,
+                        bytesDownloaded,
+                        totalBytes: spec.sizeBytes,
+                        progress: bytesDownloaded / spec.sizeBytes,
+                        stage,
+                    });
+                    observed_progress.push(
+                        modelRegistryStore.value?.ddspInstruments.find((entry) => entry.id === instrument.id)
+                            ?.downloadProgress ?? -1
+                    );
+                }
+            }
+        });
+        injectDependencies(downloadDdspInstrument, {
+            logger: { warn: vi.fn() },
+            downloadModelRepo,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            cleanupUnpublishedDdspGeneration: vi.fn(),
+            getStorageStatus: vi.fn().mockResolvedValue(storageStatus),
+            publishDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
+            stageDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
+            withDdspInstrumentLock: passThroughLock,
+        });
+
+        await downloadDdspInstrument(instrument.id);
+
+        expect(observed_progress[0]).toBeCloseTo(instrument.artifacts[0]!.sizeBytes / 2 / total_bytes);
+        expect(observed_progress).not.toContain(1 / instrument.artifacts.length);
+        expect(observed_progress).toEqual([...observed_progress].sort((left, right) => left - right));
+        expect(observed_progress.every((progress) => progress >= 0 && progress <= 0.99)).toBe(true);
+    });
+
+    it('stays below 100 percent until the verified generation is published', async () => {
+        let finish_publish = (): void => undefined;
+        const publish_pending = new Promise<void>((resolve) => {
+            finish_publish = resolve;
+        });
+        const downloadModelRepo = vi.fn<DownloadModelRepo>().mockImplementation(async ({ onProgress, spec }) => {
+            onProgress?.({
+                modelId: spec.modelId,
+                bytesDownloaded: spec.sizeBytes,
+                totalBytes: spec.sizeBytes,
+                progress: 1,
+                stage: 'complete',
+            });
+        });
+        const publishDdspInstrumentGeneration = vi.fn(() => publish_pending);
+        injectDependencies(downloadDdspInstrument, {
+            logger: { warn: vi.fn() },
+            downloadModelRepo,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            cleanupUnpublishedDdspGeneration: vi.fn(),
+            getStorageStatus: vi.fn().mockResolvedValue(storageStatus),
+            publishDdspInstrumentGeneration,
+            stageDdspInstrumentGeneration: vi.fn().mockResolvedValue(undefined),
+            withDdspInstrumentLock: passThroughLock,
+        });
+
+        const download = downloadDdspInstrument(instrument.id);
+        await vi.waitFor(() => expect(publishDdspInstrumentGeneration).toHaveBeenCalledOnce());
+
+        const pending = modelRegistryStore.value?.ddspInstruments.find((entry) => entry.id === instrument.id);
+        expect(pending).toMatchObject({ status: 'downloading', downloadProgress: 0.99 });
+        expect(Math.round((pending?.downloadProgress ?? 1) * 100)).toBe(99);
+
+        finish_publish();
+        await download;
+
+        expect(modelRegistryStore.value?.ddspInstruments.find((entry) => entry.id === instrument.id)).toMatchObject({
+            status: 'ready',
+            downloadProgress: 1,
+        });
+    });
 
     it('cleans a staged partial generation and leaves the registry error state on cancellation', async () => {
         const cancelled = new DOMException('cancelled', 'AbortError');

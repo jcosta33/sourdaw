@@ -10,13 +10,18 @@ import { describe, expect, it } from 'vitest';
 import {
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
+    assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
+    DDSP_ADMISSION_DECISION_PATH,
+    DDSP_MODEL_PATHS,
+    DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
     DDSP_TFJS_RUNTIME_PATHS,
+    ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
     GRAND_BOULE_RELEASE_REGISTRY,
@@ -38,6 +43,47 @@ const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
 const repositoryDawDspArtifacts = new Set(wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp')?.artifacts ?? []);
+const ddspTfjsApplicationRuntimePathSet = new Set<string>(DDSP_TFJS_APPLICATION_RUNTIME_PATHS);
+const ddspModelEnforcementPaths = [
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+    'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+    'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+    'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorker.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+    'src/modules/BrowserAi/useCases/downloadModel.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/removeModel.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+] as const;
+
+function sha256(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+}
+
+function writeDdspModelContractFixture(root: string, manifest: string): void {
+    const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+    for (const [path, value] of [
+        [manifestPath, manifest],
+        ['electron/protocol.ts', 'protocol'],
+        ['public/legal/THIRD-PARTY-NOTICES.md', 'notice'],
+        [DDSP_ADMISSION_DECISION_PATH, `Admitted \`DdspArtifactManifest\` SHA-256: \`${sha256(manifest)}\``],
+        ...ddspModelEnforcementPaths.map((path) => [path, `baseline:${path}`] as const),
+    ] as const) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), value);
+    }
+}
 
 function wasmWithFunctionExport(name: string): Uint8Array {
     const encodedName = new TextEncoder().encode(name);
@@ -633,10 +679,159 @@ describe('release inventory', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
+    it('composes the admitted DDSP model contract into live release inventory validation', () => {
+        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    });
+
+    it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
+        const contract = ddspModelsReleaseInventoryContract(repositoryRoot);
+
+        expect(contract.retention).toBe('keep-with-obligations');
+        expect(contract.paths).toEqual(DDSP_MODEL_PATHS);
+        expect(contract.paths).not.toContain('scripts/checkReleaseInventory.ts');
+        expect(contract.paths).toEqual(
+            expect.arrayContaining([
+                'electron/protocol.ts',
+                'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+                'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+                'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+                'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+                'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+                'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+                'src/modules/BrowserAi/workers/modelStorageWorker.ts',
+                'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+                'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+                'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+                'src/modules/BrowserAi/useCases/downloadModel.ts',
+                'src/modules/BrowserAi/useCases/removeModel.ts',
+                'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+            ])
+        );
+        for (const path of ddspModelEnforcementPaths) {
+            expect(contract.digests?.some((digest) => digest.endsWith(`:${path}`))).toBe(true);
+        }
+        expect(contract.digests?.filter((digest) => digest.includes(':bytes:'))).toHaveLength(12);
+        expect(contract.licenses).toEqual(['unverified:exact-GCS-checkpoint-artifacts']);
+        expect(contract.obligations).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('checkpoint license explicitly unverified'),
+                expect.stringContaining('MODEL_RELEASE_ADMISSION.ddsp to false'),
+                expect.stringContaining('exact Magenta DDSP source from electron/protocol.ts connect-src'),
+                expect.stringContaining('remove its release inventory egress assignment'),
+            ])
+        );
+    });
+
+    it.each([DDSP_ADMISSION_DECISION_PATH, 'electron/protocol.ts', 'public/legal/THIRD-PARTY-NOTICES.md'])(
+        'rejects admitted DDSP provenance drift in %s',
+        (changedPath) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-model-admission-'));
+            const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+            const manifest = `baseline:${manifestPath}`;
+            writeDdspModelContractFixture(root, manifest);
+
+            try {
+                const admitted = ddspModelsReleaseInventoryContract(root);
+                expect(() => assertDdspModelsReleaseInventory(root, admitted)).not.toThrow();
+
+                writeFileSync(join(root, changedPath), `changed:${changedPath}`);
+                expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
+                    changedPath === DDSP_ADMISSION_DECISION_PATH
+                        ? 'ADR 0035 does not admit the current DDSP artifact manifest'
+                        : 'DDSP models release inventory digests does not match provenance'
+                );
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it.each([...DDSP_TFJS_APPLICATION_RUNTIME_PATHS])(
+        'rejects drift in admitted DDSP TF.js runtime source %s',
+        (changedPath) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-runtime-'));
+            for (const path of DDSP_TFJS_RUNTIME_PATHS) {
+                if (!path.startsWith('public/legal/') && !ddspTfjsApplicationRuntimePathSet.has(path)) {
+                    continue;
+                }
+                mkdirSync(dirname(join(root, path)), { recursive: true });
+                writeFileSync(join(root, path), `baseline:${path}`);
+            }
+
+            try {
+                const before = ddspTfjsRuntimeReleaseInventoryContract(root);
+                writeFileSync(join(root, changedPath), `changed runtime:${changedPath}`);
+
+                expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it.each([
+        'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+        'src/modules/BrowserAi/workers/modelStorageWorker.ts',
+        'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+        'src/infra/release/modelReleaseAdmission.ts',
+        'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+        'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+        'src/modules/BrowserAi/useCases/downloadModel.ts',
+        'src/modules/BrowserAi/useCases/removeModel.ts',
+    ])('rejects drift in admitted DDSP enforcement %s', (changedPath) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-enforcement-'));
+        writeDdspModelContractFixture(root, 'admitted manifest');
+
+        try {
+            const admitted = ddspModelsReleaseInventoryContract(root);
+            writeFileSync(join(root, changedPath), `changed enforcement:${changedPath}`);
+
+            expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
+                'DDSP models release inventory digests does not match provenance'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a regenerated DDSP inventory when the manifest changes without a new admission decision', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-manifest-anchor-'));
+        const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+        const manifest = 'admitted manifest';
+        writeDdspModelContractFixture(root, manifest);
+
+        try {
+            const admitted = ddspModelsReleaseInventoryContract(root);
+            const changedManifest = 'changed manifest and artifact identities';
+            writeFileSync(join(root, manifestPath), changedManifest);
+            const regenerated = {
+                ...admitted,
+                digests: admitted.digests?.map((digest) =>
+                    digest.endsWith(`:${manifestPath}`) ? `sha256:${sha256(changedManifest)}:${manifestPath}` : digest
+                ),
+            };
+
+            expect(() => assertDdspModelsReleaseInventory(root, regenerated)).toThrow(
+                'ADR 0035 does not admit the current DDSP artifact manifest'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps the public DDSP notice truthful about active downloads and the unverified checkpoint license', () => {
+        const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
+
+        expect(notice).not.toContain('release-withheld DDSP worker');
+        expect(notice).not.toContain('product admission gate remains closed');
+        expect(notice).toContain('checkpoint license remains unverified');
+        expect(notice).toContain('does not bundle or redistribute');
+    });
+
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
         for (const path of DDSP_TFJS_RUNTIME_PATHS) {
-            if (!path.startsWith('public/legal/')) {
+            if (!path.startsWith('public/legal/') && !ddspTfjsApplicationRuntimePathSet.has(path)) {
                 continue;
             }
             mkdirSync(join(root, path, '..'), { recursive: true });
