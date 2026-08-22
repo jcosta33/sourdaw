@@ -147,6 +147,7 @@ type PendingAutomergeStorageWrite = {
     readonly didCommit: () => void;
     readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
+    readonly scoped: boolean;
     readonly snapshotTransaction: object | undefined;
     readonly prepare: () => PendingWritePreparation;
 };
@@ -221,8 +222,39 @@ let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
+type AutomergeStorageMutationOrigin = 'owned' | 'unowned';
+let activeAutomergeStorageMutationOrigin: AutomergeStorageMutationOrigin | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
 const inboundSanitizersBySlot = new Map<string, (value: unknown) => unknown>();
+
+/**
+ * Whether the mutation currently reaching the repository belongs to an action.
+ *
+ * A storage flush carries the scope captured when its pending write was
+ * created, overriding whichever transaction happens to call the flush. With no
+ * pending-write provenance, direct repository mutations fall back to the
+ * ambient action transaction. This keeps delayed owned commits owned, foreign
+ * buffered writes foreign, and direct in-action document mutations owned.
+ */
+export function isAutomergeStorageMutationOwned(): boolean {
+    if (activeAutomergeStorageMutationOrigin) {
+        return activeAutomergeStorageMutationOrigin === 'owned';
+    }
+    return activeAutomergeStorageTransaction !== undefined;
+}
+
+function runWithAutomergeStorageMutationOrigin<Result>(
+    origin: AutomergeStorageMutationOrigin,
+    callback: () => Result
+): Result {
+    const previousOrigin = activeAutomergeStorageMutationOrigin;
+    activeAutomergeStorageMutationOrigin = origin;
+    try {
+        return callback();
+    } finally {
+        activeAutomergeStorageMutationOrigin = previousOrigin;
+    }
+}
 
 function getInboundSanitizerKey(docId: string, key: string): string {
     return `${docId}\u0000${key}`;
@@ -336,6 +368,7 @@ type AutomergeStorageCommitOutcome =
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
 function commitAutomergeStorageMutations(
     mutations: readonly AutomergeStorageMutationInput[],
+    origin: AutomergeStorageMutationOrigin,
     validateDocument?: AutomergeStorageDocumentValidator
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
@@ -355,31 +388,33 @@ function commitAutomergeStorageMutations(
     // control-flow analysis does not model the write through the callback and
     // narrows a local to `false` for the whole catch below.
     const application = { appliedChangeFn: false };
-    try {
-        port.mutateDoc({
-            docId: firstMutation.docId,
-            changedKeys,
-            changeFn: (doc) => {
-                for (const mutation of mutations) {
-                    mutation.changeFn(doc);
-                }
-                const validationFailure = validateDocument?.(doc) ?? null;
-                if (validationFailure) {
-                    throw new AutomergeStorageTransactionValidationError(validationFailure);
-                }
-                application.appliedChangeFn = true;
-            },
-            message,
-            snapshotTransaction: firstMutation.snapshotTransaction,
-        });
-    } catch (error) {
-        if (application.appliedChangeFn) {
-            return { status: 'ambiguous', error };
+    return runWithAutomergeStorageMutationOrigin(origin, () => {
+        try {
+            port.mutateDoc({
+                docId: firstMutation.docId,
+                changedKeys,
+                changeFn: (doc) => {
+                    for (const mutation of mutations) {
+                        mutation.changeFn(doc);
+                    }
+                    const validationFailure = validateDocument?.(doc) ?? null;
+                    if (validationFailure) {
+                        throw new AutomergeStorageTransactionValidationError(validationFailure);
+                    }
+                    application.appliedChangeFn = true;
+                },
+                message,
+                snapshotTransaction: firstMutation.snapshotTransaction,
+            });
+        } catch (error) {
+            if (application.appliedChangeFn) {
+                return { status: 'ambiguous', error };
+            }
+            return { status: 'rolled-back', error };
         }
-        return { status: 'rolled-back', error };
-    }
 
-    return { status: 'committed' };
+        return { status: 'committed' };
+    });
 }
 
 /**
@@ -593,6 +628,10 @@ function flushMatchingAutomergeStorageWrites(
 
     for (const [docId, ownerGroups] of groups) {
         for (const writes of ownerGroups.values()) {
+            const firstWrite = writes[0];
+            if (!firstWrite) {
+                continue;
+            }
             const mutations: AutomergeStorageMutationInput[] = [];
             const abandonedWrites: PendingAutomergeStorageWrite[] = [];
             let preparationFailed = false;
@@ -648,7 +687,11 @@ function flushMatchingAutomergeStorageWrites(
                 continue;
             }
 
-            const outcome = commitAutomergeStorageMutations(mutations, documentValidators.get(docId));
+            const outcome = commitAutomergeStorageMutations(
+                mutations,
+                firstWrite.scoped ? 'owned' : 'unowned',
+                documentValidators.get(docId)
+            );
             if (documentValidators.has(docId)) {
                 validatedDocumentIds.add(docId);
             }
@@ -1120,6 +1163,7 @@ export const createAutomergeStorage = <TData>(
             didDefer: () => releasePendingWrite(getPending()),
             docId,
             prepare: () => preparePendingWrite(getPending()),
+            scoped: context.scoped,
             snapshotTransaction: context.snapshotTransaction,
         };
         pending = {

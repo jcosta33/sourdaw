@@ -153,3 +153,4 @@ export { createRuntimeGraphTopologyFingerprint } from './createRuntimeGraphTopol
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';
 export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnapshot';
+export { matchesRuntimeDeviceChainTopology } from './matchesRuntimeDeviceChainTopology';

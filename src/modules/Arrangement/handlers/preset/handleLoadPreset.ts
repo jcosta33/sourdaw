@@ -120,7 +120,11 @@ function initializeMissingLiveStrip(after: Track): RuntimeDeviceDeltaResult {
     return initializeTrackStripFromSnapshot(snapshot);
 }
 
-function createPostCommitRuntimeEffect(before: Track, after: Track): () => void {
+function createPostCommitRuntimeEffect(
+    before: Track,
+    after: Track,
+    batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
+): () => void {
     let failure: RuntimeDeviceDeltaPostCommitError | undefined;
     return () => {
         if (failure) {
@@ -144,15 +148,18 @@ function createPostCommitRuntimeEffect(before: Track, after: Track): () => void 
                   before,
                   after,
                   operation: 'replace-device-chain',
+                  batchContext,
               })
             : initializeMissingLiveStrip(after);
-        if (result.acceptance === 'superseded') {
+        if (result.acceptance === 'superseded' && result.application === 'not-applied') {
             return;
         }
-        const presetFailure = getRuntimeDeviceDeltaPostCommitFailure(result, 'Preset');
-        if (presetFailure) {
-            failure = presetFailure;
-            throw failure;
+        if (result.acceptance !== 'superseded') {
+            const presetFailure = getRuntimeDeviceDeltaPostCommitFailure(result, 'Preset');
+            if (presetFailure) {
+                failure = presetFailure;
+                throw failure;
+            }
         }
         // Parameter controls are intentionally separate from the topology
         // delta. They run only after the exact live chain was accepted.
@@ -164,13 +171,16 @@ function createPostCommitRuntimeEffect(before: Track, after: Track): () => void 
     };
 }
 
-function executeReplacement(input: {
-    trackId: string;
-    expectedBefore: DeviceChainTopologySnapshot;
-    expectedFrozen: boolean;
-    replacementDevices: readonly DeviceSnapshot[];
-    expectedProjectRevision?: string;
-}) {
+function executeReplacement(
+    input: {
+        trackId: string;
+        expectedBefore: DeviceChainTopologySnapshot;
+        expectedFrozen: boolean;
+        replacementDevices: readonly DeviceSnapshot[];
+        expectedProjectRevision?: string;
+    },
+    batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
+) {
     const current = resolveReplacement(
         {
             trackId: input.trackId,
@@ -187,7 +197,7 @@ function executeReplacement(input: {
     const before = structuredClone(current);
     const after = createReplacementTopology(before, input.replacementDevices);
     updateTrack(before.id, () => after);
-    const applyRuntimeEffect = createPostCommitRuntimeEffect(before, after);
+    const applyRuntimeEffect = createPostCommitRuntimeEffect(before, after, batchContext);
     return {
         status: 'written' as const,
         afterCommit: applyRuntimeEffect,
@@ -247,7 +257,7 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
             ) !== null
         );
     },
-    execute: (action) => {
+    execute: (action, context) => {
         if (
             resolveReplacement(
                 {
@@ -265,12 +275,15 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
         // The first application consumes the collaboration revision proof. The
         // guarded inverse and redo retain their exact topology fingerprints.
         delete action.payload.expectedProjectRevision;
-        return executeReplacement({
-            trackId: action.payload.trackId,
-            expectedBefore: action.payload.expectedBefore,
-            expectedFrozen: action.payload.expectedFrozen,
-            replacementDevices: action.payload.devices,
-        });
+        return executeReplacement(
+            {
+                trackId: action.payload.trackId,
+                expectedBefore: action.payload.expectedBefore,
+                expectedFrozen: action.payload.expectedFrozen,
+                replacementDevices: action.payload.devices,
+            },
+            context
+        );
     },
     describe: describeLoadPreset,
     previewExecution: 'isolated-project',
@@ -289,13 +302,16 @@ export const handleRestorePresetDeviceChain = createHandler<'restorePresetDevice
             },
             context
         ) !== null,
-    execute: (action) =>
-        executeReplacement({
-            trackId: action.payload.trackId,
-            expectedBefore: action.payload.expectedBefore,
-            expectedFrozen: action.payload.expectedFrozen,
-            replacementDevices: action.payload.replacementDevices,
-        }),
+    execute: (action, context) =>
+        executeReplacement(
+            {
+                trackId: action.payload.trackId,
+                expectedBefore: action.payload.expectedBefore,
+                expectedFrozen: action.payload.expectedFrozen,
+                replacementDevices: action.payload.replacementDevices,
+            },
+            context
+        ),
     describe: () => ({ label: 'Restore preset device chain' }),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

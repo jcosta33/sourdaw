@@ -312,9 +312,7 @@ export const parsePromptToActions = inject({ logger })(
                         projectRevision,
                         run: agentRun ? { grants: agentRun.grants, budgets: agentRun.budgets } : undefined,
                         receipts:
-                            receiptContext === null
-                                ? []
-                                : [{ id: 'application-tool-loop', summary: receiptContext.slice(0, 8_192) }],
+                            receiptContext === null ? [] : [{ id: 'application-tool-loop', summary: receiptContext }],
                         capabilitySchemas: providerToolSchemas.map((schema) => ({
                             name: schema.function.name,
                             schemaVersion: 1,

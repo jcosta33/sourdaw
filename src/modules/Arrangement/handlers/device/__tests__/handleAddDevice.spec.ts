@@ -4,7 +4,10 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 
-import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
+import {
+    type DeviceChainRuntimeDeltaDischarged,
+    type DeviceChainRuntimeDeltaSuperseded,
+} from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +47,12 @@ const supersededAddDelta: DeviceChainRuntimeDeltaSuperseded = {
     acceptance: 'superseded',
     application: 'not-applied',
     reason: 'Track t1 left project truth before its add-device delta was submitted',
+};
+
+const dischargedAddDelta: DeviceChainRuntimeDeltaDischarged = {
+    acceptance: 'superseded',
+    application: 'discharged',
+    reason: 'Live runtime already matches the authoritative final device chain for track t1',
 };
 
 describe('handleAddDevice', () => {
@@ -396,6 +405,23 @@ describe('handleAddDevice', () => {
 
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('finishes parameter initialization when a grouped topology step was already discharged', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
+        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(dischargedAddDelta);
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
     });
 
     it('reports clean command success only after an applied runtime delta', async () => {

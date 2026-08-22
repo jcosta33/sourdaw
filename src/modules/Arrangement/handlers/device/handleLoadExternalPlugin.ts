@@ -14,7 +14,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         const { pluginId, trackId: providedTrackId } = alpha.payload;
         const plugin = findSupportedPlugin(pluginId);
         if (!plugin) {
@@ -64,18 +64,21 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                     before: committedBefore,
                     after,
                     operation: 'add-device',
+                    batchContext: context,
                 });
                 // A later action in this same commit removed the host track.
                 // The chain delta is void, and so is the plugin activation
                 // below: activating a native instance onto a strip that is
                 // being torn down would leak the instance.
-                if (result.acceptance === 'superseded') {
+                if (result.acceptance === 'superseded' && result.application === 'not-applied') {
                     return;
                 }
-                const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
-                if (runtimeFailure) {
-                    postCommitFailure = runtimeFailure;
-                    throw postCommitFailure;
+                if (result.acceptance !== 'superseded') {
+                    const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
+                    if (runtimeFailure) {
+                        postCommitFailure = runtimeFailure;
+                        throw postCommitFailure;
+                    }
                 }
                 runtimeDeltaApplied = true;
             }

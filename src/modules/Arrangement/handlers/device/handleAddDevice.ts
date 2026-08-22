@@ -205,18 +205,25 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 }
                 return;
             }
-            const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
+            const result = applyDeviceChainRuntimeDelta({
+                before: committedBefore,
+                after,
+                operation: 'add-device',
+                batchContext: context,
+            });
             // The host track left project truth after this delta was compiled —
             // a later action in the same commit removed it. Nothing is owed:
             // that action's teardown owns the strip, and the parameter writes
             // below would target a device on a track that no longer exists.
-            if (result.acceptance === 'superseded') {
+            if (result.acceptance === 'superseded' && result.application === 'not-applied') {
                 return;
             }
-            const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
-            if (runtimeFailure) {
-                postCommitFailure = runtimeFailure;
-                throw postCommitFailure;
+            if (result.acceptance !== 'superseded') {
+                const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
+                if (runtimeFailure) {
+                    postCommitFailure = runtimeFailure;
+                    throw postCommitFailure;
+                }
             }
             for (const [parameterId, value] of Object.entries(committedDevice.parameterValues)) {
                 updateDeviceParam(after.id, committedDevice.id, parameterId, value);

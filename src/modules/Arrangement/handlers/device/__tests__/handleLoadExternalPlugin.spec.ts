@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type HandlerValidationContext } from '#/utils/handlerContract';
+
 import { handleLoadExternalPlugin } from '../handleLoadExternalPlugin';
 
 const mocks = vi.hoisted(() => ({
@@ -52,6 +54,48 @@ describe('handleLoadExternalPlugin', () => {
 
         expect(mocks.addExternalDevice).toHaveBeenCalledWith('audio-1', 'plugin-1', 'Compressor');
         expect(result).toEqual({ status: 'written' });
+    });
+
+    it('forwards grouped same-track context to the deferred runtime delta', async () => {
+        const action = {
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'plugin-1', trackId: 'audio-1' },
+        } as const;
+        const batchContext = {
+            actionIndex: 0,
+            actions: [
+                action,
+                {
+                    type: 'addDevice',
+                    payload: { trackId: 'audio-1', deviceType: 'builtin-eq', deviceId: 'device-2' },
+                },
+            ],
+        } satisfies HandlerValidationContext;
+        const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
+        const device = {
+            id: 'device-1',
+            externalPluginId: 'plugin-1',
+            externalInstanceId: 'instance-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [before] });
+        mocks.addExternalDevice.mockReturnValue(device);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
+
+        const result = await handleLoadExternalPlugin.execute(action, batchContext);
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Expected a deferred external-plugin runtime effect');
+        }
+        result.afterCommit();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
+            before,
+            after: { ...before, devices: [device] },
+            operation: 'add-device',
+            batchContext,
+        });
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-1', instanceId: 'instance-1' })
+        );
     });
 
     it('reports no-write when a provided dormant VCA rejects the device', async () => {

@@ -10,7 +10,7 @@ import {
     refreshVersionedCommandBatchForApproval,
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, captureUnownedProjectMutations } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import {
@@ -305,19 +305,26 @@ function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation
     return labels;
 }
 
-function isConfirmationExecutionAuthorized(confirmation: PendingAppActionConfirmation, signal: AbortSignal): boolean {
+/**
+ * Whether an outside writer moved the project since `baseline`.
+ *
+ * The confirmed batch moves the project itself: every action it commits, and
+ * every reactive subscriber that flushes one of those writes, advances the
+ * document heads. So a moved revision is not evidence of interference, and an
+ * in-flight check that reads it that way aborts the batch on its own side
+ * effect. `captureUnownedProjectMutations` counts only mutations whose actual
+ * origin is outside an action: delayed storage writes retain their creation-time
+ * ownership even when another action happens to flush them.
+ */
+function hasUnownedProjectChange(baseline: number): boolean {
+    return captureUnownedProjectMutations() !== baseline;
+}
+
+function isConfirmationExecutionAuthorized(baseline: number, signal: AbortSignal): boolean {
     if (signal.aborted) {
         return false;
     }
-    if (captureProjectRevision() === confirmation.projectRevision) {
-        return true;
-    }
-    const actions = confirmation.approvalSnapshot.actions;
-    return (
-        actions.length === 1 &&
-        actions[0]?.type === 'createDrumPreviewBranches' &&
-        isDrumPreviewBranchPlanApplied(actions[0])
-    );
+    return !hasUnownedProjectChange(baseline);
 }
 
 function getProtectedAffectedIds(
@@ -743,6 +750,10 @@ export async function confirmPendingChatActions(
         : null;
     let batchResult: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
     let cancellationTriggeredByInvalidation = false;
+    // Pinned before the first action, so every mutation the batch itself
+    // raises from here on is excluded by construction and only an outside
+    // writer moves it.
+    const unownedMutationBaseline = captureUnownedProjectMutations();
     try {
         const executionOptions = {
             ...group,
@@ -750,21 +761,21 @@ export async function confirmPendingChatActions(
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
-                if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
+                if (!isConfirmationExecutionAuthorized(unownedMutationBaseline, aborter.signal)) {
                     return false;
                 }
-                // Only abort, revision, and actor authorization gate the
+                // Only abort, outside-writer, and actor authorization gate the
                 // in-flight batch. The approval itself was fully validated by
-                // getApprovalPreflightFailure before execution began;
-                // re-deriving target fingerprints per action would read
-                // target state this batch has already mutated, so any
-                // multi-action batch touching a fingerprinted target would
-                // invalidate itself mid-flight. External interference is
-                // still caught here: every project mutation moves the
-                // revision heads isConfirmationExecutionAuthorized compares.
+                // getApprovalPreflightFailure before execution began, against
+                // the pinned proposal revision; re-deriving that revision — or
+                // target fingerprints — per action would read state this batch
+                // has already mutated, so any batch touching what it plans to
+                // change would invalidate itself mid-flight. Outside
+                // interference is still caught by the one signal the batch
+                // cannot move: mutations not owned by its action write scope.
                 // The actor binding is re-checked separately because a
                 // collaborator reconnect rotates localPeerId (same fallback
-                // as compileAgentRiskApproval) without moving those heads.
+                // as compileAgentRiskApproval) without mutating anything.
                 const approved = confirmation.approvalSnapshot;
                 if (!approved.agentApproval) {
                     return true;
@@ -792,7 +803,7 @@ export async function confirmPendingChatActions(
             versionedResult.status === 'failed';
         if (
             versionedResult.status === 'cancelled' ||
-            (failedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision)
+            (failedBeforeCommit && hasUnownedProjectChange(unownedMutationBaseline))
         ) {
             cancellationTriggeredByInvalidation = !aborter.signal.aborted;
             await agentRunCancellation.cancel({ runId: confirmation.runId, reason: versionedResult.reason });
@@ -869,7 +880,7 @@ export async function confirmPendingChatActions(
 
     const batchFailedBeforeCommit =
         batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
-    if (batchFailedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision) {
+    if (batchFailedBeforeCommit && hasUnownedProjectChange(unownedMutationBaseline)) {
         return invalidatePendingConfirmation(confirmation);
     }
 
