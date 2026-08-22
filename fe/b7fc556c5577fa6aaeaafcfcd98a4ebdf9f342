@@ -1,0 +1,56 @@
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-84
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-201
+public/legal/Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-26
+public/legal/Apache-TVM/licenses/LICENSE.builtin_fp16.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-311
+public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-202
+public/legal/Qwen-NOTICE.txt
+  s_a40848e8f8cca9::t_dae41c2ee1fc66 9-13,25-26
+.agents/decisions/0035-admit-webllm-qwen-conversions-under-apache-2.0.md
+  s_a40848e8f8cca9::t_dae41c2ee1fc66 33-36,39-40,45-51,66-68,83-84,86,98-99
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_2e2bffef164199 204,371-372
+  s_a40848e8f8cca9::t_11cd8452eea824 281-296,309-324,340,353-368,375,377,383-385,388,390
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-29
+public/legal/Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-202
+.agents/decisions/README.md
+  s_a40848e8f8cca9::t_dae41c2ee1fc66 51
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-456
+public/legal/Apache-TVM/licenses/LICENSE.concurrentqueue.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-22
+public/legal/Apache-TVM/licenses/LICENSE.cutlass.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-23
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_dae41c2ee1fc66 53-57,62-63,65-79,84-85
+public/legal/Apache-TVM/licenses/LICENSE.libflash_attn.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-29
+public/legal/Apache-TVM/licenses/LICENSE.vllm.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-201
+public/legal/Apache-TVM/licenses/LICENSE.rang.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-24
+public/legal/Apache-TVM/licenses/LICENSE.l2_cache_flush.txt
+  s_a40848e8f8cca9::t_1c7222b25b81fe 1-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "feb7fc556c5577fa6aaeaafcfcd98a4ebdf9f342",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
