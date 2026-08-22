@@ -32,6 +32,7 @@
                 ".dependency-cruiser.types.cjs",
                 ".editorconfig",
                 ".gitignore",
+                ".gitleaks.toml",
                 ".node-version",
                 ".oxlintrc.json",
                 ".prettierignore",
@@ -691,11 +692,11 @@
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
                 "daw-dsp sha256:85707e299233b71706e1170f0b9c8e717b6b83b238322e883cdcb6bea7fa3e78",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
-                "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
+                "proof-chamber sha256:3d5c8eb0168f12bc9503c5d3b74ca788d19e462b2beb6d05251cfae19207f386",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:409bd0f30ee4d81474913a896a926e89a46055fa99c93b846e8301424956038b:public/wasm/manifest.json"
+                "sha256:b45e8de40ee3aa466bdece56030a9e92aa93008d2256c6e745714b0a1eb2c348:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -947,7 +948,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "409bd0f30ee4d81474913a896a926e89a46055fa99c93b846e8301424956038b"
+            "sha256": "b45e8de40ee3aa466bdece56030a9e92aa93008d2256c6e745714b0a1eb2c348"
         }
     ],
     "externalReferences": [

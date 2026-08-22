@@ -1319,6 +1319,7 @@ const schemaDefinitions = [
             endBeat: 1,
             type: 151,
             audioBufferId: 0,
+            fileId: 0,
             assetHash: 0,
             audioOffsetBeats: 1,
             midiOffsetBeats: 1,

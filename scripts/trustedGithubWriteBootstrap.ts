@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile';
 
+export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
+
+/** Set by a hoisting parent so the hoisted copy knows which repository it acts on. */
+export const REPOSITORY_ROOT_ENV = 'SOURDAW_TRUSTED_REPOSITORY_ROOT';
+
 export type TrustedSourceSnapshot = {
     commit: string;
     sources: ReadonlyMap<string, string>;
@@ -14,7 +19,6 @@ export type TrustedSourceSnapshot = {
 
 type TrustedSourcePort = {
     resolveOriginMain: () => string;
-    readLocalSource: (path: string) => string;
     readOriginSource: (commit: string, path: string) => string;
     executeSnapshot: (
         command: TrustedGithubWriteCommand,
@@ -67,7 +71,7 @@ export function assertTrustedSourceGraph(
         if (!pathSet.has(path)) {
             throw new Error(`trusted snapshot contains unexpected source ${path}`);
         }
-        if (path === 'scripts/trustedGithubWriteBootstrap.ts') {
+        if (path === BOOTSTRAP_PATH) {
             continue;
         }
         for (const dependency of localModuleDependencies(path, source)) {
@@ -105,13 +109,32 @@ export async function runTrustedGithubWriteCommand(
     if (commit.trim() === '') {
         throw new Error('origin/main did not resolve to a commit');
     }
+    // Every script the command *executes* is read from `origin/main` and run
+    // from the snapshot below, so whatever a lane holds for those — mutated, or
+    // merely older than main — cannot reach the GitHub write. Refusing on a
+    // difference protected none of them any further, and it forced a lane that
+    // had only fallen behind to merge main first. A merge can resolve cleanly
+    // and leave generated artifacts stale, so that requirement cost real safety
+    // to buy none.
+    //
+    // This file is not one of those, and the distinction is the whole security
+    // story here. `pnpm deliver` resolves this loader from the lane's own root,
+    // so the code that pins the commit, builds the snapshot and decides whether
+    // to run it is always the working-tree copy; nothing in the snapshot imports
+    // it, so the snapshot cannot vouch for it. The comparison removed above did
+    // cover this one file, but only against honest drift — a hostile edit would
+    // delete the check along with everything else — and honest drift is exactly
+    // the behind-a-moved-main case this change exists to permit.
+    //
+    // Verifying the loader properly means re-executing main's copy rather than
+    // refusing, and that cannot land here: main's copy derives the repository
+    // root from its own module URL, so a copy executed out of a temporary
+    // directory would run git against that directory. It needs a loader on main
+    // that accepts the root from its caller, which is a later change, not this
+    // one. Filed as #2671 rather than asserted away.
     const sources = new Map<string, string>();
     for (const path of trustedDependencyPaths(command)) {
-        const trustedSource = port.readOriginSource(commit, path);
-        if (port.readLocalSource(path) !== trustedSource) {
-            throw new Error(`${path} does not match origin/main at ${commit}; refusing to run a mutated copy`);
-        }
-        sources.set(path, trustedSource);
+        sources.set(path, port.readOriginSource(commit, path));
     }
     assertTrustedSourceGraph(command, sources);
     return port.executeSnapshot(command, args, { commit, sources });
@@ -183,11 +206,60 @@ function captureGit(repositoryRoot: string, args: string[]): string {
     return result.stdout;
 }
 
+/**
+ * Hoisting exists because this file is the one member of the trusted closure
+ * that runs as the lane holds it: `package.json` resolves it from the lane's
+ * root, and nothing inside the snapshot imports it, so the snapshot cannot
+ * vouch for it. Handing the whole invocation to main's copy is what makes the
+ * loader trusted too, and it does that without refusing a lane that has merely
+ * fallen behind — refusing is what forced a merge, and a merge can resolve
+ * cleanly while leaving generated artifacts stale.
+ *
+ * The hop terminates because the copy hoisted to is byte-identical to origin's,
+ * so it takes the other branch. It is skipped when origin's copy predates
+ * `REPOSITORY_ROOT_ENV`: that copy derives the repository root from its own
+ * module URL, so hoisting to it would run git against a temporary directory.
+ */
+export function shouldHoistToOrigin(executingSource: string, originSource: string): boolean {
+    return executingSource !== originSource && originSource.includes(REPOSITORY_ROOT_ENV);
+}
+
+export async function hoistToOriginBootstrap(
+    originSource: string,
+    repositoryRoot: string,
+    argv: string[],
+    spawnBootstrap: (entryPath: string, argv: string[], repositoryRoot: string) => number = spawnOriginBootstrap
+): Promise<number> {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-loader-'));
+    try {
+        const entry = resolve(root, 'trustedGithubWriteBootstrap.ts');
+        writeFileSync(entry, originSource, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+        return spawnBootstrap(entry, argv, repositoryRoot);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function spawnOriginBootstrap(entryPath: string, argv: string[], repositoryRoot: string): number {
+    const result = spawnSync(process.execPath, [entryPath, ...argv], {
+        cwd: process.cwd(),
+        env: { ...process.env, [REPOSITORY_ROOT_ENV]: repositoryRoot },
+        stdio: 'inherit',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === null) {
+        throw new Error(`trusted loader terminated by ${result.signal ?? 'unknown signal'}`);
+    }
+    return result.status;
+}
+
 function defaultPort(repositoryRoot: string): TrustedSourcePort {
     return {
         resolveOriginMain: () =>
             captureGit(repositoryRoot, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']).trim(),
-        readLocalSource: (path) => readFileSync(resolve(repositoryRoot, path), 'utf8'),
         readOriginSource: (commit, path) => captureGit(repositoryRoot, ['show', `${commit}:${path}`]),
         executeSnapshot: executeTrustedSnapshot,
     };
@@ -202,8 +274,19 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
 
 async function main(): Promise<number> {
     const command = parseCommand(process.argv[2]);
-    const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-    return runTrustedGithubWriteCommand(command, process.argv.slice(3), defaultPort(repositoryRoot));
+    const executingFile = fileURLToPath(import.meta.url);
+    // A hoisted copy runs from a temporary directory, where its own module URL
+    // says nothing about which repository it is acting on, so the hoisting
+    // parent names the root. Absent that, the root is this file's parent, which
+    // is what a normal invocation wants.
+    const repositoryRoot = resolve(process.env[REPOSITORY_ROOT_ENV] ?? fileURLToPath(new URL('..', import.meta.url)));
+    const port = defaultPort(repositoryRoot);
+
+    const originBootstrap = port.readOriginSource(port.resolveOriginMain(), BOOTSTRAP_PATH);
+    if (shouldHoistToOrigin(readFileSync(executingFile, 'utf8'), originBootstrap)) {
+        return hoistToOriginBootstrap(originBootstrap, repositoryRoot, process.argv.slice(2));
+    }
+    return runTrustedGithubWriteCommand(command, process.argv.slice(3), port);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

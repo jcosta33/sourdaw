@@ -678,7 +678,11 @@ describe('resource enforcement', () => {
 
     it.each([
         ['stricter', '1024', '1', '1', 1_024, '1', '1'],
-        ['looser', '4096', '8', '8', 2_048, '2', '2'],
+        // The heap ceiling is the run's RSS budget — the focused profile's
+        // 4 GiB here — not a constant below it. The RSS monitor is what makes a
+        // run safe; a lower heap ceiling only aborts commands whose legitimate
+        // peak sits between the two.
+        ['at the budget', '8192', '8', '8', 4_096, '2', '2'],
     ])(
         'preserves or tightens caller limits: %s',
         async (_label, heap, cargo, rust, expectedHeap, expectedCargo, expectedRust) => {

@@ -1,25 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openLevain(page: import('@playwright/test').Page): Promise<void> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill('levain');
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: /^Levain/i }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.click();
-    await expect(page.getByRole('button', { name: /Close Levain/i }).first()).toBeVisible({ timeout: 15_000 });
+async function openLevain(page: Page): Promise<void> {
+    const browser = page.getByRole('complementary', { name: 'Browser panel' });
+    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('button', { name: /^Levain/ }).click();
+    await expect(page.getByRole('button', { name: 'Close Levain' })).toBeVisible({
+        timeout: 30_000,
+    });
 }
 
-// Levain instrument search filter depth. The search input (aria-label="Search
-// Levain instruments") is uncovered — no E2E asserts filtering narrows the
-// instrument list.
-test.describe('Levain instrument search — filter narrows list', () => {
+test.describe('Levain instrument search', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
@@ -27,28 +19,23 @@ test.describe('Levain instrument search — filter narrows list', () => {
         await openLevain(page);
     });
 
-    test('typing a narrow query decreases the instrument count', async ({ page }) => {
-        const search = page.getByLabel('Search Levain instruments');
-        await expect(search).toBeVisible({ timeout: 10_000 });
+    test('violin keeps Solo Violin, hides Trumpets, and clear restores Trumpets', async ({ page }) => {
+        const search = page.getByRole('textbox', { name: 'Search Levain instruments' });
+        const lineup = search.locator('xpath=../..');
+        const soloViolin = lineup.getByRole('button', { name: /Solo Violin/ });
+        const trumpets = lineup.getByRole('button', { name: /Trumpets/ });
 
-        // Count instrument buttons before filtering.
-        const instruments = page.locator('button.levain-window');
-        await expect(instruments.first()).toBeVisible({ timeout: 5000 });
-        const before = await instruments.count();
-        expect(before).toBeGreaterThanOrEqual(2);
+        await expect(soloViolin).toBeVisible();
+        await expect(trumpets).toBeVisible();
 
-        // Type a narrow query.
         await search.fill('violin');
-        await page.waitForTimeout(500);
 
-        // The list narrowed (or is empty — either way the count changed).
-        const after = await instruments.count();
-        expect(after).toBeLessThan(before);
+        await expect(soloViolin).toBeVisible();
+        await expect(trumpets).toHaveCount(0);
 
-        // Clearing restores the full list.
         await search.fill('');
-        await page.waitForTimeout(500);
-        const restored = await instruments.count();
-        expect(restored).toBe(before);
+
+        await expect(soloViolin).toBeVisible();
+        await expect(trumpets).toBeVisible();
     });
 });

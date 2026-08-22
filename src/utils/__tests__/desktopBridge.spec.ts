@@ -4,20 +4,24 @@ import {
     createChannel,
     desktopOpenDialog,
     desktopPathJoin,
+    desktopPlatform,
     desktopSaveDialog,
     desktopSamplesBaseUrl,
+    desktopWindowControls,
     invokeForBinaryResponse,
     invokeWithBinaryBody,
     isDesktopRuntime,
     readFileBytes,
     desktopInvoke,
     desktopListen,
+    usesFramelessWindowChrome,
     writeFileBytes,
 } from '../desktopBridge';
 
 type MutableWindow = Record<string, unknown>;
 
-const createBridgeMock = () => ({
+const createBridgeMock = (platform = 'linux') => ({
+    platform,
     invoke: vi.fn().mockResolvedValue('bridged'),
     invokeBinary: vi.fn().mockResolvedValue('binary-result'),
     invokeBinaryResponse: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
@@ -32,10 +36,17 @@ const createBridgeMock = () => ({
         samplesBase: vi.fn().mockResolvedValue('app://sourdaw/samples'),
         join: vi.fn().mockResolvedValue('/bridge-joined'),
     },
+    windowControls: {
+        minimize: vi.fn().mockResolvedValue(undefined),
+        toggleMaximize: vi.fn().mockResolvedValue(true),
+        close: vi.fn().mockResolvedValue(undefined),
+        isMaximized: vi.fn().mockResolvedValue(false),
+        listenMaximized: vi.fn().mockReturnValue(() => undefined),
+    },
 });
 
-const installBridge = (): ReturnType<typeof createBridgeMock> => {
-    const bridge = createBridgeMock();
+const installBridge = (platform = 'linux'): ReturnType<typeof createBridgeMock> => {
+    const bridge = createBridgeMock(platform);
     (window as unknown as MutableWindow).sourdaw = bridge;
     return bridge;
 };
@@ -76,6 +87,47 @@ describe('desktopBridge', () => {
             ['desktopSamplesBaseUrl', async () => desktopSamplesBaseUrl()],
         ])('should refuse %s loudly rather than silently no-op', async (_name, call) => {
             await expect(call()).rejects.toThrow('Sourdaw desktop bridge is not available');
+        });
+
+        it('should refuse the synchronous window-control accessors loudly too', () => {
+            expect(() => desktopWindowControls()).toThrow('Sourdaw desktop bridge is not available');
+        });
+
+        it('should answer the platform probes without the bridge rather than throwing', () => {
+            expect(desktopPlatform()).toBeNull();
+            expect(usesFramelessWindowChrome()).toBe(false);
+        });
+    });
+
+    describe('window chrome', () => {
+        it('should read the platform from the bridge', () => {
+            installBridge('linux');
+            expect(desktopPlatform()).toBe('linux');
+        });
+
+        it('should treat only the linux desktop build as frameless chrome', () => {
+            installBridge('linux');
+            expect(usesFramelessWindowChrome()).toBe(true);
+
+            installBridge('darwin');
+            expect(usesFramelessWindowChrome()).toBe(false);
+
+            installBridge('win32');
+            expect(usesFramelessWindowChrome()).toBe(false);
+        });
+
+        it('should hand the window-control surface through', async () => {
+            const bridge = installBridge();
+
+            await desktopWindowControls().minimize();
+            await desktopWindowControls().close();
+            await expect(desktopWindowControls().toggleMaximize()).resolves.toBe(true);
+            await expect(desktopWindowControls().isMaximized()).resolves.toBe(false);
+
+            expect(bridge.windowControls.minimize).toHaveBeenCalledTimes(1);
+            expect(bridge.windowControls.close).toHaveBeenCalledTimes(1);
+            expect(bridge.windowControls.toggleMaximize).toHaveBeenCalledTimes(1);
+            expect(bridge.windowControls.isMaximized).toHaveBeenCalledTimes(1);
         });
     });
 

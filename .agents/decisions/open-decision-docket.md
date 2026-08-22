@@ -44,29 +44,30 @@ what is open. Neither was engineering's to take unilaterally.
   and `#[allow]` would be evasion. `src-tauri` excluded from the build legs — it
   cannot compile on `ubuntu-latest`. (Since the Electron cutover the excluded
   crate is `sourdaw-native`, for the same unconditional-`metal` reason.)
-  Context the decision did not change: `health-gates.yml` is
-  `on: workflow_dispatch` only because the account's Actions billing is
-  suspended, so *nothing* runs automatically today. Restoring it is one `on:`
-  block whenever billing is.
+  Context that has since changed: `health-gates.yml` was `on: workflow_dispatch`
+  only, because the account's Actions billing was suspended. The repository is
+  public now, so standard runners cost nothing and hosted checks run again. The
+  `sourdaw-native` exclusion survives that change — it needs macOS, which is now
+  its own job rather than a gap — and `-D warnings` stays deferred.
 
 - **Parameter-automation coverage — owner chose: its own spec, not folded into
   Phase 2 and not built now.** Phase 2 measured that Fermenter reaches 15 of its
   105 parameters declared `automatable: true` (~106 parameter-level gaps
   overall). Written as `SPEC-parameter-automation-coverage`, `status: draft`,
   with the audit as its first acceptance criterion — because a param declared
-  automatable may be *structurally* unschedulable, in which case the descriptor
+  automatable may be _structurally_ unschedulable, in which case the descriptor
   is the defect and the real number is far below 106.
 
 ### Programme blockers, recorded here as the formal record — 2026-08-07
 
-The ultracode brief's `Done` requires each phase to be *landed or explicitly blocked
-with the blocker named*. The per-phase ledger lives in `SURVEY-ultracode-scope.md`;
+The ultracode brief's `Done` requires each phase to be _landed or explicitly blocked
+with the blocker named_. The per-phase ledger lives in `SURVEY-ultracode-scope.md`;
 the one phase that is genuinely **blocked** — as opposed to merely unstarted — is
 recorded here so the blocker sits in the decision record rather than only in a survey
 note. It is not an owner decision; it is an engineering precondition.
 
 - **Phase 5 (one implementation per transform) — blocked, two named blockers.**
-  (i) It is sequenced *after* phases 2–4, and Phase 2 is partial: its AC-3 was not
+  (i) It is sequenced _after_ phases 2–4, and Phase 2 is partial: its AC-3 was not
   built by design and AC-4 sits behind AC-3, while AC-0's browser null harness needs
   cross-origin isolation, wasm fixtures for 13 devices, and `BaseAudioContext`
   widening — a phase of its own. (ii) Its FFT choice cannot be made until a
@@ -76,8 +77,8 @@ note. It is not an owner decision; it is an engineering precondition.
 
 - **Phase 3 (one clock) — NOT blocked. Unstarted, with a measurement owed before
   design.** An earlier draft of this entry called it blocked; that was wrong, and the
-  survey's own reconciliation says so plainly — *"no external blocker — capacity, not
-  obstruction"*. Nothing external is withholding it. What it owes itself before
+  survey's own reconciliation says so plainly — _"no external blocker — capacity, not
+  obstruction"_. Nothing external is withholding it. What it owes itself before
   choosing between "re-derive position every tick" and "keep an integrator and
   reconcile" is a measurement: worker-tick jitter under UI load, and `currentTime`
   granularity on the target. Owing yourself a measurement is not the same as being
@@ -94,26 +95,26 @@ note. It is not an owner decision; it is an engineering precondition.
 work "removed no capability and changed no existing project's sound". That was false,
 and the correction matters more than the original claim.**
 
-The two decisions the brief names as *currently open and known* — the shape of a
+The two decisions the brief names as _currently open and known_ — the shape of a
 project file, and whether it embeds audio or references it — were both **ratified** in
 ADR 0014 on 2026-08-03 and 2026-08-04 respectively; that ADR's own Status line records
 gates **M1–M10** as reported or formally deferred.
 
 But two changes inside the window did meet the brief's definition of an owner decision:
 
-- **#1236 removed GrandBoule's `afterTouchSensitivity` control** — *"what capability is
-  removed"*. Its commit message records it as taken **per the owner**, so it was put in
+- **#1236 removed GrandBoule's `afterTouchSensitivity` control** — _"what capability is
+  removed"_. Its commit message records it as taken **per the owner**, so it was put in
   front of them; it is logged here so the record shows it, not to re-open it. The
   research behind it has since been partly corrected — see the Keyscape refutation in
   `SURVEY-ultracode-scope.md` — and the removal survives that correction on its
   remaining sources.
 - **#1236 also wired `sustain_threshold` and `cc_smoothing_ms`, and #1249 wired Crumbs'
-  master tune** — *"changes how existing projects sound"*. `sustain_threshold` had been
+  master tune** — _"changes how existing projects sound"_. `sustain_threshold` had been
   inert behind a hardcoded `HALF_PEDAL_LOW` of 0.15, so any project storing a
   non-default value renders differently now. These needed no separate confirmation:
   ADR 0016 rules that with no users, correctness wins outright and no compatibility
   path is carried, and the brief states that anything inside an accepted ADR is merged
-  without asking. Recorded because *"it was covered by an ADR"* and *"nothing changed"*
+  without asking. Recorded because _"it was covered by an ADR"_ and _"nothing changed"_
   are different statements, and only the first is true.
 
 The remaining owner-decision surface is the finish-or-remove ledger below: each row is
@@ -128,7 +129,7 @@ to this docket is **not** the same as putting one in front of the owner.
   entries and `loadModel` now require weights actually registered from OPFS, so
   nothing is advertised that cannot run, and the entries return by themselves if
   weights ever land. The use cases survive unwired. The row stays open as a
-  finish-or-remove question; what changed is that the *dishonesty* is closed —
+  finish-or-remove question; what changed is that the _dishonesty_ is closed —
   `encodeAudio`/`decodeLatent` were a `Math.sin`/`Math.tanh` transform returning
   0.718-peak audio while logging "RAVE model loaded".
   Note for whoever finishes it: the probe asks OPFS for `rave/<model.id>` while
@@ -144,32 +145,32 @@ to this docket is **not** the same as putting one in front of the owner.
 ## Unbuilt feature subsystems (finish-or-remove)
 
 Whole subsystems that are **dead or dormant in production today** — each an
-honest *finish it* or *delete it* call (multi-file either way), not a cleanup
+honest _finish it_ or _delete it_ call (multi-file either way), not a cleanup
 fix. Left intact by the 2026-06-26 module-audit remediation under its explicit
-rule (*do not half-build a feature, do not unilaterally delete a parked
-subsystem*). The code is the live source of truth for each row's present state;
+rule (_do not half-build a feature, do not unilaterally delete a parked
+subsystem_). The code is the live source of truth for each row's present state;
 citations were re-verified against `main` on 2026-07-16. Make each
 ship-or-retire call against this table; do not delete rows piecemeal. Blocks
 code: no (all dormant).
 
-| Subsystem | Module(s) | State today | Decision |
-|---|---|---|---|
-| **Extension module** (whole) | Extension | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module. **RESOLVED 2026-07-18 (#427): module deleted — user decision (unfreeze + delete), ADR-0011 W7.** |
-| **DDSP synthesis pipeline** | BrowserAi | TF.js worker is a stub returning `UNAVAILABLE` (`workers/tfjsInferenceWorker.ts:16,40`); PR #101 de-advertised the four DDSP instruments as unavailable instead of `ready`, but the synthesis pipeline itself remains unbuilt | Build the inference, or remove the pipeline |
-| **RAVE timbre-transfer** | BrowserAi | Model discovery is OPFS-gated and no factory weights are available; placeholder encode/decode/transfer operations remain unshipped | Build model provisioning and real inference, or remove the placeholder pipeline |
-| **WAM plugin host** | Plugin | `loadWAMPlugin` never called by any production JS (`useCases/wamPluginHost/hostOperations/loadWAMPlugin.ts`) | Build host load/query + UI, or remove the host surface |
-| **Push 2 hardware controller** | ControlSurface | Protocol/codec primitives exist, but no production hardware transport owns them; the two files remain visible `no-orphans` warnings. `handlePadPress` now does an indexed write with a clamped velocity instead of a full `.map()` scan (issue #1828 F-6/F-7); `updateDisplay`/`setPadColor`/`setPadMode`/`setScale`/`mapEncoder` and `pushStore`'s UI reader are still unreached outside specs | Build the connection lifecycle tracked by #1745; do not delete or exempt the primitives |
-| **MIDI hardware controller** | ControlSurface | `export/importHardwareMappings` dead; profiles never populated; the unshipped controller-scripting Worker was retired in #1746. `hardwareControllerStore` is now seeded with `PUSH_2_PROFILE` and `importHardwareMappings` notifies on an unknown `profileId` instead of silently no-opping (issue #1828 F-8), but `matchControllerProfile` still has no production caller and no device-identity data to match against | Build device wiring, or remove the remaining subsystem. Any future scripting surface requires a new trust-model decision |
-| **MCU/OSC control-surface protocol layer** | ControlSurface | `stores/controlSurface.ts` (`McuState` banking/vpots, OSC endpoints/mappings) is reachable only through `setProtocol`; `mcuBankLeft`/`mcuBankRight`/vpot/OSC dispatch have no production caller. `connected` is now kept in sync with `protocol` inside `handleSetControlSurface` and the banking use cases no longer reassign the master fader or leave channel faders unclamped (issue #1828 F-4/F-5) | Build the MCU/OSC hardware transport wiring, or remove the protocol-state model. Same desktop-deferral class as the Push/MIDI hardware controller rows above (ADR 0016) |
-| **Native CRDT backend + `.sdaw` import/merge** | CrdtDocument | `nativeCrdtPersistence/` parked; PR #110 fixed the misleading `getPersistenceBackend()` report so the active lifecycle reports browser/IndexedDB; `.sdaw` merge wired but no trigger | Build the native backend / `.sdaw` import UI, or remove |
-| **Toaster performance features** | Toaster | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead | Ship each (UI + command + e2e) or retire it with its branches |
-| **Yeast param-readback / introspection UI** | Yeast | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row) | Build the param-projection store + pattern/reorder wiring, or retire |
-| **SoundLibrary vs SampleLibrary** | SoundLibrary | Two modules own "the sample library"; only SampleLibrary has a UI; their `findSimilarSamples` return types are incompatible (`SampleEntry[]` vs `string[]`) | Decide the owner; retire or merge the other (cross-module model-merge is forbidden — an ownership/migration decision) |
-| ~~**Collaboration transport-permission**~~ *(closed — ADR 0016 ruling 4)* | Collaboration | The role scaffold (`PermissionManager`, `canControlTransport`, `getRole`, `transport-controller`/`viewer`) was deleted; an invite is documented as unconditional write access in `useCases/collaboration/generateInvite.ts` and `Collaboration/AGENTS.md` | Resolved: scaffold removed |
-| **GrandBoule sampled-attack** | GrandBoule | Hybrid attack-clip pathway wired through types, no production caller | Wire the attack-clip load flow, or remove |
-| **Synth CV/Gate** | Synth | Convert+write path inert; only `addCvOutput` wired | Build the modular CV/Gate UI, or remove the convert/write ops |
-| **SampleLibrary embedding (Find-Similar / UMAP)** | SampleLibrary | `setEmbedding` never called (`stores/embeddingStore.ts:22`, zero callers) → embeddings map always empty → Find-Similar returns `[]`. The `presentations/views/LibraryBrowser.tsx:449` "Re-project UMAP" button is live but silently no-ops for the same reason — hide or wire it regardless of the finish-or-remove call | Build embedding population, or remove the G2/G3 controls |
-| **Smaller dormant features** | Crumbs (metering read-back, Warp/Mod-XY, automation→engine routing), Scoring (PolyDisplay), Automation (linked-lanes, envelope modulator), Bacteria (Lab-bench wiring) | each wired-but-dead | finish or remove per the per-module audit |
+| Subsystem                                                                 | Module(s)                                                                                                                                                              | State today                                                                                                                                                                                                                                                                                                                                                                                                             | Decision                                                                                                                                                                                |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Extension module** (whole)                                              | Extension                                                                                                                                                              | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers                                                                                                                                                                                                                                | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module. **RESOLVED 2026-07-18 (#427): module deleted — user decision (unfreeze + delete), ADR-0011 W7.** |
+| **DDSP synthesis pipeline**                                               | BrowserAi                                                                                                                                                              | TF.js worker is a stub returning `UNAVAILABLE` (`workers/tfjsInferenceWorker.ts:16,40`); PR #101 de-advertised the four DDSP instruments as unavailable instead of `ready`, but the synthesis pipeline itself remains unbuilt                                                                                                                                                                                           | Build the inference, or remove the pipeline                                                                                                                                             |
+| **RAVE timbre-transfer**                                                  | BrowserAi                                                                                                                                                              | Model discovery is OPFS-gated and no factory weights are available; placeholder encode/decode/transfer operations remain unshipped                                                                                                                                                                                                                                                                                      | Build model provisioning and real inference, or remove the placeholder pipeline                                                                                                         |
+| **WAM plugin host**                                                       | Plugin                                                                                                                                                                 | `loadWAMPlugin` never called by any production JS (`useCases/wamPluginHost/hostOperations/loadWAMPlugin.ts`)                                                                                                                                                                                                                                                                                                            | Build host load/query + UI, or remove the host surface                                                                                                                                  |
+| **Push 2 hardware controller**                                            | ControlSurface                                                                                                                                                         | Protocol/codec primitives exist, but no production hardware transport owns them; the two files remain visible `no-orphans` warnings. `handlePadPress` now does an indexed write with a clamped velocity instead of a full `.map()` scan (issue #1828 F-6/F-7); `updateDisplay`/`setPadColor`/`setPadMode`/`setScale`/`mapEncoder` and `pushStore`'s UI reader are still unreached outside specs                         | Build the connection lifecycle tracked by #1745; do not delete or exempt the primitives                                                                                                 |
+| **MIDI hardware controller**                                              | ControlSurface                                                                                                                                                         | `export/importHardwareMappings` dead; profiles never populated; the unshipped controller-scripting Worker was retired in #1746. `hardwareControllerStore` is now seeded with `PUSH_2_PROFILE` and `importHardwareMappings` notifies on an unknown `profileId` instead of silently no-opping (issue #1828 F-8), but `matchControllerProfile` still has no production caller and no device-identity data to match against | Build device wiring, or remove the remaining subsystem. Any future scripting surface requires a new trust-model decision                                                                |
+| **MCU/OSC control-surface protocol layer**                                | ControlSurface                                                                                                                                                         | `stores/controlSurface.ts` (`McuState` banking/vpots, OSC endpoints/mappings) is reachable only through `setProtocol`; `mcuBankLeft`/`mcuBankRight`/vpot/OSC dispatch have no production caller. `connected` is now kept in sync with `protocol` inside `handleSetControlSurface` and the banking use cases no longer reassign the master fader or leave channel faders unclamped (issue #1828 F-4/F-5)                 | Build the MCU/OSC hardware transport wiring, or remove the protocol-state model. Same desktop-deferral class as the Push/MIDI hardware controller rows above (ADR 0016)                 |
+| **Native CRDT backend + `.sdaw` import/merge**                            | CrdtDocument                                                                                                                                                           | `nativeCrdtPersistence/` parked; PR #110 fixed the misleading `getPersistenceBackend()` report so the active lifecycle reports browser/IndexedDB; `.sdaw` merge wired but no trigger                                                                                                                                                                                                                                    | Build the native backend / `.sdaw` import UI, or remove                                                                                                                                 |
+| **Toaster performance features**                                          | Toaster                                                                                                                                                                | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead                                                                                                                                                                                                                                                          | Ship each (UI + command + e2e) or retire it with its branches                                                                                                                           |
+| **Yeast param-readback / introspection UI**                               | Yeast                                                                                                                                                                  | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row)                                                                                                                                                   | Build the param-projection store + pattern/reorder wiring, or retire                                                                                                                    |
+| **SoundLibrary vs SampleLibrary**                                         | SoundLibrary                                                                                                                                                           | Two modules own "the sample library"; only SampleLibrary has a UI; their `findSimilarSamples` return types are incompatible (`SampleEntry[]` vs `string[]`)                                                                                                                                                                                                                                                             | Decide the owner; retire or merge the other (cross-module model-merge is forbidden — an ownership/migration decision)                                                                   |
+| ~~**Collaboration transport-permission**~~ _(closed — ADR 0016 ruling 4)_ | Collaboration                                                                                                                                                          | The role scaffold (`PermissionManager`, `canControlTransport`, `getRole`, `transport-controller`/`viewer`) was deleted; an invite is documented as unconditional write access in `useCases/collaboration/generateInvite.ts` and `Collaboration/AGENTS.md`                                                                                                                                                               | Resolved: scaffold removed                                                                                                                                                              |
+| **GrandBoule sampled-attack**                                             | GrandBoule                                                                                                                                                             | Hybrid attack-clip pathway wired through types, no production caller                                                                                                                                                                                                                                                                                                                                                    | Wire the attack-clip load flow, or remove                                                                                                                                               |
+| **Synth CV/Gate**                                                         | Synth                                                                                                                                                                  | Convert+write path inert; only `addCvOutput` wired                                                                                                                                                                                                                                                                                                                                                                      | Build the modular CV/Gate UI, or remove the convert/write ops                                                                                                                           |
+| **SampleLibrary embedding (Find-Similar / UMAP)**                         | SampleLibrary                                                                                                                                                          | `setEmbedding` never called (`stores/embeddingStore.ts:22`, zero callers) → embeddings map always empty → Find-Similar returns `[]`. The `presentations/views/LibraryBrowser.tsx:449` "Re-project UMAP" button is live but silently no-ops for the same reason — hide or wire it regardless of the finish-or-remove call                                                                                                | Build embedding population, or remove the G2/G3 controls                                                                                                                                |
+| **Smaller dormant features**                                              | Crumbs (metering read-back, Warp/Mod-XY, automation→engine routing), Scoring (PolyDisplay), Automation (linked-lanes, envelope modulator), Bacteria (Lab-bench wiring) | each wired-but-dead                                                                                                                                                                                                                                                                                                                                                                                                     | finish or remove per the per-module audit                                                                                                                                               |
 
 - **DJ mode / VCV Rack integration — keep or drop (product line).** Niche
   ideas surfaced during intake decomposition with no owning spec: DJ mode is
@@ -482,15 +483,15 @@ code: no (all dormant).
   `src/modules/Workspace/presentations/views/ClipView.tsx:125`.
 - **Wire or retire Workspace `automationSubLanes`.** The sub-lane mutators
   (`useCases/automationSubLanes/{addAutomationSubLane,removeAutomationSubLane,swapAutomationSubLaneParam}.ts`
-  + `helpers.setAutomationSubLanes`) have zero production callers and are not
-  exported from the Workspace `useCases` barrel, so `workspace.automationSubLanes`
-  can never be populated at runtime; the Arrangement reader
-  `hitTestAutomationSubLane` (wired via
-  `Arrangement/presentations/helpers/timelineTools.ts:133,173`) hit-tests an
-  always-empty map. Wire an add-sub-lane command/UI, or retire the feature.
-  Blocks code: no. Source:
-  `src/modules/Workspace/useCases/automationSubLanes/`,
-  `src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts:27`.
+    - `helpers.setAutomationSubLanes`) have zero production callers and are not
+      exported from the Workspace `useCases` barrel, so `workspace.automationSubLanes`
+      can never be populated at runtime; the Arrangement reader
+      `hitTestAutomationSubLane` (wired via
+      `Arrangement/presentations/helpers/timelineTools.ts:133,173`) hit-tests an
+      always-empty map. Wire an add-sub-lane command/UI, or retire the feature.
+      Blocks code: no. Source:
+      `src/modules/Workspace/useCases/automationSubLanes/`,
+      `src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts:27`.
 - **Wire-format naming drift: Workspace persists `scoring*` for the Tuner
   module.** After the Scoring→Tuner rename the module is `Tuner`, but Workspace
   still names the persisted field `scoringHeight`, the device-panel discriminant
@@ -782,7 +783,7 @@ code: no (all dormant).
   `src/modules/AiRuntime/useCases/validateActionPayload.ts:477` (PAYLOAD_VALIDATORS, ~194 'unchecked' entries).
 - **Wire or retire `musicMentor.getMentorTip`.** The singular `getMentorTip`
   query has zero non-test callers (referenced only by its own spec) — distinct
-  from the plural `getMentorTips` handler, which *is* wired
+  from the plural `getMentorTips` handler, which _is_ wired
   (`handlers/aiOrganization/handleGetMentorTips.ts`,
   `src/modules/CommandInterface/useCases/commands/AiCommands.ts:203`). Wire the tip query
   into a surface or delete it. Blocks code: no. Source:
@@ -808,7 +809,7 @@ code: no (all dormant).
   `.agents/decisions/0008-recent-projects-load-backend.md`.
 - **Legacy-MIDI migration coverage (product).** `migrateAbsoluteMidiNotes`
   gates on `/melody|chords|drums|copy/i` name match + `minStart >=
-  clip.startBeat`, by design missing renamed or hand-edited AI clips. Options:
+clip.startBeat`, by design missing renamed or hand-edited AI clips. Options:
   accept the residual vs audit real stored projects to size the gap before
   widening. Blocks code: no. Source:
   `src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts`.
@@ -886,7 +887,7 @@ code: no (all dormant).
   fully orphaned since commit e4b31ed8b (2026-06-30) routed the sample-search
   action to SampleLibrary — zero files outside `src/modules/SoundLibrary/`
   import it (`grep -rn "modules/SoundLibrary" src/ | grep -v
-  "src/modules/SoundLibrary/"` returns nothing; the only residual mention is a
+"src/modules/SoundLibrary/"` returns nothing; the only residual mention is a
   stale doc-comment in
   `src/modules/Arrangement/repositories/presets/factoryPresets.ts:95`). Its
   `stores/`, `events/`, and `useCases/` barrels have no external consumers.
@@ -1046,11 +1047,10 @@ finding as absence of a problem.
 - **Backlog module reads**: Knead, Fermenter, LocalStorage, Scoring were not
   opened in the overview pass — unverified rather than confirmed.
 
-
 ## Project persistence (ADR 0014, proposed)
 
 Decisions the architecture cannot be chosen without. Evidence:
-`.agents/artifacts/sourdaw/RESEARCH-project-persistence.md`. Each changes what a project file *is*
+`.agents/artifacts/sourdaw/RESEARCH-project-persistence.md`. Each changes what a project file _is_
 or how a user moves work between machines, which is why none of them is engineering's to make.
 
 - ~~**Is a project one file, or a folder?**~~ **DECIDED 2026-08-02 — a folder, with a
@@ -1069,7 +1069,7 @@ or how a user moves work between machines, which is why none of them is engineer
   needs regardless. Convention does not give the web half, because reference-by-path has no working
   web form: a File System Access handle persists in IndexedDB but needs `requestPermission()` in
   each new session, so a sixty-sample project prompts per file on every reload. Accepted costs: two
-  reader paths from day one, a *consolidate* action owed on the writer, and a shared sample
+  reader paths from day one, a _consolidate_ action owed on the writer, and a shared sample
   duplicated per project — that last one is the separate library question below, not this one.
 - ~~**May browser-resident storage ever be described as "safe"?**~~ **DECIDED 2026-08-02 — no.
   Browser storage is a cache, never the authority.** The authoritative copy is a file the user
@@ -1080,7 +1080,7 @@ or how a user moves work between machines, which is why none of them is engineer
   desktop project file has no equivalent failure mode.
 - ~~**Is "install the app" a stated durability requirement?**~~ **DECIDED 2026-08-02 — no, for the
   spec reason above rather than anything about installing.** Chrome's documented grant heuristics
-  *do* include installation, alongside site engagement and notification permission
+  _do_ include installation, alongside site engagement and notification permission
   ([web.dev](https://web.dev/articles/persistent-storage)). A gate-M1 probe reported `persist()`
   false even for an installed PWA, but it ran on a throwaway profile with no history and installed
   via CDP, so it measured its own fixture; **that result is withdrawn.** The answer does not depend
@@ -1101,14 +1101,15 @@ or how a user moves work between machines, which is why none of them is engineer
   retained pre-migration generation.** Newer opens older; older refuses newer; migration rewrites in
   place. Strict industry convention, and the simplest thing to implement and reason about.
 
-  **The cost was stated before the call and accepted: there is no recourse after a bad migration.**
-  A web user cannot install the previous build, so unlike on desktop a migration bug reaches
-  everyone at once with no way back for work already migrated. Retaining the previous generation was
-  recommended and declined — ADR 0014's content-addressed layout would have made it close to free,
-  since the old document is a differently-named file that migration need only not delete. Recorded
-  here so that if a migration does go wrong, the absence of a fallback is a known accepted risk and
-  not a surprise. **What would change this:** the first migration that has to touch existing
-  projects is the point to re-examine it, and doing so is not re-litigation.
+    **The cost was stated before the call and accepted: there is no recourse after a bad migration.**
+    A web user cannot install the previous build, so unlike on desktop a migration bug reaches
+    everyone at once with no way back for work already migrated. Retaining the previous generation was
+    recommended and declined — ADR 0014's content-addressed layout would have made it close to free,
+    since the old document is a differently-named file that migration need only not delete. Recorded
+    here so that if a migration does go wrong, the absence of a fallback is a known accepted risk and
+    not a surprise. **What would change this:** the first migration that has to touch existing
+    projects is the point to re-examine it, and doing so is not re-litigation.
+
 - **How much budget the desktop store gets.** ADR 0012 is accepted and Option C is what compliance
   costs. Option B is materially cheaper and violates it. If the budget is not there, the honest move
   is to amend ADR 0012 explicitly and choose B — not to adopt C and under-build it.
@@ -1130,7 +1131,7 @@ do, that table is the record and this list is the pointer.
   Decide whether the first export of a pre-existing project warns.
 - **Restoring device state that was previously lost** — Levain's instrument, Fermenter's layers,
   Crumbs' sample and pads, Toaster's `engineParams`. A reopened project currently plays defaults;
-  after the fix it plays what was saved, which for a project developed *since* the loss is something
+  after the fix it plays what was saved, which for a project developed _since_ the loss is something
   the user has never heard.
 - **Native plugin hosting: ship or gate.** Unreachable today via two independent mechanisms (the ACL
   grants 3 of ~78 commands; `start_native_engine` has no caller). Shipping is an XL transport
@@ -1138,7 +1139,7 @@ do, that table is the record and this list is the pointer.
 - **Capabilities to remove or build.** Crust, CvGate, RAVE, the DDSP/TF.js instruments, Bacteria's
   three dead distortion modes, Levain's macros and mic strips, Proof's linear-phase EQ, Crumbs' pads
   and slices, Toaster's internal sequencer. Each removal deletes something a user may have
-  configured and persisted. Several are cheaper to *build* than the survey assumed — the DSP already
+  configured and persisted. Several are cheaper to _build_ than the survey assumed — the DSP already
   exists and is simply never instantiated.
 - **Collaboration posture.** Build host-side admission and roles, or delete the role model and
   document that an invite string is unconditional write access. Leaving it guarantees the next
@@ -1147,20 +1148,20 @@ do, that table is the record and this list is the pointer.
   absence, and require a digest on every catalog entry added from now on.** The digest-less set is
   therefore closed and shrinks as entries are backfilled, rather than growing.
 
-  **This matches how the web actually behaves, which is the opposite of the justification this
-  entry originally carried.** Subresource Integrity performs **no check at all** when `integrity` is
-  absent — resources load normally — and requiring the attribute needs an explicit `Integrity-Policy`
-  response header to opt in ([W3C SRI](https://www.w3.org/TR/sri-2/),
-  [MDN Integrity-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Integrity-Policy)).
-  So failing closed on absence is *stricter than the ecosystem*, not the default, and the survey's
-  earlier claim that HuggingFace Hub, ONNX tooling and SRI treat a missing digest as an error is
-  wrong and was not used as justification. The shape adopted here is deliberately SRI's own: verify
-  what is declared, and make the requirement explicit for anything new.
+    **This matches how the web actually behaves, which is the opposite of the justification this
+    entry originally carried.** Subresource Integrity performs **no check at all** when `integrity` is
+    absent — resources load normally — and requiring the attribute needs an explicit `Integrity-Policy`
+    response header to opt in ([W3C SRI](https://www.w3.org/TR/sri-2/),
+    [MDN Integrity-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Integrity-Policy)).
+    So failing closed on absence is _stricter than the ecosystem_, not the default, and the survey's
+    earlier claim that HuggingFace Hub, ONNX tooling and SRI treat a missing digest as an error is
+    wrong and was not used as justification. The shape adopted here is deliberately SRI's own: verify
+    what is declared, and make the requirement explicit for anything new.
 
-  **Accepted cost:** existing entries stay unverified until backfilled, and that backfill has to
-  actually happen — it is not implied by this decision. Failing closed today was considered and
-  declined because no catalog entry carries a digest, so it would break every model install; choosing
-  it would really have been choosing to complete the backfill first.
+    **Accepted cost:** existing entries stay unverified until backfilled, and that backfill has to
+    actually happen — it is not implied by this decision. Failing closed today was considered and
+    declined because no catalog entry carries a digest, so it would break every model install; choosing
+    it would really have been choosing to complete the backfill first.
 
 ## RESOLVED 2026-08-01 by ADR 0016
 

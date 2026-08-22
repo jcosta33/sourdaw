@@ -22,6 +22,11 @@ import {
     VOICE_DICTATION_START_CHANNEL,
     VOICE_DICTATION_STOP_CHANNEL,
     VOICE_DICTATION_TERMINAL_CHANNEL,
+    WINDOW_CLOSE_CHANNEL,
+    WINDOW_IS_MAXIMIZED_CHANNEL,
+    WINDOW_MAXIMIZED_CHANGED_CHANNEL,
+    WINDOW_MINIMIZE_CHANNEL,
+    WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -65,11 +70,24 @@ describe('the published surface', () => {
             'invokeBinaryResponse',
             'listen',
             'paths',
+            'platform',
             'stream',
             'voiceDictation',
+            'windowControls',
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
+        expect(Object.keys(bridge.windowControls).sort()).toEqual([
+            'close',
+            'isMaximized',
+            'listenMaximized',
+            'minimize',
+            'toggleMaximize',
+        ]);
+    });
+
+    it('publishes the platform synchronously, so chrome gating needs no round trip', () => {
+        expect(createSourdawBridge(fakeIpc().ipc, 'epoch', undefined, 'linux').platform).toBe('linux');
     });
 
     it('registers one process-wide listener per push channel, not one per subscription', () => {
@@ -87,6 +105,7 @@ describe('the published surface', () => {
                 [EVENT_CHANNEL, 1],
                 [STREAM_CHANNEL, 1],
                 [VOICE_DICTATION_TERMINAL_CHANNEL, 1],
+                [WINDOW_MAXIMIZED_CHANGED_CHANNEL, 1],
             ])
         );
     });
@@ -417,6 +436,54 @@ describe('streaming commands', () => {
         failing.push(STREAM_CHANNEL, streamId, { late: true });
 
         expect(events).toEqual([]);
+    });
+});
+
+describe('window controls', () => {
+    it('sends minimize and close down their own channels', async () => {
+        const fake = fakeIpc();
+        const bridge = createSourdawBridge(fake.ipc);
+
+        await bridge.windowControls.minimize();
+        await bridge.windowControls.close();
+
+        expect(fake.invoke).toHaveBeenCalledWith(WINDOW_MINIMIZE_CHANNEL);
+        expect(fake.invoke).toHaveBeenCalledWith(WINDOW_CLOSE_CHANNEL);
+    });
+
+    it('answers toggle-maximize and is-maximized with the boolean main returned', async () => {
+        const fake = fakeIpc(
+            (channel) => channel === WINDOW_TOGGLE_MAXIMIZE_CHANNEL || channel === WINDOW_IS_MAXIMIZED_CHANNEL
+        );
+        const bridge = createSourdawBridge(fake.ipc);
+
+        await expect(bridge.windowControls.toggleMaximize()).resolves.toBe(true);
+        await expect(bridge.windowControls.isMaximized()).resolves.toBe(true);
+        expect(fake.invoke).toHaveBeenCalledWith(WINDOW_TOGGLE_MAXIMIZE_CHANNEL);
+        expect(fake.invoke).toHaveBeenCalledWith(WINDOW_IS_MAXIMIZED_CHANNEL);
+    });
+
+    it('fails loudly when a window-control channel answers with a non-boolean', async () => {
+        const bridge = createSourdawBridge(fakeIpc(() => 'yes').ipc);
+
+        await expect(bridge.windowControls.toggleMaximize()).rejects.toThrow(/non-boolean/u);
+        await expect(bridge.windowControls.isMaximized()).rejects.toThrow(/non-boolean/u);
+    });
+
+    it('delivers maximize transitions until unsubscribed, and ignores malformed ones', () => {
+        const fake = fakeIpc();
+        const bridge = createSourdawBridge(fake.ipc);
+        const kept = vi.fn();
+        const dropped = vi.fn();
+
+        bridge.windowControls.listenMaximized(kept);
+        bridge.windowControls.listenMaximized(dropped)();
+        fake.push(WINDOW_MAXIMIZED_CHANGED_CHANNEL, true);
+        fake.push(WINDOW_MAXIMIZED_CHANGED_CHANNEL, 'maximized');
+
+        expect(kept).toHaveBeenCalledTimes(1);
+        expect(kept).toHaveBeenCalledWith(true);
+        expect(dropped).not.toHaveBeenCalled();
     });
 });
 

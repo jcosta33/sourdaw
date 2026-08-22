@@ -5,8 +5,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { createTrack } from '#/modules/Arrangement/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { setActiveYeastDevice, yeastStore } from '../../stores/yeastStore';
 import { createOfflineYeastMidiProcessor } from '../createOfflineYeastMidiProcessor';

@@ -208,8 +208,7 @@ impl Biquad {
         let numerator_imag = -(b1 * sin_w + b2 * sin_2w);
         let denominator_real = 1.0 + a1 * cos_w + a2 * cos_2w;
         let denominator_imag = -(a1 * sin_w + a2 * sin_2w);
-        let denominator =
-            denominator_real * denominator_real + denominator_imag * denominator_imag;
+        let denominator = denominator_real * denominator_real + denominator_imag * denominator_imag;
         if denominator <= 1e-300 {
             return f64::INFINITY;
         }
@@ -813,7 +812,9 @@ impl DecayRateEq {
             BandType::LowShelf => {
                 self.biquads[index].design_low_shelf(freq, gain_db, self.sample_rate)
             }
-            BandType::Bell => self.biquads[index].design_peak(freq, gain_db, band.q, self.sample_rate),
+            BandType::Bell => {
+                self.biquads[index].design_peak(freq, gain_db, band.q, self.sample_rate)
+            }
             BandType::HighShelf => {
                 self.biquads[index].design_high_shelf(freq, gain_db, self.sample_rate)
             }
@@ -878,8 +879,8 @@ impl DecayRateEq {
 #[cfg(test)]
 mod tests {
     use super::{
-        band_index_for_name, loop_gain_from_rt60, DecayRateEq, DEFAULT_MULTIPLIER,
-        MAX_MULTIPLIER, MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
+        band_index_for_name, loop_gain_from_rt60, DecayRateEq, DEFAULT_MULTIPLIER, MAX_MULTIPLIER,
+        MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
     };
 
     #[test]
@@ -963,7 +964,10 @@ mod tests {
         ("hi pair, rest cut", [0.25, 0.25, 0.25, 0.25, 4.0, 4.0]),
         ("all max", [4.0, 4.0, 4.0, 4.0, 4.0, 4.0]),
         ("all min", [0.25, 0.25, 0.25, 0.25, 0.25, 0.25]),
-        ("alternating boost and cut", [4.0, 0.25, 4.0, 0.25, 4.0, 0.25]),
+        (
+            "alternating boost and cut",
+            [4.0, 0.25, 4.0, 0.25, 4.0, 0.25],
+        ),
     ];
 
     /// Every base loop gain an engine can hand the stage.
@@ -1092,7 +1096,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn a_loop_with_no_headroom_zeroes_every_band_and_not_only_the_starved_one() {

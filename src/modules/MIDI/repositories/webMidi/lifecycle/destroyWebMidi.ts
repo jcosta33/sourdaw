@@ -6,10 +6,10 @@ import { getNativeMode } from '../getNativeMode';
 import { releaseAllActiveNotes } from '../releaseAllActiveNotes';
 import { resetChannelControllerState } from '../resetChannelControllerState';
 import { setMidiAccess } from '../setMidiAccess';
-import { setState } from '../setState';
-import { setTargetTrackId } from '../setTargetTrackId';
 import { setNativeEventUnlisten } from '../setNativeEventUnlisten';
 import { setNativeMode } from '../setNativeMode';
+import { setState } from '../setState';
+import { setTargetTrackId } from '../setTargetTrackId';
 import { midiLearn } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';

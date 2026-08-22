@@ -52,7 +52,11 @@ describe('selectMidiInput', () => {
         selectMidiInput({ deviceId: 'Built-in', onMidiMessage });
 
         await vi.waitFor(() =>
-            expect(selectMidiInputNativeMock).toHaveBeenCalledWith({ portIndex: 1, portName: 'Built-in', onMidiMessage })
+            expect(selectMidiInputNativeMock).toHaveBeenCalledWith({
+                portIndex: 1,
+                portName: 'Built-in',
+                onMidiMessage,
+            })
         );
     });
 
