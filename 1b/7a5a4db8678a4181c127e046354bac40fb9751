@@ -1,0 +1,19 @@
+tests/e2e/fermenterMacroRemainingTestId.spec.ts
+  s_24b1bdbc3c31ad::t_2751195fbfb1aa 3,5,10,13-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1b7a5a4db8678a4181c127e046354bac40fb9751",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
