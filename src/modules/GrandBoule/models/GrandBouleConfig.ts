@@ -19,10 +19,9 @@ export type GrandBouleConfig = {
     /** Whether the hybrid sampled-attack pathway is active. */
     sampledAttackEnabled: boolean;
     /**
-     * Stretched-tuning amount (0.0 – 2.0). Scales the smooth Steinway D
-     * Railsback curve baked into the engine. 0 = equal temperament (with
-     * per-note jitter still applied), 1 = the full project curve, and
-     * 2 = exaggerated stretch. The curve uses Jaatinen & Pätynen 2022 anchors.
+     * Stretched-tuning amount (0.0 – 2.0). Scales the project-authored smooth
+     * stretch curve. 0 = equal temperament with project note variation,
+     * 1 = the default project curve, and 2 = exaggerated stretch.
      */
     stretchAmount: number;
     /**

@@ -28,7 +28,7 @@ export type GrandBoulePerNoteValues = {
     hammerMass: number;
     /** Multiplier on inharmonicity B. */
     stringStiffness: number;
-    /** Coupling strength to soundboard (0 = disconnected). */
+    /** Per-note bridge contribution (0 = disconnected). */
     bridgeCoupling: number;
     /** Damper bandwidth multiplier. */
     damperFirmness: number;

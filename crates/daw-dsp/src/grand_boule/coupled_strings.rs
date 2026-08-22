@@ -24,8 +24,8 @@ pub const MAX_UNISONS: usize = 3;
 /// Bridge-induced bandwidth added to the fast (vertical) polarization, in Hz.
 /// Scales with frequency: bass strings couple more weakly through the bridge
 /// (longer prompt sound, T60 ≈ 2–3 s) while treble strings couple more
-/// strongly (shorter prompt, T60 ≈ 0.3–0.8 s). This matches measurements
-/// from Askenfelt & Jansson.
+/// strongly (shorter prompt, T60 ≈ 0.3–0.8 s). These are project decay
+/// targets rather than measurements of a named instrument.
 fn sigma_bridge_hz(fundamental_hz: f32) -> f32 {
     // Bass A0 (27.5): ~0.9 Hz → T60 ≈ 2.4 s
     // Mid  C4 (261):  ~1.8 Hz → T60 ≈ 1.2 s
@@ -40,16 +40,14 @@ const SIGMA_SLOW_SCALE: f32 = 0.01;
 /// (slow) polarization. With `configure_aftersound`, the horizontal C0 is
 /// computed from the fast bandwidth (matched impulse response). The gain
 /// controls how quickly the aftersound builds up to its steady-state level
-/// relative to the prompt. Weinreich (1977) measured the aftersound plateau
-/// at roughly 15–20 dB below the prompt peak on a Steinway D; 30× coupling
-/// with 0.7 mix achieves this ratio.
+/// relative to the prompt. The gain and mix are project voicing constants.
 const BRIDGE_COUPLING_GAIN: f32 = 30.0;
 
 /// Relative output mix for the horizontal (slow) polarization.
 ///
 /// The horizontal polarization is driven by bridge coupling from the
-/// vertical output (Weinreich 1977). Combined with BRIDGE_COUPLING_GAIN,
-/// this sets the aftersound plateau at ~15–20 dB below the prompt peak.
+/// vertical output. Combined with `BRIDGE_COUPLING_GAIN`, this sets the
+/// project aftersound balance.
 const HORIZONTAL_MIX: f32 = 0.7;
 
 /// One unison: a vertical + horizontal polarization pair.
@@ -151,7 +149,7 @@ impl CoupledStringAssembly {
             // Horizontal (aftersound) polarization: C0 uses fast bandwidth
             // for efficient energy pickup from bridge coupling, but C1/C2
             // use slow bandwidth for the long-ringing aftersound tail
-            // (Weinreich 1977, §3.4).
+            // used by the project aftersound voicing.
             unison
                 .horizontal
                 .configure_aftersound_from_string_parameters(parameters, fast_damp, slow_damp);
@@ -186,7 +184,7 @@ impl CoupledStringAssembly {
 
     /// Process one sample. The vertical polarization is driven by the hammer
     /// force directly; the horizontal polarization receives energy through
-    /// bridge coupling from the vertical output (Weinreich 1977, §3.4).
+    /// bridge coupling from the vertical output.
     ///
     /// The `BRIDGE_COUPLING_GAIN` compensates for the horizontal resonators'
     /// very small C0 (narrow decay bandwidth) so that energy transfers at a

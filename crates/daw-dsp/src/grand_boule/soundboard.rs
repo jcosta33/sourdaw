@@ -1,53 +1,56 @@
-//! Parametric soundboard resonance bank for the Grand Boule piano.
+//! Fixed finite-impulse-response body renderer for the Grand Boule piano.
 //!
-//! Implements a bank of parallel biquad resonators
-//! tuned to a plausible piano soundboard mode distribution. The soundboard
-//! is a single global element (one per engine, not per voice) driven by the
-//! aggregate bridge force of all active voices.
-//!
-//! The bank is stereo: every mode gets an independent L/R gain pair drawn at
-//! construction time, so the soundboard imparts a natural stereo spread
-//! without any post-processing.
-//!
-//! Struct-of-Arrays layout mirrors [`super::string::ModalString`] for the
-//! same SIMD auto-vectorisation properties.
+//! Four project-authored warm/open stereo kernels are built from cascades of
+//! two-tap feed-forward delays. The body runs once on the aggregate bridge bus;
+//! it has no feedback path and reaches exact silence after its bounded tail.
 
 use crate::primitives::flush_denormal;
 
-/// Number of soundboard modes. 192 = 24 × 8 for `f32x8` SIMD alignment.
-pub const SOUNDBOARD_MODES: usize = 192;
+const FIR_STAGE_COUNT: usize = 12;
+const EARLY_STAGE_COUNT: usize = 4;
+const BODY_OUTPUT_GAIN: f32 = 0.18;
 
-/// Lowest soundboard resonance (Hz). A full-size concert grand's
-/// soundboard fundamental sits around 30–40 Hz — low enough to radiate
-/// the second partial of A0 (55 Hz) and to add warmth to the bass register.
-const MODE_MIN_HZ: f32 = 30.0;
+#[derive(Clone, Copy)]
+struct KernelSpec {
+    delay_ms: [f32; FIR_STAGE_COUNT],
+    delayed_gain: [f32; FIR_STAGE_COUNT],
+}
 
-/// Highest soundboard resonance (Hz). Modes above this frequency blend into
-/// the radiation HF hump and contribute little.
-const MODE_MAX_HZ: f32 = 7_800.0;
+const WARM_LEFT: KernelSpec = KernelSpec {
+    delay_ms: [
+        17.0, 29.0, 43.0, 61.0, 79.0, 97.0, 113.0, 131.0, 149.0, 157.0, 173.0, 191.0,
+    ],
+    delayed_gain: [
+        0.34, 0.28, -0.25, 0.31, 0.24, -0.22, 0.27, -0.20, 0.23, 0.18, -0.17, 0.15,
+    ],
+};
 
-/// Plate-to-waveguide transition frequency.
-/// (Chaigne, Cotté & Viggiano 2013, JASA 133(4)). Below this frequency the
-/// soundboard vibrates as a single homogeneous orthotropic plate; above it
-/// the inter-rib spaces act as waveguides and the modes localise. The
-/// implication for synthesis is that the plate region has a *lower* modal
-/// density (Skudrzyk mean admittance) and a *broader* radiation pattern,
-/// while the waveguide region has higher modal density and decorrelated
-/// stereo radiation.
-const PLATE_WAVEGUIDE_HZ: f32 = 1_100.0;
+const WARM_RIGHT: KernelSpec = KernelSpec {
+    delay_ms: [
+        19.0, 31.0, 47.0, 59.0, 73.0, 101.0, 109.0, 137.0, 151.0, 163.0, 179.0, 193.0,
+    ],
+    delayed_gain: [
+        0.32, -0.27, 0.29, 0.23, -0.26, 0.21, 0.25, -0.19, 0.22, -0.18, 0.16, 0.14,
+    ],
+};
 
-/// Fraction of soundboard modes allocated to the plate region (below
-/// 1.1 kHz). The plate region is broad and structural — about a third of
-/// the modes get parked there, the rest live in the dense waveguide
-/// region.
-const PLATE_FRACTION: f32 = 0.32;
+const OPEN_LEFT: KernelSpec = KernelSpec {
+    delay_ms: [
+        13.0, 37.0, 41.0, 67.0, 71.0, 103.0, 107.0, 139.0, 143.0, 167.0, 181.0, 197.0,
+    ],
+    delayed_gain: [
+        0.23, -0.31, 0.35, -0.28, 0.30, -0.24, 0.27, 0.22, -0.21, 0.19, -0.18, 0.16,
+    ],
+};
 
-/// Frequency-independent input-drive coefficient. Scales the bridge signal
-/// feeding the soundboard modes. The soundboard is the primary sound radiator
-/// in a real piano — the direct string signal should be a minority component.
-/// 0.18 gives a soundboard-to-dry ratio of roughly 3:1, producing the warm,
-/// resonant body that distinguishes a grand piano from an electric.
-const DRIVE: f32 = 0.18;
+const OPEN_RIGHT: KernelSpec = KernelSpec {
+    delay_ms: [
+        23.0, 27.0, 53.0, 57.0, 83.0, 89.0, 127.0, 133.0, 147.0, 157.0, 187.0, 199.0,
+    ],
+    delayed_gain: [
+        -0.25, 0.33, -0.29, 0.36, -0.27, 0.26, -0.23, 0.24, 0.20, -0.19, 0.17, -0.15,
+    ],
+};
 
 /// The rendered bridge bus delivered to the independent soundboard stage.
 ///
@@ -63,154 +66,139 @@ impl RenderedBridgeSignal {
     }
 }
 
-#[repr(C, align(64))]
+#[derive(Clone, Debug)]
+struct FeedForwardDelay {
+    buffer: Box<[f32]>,
+    cursor: usize,
+    delayed_gain: f32,
+}
+
+impl FeedForwardDelay {
+    fn new(sample_rate: f32, delay_ms: f32, delayed_gain: f32) -> Self {
+        let delay_samples = (sample_rate.max(1.0) * delay_ms * 0.001).round() as usize;
+        Self {
+            buffer: vec![0.0; delay_samples.max(1)].into_boxed_slice(),
+            cursor: 0,
+            delayed_gain,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.buffer.fill(0.0);
+        self.cursor = 0;
+    }
+
+    #[inline]
+    fn tick(&mut self, input: f32) -> f32 {
+        let delayed = self.buffer[self.cursor];
+        self.buffer[self.cursor] = input;
+        self.cursor += 1;
+        if self.cursor == self.buffer.len() {
+            self.cursor = 0;
+        }
+        flush_denormal(input + delayed * self.delayed_gain)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CascadeOutput {
+    early: f32,
+    diffuse: f32,
+}
+
+#[derive(Clone, Debug)]
+struct FeedForwardCascade {
+    stages: [FeedForwardDelay; FIR_STAGE_COUNT],
+}
+
+impl FeedForwardCascade {
+    fn new(sample_rate: f32, spec: KernelSpec) -> Self {
+        Self {
+            stages: core::array::from_fn(|index| {
+                FeedForwardDelay::new(sample_rate, spec.delay_ms[index], spec.delayed_gain[index])
+            }),
+        }
+    }
+
+    fn reset(&mut self) {
+        for stage in &mut self.stages {
+            stage.reset();
+        }
+    }
+
+    #[inline]
+    fn tick(&mut self, input: f32) -> CascadeOutput {
+        let mut sample = input;
+        let mut early = input;
+        for (index, stage) in self.stages.iter_mut().enumerate() {
+            sample = stage.tick(sample);
+            if index + 1 == EARLY_STAGE_COUNT {
+                early = sample;
+            }
+        }
+        CascadeOutput {
+            early,
+            diffuse: sample,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Soundboard {
-    c0: [f32; SOUNDBOARD_MODES],
-    c1: [f32; SOUNDBOARD_MODES],
-    c2: [f32; SOUNDBOARD_MODES],
-    gain_left: [f32; SOUNDBOARD_MODES],
-    gain_right: [f32; SOUNDBOARD_MODES],
-    x1: [f32; SOUNDBOARD_MODES],
-    x2: [f32; SOUNDBOARD_MODES],
-    y1: [f32; SOUNDBOARD_MODES],
-    y2: [f32; SOUNDBOARD_MODES],
-    sample_rate: f32,
+    warm_left: FeedForwardCascade,
+    warm_right: FeedForwardCascade,
+    open_left: FeedForwardCascade,
+    open_right: FeedForwardCascade,
+    brightness: f32,
+    late_diffusion_gain: f32,
+    early_diffuse_mix: f32,
     #[cfg(test)]
     rendered_bridge_process_count: usize,
 }
 
 impl Soundboard {
-    /// Construct a soundboard with a deterministic mode distribution.
-    /// Allocation-free: all arrays live inline.
+    /// Construct all delay storage and fixed kernels. Processing and control
+    /// updates allocate nothing after this returns.
     pub fn new(sample_rate: f32) -> Self {
-        let mut board = Self {
-            c0: [0.0; SOUNDBOARD_MODES],
-            c1: [0.0; SOUNDBOARD_MODES],
-            c2: [0.0; SOUNDBOARD_MODES],
-            gain_left: [0.0; SOUNDBOARD_MODES],
-            gain_right: [0.0; SOUNDBOARD_MODES],
-            x1: [0.0; SOUNDBOARD_MODES],
-            x2: [0.0; SOUNDBOARD_MODES],
-            y1: [0.0; SOUNDBOARD_MODES],
-            y2: [0.0; SOUNDBOARD_MODES],
-            sample_rate,
+        Self {
+            warm_left: FeedForwardCascade::new(sample_rate, WARM_LEFT),
+            warm_right: FeedForwardCascade::new(sample_rate, WARM_RIGHT),
+            open_left: FeedForwardCascade::new(sample_rate, OPEN_LEFT),
+            open_right: FeedForwardCascade::new(sample_rate, OPEN_RIGHT),
+            brightness: 0.55,
+            late_diffusion_gain: 0.6,
+            early_diffuse_mix: 0.5,
             #[cfg(test)]
             rendered_bridge_process_count: 0,
-        };
-        board.rebuild_modes();
-        board
+        }
     }
 
-    /// Clear all biquad states (engine reset).
     pub fn reset(&mut self) {
-        self.x1.fill(0.0);
-        self.x2.fill(0.0);
-        self.y1.fill(0.0);
-        self.y2.fill(0.0);
+        self.warm_left.reset();
+        self.warm_right.reset();
+        self.open_left.reset();
+        self.open_right.reset();
         #[cfg(test)]
         {
             self.rendered_bridge_process_count = 0;
         }
     }
 
-    /// Rebuild mode coefficients. Called from `new` and whenever the sample
-    /// rate changes.
-    ///
-    /// The mode set is split at `PLATE_WAVEGUIDE_HZ`:
-    ///
-    /// * **Plate region** (≤ 1.1 kHz, ~32 % of modes): low density, high Q
-    ///   in the lows, broadly correlated L/R radiation (most plate modes
-    ///   span the whole soundboard so both channels see them).
-    /// * **Waveguide region** (> 1.1 kHz, remaining modes): higher density,
-    ///   moderate Q, *decorrelated* L/R radiation because the modes are
-    ///   localised to individual inter-rib waveguides.
-    pub fn rebuild_modes(&mut self) {
-        use core::f32::consts::{PI, TAU};
+    pub fn set_brightness(&mut self, value: f32) {
+        if value.is_finite() {
+            self.brightness = value.clamp(0.0, 1.0);
+        }
+    }
 
-        let nyquist = self.sample_rate * 0.5;
-        // Deterministic LCG — we do not need cryptographic quality, only
-        // repeatable jitter so that every instance of the plugin sounds
-        // identical and allocation-free.
-        let mut rng_state: u32 = 0x1234_5678;
-        let mut next_rand = || -> f32 {
-            rng_state = rng_state
-                .wrapping_mul(1_664_525)
-                .wrapping_add(1_013_904_223);
-            (rng_state >> 8) as f32 / (1 << 24) as f32
-        };
+    pub fn set_body_resonance(&mut self, value: f32) {
+        if value.is_finite() {
+            self.late_diffusion_gain = value.clamp(0.0, 1.0);
+        }
+    }
 
-        let plate_count = ((SOUNDBOARD_MODES as f32 * PLATE_FRACTION) as usize).max(1);
-        let waveguide_count = SOUNDBOARD_MODES - plate_count;
-        let log_plate_lo = MODE_MIN_HZ.ln();
-        let log_plate_hi = PLATE_WAVEGUIDE_HZ.ln();
-        let log_wg_lo = PLATE_WAVEGUIDE_HZ.ln();
-        let log_wg_hi = MODE_MAX_HZ.ln();
-
-        for index in 0..SOUNDBOARD_MODES {
-            // Plate vs waveguide membership and log-spaced frequency.
-            let (freq_nominal, is_plate) = if index < plate_count {
-                let local = index as f32 / (plate_count.max(1) as f32 - 1.0).max(1.0);
-                (
-                    (log_plate_lo + local.clamp(0.0, 1.0) * (log_plate_hi - log_plate_lo)).exp(),
-                    true,
-                )
-            } else {
-                let local =
-                    (index - plate_count) as f32 / (waveguide_count.max(1) as f32 - 1.0).max(1.0);
-                (
-                    (log_wg_lo + local.clamp(0.0, 1.0) * (log_wg_hi - log_wg_lo)).exp(),
-                    false,
-                )
-            };
-            let jitter = 1.0 + 0.15 * (2.0 * next_rand() - 1.0);
-            let freq = (freq_nominal * jitter).clamp(MODE_MIN_HZ, nyquist * 0.98);
-
-            // Plate modes carry low-mid energy with high Q (long ringing
-            // body resonances). Waveguide modes are more lossy and add the
-            // characteristic upper-mid "shimmer" without dominating.
-            let q = if is_plate {
-                // Lowest plate modes are highly resonant (Suzuki 1986).
-                let bass_bias = 1.0
-                    - ((freq - MODE_MIN_HZ) / (PLATE_WAVEGUIDE_HZ - MODE_MIN_HZ)).clamp(0.0, 1.0);
-                60.0 + 180.0 * bass_bias
-            } else {
-                // Waveguide region modes — moderate Q with mild peak around
-                // 2 kHz where coincidence radiation is most efficient.
-                let peak_bias = 1.0 - ((freq.ln() - 2_000.0_f32.ln()).abs() * 0.7).min(1.0);
-                60.0 + 90.0 * peak_bias
-            };
-            let bandwidth = freq / q;
-
-            let theta = TAU * freq / self.sample_rate;
-            let r = (-PI * bandwidth / self.sample_rate).exp();
-
-            // Amplitude rolls off slightly with frequency (~ -3 dB/oct).
-            // Plate modes carry slightly more energy because they radiate
-            // efficiently across the whole board.
-            let plate_boost = if is_plate { 1.20 } else { 1.0 };
-            let amp = plate_boost / freq.sqrt();
-
-            self.c0[index] = DRIVE * amp * (1.0 - r * r) * theta.sin() * 0.5;
-            self.c1[index] = 2.0 * r * theta.cos();
-            self.c2[index] = -(r * r);
-
-            // Stereo placement.
-            //
-            // Plate modes span the whole board → near-mono with a small
-            // ±7.65° spread either side of centre. Waveguide modes are
-            // localised to inter-rib bays → strongly decorrelated, allowed
-            // any pan angle.
-            let pan = next_rand();
-            let angle = if is_plate {
-                // Confine to (45° ± 7.65°) — broadly mono with a touch of
-                // perspective. PI*0.085 ≈ 0.267 rad ≈ 15.3° peak-to-peak.
-                PI * 0.25 + (pan - 0.5) * (PI * 0.085)
-            } else {
-                pan * PI * 0.5
-            };
-            self.gain_left[index] = angle.cos();
-            self.gain_right[index] = angle.sin();
+    pub fn set_tone_color(&mut self, value: f32) {
+        if value.is_finite() {
+            self.early_diffuse_mix = (value.clamp(-1.0, 1.0) + 1.0) * 0.5;
         }
     }
 
@@ -220,30 +208,35 @@ impl Soundboard {
         self.process_rendered_bridge(RenderedBridgeSignal::new(input))
     }
 
-    /// Resonantly process the completed bridge bus at the Grand Boule stage
-    /// boundary. This keeps the global soundboard state distinct from voice
-    /// string state without changing the public scalar `tick` API.
+    /// Process the completed aggregate bridge bus exactly once. Warm/open
+    /// kernels remain state-aligned while brightness crossfades them; body
+    /// resonance scales only the late cascade contribution, and tone color
+    /// crossfades the early and fully diffused taps.
     #[inline]
     pub(crate) fn process_rendered_bridge(&mut self, bridge: RenderedBridgeSignal) -> (f32, f32) {
         #[cfg(test)]
         {
             self.rendered_bridge_process_count += 1;
         }
+
         let input = bridge.0;
-        let mut left = 0.0_f32;
-        let mut right = 0.0_f32;
-        for index in 0..SOUNDBOARD_MODES {
-            let y = self.c0[index] * (input - self.x2[index])
-                + self.c1[index] * self.y1[index]
-                + self.c2[index] * self.y2[index];
-            self.x2[index] = self.x1[index];
-            self.x1[index] = input;
-            self.y2[index] = self.y1[index];
-            self.y1[index] = flush_denormal(y);
-            left += self.gain_left[index] * y;
-            right += self.gain_right[index] * y;
-        }
+        let warm_left = self.warm_left.tick(input);
+        let warm_right = self.warm_right.tick(input);
+        let open_left = self.open_left.tick(input);
+        let open_right = self.open_right.tick(input);
+
+        let left = self.render_channel(warm_left, open_left);
+        let right = self.render_channel(warm_right, open_right);
         (left, right)
+    }
+
+    #[inline]
+    fn render_channel(&self, warm: CascadeOutput, open: CascadeOutput) -> f32 {
+        let early = warm.early + (open.early - warm.early) * self.brightness;
+        let diffuse = warm.diffuse + (open.diffuse - warm.diffuse) * self.brightness;
+        let controlled_diffuse = early + (diffuse - early) * self.late_diffusion_gain;
+        let body = early + (controlled_diffuse - early) * self.early_diffuse_mix;
+        flush_denormal(body * BODY_OUTPUT_GAIN)
     }
 
     #[cfg(test)]
@@ -257,62 +250,103 @@ mod tests {
     use super::*;
 
     #[test]
-    fn soundboard_constructs_with_all_modes() {
+    fn soundboard_constructs_with_fixed_stage_count() {
         let board = Soundboard::new(48_000.0);
-        // Every coefficient should be set — no zeros left over.
-        let zeros = board.c1.iter().filter(|&&v| v == 0.0).count();
-        assert_eq!(zeros, 0);
+        assert_eq!(board.warm_left.stages.len(), FIR_STAGE_COUNT);
+        assert_eq!(board.open_right.stages.len(), FIR_STAGE_COUNT);
+        for spec in [WARM_LEFT, WARM_RIGHT, OPEN_LEFT, OPEN_RIGHT] {
+            let tail_ms: f32 = spec.delay_ms.iter().sum();
+            assert!((1_000.0..=1_500.0).contains(&tail_ms));
+        }
     }
 
     #[test]
-    fn impulse_response_decays() {
+    fn impulse_response_has_a_finite_tail() {
         let mut board = Soundboard::new(48_000.0);
-        let (l0, r0) = board.tick(1.0);
-        let initial_energy = l0.abs() + r0.abs();
-        // Run long enough for even the narrowest modes to decay audibly.
-        let mut late_energy = 0.0_f32;
-        for _ in 0..48_000 {
-            let _ = board.tick(0.0);
+        let (left, right) = board.tick(1.0);
+        assert!(left.abs() + right.abs() > 0.0);
+
+        let mut tail_energy = 0.0_f32;
+        let mut late_tail_energy = 0.0_f32;
+        for frame in 0..72_000 {
+            let (left, right) = board.tick(0.0);
+            tail_energy += left.abs() + right.abs();
+            if frame >= 48_000 {
+                late_tail_energy += left.abs() + right.abs();
+            }
         }
-        for _ in 0..4_800 {
-            let (l, r) = board.tick(0.0);
-            late_energy += l.abs() + r.abs();
+        assert!(
+            tail_energy > 0.0,
+            "the FIR body should emit a non-trivial tail"
+        );
+        assert!(
+            late_tail_energy > 0.0,
+            "the FIR body tail should extend beyond one second"
+        );
+        for _ in 0..512 {
+            assert_eq!(board.tick(0.0), (0.0, 0.0));
         }
-        assert!(initial_energy > 0.0);
-        assert!(late_energy / 4_800.0 < initial_energy);
     }
 
     #[test]
-    fn silent_input_produces_no_output_after_reset() {
+    fn reset_clears_every_delay_stage() {
         let mut board = Soundboard::new(48_000.0);
+        board.tick(1.0);
+        for _ in 0..4_000 {
+            board.tick(0.0);
+        }
         board.reset();
-        let (l, r) = board.tick(0.0);
-        assert_eq!(l, 0.0);
-        assert_eq!(r, 0.0);
+        assert_eq!(board.tick(0.0), (0.0, 0.0));
     }
 
     #[test]
-    fn stereo_channels_differ() {
+    fn stereo_channels_use_distinct_kernels() {
         let mut board = Soundboard::new(48_000.0);
         board.tick(1.0);
         let mut total_diff = 0.0_f32;
-        for _ in 0..4_800 {
-            let (l, r) = board.tick(0.0);
-            total_diff += (l - r).abs();
+        for _ in 0..9_600 {
+            let (left, right) = board.tick(0.0);
+            total_diff += (left - right).abs();
         }
-        assert!(total_diff > 0.0, "L and R should decorrelate");
+        assert!(
+            total_diff > 0.0,
+            "left and right kernels should decorrelate"
+        );
     }
 
     #[test]
-    fn rendered_bridge_signal_drives_an_independent_resonator_stage() {
+    fn controls_select_fixed_kernel_contributions_without_rebuilding() {
+        let render = |brightness: f32, body: f32, tone: f32| {
+            let mut board = Soundboard::new(48_000.0);
+            board.set_brightness(brightness);
+            board.set_body_resonance(body);
+            board.set_tone_color(tone);
+            let mut output = Vec::with_capacity(24_000);
+            output.push(board.tick(1.0));
+            for _ in 1..24_000 {
+                output.push(board.tick(0.0));
+            }
+            output
+        };
+
+        assert_ne!(render(0.0, 1.0, 1.0), render(1.0, 1.0, 1.0));
+        assert_ne!(render(0.5, 0.0, 1.0), render(0.5, 1.0, 1.0));
+        assert_ne!(render(0.5, 1.0, -1.0), render(0.5, 1.0, 1.0));
+    }
+
+    #[test]
+    fn rendered_bridge_signal_drives_an_independent_body_stage() {
         let mut board = Soundboard::new(48_000.0);
         let _ = board.process_rendered_bridge(RenderedBridgeSignal::new(1.0));
 
-        let (left, right) = board.process_rendered_bridge(RenderedBridgeSignal::new(0.0));
-
+        let mut retained_tail = 0.0_f32;
+        for _ in 0..9_600 {
+            let (left, right) = board.process_rendered_bridge(RenderedBridgeSignal::new(0.0));
+            retained_tail += left.abs() + right.abs();
+        }
         assert!(
-            left.abs() + right.abs() > 0.0,
-            "the soundboard must retain its own resonator state after bridge input ends"
+            retained_tail > 0.0,
+            "the body must retain its finite FIR tail"
         );
     }
 }

@@ -589,7 +589,9 @@ fn device_engines_hold_their_output_level_at_the_engine_boundary() {
         ("proof", proof_level(), 0.81706, 0.35082),
         ("knead", knead_level(), 0.52538, 0.24745),
         ("fermenter", fermenter_level(), 1.46824, 0.39554),
-        ("grand_boule", grand_boule_level(), 1.04235, 0.21259),
+        // Re-measured 2026-08-22 after replacing the recursive modal body with
+        // the fixed feed-forward FIR body. The +/-1 dB bands are unchanged.
+        ("grand_boule", grand_boule_level(), 1.36708, 0.28596),
         ("toaster", toaster_level(), 0.54580, 0.17768),
         ("levain", levain_level(), 0.32936, 0.19990),
     ];

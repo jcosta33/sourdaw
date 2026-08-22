@@ -592,8 +592,8 @@
                 "current tracked AudioEngine host boundary"
             ],
             "digests": [
-                "tracked-set-sha256:416b4a377a06bc59196185f13abc40e1dd53be8925ad76eabedc1c1c3262d34f:grand-boule-native-rust",
-                "tracked-set-sha256:dc617e4ed049837a93f1579cbaa9c99619b182aff4a970c96649dc002b53d95b:grand-boule-product-module",
+                "tracked-set-sha256:5e9f07ead65214b142e549a2131791ff35dacb7cecad771356ade5e1c51166d7:grand-boule-native-rust",
+                "tracked-set-sha256:d0d3f0e8a966009ee8506e1a6217739fa84859c226f035741cd08aa623208638:grand-boule-product-module",
                 "tracked-set-sha256:440ad6ef75e3ef532b9b1b7a3a7d55e8cbed6240d7784c42ca7461b3bc9d8a2c:grand-boule-product-descriptor",
                 "tracked-set-sha256:2c8c7dc7fac16bded7121cdd5a8de8cb8e8a42b2da6b45548e4e69ed64362260:grand-boule-release-admission",
                 "tracked-set-sha256:e88b521ae47d43f39cdad5784ed79b8e372045da8e8a2d433ac267ff0d783305:grand-boule-node-host",
@@ -604,9 +604,9 @@
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADR 0035 records the engineering release decision and the direct patent, provenance, and source-expression evidence.",
-                "ADR 0033 and focused Rust regressions pin independent string-modal coefficient derivation followed by a downstream soundboard stage.",
-                "The release checker requires Grand Boule in the Rust wasm32 graph, generated glue, declarations, mirrors, binary exports, and exact source digests."
+                "ADR 0035 records the system-level claim map, finite FIR body design-around, independently revoiced project parameters, and engineering-not-legal-certainty boundary.",
+                "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
+                "The release checker pins the FIR source shape, project-tuning and neutral-voicing provenance, Rust wasm32 graph, generated surfaces, binary exports, and exact source digests."
             ],
             "obligations": ["Complete the OS-10 project grant before public release."]
         },
@@ -689,13 +689,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:4846afd6d5b9febafbe7eb29334efa9c68c8e3777f485f78b25033e0676274d8",
+                "daw-dsp sha256:f2f00a28dd4f2d4a850b2986604aca1081c43278494186e75100c92383be726a",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
                 "proof-chamber sha256:88ab219467a6357f75a05fc5f96921d6be028aa5fd202fc9908fe5913c220570",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:2b02cb68d9a8f91d8f6522cce082df1dbd567f4283cb273d1e1de6ca5e3e8be2:public/wasm/manifest.json"
+                "sha256:933dcbef11e70cd19582a224d307405edb6c8fb6e016db0aa57d9d9fcbd2d2b1:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -819,9 +819,7 @@
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
                 "src/modules/Gluten/models/GlutenPatch.ts",
                 "src/modules/Gluten/models/GlutenTopologyGating.ts",
-                "src/modules/GrandBoule/models/GrandBouleConfig.ts",
                 "src/modules/GrandBoule/models/GrandBouleMorphState.ts",
-                "src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts",
                 "src/modules/Grinder/models/GrinderPatch.ts",
                 "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
                 "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
@@ -949,7 +947,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "2b02cb68d9a8f91d8f6522cce082df1dbd567f4283cb273d1e1de6ca5e3e8be2"
+            "sha256": "933dcbef11e70cd19582a224d307405edb6c8fb6e016db0aa57d9d9fcbd2d2b1"
         }
     ],
     "externalReferences": [
@@ -1386,9 +1384,7 @@
             "paths": [
                 "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
-                "src/modules/GrandBoule/models/GrandBouleConfig.ts",
-                "src/modules/GrandBoule/models/GrandBouleMorphState.ts",
-                "src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts"
+                "src/modules/GrandBoule/models/GrandBouleMorphState.ts"
             ]
         },
         {

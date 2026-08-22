@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertGrandBouleDesignAroundSource,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
     assertGrandBouleRustWasmBoundary,
@@ -113,7 +114,30 @@ function writeDistributedWasmFixture(root: string, binaryExport = 'allowed_insta
 function writeGrandBouleReleaseFixture(root: string): void {
     for (const [path, contents] of [
         ['crates/daw-dsp/src/grand_boule/engine.rs', 'native engine'],
+        [
+            'crates/daw-dsp/src/grand_boule/soundboard.rs',
+            `const FIR_STAGE_COUNT: usize = 12;
+struct FeedForwardDelay {}
+const WARM_LEFT: KernelSpec = KernelSpec {};
+const WARM_RIGHT: KernelSpec = KernelSpec {};
+const OPEN_LEFT: KernelSpec = KernelSpec {};
+const OPEN_RIGHT: KernelSpec = KernelSpec {};
+fn tick() { input + delayed * self.delayed_gain; }`,
+        ],
+        [
+            'crates/daw-dsp/src/grand_boule/parameters.rs',
+            '//! Project tuning curves and standard piano mappings for Grand Boule.',
+        ],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
+        [
+            'src/modules/GrandBoule/models/GrandBouleMorphState.ts',
+            `export const voicings = [
+                { id: 'balanced-grand', name: 'Balanced Grand' },
+                { id: 'mellow-grand', name: 'Mellow Grand' },
+                { id: 'clear-grand', name: 'Clear Grand' },
+                { id: 'singing-grand', name: 'Singing Grand' },
+            ];`,
+        ],
         [
             'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
             "export const GRAND_BOULE_DESCRIPTOR = { id: 'grand-boule' };",
@@ -196,6 +220,29 @@ describe('release inventory', () => {
             expect(() => assertGrandBouleRustWasmBoundary(root)).toThrow(
                 'Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
             );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('pins the Grand Boule FIR body and neutral project provenance source shape', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-design-around-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            expect(() => assertGrandBouleDesignAroundSource(root)).not.toThrow();
+
+            const soundboardPath = join(root, 'crates/daw-dsp/src/grand_boule/soundboard.rs');
+            const soundboardSource = readFileSync(soundboardPath, 'utf8');
+            writeFileSync(soundboardPath, 'const SOUNDBOARD_MODES: usize = 192; fn rebuild_modes() {}');
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('Grand Boule FIR body contract');
+
+            writeFileSync(soundboardPath, soundboardSource);
+            writeFileSync(
+                join(root, 'src/modules/GrandBoule/models/GrandBouleMorphState.ts'),
+                `export const model = { id: 'balanced-grand', name: 'Steinway Model D' };`
+            );
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('product voicing contract');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

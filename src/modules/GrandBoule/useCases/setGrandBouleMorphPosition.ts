@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule morph position and dispatch interpolated
- * physical-modeling parameters to the engine.
+ * product-voicing parameters to the engine.
  *
  * Linearly interpolates every numeric model parameter between model A and
  * model B according to the new morph position, then forwards the blended
@@ -27,7 +27,7 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 /**
- * Interpolate all numeric physical-modeling parameters between two models.
+ * Interpolate all numeric product-voicing parameters between two models.
  */
 function interpolateModels(
     modelA: GrandBoulePianoModel,

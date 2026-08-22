@@ -1,7 +1,7 @@
 /**
  * Morph/layer panel for the Grand Boule piano plugin.
  *
- * Lets the user pick two piano models, blend between them with a morph
+ * Lets the user pick two product voicings, blend between them with a morph
  * knob, adjust layer balance, and toggle the morph engine on/off.
  */
 
@@ -17,6 +17,7 @@ import {
     type GrandBouleMorphState,
     type GrandBoulePianoModel,
     BUILTIN_PIANO_MODELS,
+    findPianoModelById,
 } from '../../models/GrandBouleMorphState';
 
 type MorphPanelProps = {
@@ -160,8 +161,8 @@ export const MorphPanel = ({
     onModelBChange,
     onEnabledChange,
 }: MorphPanelProps): ReactElement => {
-    const modelA = BUILTIN_PIANO_MODELS.find((m) => m.id === morph.modelA);
-    const modelB = BUILTIN_PIANO_MODELS.find((m) => m.id === morph.modelB);
+    const modelA = findPianoModelById(morph.modelA);
+    const modelB = findPianoModelById(morph.modelB);
 
     return (
         <DawPluginSectionCard
@@ -185,8 +186,8 @@ export const MorphPanel = ({
 
                 {/* Model selectors */}
                 <Grid cols={2} gap={2}>
-                    <ModelSelector label="Model A" selectedId={morph.modelA} onSelect={onModelAChange} />
-                    <ModelSelector label="Model B" selectedId={morph.modelB} onSelect={onModelBChange} />
+                    <ModelSelector label="Model A" selectedId={modelA?.id ?? morph.modelA} onSelect={onModelAChange} />
+                    <ModelSelector label="Model B" selectedId={modelB?.id ?? morph.modelB} onSelect={onModelBChange} />
                 </Grid>
 
                 {/* Blend indicator */}

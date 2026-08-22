@@ -3,7 +3,7 @@ import { type Store } from '#/infra/store/types';
  * Update the Grand Boule soundboard send level.
  *
  * 0.0 = dry strings only, 1.0 = fully routed through the parametric
- * soundboard bank.
+ * fixed soundboard FIR body.
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';

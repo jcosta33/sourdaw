@@ -1,10 +1,14 @@
-//! Grand Boule — Sourdaw's physically-modelled grand piano.
+//! Grand Boule — Sourdaw's modelled grand piano.
 //!
 //! Modal synthesis engine producing polyphonic piano audio from an inharmonic
-//! biquad bank driven by a nonlinear felt-hammer interaction. Compiles to
-//! native and WASM hosts.
+//! string bank driven by a nonlinear felt-hammer interaction, followed by a
+//! finite FIR body. Compiles to native and WASM hosts.
 //!
 //! The audio path is lock-free and allocation-free after construction.
+//!
+//! Provenance: implementation, body kernels, and tuning curves are
+//! project-authored product voicings; standard MIDI, temperament, and piano
+//! construction conventions are used only as general engineering inputs.
 
 pub mod attack_sampler;
 pub mod coupled_strings;

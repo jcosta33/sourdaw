@@ -56,7 +56,7 @@ describe('setGrandBouleMorphPosition', () => {
     it('dispatches model A parameters directly when morph is disabled, ignoring layer B', () => {
         const { handle, setParam } = fakeEngine();
         const state = createDefaultGrandBouleState();
-        // Defaults: modelA = steinway-d, modelB = yamaha-cfx, enabled = false.
+        // Defaults: balanced-grand to clear-grand, with morph disabled.
         const { store, set } = storeWith(state);
 
         setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.9 });
@@ -104,7 +104,7 @@ describe('setGrandBouleMorphPosition', () => {
         };
         const { store, set } = storeWith(state);
 
-        // modelA = steinway-d, modelB = yamaha-cfx, t = 0.5.
+        // balanced-grand to clear-grand at t = 0.5.
         setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.5 });
 
         expect(paramsByName(setParam)).toEqual({

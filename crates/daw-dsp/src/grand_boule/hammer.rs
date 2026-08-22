@@ -12,8 +12,8 @@
 //! F(t) = Q₀ · ( δᵖ(t)  +  a · δ̇(t) · |δ(t)|^(p−1) )
 //! ```
 //!
-//! The `δ̇·|δ|^(p−1)` term reproduces the asymmetric force pulse measured on
-//! real hammers (fast rise, slower decay) without needing a history buffer.
+//! The `δ̇·|δ|^(p−1)` term gives the project voicing an asymmetric force pulse
+//! (fast rise, slower decay) without needing a history buffer.
 //! Callers that do not need hysteresis use the cheaper [`HammerState::tick`]
 //! path.
 
@@ -42,9 +42,8 @@ pub struct HammerParams {
     /// Hammer mass in kilograms.
     pub mass_kg: f32,
     /// Stulov asymmetry coefficient `a` in seconds. Larger values produce a
-    /// more pronounced fast-rise / slow-decay force pulse. Stulov (2005)
-    /// reports a ≈ 310 µs for note 49.  Set to `0.0` to fall back to the
-    /// memoryless power law.
+    /// more pronounced fast-rise / slow-decay force pulse. Set to `0.0` to
+    /// fall back to the memoryless power law.
     pub stulov_a: f32,
     /// Velocity-dependent contact low-pass coefficient `α` in
     /// `y[n] = α·y[n−1] + (1−α)·x[n]`. Higher velocity produces a wider
@@ -132,8 +131,8 @@ impl HammerState {
             // Stulov's three-parameter form: power-law spring + asymmetric
             // velocity-coupled damping. The damping term carries the sign
             // of δ̇ so loading and unloading produce different forces — the
-            // hysteresis loop responsible for the perceptually crucial
-            // fast-rise / slow-decay force pulse measured on real hammers.
+            // hysteresis loop used for the fast-rise / slow-decay product
+            // voicing.
             let delta_p = compression.powf(params.exponent_p);
             let delta_p_minus_1 = compression.powf(params.exponent_p - 1.0);
             params.stiffness_k * (delta_p + params.stulov_a * compression_dot * delta_p_minus_1)
@@ -162,8 +161,7 @@ impl HammerState {
 /// velocity-sensitivity exponent `β` and the host sample rate.
 ///
 /// `f_c(v) = f_min + (f_max − f_min)·(1 − e^{−β·v})` saturates at high
-/// velocity (Aramaki et al. 2000), then `α = exp(−2π·f_c / fs)` produces
-/// the standard one-pole pole.
+/// velocity, then `α = exp(−2π·f_c / fs)` produces the standard one-pole pole.
 pub fn contact_lowpass_alpha(
     strike_velocity: f32,
     f_min_hz: f32,

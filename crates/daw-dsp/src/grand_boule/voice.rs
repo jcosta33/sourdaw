@@ -345,10 +345,8 @@ impl PianoVoice {
             0
         };
 
-        // Stulov asymmetry coefficient `a`. Stulov (2005) reports a ≈ 310 µs
-        // for note 49; the felt becomes stiffer and slightly more lossy on
-        // short treble hammers. We linearly interpolate around the published
-        // anchor and disable it on the cheaper quality tiers.
+        // Project asymmetry voicing: short treble hammers are slightly more
+        // lossy. Disabled on the cheaper quality tiers.
         let stulov_a = if self.quality == VoiceQuality::High {
             (0.000_25 + 0.000_002 * (key as f32 - 49.0)).max(0.0)
         } else {
@@ -406,7 +404,7 @@ impl PianoVoice {
         self.duplex.reset();
 
         // Strike velocity scales with MIDI velocity. A velocity of 1.0 maps to
-        // ~4 m/s, matching measurements from Askenfelt/Jansson.
+        // ~4 m/s at the top of the project velocity range.
         self.hammer.strike(0.8 + 4.0 * self.velocity);
         self.arm_attack(key, attack_length);
     }

@@ -65,6 +65,16 @@ describe('MorphPanel — morph position readout', () => {
     });
 });
 
+describe('MorphPanel — product voicings', () => {
+    it('renders legacy serialized ids through neutral visible labels', () => {
+        render(<MorphPanel {...defaultProps({ morph: morph({ modelA: 'steinway-d', modelB: 'yamaha-cfx' }) })} />);
+
+        expect(screen.getAllByText('Balanced Grand').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Clear Grand').length).toBeGreaterThan(0);
+        expect(screen.queryByText(/Steinway|Yamaha/u)).not.toBeInTheDocument();
+    });
+});
+
 describe('MorphPanel — knob accessible names', () => {
     it('exposes the morph and balance knobs as named sliders', () => {
         render(<MorphPanel {...defaultProps({ morph: morph({ enabled: true }) })} />);

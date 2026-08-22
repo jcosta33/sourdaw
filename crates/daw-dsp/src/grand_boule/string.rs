@@ -33,9 +33,9 @@ const MAX_F64_PARTIALS: usize = 8;
 /// Physical inputs that derive a string modal bank's coefficients.
 ///
 /// This deliberately carries only per-string quantities. The soundboard is a
-/// separate resonator stage fed after the voice has rendered its bridge
-/// signal, so soundboard controls and state cannot participate in string
-/// coefficient derivation.
+/// separate finite FIR body fed after the voice has rendered its bridge signal,
+/// so soundboard controls and state cannot participate in string coefficient
+/// derivation.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StringModalParameters {
     fundamental_hz: f32,
@@ -243,7 +243,7 @@ impl ModalString {
     /// This correctly models the bridge-mediated energy transfer where the
     /// horizontal polarization picks up energy at the resonant frequency
     /// with the same efficiency as the vertical, but releases it far more
-    /// slowly (Weinreich 1977, §3.4).
+    /// slowly for the project aftersound voicing.
     /// Compatibility wrapper for existing Rust callers of the aftersound
     /// scalar API. Grand Boule's own voice path uses
     /// [`Self::configure_aftersound_from_string_parameters`].

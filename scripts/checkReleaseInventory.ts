@@ -371,6 +371,53 @@ export function assertGrandBouleRustWasmBoundary(root: string): void {
     }
 }
 
+export function assertGrandBouleDesignAroundSource(root: string): void {
+    const soundboardPath = 'crates/daw-dsp/src/grand_boule/soundboard.rs';
+    const soundboard = readFileSync(resolve(root, soundboardPath), 'utf8');
+    for (const required of [
+        'const FIR_STAGE_COUNT: usize = 12;',
+        'struct FeedForwardDelay',
+        'const WARM_LEFT: KernelSpec',
+        'const WARM_RIGHT: KernelSpec',
+        'const OPEN_LEFT: KernelSpec',
+        'const OPEN_RIGHT: KernelSpec',
+        'input + delayed * self.delayed_gain',
+    ]) {
+        if (!soundboard.includes(required)) {
+            throw new Error(`Grand Boule FIR body contract is missing ${required} in ${soundboardPath}`);
+        }
+    }
+    for (const forbidden of ['SOUNDBOARD_MODES', 'rebuild_modes', 'gain_left:', 'gain_right:', 'y1:', 'y2:']) {
+        if (soundboard.includes(forbidden)) {
+            throw new Error(
+                `Grand Boule FIR body contract rejects modal body source ${forbidden} in ${soundboardPath}`
+            );
+        }
+    }
+
+    const parametersPath = 'crates/daw-dsp/src/grand_boule/parameters.rs';
+    const parameters = readFileSync(resolve(root, parametersPath), 'utf8');
+    if (!parameters.includes('Project tuning curves and standard piano mappings')) {
+        throw new Error(`Grand Boule parameter provenance must label project tuning in ${parametersPath}`);
+    }
+    if (/(?:Jaatinen|Pätynen|Hinrichsen|Steinway D|HAL RT|patent)/iu.test(parameters)) {
+        throw new Error(`Grand Boule parameter provenance contains an unsupported source claim in ${parametersPath}`);
+    }
+
+    const voicingsPath = 'src/modules/GrandBoule/models/GrandBouleMorphState.ts';
+    const voicings = readFileSync(resolve(root, voicingsPath), 'utf8');
+    for (const id of ['balanced-grand', 'mellow-grand', 'clear-grand', 'singing-grand']) {
+        if (!voicings.includes(`id: '${id}'`)) {
+            throw new Error(`Grand Boule product voicing contract is missing neutral id ${id} in ${voicingsPath}`);
+        }
+    }
+    if (/name:\s*['"](?:Steinway|Bösendorfer|Bosendorfer|Yamaha|Fazioli)/u.test(voicings)) {
+        throw new Error(
+            `Grand Boule product voicing contract rejects brand-specific display labels in ${voicingsPath}`
+        );
+    }
+}
+
 export function assertGrandBouleReleasedInWasm(root: string): void {
     const census = distributedWasmArtifactCensus(root);
     const dawDspPackage = wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp');
@@ -1075,6 +1122,7 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         stdio: 'inherit',
     });
     assertGrandBouleRustWasmBoundary(root);
+    assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>

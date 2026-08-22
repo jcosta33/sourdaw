@@ -48,7 +48,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0032](0032-withhold-grand-boule-from-release.md)                   | Preserve Grand Boule but withhold it from released product paths — **superseded by 0035**                                               |
 | [0033](0033-grand-boule-string-soundboard-boundary.md)              | Make Grand Boule string-modal derivation and soundboard resonance independently explicit                                                |
 | [0034](0034-grand-boule-native-only-wasm-contract.md)               | Keep Grand Boule native-only at the daw-dsp WASM boundary — **superseded by 0035**                                                      |
-| [0035](0035-readmit-grand-boule.md)                                 | Readmit Grand Boule to public source, web, and desktop releases — **supersedes 0032 and 0034**                                          |
+| [0035](0035-readmit-grand-boule.md)                                 | Readmit Grand Boule with a finite FIR body and project-authored voicings — **supersedes 0032 and 0034**                                 |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

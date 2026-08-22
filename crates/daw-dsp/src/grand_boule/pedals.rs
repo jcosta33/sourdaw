@@ -20,8 +20,8 @@ pub const UNA_CORDA_SYMPATHETIC_COUPLING: f32 = 0.3;
 
 /// Reference smoothstep lower threshold for the half-pedal curve — the pedal
 /// position at which the dampers start to leave the strings. Calibratable at
-/// runtime via `PedalState::set_half_pedal_low`; this is the value a
-/// reference pedal is measured at.
+/// runtime via `PedalState::set_half_pedal_low`; this is the default product
+/// calibration point.
 pub const DEFAULT_HALF_PEDAL_LOW: f32 = 0.15;
 
 /// Upper bound accepted for the calibrated lower threshold. Mirrors the
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn cc_smoothing_is_clamped_to_the_published_range() {
+    fn cc_smoothing_is_clamped_to_the_product_range() {
         let mut pedals = PedalState::new();
         assert_eq!(pedals.cc_smoothing_ms(), 0.0);
 
@@ -666,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn calibrated_threshold_is_clamped_to_the_published_range() {
+    fn calibrated_threshold_is_clamped_to_the_product_range() {
         let mut pedals = PedalState::new();
         assert_eq!(pedals.half_pedal_low(), DEFAULT_HALF_PEDAL_LOW);
 
