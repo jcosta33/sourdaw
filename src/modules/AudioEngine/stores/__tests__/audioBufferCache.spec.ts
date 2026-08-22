@@ -835,6 +835,34 @@ describe('audioBufferCache conversions', () => {
         expect(controls.committedMeta.get('ordinary-set-collision')?.preparedOwner).toBeUndefined();
     });
 
+    it('does not publish prepared PCM over a newer ordinary runtime mutation when its durable write aborts', async () => {
+        const controls = installFakeAudioIndexedDb();
+        controls.pauseWriteSettlements();
+        const prepared = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        prepared.getChannelData(0)[0] = 0.25;
+        const persistence = audioBufferCache.persistPreparedBuffer({ id: 'ordinary-abort-race', buffer: prepared });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.abortNextWrite();
+        const ordinary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        ordinary.getChannelData(0)[0] = 0.85;
+        audioBufferCache.set('ordinary-abort-race', ordinary);
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await flushIndexedDbTasks(2);
+        const persisted = await persistence;
+        expect(persisted).toMatchObject({ status: 'persisted', bufferId: 'ordinary-abort-race' });
+
+        expect(audioBufferCache.get('ordinary-abort-race')).toBe(ordinary);
+        expect(controls.committed.get('ordinary-abort-race')?.channelData[0]?.[0]).toBeCloseTo(0.25);
+        expect(controls.committedMeta.get('ordinary-abort-race')?.preparedOwner?.status).toBe('temporary');
+    });
+
     it('keeps temporary prepared PCM out of non-lease restore and export until project promotion', async () => {
         installFakeAudioIndexedDb();
         const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
@@ -944,6 +972,74 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get('discard-race')).toBe(ordinary);
         expect(controls.committed.get('discard-race')?.channelData[0]?.[0]).toBeCloseTo(0.85);
         expect(controls.committedMeta.get('discard-race')?.preparedOwner).toBeUndefined();
+    });
+
+    it('evicts matching prepared PCM after overlapping discard retries commit deletion', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        const persisted = await audioBufferCache.persistPreparedBuffer({ id: 'discard-retry', buffer: temporary });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected discard-retry prepared PCM to persist');
+        }
+
+        controls.pauseWriteSettlements();
+        const firstDiscard = audioBufferCache.releasePreparedBuffer({
+            id: 'discard-retry',
+            leaseId: persisted.leaseId,
+            disposition: 'discard',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        const retryDiscard = audioBufferCache.releasePreparedBuffer({
+            id: 'discard-retry',
+            leaseId: persisted.leaseId,
+            disposition: 'discard',
+        });
+
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await expect(firstDiscard).resolves.toEqual({ status: 'released', disposition: 'discarded' });
+        await expect(retryDiscard).resolves.toEqual({ status: 'missing' });
+        expect(audioBufferCache.has('discard-retry')).toBe(false);
+        expect(controls.committed.has('discard-retry')).toBe(false);
+        expect(controls.committedMeta.has('discard-retry')).toBe(false);
+    });
+
+    it('exports newer ordinary runtime PCM when its aborted write leaves temporary metadata durable', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        temporary.getChannelData(0)[0] = 0.25;
+        const persisted = await audioBufferCache.persistPreparedBuffer({
+            id: 'ordinary-export-abort',
+            buffer: temporary,
+        });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected ordinary-export-abort prepared PCM to persist');
+        }
+
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const ordinary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        ordinary.getChannelData(0)[0] = 0.85;
+        audioBufferCache.set('ordinary-export-abort', ordinary);
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await flushIndexedDbTasks(2);
+
+        await expect(audioBufferCache.exportBuffers(['ordinary-export-abort'])).resolves.toEqual({
+            'ordinary-export-abort': {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [encodeFloat32([0.85])],
+            },
+        });
+        expect(controls.committedMeta.get('ordinary-export-abort')?.preparedOwner?.status).toBe('temporary');
     });
 
     it('rejects a settled temporary owner after reload while preserving its lease and exact PCM', async () => {

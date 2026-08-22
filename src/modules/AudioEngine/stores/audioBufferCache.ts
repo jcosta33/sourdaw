@@ -77,10 +77,12 @@ const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
 const pinnedBufferIds = new Set<string>();
 const residentFreezeProjectIdById = new Map<string, number | undefined>();
-const residentPreparedOwnerById = new Map<string, PreparedBufferOwner>();
+const residentBufferOwnerById = new Map<string, ResidentBufferOwner>();
 let nextBufferLifecycleEpoch = 0;
 let runtimeClearEpoch = 0;
 const bufferLifecycleEpochById = new Map<string, number>();
+let nextRuntimeMutationEpoch = 0;
+const runtimeMutationEpochById = new Map<string, number>();
 const activeBufferReopenCountById = new Map<string, number>();
 
 type BufferLifecycleSnapshot = {
@@ -88,8 +90,15 @@ type BufferLifecycleSnapshot = {
     clearEpoch: number;
 };
 
-function bumpBufferLifecycleEpoch(id: string): void {
-    bufferLifecycleEpochById.set(id, ++nextBufferLifecycleEpoch);
+function bumpBufferLifecycleEpoch(id: string): number {
+    const epoch = ++nextBufferLifecycleEpoch;
+    bufferLifecycleEpochById.set(id, epoch);
+    return epoch;
+}
+
+function markBufferRuntimeMutation(id: string): void {
+    bumpBufferLifecycleEpoch(id);
+    runtimeMutationEpochById.set(id, ++nextRuntimeMutationEpoch);
 }
 
 function beginBufferReopen(id: string): BufferLifecycleSnapshot {
@@ -101,6 +110,18 @@ function captureBufferLifecycle(id: string): BufferLifecycleSnapshot {
     return { bufferEpoch: bufferLifecycleEpochById.get(id), clearEpoch: runtimeClearEpoch };
 }
 
+function cleanupBufferLifecycleIfIdle(id: string): void {
+    if (
+        !cache.has(id) &&
+        !activeBufferReopenCountById.has(id) &&
+        !persistenceGenerationById.has(id) &&
+        !activePreparedPersistenceLeaseIdsById.has(id)
+    ) {
+        bufferLifecycleEpochById.delete(id);
+        runtimeMutationEpochById.delete(id);
+    }
+}
+
 function finishBufferReopen(id: string): void {
     const remaining = (activeBufferReopenCountById.get(id) ?? 1) - 1;
     if (remaining > 0) {
@@ -108,9 +129,7 @@ function finishBufferReopen(id: string): void {
         return;
     }
     activeBufferReopenCountById.delete(id);
-    if (!cache.has(id) && !persistenceGenerationById.has(id)) {
-        bufferLifecycleEpochById.delete(id);
-    }
+    cleanupBufferLifecycleIfIdle(id);
 }
 
 function isBufferLifecycleCurrent(id: string, snapshot: BufferLifecycleSnapshot): boolean {
@@ -124,7 +143,7 @@ function audioCacheSet(
     ownershipKnown = false,
     preparedOwner?: PreparedBufferOwner
 ): void {
-    bumpBufferLifecycleEpoch(id);
+    markBufferRuntimeMutation(id);
     // Promote existing entry to MRU position
     if (cache.has(id)) {
         cache.delete(id);
@@ -149,11 +168,7 @@ function audioCacheSet(
     } else {
         residentFreezeProjectIdById.delete(id);
     }
-    if (preparedOwner) {
-        residentPreparedOwnerById.set(id, preparedOwner);
-    } else {
-        residentPreparedOwnerById.delete(id);
-    }
+    residentBufferOwnerById.set(id, preparedOwner ? { kind: 'prepared', owner: preparedOwner } : { kind: 'ordinary' });
 }
 
 function replacePinnedBufferIds(ids: readonly string[]): void {
@@ -242,6 +257,8 @@ type PreparedBufferOwner = {
     leaseId: string;
     status: 'project-owned' | 'temporary';
 };
+
+type ResidentBufferOwner = { kind: 'ordinary' } | { kind: 'prepared'; owner: PreparedBufferOwner };
 
 /** One connection for the life of the module (audit M-045). `get()` and
  * `getWaveformPeaks()` run per clip per timeline paint, and each one refreshes
@@ -602,8 +619,28 @@ function isReplaceablePreparedBuffer(
 }
 
 function isReplaceablePreparedRuntime(id: string): boolean {
-    const owner = residentPreparedOwnerById.get(id);
-    return owner?.status === 'temporary' && activePreparedPersistenceLeaseIdsById.get(id)?.has(owner.leaseId) === true;
+    const residentOwner = residentBufferOwnerById.get(id);
+    return (
+        residentOwner?.kind === 'prepared' &&
+        residentOwner.owner.status === 'temporary' &&
+        activePreparedPersistenceLeaseIdsById.get(id)?.has(residentOwner.owner.leaseId) === true
+    );
+}
+
+function isResidentTemporaryPreparedBuffer(id: string): boolean {
+    const residentOwner = residentBufferOwnerById.get(id);
+    return residentOwner?.kind === 'prepared' && residentOwner.owner.status === 'temporary';
+}
+
+function evictResidentPreparedBufferIfOwned(id: string, leaseId: string): void {
+    const residentOwner = residentBufferOwnerById.get(id);
+    if (
+        residentOwner?.kind === 'prepared' &&
+        residentOwner.owner.status === 'temporary' &&
+        residentOwner.owner.leaseId === leaseId
+    ) {
+        evictCachedBuffer(id);
+    }
 }
 
 async function readPreparedOwnerFromIdb(id: string): Promise<PreparedBufferOwner | null | 'invalid'> {
@@ -800,22 +837,21 @@ function clearWaveformCachesForId(id: string) {
  * empty `mipmapLevel1Cache` too — that is the map this helper reaches only
  * via `clearWaveformCachesForId`. */
 function evictCachedBuffer(id: string): void {
-    bumpBufferLifecycleEpoch(id);
+    markBufferRuntimeMutation(id);
     cache.delete(id);
     residentFreezeProjectIdById.delete(id);
-    residentPreparedOwnerById.delete(id);
+    residentBufferOwnerById.delete(id);
     clearWaveformCachesForId(id);
     accessRefreshStampById.delete(id);
-    if (!activeBufferReopenCountById.has(id) && !persistenceGenerationById.has(id)) {
-        bufferLifecycleEpochById.delete(id);
-    }
+    cleanupBufferLifecycleIfIdle(id);
 }
 
 function clearRuntimeCacheState(): void {
     runtimeClearEpoch++;
     cache.clear();
     residentFreezeProjectIdById.clear();
-    residentPreparedOwnerById.clear();
+    residentBufferOwnerById.clear();
+    runtimeMutationEpochById.clear();
     pinnedBufferIds.clear();
     waveformCache.clear();
     // The level-1 mipmap is keyed by id alone and is not bounded. Keeping it
@@ -847,8 +883,13 @@ async function prepareBuffersFromIdb({
 }: PrepareBuffersFromIdbInput): Promise<PreparedAudioBuffers | null> {
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const excludedTemporaryIds = new Set(
-        [...residentPreparedOwnerById]
-            .filter(([id, owner]) => owner.status === 'temporary' && (ids === undefined || ids.includes(id)))
+        [...residentBufferOwnerById]
+            .filter(
+                ([id, owner]) =>
+                    owner.kind === 'prepared' &&
+                    owner.owner.status === 'temporary' &&
+                    (ids === undefined || ids.includes(id))
+            )
             .map(([id]) => id)
     );
     const publishPinIds = (): string[] | undefined => ids?.filter((id) => !excludedTemporaryIds.has(id));
@@ -991,6 +1032,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
     const generation = claimPersistenceGeneration(id);
     const attempt = registerPreparedPersistenceAttempt(id, generation, leaseId);
     bumpBufferLifecycleEpoch(id);
+    const runtimeMutationEpoch = runtimeMutationEpochById.get(id);
     try {
         const db = await openDb();
         if (persistenceGenerationById.get(id) !== generation) {
@@ -1026,7 +1068,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
                 return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
             }
         }
-        if (runtimeClearEpoch === clearEpoch) {
+        if (runtimeClearEpoch === clearEpoch && runtimeMutationEpochById.get(id) === runtimeMutationEpoch) {
             const owner = { schemaVersion: 1, leaseId, status: 'temporary' } satisfies PreparedBufferOwner;
             audioCacheSet(id, buffer, undefined, true, owner);
             clearWaveformCachesForId(id);
@@ -1044,6 +1086,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
         if (persistenceGenerationById.get(id) === generation) {
             persistenceGenerationById.delete(id);
         }
+        cleanupBufferLifecycleIfIdle(id);
     }
 }
 
@@ -1097,7 +1140,6 @@ async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBuff
 async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePreparedBufferInput) {
     const generation = claimPersistenceGeneration(id);
     bumpBufferLifecycleEpoch(id);
-    const runtimeLifecycle = captureBufferLifecycle(id);
     try {
         const db = await openDb();
         if (persistenceGenerationById.get(id) !== generation) {
@@ -1112,6 +1154,9 @@ async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePrepar
         ]);
         if (!data || !meta) {
             await awaitTransaction(tx);
+            if (!data && !meta) {
+                evictResidentPreparedBufferIfOwned(id, leaseId);
+            }
             return { status: 'missing' as const };
         }
         const owner = readPreparedBufferOwner(meta);
@@ -1134,18 +1179,19 @@ async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePrepar
             }
             metaStore.put({ ...meta, preparedOwner: { ...owner, status: 'project-owned' } } satisfies BufferMeta, id);
             await awaitTransaction(tx);
-            const residentOwner = residentPreparedOwnerById.get(id);
-            if (residentOwner?.leaseId === leaseId) {
-                residentPreparedOwnerById.set(id, { ...residentOwner, status: 'project-owned' });
+            const residentOwner = residentBufferOwnerById.get(id);
+            if (residentOwner?.kind === 'prepared' && residentOwner.owner.leaseId === leaseId) {
+                residentBufferOwnerById.set(id, {
+                    kind: 'prepared',
+                    owner: { ...residentOwner.owner, status: 'project-owned' },
+                });
             }
             return { status: 'released' as const, disposition: 'project-owned' as const };
         }
         store.delete(id);
         metaStore.delete(id);
         await awaitTransaction(tx);
-        if (isBufferLifecycleCurrent(id, runtimeLifecycle)) {
-            evictCachedBuffer(id);
-        }
+        evictResidentPreparedBufferIfOwned(id, leaseId);
         return { status: 'released' as const, disposition: 'discarded' as const };
     } catch (error) {
         return { status: 'failed' as const, reason: failureReason(error) };
@@ -1153,6 +1199,7 @@ async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePrepar
         if (persistenceGenerationById.get(id) === generation) {
             persistenceGenerationById.delete(id);
         }
+        cleanupBufferLifecycleIfIdle(id);
     }
 }
 
@@ -1390,7 +1437,7 @@ export const audioBufferCache = {
     async exportBuffers(ids: string[]): Promise<Record<string, ExportedAudioBuffer>> {
         const result: Record<string, ExportedAudioBuffer> = {};
         const metadataById = new Map<string, BufferMeta>();
-        const temporaryIds = new Set(ids.filter((id) => residentPreparedOwnerById.get(id)?.status === 'temporary'));
+        const temporaryIds = new Set(ids.filter(isResidentTemporaryPreparedBuffer));
         try {
             const db = await openDb();
             const tx = db.transaction(META_STORE_NAME, 'readonly');
@@ -1402,8 +1449,14 @@ export const audioBufferCache = {
                 const metadata = metadataRows[index];
                 if (metadata) {
                     metadataById.set(ids[index]!, metadata);
-                    if (metadata.preparedOwner?.status === 'temporary') {
-                        temporaryIds.add(ids[index]!);
+                    const id = ids[index]!;
+                    const residentOwner = residentBufferOwnerById.get(id);
+                    const hasCurrentNonTemporaryResident =
+                        cache.has(id) &&
+                        (residentOwner?.kind === 'ordinary' ||
+                            (residentOwner?.kind === 'prepared' && residentOwner.owner.status === 'project-owned'));
+                    if (metadata.preparedOwner?.status === 'temporary' && !hasCurrentNonTemporaryResident) {
+                        temporaryIds.add(id);
                     }
                 }
             }
