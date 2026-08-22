@@ -201,7 +201,7 @@
                 "sha256:5d7b38822c5c0a4b51559a39c08b39f5bbbf83df0df214c0a21771816966c9e2:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:d0df42740ac22a2e5a5725d4928cc5f20c6d13e98702c32dda90a6f9b7beee2d:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:4ac3878d7602b467c1ee97b83a5b0b5a34f3fd066a30fbcc80f77d1a36d06396:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -278,45 +278,71 @@
                 "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
                 "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
                 "public/legal/Apache-2.0.txt",
+                "public/legal/Apache-TVM-LICENSE.txt",
+                "public/legal/Apache-TVM-NOTICE.txt",
+                "public/legal/MLC-LLM-NOTICE.txt",
                 "public/legal/Qwen-NOTICE.txt",
                 "public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "sources": [
-                "https://huggingface.co/mlc-ai/Qwen3-1.7B-q4f16_1-MLC",
-                "https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC",
-                "https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC",
-                "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs-bin",
-                "https://huggingface.co/Qwen/Qwen3-1.7B/blob/main/LICENSE",
-                "https://huggingface.co/Qwen/Qwen3-4B/blob/main/LICENSE",
-                "https://huggingface.co/Qwen/Qwen3-8B/blob/main/LICENSE",
-                "https://github.com/mlc-ai/web-llm/blob/main/LICENSE"
+                "https://huggingface.co/mlc-ai/Qwen3-1.7B-q4f16_1-MLC/tree/80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
+                "https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC/tree/a5c9fab855e3ccbdfed2e7e69683d75f30332161",
+                "https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC/tree/b3d55c289eae58f77095f5b68c895eeea358ee09",
+                "https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base",
+                "https://github.com/mlc-ai/binary-mlc-llm-libs/pull/165",
+                "https://github.com/mlc-ai/mlc-llm/tree/2008fe8343e1f40ef89ee57b9287aebcf1b86c98",
+                "https://github.com/apache/tvm/tree/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8",
+                "https://huggingface.co/Qwen/Qwen3-1.7B/blob/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/LICENSE",
+                "https://huggingface.co/Qwen/Qwen3-4B/blob/1cfa9a7208912126459214e8b04321603b3df60c/LICENSE",
+                "https://huggingface.co/Qwen/Qwen3-8B/blob/b968826d9c46dd6066d109eabc6255188de91218/LICENSE",
+                "https://github.com/mlc-ai/web-llm/blob/9e572d6ed95e248f29634996cd32cc8f3023d89d/LICENSE"
             ],
             "revisions": [
-                "Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
-                "Qwen3-4B a5c9fab855e3ccbdfed2e7e69683d75f30332161",
-                "Qwen3-8B b3d55c289eae58f77095f5b68c895eeea358ee09",
-                "WASM 025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
+                "MLC conversion Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
+                "MLC conversion Qwen3-4B a5c9fab855e3ccbdfed2e7e69683d75f30332161",
+                "MLC conversion Qwen3-8B b3d55c289eae58f77095f5b68c895eeea358ee09",
+                "licensed Qwen3-1.7B candidate 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+                "licensed Qwen3-4B candidate 1cfa9a7208912126459214e8b04321603b3df60c",
+                "licensed Qwen3-8B candidate b968826d9c46dd6066d109eabc6255188de91218",
+                "binary-mlc-llm-libs merge 025bcaf3780fa8254f5e5efd3bfea0a5397248f4",
+                "MLC-LLM source 2008fe8343e1f40ef89ee57b9287aebcf1b86c98",
+                "Apache TVM source bc1a904ec1ad89454ee6577d66cde1268b8f6bc8",
+                "@mlc-ai/web-llm 0.2.84 gitHead 9e572d6ed95e248f29634996cd32cc8f3023d89d"
             ],
             "digests": [
                 "sha256:932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255",
                 "sha256:2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f",
-                "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
+                "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb",
+                "sha256:8161aaa4b40bccf19fcedb2f2e8c221eb9efb72d2198681f1958c9c1e05a682f:5566554:web-llm-models/v0_2_84/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm",
+                "sha256:a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440:5847049:web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm",
+                "sha256:bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72:5855792:web-llm-models/v0_2_84/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm",
+                "npm-integrity:sha512-hrOWzK4/nGNmgoRKT8pgVmZZ2oEPpbblIWQOwpqNyvK2dysHw3KVB1gNJOuRcQfKOPhucEhX1NJzXzgMDnwSCQ==:@mlc-ai/web-llm@0.2.84",
+                "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e:Qwen3-1.7B-4B-8B-immutable-LICENSE",
+                "sha256:3a7dfb37bb96ce6f5a1cc0d6d4c8da3b8a35e6ec4692647ba0a37f6155c7e694:public/legal/MLC-LLM-NOTICE.txt",
+                "sha256:967cd2fb97712c43271e2b1c4f636c4d8823898869f0f76f65bf8a3232584f0f:public/legal/Apache-TVM-NOTICE.txt",
+                "sha256:bc894d48edd3a82ee4160cfb2d1bb9f79bda5ac66226930956eec779e954b315:public/legal/Apache-TVM-LICENSE.txt",
+                "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
+                "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
+                "sha256:aed572ff6b3eda1af1bf5190648d3c6b4b3e049c27f22c2b3da7de8760aee90f:public/legal/Qwen-NOTICE.txt",
+                "sha256:4ac3878d7602b467c1ee97b83a5b0b5a34f3fd066a30fbcc80f77d1a36d06396:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:Qwen3-1.7B-4B-8B-upstream-models",
-                "Apache-2.0:MLC-WebLLM-runtime",
-                "residual:exact-MLC-conversion-repositories-omit-license-metadata"
+                "Apache-2.0:MLC-LLM-WebLLM-runtime",
+                "Apache-2.0:Apache-TVM-runtime-with-Apache-MIT-BSD-3-Clause-bundled-attribution",
+                "accepted-residual:no-exact-base-checkpoint-mapping-or-hermetic-build-input-record"
             ],
             "productSurfaces": ["browser-local language model", "desktop-local language model"],
             "evidence": [
                 "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
-                "Each MLC conversion card identifies its official Qwen model; Qwen3 1.7B, 4B, and 8B publish Apache-2.0 licenses.",
-                "Apache-2.0 covers object form produced by mechanical transformation or conversion and grants distribution of works and derivative works in source or object form.",
-                "The exact conversion cards omit repository-level LICENSE metadata; this is residual provenance evidence, not evidence that the upstream Apache grant disappeared."
+                "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions, whose Apache-2.0 notices and TVM license closure are shipped byte-for-byte.",
+                "Each MLC conversion card identifies its official Qwen model; immutable Qwen3 1.7B, 4B, and 8B revisions publish byte-identical Apache-2.0 licenses.",
+                "The exact conversion cards do not map to base-checkpoint revisions, and PR 165 does not record exact emsdk, resolved configuration, or build-log inputs. Byte identity and the Apache source/license chain are proven; hermetic reproduction and complete build-input provenance are not."
             ],
             "obligations": [
-                "Carry the Apache-2.0 text and Qwen attribution in public/legal/Apache-2.0.txt and public/legal/Qwen-NOTICE.txt with every web and desktop release.",
+                "Carry the Apache-2.0 text, Qwen attribution, exact MLC-LLM and TVM notices, and exact TVM license and bundled third-party attribution closure on the public web and desktop legal surfaces.",
                 "Preserve the pinned revisions, artifact digests, byte verification, and fail-closed behavior when WebGPU is unavailable.",
+                "Do not represent the licensed Qwen candidate revisions or incomplete upstream build record as exact conversion inputs or a hermetic reproduction recipe.",
                 "Reassess admission if conflicting licensing or provenance evidence appears for an exact conversion artifact."
             ]
         },

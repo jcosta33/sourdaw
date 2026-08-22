@@ -51,9 +51,24 @@ separately downloaded DDSP checkpoint artifacts; the product admission gate rema
 
 Web and desktop builds can download three pinned MLC-format Qwen models for browser-local WebLLM
 inference. Their upstream Qwen 1.7B, 4B, and 8B models are Apache-2.0; the MLC cards identify those
-models as the source of the corresponding conversions. The complete Apache-2.0 text and attribution,
-the pinned MLC revisions, and the artifact-verification boundary are recorded in
-[Apache-2.0.txt](./Apache-2.0.txt) and [Qwen-NOTICE.txt](./Qwen-NOTICE.txt).
+models as the source of the corresponding conversions. The complete Apache-2.0 text and Qwen
+attribution are in [Apache-2.0.txt](./Apache-2.0.txt) and
+[Qwen-NOTICE.txt](./Qwen-NOTICE.txt).
+
+The admitted WebGPU modules come from
+[binary-mlc-llm-libs at `025bcaf3780fa8254f5e5efd3bfea0a5397248f4`](https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base).
+The merged upstream record names MLC-LLM `2008fe8343e1f40ef89ee57b9287aebcf1b86c98`
+and Apache TVM `bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as their source revisions. Their
+exact notices and TVM's complete license and bundled third-party attribution closure are in
+[MLC-LLM-NOTICE.txt](./MLC-LLM-NOTICE.txt),
+[Apache-TVM-NOTICE.txt](./Apache-TVM-NOTICE.txt), and
+[Apache-TVM-LICENSE.txt](./Apache-TVM-LICENSE.txt).
+
+The exact downloaded model and WebAssembly bytes remain pinned and verified before storage or
+inference. This admission does not claim hermetic reproduction: the upstream conversions do not map
+to base-checkpoint revisions, and the binary merge record lacks the exact emsdk revision, resolved
+build configuration, and build log. Byte identity and the Apache source/license chain are proven;
+the complete build-input provenance is not.
 
 ## Trademarks
 
