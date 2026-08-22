@@ -1,0 +1,49 @@
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_a6fed47d178e9f 65,190,417
+src/modules/Collaboration/useCases/collaboration/getCollaborationAssetOwnerId.ts
+  s_a40848e8f8cca9::t_ea136621c8df4d 2,14
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_f996b1a92191a3 161
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_027de522a62e05 184-193
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_6f8888931ccadd 186
+  s_a40848e8f8cca9::t_a7b78709c920e9 363,384,388-404,407-408,417
+  s_a40848e8f8cca9::t_186491048fdb1c 49,144,412-416,418-442,463
+  s_a40848e8f8cca9::t_7a1c1380471408 443-462,464-471
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_f996b1a92191a3 14,19-20
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_f996b1a92191a3 49,140
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_b6fd476b30d6f4 86-87,167-169,184-187,199-200,207-209,215,217-220,229,240,251,262,277,293,296,300-302,314-319,576
+  s_a40848e8f8cca9::t_7145c67048bf85 351-353,385-387,409-411,446-448,487-489,524-526,547-549,554-556,577-578,622-624,745-747,759-761
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_a40848e8f8cca9::t_f7a073b3c62997 499,515,518,520-529
+  s_a40848e8f8cca9::t_b491873a1287cd 19,85,100,385-391,514,532,540
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_186491048fdb1c 1277-1360
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_fc8826839f6301 13
+  s_a40848e8f8cca9::t_269a7e103e09a2 215
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_b491873a1287cd 164-165,464
+src/modules/Collaboration/useCases/collaboration/__tests__/getCollaborationAssetOwnerId.spec.ts
+  s_a40848e8f8cca9::t_f31b41865f7a71 1,6,10,13-14,16,18,21-22,24-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fedc7a55edd7e683a25173fe765fda408a590b74",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
