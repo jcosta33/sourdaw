@@ -2,19 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
-    releaseStagedAsset: vi.fn(),
+    releaseStagedAssets: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: () => ({ releaseStagedAsset: mocks.releaseStagedAsset }),
+    getAssetTransfer: () => ({
+        releaseStagedAssets: mocks.releaseStagedAssets,
+    }),
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
 import { createStemImportConfirmationResourceLease } from '../createStemImportConfirmationResourceLease';
+import { discardPreparedStemImportResources } from '../discardPreparedStemImportResources';
 import { preparedStemImportResources } from '../registerPreparedStemImportResources';
 
 const stems = [
@@ -29,12 +32,17 @@ describe('prepared stem import resource cleanup', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
         vi.clearAllMocks();
-        mocks.releaseStagedAsset.mockResolvedValue({
+        mocks.releaseStagedAssets.mockResolvedValue({
             status: 'released',
-            leaseId: 'staged-asset-1',
-            hash: 'sha256:asset-1',
-            assetRemoved: true,
-            ownerRetained: false,
+            releases: [
+                {
+                    status: 'released',
+                    leaseId: 'staged-asset-1',
+                    hash: 'sha256:asset-1',
+                    assetRemoved: true,
+                    ownerRetained: false,
+                },
+            ],
         });
     });
 
@@ -53,12 +61,14 @@ describe('prepared stem import resource cleanup', () => {
             failedAssetIds: [],
         });
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1', 'sha256:asset-1');
+        expect(mocks.releaseStagedAssets).toHaveBeenCalledExactlyOnceWith([
+            { leaseId: 'staged-asset-1', expectedHash: 'sha256:asset-1' },
+        ]);
         expect(agentRunLifecycle.get('stem-delete')?.temporaryAssets).toEqual([]);
     });
 
     it('keeps cleanup ownership when durable lease release returns a typed failure', async () => {
-        mocks.releaseStagedAsset.mockResolvedValue({ status: 'failed', reason: 'lease-hash-mismatch' });
+        mocks.releaseStagedAssets.mockResolvedValue({ status: 'failed', reason: 'lease-hash-mismatch' });
         agentRunLifecycle.create({
             runId: 'stem-release-failure',
             request: 'Import stems.',
@@ -94,19 +104,24 @@ describe('prepared stem import resource cleanup', () => {
             failedAssetIds: [],
         });
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAssets).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
     });
 
     it('retries a confirmation lease whose first hash-bound durable release is rejected', async () => {
-        mocks.releaseStagedAsset
+        mocks.releaseStagedAssets
             .mockResolvedValueOnce({ status: 'failed', reason: 'missing-asset' })
             .mockResolvedValueOnce({
                 status: 'released',
-                leaseId: 'staged-asset-1',
-                hash: 'sha256:asset-1',
-                assetRemoved: true,
-                ownerRetained: false,
+                releases: [
+                    {
+                        status: 'released',
+                        leaseId: 'staged-asset-1',
+                        hash: 'sha256:asset-1',
+                        assetRemoved: true,
+                        ownerRetained: false,
+                    },
+                ],
             });
         const lease = createStemImportConfirmationResourceLease([
             { type: 'importStemSet', payload: { stems } },
@@ -115,9 +130,31 @@ describe('prepared stem import resource cleanup', () => {
             throw new Error('Expected a stem import confirmation resource lease');
         }
 
-        await expect(lease.release()).rejects.toThrow('Could not release staged lease staged-asset-1: missing-asset');
+        await expect(lease.release()).rejects.toThrow('Could not release staged stem assets: missing-asset');
         await expect(lease.release()).resolves.toBeUndefined();
 
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(2);
+        expect(mocks.releaseStagedAssets).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps every decoded buffer executable when atomic staged-lease cleanup rejects', async () => {
+        const multipleStems = [
+            stems[0],
+            {
+                audioBufferId: 'decoded-buffer-2',
+                assetLeaseId: 'staged-asset-2',
+                assetHash: 'sha256:asset-2',
+            },
+        ];
+        mocks.releaseStagedAssets.mockResolvedValueOnce({ status: 'failed', reason: 'lease-hash-mismatch' });
+
+        await expect(discardPreparedStemImportResources(multipleStems)).rejects.toThrow(
+            'Could not release staged stem assets: lease-hash-mismatch'
+        );
+
+        expect(mocks.releaseStagedAssets).toHaveBeenCalledExactlyOnceWith([
+            { leaseId: 'staged-asset-1', expectedHash: 'sha256:asset-1' },
+            { leaseId: 'staged-asset-2', expectedHash: 'sha256:asset-2' },
+        ]);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
     });
 });

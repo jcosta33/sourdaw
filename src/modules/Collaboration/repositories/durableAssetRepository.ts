@@ -20,6 +20,10 @@ type LeaseRecord = {
     ownerId: string;
     hash: string;
     state: LeaseState;
+    /** Persisted operation owner used to reclaim an interrupted staging set. */
+    cleanupOwnerId?: string;
+    /** Persisted creation time keeps restart recovery classification auditable. */
+    createdAt?: number;
 };
 
 export type DurableAsset = { hash: string; blob: Blob; name: string };
@@ -50,6 +54,11 @@ export type ReleaseStagedAssetResult =
           ownerRetained: boolean;
       }
     | DurableAssetFailure;
+export type StagedAssetBinding = { leaseId: string; expectedHash: string };
+type ReleasedStagedAsset = Exclude<ReleaseStagedAssetResult, DurableAssetFailure>;
+export type ReleaseStagedAssetsResult = { status: 'released'; releases: ReleasedStagedAsset[] } | DurableAssetFailure;
+export type ReclaimInterruptedStagedAssetsResult =
+    { status: 'reclaimed'; releases: ReleasedStagedAsset[] } | DurableAssetFailure;
 export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetRemoved: boolean } | DurableAssetFailure;
 export type RebindDurableAssetOwnerResult =
     { status: 'rebound'; previousOwnerId: string; ownerId: string; reboundHashes: string[] } | DurableAssetFailure;
@@ -61,14 +70,23 @@ const invalidationListeners = new Set<(event: AssetInvalidation) => void>();
 
 export type DurableAssetRepository = {
     storeDurableAsset: (blob: Blob, name: string, verifiedHash?: string) => Promise<DurableAsset>;
-    stageAsset: (leaseId: string, blob: Blob, name: string) => Promise<DurableAsset & { leaseId: string }>;
+    stageAsset: (
+        leaseId: string,
+        blob: Blob,
+        name: string,
+        cleanupOwnerId?: string
+    ) => Promise<DurableAsset & { leaseId: string }>;
     reopenStagedAsset: (leaseId: string, expectedHash: string) => Promise<ReopenStagedAssetResult>;
     reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>;
     promoteStagedAsset: (leaseId: string, expectedHash: string) => Promise<PromoteStagedAssetResult>;
     releaseStagedAsset: (leaseId: string, expectedHash: string) => Promise<ReleaseStagedAssetResult>;
+    releaseStagedAssets: (bindings: readonly StagedAssetBinding[]) => Promise<ReleaseStagedAssetsResult>;
     releaseOwnedAsset: (hash: string) => Promise<ReleaseOwnedAssetResult>;
     rebindOwner: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
     reconcileOwnedAssets: (referencedHashes: readonly string[]) => Promise<ReconcileOwnedAssetsResult>;
+    reclaimInterruptedStagedAssets: (
+        cleanupOwnerIds: readonly string[]
+    ) => Promise<ReclaimInterruptedStagedAssetsResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };
 
@@ -186,7 +204,9 @@ function isLeaseRecord(value: unknown): value is LeaseRecord {
         typeof record.leaseId === 'string' &&
         typeof record.ownerId === 'string' &&
         typeof record.hash === 'string' &&
-        (record.state === 'staged' || record.state === 'promoted' || record.state === 'released')
+        (record.state === 'staged' || record.state === 'promoted' || record.state === 'released') &&
+        (record.cleanupOwnerId === undefined || typeof record.cleanupOwnerId === 'string') &&
+        (record.createdAt === undefined || (typeof record.createdAt === 'number' && Number.isFinite(record.createdAt)))
     );
 }
 
@@ -242,6 +262,147 @@ function notifyInvalidation(event: AssetInvalidation): void {
     }
 }
 
+async function releaseStagedAssetSet(
+    ownerId: string,
+    bindings: readonly StagedAssetBinding[]
+): Promise<ReleaseStagedAssetsResult> {
+    const uniqueBindings = new Map<string, StagedAssetBinding>();
+    for (const binding of bindings) {
+        const existing = uniqueBindings.get(binding.leaseId);
+        if (existing && existing.expectedHash !== binding.expectedHash) {
+            return { status: 'failed', reason: 'lease-hash-mismatch' };
+        }
+        uniqueBindings.set(binding.leaseId, binding);
+    }
+    if (uniqueBindings.size === 0) {
+        return { status: 'released', releases: [] };
+    }
+
+    // Verify every referenced blob before opening the write transaction. No
+    // lease in the set may move if any hash binding or stored byte fails.
+    const verifiedHashes = new Set<string>();
+    for (const binding of uniqueBindings.values()) {
+        const lease = await readLease(binding.leaseId);
+        if ('status' in lease) {
+            return lease;
+        }
+        if (lease.ownerId !== ownerId) {
+            return { status: 'failed', reason: 'lease-owner-mismatch' };
+        }
+        if (lease.hash !== binding.expectedHash) {
+            return { status: 'failed', reason: 'lease-hash-mismatch' };
+        }
+        if (lease.state === 'promoted') {
+            return { status: 'failed', reason: 'lease-terminal-conflict' };
+        }
+        if (!verifiedHashes.has(lease.hash)) {
+            const asset = await readAsset(lease.hash);
+            if ('status' in asset && !(lease.state === 'released' && asset.reason === 'missing-asset')) {
+                return asset;
+            }
+            verifiedHashes.add(lease.hash);
+        }
+    }
+
+    const database = await openDatabase();
+    const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
+    const assetStore = transaction.objectStore(ASSET_STORE);
+    const leaseStore = transaction.objectStore(LEASE_STORE);
+    const completion = awaitTransaction(transaction);
+    // Enqueue both reads before yielding. IndexedDB may auto-commit a
+    // transaction between promise turns when it has no outstanding requests.
+    const [assetValues, leaseValues] = await Promise.all([
+        readAllStoredValues(assetStore),
+        readAllStoredValues(leaseStore),
+    ]);
+    const leases = new Map(
+        leaseValues.flatMap((value) => (isLeaseRecord(value) ? [[value.leaseId, value] as const] : []))
+    );
+    const assets = new Map(
+        assetValues.flatMap((value) => (isAssetRecord(value) ? [[value.hash, value] as const] : []))
+    );
+    const leaseEntries = [...uniqueBindings.values()].map((binding) => ({
+        binding,
+        value: leases.get(binding.leaseId),
+    }));
+
+    async function fail(reason: DurableAssetFailure['reason']): Promise<DurableAssetFailure> {
+        transaction.abort();
+        await completion.catch(() => undefined);
+        return { status: 'failed', reason };
+    }
+
+    const releases: ReleasedStagedAsset[] = [];
+    const nextAssets = new Map<string, AssetRecord | undefined>();
+    const nextLeases = new Map<string, LeaseRecord>();
+    for (const { binding, value } of leaseEntries) {
+        if (!isLeaseRecord(value)) {
+            return fail(value === undefined ? 'unknown-lease' : 'corrupt-record');
+        }
+        if (value.ownerId !== ownerId) {
+            return fail('lease-owner-mismatch');
+        }
+        if (value.hash !== binding.expectedHash) {
+            return fail('lease-hash-mismatch');
+        }
+        if (value.state === 'promoted') {
+            return fail('lease-terminal-conflict');
+        }
+        const storedAsset = nextAssets.has(value.hash) ? nextAssets.get(value.hash) : assets.get(value.hash);
+        if (value.state === 'released') {
+            if (storedAsset !== undefined && !isAssetRecord(storedAsset)) {
+                return fail('corrupt-record');
+            }
+            releases.push({
+                status: 'already-released',
+                leaseId: value.leaseId,
+                hash: value.hash,
+                assetRemoved: storedAsset === undefined,
+                ownerRetained: storedAsset === undefined ? false : ownerRetained(storedAsset, ownerId),
+            });
+            continue;
+        }
+        if (!isAssetRecord(storedAsset)) {
+            return fail(storedAsset === undefined ? 'missing-asset' : 'corrupt-record');
+        }
+        if (!storedAsset.activeLeases.some((entry) => entry.leaseId === value.leaseId && entry.ownerId === ownerId)) {
+            return fail('corrupt-record');
+        }
+        const next: AssetRecord = {
+            ...storedAsset,
+            activeLeases: storedAsset.activeLeases.filter((entry) => entry.leaseId !== value.leaseId),
+        };
+        const assetRemoved = next.ownerIds.length === 0 && next.activeLeases.length === 0;
+        nextAssets.set(value.hash, assetRemoved ? undefined : next);
+        nextLeases.set(value.leaseId, { ...value, state: 'released' });
+        releases.push({
+            status: 'released',
+            leaseId: value.leaseId,
+            hash: value.hash,
+            assetRemoved,
+            ownerRetained: !assetRemoved && ownerRetained(next, ownerId),
+        });
+    }
+
+    for (const [hash, asset] of nextAssets) {
+        if (asset) {
+            assetStore.put(asset);
+        } else {
+            assetStore.delete(hash);
+        }
+    }
+    for (const lease of nextLeases.values()) {
+        leaseStore.put(lease);
+    }
+    await completion;
+    for (const release of releases) {
+        if (release.status === 'released' && !release.ownerRetained) {
+            notifyInvalidation(release.assetRemoved ? { hash: release.hash } : { hash: release.hash, ownerId });
+        }
+    }
+    return { status: 'released', releases };
+}
+
 /** Own content-addressed originals for one opaque Collaboration project identity. */
 export function createDurableAssetRepository(ownerId: string): DurableAssetRepository {
     if (ownerId.length === 0) {
@@ -272,7 +433,7 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
             return asDurableAsset(record);
         },
 
-        async stageAsset(leaseId, blob, name) {
+        async stageAsset(leaseId, blob, name, cleanupOwnerId = leaseId) {
             const hash = await hashBlob(blob);
             const database = await openDatabase();
             const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
@@ -292,6 +453,7 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
                 (!isLeaseRecord(existingLease) ||
                     existingLease.ownerId !== ownerId ||
                     existingLease.hash !== hash ||
+                    (existingLease.cleanupOwnerId !== undefined && existingLease.cleanupOwnerId !== cleanupOwnerId) ||
                     existingLease.state !== 'staged')
             ) {
                 await completion;
@@ -309,15 +471,15 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
                     : [...activeLeases, { leaseId, ownerId }],
             };
             assetStore.put(record);
-            if (existingLease === undefined) {
-                leaseStore.put({
-                    schemaVersion: RECORD_SCHEMA_VERSION,
-                    leaseId,
-                    ownerId,
-                    hash,
-                    state: 'staged',
-                } satisfies LeaseRecord);
-            }
+            leaseStore.put({
+                schemaVersion: RECORD_SCHEMA_VERSION,
+                leaseId,
+                ownerId,
+                hash,
+                state: 'staged',
+                cleanupOwnerId: existingLease?.cleanupOwnerId ?? cleanupOwnerId,
+                createdAt: existingLease?.createdAt ?? Date.now(),
+            } satisfies LeaseRecord);
             await completion;
             return { ...asDurableAsset(record), leaseId };
         },
@@ -433,96 +595,16 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
         },
 
         async releaseStagedAsset(leaseId, expectedHash) {
-            const lease = await readLease(leaseId);
-            if ('status' in lease) {
-                return lease;
+            const result = await releaseStagedAssetSet(ownerId, [{ leaseId, expectedHash }]);
+            if (result.status === 'failed') {
+                return result;
             }
-            if (lease.ownerId !== ownerId) {
-                return { status: 'failed', reason: 'lease-owner-mismatch' };
-            }
-            if (lease.hash !== expectedHash) {
-                return { status: 'failed', reason: 'lease-hash-mismatch' };
-            }
-            if (lease.state === 'promoted') {
-                return { status: 'failed', reason: 'lease-terminal-conflict' };
-            }
-            if (lease.state === 'released') {
-                const current = await readAsset(lease.hash);
-                if ('status' in current) {
-                    if (current.reason === 'missing-asset') {
-                        return {
-                            status: 'already-released',
-                            leaseId,
-                            hash: lease.hash,
-                            assetRemoved: true,
-                            ownerRetained: false,
-                        };
-                    }
-                    return current;
-                }
-                return {
-                    status: 'already-released',
-                    leaseId,
-                    hash: lease.hash,
-                    assetRemoved: false,
-                    ownerRetained: ownerRetained(current, ownerId),
-                };
-            }
-            const verified = await readAsset(lease.hash);
-            if ('status' in verified) {
-                return verified;
-            }
-            const database = await openDatabase();
-            const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
-            const assetStore = transaction.objectStore(ASSET_STORE);
-            const leaseStore = transaction.objectStore(LEASE_STORE);
-            const completion = awaitTransaction(transaction);
-            const [currentAsset, currentLease] = await Promise.all([
-                readStoredValue(assetStore, lease.hash),
-                readStoredValue(leaseStore, leaseId),
-            ]);
-            if (!isAssetRecord(currentAsset) || !isLeaseRecord(currentLease)) {
-                transaction.abort();
-                await completion.catch(() => undefined);
-                return { status: 'failed', reason: 'corrupt-record' };
-            }
-            if (currentLease.ownerId !== ownerId) {
-                transaction.abort();
-                await completion.catch(() => undefined);
-                return { status: 'failed', reason: 'lease-owner-mismatch' };
-            }
-            if (currentLease.hash !== expectedHash) {
-                transaction.abort();
-                await completion.catch(() => undefined);
-                return { status: 'failed', reason: 'lease-hash-mismatch' };
-            }
-            if (currentLease.state !== 'staged') {
-                transaction.abort();
-                await completion.catch(() => undefined);
-                return { status: 'failed', reason: 'lease-terminal-conflict' };
-            }
-            if (!currentAsset.activeLeases.some((entry) => entry.leaseId === leaseId && entry.ownerId === ownerId)) {
-                transaction.abort();
-                await completion.catch(() => undefined);
-                return { status: 'failed', reason: 'corrupt-record' };
-            }
-            const next: AssetRecord = {
-                ...currentAsset,
-                activeLeases: currentAsset.activeLeases.filter((entry) => entry.leaseId !== leaseId),
-            };
-            const assetRemoved = next.ownerIds.length === 0 && next.activeLeases.length === 0;
-            if (assetRemoved) {
-                assetStore.delete(lease.hash);
-            } else {
-                assetStore.put(next);
-            }
-            leaseStore.put({ ...currentLease, state: 'released' } satisfies LeaseRecord);
-            await completion;
-            const retained = !assetRemoved && ownerRetained(next, ownerId);
-            if (!retained) {
-                notifyInvalidation(assetRemoved ? { hash: lease.hash } : { hash: lease.hash, ownerId });
-            }
-            return { status: 'released', leaseId, hash: lease.hash, assetRemoved, ownerRetained: retained };
+            const release = result.releases[0];
+            return release ?? { status: 'failed', reason: 'corrupt-record' };
+        },
+
+        releaseStagedAssets(bindings) {
+            return releaseStagedAssetSet(ownerId, bindings);
         },
 
         async releaseOwnedAsset(hash) {
@@ -659,9 +741,56 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
             return { status: 'reconciled', releasedHashes, removedHashes };
         },
 
+        reclaimInterruptedStagedAssets(cleanupOwnerIds) {
+            return reclaimInterruptedStagedAssetSets(cleanupOwnerIds);
+        },
+
         subscribeInvalidation(listener) {
             invalidationListeners.add(listener);
             return () => invalidationListeners.delete(listener);
         },
     };
+}
+
+/** Reclaim exact crash-orphaned staging sets identified by their persisted operation owners. */
+async function reclaimInterruptedStagedAssetSets(
+    cleanupOwnerIds: readonly string[]
+): Promise<ReclaimInterruptedStagedAssetsResult> {
+    const requestedOwners = new Set(cleanupOwnerIds);
+    if (requestedOwners.size === 0) {
+        return { status: 'reclaimed', releases: [] };
+    }
+    const database = await openDatabase();
+    const transaction = database.transaction(LEASE_STORE, 'readonly');
+    const completion = awaitTransaction(transaction);
+    const values = await readAllStoredValues(transaction.objectStore(LEASE_STORE));
+    await completion;
+    if (values.some((value) => !isLeaseRecord(value))) {
+        return { status: 'failed', reason: 'corrupt-record' };
+    }
+
+    const bindingsByOwner = new Map<string, StagedAssetBinding[]>();
+    for (const lease of values as LeaseRecord[]) {
+        if (
+            lease.state !== 'staged' ||
+            lease.cleanupOwnerId === undefined ||
+            lease.createdAt === undefined ||
+            !requestedOwners.has(lease.cleanupOwnerId)
+        ) {
+            continue;
+        }
+        const ownerBindings = bindingsByOwner.get(lease.ownerId) ?? [];
+        ownerBindings.push({ leaseId: lease.leaseId, expectedHash: lease.hash });
+        bindingsByOwner.set(lease.ownerId, ownerBindings);
+    }
+
+    const releases: ReleasedStagedAsset[] = [];
+    for (const [ownerId, bindings] of bindingsByOwner) {
+        const result = await releaseStagedAssetSet(ownerId, bindings);
+        if (result.status === 'failed') {
+            return result;
+        }
+        releases.push(...result.releases);
+    }
+    return { status: 'reclaimed', releases };
 }

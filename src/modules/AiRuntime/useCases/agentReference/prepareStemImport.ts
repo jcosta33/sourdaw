@@ -46,7 +46,8 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 export async function prepareStemImport(
     signal?: AbortSignal,
-    admitWork?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean
+    admitWork?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean,
+    cleanupOwnerId?: string
 ) {
     const files = await pickFiles({
         multiple: true,
@@ -137,7 +138,12 @@ export async function prepareStemImport(
             };
             prepared.push(pendingStem);
             const assetLeaseId = `asset-stage-${pendingStem.stemId}`;
-            const stagedAsset = await getAssetTransfer()?.stageLocalAsset(file, file.name, assetLeaseId);
+            const stagedAsset = await getAssetTransfer()?.stageLocalAsset(
+                file,
+                file.name,
+                assetLeaseId,
+                cleanupOwnerId
+            );
             if (stagedAsset) {
                 Object.assign(pendingStem, {
                     assetHash: stagedAsset.hash,

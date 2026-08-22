@@ -345,6 +345,7 @@ describe('sessionRuntimePrimitives', () => {
 describe('sessionRuntimePrimitives runtime wiring', () => {
     let notifyOwnerId: (ownerId: string | undefined) => void = () => undefined;
     let notifyReferencedHashes: (hashes: readonly string[]) => void = () => undefined;
+    let currentOwnerId = 'project:local-before-sync';
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -358,10 +359,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         transportStoreMock.value = null;
         crdtMock.hasCrdtDoc.mockReturnValue(false);
         crdtMock.waitForCrdtDocumentTransition.mockReturnValue(null);
+        currentOwnerId = 'project:local-before-sync';
         configureCollaborationAssetOwner({
-            captureOwnerId: () => 'project:local-before-sync',
-            subscribeOwnerId: (listener) => {
-                notifyOwnerId = listener;
+            captureProjectEpoch: () => ({ ownerId: currentOwnerId, epoch: 1, committed: true }),
+            subscribeProjectEpoch: (listener) => {
+                notifyOwnerId = (ownerId) => {
+                    currentOwnerId = ownerId ?? currentOwnerId;
+                    listener({ ownerId, epoch: 1, committed: true });
+                };
                 return () => undefined;
             },
             captureReferencedHashes: () => [],
@@ -393,6 +398,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             sessionRuntimePrimitives.initialize('collaboration-join:attempt-1', {
                 rebindToSynchronizedOwner: true,
             });
+            collaborationStore.set({ isEnabled: true } as CollaborationState);
             const assetTransfer = latestAssetTransfer();
 
             notifyOwnerId('project:host-authoritative');

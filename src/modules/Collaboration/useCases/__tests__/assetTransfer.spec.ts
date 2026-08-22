@@ -229,6 +229,39 @@ describe('AssetTransfer', () => {
         });
     });
 
+    it('leaves an entire staged set untouched when one atomic release binding is wrong', async () => {
+        const first = await transfer.stageLocalAsset(
+            new Blob(['atomic-first']),
+            'atomic-first.wav',
+            'asset-stage-atomic-first'
+        );
+        const second = await transfer.stageLocalAsset(
+            new Blob(['atomic-second']),
+            'atomic-second.wav',
+            'asset-stage-atomic-second'
+        );
+
+        await expect(
+            transfer.releaseStagedAssets([
+                { leaseId: first.leaseId, expectedHash: first.hash },
+                { leaseId: second.leaseId, expectedHash: first.hash },
+            ])
+        ).resolves.toEqual({ status: 'failed', reason: 'lease-hash-mismatch' });
+        await expect(transfer.reopenStagedAsset(first.leaseId, first.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        await expect(transfer.reopenStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+
+        await expect(
+            transfer.releaseStagedAssets([
+                { leaseId: first.leaseId, expectedHash: first.hash },
+                { leaseId: second.leaseId, expectedHash: second.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'released', releases: [{ status: 'released' }, { status: 'released' }] });
+    });
+
     it('retries a caller-known lease identity after storage commits but handoff faults', async () => {
         const durableAssets = createDurableAssetRepository(TEST_OWNER);
         let injectHandoffFault = true;
@@ -276,6 +309,105 @@ describe('AssetTransfer', () => {
             status: 'opened',
         });
         retriedTransfer.dispose();
+    });
+
+    it('persists the cleanup owner and creation time needed to recover a staged lease after restart', async () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1_735_689_600_000);
+
+        const staged = await transfer.stageLocalAsset(
+            new Blob(['restart-orphan']),
+            'restart-orphan.wav',
+            'asset-stage-restart-orphan',
+            'agent-run-crashed'
+        );
+
+        expect(durableAssetIndexedDb.readLease(staged.leaseId)).toMatchObject({
+            cleanupOwnerId: 'agent-run-crashed',
+            createdAt: 1_735_689_600_000,
+        });
+        now.mockRestore();
+    });
+
+    it('reclaims only the persisted staging set owned by an interrupted operation after restart', async () => {
+        const orphaned = await transfer.stageLocalAsset(
+            new Blob(['orphaned-after-restart']),
+            'orphaned.wav',
+            'asset-stage-orphaned-after-restart',
+            'agent-run-interrupted'
+        );
+        const retained = await transfer.stageLocalAsset(
+            new Blob(['still-live-after-restart']),
+            'retained.wav',
+            'asset-stage-retained-after-restart',
+            'agent-run-still-live'
+        );
+        transfer.dispose();
+        vi.resetModules();
+        const [{ createDurableAssetRepository: createFreshRepository }, { AssetTransfer: FreshAssetTransfer }] =
+            await Promise.all([import('../../repositories/durableAssetRepository'), import('../assetTransfer')]);
+
+        await expect(
+            createFreshRepository(TEST_OWNER).reclaimInterruptedStagedAssets(['agent-run-interrupted'])
+        ).resolves.toMatchObject({
+            status: 'reclaimed',
+            releases: [expect.objectContaining({ leaseId: orphaned.leaseId, status: 'released' })],
+        });
+
+        const recreated = new FreshAssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(recreated.reopenStagedAsset(orphaned.leaseId, orphaned.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-terminal-conflict',
+        });
+        await expect(recreated.reopenStagedAsset(retained.leaseId, retained.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        recreated.dispose();
+    });
+
+    it('quiesces an already-started staging write before rebinding its owner', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const stagingStarted = Promise.withResolvers<void>();
+        const allowStagingToFinish = Promise.withResolvers<void>();
+        const serializedAssets = {
+            ...durableAssets,
+            stageAsset: async (...input: Parameters<typeof durableAssets.stageAsset>) => {
+                stagingStarted.resolve();
+                await allowStagingToFinish.promise;
+                return durableAssets.stageAsset(...input);
+            },
+            rebindOwner: vi.fn(durableAssets.rebindOwner),
+        };
+        const serialTransfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            TEST_OWNER,
+            serializedAssets
+        );
+
+        const staging = serialTransfer.stageLocalAsset(
+            new Blob(['owner-bound-write']),
+            'owner-bound.wav',
+            'asset-stage-owner-bound'
+        );
+        await stagingStarted.promise;
+        const rebinding = serialTransfer.rebindOwner('project:rebound');
+        await Promise.resolve();
+
+        expect(serializedAssets.rebindOwner).not.toHaveBeenCalled();
+        allowStagingToFinish.resolve();
+        const staged = await staging;
+        await expect(rebinding).resolves.toMatchObject({ status: 'rebound', ownerId: 'project:rebound' });
+
+        const recreated = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            'project:rebound'
+        );
+        await expect(recreated.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        recreated.dispose();
+        serialTransfer.dispose();
     });
 
     it('releases only the exact project owner and reclaims bytes after the final owner leaves', async () => {

@@ -9,9 +9,8 @@ type PreparedStemResource = {
 
 export async function discardPreparedStemImportResources(stems: readonly PreparedStemResource[]): Promise<void> {
     const transfer = getAssetTransfer();
-    const releases: Promise<void>[] = [];
+    const bindings: Array<{ leaseId: string; expectedHash: string }> = [];
     for (const stem of stems) {
-        releasePreviewAudioBuffer(stem.audioBufferId);
         if (stem.assetLeaseId) {
             if (!stem.assetHash) {
                 throw new Error(`Prepared stem has no hash for staged lease: ${stem.assetLeaseId}`);
@@ -19,14 +18,19 @@ export async function discardPreparedStemImportResources(stems: readonly Prepare
             if (!transfer) {
                 throw new Error(`Asset transfer is unavailable for staged lease: ${stem.assetLeaseId}`);
             }
-            releases.push(
-                transfer.releaseStagedAsset(stem.assetLeaseId, stem.assetHash).then((result) => {
-                    if (result.status === 'failed') {
-                        throw new Error(`Could not release staged lease ${stem.assetLeaseId}: ${result.reason}`);
-                    }
-                })
-            );
+            bindings.push({ leaseId: stem.assetLeaseId, expectedHash: stem.assetHash });
         }
     }
-    await Promise.all(releases);
+    if (bindings.length > 0) {
+        const result = await transfer?.releaseStagedAssets(bindings);
+        if (!result || result.status === 'failed') {
+            throw new Error(`Could not release staged stem assets: ${result?.reason ?? 'asset-transfer-unavailable'}`);
+        }
+    }
+    // PCM remains executable until the durable lease set has settled in one
+    // transaction. A failed release therefore leaves the confirmation wholly
+    // retryable instead of partially destroying its inputs.
+    for (const stem of stems) {
+        releasePreviewAudioBuffer(stem.audioBufferId);
+    }
 }

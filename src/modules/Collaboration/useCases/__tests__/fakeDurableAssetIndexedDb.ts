@@ -132,6 +132,7 @@ class FakeObjectStore {
 
 export type FakeDurableAssetIndexedDb = {
     reset: () => void;
+    readLease: (leaseId: string) => Readonly<Record<string, unknown>> | undefined;
     deleteAsset: (hash: string) => void;
     overwriteAssetBlob: (hash: string, blob: Blob) => void;
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
@@ -177,6 +178,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 store.clear();
             }
         },
+        readLease: (leaseId) => stores.get('leases')?.get(leaseId),
         deleteAsset: (hash) => {
             stores.get('assets')?.delete(hash);
         },
