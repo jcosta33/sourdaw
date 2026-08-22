@@ -24,8 +24,9 @@ pub enum NoiseEvent {
     PedalDown,
     /// Longitudinal "string precursor" — the bite that arrives at the
     /// bridge before the transverse wave because the longitudinal wave
-    /// travels much faster than the transverse wave. Bright,
-    /// very short (~3 ms), ~25 dB above the structure-borne thump.
+    /// travels much faster than the transverse wave. Its exact duration,
+    /// spectrum, and level below are project voicing informed by Askenfelt's
+    /// published transient categories, not copied measurement-table values.
     StringPrecursor,
 }
 

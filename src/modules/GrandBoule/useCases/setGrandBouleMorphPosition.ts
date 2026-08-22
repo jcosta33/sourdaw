@@ -11,10 +11,12 @@ import { type Store } from '#/infra/store/types';
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../stores/grandBouleStore';
 
-import { applyGrandBouleMorphState } from './applyGrandBouleMorphState';
+import { dispatchGrandBouleMorphEdit } from './dispatchGrandBouleMorphEdit';
 
 type SetGrandBouleMorphPositionInput = {
     engine: GrandBouleEngineHandle;
+    deviceId: string;
+    isTransient?: boolean;
     morphPosition: number;
     store: Store<GrandBouleState>;
 };
@@ -28,12 +30,11 @@ export function setGrandBouleMorphPosition(input: SetGrandBouleMorphPositionInpu
     const clamped = Math.max(0, Math.min(1, input.morphPosition));
 
     const nextMorph = { ...state.morph, morphPosition: clamped };
-    if (!applyGrandBouleMorphState(input.engine, nextMorph)) {
-        return;
-    }
-
-    input.store.set({
-        ...state,
-        morph: nextMorph,
+    dispatchGrandBouleMorphEdit({
+        deviceId: input.deviceId,
+        engine: input.engine,
+        store: input.store,
+        nextMorph,
+        isTransient: input.isTransient ?? false,
     });
 }

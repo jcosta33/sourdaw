@@ -71,6 +71,11 @@ impl GrandBouleInstance {
         self.engine.note_off(midi_note);
     }
 
+    /// Authoritative number of sounding voices in the playable pool.
+    pub fn active_voices(&self) -> u32 {
+        self.engine.active_voice_count() as u32
+    }
+
     /// Trigger a note carrying its MPE member channel.
     pub fn note_on_with_channel(&mut self, midi_note: u8, velocity: f32, channel: u8) {
         self.engine

@@ -24,7 +24,7 @@ const GRAND_BOULE_DESCRIPTOR_DATA: PluginDescriptor = {
             value: 0.1,
             defaultValue: 0.1,
             minValue: 0,
-            maxValue: 2,
+            maxValue: 1,
             unit: '',
             automatable: true,
             hasAutomation: false,

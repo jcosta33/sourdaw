@@ -89,7 +89,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,6 +102,25 @@ import { startServer } from './server.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
+
+const MEASUREMENT_SOURCE_PATHS = [
+    'crates/daw-dsp/benches/quantum.rs',
+    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+    'public/wasm/manifest.json',
+];
+
+function measurementSourceDigests() {
+    return Object.fromEntries(
+        MEASUREMENT_SOURCE_PATHS.map((path) => [
+            path,
+            createHash('sha256')
+                .update(readFileSync(resolve(repoRoot, path)))
+                .digest('hex'),
+        ])
+    );
+}
 
 /** 128 frames at 48 kHz, in milliseconds — the deadline every figure is read against. */
 const BUDGET_MS = (128 / 48_000) * 1000;
@@ -806,6 +826,8 @@ async function main() {
             `${JSON.stringify(
                 {
                     machine,
+                    sourceRevision: machine.gitSha,
+                    sourceDigests: measurementSourceDigests(),
                     browser: payload.browser,
                     userAgent: payload.userAgent,
                     budgetMs: BUDGET_MS,

@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    apply: vi.fn(),
-    hydrate: vi.fn(),
     controls: {
         ready: true,
         noteOn: vi.fn(),
@@ -29,25 +27,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioSampleRate: () => 48_000,
 }));
 vi.mock('../../repositories/grandBouleEngineHandle', () => ({ createDisconnectedGrandBouleEngineHandle: vi.fn() }));
-vi.mock('../applyGrandBouleMorphState', () => ({ applyGrandBouleMorphState: mocks.apply }));
-vi.mock('../hydrateGrandBouleMorphStateFromProject', () => ({ hydrateGrandBouleMorphStateFromProject: mocks.hydrate }));
 
 import { resolveGrandBouleEngine } from '../resolveGrandBouleEngine';
 
 describe('resolveGrandBouleEngine', () => {
-    it('hydrates and applies saved voicing when the live controls become ready', () => {
-        const morph = {
-            modelA: 'mellow-grand',
-            modelB: 'singing-grand',
-            morphPosition: 0.4,
-            layerBalance: 0.2,
-            enabled: true,
-        };
-        mocks.hydrate.mockReturnValue(morph);
+    it('resolves the addressed ready controls without mutating project or session state', () => {
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
 
-        resolveGrandBouleEngine({ deviceId: 'grand-1' });
-
-        expect(mocks.hydrate).toHaveBeenCalledWith('grand-1');
-        expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ setParam: expect.any(Function) }), morph);
+        engine.setParam({ name: 'tone_color', value: 0.2 });
+        expect(mocks.controls.setParam).toHaveBeenCalledWith('tone_color', 0.2);
     });
 });

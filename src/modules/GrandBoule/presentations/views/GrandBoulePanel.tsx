@@ -22,6 +22,7 @@ import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVe
 import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
 import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
 import { syncMidiCalibrationToEngine } from '../../useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine';
+import { applyGrandBouleMorphState } from '../../useCases/applyGrandBouleMorphState';
 import { hydrateGrandBouleConfigFromProject } from '../../useCases/hydrateGrandBouleConfigFromProject';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
@@ -35,6 +36,7 @@ import { setGrandBouleAttackBite } from '../../useCases/setGrandBouleAttackBite'
 import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
 import { setGrandBouleMorphBalance } from '../../useCases/setGrandBouleMorphBalance';
 import { setGrandBouleMorphEnabled } from '../../useCases/setGrandBouleMorphEnabled';
+import { setGrandBouleMorphModel } from '../../useCases/setGrandBouleMorphModel';
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
 import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
@@ -267,13 +269,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         if (!engineReady) {
             return;
         }
-        const currentMorphPosition = storeRef.current.value?.morph.morphPosition;
-        if (currentMorphPosition !== undefined) {
-            setGrandBouleMorphPosition({
-                engine: engineRef.current,
-                store: storeRef.current,
-                morphPosition: currentMorphPosition,
-            });
+        const currentMorph = storeRef.current.value?.morph;
+        if (currentMorph) {
+            applyGrandBouleMorphState(engineRef.current, currentMorph);
         }
         // The two engine-consumed calibration values live on the store, which
         // outlives any one engine instance (`storesByDevice` is a module Map).
@@ -356,25 +354,27 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     <SectionCard title="Morph" detail="Piano model blending.">
                         <MorphPanel
                             morph={morph}
-                            onMorphPositionChange={(position) =>
-                                setGrandBouleMorphPosition({ engine, store, morphPosition: position })
+                            onMorphPositionChange={(position, isTransient) =>
+                                setGrandBouleMorphPosition({
+                                    deviceId,
+                                    engine,
+                                    store,
+                                    morphPosition: position,
+                                    isTransient,
+                                })
                             }
-                            onLayerBalanceChange={(balance) => setGrandBouleMorphBalance({ engine, store, balance })}
-                            onModelAChange={(modelId) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, modelA: modelId } });
-                                    setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
-                                }
-                            }}
-                            onModelBChange={(modelId) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, modelB: modelId } });
-                                    setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
-                                }
-                            }}
-                            onEnabledChange={(enabled) => setGrandBouleMorphEnabled({ engine, store, enabled })}
+                            onLayerBalanceChange={(balance, isTransient) =>
+                                setGrandBouleMorphBalance({ deviceId, engine, store, balance, isTransient })
+                            }
+                            onModelAChange={(modelId) =>
+                                setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelA', modelId })
+                            }
+                            onModelBChange={(modelId) =>
+                                setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelB', modelId })
+                            }
+                            onEnabledChange={(enabled) =>
+                                setGrandBouleMorphEnabled({ deviceId, engine, store, enabled })
+                            }
                         />
                     </SectionCard>
 
@@ -387,9 +387,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 }
                                 label="Master"
                                 min={0}
-                                max={2}
+                                max={1}
                                 step={0.01}
-                                defaultValue={0.7}
+                                defaultValue={0.1}
                                 readout={`${Math.round(config.masterGain * 100)}%`}
                             />
                             <Knob

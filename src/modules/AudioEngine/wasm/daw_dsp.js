@@ -999,6 +999,14 @@ export class GrandBouleInstance {
         wasm.__wbg_grandbouleinstance_free(ptr, 0);
     }
     /**
+     * Authoritative number of sounding voices in the playable pool.
+     * @returns {number}
+     */
+    active_voices() {
+        const ret = wasm.grandbouleinstance_active_voices(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Panic: silence every voice immediately.
      */
     all_notes_off() {

@@ -57,7 +57,13 @@ describe('setGrandBouleMorphPosition', () => {
         const { handle, setParam } = fakeEngine();
         const { store, set } = storeWith(null);
 
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.5 });
+        setGrandBouleMorphPosition({
+            deviceId: 'grand-1',
+            store,
+            engine: handle,
+            morphPosition: 0.5,
+            isTransient: true,
+        });
 
         expect(set).not.toHaveBeenCalled();
         expect(setParam).not.toHaveBeenCalled();
@@ -69,7 +75,13 @@ describe('setGrandBouleMorphPosition', () => {
         // Defaults: balanced-grand to clear-grand, with morph disabled.
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.9 });
+        setGrandBouleMorphPosition({
+            deviceId: 'grand-1',
+            store,
+            engine: handle,
+            morphPosition: 0.9,
+            isTransient: true,
+        });
 
         // Disabled morph always plays modelA's raw parameters, regardless of position.
         expectParamsClose(setParam, {
@@ -91,7 +103,7 @@ describe('setGrandBouleMorphPosition', () => {
         const state = createDefaultGrandBouleState();
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 5 });
+        setGrandBouleMorphPosition({ deviceId: 'grand-1', store, engine: handle, morphPosition: 5, isTransient: true });
 
         expect(set).toHaveBeenCalledWith({ ...state, morph: { ...state.morph, morphPosition: 1 } });
     });
@@ -101,7 +113,13 @@ describe('setGrandBouleMorphPosition', () => {
         const state = createDefaultGrandBouleState();
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: -3 });
+        setGrandBouleMorphPosition({
+            deviceId: 'grand-1',
+            store,
+            engine: handle,
+            morphPosition: -3,
+            isTransient: true,
+        });
 
         expect(set).toHaveBeenCalledWith({ ...state, morph: { ...state.morph, morphPosition: 0 } });
     });
@@ -115,7 +133,13 @@ describe('setGrandBouleMorphPosition', () => {
         const { store, set } = storeWith(state);
 
         // balanced-grand to clear-grand at t = 0.5.
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.5 });
+        setGrandBouleMorphPosition({
+            deviceId: 'grand-1',
+            store,
+            engine: handle,
+            morphPosition: 0.5,
+            isTransient: true,
+        });
 
         expectParamsClose(setParam, {
             hammer_hardness_scale: 1.13,
@@ -139,7 +163,7 @@ describe('setGrandBouleMorphPosition', () => {
         };
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphEnabled({ store, engine: handle, enabled: true });
+        setGrandBouleMorphEnabled({ deviceId: 'grand-1', store, engine: handle, enabled: true, isTransient: true });
 
         expectParamsClose(setParam, {
             hammer_hardness_scale: 1.025,
@@ -164,7 +188,7 @@ describe('setGrandBouleMorphPosition', () => {
         };
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphBalance({ store, engine: handle, balance });
+        setGrandBouleMorphBalance({ deviceId: 'grand-1', store, engine: handle, balance, isTransient: true });
 
         expect(paramsByName(setParam).hammer_hardness_scale).toBeCloseTo(hardness, 10);
         expect(set).toHaveBeenCalledWith({ ...state, morph: { ...state.morph, layerBalance: balance } });
@@ -179,7 +203,13 @@ describe('setGrandBouleMorphPosition', () => {
         };
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.5 });
+        setGrandBouleMorphPosition({
+            deviceId: 'grand-1',
+            store,
+            engine: handle,
+            morphPosition: 0.5,
+            isTransient: true,
+        });
 
         expect(setParam).not.toHaveBeenCalled();
         expect(set).not.toHaveBeenCalled();
@@ -196,7 +226,13 @@ describe('setGrandBouleMorphPosition', () => {
         };
         const { store, set } = storeWith(state);
 
-        setGrandBouleMorphPosition({ store, engine: handle, morphPosition: 0.5 });
+        setGrandBouleMorphPosition({
+            deviceId: 'grand-1',
+            store,
+            engine: handle,
+            morphPosition: 0.5,
+            isTransient: true,
+        });
 
         expect(setParam).not.toHaveBeenCalled();
         expect(set).not.toHaveBeenCalled();

@@ -94,7 +94,17 @@ const calibrationTable = () => {
 };
 
 const occupancyList = () =>
-    data.rows.map((row) => `- **${row.id}** — after the timed run: ${row.lateVerify.detail}`).join('\n');
+    data.rows
+        .map(
+            (row) =>
+                `- **${row.id}** — after warmup: ${row.warmVerify.detail}; ` +
+                `after the timed run: ${row.lateVerify.detail}`
+        )
+        .join('\n');
+const sourceDigestList = () =>
+    Object.entries(data.sourceDigests)
+        .map(([path, digest]) => `- \`${path}\`: \`sha256:${digest}\``)
+        .join('\n');
 
 const nonAudioThreadSection =
     otherRows.length === 0
@@ -123,13 +133,17 @@ const block = `${BEGIN}
 | OS | ${data.machine.os}, ${data.machine.arch} |
 | Browser | **${data.browser}** (Google Chrome stable, headless) |
 | User agent | \`${data.userAgent}\` |
-| **Commit measured** | **\`${data.machine.gitSha}\`** |
+| **Commit measured** | **\`${data.sourceRevision}\`** |
 | Base it sits on | \`${data.machine.gitBase}\` |
 | Working tree | ${data.machine.workingTree} |
 | Taken | ${data.machine.takenAt} |
 | Machine load | ${data.load.before.toFixed(2)} before, ${data.load.after.toFixed(2)} after — **recorded, not gated** |
 | Warm-up / samples | ${data.options.warmupQuanta} discarded, ${data.options.measureQuanta} timed quanta per row |
 | Budget | ${budget.toFixed(4)} ms = 128 frames ÷ 48 kHz |
+
+Measured-source digests:
+
+${sourceDigestList()}
 
 ### On the audio thread — these share the one ${budget.toFixed(3)} ms deadline
 

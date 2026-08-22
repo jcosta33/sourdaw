@@ -82,7 +82,7 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
         signal?.throwIfAborted();
         throw new Error(`Crumbs content preparation ${outcome} for ${deviceId}`);
     },
-    'grand-boule': ({ deviceId, port }) => prepareOfflineGrandBoule({ deviceId, port }),
+    'grand-boule': ({ deviceState, port }) => prepareOfflineGrandBoule({ deviceState, port }),
     gluten: null,
     // Every control the panel owns is a `CrustPatch` key, and every one of them
     // is encoded to a number by `crustParamBridge` and persisted as a

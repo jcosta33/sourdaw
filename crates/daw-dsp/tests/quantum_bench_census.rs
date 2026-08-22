@@ -55,7 +55,119 @@ fn crate_root() -> PathBuf {
 /// than re-implementing the check inside the test — a fixture test that
 /// reimplements the predicate proves the reimplementation, not the guard.
 fn device_is_covered(bench_source: &str, type_name: &str) -> bool {
-    source_without_comments(bench_source).contains(&format!("{type_name}::new"))
+    executable_function_bodies(bench_source).iter().any(|body| {
+        let marker = format!("{type_name}::new");
+        body.find(&marker)
+            .is_some_and(|index| !body[..index].contains("return"))
+    })
+}
+
+fn source_without_non_code(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut chars = source.chars().peekable();
+    let mut mode = 0_u8;
+    let mut escaped = false;
+    while let Some(ch) = chars.next() {
+        if mode == 1 {
+            if ch == '\n' {
+                mode = 0;
+                output.push('\n');
+            } else {
+                output.push(' ');
+            }
+        } else if mode == 2 {
+            if ch == '*' && chars.peek() == Some(&'/') {
+                output.push(' ');
+                output.push(' ');
+                chars.next();
+                mode = 0;
+            } else {
+                output.push(if ch == '\n' { '\n' } else { ' ' });
+            }
+        } else if mode == 3 || mode == 4 {
+            output.push(if ch == '\n' { '\n' } else { ' ' });
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if (mode == 3 && ch == '"') || (mode == 4 && ch == '\'') {
+                mode = 0;
+            }
+        } else if ch == '/' && chars.peek() == Some(&'/') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            mode = 1;
+        } else if ch == '/' && chars.peek() == Some(&'*') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            mode = 2;
+        } else if ch == '"' {
+            output.push(' ');
+            mode = 3;
+        } else if ch == '\'' {
+            output.push(' ');
+            mode = 4;
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
+fn executable_function_bodies(source: &str) -> Vec<String> {
+    let source = source_without_non_code(source);
+    let bytes = source.as_bytes();
+    let mut bodies = Vec::new();
+    let mut cursor = 0;
+    while let Some(offset) = source[cursor..].find("fn ") {
+        let start = cursor + offset;
+        let Some(open_offset) = source[start..].find('{') else {
+            break;
+        };
+        let open = start + open_offset;
+        let mut depth = 0_i32;
+        for index in open..bytes.len() {
+            match bytes[index] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        bodies.push(source[open + 1..index].to_string());
+                        cursor = index + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if cursor <= open {
+            break;
+        }
+    }
+    bodies
+}
+
+fn named_function_body(source: &str, name: &str) -> Option<String> {
+    let source = source_without_non_code(source);
+    let declaration = format!("fn {name}");
+    let start = source.find(&declaration)?;
+    let open = start + source[start..].find('{')?;
+    let mut depth = 0_i32;
+    for (offset, byte) in source.as_bytes()[open..].iter().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(source[open + 1..open + offset].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// A census marker must be executable source, never a stale prose reference.
@@ -108,6 +220,7 @@ struct Device {
 /// Kept as a free function over a `&str` so the broken-fixture tests at the
 /// bottom can drive it without writing files.
 fn device_type_in_module_source(source: &str) -> Option<String> {
+    let source = source_without_non_code(source);
     if !source.contains("#[wasm_bindgen]") {
         return None;
     }
@@ -232,6 +345,7 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
         .expect("browser WASM recipes must be readable");
     let runner = std::fs::read_to_string(root.join("benches/wasm/run.mjs"))
         .expect("browser WASM runner must be readable");
+    let executable_recipes = source_without_non_code(&recipes);
     let processor = source_without_comments(&processor);
     let recipes = source_without_comments(&recipes);
     let runner = source_without_comments(&runner);
@@ -246,6 +360,15 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
         assert!(
             recipes.contains(required),
             "the browser WASM recipe/census is missing Grand Boule marker `{required}`"
+        );
+    }
+    for required in [
+        "activeVoices: () => instance.active_voices()",
+        "expectSounding: struck",
+    ] {
+        assert!(
+            executable_recipes.contains(required),
+            "the browser Grand Boule measurement lacks executable exact-occupancy proof `{required}`"
         );
     }
     for required in ["const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]]"] {
@@ -279,15 +402,17 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
 
 #[test]
 fn grand_boule_remains_in_the_native_cost_bench() {
-    let bench = source_without_comments(
-        &std::fs::read_to_string(crate_root().join("benches/quantum.rs"))
-            .expect("native cost bench must be readable"),
-    );
-    assert!(bench.contains("GrandBouleInstance::new"));
-    assert!(bench.contains("bench_grand_boule_process_block"));
-    assert!(bench.contains("bench_grand_boule_instance"));
-    assert!(bench.contains("REFERENCE_PROJECT_WORKER"));
-    assert!(bench.contains("WORKER Grand Boule"));
+    let bench = std::fs::read_to_string(crate_root().join("benches/quantum.rs"))
+        .expect("native cost bench must be readable");
+    assert!(device_is_covered(&bench, "GrandBouleInstance"));
+    let row = named_function_body(&bench, "row_grand_boule")
+        .expect("Grand Boule measured row must exist");
+    for required in ["active_voices", "assert_eq!", "GRAND_BOULE_POOL"] {
+        assert!(
+            row.contains(required),
+            "Grand Boule measured row lacks executable {required}"
+        );
+    }
 }
 
 /// The deliberately broken fixtures ADR 0015 rule 2 (iv) requires.
@@ -353,13 +478,15 @@ mod the_extractor_can_go_red {
         let device = device_type_in_module_source(WASM_DEVICE).expect("fixture is a device");
 
         // Crust's exact shape: the bench names other devices and not this one.
-        let bench_without_it = "let mut i = daw_dsp::gluten::GlutenInstance::new(SAMPLE_RATE);";
+        let bench_without_it =
+            "fn row() { let mut i = daw_dsp::gluten::GlutenInstance::new(SAMPLE_RATE); }";
         assert!(
             !device_is_covered(bench_without_it, &device),
             "a bench that never constructs the device must not count as covering it"
         );
 
-        let bench_with_it = format!("let mut i = daw_dsp::sourdough::{device}::new(SAMPLE_RATE);");
+        let bench_with_it =
+            format!("fn row() {{ let mut i = daw_dsp::sourdough::{device}::new(SAMPLE_RATE); }}");
         assert!(
             device_is_covered(&bench_with_it, &device),
             "a bench that does construct the device must count as covering it, or the census \
@@ -387,6 +514,14 @@ mod the_extractor_can_go_red {
     fn comment_only_constructor_markers_are_not_coverage() {
         assert!(!device_is_covered(
             "// SourdoughInstance::new(SAMPLE_RATE)\n/* SourdoughInstance::new(SAMPLE_RATE) */",
+            "SourdoughInstance"
+        ));
+    }
+
+    #[test]
+    fn string_and_unreachable_constructor_markers_are_not_coverage() {
+        assert!(!device_is_covered(
+            r#"fn decoy() { let marker = "SourdoughInstance::new(SAMPLE_RATE)"; return; SourdoughInstance::new(SAMPLE_RATE); }"#,
             "SourdoughInstance"
         ));
     }

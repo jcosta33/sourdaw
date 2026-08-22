@@ -22,8 +22,8 @@ import {
 
 type MorphPanelProps = {
     morph: GrandBouleMorphState;
-    onMorphPositionChange: (value: number) => void;
-    onLayerBalanceChange: (value: number) => void;
+    onMorphPositionChange: (value: number, isTransient?: boolean) => void;
+    onLayerBalanceChange: (value: number, isTransient?: boolean) => void;
     onModelAChange: (modelId: string) => void;
     onModelBChange: (modelId: string) => void;
     onEnabledChange: (enabled: boolean) => void;
@@ -84,7 +84,7 @@ const MorphKnob = ({
     max: number;
     step: number;
     defaultValue: number;
-    onChange: (value: number) => void;
+    onChange: (value: number, isTransient?: boolean) => void;
     readout: string;
 }): ReactElement => (
     <Stack align="center" gap={1}>

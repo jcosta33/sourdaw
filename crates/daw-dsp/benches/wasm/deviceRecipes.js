@@ -811,12 +811,6 @@ export function buildDevices({
             }
         };
         strike();
-        const soloInstance = new dsp.GrandBouleInstance(SAMPLE_RATE, 64);
-        const soloReference = makeSoloReference({
-            instance: soloInstance,
-            module: dsp,
-            strike: () => soloInstance.note_on(notes[Math.floor(notes.length / 2)], 0.8),
-        });
         devices.push(
             heldInstrument({
                 id: 'grand_boule',
@@ -825,8 +819,9 @@ export function buildDevices({
                 instance,
                 module: dsp,
                 struck,
+                expectSounding: struck,
+                activeVoices: () => instance.active_voices(),
                 restrike: strike,
-                soloReference,
             })
         );
     }

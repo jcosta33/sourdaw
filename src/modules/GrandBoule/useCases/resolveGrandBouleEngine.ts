@@ -6,9 +6,6 @@ import {
     type GrandBouleEngineHandle,
 } from '../repositories/grandBouleEngineHandle';
 
-import { applyGrandBouleMorphState } from './applyGrandBouleMorphState';
-import { hydrateGrandBouleMorphStateFromProject } from './hydrateGrandBouleMorphStateFromProject';
-
 type GrandBouleResolverDevice = {
     id: string;
 };
@@ -68,9 +65,5 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
         getAnalyserNode: () => strip.analyserNode,
         sampleRate: () => getAudioSampleRate(),
     };
-    const morph = hydrateGrandBouleMorphStateFromProject(input.deviceId);
-    if (morph) {
-        applyGrandBouleMorphState(engine, morph);
-    }
     return engine;
 }

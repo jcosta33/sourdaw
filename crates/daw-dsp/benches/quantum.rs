@@ -298,14 +298,8 @@ fn grand_boule_instance(sounding: usize) -> GrandBouleInstance {
 /// before the benchmark so the numbers below are readable as a claim about
 /// sounding voices.
 ///
-/// `GrandBouleEngine` exposes no active-voice count, so occupancy is
-/// established two ways. Structurally: every note struck here is distinct, so
-/// the retrigger branch never fires; `PianoVoice::steal_priority` ranks `Idle`
-/// above every sounding lifecycle/key-ownership class, so with 64 slots and at
-/// most 64 notes the allocator always lands on an empty slot and never steals
-/// a sounding one. Empirically: the RMS printed at the warm-up point and again
-/// after ~10 s of rendered audio — longer than any criterion sample — shows the
-/// strings still moving, and shows it growing with voice count.
+/// Occupancy is read from the engine and asserted after warm-up and after the
+/// long run. RMS remains a signal-health check, not a proxy for voice count.
 ///
 /// That RMS falls a long way over those 10 s, because that is what a struck
 /// piano string does. It does not make the voice cheaper. `amplitude` is the
@@ -324,6 +318,7 @@ fn verify_grand_boule_voices_stay_sounding() {
     eprintln!("[verify]  sounding | after warm-up | after 10 s |     peak @ 10 s");
     for sounding in GRAND_BOULE_VOICE_COUNTS {
         let (mut engine, mut left, mut right) = grand_boule_engine(sounding);
+        assert_eq!(engine.active_voice_count(), sounding);
         let warm = rms(&left, &right);
         for _ in 0..LONG_RUN_BLOCKS {
             left.fill(0.0);
@@ -331,6 +326,7 @@ fn verify_grand_boule_voices_stay_sounding() {
             engine.process_block(&mut left, &mut right);
         }
         let late = rms(&left, &right);
+        assert_eq!(engine.active_voice_count(), sounding);
         eprintln!(
             "[verify]  {sounding:>8} | {warm:>13.3e} | {late:>10.3e} | {:>15.3e}",
             peak(&left, &right)
@@ -352,6 +348,7 @@ fn bench_grand_boule_process_block(criterion: &mut Criterion) {
     group.measurement_time(Duration::from_secs(8));
     for sounding in GRAND_BOULE_VOICE_COUNTS {
         let (mut engine, mut left, mut right) = grand_boule_engine(sounding);
+        assert_eq!(engine.active_voice_count(), sounding);
         group.bench_with_input(
             BenchmarkId::from_parameter(sounding),
             &sounding,
@@ -374,6 +371,7 @@ fn bench_grand_boule_process_block(criterion: &mut Criterion) {
                 });
             },
         );
+        assert_eq!(engine.active_voice_count(), sounding);
     }
     group.finish();
 }
@@ -383,6 +381,7 @@ fn bench_grand_boule_instance(criterion: &mut Criterion) {
     group.measurement_time(Duration::from_secs(8));
     for sounding in GRAND_BOULE_VOICE_COUNTS {
         let mut instance = grand_boule_instance(sounding);
+        assert_eq!(instance.active_voices(), sounding as u32);
         group.bench_with_input(
             BenchmarkId::from_parameter(sounding),
             &sounding,
@@ -390,6 +389,7 @@ fn bench_grand_boule_instance(criterion: &mut Criterion) {
                 bencher.iter(|| black_box(instance.process(black_box(QUANTUM as u32))));
             },
         );
+        assert_eq!(instance.active_voices(), sounding as u32);
     }
     group.finish();
 }
@@ -1070,6 +1070,7 @@ fn row_fermenter() -> Row {
 /// is what a pedalled piano does anyway.
 fn row_grand_boule() -> Row {
     let mut instance = grand_boule_instance(GRAND_BOULE_POOL);
+    assert_eq!(instance.active_voices(), GRAND_BOULE_POOL as u32);
     let samples = sample_quanta(
         &mut instance,
         &mut |device, block| {
@@ -1082,13 +1083,15 @@ fn row_grand_boule() -> Row {
         &mut |device| device.process(QUANTUM as u32),
     );
     let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
+    let active = instance.active_voices();
+    assert_eq!(active, GRAND_BOULE_POOL as u32);
     Row {
         id: "grand_boule",
         label: "Grand Boule (64 voices, re-struck 1/s)",
         load: "live host constructs 64 voices; pedalled playing fills and holds the pool",
         distribution: summarise(samples),
-        occupancy: format!("64 voices (no active-voice export), output RMS {level:.3e}"),
-        occupancy_ok: level > 1.0e-5,
+        occupancy: format!("active_voices() = {active}, expected 64, output RMS {level:.3e}"),
+        occupancy_ok: active == GRAND_BOULE_POOL as u32 && level > 1.0e-5,
     }
 }
 

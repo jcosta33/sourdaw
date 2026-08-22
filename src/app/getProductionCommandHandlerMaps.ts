@@ -3,6 +3,7 @@ import { getAiOrganizationHandlers } from '#/modules/AiRuntime/useCases';
 import { getArrangementHandlers, getSongStructureHandlers } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
+import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getRaveHandlers } from '#/modules/BrowserAi/useCases';
@@ -62,6 +63,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getVersionControlHandlers(),
         getDawProjectHandlers(),
         getFinalFeatureHandlers(),
+        getGrandBouleHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),

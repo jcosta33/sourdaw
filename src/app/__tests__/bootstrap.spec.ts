@@ -281,7 +281,8 @@ vi.mock('#/modules/Gluten/stores', () => ({
 }));
 
 vi.mock('#/modules/GrandBoule/useCases', () => ({
-    initGrandBouleDeviceStatePersistence: () => noop,
+    getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
+    initGrandBouleSubscribers: () => noop,
     setGrandBouleEventBus: noop,
 }));
 
@@ -469,6 +470,7 @@ describe('bootstrap', () => {
         'VersionControl',
         'DawProject',
         'FinalFeature',
+        'GrandBoule',
         'NodeView',
         'WebMidiInput',
         'Rave',

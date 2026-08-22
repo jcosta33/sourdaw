@@ -1,14 +1,8 @@
-import { createDefaultMorphState } from '../models/GrandBouleMorphState';
+import { readGrandBouleMorphState } from '../models/GrandBouleDeviceState';
 import { projectGrandBouleMorphState } from '../models/projectGrandBouleMorphState';
-import { createGrandBouleStore } from '../stores/grandBouleStore';
 
-import { hydrateGrandBouleMorphStateFromProject } from './hydrateGrandBouleMorphStateFromProject';
-
-export function prepareOfflineGrandBoule({ deviceId, port }: { deviceId: string; port: MessagePort }): void {
-    const morph =
-        hydrateGrandBouleMorphStateFromProject(deviceId) ??
-        createGrandBouleStore(deviceId).value?.morph ??
-        createDefaultMorphState();
+export function prepareOfflineGrandBoule({ deviceState, port }: { deviceState: unknown; port: MessagePort }): void {
+    const morph = readGrandBouleMorphState(deviceState);
     for (const parameter of projectGrandBouleMorphState(morph)) {
         port.postMessage({ type: 'param', ...parameter });
     }

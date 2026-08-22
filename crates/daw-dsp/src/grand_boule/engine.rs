@@ -145,13 +145,13 @@ impl GrandBouleEngine {
             velocity_curve: 1.0,
             sample_rate,
             temperament: Temperament::Equal,
-            hammer_hardness_scale: 1.0,
-            hammer_mass_scale: 1.0,
-            soundboard_brightness: 0.55,
+            hammer_hardness_scale: 0.92,
+            hammer_mass_scale: 1.08,
+            soundboard_brightness: 0.48,
             pending_channel: 0,
-            sympathetic_level: 0.5,
-            body_resonance: 0.6,
-            tone_color: 0.0,
+            sympathetic_level: 0.58,
+            body_resonance: 0.52,
+            tone_color: -0.08,
             stretch_amount: 1.0,
             attack_bite: 1.0,
             voice_quality: VoiceQuality::Standard,
@@ -196,6 +196,11 @@ impl GrandBouleEngine {
 
     pub fn voice_count(&self) -> usize {
         self.voices.len()
+    }
+
+    /// Number of currently sounding playable voices.
+    pub fn active_voice_count(&self) -> usize {
+        self.voices.iter().filter(|voice| !voice.is_idle()).count()
     }
 
     pub fn pedals(&self) -> &PedalState {
@@ -795,6 +800,21 @@ impl GrandBouleEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn constructor_uses_the_balanced_grand_voicing() {
+        let engine = GrandBouleEngine::new(48_000.0, DEFAULT_VOICE_COUNT);
+        let actual = (
+            engine.hammer_hardness_scale,
+            engine.hammer_mass_scale,
+            engine.soundboard_brightness,
+            engine.sympathetic_level,
+            engine.body_resonance,
+            engine.tone_color,
+        );
+        assert_eq!(actual, (0.92, 1.08, 0.48, 0.58, 0.52, -0.08));
+        assert_ne!(actual, (1.0, 1.0, 0.55, 0.5, 0.6, 0.0));
+    }
 
     /// Render long enough for every strike burst to finish, so a later burst
     /// count reads only what the event under test triggered.

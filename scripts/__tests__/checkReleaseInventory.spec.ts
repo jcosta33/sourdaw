@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -8,8 +9,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
     assertGrandBouleDesignAroundSource,
+    assertGrandBouleMeasurementAdmission,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
+    assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
@@ -129,7 +132,34 @@ function writeDistributedWasmFixture(root: string, binaryExport = 'allowed_insta
 
 function writeGrandBouleReleaseFixture(root: string): void {
     for (const [path, contents] of [
-        ['crates/daw-dsp/src/grand_boule/engine.rs', 'native engine'],
+        [
+            'crates/daw-dsp/src/grand_boule/engine.rs',
+            `struct GrandBouleEngine {}
+impl GrandBouleEngine {
+    pub fn new(sample_rate: f32, voice_count: usize) -> Self {
+        Self {
+            hammer_hardness_scale: 0.92,
+            hammer_mass_scale: 1.08,
+            soundboard_brightness: 0.48,
+            sympathetic_level: 0.58,
+            body_resonance: 0.52,
+            tone_color: -0.08,
+        }
+    }
+}`,
+        ],
+        ['crates/daw-dsp/src/grand_boule/attack_sampler.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/duplex.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/hammer.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/longitudinal.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/mechanical_noise.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/midi2.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/mod.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/pedals.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/radiation.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/string.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/sympathetic.rs', 'project source'],
+        ['crates/daw-dsp/src/grand_boule/voice.rs', 'project source'],
         [
             'crates/daw-dsp/src/grand_boule/soundboard.rs',
             `const FIR_STAGE_COUNT: usize = 12;
@@ -185,25 +215,98 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/AudioEngine/workers/grandBouleEngineWorker.ts', 'export const worker = 1;'],
         ['src/modules/AudioEngine/worklets/grandBouleEngineCore.ts', 'export const core = 1;'],
         ['src/modules/AudioEngine/worklets/grandBouleProcessor.ts', 'export const processor = 1;'],
+        ['.agents/decisions/0035-readmit-grand-boule.md', '# Grand Boule admission'],
+        ['src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts', 'export const presets = [];'],
+        ['src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx', 'export const tab = 1;'],
+        [
+            'src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts',
+            'export const factories = 1;',
+        ],
+        [
+            'src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts',
+            'export const types = 1;',
+        ],
+        ['src/utils/nativeDspDeviceTypes.ts', 'export const types = 1;'],
+        ['src/modules/AudioEngine/engine/wasmDeviceRegistry.ts', 'export const registry = 1;'],
+        ['src/modules/AudioEngine/models/AudioEngineState.ts', 'export const state = 1;'],
+        ['src/modules/AudioEngine/repositories/createWebAudioEngine.ts', 'export const engine = 1;'],
+        ['src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts', 'export const schedule = 1;'],
+        ['src/app/bootstrap.ts', 'export const bootstrap = 1;'],
+        ['src/app/getProductionCommandHandlerMaps.ts', 'export const handlers = 1;'],
+        ['src/utils/handlerContract.ts', 'export type Action = unknown;'],
+        ['src/app/prepareOfflineDeviceSetup.ts', 'export const offline = 1;'],
+        ['src/modules/AudioEngine/useCases/buildDeviceChain.ts', 'export const chain = 1;'],
+        ['src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts', 'export const prepare = 1;'],
+        ['crates/daw-dsp/benches/quantum.rs', 'fn grand_boule() {}'],
+        ['crates/daw-dsp/benches/wasm/deviceRecipes.js', 'export const grandBoule = 1;'],
+        ['crates/daw-dsp/tests/quantum_bench_census.rs', 'fn census() {}'],
+        ['scripts/checkReleaseInventory.ts', 'export const check = 1;'],
     ] as const) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), contents);
     }
     execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
+}
+
+function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
+    const sourcePaths = [
+        'crates/daw-dsp/benches/quantum.rs',
+        'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+        'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+        'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+        'public/wasm/manifest.json',
+    ];
+    for (const path of sourcePaths) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), `measured source ${path}`);
+    }
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync(
         'git',
-        [
-            'add',
-            'crates/daw-dsp/src/grand_boule',
-            'src/modules/GrandBoule',
-            'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            'src/infra/release/deviceReleaseAdmission.ts',
-            'src/modules/AudioEngine',
-        ],
+        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'source'],
         {
             cwd: root,
         }
     );
+    const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const sourceDigests = Object.fromEntries(
+        sourcePaths.map((path) => [
+            path,
+            createHash('sha256')
+                .update(readFileSync(join(root, path)))
+                .digest('hex'),
+        ])
+    );
+    const detail = 'active_voices() = 64, expected 64 from 64 note-ons, output RMS 1.000e-1';
+    const data = {
+        sourceRevision: revision,
+        sourceDigests,
+        machine: { gitSha: revision, workingTree: 'clean' },
+        budgetMs: 2.666,
+        referenceProject: { audioWorstQuantumUpperMs: 2.1, workerMedianMs: 2.2 },
+        rows: [
+            {
+                id: 'grand_boule',
+                costSite: 'worker',
+                warmVerify: { ok: true, detail },
+                lateVerify: { ok: true, detail },
+            },
+        ],
+    };
+    const jsonPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.json');
+    const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+    writeFileSync(jsonPath, JSON.stringify(data));
+    writeFileSync(
+        markdownPath,
+        [
+            revision,
+            detail,
+            ...Object.entries(sourceDigests).flatMap(([path, digest]) => [path, `sha256:${digest}`]),
+        ].join('\n')
+    );
+    return { jsonPath, revision };
 }
 
 function inventory(): ReleaseInventory {
@@ -309,6 +412,22 @@ describe('release inventory', () => {
             writeGrandBouleReleaseFixture(root);
             writeFileSync(voicingsPath, `${readFileSync(voicingsPath, 'utf8')}\nconst oldId = 'steinway-d';\n`);
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('legacy branded id');
+
+            writeGrandBouleReleaseFixture(root);
+            const enginePath = join(root, 'crates/daw-dsp/src/grand_boule/engine.rs');
+            writeFileSync(
+                enginePath,
+                `// hammer_hardness_scale: 0.92, hammer_mass_scale: 1.08
+                 const DECOY: &str = "soundboard_brightness: 0.48";
+                 struct GrandBouleEngine {}
+                 impl GrandBouleEngine {
+                   pub fn new(sample_rate: f32, voice_count: usize) -> Self {
+                     Self { hammer_hardness_scale: 1.0, hammer_mass_scale: 1.0, soundboard_brightness: 0.55,
+                       sympathetic_level: 0.5, body_resonance: 0.6, tone_color: 0.0 }
+                   }
+                 }`
+            );
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('Rust constructor');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -375,6 +494,31 @@ describe('release inventory', () => {
                                const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);
                            }
                        }`
+            );
+            expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(
+        repositoryDistributedArtifacts.textArtifacts.filter(
+            (path) => repositoryDawDspArtifacts.has(path) && path.endsWith('.js')
+        )
+    )('rejects unreachable or nested constructor calls in %s', (path) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-wasm-unreachable-'));
+        try {
+            writeDistributedWasmFixture(root);
+            writeFileSync(
+                join(root, path),
+                `export class GrandBouleInstance {
+                    constructor(sample_rate, voice_count) {
+                        return;
+                        if (false) wasm.grandbouleinstance_new(sample_rate, voice_count);
+                    }
+                }`
             );
             expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
@@ -528,7 +672,7 @@ describe('release inventory', () => {
             const before = grandBouleReleaseInventoryContract(root);
             expect(before.retention).toBe('keep');
             expect(before.releaseModes).toEqual(['source', 'web', 'desktop']);
-            expect(before.paths).toEqual(GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ path }) => path));
+            expect(before.paths).toEqual(GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ paths }) => [...paths]));
             expect(before.paths).toContain('src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts');
             expect(before.paths).toContain('src/infra/release/deviceReleaseAdmission.ts');
             expect(before.paths).toContain('src/modules/AudioEngine/worklets/grandBoule*.ts');
@@ -552,6 +696,68 @@ describe('release inventory', () => {
                 'changed descriptor'
             );
             expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+
+            const representatives = [
+                'crates/daw-dsp/src/grand_boule/engine.rs',
+                '.agents/decisions/0035-readmit-grand-boule.md',
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/infra/release/deviceReleaseAdmission.ts',
+                'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+                'src/modules/GrandBoule/models/GrandBouleConfig.ts',
+                'src/app/prepareOfflineDeviceSetup.ts',
+                'crates/daw-dsp/benches/quantum.rs',
+            ];
+            writeGrandBouleReleaseFixture(root);
+            const baseline = grandBouleReleaseInventoryContract(root).digests;
+            for (const [index, path] of representatives.entries()) {
+                const absolute = join(root, path);
+                const original = readFileSync(absolute, 'utf8');
+                writeFileSync(absolute, `${original}\nmutation-${index}`);
+                const changed = grandBouleReleaseInventoryContract(root).digests;
+                expect(
+                    changed.flatMap((digest, changedIndex) => (digest === baseline[changedIndex] ? [] : [changedIndex]))
+                ).toEqual([index]);
+                writeFileSync(absolute, original);
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects every tracked Rust file without an admission basis', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-source-gap-'));
+        try {
+            writeGrandBouleReleaseFixture(root);
+            const unsupported = join(root, 'crates/daw-dsp/src/grand_boule/unsupported.rs');
+            writeFileSync(unsupported, 'project source');
+            execFileSync('git', ['add', 'crates/daw-dsp/src/grand_boule/unsupported.rs'], { cwd: root });
+            expect(() => assertGrandBouleRustSourceAdmission(root)).toThrow('unsupported attribution gap');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('binds the measured row to exact voice proof, source bytes, revision, and Markdown', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const original = readFileSync(jsonPath, 'utf8');
+            const data = JSON.parse(original) as {
+                sourceDigests: Record<string, string>;
+                rows: Array<{ warmVerify: { detail: string } }>;
+            };
+            data.rows[0]!.warmVerify.detail = 'active_voices() = 63, expected 64';
+            writeFileSync(jsonPath, JSON.stringify(data));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('exactly 64 active voices');
+
+            const changed = JSON.parse(original) as {
+                sourceDigests: Record<string, string>;
+            };
+            changed.sourceDigests['crates/daw-dsp/benches/quantum.rs'] = '0'.repeat(64);
+            writeFileSync(jsonPath, JSON.stringify(changed));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('source digest drifted');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

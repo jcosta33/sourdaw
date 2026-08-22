@@ -1,20 +1,25 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 
-import { toGrandBouleDeviceState } from '../models/GrandBouleDeviceState';
-import { createGrandBouleStore } from '../stores/grandBouleStore';
+import { readGrandBouleMorphState, toGrandBouleDeviceState } from '../models/GrandBouleDeviceState';
+import { type GrandBouleMorphState } from '../models/GrandBouleMorphState';
 
-export function commitGrandBouleDeviceState(deviceId: string): void {
-    const morph = createGrandBouleStore(deviceId).value?.morph;
-    if (!morph) {
-        return;
-    }
-    const next = toGrandBouleDeviceState(morph);
-    const current = trackStore.value?.tracks
+import { reconcileGrandBouleDeviceStateFromProject } from './reconcileGrandBouleDeviceStateFromProject';
+
+export function commitGrandBouleDeviceState(deviceId: string, morph: GrandBouleMorphState): void {
+    const device = trackStore.value?.tracks
         .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.deviceState;
-    if (JSON.stringify(current) === JSON.stringify(next)) {
+        .find((candidate) => candidate.id === deviceId && candidate.type === 'grand-boule');
+    if (!device) {
         return;
     }
-    void executeAppAction({ type: 'setDeviceState', payload: { deviceId, state: next } }, { skipMacroRecording: true });
+    const before = toGrandBouleDeviceState(readGrandBouleMorphState(device.deviceState));
+    const after = toGrandBouleDeviceState(morph);
+    if (JSON.stringify(before) === JSON.stringify(after)) {
+        reconcileGrandBouleDeviceStateFromProject(deviceId);
+        return;
+    }
+    void executeAppAction({ type: 'setGrandBouleDeviceState', payload: { deviceId, before, after } }).catch(() =>
+        reconcileGrandBouleDeviceStateFromProject(deviceId)
+    );
 }

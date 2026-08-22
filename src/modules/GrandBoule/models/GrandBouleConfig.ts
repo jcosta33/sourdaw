@@ -4,7 +4,7 @@
  */
 
 export type GrandBouleConfig = {
-    /** Master output gain (0.0 – 2.0, 1.0 = unity). */
+    /** Master output gain (0.0 - 1.0, 1.0 = the engine safety ceiling). */
     masterGain: number;
     /** Currently loaded preset id, or null if default. */
     activePresetId: string | null;
