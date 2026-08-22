@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { type ReactElement, useState, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { Sparkles, Loader2, Music, Mic, AudioLines, Download, Cpu } from 'lucide-react';
 
@@ -21,14 +21,17 @@ import {
     downloadModel,
     KOKORO_MODEL_ENTRY,
     getDdspPhraseId,
+    invalidateDdspPhraseIfSourceChanged,
     isDdspInstrumentId,
-    markDdspPhraseStale,
+    recordDdspPhraseSource,
     renderDdspInstrument,
 } from '#/modules/BrowserAi/useCases';
-import { type MidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { defaultGrooveTemplateState, grooveTemplateStore, type MidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../../models/TrackViewTypes';
@@ -68,12 +71,14 @@ type DdspLaunch = {
 };
 
 type DdspSourceFingerprintInput = {
-    clip: Pick<Clip, 'id' | 'startBeat' | 'endBeat'>;
     defaultTempo: number;
+    durationSec: number;
     instrument: { artifactVersion?: string; id: string } | undefined;
-    notes: ReadonlyArray<{ duration: number; pitch: number; startBeat: number; velocity: number }>;
-    tempoChanges: ReadonlyArray<{ beat: number; curve: 'instant' | 'linear'; id: string; tempo: number }>;
+    notes: ReadonlyArray<DdspTimedNote>;
+    projection: Pick<Clip, 'endBeat' | 'loopEnabled' | 'loopLength' | 'midiOffsetBeats' | 'startBeat'>;
 };
+
+type DdspTimedNote = { durationSec: number; pitch: number; startSec: number; velocity: number };
 
 const EMPTY_MIDI_STATE: MidiStoreState = {
     probabilitySeed: 0,
@@ -83,22 +88,77 @@ const EMPTY_MIDI_STATE: MidiStoreState = {
 };
 
 function ddspSourceFingerprint({
-    clip,
     defaultTempo,
+    durationSec,
     instrument,
     notes,
-    tempoChanges,
+    projection,
 }: DdspSourceFingerprintInput): string {
     return JSON.stringify([
-        clip.id,
-        clip.startBeat,
-        clip.endBeat,
         instrument?.id ?? null,
         instrument?.artifactVersion ?? null,
-        notes.map(({ pitch, velocity, startBeat, duration }) => [pitch, velocity, startBeat, duration]),
         defaultTempo,
-        tempoChanges.map(({ id, beat, tempo, curve }) => [id, beat, tempo, curve]),
+        durationSec,
+        notes.map(({ pitch, velocity, startSec, durationSec: noteDurationSec }) => [
+            pitch,
+            velocity,
+            startSec,
+            noteDurationSec,
+        ]),
+        projection.startBeat,
+        projection.endBeat,
+        projection.midiOffsetBeats ?? 0,
+        projection.loopEnabled ?? false,
+        projection.loopLength ?? null,
     ]);
+}
+
+function projectDdspNotes({
+    clip,
+    defaultTempo,
+    notes,
+    tempoChanges,
+}: {
+    clip: Clip;
+    defaultTempo: number;
+    notes: MidiStoreState['notesByClipId'][string];
+    tempoChanges: Parameters<typeof secondsBetweenBeats>[0];
+}): DdspTimedNote[] {
+    const loopProjection = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
+    const projectedNotes = Array.from({ length: loopProjection.iterationCount }, (_, iterationIndex) => {
+        const iterationStartBeat = clip.startBeat + iterationIndex * loopProjection.loopLengthBeats;
+        return notes.flatMap((note) =>
+            projectClipMidiEvents({
+                events: [note],
+                clipId: clip.id,
+                clipStartBeat: clip.startBeat,
+                clipEndBeat: clip.endBeat,
+                iterationStartBeat,
+                loopLengthBeats: loopProjection.loopLengthBeats,
+                midiOffsetBeats,
+                loopEnabled: clip.loopEnabled ?? false,
+            })
+        );
+    }).flat();
+    return projectedNotes.flatMap((note) => {
+        const endBeat = note.startBeat + note.duration;
+        if (endBeat <= note.startBeat) {
+            return [];
+        }
+        return [
+            {
+                pitch: note.pitch,
+                velocity: note.velocity,
+                startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, note.startBeat, defaultTempo),
+                durationSec: secondsBetweenBeats(tempoChanges, note.startBeat, endBeat, defaultTempo),
+            },
+        ];
+    });
 }
 
 export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElement => {
@@ -129,6 +189,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         storageUsedBytes: 0,
     });
     const midiState = useStore(midiStore, EMPTY_MIDI_STATE);
+    useStore(grooveTemplateStore, defaultGrooveTemplateState);
     const tempoMapState = useStore(tempoMapStore, { changes: [] });
     const transportState = useStore(transportStore, defaultTransportState);
 
@@ -143,12 +204,24 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const selectedDdspInstrument =
         readyDdspInstruments.find((instrument) => instrument.id === ddspInstrumentId) ?? readyDdspInstruments[0];
     const ddspNotes = midiState.notesByClipId[clip.id] ?? [];
-    const currentDdspSourceFingerprint = ddspSourceFingerprint({
+    const ddspDurationSec = secondsBetweenBeats(
+        tempoMapState.changes,
+        clip.startBeat,
+        clip.endBeat,
+        transportState.tempo
+    );
+    const projectedDdspNotes = projectDdspNotes({
         clip,
         defaultTempo: transportState.tempo,
-        instrument: selectedDdspInstrument,
         notes: ddspNotes,
         tempoChanges: tempoMapState.changes,
+    });
+    const currentDdspSourceFingerprint = ddspSourceFingerprint({
+        defaultTempo: transportState.tempo,
+        durationSec: ddspDurationSec,
+        instrument: selectedDdspInstrument,
+        notes: projectedDdspNotes,
+        projection: clip,
     });
 
     // Every AI action here runs for seconds while the panel stays interactive, so each one has
@@ -174,7 +247,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setDdspInstrumentId(selectedDdspInstrument?.id ?? '');
     }, [selectedDdspInstrument?.id]);
 
-    useEffect(
+    useLayoutEffect(
         () => () => {
             const activeDdspLaunch = ddspLaunchRef.current;
             ddspLaunchRef.current = null;
@@ -188,24 +261,23 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         fingerprint: currentDdspSourceFingerprint,
     });
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const previous = committedDdspSourceRef.current;
         committedDdspSourceRef.current = { clipId: clip.id, fingerprint: currentDdspSourceFingerprint };
-        if (previous.clipId !== clip.id || previous.fingerprint === currentDdspSourceFingerprint) {
-            return;
+        const sourceChanged = previous.clipId === clip.id && previous.fingerprint !== currentDdspSourceFingerprint;
+        const invalidated = invalidateDdspPhraseIfSourceChanged(clip.id, currentDdspSourceFingerprint);
+        if (sourceChanged) {
+            const activeLaunch = ddspLaunchRef.current;
+            if (activeLaunch !== null) {
+                ddspLaunchRef.current = null;
+                activeLaunch.controller.abort();
+                setIsRenderingDdsp(false);
+            }
         }
-
-        const activeLaunch = ddspLaunchRef.current;
-        if (activeLaunch !== null) {
-            ddspLaunchRef.current = null;
-            markDdspPhraseStale(clip.id);
-            activeLaunch.controller.abort();
-            setIsRenderingDdsp(false);
-        } else if (ddspResult !== null) {
-            markDdspPhraseStale(clip.id);
+        if (sourceChanged || invalidated) {
+            setDdspResult(null);
         }
-        setDdspResult(null);
-    }, [clip.id, currentDdspSourceFingerprint, ddspResult]);
+    }, [clip.id, currentDdspSourceFingerprint]);
 
     const stillOwnsPanel = ({ signal, launchClipId }: StillOwnsPanelInput): boolean => {
         if (signal.aborted) {
@@ -308,26 +380,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             return;
         }
 
-        const tempoChanges = tempoMapState.changes;
-        const defaultTempo = transportState.tempo;
-        const notes = ddspNotes.flatMap((note) => {
-            const rawStart = clip.startBeat + note.startBeat;
-            const rawEnd = rawStart + note.duration;
-            const clippedStart = Math.max(clip.startBeat, rawStart);
-            const clippedEnd = Math.min(clip.endBeat, rawEnd);
-            if (clippedEnd <= clippedStart) {
-                return [];
-            }
-            return [
-                {
-                    pitch: note.pitch,
-                    velocity: note.velocity,
-                    startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, clippedStart, defaultTempo),
-                    durationSec: secondsBetweenBeats(tempoChanges, clippedStart, clippedEnd, defaultTempo),
-                },
-            ];
-        });
-        if (notes.length === 0) {
+        if (projectedDdspNotes.length === 0) {
             notifyUser('No MIDI notes in this clip to render', 'error');
             return;
         }
@@ -345,14 +398,15 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             const result = await renderDdspInstrument({
                 phraseId: getDdspPhraseId(clip.id),
                 instrumentId,
-                notes,
-                durationSec: secondsBetweenBeats(tempoChanges, clip.startBeat, clip.endBeat, defaultTempo),
+                notes: projectedDdspNotes,
+                durationSec: ddspDurationSec,
                 signal: launch.controller.signal,
             });
             if (!stillOwnsDdspLaunch(launch, launchClipId)) {
                 return;
             }
             setDdspResult({ audio: result.audio, sampleRate: result.sampleRate, label: 'DDSP', name: instrument.name });
+            recordDdspPhraseSource(clip.id, launch.sourceFingerprint);
             notifyAiChange('Instrument render complete', [`${instrument.name} rendered — drag it onto an audio track`]);
         } catch (error) {
             if (!stillOwnsDdspLaunch(launch, launchClipId) || (error instanceof Error && error.name === 'AbortError')) {
