@@ -1,0 +1,25 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_a40848e8f8cca9::t_7a032a14e3156e 817,819-846,848-862
+  s_a40848e8f8cca9::t_4f41803a1c7654 865-883,885,888,899
+  s_a40848e8f8cca9::t_8f455d745e6f19 900,905-914,916-918,920-924
+  s_a40848e8f8cca9::t_99b1d029f96ebc 863-864
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_a40848e8f8cca9::t_17440b46f5fa4b 443,478-482,489-491,495-502,571,990
+  s_a40848e8f8cca9::t_acbf9017572cae 572-575,583-584,943,958
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9d5fe1980c188b84fd2811795c31ff9c0c0f2356",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
