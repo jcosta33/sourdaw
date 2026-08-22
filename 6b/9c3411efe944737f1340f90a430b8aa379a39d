@@ -1,0 +1,72 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_9fce2fecb2fd8c 13,20-22,24,46-86,682-830,834
+.agents/decisions/README.md
+  s_0a3429e31e555d::t_9fce2fecb2fd8c 46,52
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_b0066baaff1705 200-204,206,209,217,219-222,403,407-409,411-422,425-480,483,485-487,489-493,702,1351-1368,1370
+  s_0a3429e31e555d::t_7272eb1fa61a6b 1369
+.agents/decisions/0030-exact-model-release-admission.md
+  s_0a3429e31e555d::t_700c78a57a7de4 5,22-24
+.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md
+  s_0a3429e31e555d::t_504a1e83f15bfc 1-60
+electron/__tests__/webviewSecurity.spec.ts
+  s_0a3429e31e555d::t_f784e8103485fb 25,45,94-97,106,108-117,128-132
+electron/protocol.ts
+  s_0a3429e31e555d::t_9b7841637a447a 69-71,74-78,82
+public/legal/Magenta.js-NOTICE.txt
+  s_0a3429e31e555d::t_78396c1535831b 21-24
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_84d61cafca5128 40,48-51
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_efa921681e816e 9-10,81,87-89,97-131,133-134,1025-1026,1029-1031,1058,1067-1128,1152,1162-1165,1660-1661
+src/infra/release/modelReleaseAdmission.ts
+  s_0a3429e31e555d::t_784c1b468bb89f 3
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_0a3429e31e555d::t_a0608c4e6365d6 1,13,15,18,31-164,289,326-327,332,334-340
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_0a3429e31e555d::t_1301b69a33d0c1 14-16,25,27,31-34,43-51,55-56,78-79,81-158,161-174,176-179,182-234
+src/modules/BrowserAi/useCases/__tests__/capabilityColdStart.spec.ts
+  s_0a3429e31e555d::t_68725c5e28854e 15,34-48,102-104,124-126
+src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts
+  s_0a3429e31e555d::t_f3bc485e656d47 80
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_0a3429e31e555d::t_c251f636be6e09 10,17,139-225
+src/modules/BrowserAi/useCases/__tests__/downloadModel.spec.ts
+  s_0a3429e31e555d::t_801bcbc3dc1971 96-98,104-106,114-140
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_0a3429e31e555d::t_f9c2d29c21fe30 11,24,40,82-88,92,119,133,136,142-143,149-154,165-185,197,228,251,261-323,335,357,383,407,432,462
+src/modules/BrowserAi/useCases/__tests__/removeModel.spec.ts
+  s_0a3429e31e555d::t_d7177da8819d30 52-64,82,85,87-88,104,106-128,142,144
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_0a3429e31e555d::t_49199f5ed312d1 14-17,55,131-145
+src/modules/BrowserAi/useCases/downloadDdspInstrument.ts
+  s_0a3429e31e555d::t_7801297141450f 70-85,87,97-103,106-107
+src/modules/BrowserAi/useCases/downloadModel.ts
+  s_0a3429e31e555d::t_f656bd8f45b038 35-37
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_0a3429e31e555d::t_b34fb7f4587b54 22,50,53-60,138-145,152
+src/modules/BrowserAi/useCases/removeModel.ts
+  s_0a3429e31e555d::t_eb7ee32ad68787 22-24
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_0a3429e31e555d::t_6ea3e495826925 3,118-120
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_0a3429e31e555d::t_1bbfd01ea1bbbe 106
+tests/e2e/modelManagerAdmission.spec.ts
+  s_0a3429e31e555d::t_14b1af5e756235 25,29-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6b9c3411efe944737f1340f90a430b8aa379a39d",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
