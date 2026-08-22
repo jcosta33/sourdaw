@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
@@ -55,24 +55,40 @@ vi.mock('#/modules/Arrangement/stores', async () => {
     };
 });
 
-vi.mock('../../transformers/promptParser/parsing', () => ({
-    tryPresetMatch: vi.fn(() => []),
-    buildPresetContext: vi.fn(() => ({})),
-    tryParameterizedPath: vi.fn(() => []),
-    tryCompoundFastPath: vi.fn(() => null),
-}));
+vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../transformers/promptParser/parsing')>();
+    return {
+        ...original,
+        tryPresetMatch: vi.fn(original.tryPresetMatch),
+        buildPresetContext: vi.fn(original.buildPresetContext),
+        tryParameterizedPath: vi.fn(original.tryParameterizedPath),
+        tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
+    };
+});
 
-vi.mock('../getProjectContext', () => ({
-    getProjectContext: vi.fn(),
-}));
+vi.mock('../getProjectContext', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../getProjectContext')>();
+    return {
+        ...original,
+        getProjectContext: vi.fn(original.getProjectContext),
+    };
+});
 
-vi.mock('../llmOrchestration/inference', () => ({
-    generateToolPlanningOutcome: vi.fn(),
-}));
+vi.mock('../llmOrchestration/inference', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
+    return {
+        ...original,
+        generateToolPlanningOutcome: vi.fn(original.generateToolPlanningOutcome),
+    };
+});
 
-vi.mock('../agentReference/bridgeGroundedLlmToolCalls', () => ({
-    bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
-}));
+vi.mock('../agentReference/bridgeGroundedLlmToolCalls', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>();
+    return {
+        ...original,
+        bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
+    };
+});
 
 vi.mock('../../transformers/llmActionBridge', async () => {
     const actual = await vi.importActual<typeof import('../../transformers/llmActionBridge')>(
@@ -257,6 +273,10 @@ describe('parsePromptToActions', () => {
         mockBuildLlmActionSystemPrompt.mockClear();
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it.each([

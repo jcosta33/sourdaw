@@ -47,12 +47,17 @@ function reconcileAgentCommandWork(input: {
     runId: string;
     attemptId: string;
     estimates: readonly AgentWorkBudgetEstimate[];
+    actualRenderJobs?: number;
 }): void {
     for (const estimate of input.estimates) {
+        const consumed =
+            estimate.category === 'maxRenderJobs' && input.actualRenderJobs !== undefined
+                ? input.actualRenderJobs
+                : estimate.amount;
         agentRunLifecycle.reconcileBudgetAttempt({
             runId: input.runId,
             attemptId: `${input.attemptId}:${estimate.category}`,
-            consumed: estimate.amount,
+            consumed,
             mode: 'final',
             provenance: 'versioned-estimate',
         });

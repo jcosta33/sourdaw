@@ -75,7 +75,7 @@ export class ApplicationOwnedToolLoopRequestError extends Error {
     }
 }
 
-type ToolLoopLimits = Partial<typeof DEFAULT_LIMITS>;
+type ToolLoopLimits = Partial<Record<keyof typeof DEFAULT_LIMITS, number>>;
 
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;

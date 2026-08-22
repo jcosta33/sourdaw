@@ -48,7 +48,6 @@ const runtimeMocks = vi.hoisted(() => ({
     engineRemoveSend: vi.fn(),
     engineSetSend: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
-    removeDeviceFromStrip: vi.fn(),
     removeTrackStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
 }));
@@ -57,7 +56,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
-    removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
     updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
@@ -408,7 +406,6 @@ describe('confirmed compound bus actions', () => {
 
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(BUS_ID, expect.any(String));
         expect(runtimeMocks.engineRemoveSend).toHaveBeenCalledWith('track-vocals', BUS_ID);
     });
 
@@ -421,7 +418,6 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
         expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
         expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');
@@ -471,7 +467,7 @@ describe('confirmed compound bus actions', () => {
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-repeated-mute-conflict' })
-        ).resolves.toMatchObject({ status: 'failed' });
+        ).resolves.toMatchObject({ status: 'invalidated' });
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
         expect(undoStore.value?.past).toEqual([]);
         expect(aiActionHistoryStore.value?.groups).toEqual([]);

@@ -25,6 +25,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -81,7 +82,11 @@ const runtimeMocks = vi.hoisted(() => {
         removeDeviceFromStrip: vi.fn(),
         removeSend: vi.fn(),
         renderOffline: vi.fn(),
-        resolveToasterPadBinding: vi.fn(() => null),
+        resolveToasterPadBinding: vi.fn((_tracks: unknown, trackId: string) => ({
+            type: 'pad' as const,
+            padIndex: 0,
+            trackId,
+        })),
         setSend: vi.fn(),
         setTrackGain: vi.fn(),
         setTrackOutput: vi.fn(),
@@ -109,6 +114,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: vi.fn(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' })),
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
@@ -603,6 +609,7 @@ describe('drum bus prompt workflow', () => {
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         sidechainStore.set({ routes: [] });
         markerStore.set({ markers: [], sections: [] });
@@ -988,7 +995,7 @@ describe('drum bus prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);

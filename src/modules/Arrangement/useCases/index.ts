@@ -256,3 +256,4 @@ export { getAgentBuiltinDeviceFactoryManifest } from './getAgentBuiltinDeviceFac
 export { getArrangementHandlers } from './getArrangementHandlers';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
+export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';

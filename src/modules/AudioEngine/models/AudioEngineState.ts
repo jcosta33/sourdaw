@@ -483,9 +483,9 @@ export type AudioEngine = {
     /** Monotonic live-graph revision used to reject stale compiled deltas. */
     getRuntimeGraphRevision(): number;
     /** Composition-owned freshness authority; AudioEngine never reads project state directly. */
-    setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator): void;
+    setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator | null): void;
     /** Composition-owned exact topology authority; AudioEngine never reads project state directly. */
-    setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator): void;
+    setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator | null): void;
     /** Validated, immutable graph command applied only at the main-thread graph boundary. */
     applyRuntimeGraphDelta(delta: unknown): RuntimeGraphDeltaResult;
     /** Rehydration-only baseline; validates one complete strip before publishing it. */

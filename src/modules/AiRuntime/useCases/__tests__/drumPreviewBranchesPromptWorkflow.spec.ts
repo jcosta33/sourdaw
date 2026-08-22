@@ -30,6 +30,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
@@ -409,10 +410,12 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             pitchBendByClipId: {},
         });
         flushAutomergeStorageWrites();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
@@ -610,7 +613,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
 
         await confirmPendingChatActions({ confirmationId });
 
-        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('failed');
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('invalidated');
         expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
         expect(branchStore.value?.branches).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(0);

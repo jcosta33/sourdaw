@@ -10,6 +10,8 @@ export function createDeleteDrumPreviewBranchesHandler({
     canMutateBranchMetadata,
 }: CreateDeleteDrumPreviewBranchesHandlerInput) {
     return createHandler<'deleteDrumPreviewBranches'>({
+        canReapplyAfterDivergence: () => canMutateBranchMetadata(),
+        validate: () => canMutateBranchMetadata(),
         previewExecution: 'unsupported-external',
         execute: async (action) => {
             if (!canMutateBranchMetadata()) {

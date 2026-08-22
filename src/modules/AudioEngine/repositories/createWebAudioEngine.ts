@@ -614,7 +614,11 @@ class AudioEngineImpl implements AudioEngine {
             });
         }
 
-        const source = this.trackNodes.get(delta.before.id);
+        let source = this.trackNodes.get(delta.before.id);
+        if (!source && delta.before.devices.length === 0) {
+            this.ensureTrackStripInGraph(delta.before.id);
+            source = this.trackNodes.get(delta.before.id);
+        }
         if (!source || !this.matchesRuntimeDeviceChain(source, delta.before)) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
@@ -1204,11 +1208,11 @@ class AudioEngineImpl implements AudioEngine {
         return this.runtimeGraphRevision;
     }
 
-    public setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator): void {
+    public setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator | null): void {
         this.runtimeGraphProjectRevisionValidator = validator;
     }
 
-    public setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator): void {
+    public setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator | null): void {
         this.runtimeGraphTopologyValidator = validator;
     }
 

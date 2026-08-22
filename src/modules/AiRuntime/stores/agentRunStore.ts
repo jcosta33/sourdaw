@@ -109,9 +109,10 @@ function readRanges(value: unknown): Array<{ startBeat: number; endBeat: number 
             !isRecord(candidate) ||
             typeof candidate.startBeat !== 'number' ||
             !Number.isFinite(candidate.startBeat) ||
+            candidate.startBeat < 0 ||
             typeof candidate.endBeat !== 'number' ||
             !Number.isFinite(candidate.endBeat) ||
-            candidate.endBeat <= candidate.startBeat
+            candidate.endBeat < candidate.startBeat
         ) {
             return null;
         }
@@ -669,6 +670,17 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             const digest = readString(candidate.digest);
             return id === null || digest === null ? null : { id, digest };
         });
+        const sections =
+            rawSnapshot.sections === undefined
+                ? undefined
+                : readCollection(rawSnapshot.sections, (candidate) => {
+                      if (!isRecord(candidate)) {
+                          return null;
+                      }
+                      const id = readString(candidate.id);
+                      const digest = readString(candidate.digest);
+                      return id === null || digest === null ? null : { id, digest };
+                  });
         if (
             identity === null ||
             typeof rawSnapshot.tempo !== 'number' ||
@@ -678,6 +690,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
             selectedTrack === undefined ||
             selectableTargets === null ||
+            sections === null ||
             readNonNegativeInteger(rawSnapshot.targetCount) === null ||
             typeof rawSnapshot.truncated !== 'boolean'
         ) {
@@ -689,6 +702,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
             selectedTrack,
             selectableTargets,
+            ...(sections === undefined ? {} : { sections }),
             targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
             truncated: rawSnapshot.truncated,
         };
@@ -1048,203 +1062,204 @@ function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
     }
-    const runId = readString(value.runId);
-    const request = readString(value.request);
-    const createdAt = readTimestamp(value.createdAt);
-    const updatedAt = readTimestamp(value.updatedAt);
-    const mode = AGENT_EXECUTION_MODES.find((candidate) => candidate === value.mode);
-    const phase = AGENT_RUN_PHASES.find((candidate) => candidate === value.phase);
-    if (
-        runId === null ||
-        request === null ||
-        createdAt === null ||
-        updatedAt === null ||
-        mode === undefined ||
-        phase === undefined ||
-        !isRecord(value.revisions) ||
-        !isRecord(value.scope) ||
-        !isRecord(value.grants) ||
-        !isRecord(value.budgets) ||
-        !isRecord(value.cancellation) ||
-        !isRecord(value.manualResume)
-    ) {
-        return null;
-    }
-    const createdRevision = readNullableString(value.revisions.created);
-    const plannedRevision = readNullableString(value.revisions.planned);
-    const approvedRevision = readNullableString(value.revisions.approved);
-    const committedRevision = readNullableString(value.revisions.committed);
-    const targetIds = readStringArray(value.scope.targetIds);
-    const targetRanges = readRanges(value.scope.targetRanges);
-    const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
-    const protectedRanges = readRanges(value.scope.protectedRanges);
-    const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
-    const limits = readNumberRecord(value.budgets.limits);
-    const consumed = readNumberRecord(value.budgets.consumed);
-    const budgetAttempts = (() => {
-        if (value.budgetAttempts === undefined) {
-            return [];
-        }
-        return readCollection(value.budgetAttempts, (candidate) => {
-            if (!isRecord(candidate)) {
-                return null;
-            }
-            const attemptId = readString(candidate.attemptId);
-            const category = readString(candidate.category);
-            const reserved =
-                typeof candidate.reserved === 'number' && Number.isFinite(candidate.reserved)
-                    ? candidate.reserved
-                    : null;
-            const actual =
-                typeof candidate.actual === 'number' && Number.isFinite(candidate.actual) ? candidate.actual : null;
-            const provenance = (['provider-reported', 'versioned-estimate', 'unavailable'] as const).find(
-                (value) => value === candidate.provenance
-            );
-            let estimateMethod: AgentRunBudgetAttempt['estimateMethod'] | null = undefined;
-            if (candidate.estimateMethod !== undefined) {
-                estimateMethod =
-                    candidate.estimateMethod === 'compiled-provider-request-utf8-byte-token-ceiling-v1'
-                        ? 'compiled-provider-request-utf8-byte-token-ceiling-v1'
-                        : null;
-            }
-            return attemptId === null ||
-                category === null ||
-                reserved === null ||
-                actual === null ||
-                provenance === undefined ||
-                estimateMethod === null ||
-                typeof candidate.final !== 'boolean'
-                ? null
-                : {
-                      attemptId,
-                      category,
-                      reserved,
-                      actual,
-                      provenance,
-                      ...(estimateMethod === undefined ? {} : { estimateMethod }),
-                      final: candidate.final,
-                  };
-        });
-    })();
-    const plan = readAgentRunPlan(value.plan, {
-        targetIds: targetIds ?? [],
-        targetRanges: targetRanges ?? [],
-        protectedTargetIds: protectedTargetIds ?? [],
-        protectedRanges: protectedRanges ?? [],
-    });
-    const decision = readAgentRunDecision(value.decision);
-    const resume =
-        value.resume === undefined || value.resume === null
-            ? null
-            : (() => {
-                  if (!isRecord(value.resume)) {
-                      return null;
-                  }
-                  const sourceRunId = readString(value.resume.sourceRunId);
-                  const decisionId = readString(value.resume.decisionId);
-                  const selectedAlternativeId = readString(value.resume.selectedAlternativeId);
-                  const proposalIdentity = readString(value.resume.proposalIdentity);
-                  const capabilitySchemaIdentity = readString(value.resume.capabilitySchemaIdentity);
-                  const revision = readString(value.resume.revision);
-                  const selectedAlternative = value.resume.selectedAlternative;
-                  const scope = value.resume.scope;
-                  const grants = value.resume.grants;
-                  const budgets = value.resume.budgets;
-                  if (
-                      sourceRunId === null ||
-                      decisionId === null ||
-                      selectedAlternativeId === null ||
-                      proposalIdentity === null ||
-                      capabilitySchemaIdentity === null ||
-                      revision === null ||
-                      !isRecord(selectedAlternative) ||
-                      !isRecord(scope) ||
-                      !isRecord(grants) ||
-                      !isRecord(budgets)
-                  ) {
-                      return null;
-                  }
-                  const parsedDecision = readAgentRunDecision({
-                      decisionId,
-                      capabilitySchemaIdentity,
-                      proposalIdentity,
-                      budgets,
-                      revision,
-                      scope,
-                      grants,
-                      alternatives: [selectedAlternative],
-                      reason: 'resume',
-                      selectedAlternativeId,
-                      resumeAttemptId: null,
-                  });
-                  const alternative = parsedDecision?.alternatives[0];
-                  return parsedDecision === null ||
-                      parsedDecision === undefined ||
-                      alternative === undefined ||
-                      alternative.id !== selectedAlternativeId
-                      ? null
-                      : {
-                            sourceRunId,
-                            decisionId,
-                            selectedAlternativeId,
-                            selectedAlternative: alternative,
-                            proposalIdentity,
-                            capabilitySchemaIdentity,
-                            revision,
-                            scope: parsedDecision.scope,
-                            grants: parsedDecision.grants,
-                            budgets: parsedDecision.budgets,
-                        };
-              })();
-    const batches = readCollection(value.batches, readBatch);
-    const receipts = readCollection(value.receipts, readReceipt);
-    const renders = readCollection(value.renders, readArtifact);
-    const analyses = readCollection(value.analyses, readArtifact);
-    const providerUsage = readCollection(value.providerUsage, readProviderUsage);
-    const modelRoute = (() => {
-        const rawModelRoute = value.modelRoute;
-        if (rawModelRoute === undefined) {
-            return { requestedRoute: 'legacy-unknown' as const, selectedRouteId: null };
-        }
-        if (!isRecord(rawModelRoute)) {
+        const runId = readString(value.runId);
+        const request = readString(value.request);
+        const createdAt = readTimestamp(value.createdAt);
+        const updatedAt = readTimestamp(value.updatedAt);
+        const mode = AGENT_EXECUTION_MODES.find((candidate) => candidate === value.mode);
+        const phase = AGENT_RUN_PHASES.find((candidate) => candidate === value.phase);
+        if (
+            runId === null ||
+            request === null ||
+            createdAt === null ||
+            updatedAt === null ||
+            mode === undefined ||
+            phase === undefined ||
+            !isRecord(value.revisions) ||
+            !isRecord(value.scope) ||
+            !isRecord(value.grants) ||
+            !isRecord(value.budgets) ||
+            !isRecord(value.cancellation) ||
+            !isRecord(value.manualResume)
+        ) {
+            console.log('readAgentRun: failed header fields', { runId, request, createdAt, updatedAt, mode, phase, revisions: isRecord(value.revisions), scope: isRecord(value.scope), grants: isRecord(value.grants), budgets: isRecord(value.budgets), cancellation: isRecord(value.cancellation), manualResume: isRecord(value.manualResume) });
             return null;
         }
-        const requestedRoutes = ['auto', 'webllm', 'cloud', 'legacy-unknown'] as const;
-        const requestedRoute =
-            rawModelRoute.requestedRoute === 'native'
-                ? 'legacy-unknown'
-                : requestedRoutes.find((candidate) => candidate === rawModelRoute.requestedRoute);
-        const selectedRouteId = readNullableString(rawModelRoute.selectedRouteId);
-        return requestedRoute === undefined || selectedRouteId === undefined
-            ? null
-            : { requestedRoute, selectedRouteId };
-    })();
-    const errors = readCollection(value.errors, readError);
-    const saga = readSaga(value.saga);
-    const committedWork = readCollection(value.committedWork, readCommittedWork);
-    const retriableWork = readCollection(value.retriableWork, readRetriableWork);
-    const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
-    const workLeases = readCollection(value.workLeases, readWorkLease);
-    const contextEvidence =
-        value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
-    const cancellationGeneration = readNonNegativeInteger(value.cancellation.generation);
-    const requestedAt = readNullableTimestamp(value.cancellation.requestedAt);
-    const cancellationReason = readNullableString(value.cancellation.reason);
-    const consumerAcknowledgedAt = readNullableTimestamp(value.cancellation.consumerAcknowledgedAt);
-    const transportAcknowledgedAt = readNullableTimestamp(value.cancellation.transportAcknowledgedAt);
-    const backendAcknowledgedAt = readNullableTimestamp(value.cancellation.backendAcknowledgedAt);
-    const manualResumeReason = readNullableString(value.manualResume.reason);
-    const manualResumeWorkIds = readStringArray(value.manualResume.workIds);
-    const manualResumeRequiredAt = readNullableTimestamp(value.manualResume.requiredAt);
-    const createGrant = value.grants.create;
-    const deleteGrant = value.grants.delete;
-    const routingGrant = value.grants.routing;
-    const tempoGrant = value.grants.tempo;
-    const masterGrant = value.grants.master;
-    const fileGrant = value.grants.file;
-    const audioUploadGrant = value.grants.audioUpload;
-    const remoteGenerationGrant = value.grants.remoteGeneration;
-    const autoCommitGrant = value.grants.autoCommit;
+        const createdRevision = readNullableString(value.revisions.created);
+        const plannedRevision = readNullableString(value.revisions.planned);
+        const approvedRevision = readNullableString(value.revisions.approved);
+        const committedRevision = readNullableString(value.revisions.committed);
+        const targetIds = readStringArray(value.scope.targetIds);
+        const targetRanges = readRanges(value.scope.targetRanges);
+        const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
+        const protectedRanges = readRanges(value.scope.protectedRanges);
+        const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
+        const limits = readNumberRecord(value.budgets.limits);
+        const consumed = readNumberRecord(value.budgets.consumed);
+        const budgetAttempts = (() => {
+            if (value.budgetAttempts === undefined) {
+                return [];
+            }
+            return readCollection(value.budgetAttempts, (candidate) => {
+                if (!isRecord(candidate)) {
+                    return null;
+                }
+                const attemptId = readString(candidate.attemptId);
+                const category = readString(candidate.category);
+                const reserved =
+                    typeof candidate.reserved === 'number' && Number.isFinite(candidate.reserved)
+                        ? candidate.reserved
+                        : null;
+                const actual =
+                    typeof candidate.actual === 'number' && Number.isFinite(candidate.actual) ? candidate.actual : null;
+                const provenance = (['provider-reported', 'versioned-estimate', 'unavailable'] as const).find(
+                    (value) => value === candidate.provenance
+                );
+                let estimateMethod: AgentRunBudgetAttempt['estimateMethod'] | null = undefined;
+                if (candidate.estimateMethod !== undefined) {
+                    estimateMethod =
+                        candidate.estimateMethod === 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                            ? 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                            : null;
+                }
+                return attemptId === null ||
+                    category === null ||
+                    reserved === null ||
+                    actual === null ||
+                    provenance === undefined ||
+                    estimateMethod === null ||
+                    typeof candidate.final !== 'boolean'
+                    ? null
+                    : {
+                          attemptId,
+                          category,
+                          reserved,
+                          actual,
+                          provenance,
+                          ...(estimateMethod === undefined ? {} : { estimateMethod }),
+                          final: candidate.final,
+                      };
+            });
+        })();
+        const plan = readAgentRunPlan(value.plan, {
+            targetIds: targetIds ?? [],
+            targetRanges: targetRanges ?? [],
+            protectedTargetIds: protectedTargetIds ?? [],
+            protectedRanges: protectedRanges ?? [],
+        });
+        const decision = readAgentRunDecision(value.decision);
+        const resume =
+            value.resume === undefined || value.resume === null
+                ? null
+                : (() => {
+                      if (!isRecord(value.resume)) {
+                          return null;
+                      }
+                      const sourceRunId = readString(value.resume.sourceRunId);
+                      const decisionId = readString(value.resume.decisionId);
+                      const selectedAlternativeId = readString(value.resume.selectedAlternativeId);
+                      const proposalIdentity = readString(value.resume.proposalIdentity);
+                      const capabilitySchemaIdentity = readString(value.resume.capabilitySchemaIdentity);
+                      const revision = readString(value.resume.revision);
+                      const selectedAlternative = value.resume.selectedAlternative;
+                      const scope = value.resume.scope;
+                      const grants = value.resume.grants;
+                      const budgets = value.resume.budgets;
+                      if (
+                          sourceRunId === null ||
+                          decisionId === null ||
+                          selectedAlternativeId === null ||
+                          proposalIdentity === null ||
+                          capabilitySchemaIdentity === null ||
+                          revision === null ||
+                          !isRecord(selectedAlternative) ||
+                          !isRecord(scope) ||
+                          !isRecord(grants) ||
+                          !isRecord(budgets)
+                      ) {
+                          return null;
+                      }
+                      const parsedDecision = readAgentRunDecision({
+                          decisionId,
+                          capabilitySchemaIdentity,
+                          proposalIdentity,
+                          budgets,
+                          revision,
+                          scope,
+                          grants,
+                          alternatives: [selectedAlternative],
+                          reason: 'resume',
+                          selectedAlternativeId,
+                          resumeAttemptId: null,
+                      });
+                      const alternative = parsedDecision?.alternatives[0];
+                      return parsedDecision === null ||
+                          parsedDecision === undefined ||
+                          alternative === undefined ||
+                          alternative.id !== selectedAlternativeId
+                          ? null
+                          : {
+                                sourceRunId,
+                                decisionId,
+                                selectedAlternativeId,
+                                selectedAlternative: alternative,
+                                proposalIdentity,
+                                capabilitySchemaIdentity,
+                                revision,
+                                scope: parsedDecision.scope,
+                                grants: parsedDecision.grants,
+                                budgets: parsedDecision.budgets,
+                            };
+                  })();
+        const batches = readCollection(value.batches, readBatch);
+        const receipts = readCollection(value.receipts, readReceipt);
+        const renders = readCollection(value.renders, readArtifact);
+        const analyses = readCollection(value.analyses, readArtifact);
+        const providerUsage = readCollection(value.providerUsage, readProviderUsage);
+        const modelRoute = (() => {
+            const rawModelRoute = value.modelRoute;
+            if (rawModelRoute === undefined) {
+                return { requestedRoute: 'legacy-unknown' as const, selectedRouteId: null };
+            }
+            if (!isRecord(rawModelRoute)) {
+                return null;
+            }
+            const requestedRoutes = ['auto', 'webllm', 'cloud', 'legacy-unknown'] as const;
+            const requestedRoute =
+                rawModelRoute.requestedRoute === 'native'
+                    ? 'legacy-unknown'
+                    : requestedRoutes.find((candidate) => candidate === rawModelRoute.requestedRoute);
+            const selectedRouteId = readNullableString(rawModelRoute.selectedRouteId);
+            return requestedRoute === undefined || selectedRouteId === undefined
+                ? null
+                : { requestedRoute, selectedRouteId };
+        })();
+        const errors = readCollection(value.errors, readError);
+        const saga = readSaga(value.saga);
+        const committedWork = readCollection(value.committedWork, readCommittedWork);
+        const retriableWork = readCollection(value.retriableWork, readRetriableWork);
+        const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
+        const workLeases = readCollection(value.workLeases, readWorkLease);
+        const contextEvidence =
+            value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
+        const cancellationGeneration = readNonNegativeInteger(value.cancellation.generation);
+        const requestedAt = readNullableTimestamp(value.cancellation.requestedAt);
+        const cancellationReason = readNullableString(value.cancellation.reason);
+        const consumerAcknowledgedAt = readNullableTimestamp(value.cancellation.consumerAcknowledgedAt);
+        const transportAcknowledgedAt = readNullableTimestamp(value.cancellation.transportAcknowledgedAt);
+        const backendAcknowledgedAt = readNullableTimestamp(value.cancellation.backendAcknowledgedAt);
+        const manualResumeReason = readNullableString(value.manualResume.reason);
+        const manualResumeWorkIds = readStringArray(value.manualResume.workIds);
+        const manualResumeRequiredAt = readNullableTimestamp(value.manualResume.requiredAt);
+        const createGrant = value.grants.create;
+        const deleteGrant = value.grants.delete;
+        const routingGrant = value.grants.routing;
+        const tempoGrant = value.grants.tempo;
+        const masterGrant = value.grants.master;
+        const fileGrant = value.grants.file;
+        const audioUploadGrant = value.grants.audioUpload;
+        const remoteGenerationGrant = value.grants.remoteGeneration;
+        const autoCommitGrant = value.grants.autoCommit;
     if (
         createdRevision === undefined ||
         plannedRevision === undefined ||

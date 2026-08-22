@@ -89,7 +89,7 @@ describe('VoiceCommandOverlay', () => {
             errorText: null,
             finalText: '',
             interimText: '',
-            voiceMode: 'whisper',
+            voiceMode: 'browser',
             stopListening: vi.fn(),
         });
 

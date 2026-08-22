@@ -25,6 +25,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -320,10 +321,12 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
@@ -606,7 +609,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
 
         expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
         expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1.02);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed', executedActions: [] });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'invalidated', executedActions: [] });
         expect(undoStore.value?.past).toEqual([]);
     });
 

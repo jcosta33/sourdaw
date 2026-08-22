@@ -502,17 +502,18 @@ function reconcileAgentRunBudgetAttempt(input: {
             provenance: input.provenance,
             final: previous.final || input.mode === 'final',
         };
+        const consumedDelta = input.mode === 'final' ? actual - previous.reserved : additionalCeiling;
         return {
             ...run,
             budgetAttempts: attempts,
             budgets:
-                additionalCeiling === 0
+                consumedDelta === 0
                     ? run.budgets
                     : {
                           ...run.budgets,
                           consumed: {
                               ...run.budgets.consumed,
-                              [previous.category]: (run.budgets.consumed[previous.category] ?? 0) + additionalCeiling,
+                              [previous.category]: Math.max(0, (run.budgets.consumed[previous.category] ?? 0) + consumedDelta),
                           },
                       },
         };

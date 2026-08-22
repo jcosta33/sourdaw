@@ -18,6 +18,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -46,7 +47,12 @@ const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
-        ensureTrackStrip: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: { appRevision: 1, projectRevision: 'rev-1' },
+            runtimeRevision: 1,
+        })),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
         removeBusStrip: vi.fn(),
@@ -78,7 +84,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: runtimeMocks.initializeTrackStripFromSnapshot,
     removeBusStrip: runtimeMocks.removeBusStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
@@ -254,10 +260,12 @@ describe('delete muted empty tracks prompt workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -407,8 +415,12 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(
             trackStore.value?.tracks.filter((track) => !protectedBefore?.some((item) => item.id === track.id))
         ).toHaveLength(2);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ output: expect.objectContaining({ sourceId: 'track-muted-audio' }) })
+        );
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ output: expect.objectContaining({ sourceId: 'track-muted-midi' }) })
+        );
 
         await redo();
 
@@ -431,13 +443,17 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
-        runtimeMocks.ensureTrackStrip.mockClear();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
 
         await undo();
 
         expect(trackStore.value).toEqual(beforeDeletion);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ output: expect.objectContaining({ sourceId: 'track-muted-audio' }) })
+        );
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ output: expect.objectContaining({ sourceId: 'track-muted-midi' }) })
+        );
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });
@@ -542,7 +558,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);
@@ -578,7 +594,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);
@@ -736,15 +752,14 @@ describe('delete muted empty tracks prompt workflow', () => {
         trackStore.set({ ...state, tracks: [...state.tracks, collaboratorTrack] });
         const beforeUndo = structuredClone(trackStore.value?.tracks);
         const historyBeforeUndo = structuredClone(undoStore.value);
-        runtimeMocks.ensureTrackStrip.mockClear();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
 
         await undo();
 
         expect(getTrack('track-muted-audio')).toEqual(collaboratorTrack);
         expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-midi')).toBe(false);
         expect(trackStore.value?.tracks).toEqual(beforeUndo);
-        expect(runtimeMocks.ensureTrackStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.ensureTrackStrip).not.toHaveBeenCalledWith('track-muted-audio');
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(undoStore.value).toEqual(historyBeforeUndo);
     });
 });

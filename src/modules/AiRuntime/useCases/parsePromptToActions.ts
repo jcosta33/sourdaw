@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { markerStore } from '#/modules/Arrangement/stores';
-import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -9,12 +9,15 @@ import { type IntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
+import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
 import {
     isWorkflowCapabilityId,
+    WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
     WORKFLOW_CAPABILITY_TOOL_NAME,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
 import { buildLlmActionSystemPrompt } from '../transformers/llmActionBridge';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../transformers/llmActionLimits';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
@@ -248,9 +251,7 @@ export const parsePromptToActions = inject({ logger })(
                 return { actions: [], rawText: prompt, requiresConfirmation: false };
             }
 
-            // 5. Provider-neutral LLM path. This only proposes typed actions;
-            // sendChatMessage remains responsible for confirmation and execution.
-            let applicationToolReceiptFields: Pick<IntentResult, 'applicationToolReceipts'> = {};
+            let applicationToolReceiptFields: { applicationToolReceipts?: IntentResult['applicationToolReceipts'] } = {};
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(context, projectRevision);
                 const drumRenderComparisonScope = getDrumRenderComparisonPromptScope(context, projectRevision);
@@ -287,12 +288,69 @@ export const parsePromptToActions = inject({ logger })(
                     context,
                     projectRevision
                 )?.capability;
-                const providerToolSchemas = getPlanningProviderSchemaContract().schemas;
+                const specializedWorkflowToolSchemas: readonly ToolSchema[] = [
+                    {
+                        type: 'function',
+                        function: {
+                            name: 'automateTrackGainRange',
+                            description: 'Automate track gain over a named section range',
+                            parameters: {
+                                type: 'object',
+                                properties: {
+                                    trackIds: { type: 'array', items: { type: 'string' } },
+                                    sectionName: { type: 'string' },
+                                    gainDb: { type: 'number' },
+                                },
+                                required: ['trackIds', 'sectionName', 'gainDb'],
+                            },
+                        },
+                    },
+                    {
+                        type: 'function',
+                        function: {
+                            name: 'automateSendRange',
+                            description: 'Automate send reduction over a named section range',
+                            parameters: {
+                                type: 'object',
+                                properties: {
+                                    trackIds: { type: 'array', items: { type: 'string' } },
+                                    busId: { type: 'string' },
+                                    sectionName: { type: 'string' },
+                                    reductionDb: { type: 'number' },
+                                },
+                                required: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
+                            },
+                        },
+                    },
+                ];
+                const workflowActionToolNames = new Set<string>([
+                    ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
+                    'automateTrackGainRange',
+                    'automateSendRange',
+                    'muteTrack',
+                    'unmuteTrack',
+                    'setTrackPan',
+                    'removeTrack',
+                    'soloTrack',
+                    'unsoloTrack',
+                    'setDeviceParameter',
+                ]);
+                const executableAppActionToolSchemas = getExecutableAppActionToolSchemas();
+                const workflowToolSchemas = [
+                    ...DAW_TOOL_SCHEMAS.filter((tool) => workflowActionToolNames.has(tool.function.name)),
+                    ...executableAppActionToolSchemas.filter((tool) => workflowActionToolNames.has(tool.function.name)),
+                    ...specializedWorkflowToolSchemas,
+                ];
+                const uniqueWorkflowToolSchemas = Array.from(
+                    new Map(workflowToolSchemas.map((tool) => [tool.function.name, tool])).values()
+                );
+                const providerToolSchemas = [...getPlanningProviderSchemaContract().schemas, ...uniqueWorkflowToolSchemas];
                 const terminalToolNames = new Set([
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
                     RENDER_REQUEST_TOOL_NAME,
                     ANALYSIS_REQUEST_TOOL_NAME,
+                    ...workflowActionToolNames,
                 ]);
                 const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
                 const getPlanningSystemPrompt = () => {
@@ -356,6 +414,10 @@ export const parsePromptToActions = inject({ logger })(
                 }
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     loopId: `planning-${crypto.randomUUID()}`,
+                    limits: {
+                        maxCallsPerTurn: MAX_LLM_ACTIONS_PER_BATCH + 2,
+                        maxTotalCalls: MAX_LLM_ACTIONS_PER_BATCH + 16,
+                    },
                     terminalToolNames,
                     signal,
                     requestTurn: async ({ receiptContext }) => {

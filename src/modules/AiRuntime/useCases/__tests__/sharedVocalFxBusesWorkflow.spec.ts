@@ -123,6 +123,8 @@ const runtimeMocks = vi.hoisted(() => {
     };
 });
 
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => [runtimeMocks.backend.value],
 }));
@@ -142,6 +144,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: vi.fn(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' })),
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
@@ -478,6 +481,7 @@ describe('shared vocal FX buses workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });

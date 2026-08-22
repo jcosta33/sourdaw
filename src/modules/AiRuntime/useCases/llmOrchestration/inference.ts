@@ -233,7 +233,18 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         toolSchemas: actionTools,
                         prompt: toolSelectionPrompt,
                     });
-                    const workflowActionToolNames = new Set<string>(WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES);
+                    const workflowActionToolNames = new Set<string>([
+                        ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
+                        'automateTrackGainRange',
+                        'automateSendRange',
+                        'muteTrack',
+                        'unmuteTrack',
+                        'setTrackPan',
+                        'removeTrack',
+                        'soloTrack',
+                        'unsoloTrack',
+                        'setDeviceParameter',
+                    ]);
                     const workflowActionTools =
                         workflowSelectionTools.length > 0
                             ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
@@ -246,12 +257,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
+                    const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
-                        ...workflowSelectionTools,
-                        ...applicationTools,
-                        ...workflowActionTools,
-                        ...promptActionTools,
-                    ].slice(0, 30);
+                        ...mandatoryTools,
+                        ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
+                    ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
                     );

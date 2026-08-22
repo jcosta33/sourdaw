@@ -26,6 +26,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -272,6 +273,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({
             tracks: [
                 createTrack('track-chords', 'Chords', 'clip-chords'),
@@ -451,10 +453,10 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(midiStore.value?.notesByClipId['clip-chords']).toEqual(original);
         expect(undoStore.value?.past).toEqual([]);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed' });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'invalidated' });
     });
 
     it('keeps grouped undo and redo retryable when a collaborator changes the clip or freeze state', async () => {

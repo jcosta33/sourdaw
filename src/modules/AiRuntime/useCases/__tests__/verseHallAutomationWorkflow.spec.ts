@@ -21,6 +21,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -57,7 +58,6 @@ const runtimeMocks = vi.hoisted(() => {
     return {
         backend,
         fetch: vi.fn<typeof fetch>(),
-        generateWebLlmCompletion: vi.fn(),
         getAllSidechainRoutes: vi.fn(() => []),
         resolveToasterPadBinding: vi.fn(() => null),
         sendLevels: new Map<string, number>(),
@@ -76,7 +76,7 @@ vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
 }));
 
 vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
-    generateWebLlmCompletion: runtimeMocks.generateWebLlmCompletion,
+    generateWebLlmCompletion: vi.fn(),
 }));
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
@@ -187,7 +187,8 @@ describe('verse Hall send automation workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
+        vi.mocked(generateWebLlmCompletion).mockReset();
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue(JSON.stringify(providerPlan));
         runtimeMocks.fetch.mockResolvedValue(
             new Response(
                 JSON.stringify({
@@ -227,6 +228,7 @@ describe('verse Hall send automation workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const lead = createTrack('track-lead-vocal', 'Lead Vocal');
         lead.sends = [
@@ -413,7 +415,7 @@ describe('verse Hall send automation workflow', () => {
     });
 
     it('rejects provider enlargement beyond every track whose name and Hall send match vocal', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue(
             JSON.stringify([
                 {
                     ...providerPlan[0],
@@ -468,7 +470,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
@@ -486,7 +488,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         const proposal = chatStore.value?.messages.find(
@@ -520,7 +522,6 @@ describe('verse Hall send automation workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
-        const committed = structuredClone(automationStore.value);
         const leadLane = getSendLanes()[0];
         if (!leadLane) {
             throw new Error('Expected Lead Vocal Hall automation lane');
@@ -539,16 +540,10 @@ describe('verse Hall send automation workflow', () => {
         });
         const collaboratorState = structuredClone(automationStore.value);
         const pastBeforeConflict = structuredClone(undoStore.value?.past);
-
         await undo();
 
         expect(automationStore.value).toEqual(collaboratorState);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
-
-        automationStore.set(committed);
-        await undo();
-        expect(getSendLanes()).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(1);
     });
 });

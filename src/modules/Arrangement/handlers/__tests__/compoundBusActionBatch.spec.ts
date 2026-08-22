@@ -3,21 +3,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
+import {
     clearUndoHistory,
     executeAppActionBatch,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
-import { createCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRevision,
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
+import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
 
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     engineRemoveSend: vi.fn(),
     engineSetSend: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
@@ -27,6 +38,7 @@ const runtimeMocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
@@ -52,6 +64,10 @@ const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
 describe('compound bus AppAction batch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         createCrdtDoc('root');
@@ -68,6 +84,8 @@ describe('compound bus AppAction batch', () => {
     });
 
     afterEach(() => {
+        configureRuntimeGraphProjectRevisionValidator(null);
+        configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

@@ -21,6 +21,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -49,7 +50,12 @@ const mocks = vi.hoisted(() => {
         stageLocalAsset: vi.fn<(file: File, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
-        ensureTrackStrip: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: { appRevision: 1, projectRevision: 'rev-1' },
+            runtimeRevision: 1,
+        })),
         arrangementEventEmit: vi.fn(() => Promise.resolve()),
         executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
@@ -116,7 +122,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTe
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
-    ensureTrackStrip: mocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     removeTrackStrip: mocks.removeTrackStrip,
     setTrackGain: mocks.setTrackGain,
@@ -332,6 +338,7 @@ describe('stem import and starting mix workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
@@ -622,8 +629,8 @@ describe('stem import and starting mix workflow', () => {
             status: 'cancelled',
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(12);
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(12);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -639,8 +646,8 @@ describe('stem import and starting mix workflow', () => {
 
         expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(12);
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(12);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -714,7 +721,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reconciles a transient live-strip projection failure after the atomic project commit', async () => {
-        mocks.ensureTrackStrip.mockImplementationOnce(() => {
+        mocks.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
             throw new Error('transient strip projection failure');
         });
         await sendChatMessage(PROMPT);
@@ -725,7 +732,7 @@ describe('stem import and starting mix workflow', () => {
         });
 
         expect(trackStore.value?.tracks).toHaveLength(8);
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(7);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(7);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
@@ -764,7 +771,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {
-        mocks.ensureTrackStrip.mockImplementation(() => {
+        mocks.initializeTrackStripFromSnapshot.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
         await sendChatMessage(PROMPT);

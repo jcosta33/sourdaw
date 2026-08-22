@@ -83,10 +83,19 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
     }
     const onProviderAttempt =
         input.onProviderAttempt ??
-        (() => ({
-            status: 'rejected' as const,
-            reason: 'Provider planning requires an application-owned budget admission.',
-        }));
+        (({ backend: attemptBackend, correlationId, estimatedTotalTokens, estimate }) => {
+            const budgetReservation = agentRunLifecycle.reserveBudget({
+                runId: streamIdentity.runId,
+                attemptId: correlationId,
+                category: attemptBackend === 'webllm' ? 'localTextPlanningTokens' : 'hostedTextPlanningTokens',
+                estimate: estimatedTotalTokens,
+                provenance: 'versioned-estimate',
+                estimateMethod: estimate.method,
+            });
+            return budgetReservation.status === 'reserved'
+                ? { status: 'admitted' as const }
+                : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
+        });
     let stemImportScope: StemImportPromptScope | undefined;
     let result;
     try {

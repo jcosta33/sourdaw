@@ -25,6 +25,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -247,6 +248,7 @@ describe('mix prompt workflow', () => {
             runtimeMocks.pans.set(track.id, track.pan);
             runtimeMocks.mutes.set(track.id, track.muted);
         }
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({
             messages: [],
             isGenerating: false,
@@ -256,6 +258,7 @@ describe('mix prompt workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
         resetActionReplayAuthority();
@@ -536,7 +539,7 @@ describe('mix prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result).toMatchObject({ status: 'failed' });
+        expect(result).toMatchObject({ status: 'invalidated' });
         expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackPan).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackMute).not.toHaveBeenCalled();
