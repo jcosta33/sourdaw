@@ -545,6 +545,39 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  nightly-report:
+    name: Nightly failure report
+    # A scheduled run nobody reads is a scheduled run that does not exist. The
+    # nightly is the only thing that observes what path filters and the approval
+    # gate skip, so its failures have to arrive somewhere a person looks.
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    needs: [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, codeql, secrets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update the nightly failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          failed=$(printf '%s' "$RESULTS" | jq -r '
+            to_entries[] | select(.value.result == "failure") | .key' | paste -sd ', ' -)
+          title="ci(nightly): health gates red on main"
+          body=$(printf 'The nightly run against `main` failed.\n\nFailing jobs: %s\n\n%s\n' \
+            "$failed" "$RUN_URL")
+          existing=$(gh issue list --state open --search "$title in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label bug --label status:ready
+          fi
+
   gate:
     # Named distinctly from the workflow so the required check is unambiguous in
     # the ruleset and in the checks list. Renaming it silently breaks the
