@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 
 /**
- * Rolling spectrogram waterfall (§8).
+ * Rolling spectrogram waterfall.
  *
  * Draws a log-frequency spectrogram mapped to the piano range (A0–C8).
  * Each pixel column corresponds to a piano key, so the display fills

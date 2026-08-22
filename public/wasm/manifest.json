@@ -9,16 +9,16 @@
   "packages": {
     "daw-dsp": {
       "crate": "crates/daw-dsp",
-      "crateSourceHash": "sha256:4253201a4449cc4b1db17c1632124fcc9a9ddb872a865129d1c9ad20b9a5241e",
+      "crateSourceHash": "sha256:7f25881db3c02d2131533e8447e0ab8e8518ab2e74d30ba37a074112db25fcef",
       "schemaHash": "bb96b2010945f0bc",
       "artifacts": {
-        "public/wasm/daw-dsp/daw_dsp.js": "sha256:3ffd1293754ad983190af4e445900143d2d90a5f3ba62d4927267795b9fc9a0c",
-        "public/wasm/daw-dsp/daw_dsp_bg.wasm": "sha256:fe67ebe3658e1c7da52b06e3de02022bb0b2f122074f281b7bab3d41925aa346",
-        "public/wasm/daw-dsp/daw_dsp.d.ts": "sha256:a6865df70a50bb46f56c5d378e7bbb2663ded8d2f521f0ceeb498b8819ed7781",
-        "public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts": "sha256:1d2de1321f019aac04e3af88d6a7e31353d3c44a60a1b165df1eac957b1f5e6f",
+        "public/wasm/daw-dsp/daw_dsp.js": "sha256:c98855e94d9b60620e38405600fdf3f1ea56676b65d4b74bba794e304fb017d1",
+        "public/wasm/daw-dsp/daw_dsp_bg.wasm": "sha256:2546711eeaa323fe45d03a58c595d31c0fd9c1a7bfac3f7a826c357000cd76a7",
+        "public/wasm/daw-dsp/daw_dsp.d.ts": "sha256:b567c5cbbe4b5022ad49158d77e5439a621a2da04e1dff51f788d2b2e08b2549",
+        "public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts": "sha256:1056f03dd371bec43973862be994d5e28c9142eed69f0dcaa48d3e5d0df1ea3d",
         "public/wasm/daw-dsp/package.json": "sha256:f267baf6685da8a939785e34ecfcda4b5d707aa456a7109a1330fd5f52211000",
-        "src/modules/AudioEngine/wasm/daw_dsp.js": "sha256:c69566e27be560bd0bdf88a6c07a65204a4c1bb385babf318a03012d30d54977",
-        "src/modules/AudioEngine/wasm/daw_dsp.d.ts": "sha256:a6865df70a50bb46f56c5d378e7bbb2663ded8d2f521f0ceeb498b8819ed7781"
+        "src/modules/AudioEngine/wasm/daw_dsp.js": "sha256:2372320233974582761836ce4fe31022a1dfb53f9b97ad7d6ba798a85d8c3bb2",
+        "src/modules/AudioEngine/wasm/daw_dsp.d.ts": "sha256:b567c5cbbe4b5022ad49158d77e5439a621a2da04e1dff51f788d2b2e08b2549"
       }
     },
     "proof-chamber": {

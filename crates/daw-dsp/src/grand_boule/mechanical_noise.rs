@@ -1,4 +1,4 @@
-//! Mechanical noise generator for the Grand Boule piano (§5.1).
+//! Mechanical noise generator for the Grand Boule piano.
 //!
 //! Models the small mechanical sounds a real grand makes around each note:
 //! key-down thud, hammer let-off click, damper lift, and the pedal thump.
@@ -24,8 +24,9 @@ pub enum NoiseEvent {
     PedalDown,
     /// Longitudinal "string precursor" — the bite that arrives at the
     /// bridge before the transverse wave because the longitudinal wave
-    /// travels at `c_L ≫ c_T` (§A6 of the realism appendix). Bright,
-    /// very short (~3 ms), ~25 dB above the structure-borne thump.
+    /// travels much faster than the transverse wave. Its exact duration,
+    /// spectrum, and level below are project voicing informed by Askenfelt's
+    /// published transient categories, not copied measurement-table values.
     StringPrecursor,
 }
 
@@ -110,7 +111,7 @@ impl MechanicalNoise {
             NoiseEvent::HammerLetoff => (0.003, 4_000.0, 3_000.0, -48.0),
             NoiseEvent::DamperLift => (0.007, 600.0, 800.0, -52.0),
             NoiseEvent::PedalDown => (0.020, 120.0, 300.0, -38.0),
-            // §A6 string precursor: broadband, peaks above 3 kHz, decays
+            // String precursor: broadband, peaks above 3 kHz, decays
             // in <5 ms. Russell & Rossing place its peak ~25 dB above the
             // structure-borne thump — at our reference, that's about
             // -23 dBFS, but we attenuate further so it never dominates.

@@ -1,9 +1,7 @@
 /**
- * Retained inline Grand Boule host for focused offline transport tests.
+ * AudioWorkletProcessor that hosts the Grand Boule engine for offline rendering.
  *
- * Released daw-dsp WASM supplies no Grand Boule constructor, and release
- * admission withholds this path. Tests inject a structural instance. This is a
- * sibling of `grandBouleProcessor`, not a mode of it. That one is a
+ * This is a sibling of `grandBouleProcessor`, not a mode of it. That one is a
  * SharedArrayBuffer ring consumer whose `process()` copies published frames out
  * of a ring the engine Worker fills; this one owns a `GrandBouleInstance` and
  * renders the block itself. The two share no field and no line of `process()`,
@@ -22,7 +20,7 @@
  * the producer: `Atomics.wait` is banned in `AudioWorkletGlobalScope`, and the
  * working group explicitly refused to relax that for the offline case.
  *
- * The retained Worker-ring design isolates producer load from the consumer.
+ * Live keeps the Worker and ring so an overload starves only Grand Boule.
  *
  * ## Clock
  *
@@ -40,16 +38,17 @@
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
+import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 
 import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
-    createGrandBouleNoteQueue,
+    createGrandBouleFrameQueue,
     dispatch,
+    isFramedGrandBouleMsg,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
-import { type GrandBouleInstance } from './grandBouleWasmInstance';
 
 /**
  * The Web Audio render quantum. Restated here rather than imported: worklet code
@@ -169,7 +168,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _faultMessage: string | null = null;
     _pendingMessages: GrandBouleControlMessage[] = [];
     _paramAutomation: ScheduledParam[][] = [[], [], [], [], []];
-    _queue = createGrandBouleNoteQueue();
+    _queue = createGrandBouleFrameQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
     // identity change (audit RT-7). In steady state `update` performs four
     // primitive comparisons and allocates nothing.
@@ -260,12 +259,10 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             return;
         }
         // Offline scheduling posts the complete part before rendering starts.
-        // Hold a note exactly on the next frame so frame-zero automation reaches
-        // the sleeping engine first; preserve the shared host behavior for notes
-        // already inside the remainder of the current quantum and for late notes.
-        const holdAtCurrentFrame =
-            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
-            msg.sampleFrame === currentFrame;
+        // Hold a framed event exactly on the next frame so frame-zero automation
+        // reaches the sleeping engine first; preserve shared behavior for events
+        // already inside the remainder of the current quantum and for late ones.
+        const holdAtCurrentFrame = isFramedGrandBouleMsg(msg) && msg.sampleFrame === currentFrame;
         receiveGrandBouleMessage({
             instance,
             queue: this._queue,

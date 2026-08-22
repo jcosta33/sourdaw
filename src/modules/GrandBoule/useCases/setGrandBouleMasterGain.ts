@@ -21,7 +21,7 @@ type SetGrandBouleMasterGainInput = {
 };
 
 export function setGrandBouleMasterGain(input: SetGrandBouleMasterGainInput): void {
-    const clamped = Math.max(0, Math.min(2, input.gain));
+    const clamped = Math.max(0, Math.min(1, input.gain));
     dispatchGrandBouleParam({
         deviceId: input.deviceId,
         paramId: 'masterGain',

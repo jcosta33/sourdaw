@@ -1,8 +1,8 @@
 /**
- * Morph/layer state for the Grand Boule piano plugin (spec §3.1).
+ * Morph/layer state for the Grand Boule piano plugin.
  *
- * Defines the per-model physical-modeling parameters and the morph state
- * that controls blending between two piano models. Models are pure data
+ * Defines product-authored voicing parameters and the morph state that
+ * controls blending between two voicings. Voicings are pure data
  * descriptors — the actual DSP parameter dispatch happens in the
  * `setGrandBouleMorphPosition` use case.
  */
@@ -20,79 +20,76 @@ export type GrandBoulePianoModel = {
 };
 
 export type GrandBouleMorphState = {
-    /** Preset ID for layer A. */
+    /** Product voicing ID for layer A. */
     modelA: string;
-    /** Preset ID for layer B. */
+    /** Product voicing ID for layer B. */
     modelB: string;
     /** Morph position: 0.0 = pure A, 1.0 = pure B. */
     morphPosition: number;
-    /** Layer balance: -1.0 = A only, 0 = equal, 1.0 = B only. */
+    /** Balance override: -1 = A, 0 = current morph position, +1 = B. */
     layerBalance: number;
     /** Whether the morph engine is active. */
     enabled: boolean;
 };
 
 // ---------------------------------------------------------------------------
-// Built-in piano models
+// Built-in product voicings
 // ---------------------------------------------------------------------------
 
 export const BUILTIN_PIANO_MODELS = [
     {
-        id: 'steinway-d',
-        name: 'Steinway Model D',
-        hammerHardnessScale: 1.0,
-        hammerMassScale: 1.0,
-        soundboardBrightness: 0.55,
-        sympatheticLevel: 0.5,
-        bodyResonance: 0.6,
-        toneColor: 0.0,
+        id: 'balanced-grand',
+        name: 'Balanced Grand',
+        hammerHardnessScale: 0.92,
+        hammerMassScale: 1.08,
+        soundboardBrightness: 0.48,
+        sympatheticLevel: 0.58,
+        bodyResonance: 0.52,
+        toneColor: -0.08,
     },
     {
-        id: 'bosendorfer-imperial',
-        name: 'Bösendorfer Imperial',
-        hammerHardnessScale: 0.6,
-        hammerMassScale: 1.4,
-        soundboardBrightness: 0.25,
-        sympatheticLevel: 0.8,
-        bodyResonance: 0.9,
-        toneColor: -0.7,
+        id: 'mellow-grand',
+        name: 'Mellow Grand',
+        hammerHardnessScale: 0.72,
+        hammerMassScale: 1.25,
+        soundboardBrightness: 0.32,
+        sympatheticLevel: 0.74,
+        bodyResonance: 0.82,
+        toneColor: -0.58,
     },
     {
-        id: 'yamaha-cfx',
-        name: 'Yamaha CFX',
-        hammerHardnessScale: 1.5,
-        hammerMassScale: 0.7,
-        soundboardBrightness: 0.85,
-        sympatheticLevel: 0.3,
-        bodyResonance: 0.35,
-        toneColor: 0.7,
+        id: 'clear-grand',
+        name: 'Clear Grand',
+        hammerHardnessScale: 1.34,
+        hammerMassScale: 0.82,
+        soundboardBrightness: 0.78,
+        sympatheticLevel: 0.36,
+        bodyResonance: 0.42,
+        toneColor: 0.56,
     },
     {
-        id: 'fazioli-f308',
-        name: 'Fazioli F308',
-        hammerHardnessScale: 1.2,
-        hammerMassScale: 0.85,
-        soundboardBrightness: 0.75,
-        sympatheticLevel: 0.6,
-        bodyResonance: 0.5,
-        toneColor: 0.4,
+        id: 'singing-grand',
+        name: 'Singing Grand',
+        hammerHardnessScale: 1.12,
+        hammerMassScale: 0.94,
+        soundboardBrightness: 0.68,
+        sympatheticLevel: 0.66,
+        bodyResonance: 0.57,
+        toneColor: 0.28,
     },
 ] as const satisfies readonly GrandBoulePianoModel[];
 
 export function createDefaultMorphState(): GrandBouleMorphState {
     return {
-        modelA: 'steinway-d',
-        modelB: 'yamaha-cfx',
+        modelA: 'balanced-grand',
+        modelB: 'clear-grand',
         morphPosition: 0.0,
         layerBalance: 0.0,
         enabled: false,
     };
 }
 
-/**
- * Look up a built-in piano model by ID. Returns `undefined` when the ID
- * does not match any known model.
- */
+/** Look up a built-in product voicing by its product-owned ID. */
 export function findPianoModelById(id: string): GrandBoulePianoModel | undefined {
-    return BUILTIN_PIANO_MODELS.find((m) => m.id === id);
+    return BUILTIN_PIANO_MODELS.find((model) => model.id === id);
 }

@@ -6,6 +6,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
 
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
@@ -248,7 +249,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
     for (const file of files) {
         if (!existsSync(resolve(root, file))) {
-            throw new Error(`Grand Boule preserved source is missing: ${file}`);
+            throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
@@ -261,7 +262,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
 function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
-        throw new Error(`Grand Boule preserved source boundary has no tracked files: ${pathspecs.join(', ')}`);
+        throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
     return trackedFilesSha256(root, files);
 }
@@ -288,11 +289,134 @@ export type DistributedWasmArtifactCensus = {
     wasmArtifacts: string[];
 };
 
-function namesGrandBoule(value: string): boolean {
-    return value
-        .replaceAll(/[^A-Za-z0-9]/g, '')
-        .toLowerCase()
-        .includes('grandboule');
+function executableSource(source: string): string {
+    const output = [...source];
+    let mode: 'code' | 'line-comment' | 'block-comment' | 'single' | 'double' | 'template' = 'code';
+    let escaped = false;
+    for (let index = 0; index < source.length; index += 1) {
+        const character = source[index]!;
+        const next = source[index + 1];
+        if (mode === 'line-comment') {
+            if (character === '\n') {
+                mode = 'code';
+            } else {
+                output[index] = ' ';
+            }
+            continue;
+        }
+        if (mode === 'block-comment') {
+            output[index] = character === '\n' ? '\n' : ' ';
+            if (character === '*' && next === '/') {
+                output[index + 1] = ' ';
+                index += 1;
+                mode = 'code';
+            }
+            continue;
+        }
+        if (mode !== 'code') {
+            output[index] = character === '\n' ? '\n' : ' ';
+            if (escaped) {
+                escaped = false;
+            } else if (character === '\\') {
+                escaped = true;
+            } else if (
+                (mode === 'single' && character === "'") ||
+                (mode === 'double' && character === '"') ||
+                (mode === 'template' && character === '`')
+            ) {
+                mode = 'code';
+            }
+            continue;
+        }
+        if (character === '/' && next === '/') {
+            output[index] = output[index + 1] = ' ';
+            index += 1;
+            mode = 'line-comment';
+        } else if (character === '/' && next === '*') {
+            output[index] = output[index + 1] = ' ';
+            index += 1;
+            mode = 'block-comment';
+        } else if (character === "'") {
+            output[index] = ' ';
+            mode = 'single';
+        } else if (character === '"') {
+            output[index] = ' ';
+            mode = 'double';
+        } else if (character === '`') {
+            output[index] = ' ';
+            mode = 'template';
+        }
+    }
+    return output.join('');
+}
+
+function balancedBody(source: string, openBrace: number): { body: string; start: number; end: number } | undefined {
+    if (openBrace < 0) {
+        return undefined;
+    }
+    let depth = 0;
+    for (let index = openBrace; index < source.length; index += 1) {
+        if (source[index] === '{') {
+            depth += 1;
+        } else if (source[index] === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return { body: source.slice(openBrace + 1, index), start: openBrace + 1, end: index };
+            }
+        }
+    }
+    return undefined;
+}
+
+function declaredBody(source: string, declaration: RegExp): string | undefined {
+    const executable = executableSource(source);
+    const match = declaration.exec(executable);
+    if (match === null) {
+        return undefined;
+    }
+    return balancedBody(executable, executable.indexOf('{', match.index + match[0].length - 1))?.body;
+}
+
+function topLevelExecutableCall(body: string, call: RegExp): boolean {
+    const match = call.exec(body);
+    if (match === null || /\breturn\b/u.test(body.slice(0, match.index))) {
+        return false;
+    }
+    let depth = 0;
+    for (const character of body.slice(0, match.index)) {
+        if (character === '{') {
+            depth += 1;
+        } else if (character === '}') {
+            depth -= 1;
+        }
+    }
+    return depth === 0;
+}
+
+function hasGrandBouleConstructorText(path: string, source: string): boolean {
+    if (path.endsWith('_bg.wasm.d.ts')) {
+        return /\bexport\s+const\s+grandbouleinstance_new\s*:\s*\(\s*a\s*:\s*number\s*,\s*b\s*:\s*number\s*\)\s*=>\s*number\s*;/u.test(
+            executableSource(source)
+        );
+    }
+    const classBody = declaredBody(source, /\bexport\s+class\s+GrandBouleInstance\s*\{/u);
+    if (classBody === undefined) {
+        return false;
+    }
+    if (path.endsWith('.d.ts')) {
+        return /\bconstructor\s*\(\s*sample_rate\s*:\s*number\s*,\s*voice_count\s*:\s*number\s*\)\s*;/u.test(classBody);
+    }
+    if (path.endsWith('.js')) {
+        const constructor = declaredBody(classBody, /\bconstructor\s*\(\s*sample_rate\s*,\s*voice_count\s*\)\s*\{/u);
+        return (
+            constructor !== undefined &&
+            topLevelExecutableCall(
+                constructor,
+                /\bwasm\s*\.\s*grandbouleinstance_new\s*\(\s*sample_rate\s*,\s*voice_count\s*\)/u
+            )
+        );
+    }
+    return false;
 }
 
 function filesRecursively(root: string, directory: string): string[] {
@@ -398,29 +522,312 @@ export function distributedWasmArtifactCensus(root: string): DistributedWasmArti
 
 export function assertGrandBouleRustWasmBoundary(root: string): void {
     const source = readFileSync(resolve(root, 'crates/daw-dsp/src/lib.rs'), 'utf8');
+    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
     const gatedModule =
         /#\[cfg\s*\(\s*not\s*\(\s*target_arch\s*=\s*"wasm32"\s*\)\s*\)\s*\]\s*pub\s+mod\s+grand_boule\s*;/u;
-    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
-    if (declarations.length !== 1 || !gatedModule.test(source)) {
-        throw new Error('Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
+    if (declarations.length !== 1 || gatedModule.test(source)) {
+        throw new Error('Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
     }
 }
 
-export function assertGrandBouleWithheldFromWasm(root: string): void {
-    const census = distributedWasmArtifactCensus(root);
-    for (const path of census.textArtifacts) {
-        if (namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
-            throw new Error(`Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`);
+export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
+    'attack_sampler.rs': 'project-authored implementation',
+    'coupled_strings.rs':
+        'project-authored aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
+    'duplex.rs': 'project-authored implementation using standard duplex-string acoustics',
+    'engine.rs': 'project-authored orchestration and product voicing',
+    'hammer.rs': 'project-authored implementation of the cited Stulov scientific relation',
+    'longitudinal.rs': 'project-authored implementation using standard longitudinal-mode physics',
+    'mechanical_noise.rs': 'project-authored implementation informed by cited mechanical-transient observations',
+    'midi2.rs': 'project-authored implementation of public MIDI protocol facts',
+    'mod.rs': 'project-authored host and WASM boundary',
+    'parameters.rs': 'project-authored curves retaining cited Russell and Rossing measurement anchors',
+    'pedals.rs': 'project-authored implementation using standard piano mechanics',
+    'radiation.rs': 'project-authored radiation and microphone model',
+    'soundboard.rs': 'project-authored finite body kernels and processing',
+    'string.rs': 'project-authored modal coefficient implementation from standard string equations',
+    'sympathetic.rs': 'project-authored sympathetic-resonance implementation',
+    'voice.rs': 'project-authored voice lifecycle and coefficient composition',
+} as const;
+
+export function assertGrandBouleRustSourceAdmission(root: string): void {
+    const rustRoot = 'crates/daw-dsp/src/grand_boule';
+    const actual = trackedFiles(root, [rustRoot]).map((path) => path.slice(`${rustRoot}/`.length));
+    const expected = Object.keys(GRAND_BOULE_RUST_SOURCE_ADMISSION).sort();
+    const unsupported = actual.find((path) => !expected.includes(path));
+    const missing = expected.find((path) => !actual.includes(path));
+    if (unsupported !== undefined) {
+        throw new Error(`Grand Boule Rust source has unsupported attribution gap: ${unsupported}`);
+    }
+    if (missing !== undefined) {
+        throw new Error(`Grand Boule Rust source admission boundary is missing: ${missing}`);
+    }
+}
+
+function rustGrandBouleConstructorTuple(source: string): number[] | null {
+    const implBody = declaredBody(source, /\bimpl\s+GrandBouleEngine\s*\{/u);
+    if (implBody === undefined) {
+        return null;
+    }
+    const constructorBody = declaredBody(
+        implBody,
+        /\bpub\s+fn\s+new\s*\(\s*sample_rate\s*:\s*f32\s*,\s*voice_count\s*:\s*usize\s*\)\s*->\s*Self\s*\{/u
+    );
+    if (constructorBody === undefined || /\breturn\b/u.test(constructorBody)) {
+        return null;
+    }
+    const initializer = declaredBody(constructorBody, /\bSelf\s*\{/u);
+    if (initializer === undefined) {
+        return null;
+    }
+    return [
+        'hammer_hardness_scale',
+        'hammer_mass_scale',
+        'soundboard_brightness',
+        'sympathetic_level',
+        'body_resonance',
+        'tone_color',
+    ].map((field) => {
+        const value = initializer.match(new RegExp(String.raw`\b${field}\s*:\s*(-?\d+(?:\.\d+)?)`, 'u'))?.[1];
+        return value === undefined ? Number.NaN : Number(value);
+    });
+}
+
+export function assertGrandBouleDesignAroundSource(root: string): void {
+    assertGrandBouleRustSourceAdmission(root);
+    const soundboardPath = 'crates/daw-dsp/src/grand_boule/soundboard.rs';
+    const soundboard = readFileSync(resolve(root, soundboardPath), 'utf8');
+    for (const required of [
+        'const FIR_STAGE_COUNT: usize = 12;',
+        'struct FeedForwardDelay',
+        'const WARM_LEFT: KernelSpec',
+        'const WARM_RIGHT: KernelSpec',
+        'const OPEN_LEFT: KernelSpec',
+        'const OPEN_RIGHT: KernelSpec',
+        'input + delayed * self.delayed_gain',
+    ]) {
+        if (!soundboard.includes(required)) {
+            throw new Error(`Grand Boule FIR body contract is missing ${required} in ${soundboardPath}`);
+        }
+    }
+    for (const forbidden of ['SOUNDBOARD_MODES', 'rebuild_modes', 'gain_left:', 'gain_right:', 'y1:', 'y2:']) {
+        if (soundboard.includes(forbidden)) {
+            throw new Error(
+                `Grand Boule FIR body contract rejects modal body source ${forbidden} in ${soundboardPath}`
+            );
         }
     }
 
-    for (const path of census.wasmArtifacts) {
-        const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
-        const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
-        if (forbiddenExport !== undefined) {
+    const parametersPath = 'crates/daw-dsp/src/grand_boule/parameters.rs';
+    const parameters = readFileSync(resolve(root, parametersPath), 'utf8');
+    if (!parameters.includes('Project tuning curves and standard piano mappings')) {
+        throw new Error(`Grand Boule parameter provenance must label project tuning in ${parametersPath}`);
+    }
+    if (/(?:Jaatinen|Pätynen|Hinrichsen|Steinway D|HAL RT|patent)/iu.test(parameters)) {
+        throw new Error(`Grand Boule parameter provenance contains an unsupported source claim in ${parametersPath}`);
+    }
+    if (!parameters.includes('let exponent = 7.86_f32 + 1.88 * t.powf(1.32) + 0.14 * t * (1.0 - t);')) {
+        throw new Error(`Grand Boule project hammer-stiffness curve is missing in ${parametersPath}`);
+    }
+    if (/8\.0_f32\s*\+\s*0\.020\s*\*\s*\(key as f32 - 1\.0\)/u.test(parameters)) {
+        throw new Error(`Grand Boule rejects the legacy hammer-stiffness formula in ${parametersPath}`);
+    }
+
+    const enginePath = 'crates/daw-dsp/src/grand_boule/engine.rs';
+    const engine = readFileSync(resolve(root, enginePath), 'utf8');
+    const constructorTuple = rustGrandBouleConstructorTuple(engine);
+    const balancedTuple = [0.92, 1.08, 0.48, 0.58, 0.52, -0.08];
+    if (JSON.stringify(constructorTuple) !== JSON.stringify(balancedTuple)) {
+        throw new Error(`Grand Boule Rust constructor must use the balanced-grand tuple in ${enginePath}`);
+    }
+
+    const coupledStringsPath = 'crates/daw-dsp/src/grand_boule/coupled_strings.rs';
+    const coupledStrings = readFileSync(resolve(root, coupledStringsPath), 'utf8');
+    for (const required of [
+        'fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay',
+        'prompt_hz: 0.58 + 0.72 * register + 7.2 * register.powf(2.4)',
+        'aftersound_hz: 0.012 + 0.025 * register + 0.105 * register * register',
+        'const POLARIZATION_TRANSFER_GAIN: f32 = 30.0;',
+        'const AFTERSOUND_MIX: f32 = 0.7;',
+        'No body or soundboard property enters string coefficient',
+    ]) {
+        if (!coupledStrings.includes(required)) {
             throw new Error(
-                `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${path}:${forbiddenExport.name}`
+                `Grand Boule project polarization-decay source is missing ${required} in ${coupledStringsPath}`
             );
+        }
+    }
+    if (
+        /(?:sigma_bridge|bridge[- ]admittance|SIGMA_SLOW_SCALE|BRIDGE_COUPLING_GAIN|0\.8\s*\+\s*fundamental_hz\s*\*\s*0\.004)/iu.test(
+            coupledStrings
+        )
+    ) {
+        throw new Error(`Grand Boule rejects the legacy bridge-derived decay source in ${coupledStringsPath}`);
+    }
+
+    const voicingsPath = 'src/modules/GrandBoule/models/GrandBouleMorphState.ts';
+    const voicings = readFileSync(resolve(root, voicingsPath), 'utf8');
+    const productVoicings = {
+        'balanced-grand': [0.92, 1.08, 0.48, 0.58, 0.52, -0.08],
+        'mellow-grand': [0.72, 1.25, 0.32, 0.74, 0.82, -0.58],
+        'clear-grand': [1.34, 0.82, 0.78, 0.36, 0.42, 0.56],
+        'singing-grand': [1.12, 0.94, 0.68, 0.66, 0.57, 0.28],
+    } as const;
+    const legacyVoicingTuples = [
+        [1, 1, 0.55, 0.5, 0.6, 0],
+        [0.6, 1.4, 0.25, 0.8, 0.9, -0.7],
+        [1.5, 0.7, 0.85, 0.3, 0.35, 0.7],
+        [1.2, 0.85, 0.75, 0.6, 0.5, 0.4],
+    ] as const;
+    const tupleFields = [
+        'hammerHardnessScale',
+        'hammerMassScale',
+        'soundboardBrightness',
+        'sympatheticLevel',
+        'bodyResonance',
+        'toneColor',
+    ] as const;
+    for (const [id, expectedTuple] of Object.entries(productVoicings)) {
+        const block = voicings.match(new RegExp(String.raw`\{\s*id:\s*['"]${id}['"][\s\S]*?\n\s*\}`, 'u'))?.[0];
+        if (block === undefined) {
+            throw new Error(`Grand Boule product voicing contract is missing neutral id ${id} in ${voicingsPath}`);
+        }
+        const tuple = tupleFields.map((field) => {
+            const value = block.match(new RegExp(String.raw`${field}:\s*(-?\d+(?:\.\d+)?)`, 'u'))?.[1];
+            return value === undefined ? Number.NaN : Number(value);
+        });
+        if (legacyVoicingTuples.some((legacyTuple) => JSON.stringify(tuple) === JSON.stringify(legacyTuple))) {
+            throw new Error(
+                `Grand Boule product voicing contract rejects a legacy branded tuple for ${id} in ${voicingsPath}`
+            );
+        }
+        if (JSON.stringify(tuple) !== JSON.stringify(expectedTuple)) {
+            throw new Error(
+                `Grand Boule product voicing contract does not pin the project tuple for ${id} in ${voicingsPath}`
+            );
+        }
+    }
+    if (/name:\s*['"](?:Steinway|Bösendorfer|Bosendorfer|Yamaha|Fazioli)/u.test(voicings)) {
+        throw new Error(
+            `Grand Boule product voicing contract rejects brand-specific display labels in ${voicingsPath}`
+        );
+    }
+    for (const legacyId of ['steinway-d', 'bosendorfer-imperial', 'yamaha-cfx', 'fazioli-f308']) {
+        if (voicings.includes(legacyId)) {
+            throw new Error(
+                `Grand Boule product voicing contract rejects legacy branded id ${legacyId} in ${voicingsPath}`
+            );
+        }
+    }
+}
+
+export function assertGrandBouleReleasedInWasm(root: string): void {
+    const census = distributedWasmArtifactCensus(root);
+    const dawDspPackage = wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp');
+    if (dawDspPackage === undefined) {
+        throw new Error('distributed WASM contract is missing the daw-dsp package');
+    }
+    const dawDspArtifacts = new Set(dawDspPackage.artifacts);
+
+    for (const path of census.textArtifacts.filter(
+        (artifact) => dawDspArtifacts.has(artifact) && !artifact.endsWith('/package.json')
+    )) {
+        if (!hasGrandBouleConstructorText(path, readFileSync(resolve(root, path), 'utf8'))) {
+            throw new Error(
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
+            );
+        }
+    }
+
+    for (const path of census.wasmArtifacts.filter((artifact) => dawDspArtifacts.has(artifact))) {
+        const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
+        const constructorExport = WebAssembly.Module.exports(module).find(
+            ({ name, kind }) => name === 'grandbouleinstance_new' && kind === 'function'
+        );
+        if (constructorExport === undefined) {
+            throw new Error(
+                `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
+            );
+        }
+    }
+}
+
+const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
+    'crates/daw-dsp/benches/quantum.rs',
+    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+    'public/wasm/manifest.json',
+] as const;
+
+export function assertGrandBouleMeasurementAdmission(root: string): void {
+    const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
+    const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
+    const data = JSON.parse(readFileSync(resolve(root, jsonPath), 'utf8')) as {
+        sourceRevision?: string;
+        sourceDigests?: Record<string, string>;
+        machine?: { gitSha?: string; workingTree?: string };
+        budgetMs?: number;
+        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+        rows?: Array<{
+            id?: string;
+            costSite?: string;
+            warmVerify?: { ok?: boolean; detail?: string };
+            lateVerify?: { ok?: boolean; detail?: string };
+        }>;
+    };
+    const revision = data.sourceRevision;
+    if (!revision || revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
+        throw new Error('Grand Boule measurement must name one clean implementation source revision');
+    }
+    const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
+    if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
+        throw new Error('Grand Boule measurement source-digest census is incomplete');
+    }
+    for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
+        let sourceAtRevision: Buffer;
+        try {
+            sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
+        } catch {
+            throw new Error(`Grand Boule measurement source revision cannot provide ${path}`);
+        }
+        const expected = createHash('sha256').update(sourceAtRevision).digest('hex');
+        if (data.sourceDigests?.[path] !== expected) {
+            throw new Error(`Grand Boule measurement source digest drifted for ${path}`);
+        }
+    }
+    const rows = data.rows?.filter((row) => row.id === 'grand_boule') ?? [];
+    const row = rows[0];
+    const exactVoiceProof = /active_voices\(\)\s*=\s*64,\s*expected\s+64/u;
+    if (
+        rows.length !== 1 ||
+        row?.costSite !== 'worker' ||
+        row.warmVerify?.ok !== true ||
+        row.lateVerify?.ok !== true ||
+        !exactVoiceProof.test(row.warmVerify.detail ?? '') ||
+        !exactVoiceProof.test(row.lateVerify.detail ?? '')
+    ) {
+        throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
+    }
+    if (
+        typeof data.budgetMs !== 'number' ||
+        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
+        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
+        data.referenceProject.workerMedianMs >= data.budgetMs
+    ) {
+        throw new Error('Grand Boule measured reference project exceeds its render budget');
+    }
+    const markdown = readFileSync(resolve(root, markdownPath), 'utf8');
+    assertGeneratedRegionMatches(markdown, data);
+    for (const required of [revision, row.warmVerify.detail!, row.lateVerify.detail!]) {
+        if (!markdown.includes(required)) {
+            throw new Error(`Grand Boule JSON and Markdown measurement tables disagree on ${required}`);
+        }
+    }
+    for (const [path, digest] of Object.entries(data.sourceDigests ?? {})) {
+        if (!markdown.includes(path) || !markdown.includes(`sha256:${digest}`)) {
+            throw new Error(`Grand Boule Markdown measurement provenance omits ${path}`);
         }
     }
 }
@@ -436,60 +843,142 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
     };
 }
 
-type GrandBoulePreservationBoundary = {
-    path: string;
-    gitPathspec: string;
+type GrandBouleReleaseBoundary = {
+    paths: readonly string[];
+    gitPathspecs: readonly string[];
     digestLabel: string;
 };
 
-export const GRAND_BOULE_PRESERVATION_REGISTRY = {
-    kind: 'patent-directed-component',
-    retention: 'defer-behind-admission',
-    owner: 'OS-05',
+export const GRAND_BOULE_RELEASE_REGISTRY = {
+    kind: 'project-source',
+    retention: 'keep',
+    owner: 'OS-10',
     releaseModes: ['source', 'web', 'desktop'],
-    productSurfaces: ['Preserved Grand Boule source and project schema'],
+    productSurfaces: ['Grand Boule source, browser WASM, and desktop runtime'],
     boundaries: [
         {
-            path: 'crates/daw-dsp/src/grand_boule/**',
-            gitPathspec: 'crates/daw-dsp/src/grand_boule',
+            paths: ['crates/daw-dsp/src/grand_boule/**'],
+            gitPathspecs: ['crates/daw-dsp/src/grand_boule'],
             digestLabel: 'grand-boule-native-rust',
         },
         {
-            path: 'src/modules/GrandBoule/**',
-            gitPathspec: 'src/modules/GrandBoule',
-            digestLabel: 'grand-boule-product-module',
+            paths: ['.agents/decisions/0036-readmit-grand-boule.md'],
+            gitPathspecs: ['.agents/decisions/0036-readmit-grand-boule.md'],
+            digestLabel: 'grand-boule-admission-decision',
         },
         {
-            path: 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            gitPathspec: 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            digestLabel: 'grand-boule-product-descriptor',
+            paths: [
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts',
+                'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',
+            ],
+            gitPathspecs: [
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts',
+                'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',
+            ],
+            digestLabel: 'grand-boule-discovery-catalog',
         },
         {
-            path: 'src/infra/release/deviceReleaseAdmission.ts',
-            gitPathspec: 'src/infra/release/deviceReleaseAdmission.ts',
-            digestLabel: 'grand-boule-release-admission',
+            paths: [
+                'src/infra/release/deviceReleaseAdmission.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts',
+                'src/utils/nativeDspDeviceTypes.ts',
+            ],
+            gitPathspecs: [
+                'src/infra/release/deviceReleaseAdmission.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts',
+                'src/utils/nativeDspDeviceTypes.ts',
+            ],
+            digestLabel: 'grand-boule-factory-admission',
         },
         {
-            path: 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
-            gitPathspec: 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
-            digestLabel: 'grand-boule-node-host',
+            paths: [
+                'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+                'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts',
+                'src/modules/AudioEngine/models/AudioEngineState.ts',
+                'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+                'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+                'src/modules/AudioEngine/worklets/grandBoule*.ts',
+                'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
+            ],
+            gitPathspecs: [
+                'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+                'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts',
+                'src/modules/AudioEngine/models/AudioEngineState.ts',
+                'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+                'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+                ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
+                'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
+            ],
+            digestLabel: 'grand-boule-live-runtime',
         },
         {
-            path: 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
-            gitPathspec: 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
-            digestLabel: 'grand-boule-ring-protocol',
+            paths: [
+                'src/modules/GrandBoule/**',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
+                'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+                'src/app/bootstrap.ts',
+                'src/app/getProductionCommandHandlerMaps.ts',
+                'src/utils/handlerContract.ts',
+            ],
+            gitPathspecs: [
+                'src/modules/GrandBoule',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
+                'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+                'src/app/bootstrap.ts',
+                'src/app/getProductionCommandHandlerMaps.ts',
+                'src/utils/handlerContract.ts',
+            ],
+            digestLabel: 'grand-boule-project-state',
         },
         {
-            path: 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
-            gitPathspec: 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
-            digestLabel: 'grand-boule-worker-host',
+            paths: [
+                'src/app/prepareOfflineDeviceSetup.ts',
+                'src/modules/AudioEngine/useCases/buildDeviceChain.ts',
+                'src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts',
+            ],
+            gitPathspecs: [
+                'src/app/prepareOfflineDeviceSetup.ts',
+                'src/modules/AudioEngine/useCases/buildDeviceChain.ts',
+                'src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts',
+            ],
+            digestLabel: 'grand-boule-offline-composition',
         },
         {
-            path: 'src/modules/AudioEngine/worklets/grandBoule*.ts',
-            gitPathspec: ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
-            digestLabel: 'grand-boule-worklet-hosts',
+            paths: [
+                'crates/daw-dsp/benches/quantum.rs',
+                'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
+                'crates/daw-dsp/tests/quantum_bench_census.rs',
+                'scripts/checkReleaseInventory.ts',
+            ],
+            gitPathspecs: [
+                'crates/daw-dsp/benches/quantum.rs',
+                'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
+                'crates/daw-dsp/tests/quantum_bench_census.rs',
+                'scripts/checkReleaseInventory.ts',
+            ],
+            digestLabel: 'grand-boule-release-proof',
         },
-    ] satisfies readonly GrandBoulePreservationBoundary[],
+    ] satisfies readonly GrandBouleReleaseBoundary[],
 } as const;
 
 export function grandBouleReleaseInventoryContract(
@@ -508,31 +997,33 @@ export function grandBouleReleaseInventoryContract(
     | 'productSurfaces'
 > {
     return {
-        kind: GRAND_BOULE_PRESERVATION_REGISTRY.kind,
-        retention: GRAND_BOULE_PRESERVATION_REGISTRY.retention,
-        owner: GRAND_BOULE_PRESERVATION_REGISTRY.owner,
-        releaseModes: [...GRAND_BOULE_PRESERVATION_REGISTRY.releaseModes],
-        paths: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(({ path }) => path),
+        kind: GRAND_BOULE_RELEASE_REGISTRY.kind,
+        retention: GRAND_BOULE_RELEASE_REGISTRY.retention,
+        owner: GRAND_BOULE_RELEASE_REGISTRY.owner,
+        releaseModes: [...GRAND_BOULE_RELEASE_REGISTRY.releaseModes],
+        paths: GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ paths }) => [...paths]),
         sources: [
             'crates/daw-dsp/src/grand_boule/',
-            'src/modules/GrandBoule/',
-            'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            'src/infra/release/deviceReleaseAdmission.ts',
-            'retained Grand Boule AudioEngine host, worker, and worklet source',
-            'active patent sources recorded in the readiness audit',
+            '.agents/decisions/0036-readmit-grand-boule.md',
+            'Grand Boule discovery, catalog, factory, and release-admission source',
+            'Grand Boule AudioEngine live host, registry, scheduling, worker, and worklet source',
+            'Grand Boule project-state action, hydration, and offline-composition source',
+            'Grand Boule browser runner, gates, reference population, processor, recipe, renderer, native benchmark, census, retained JSON/Markdown evidence, and release-checker source',
+            'distributed daw-dsp WASM glue, declarations, mirrors, and binary',
         ],
         revisions: [
             'current tracked Rust source',
-            'current tracked Grand Boule product source',
-            'current tracked Grand Boule descriptor and release-admission boundary',
-            'current tracked AudioEngine host boundary',
+            'current tracked ADR 0036 source-admission record',
+            'current tracked discovery, factory, and release-admission boundaries',
+            'current tracked live host, scheduling, action, hydration, and offline boundaries',
+            'current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners',
         ],
-        digests: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(
-            ({ gitPathspec, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, [gitPathspec])}:${digestLabel}`
+        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
+            ({ gitPathspecs, digestLabel }) =>
+                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs)}:${digestLabel}`
         ),
-        licenses: ['pending:OS-10-project-grant', 'unverified:HAL-parameter-source-reuse-terms'],
-        productSurfaces: [...GRAND_BOULE_PRESERVATION_REGISTRY.productSurfaces],
+        licenses: ['pending:OS-10-project-grant'],
+        productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
 }
 
@@ -1174,7 +1665,9 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         stdio: 'inherit',
     });
     assertGrandBouleRustWasmBoundary(root);
-    assertGrandBouleWithheldFromWasm(root);
+    assertGrandBouleDesignAroundSource(root);
+    assertGrandBouleReleasedInWasm(root);
+    assertGrandBouleMeasurementAdmission(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')

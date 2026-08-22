@@ -85,7 +85,7 @@ function recordingEngine(): GrandBouleEngineHandle {
  * tell a write that landed from one that never happened.
  */
 const COMMITTED: Readonly<Record<GrandBoulePersistedParamId, number>> = {
-    masterGain: 1.45,
+    masterGain: 0.85,
     soundboardSend: 0.18,
     sympatheticSend: 0.83,
     lidPosition: 0.35,
@@ -275,7 +275,7 @@ describe('Grand Boule knob values survive a reload', () => {
 
     it('leaves a parameter project truth holds nothing for on its module default', () => {
         trackStore.set({
-            tracks: [grandBouleTrack({ masterGain: 1.9 })],
+            tracks: [grandBouleTrack({ masterGain: 0.9 })],
             selectedTrackId: TRACK_ID,
             ghostClips: [],
         });
@@ -283,7 +283,7 @@ describe('Grand Boule knob values survive a reload', () => {
         simulateReload();
 
         const defaults = createDefaultGrandBouleConfig();
-        expect(sessionConfig('masterGain')).toBe(1.9);
+        expect(sessionConfig('masterGain')).toBe(0.9);
         expect(sessionConfig('soundboardSend')).toBe(defaults.soundboardSend);
         expect(sessionConfig('sympatheticSend')).toBe(defaults.sympatheticSend);
         expect(sessionConfig('lidPosition')).toBe(defaults.lidPosition);
@@ -374,7 +374,7 @@ describe('Grand Boule knob values survive a reload', () => {
 
         // Interior points, not just the endpoints: a guard that only drives the
         // last value cannot tell a coalesced gesture from a reshaped one.
-        const sweep = [0.4, 0.55, 0.72, 0.88, 1.06, 1.24];
+        const sweep = [0.4, 0.55, 0.72, 0.81, 0.9, 0.96];
         for (const intermediate of sweep) {
             SETTERS.masterGain(intermediate, true);
         }
@@ -387,9 +387,9 @@ describe('Grand Boule knob values survive a reload', () => {
         expect(stored('masterGain')).toBe(CONSTRUCTED.masterGain);
         expect(undoDepth()).toBe(before);
 
-        SETTERS.masterGain(1.45);
+        SETTERS.masterGain(0.85);
         await vi.waitFor(() => {
-            expect(stored('masterGain')).toBe(1.45);
+            expect(stored('masterGain')).toBe(0.85);
         });
 
         expect(undoDepth()).toBe(before + 1);
