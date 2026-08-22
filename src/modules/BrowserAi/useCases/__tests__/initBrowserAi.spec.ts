@@ -21,6 +21,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 import { type CapabilityReport } from '../../models/CapabilityReport';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
+import { type StorageStatus } from '../../models/StorageStatus';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
@@ -36,6 +37,7 @@ type CheckVerifiedModel = (input: {
     sha256: string;
     sizeBytes: number;
 }) => Promise<boolean>;
+type GetStorageStatus = () => Promise<StorageStatus>;
 
 type LoggerMock = {
     info: (message: string) => void;
@@ -77,6 +79,13 @@ const fresh_capability_report: CapabilityReport = {
     detectedAt: 1_803_556_800_000,
 };
 
+const empty_storage_status: StorageStatus = {
+    usedBytes: 0,
+    limitBytes: 2 * 1024 * 1024 * 1024,
+    persisted: false,
+    availableBytes: null,
+};
+
 describe('initBrowserAi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -107,6 +116,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -130,6 +140,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -162,6 +173,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
             checkVerifiedModel: vi.fn().mockResolvedValue(false),
             checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: with_ddsp_instrument_lock,
         });
 
@@ -192,6 +204,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
             checkVerifiedModel: vi.fn().mockResolvedValue(false),
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(true),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: vi.fn().mockRejectedValue(new Error('lock failed')),
         });
 
@@ -214,6 +227,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -221,6 +235,69 @@ describe('initBrowserAi', () => {
 
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('ready');
         expect(modelRegistryStore.value?.kokoroModel?.downloadProgress).toBe(1);
+    });
+
+    it('restores verified cached models and actual storage usage on reload', async () => {
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(true);
+        const check_ddsp_instrument_ready = vi.fn().mockResolvedValue(true);
+        const get_storage_status = vi.fn<GetStorageStatus>().mockResolvedValue({
+            ...empty_storage_status,
+            usedBytes: 4_269_123,
+        });
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: get_storage_status,
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((candidate) =>
+                expect.objectContaining({ id: candidate.id, status: 'ready', downloadProgress: 1 })
+            )
+        );
+        expect(modelRegistryStore.value?.kokoroModel).toMatchObject({ status: 'ready', downloadProgress: 1 });
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(4_269_123);
+        expect(get_storage_status).toHaveBeenCalledOnce();
+        expect(get_storage_status.mock.invocationCallOrder[0]).toBeGreaterThan(
+            Math.max(
+                ...check_ddsp_instrument_ready.mock.invocationCallOrder,
+                ...check_verified_model.mock.invocationCallOrder
+            )
+        );
+    });
+
+    it('keeps verified registry state when storage usage measurement fails', async () => {
+        const logger_mock = create_logger_mock();
+        const get_storage_status = vi
+            .fn<GetStorageStatus>()
+            .mockRejectedValue(new DOMException('OPFS estimate denied', 'NotAllowedError'));
+
+        injectDependencies(initBrowserAi, {
+            logger: logger_mock,
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: vi.fn().mockResolvedValue(true),
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(true),
+            getStorageStatus: get_storage_status,
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        await expect(initBrowserAi()).resolves.toBeUndefined();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((candidate) => expect.objectContaining({ id: candidate.id, status: 'ready' }))
+        );
+        expect(modelRegistryStore.value?.kokoroModel?.status).toBe('ready');
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(0);
+        expect(get_storage_status).toHaveBeenCalledOnce();
+        expect(logger_mock.warn).toHaveBeenCalledWith(
+            '[BrowserAi] Storage usage probe failed: NotAllowedError: OPFS estimate denied'
+        );
     });
 
     it('should preserve cache-probe failures as model error state', async () => {
@@ -234,6 +311,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -255,6 +333,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -280,6 +359,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -303,6 +383,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -327,6 +408,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -356,6 +438,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
