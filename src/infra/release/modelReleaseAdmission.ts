@@ -4,6 +4,6 @@ export const MODEL_RELEASE_ADMISSION = Object.freeze({
     kokoro: true,
     rave: false,
     stemSeparation: false,
-    webLlm: false,
+    webLlm: true,
     whisper: true,
 });

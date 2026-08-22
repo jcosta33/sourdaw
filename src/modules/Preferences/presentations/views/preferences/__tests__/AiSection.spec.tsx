@@ -39,17 +39,6 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     setAiBackendPreference: mocks.setAiBackendPreference,
 }));
 
-vi.mock('#/infra/release/modelReleaseAdmission', () => ({
-    MODEL_RELEASE_ADMISSION: {
-        basicPitch: true,
-        ddsp: false,
-        kokoro: true,
-        rave: false,
-        webLlm: false,
-        whisper: true,
-    },
-}));
-
 vi.mock('#/modules/BrowserAi/presentations/views', () => ({
     CapabilityReportPanel: () => <div data-testid="capability-report-panel" />,
     ModelManagerPanel: () => <div data-testid="model-manager-panel" />,
@@ -69,16 +58,15 @@ describe('AiSection', () => {
         mocks.resolveBackend.mockReturnValue('none');
     });
 
-    it('withholds the unproved browser model and keeps hosted selection explicit', () => {
+    it('offers Browser WebLLM alongside desktop hosted selection', () => {
         render(<AiSection />);
 
         expect(screen.getByRole('option', { name: 'Automatic' })).toBeInTheDocument();
-        expect(screen.queryByRole('option', { name: 'Browser WebLLM' })).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Hosted provider' })).toBeInTheDocument();
-        expect(screen.getByText(/No local language model is admitted in this release/)).toBeInTheDocument();
 
-        fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'cloud' } });
-        expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('cloud');
+        fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'webllm' } });
+        expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
     });
 
     it('configures an explicitly selected hosted provider without exposing a retired option', async () => {
@@ -101,7 +89,7 @@ describe('AiSection', () => {
         render(<AiSection />);
 
         expect(screen.queryByRole('option', { name: 'Hosted provider' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('option', { name: 'Browser WebLLM' })).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
         expect(screen.queryByLabelText(/API key/u)).not.toBeInTheDocument();
         expect(screen.getByText(/Web builds never accept provider credentials/u)).toBeInTheDocument();
     });

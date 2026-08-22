@@ -43,14 +43,14 @@ describe('getBackendChain', () => {
         expect(getBackendChain()).toEqual([]);
     });
 
-    it('does not expose the withheld browser model when WebGPU is available', () => {
+    it('resolves the local WebLLM route when WebGPU is available', () => {
         Object.defineProperty(globalThis, 'navigator', {
             value: { gpu: {} },
             configurable: true,
             writable: true,
         });
 
-        expect(getBackendChain()).toEqual([]);
+        expect(getBackendChain()).toEqual(['webllm']);
     });
 
     it('uses a hosted provider only after explicit selection', () => {
