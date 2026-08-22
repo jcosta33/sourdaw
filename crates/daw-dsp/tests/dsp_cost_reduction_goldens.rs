@@ -110,9 +110,8 @@ fn mechanical_noise_bursts_render_identically_with_precomputed_coefficients() {
     assert_eq!(hash_samples(&render), 7_134_174_258_747_095_649);
 }
 
-/// F8 adds a per-sample output follower to every voice, and F14/F17 sit under
-/// the same render. None of them may move a sample of a held chord at the
-/// shipped default tier.
+/// Approved Grand Boule baseline after the project-authored FIR body and
+/// tuning redesign. Later DSP edits must be reviewed before moving this hash.
 #[test]
 fn grand_boule_held_chord_renders_identically() {
     let mut engine = GrandBouleEngine::new(48_000.0, 32);
@@ -129,7 +128,7 @@ fn grand_boule_held_chord_renders_identically() {
         engine.process_block(&mut left, &mut right);
         render.extend_from_slice(&left);
     }
-    assert_eq!(hash_samples(&render), 7_054_522_208_263_128_465);
+    assert_eq!(hash_samples(&render), 18_068_797_612_036_848_195);
 }
 
 /// F17: the f32 partial loop now starts at `f64_partials`, skipping slots

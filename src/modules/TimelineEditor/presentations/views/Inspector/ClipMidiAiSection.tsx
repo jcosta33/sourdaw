@@ -1,6 +1,6 @@
-import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { type ReactElement, useState, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { Sparkles, Loader2, Music, Mic, AudioLines, Download } from 'lucide-react';
+import { Sparkles, Loader2, Music, Mic, AudioLines, Download, Cpu } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
@@ -20,10 +20,18 @@ import {
     renderDiffSingerPhrase,
     downloadModel,
     KOKORO_MODEL_ENTRY,
+    getDdspPhraseId,
+    invalidateDdspPhraseIfSourceChanged,
+    isDdspInstrumentId,
+    recordDdspPhraseSource,
+    renderDdspInstrument,
 } from '#/modules/BrowserAi/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { tempoMapStore } from '#/modules/Transport/stores';
+import { defaultGrooveTemplateState, grooveTemplateStore, type MidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../../models/TrackViewTypes';
@@ -57,10 +65,109 @@ type StillOwnsPanelInput = {
     launchClipId: string;
 };
 
+type DdspLaunch = {
+    controller: AbortController;
+    sourceFingerprint: string;
+};
+
+type DdspSourceFingerprintInput = {
+    defaultTempo: number;
+    durationSec: number;
+    instrument: { artifactVersion?: string; id: string } | undefined;
+    notes: ReadonlyArray<DdspTimedNote>;
+    projection: Pick<Clip, 'endBeat' | 'loopEnabled' | 'loopLength' | 'midiOffsetBeats' | 'startBeat'>;
+};
+
+type DdspTimedNote = { durationSec: number; pitch: number; startSec: number; velocity: number };
+
+const EMPTY_MIDI_STATE: MidiStoreState = {
+    probabilitySeed: 0,
+    notesByClipId: {},
+    ccByClipId: {},
+    pitchBendByClipId: {},
+};
+
+function ddspSourceFingerprint({
+    defaultTempo,
+    durationSec,
+    instrument,
+    notes,
+    projection,
+}: DdspSourceFingerprintInput): string {
+    return JSON.stringify([
+        instrument?.id ?? null,
+        instrument?.artifactVersion ?? null,
+        defaultTempo,
+        durationSec,
+        notes.map(({ pitch, velocity, startSec, durationSec: noteDurationSec }) => [
+            pitch,
+            velocity,
+            startSec,
+            noteDurationSec,
+        ]),
+        projection.startBeat,
+        projection.endBeat,
+        projection.midiOffsetBeats ?? 0,
+        projection.loopEnabled ?? false,
+        projection.loopLength ?? null,
+    ]);
+}
+
+function projectDdspNotes({
+    clip,
+    defaultTempo,
+    notes,
+    tempoChanges,
+}: {
+    clip: Clip;
+    defaultTempo: number;
+    notes: MidiStoreState['notesByClipId'][string];
+    tempoChanges: Parameters<typeof secondsBetweenBeats>[0];
+}): DdspTimedNote[] {
+    const loopProjection = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
+    const projectedNotes = Array.from({ length: loopProjection.iterationCount }, (_, iterationIndex) => {
+        const iterationStartBeat = clip.startBeat + iterationIndex * loopProjection.loopLengthBeats;
+        return notes.flatMap((note) =>
+            projectClipMidiEvents({
+                events: [note],
+                clipId: clip.id,
+                clipStartBeat: clip.startBeat,
+                clipEndBeat: clip.endBeat,
+                iterationStartBeat,
+                loopLengthBeats: loopProjection.loopLengthBeats,
+                midiOffsetBeats,
+                loopEnabled: clip.loopEnabled ?? false,
+            })
+        );
+    }).flat();
+    return projectedNotes.flatMap((note) => {
+        const endBeat = note.startBeat + note.duration;
+        if (endBeat <= note.startBeat) {
+            return [];
+        }
+        return [
+            {
+                pitch: note.pitch,
+                velocity: note.velocity,
+                startSec: secondsBetweenBeats(tempoChanges, clip.startBeat, note.startBeat, defaultTempo),
+                durationSec: secondsBetweenBeats(tempoChanges, note.startBeat, endBeat, defaultTempo),
+            },
+        ];
+    });
+}
+
 export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElement => {
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
     const [isRenderingTts, setIsRenderingTts] = useState(false);
+    const [isRenderingDdsp, setIsRenderingDdsp] = useState(false);
+    const [ddspInstrumentId, setDdspInstrumentId] = useState('');
+    const [ddspResult, setDdspResult] = useState<RenderResult | null>(null);
     // DiffSinger SVS uses diffusion-based synthesis with configurable step count.
     const [svsRenderQuality, setSvsRenderQuality] = useState<RenderQuality>('standard');
     const [ttsText, setTtsText] = useState('');
@@ -81,6 +188,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         vocoder: null,
         storageUsedBytes: 0,
     });
+    const midiState = useStore(midiStore, EMPTY_MIDI_STATE);
+    useStore(grooveTemplateStore, defaultGrooveTemplateState);
+    const tempoMapState = useStore(tempoMapStore, { changes: [] });
+    const transportState = useStore(transportStore, defaultTransportState);
 
     const capability = capState?.phase === 'done' ? capState.report.capability : null;
     const isUnsupported = capability === 'unsupported-browser';
@@ -89,6 +200,29 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;
     const vocoderStatus = registry?.vocoder?.status ?? 'not-downloaded';
     const vocoderProgress = registry?.vocoder?.downloadProgress ?? 0;
+    const readyDdspInstruments = registry?.ddspInstruments.filter((instrument) => instrument.status === 'ready') ?? [];
+    const selectedDdspInstrument =
+        readyDdspInstruments.find((instrument) => instrument.id === ddspInstrumentId) ?? readyDdspInstruments[0];
+    const ddspNotes = midiState.notesByClipId[clip.id] ?? [];
+    const ddspDurationSec = secondsBetweenBeats(
+        tempoMapState.changes,
+        clip.startBeat,
+        clip.endBeat,
+        transportState.tempo
+    );
+    const projectedDdspNotes = projectDdspNotes({
+        clip,
+        defaultTempo: transportState.tempo,
+        notes: ddspNotes,
+        tempoChanges: tempoMapState.changes,
+    });
+    const currentDdspSourceFingerprint = ddspSourceFingerprint({
+        defaultTempo: transportState.tempo,
+        durationSec: ddspDurationSec,
+        instrument: selectedDdspInstrument,
+        notes: projectedDdspNotes,
+        projection: clip,
+    });
 
     // Every AI action here runs for seconds while the panel stays interactive, so each one has
     // to prove it still owns the panel before writing anything back (audit M-250). Two
@@ -105,14 +239,59 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     //     re-enables a button whose first job is still in flight.
     const renderedClipIdRef = useRef(clip.id);
     const variationsLaunchRef = useRef<AbortController | null>(null);
+    const ddspLaunchRef = useRef<DdspLaunch | null>(null);
     const ttsLaunchRef = useRef<AbortController | null>(null);
     const svsLaunchRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        setDdspInstrumentId(selectedDdspInstrument?.id ?? '');
+    }, [selectedDdspInstrument?.id]);
+
+    useLayoutEffect(
+        () => () => {
+            const activeDdspLaunch = ddspLaunchRef.current;
+            ddspLaunchRef.current = null;
+            activeDdspLaunch?.controller.abort();
+        },
+        [clip.id]
+    );
+
+    const committedDdspSourceRef = useRef({
+        clipId: clip.id,
+        fingerprint: currentDdspSourceFingerprint,
+    });
+
+    useLayoutEffect(() => {
+        const previous = committedDdspSourceRef.current;
+        committedDdspSourceRef.current = { clipId: clip.id, fingerprint: currentDdspSourceFingerprint };
+        const sourceChanged = previous.clipId === clip.id && previous.fingerprint !== currentDdspSourceFingerprint;
+        const invalidated = invalidateDdspPhraseIfSourceChanged(clip.id, currentDdspSourceFingerprint);
+        if (sourceChanged) {
+            const activeLaunch = ddspLaunchRef.current;
+            if (activeLaunch !== null) {
+                ddspLaunchRef.current = null;
+                activeLaunch.controller.abort();
+                setIsRenderingDdsp(false);
+            }
+        }
+        if (sourceChanged || invalidated) {
+            setDdspResult(null);
+        }
+    }, [clip.id, currentDdspSourceFingerprint]);
 
     const stillOwnsPanel = ({ signal, launchClipId }: StillOwnsPanelInput): boolean => {
         if (signal.aborted) {
             return false;
         }
         return renderedClipIdRef.current === launchClipId;
+    };
+
+    const stillOwnsDdspLaunch = (launch: DdspLaunch, launchClipId: string): boolean => {
+        return (
+            ddspLaunchRef.current === launch &&
+            committedDdspSourceRef.current.fingerprint === launch.sourceFingerprint &&
+            stillOwnsPanel({ signal: launch.controller.signal, launchClipId })
+        );
     };
 
     const handleGenerateVariations = async (): Promise<void> => {
@@ -172,7 +351,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setVariationTokenCount(0);
         setIsGeneratingVariations(false);
         setIsRenderingTts(false);
+        setIsRenderingDdsp(false);
         setIsRenderingSvs(false);
+        setDdspResult(null);
         setTtsResults([]);
         setSvsResults([]);
     }
@@ -185,6 +366,59 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             sizeBytes: KOKORO_MODEL_ENTRY.sizeBytes,
             sha256: KOKORO_MODEL_ENTRY.sha256,
         });
+    };
+
+    const handleRenderDdsp = async (): Promise<void> => {
+        const instrument = selectedDdspInstrument;
+        if (!instrument) {
+            notifyUser('Download a DDSP instrument in AI Model Manager first', 'error');
+            return;
+        }
+        const instrumentId = instrument.id;
+        if (!isDdspInstrumentId(instrumentId)) {
+            notifyUser('The selected DDSP instrument is not admitted in this release', 'error');
+            return;
+        }
+
+        if (projectedDdspNotes.length === 0) {
+            notifyUser('No MIDI notes in this clip to render', 'error');
+            return;
+        }
+
+        setIsRenderingDdsp(true);
+        setDdspResult(null);
+        ddspLaunchRef.current?.controller.abort();
+        const launch: DdspLaunch = {
+            controller: new AbortController(),
+            sourceFingerprint: currentDdspSourceFingerprint,
+        };
+        ddspLaunchRef.current = launch;
+        const launchClipId = clip.id;
+        try {
+            const result = await renderDdspInstrument({
+                phraseId: getDdspPhraseId(clip.id),
+                instrumentId,
+                notes: projectedDdspNotes,
+                durationSec: ddspDurationSec,
+                signal: launch.controller.signal,
+            });
+            if (!stillOwnsDdspLaunch(launch, launchClipId)) {
+                return;
+            }
+            setDdspResult({ audio: result.audio, sampleRate: result.sampleRate, label: 'DDSP', name: instrument.name });
+            recordDdspPhraseSource(clip.id, launch.sourceFingerprint);
+            notifyAiChange('Instrument render complete', [`${instrument.name} rendered — drag it onto an audio track`]);
+        } catch (error) {
+            if (!stillOwnsDdspLaunch(launch, launchClipId) || (error instanceof Error && error.name === 'AbortError')) {
+                return;
+            }
+            notifyUser(error instanceof Error ? error.message : 'DDSP render failed', 'error');
+        } finally {
+            if (ddspLaunchRef.current === launch) {
+                ddspLaunchRef.current = null;
+                setIsRenderingDdsp(false);
+            }
+        }
     };
 
     const handlePreviewVoice = async (): Promise<void> => {
@@ -760,6 +994,74 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         )}
                     </Button>
                 </DawPluginSectionCard>
+
+                {isUnsupported ? null : (
+                    <DawPluginSectionCard
+                        title="Instrument"
+                        detail={<Cpu className="size-3 text-[var(--color-accent-cyan)]" aria-hidden="true" />}
+                        detailMode="badge"
+                    >
+                        {readyDdspInstruments.length === 0 ? (
+                            <DawEmptyState
+                                compact
+                                title="Download an instrument to get started"
+                                description="Get a DDSP instrument from AI Model Manager to render this MIDI clip."
+                                action={
+                                    <Button
+                                        variant="secondary"
+                                        size="xs"
+                                        className="h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)]"
+                                        onClick={openPreferencesDialog}
+                                    >
+                                        <Download className="size-3 mr-1" aria-hidden="true" />
+                                        Browse Instruments
+                                    </Button>
+                                }
+                            />
+                        ) : (
+                            <Stack gap={2}>
+                                <DawCompactSelect
+                                    value={selectedDdspInstrument?.id ?? ''}
+                                    onChange={(event) => setDdspInstrumentId(event.target.value)}
+                                    aria-label="DDSP instrument"
+                                    className="w-full"
+                                >
+                                    {readyDdspInstruments.map((instrument) => (
+                                        <option key={instrument.id} value={instrument.id}>
+                                            {instrument.name}
+                                        </option>
+                                    ))}
+                                </DawCompactSelect>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-cyan)]/20 hover:bg-[var(--color-accent-cyan)]/40 text-[var(--color-accent-cyan)]"
+                                    onClick={handleRenderDdsp}
+                                    disabled={isRenderingDdsp}
+                                >
+                                    {isRenderingDdsp ? (
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />{' '}
+                                            Rendering…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Cpu className="size-3 mr-1" aria-hidden="true" /> Render Instrument
+                                        </>
+                                    )}
+                                </Button>
+                                {ddspResult ? (
+                                    <AiRenderClipPreview
+                                        audio={ddspResult.audio}
+                                        sampleRate={ddspResult.sampleRate}
+                                        label={ddspResult.label}
+                                        name={ddspResult.name}
+                                    />
+                                ) : null}
+                            </Stack>
+                        )}
+                    </DawPluginSectionCard>
+                )}
 
                 {/* Vocals — unified section for Spoken (Kokoro TTS) and Sung (DiffSinger SVS) */}
                 {renderIife_12()}

@@ -190,7 +190,18 @@ export const initBrowserAi = inject({
                 for (const clipId of Object.keys(nextNotesByClipId)) {
                     // Compare by reference — note arrays are replaced on every edit
                     if (nextNotesByClipId[clipId] !== prevNotesByClipId[clipId]) {
-                        for (const phraseId of [clipId, getDdspPhraseId(clipId)]) {
+                        const ddspPhraseId = getDdspPhraseId(clipId);
+                        for (const phraseId of [clipId, ddspPhraseId]) {
+                            // A completed canonical DDSP phrase carries its exact render-source
+                            // fingerprint. ClipMidiAiSection owns invalidation for those phrases,
+                            // so this coarse note-reference subscription remains only as a
+                            // backward-compatible fallback for untracked DDSP previews.
+                            if (
+                                phraseId === ddspPhraseId &&
+                                queueState.phraseSourceFingerprints?.[phraseId] !== undefined
+                            ) {
+                                continue;
+                            }
                             const currentStatus = queueState.phraseStatusMap[phraseId];
                             if (!currentStatus || !renderedStatuses.has(currentStatus)) {
                                 continue;

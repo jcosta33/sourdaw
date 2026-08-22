@@ -10,6 +10,8 @@ import { saveTrackTemplates } from '../../repositories/trackTemplate/saveTrackTe
 import { saveTrackAsTemplate } from '../saveTrackAsTemplate';
 import { trackTemplateCache } from '../trackTemplate';
 
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
+
 vi.mock('../../repositories/track/getTrackById', () => ({
     getTrackById: vi.fn(),
 }));
@@ -21,6 +23,16 @@ vi.mock('../../repositories/trackTemplate/loadTrackTemplates', () => ({
 vi.mock('../../repositories/trackTemplate/saveTrackTemplates', () => ({
     saveTrackTemplates: vi.fn(),
 }));
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+
+    return {
+        ...actual,
+        findWithheldDeviceType: (devices: ReadonlyArray<{ type: string }>) =>
+            devices.find(({ type }) => injectedWithheldDeviceTypes.has(type))?.type ??
+            actual.findWithheldDeviceType(devices),
+    };
+});
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 describe('saveTrackAsTemplate', () => {
@@ -43,6 +55,7 @@ describe('saveTrackAsTemplate', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         vi.clearAllMocks();
+        injectedWithheldDeviceTypes.clear();
         trackTemplateCache.templates = null;
     });
 
@@ -58,14 +71,15 @@ describe('saveTrackAsTemplate', () => {
     });
 
     it('rejects tracks containing a withheld device', () => {
+        injectedWithheldDeviceTypes.add('test-withheld-device');
         vi.mocked(getTrackById).mockReturnValue(
             TrackDummy.create({
                 id: 'track-1',
                 devices: [
                     {
-                        id: 'grand-boule-source',
-                        name: 'Grand Boule',
-                        type: 'grand-boule',
+                        id: 'withheld-source',
+                        name: 'Withheld test device',
+                        type: 'test-withheld-device',
                         bypassed: false,
                         parameterValues: {},
                     },
@@ -73,11 +87,11 @@ describe('saveTrackAsTemplate', () => {
             })
         );
 
-        expect(saveTrackAsTemplate('track-1', 'Withheld piano')).toBeNull();
+        expect(saveTrackAsTemplate('track-1', 'Withheld test device')).toBeNull();
         expect(loadTrackTemplates).not.toHaveBeenCalled();
         expect(saveTrackTemplates).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledWith(
-            'Track contains withheld device "grand-boule" and was not saved as a template.',
+            'Track contains withheld device "test-withheld-device" and was not saved as a template.',
             'warning'
         );
     });

@@ -1,8 +1,7 @@
 # WASM DSP Pipeline
 
-Sourdaw's built-in device DSP is written in Rust. Release-admitted engines compile to WebAssembly
-for the browser; native builds also retain Grand Boule while it is release-withheld. This document
-describes the WASM pipeline - build, codegen, loading - and its traps.
+Sourdaw's built-in device DSP is written in Rust and compiled to WebAssembly for the browser. This
+document describes the WASM build, codegen, loading path, and its traps.
 
 It complements:
 
@@ -52,16 +51,10 @@ the resulting structured-cloneable `WebAssembly.Module` in `processorOptions`; p
 threads. Sourdaw targets current Chrome, where compiled modules cross these same-agent-cluster
 boundaries. The shared handshake lives in `src/infra/audioWorklet/workletInitShared.ts`.
 
-`daw-dsp` exports instance structs only for modules present in its `wasm32` crate graph. The complete
-`grand_boule` module is gated at `lib.rs` with `cfg(not(target_arch = "wasm32"))`; generated glue,
-declarations, and binaries therefore contain no Grand Boule constructor or implementation. Release
-admission remains the primary product reachability gate.
-
-The browser cost benchmark imports only constructors exported by the committed WASM. Grand Boule
-DSP remains native-only evidence in `benches/quantum.rs`; the browser benchmark retains only its
-host-side ring-consumer row. That row executes the retained consumer clock publication, read-head
-publication, sleep-head load, and render-request atomics, but constructs no Grand Boule DSP and
-makes no browser-WASM DSP timing claim.
+`daw-dsp` exports every release-admitted instance in its `wasm32` crate graph, including Grand
+Boule. Grand Boule's live engine runs in a Worker behind a SharedArrayBuffer ring; its worklet pays
+only the ring-consumer cost. Offline render runs the engine inline because an
+`OfflineAudioContext` has no live deadline.
 
 Release validation treats `scripts/wasm-artifacts.ts` as the package and path authority. It rejects
 unexpected manifest packages, crate roots, artifact paths, and recursively discovered sidecars
@@ -71,12 +64,12 @@ only public non-artifact control file. Every declared text artifact is scanned a
 
 ## 3. What runs where
 
-| Crate                  | WASM | Native | Notes                                                                                         |
-| ---------------------- | ---- | ------ | --------------------------------------------------------------------------------------------- |
-| daw-dsp                | ✓    | ✓      | Grand Boule is native-only; Crumbs WASM uses a preloaded in-memory sample pool                |
-| proof-chamber (reverb) | ✓    | —      | WASM-only crate; "Dutch Oven" device id                                                       |
-| scoring (tuner)        | ✓    | —      | WASM-only crate; passthrough audio + telemetry                                                |
-| daw-wasm-decoder       | ✓    | —      | main-thread decode for codecs `decodeAudioData` can't handle (ALAC, m4a, FLAC/OGG edge cases) |
+| Crate                  | WASM | Native | Notes                                                                                            |
+| ---------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------ |
+| daw-dsp                | ✓    | ✓      | Grand Boule uses Worker/live and inline/offline hosts; Crumbs WASM uses an in-memory sample pool |
+| proof-chamber (reverb) | ✓    | —      | WASM-only crate; "Dutch Oven" device id                                                          |
+| scoring (tuner)        | ✓    | —      | WASM-only crate; passthrough audio + telemetry                                                   |
+| daw-wasm-decoder       | ✓    | —      | main-thread decode for codecs `decodeAudioData` can't handle (ALAC, m4a, FLAC/OGG edge cases)    |
 
 `daw-wasm-decoder` has no worklet generator — it is used on the main thread where async fetch is fine.
 
