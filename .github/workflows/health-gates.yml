@@ -475,8 +475,76 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  dependency-review:
+    name: Dependency review
+    needs: decide
+    # Only a pull request has two commits to diff, and this is seconds, so it
+    # sits in the fast lane rather than waiting for an approval.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
+  codeql:
+    name: CodeQL
+    needs: decide
+    # Minutes rather than seconds, so it runs with the heavy lane instead of on
+    # every push. An approval still precedes every merge, so nothing reaches
+    # main unscanned.
+    if: needs.decide.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+
+  secrets:
+    name: Secret scan
+    needs: decide
+    # Push protection already blocks known provider patterns as they are pushed.
+    # This is the other half: the whole history, which went public in one move
+    # and can no longer be un-published, and the generic patterns — private
+    # keys, connection strings — that provider matching does not cover.
+    if: needs.decide.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Scan history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   gate:
-    name: Health gates
+    # Named distinctly from the workflow so the required check is unambiguous in
+    # the ruleset and in the checks list. Renaming it silently breaks the
+    # requirement: the ruleset matches by name, and a required check that no job
+    # reports leaves every pull request pending forever.
+    name: Gate
     # The single required status check. It runs whatever happened upstream, so
     # a pull request that legitimately skips every heavy leg still reports a
     # conclusion instead of sitting pending.
@@ -486,6 +554,9 @@ jobs:
       - static
       - lint
       - boundaries
+      - dependency-review
+      - codeql
+      - secrets
       - unit
       - build
       - rust
