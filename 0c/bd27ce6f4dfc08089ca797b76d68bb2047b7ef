@@ -1,0 +1,50 @@
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_e2abb32f5075d9 65,168-174,392,399
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_238835862353b7 205-211
+  s_a40848e8f8cca9::t_fe448c75ecc4d0 181-184,190-196
+  s_a40848e8f8cca9::t_04e383c7879a90 198-204
+  s_a40848e8f8cca9::t_392ebf0c0fe750 139-144,148,153-155,157-158
+  s_a40848e8f8cca9::t_2955fc7bfdc852 146-147,149,156,170-180,185-189,197,212-221,223-273
+  s_a40848e8f8cca9::t_f848f93c99f323 1,19-26,104
+  s_a40848e8f8cca9::t_6261ac9359924c 164-165
+  s_a40848e8f8cca9::t_3e4a7ccdd1b253 145,222
+  s_a40848e8f8cca9::t_73b9a8b65a7937 150-152
+  s_a40848e8f8cca9::t_c048dc320c8390 274
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_7db66bf893344b 232-235
+  s_a40848e8f8cca9::t_fa88429f47a858 63,225-226
+  s_a40848e8f8cca9::t_54280dbf04895b 117-118,123
+  s_a40848e8f8cca9::t_de8edc622adaff 1-22,24-40,42-50,52-62,64-116,119-122,124-130,135-169,172-185,187-200,202-224,227-230,236-258,261-345,349-355,358-388,398-420,427-431,435-441,444-473,489-496,502-506
+  s_a40848e8f8cca9::t_f3327e19b30221 346-348,389-397,432-434,480-488
+  s_a40848e8f8cca9::t_2955fc7bfdc852 23,170-171,421-426,474-479
+  s_a40848e8f8cca9::t_52d5a4432e6b0b 41
+  s_a40848e8f8cca9::t_2574b06212ee04 51,131-134,186,201,231,259-260,356-357,442-443,497-501
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_54280dbf04895b 18-25,80,82,147-151,154,180-182,187-189,192-193,199-202,210-211,217-220,620-624
+  s_a40848e8f8cca9::t_fa88429f47a858 616-619
+  s_a40848e8f8cca9::t_52d5a4432e6b0b 194-196,198,203-205,207,212-214,216,221-223,225
+  s_a40848e8f8cca9::t_2955fc7bfdc852 175
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_238835862353b7 132,178-184
+  s_a40848e8f8cca9::t_04e383c7879a90 134,191-200
+  s_a40848e8f8cca9::t_f848f93c99f323 1-36,38-66,78-90,92-100,102-131,133,135-177,185-190,201-204
+  s_a40848e8f8cca9::t_fa88429f47a858 67-77
+  s_a40848e8f8cca9::t_4295a2dd60a751 37,91,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0cbd27ce6f4dfc08089ca797b76d68bb2047b7ef",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
