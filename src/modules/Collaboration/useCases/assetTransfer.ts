@@ -20,7 +20,6 @@ import {
     type DurableAssetRepository,
     type PromoteStagedAssetResult,
     type RebindDurableAssetOwnerResult,
-    type ReconcileOwnedAssetsResult,
     type ReleaseOwnedAssetResult,
     type ReleaseStagedAssetResult,
     type ReleaseStagedAssetsResult,
@@ -84,7 +83,8 @@ export class AssetTransfer {
     private callbacks: AssetTransferCallbacks;
     private durableAssets: DurableAssetRepository;
     private ownerId: string;
-    private unsubscribeInvalidation: () => void;
+    private unsubscribeInvalidation: (() => void) | null;
+    private disposed = false;
     /** Serializes every operation whose durable authority is bound to ownerId. */
     private ownerOperationTail = Promise.resolve();
 
@@ -164,6 +164,9 @@ export class AssetTransfer {
         this.ownerId = ownerId;
         this.durableAssets = durableAssets;
         this.unsubscribeInvalidation = durableAssets.subscribeInvalidation((event) => {
+            if (this.disposed) {
+                return;
+            }
             if (event.ownerId === undefined || event.ownerId === this.ownerId) {
                 this.localAssets.delete(event.hash);
             }
@@ -178,6 +181,10 @@ export class AssetTransfer {
      * retained chunk buffers outlive it.
      */
     dispose(): void {
+        if (this.disposed) {
+            return;
+        }
+        this.disposed = true;
         for (const timer of this.stallTimers.values()) {
             clearTimeout(timer);
         }
@@ -189,28 +196,28 @@ export class AssetTransfer {
         this.abandonedHashes.clear();
         this.servingHashesByPeer.clear();
         this.localAssets.clear();
-        this.unsubscribeInvalidation();
+        this.unsubscribeInvalidation?.();
+        this.unsubscribeInvalidation = null;
     }
 
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
         return this.runOwnerOperation(async (durableAssets) => {
             const stored = await durableAssets.storeDurableAsset(blob, name);
-            this.localAssets.set(stored.hash, { blob: stored.blob, name: stored.name });
+            if (!this.disposed) {
+                this.localAssets.set(stored.hash, { blob: stored.blob, name: stored.name });
+            }
             return stored.hash;
         });
     }
 
     /** Stage an import asset under a unique lease until project commit or cancellation. */
-    async stageLocalAsset(
-        blob: Blob,
-        name: string,
-        leaseId: string,
-        cleanupOwnerId?: string
-    ): Promise<{ hash: string; leaseId: string }> {
+    async stageLocalAsset(blob: Blob, name: string, leaseId: string): Promise<{ hash: string; leaseId: string }> {
         return this.runOwnerOperation(async (durableAssets) => {
-            const staged = await durableAssets.stageAsset(leaseId, blob, name, cleanupOwnerId);
-            this.localAssets.set(staged.hash, { blob: staged.blob, name: staged.name });
+            const staged = await durableAssets.stageAsset(leaseId, blob, name);
+            if (!this.disposed) {
+                this.localAssets.set(staged.hash, { blob: staged.blob, name: staged.name });
+            }
             return { hash: staged.hash, leaseId: staged.leaseId };
         });
     }
@@ -219,7 +226,7 @@ export class AssetTransfer {
     async reopenStagedAsset(leaseId: string, expectedHash: string): Promise<ReopenStagedAssetResult> {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.reopenStagedAsset(leaseId, expectedHash);
-            if (result.status === 'opened') {
+            if (result.status === 'opened' && !this.disposed) {
                 this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
             }
             return result;
@@ -230,7 +237,7 @@ export class AssetTransfer {
     async reopenLocalAsset(hash: string): Promise<ReopenDurableAssetResult> {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.reopenDurableAsset(hash);
-            if (result.status === 'opened') {
+            if (result.status === 'opened' && !this.disposed) {
                 this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
             }
             return result;
@@ -241,7 +248,7 @@ export class AssetTransfer {
     async releaseStagedAsset(leaseId: string, expectedHash: string): Promise<ReleaseStagedAssetResult> {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.releaseStagedAsset(leaseId, expectedHash);
-            if (result.status === 'released' && !result.ownerRetained) {
+            if (!this.disposed && result.status === 'released' && !result.ownerRetained) {
                 this.localAssets.delete(result.hash);
             }
             return result;
@@ -252,7 +259,7 @@ export class AssetTransfer {
     async releaseStagedAssets(bindings: readonly StagedAssetBinding[]): Promise<ReleaseStagedAssetsResult> {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.releaseStagedAssets(bindings);
-            if (result.status === 'released') {
+            if (!this.disposed && result.status === 'released') {
                 for (const release of result.releases) {
                     if (release.status === 'released' && !release.ownerRetained) {
                         this.localAssets.delete(release.hash);
@@ -267,7 +274,7 @@ export class AssetTransfer {
     async promoteStagedAsset(leaseId: string, expectedHash: string): Promise<PromoteStagedAssetResult> {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.promoteStagedAsset(leaseId, expectedHash);
-            if (result.status !== 'failed') {
+            if (!this.disposed && result.status !== 'failed') {
                 this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
             }
             return result;
@@ -283,13 +290,16 @@ export class AssetTransfer {
     async rebindOwner(nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.rebindOwner(nextOwnerId);
-            if (result.status === 'failed') {
+            if (result.status === 'failed' || this.disposed) {
                 return result;
             }
-            this.unsubscribeInvalidation();
+            this.unsubscribeInvalidation?.();
             this.ownerId = nextOwnerId;
             this.durableAssets = createDurableAssetRepository(nextOwnerId);
             this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
+                if (this.disposed) {
+                    return;
+                }
                 if (event.ownerId === undefined || event.ownerId === this.ownerId) {
                     this.localAssets.delete(event.hash);
                 }
@@ -298,23 +308,15 @@ export class AssetTransfer {
         });
     }
 
-    /** Release this project's durable ownership for originals absent from authoritative project references. */
-    async reconcileOwnedAssets(referencedHashes: readonly string[]): Promise<ReconcileOwnedAssetsResult> {
-        return this.runOwnerOperation(async (durableAssets) => {
-            const result = await durableAssets.reconcileOwnedAssets(referencedHashes);
-            if (result.status === 'reconciled') {
-                for (const hash of result.releasedHashes) {
-                    this.localAssets.delete(hash);
-                }
-            }
-            return result;
-        });
-    }
-
     private runOwnerOperation<Result>(
         operation: (durableAssets: DurableAssetRepository) => Promise<Result>
     ): Promise<Result> {
-        const task = this.ownerOperationTail.then(() => operation(this.durableAssets));
+        const task = this.ownerOperationTail.then(() => {
+            if (this.disposed) {
+                throw new Error('AssetTransfer is disposed');
+            }
+            return operation(this.durableAssets);
+        });
         this.ownerOperationTail = task.then(
             () => undefined,
             () => undefined
@@ -346,6 +348,9 @@ export class AssetTransfer {
      * must stay a handful of lookups.
      */
     requestAsset(hash: string): void {
+        if (this.disposed) {
+            return;
+        }
         if (this.localAssets.has(hash) || this.incomingTransfers.has(hash) || this.requestedHashes.has(hash)) {
             return;
         }
@@ -377,6 +382,9 @@ export class AssetTransfer {
 
     /** Handle an incoming asset-related message. */
     async handleMessage(peerId: PeerId, message: PeerMessage): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
         if (message.type !== 'crdt-sync' || message.docId !== DOC_ID_ASSET) {
             return;
         }
@@ -398,6 +406,9 @@ export class AssetTransfer {
 
     /** Arm (or re-arm) the no-progress deadline for one outstanding hash. */
     private armStallTimer(hash: string): void {
+        if (this.disposed) {
+            return;
+        }
         this.clearStallTimer(hash);
         this.stallTimers.set(
             hash,
@@ -432,6 +443,9 @@ export class AssetTransfer {
      * request/abort loop at peer-RTT speed.
      */
     private abortTransfer(hash: string, reason: string): void {
+        if (this.disposed) {
+            return;
+        }
         this.clearStallTimer(hash);
         const wasOutstanding = this.requestedHashes.delete(hash);
         const wasInFlight = this.incomingTransfers.delete(hash);
@@ -470,6 +484,9 @@ export class AssetTransfer {
             // renderer/session restart must still be able to serve originals
             // owned by this project, so every request verifies durable truth.
             const durable = await this.runOwnerOperation((durableAssets) => durableAssets.reopenDurableAsset(hash));
+            if (this.disposed) {
+                return;
+            }
             if (durable.status === 'failed') {
                 this.localAssets.delete(hash);
                 return;
@@ -504,6 +521,9 @@ export class AssetTransfer {
 
         // The manifest must land before its chunks: a chunk for a hash with no
         // manifest is rejected by `handleChunk`.
+        if (this.disposed) {
+            return;
+        }
         await this.peerManager.sendCrdtSync({
             peerId,
             message: {
@@ -524,10 +544,16 @@ export class AssetTransfer {
             : Array.from({ length: chunkCount }, (_, index1) => index1);
 
         for (const index of chunksToSend) {
+            if (this.disposed) {
+                return;
+            }
             const start = index * ASSET_CHUNK_SIZE;
             const end = Math.min(start + ASSET_CHUNK_SIZE, blob.size);
             const slice = blob.slice(start, end);
             const buffer = await slice.arrayBuffer();
+            if (this.disposed) {
+                return;
+            }
             const base64 = arrayBufferToBase64(buffer);
 
             await this.peerManager.sendCrdtSyncBuffered({
@@ -547,6 +573,9 @@ export class AssetTransfer {
     }
 
     private handleManifest(_peerId: PeerId, manifest: AssetManifest): void {
+        if (this.disposed) {
+            return;
+        }
         // Already have the asset — nothing to fetch.
         if (this.localAssets.has(manifest.hash)) {
             return;
@@ -590,6 +619,9 @@ export class AssetTransfer {
     }
 
     private handleChunk(hash: string, index: number, base64Data: unknown): void {
+        if (this.disposed) {
+            return;
+        }
         // Reject chunks for a hash with no in-flight (requested) transfer. This
         // covers chunks arriving before/without a manifest, chunks from peers
         // that lost the first-responder race, and chunks for assets we already
@@ -710,6 +742,9 @@ export class AssetTransfer {
 
             // Verify integrity before accepting the asset.
             const actualHash = await hashBlob(blob);
+            if (this.disposed) {
+                return;
+            }
             if (actualHash !== hash) {
                 this.abortTransfer(hash, `integrity check failed (received ${actualHash})`);
                 return;
@@ -721,6 +756,9 @@ export class AssetTransfer {
             const stored = await this.runOwnerOperation((durableAssets) =>
                 durableAssets.storeDurableAsset(blob, transfer.manifest.name, actualHash)
             );
+            if (this.disposed) {
+                return;
+            }
             if (stored.hash !== hash) {
                 this.abortTransfer(hash, `integrity check failed while storing ${stored.hash}`);
                 return;

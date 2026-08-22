@@ -69,7 +69,6 @@ export { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBin
 export { agentRunCancellation } from './cancelAgentRun';
 export { agentRunLifecycle } from './agentRunLifecycle';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
-export { getAgentRunCleanupOwnerIds } from './getAgentRunCleanupOwnerIds';
 export { agentRunWorkLease } from './agentRunWorkLease';
 export { normalizeAgentFailure } from './agentErrorAndSaga';
 export { admitAgentRetry } from './admitAgentRetry';

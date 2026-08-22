@@ -5,7 +5,6 @@ import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
-import { getAgentRunCleanupOwnerIds } from '../getAgentRunCleanupOwnerIds';
 
 const {
     clear: clearAgentRuns,
@@ -436,64 +435,6 @@ describe('agent run recovery', () => {
                 requiredAt: 200,
             },
         });
-    });
-
-    it('reports a terminal planning run whose staged import still needs restart cleanup', () => {
-        createAgentRun({
-            runId: 'run-terminal-staged-import',
-            request: 'Prepare a stem import confirmation.',
-            mode: 'plan',
-            createdRevision: 'heads-a',
-            createdAt: 100,
-        });
-        agentRunLifecycle.transitionPhase({
-            runId: 'run-terminal-staged-import',
-            phase: 'planning',
-            revision: 'heads-a',
-            transitionedAt: 101,
-        });
-        registerAgentRunTemporaryAsset({
-            runId: 'run-terminal-staged-import',
-            assetId: 'decoded-stem.wav',
-            kind: 'import',
-            cleanupOwner: 'stem-import-preparation',
-            createdAt: 102,
-        });
-        agentRunLifecycle.transitionPhase({
-            runId: 'run-terminal-staged-import',
-            phase: 'completed',
-            transitionedAt: 103,
-        });
-
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({
-            recoveredRunIds: ['run-terminal-staged-import'],
-        });
-        expect(getAgentRun('run-terminal-staged-import')).toMatchObject({
-            temporaryAssets: [{ assetId: 'decoded-stem.wav', status: 'cleanup-pending' }],
-        });
-    });
-
-    it('retains a failed operation identity when durable staging committed before resource handoff', () => {
-        createAgentRun({
-            runId: 'run-staging-handoff-fault',
-            request: 'Prepare stems.',
-            mode: 'plan',
-            createdRevision: 'heads-a',
-            createdAt: 100,
-        });
-        agentRunLifecycle.transitionPhase({
-            runId: 'run-staging-handoff-fault',
-            phase: 'planning',
-            revision: 'heads-a',
-            transitionedAt: 101,
-        });
-        agentRunLifecycle.transitionPhase({
-            runId: 'run-staging-handoff-fault',
-            phase: 'failed',
-            transitionedAt: 102,
-        });
-
-        expect(getAgentRunCleanupOwnerIds()).toContain('run-staging-handoff-fault');
     });
 
     it('keeps a supported persisted schema writable after hydration', async () => {

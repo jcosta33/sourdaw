@@ -16,6 +16,7 @@ import {
     replaceBranchState,
     restoreBranchStateAfterSession,
     waitForCrdtDocumentTransition,
+    DOC_PREFIX_ROOT,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
@@ -81,8 +82,7 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
-    unsubscribeAssetOwner: (() => void) | null;
-    unsubscribeAssetReferences: (() => void) | null;
+    synchronizeAssetOwner: (() => void) | null;
     assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
@@ -97,8 +97,7 @@ const sessionState: {
     isProjectingBranches: false,
     lastProjectedBranchesJson: null,
     sessionEndedByHostDeparture: false,
-    unsubscribeAssetOwner: null,
-    unsubscribeAssetReferences: null,
+    synchronizeAssetOwner: null,
     assetOwnershipTask: Promise.resolve(),
 };
 
@@ -383,6 +382,13 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
         },
+        onSyncApplied: ({ peerId, docId }) => {
+            const senderIsHost =
+                collaborationStore.value?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
+            if (senderIsHost && docId === DOC_PREFIX_ROOT) {
+                sessionState.synchronizeAssetOwner?.();
+            }
+        },
         onSendError: () => {
             // The peer is still connected but has not received these changes.
             // Saying so is the whole point: the alternative is a session that
@@ -490,10 +496,7 @@ function initializeSessionRuntime(
 
     const assetTransfer = sessionState.assetTransfer;
     let ownerSynchronized = options.rebindToSynchronizedOwner !== true;
-    let referencesObserved = ownerSynchronized;
-    let latestReferencedHashes = collaborationAssetOwnership.getReferencedHashes();
-    let referenceVersion = ownerSynchronized ? 1 : 0;
-    let reconciledReferenceVersion = 0;
+    let ownerSynchronizationQueued = false;
     const queueAssetOwnershipTask = (task: () => Promise<void>): void => {
         sessionState.assetOwnershipTask = sessionState.assetOwnershipTask
             .then(async () => {
@@ -507,46 +510,26 @@ function initializeSessionRuntime(
                 setCollaborationError('Could not update ownership of shared audio. The operation can be retried.');
             });
     };
-    const reconcileReferencesNow = async (): Promise<void> => {
-        if (!ownerSynchronized || !referencesObserved || reconciledReferenceVersion === referenceVersion) {
-            return;
-        }
-        const version = referenceVersion;
-        const referencedHashes = [...latestReferencedHashes];
-        const result = await assetTransfer.reconcileOwnedAssets(referencedHashes);
-        if (result.status === 'failed') {
-            throw new Error(`Durable asset reference reconciliation failed: ${result.reason}`);
-        }
-        reconciledReferenceVersion = version;
-    };
-    const reconcileReferences = (): void => {
-        queueAssetOwnershipTask(reconcileReferencesNow);
-    };
-
-    sessionState.unsubscribeAssetReferences = collaborationAssetOwnership.subscribeReferencedHashes((hashes) => {
-        latestReferencedHashes = hashes;
-        referencesObserved = true;
-        referenceVersion += 1;
-        reconcileReferences();
-    });
     if (options.rebindToSynchronizedOwner) {
-        sessionState.unsubscribeAssetOwner = collaborationAssetOwnership.subscribeOwner((nextOwnerId) => {
-            if (!nextOwnerId || nextOwnerId === assetOwnerId || ownerSynchronized) {
+        sessionState.synchronizeAssetOwner = () => {
+            if (ownerSynchronized || ownerSynchronizationQueued) {
                 return;
             }
+            ownerSynchronizationQueued = true;
             queueAssetOwnershipTask(async () => {
-                const result = await assetTransfer.rebindOwner(nextOwnerId);
-                if (result.status === 'failed') {
-                    throw new Error(`Durable asset owner rebind failed: ${result.reason}`);
+                try {
+                    const nextOwnerId = collaborationAssetOwnership.getOwnerId();
+                    const result = await assetTransfer.rebindOwner(nextOwnerId);
+                    if (result.status === 'failed') {
+                        throw new Error(`Durable asset owner rebind failed: ${result.reason}`);
+                    }
+                    ownerSynchronized = true;
+                    sessionState.synchronizeAssetOwner = null;
+                } finally {
+                    ownerSynchronizationQueued = false;
                 }
-                ownerSynchronized = true;
-                sessionState.unsubscribeAssetOwner?.();
-                sessionState.unsubscribeAssetOwner = null;
-                await reconcileReferencesNow();
             });
-        });
-    } else {
-        reconcileReferences();
+        };
     }
 
     return peerManager;
@@ -554,10 +537,7 @@ function initializeSessionRuntime(
 
 /** Tear down all subsystems without changing store state. */
 function cleanupSubsystems(): void {
-    sessionState.unsubscribeAssetOwner?.();
-    sessionState.unsubscribeAssetOwner = null;
-    sessionState.unsubscribeAssetReferences?.();
-    sessionState.unsubscribeAssetReferences = null;
+    sessionState.synchronizeAssetOwner = null;
     sessionState.pendingInviteId = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();

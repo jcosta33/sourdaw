@@ -11,15 +11,13 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
     const recoveredRunIds: string[] = [];
     const runs = state.runs.map((run): AgentRun => {
         const hasUnsettledLease = run.workLeases.some((lease) => lease.terminalState === null);
-        const hasUnsettledTemporaryAsset = run.temporaryAssets.some(
-            (asset) => asset.status === 'live' || asset.status === 'cleanup-pending'
-        );
+        const hasLiveTemporaryAsset = run.temporaryAssets.some((asset) => asset.status === 'live');
         const hasUnsettledSaga = run.saga.steps.some(
             (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
         );
         if (
-            (TERMINAL_PHASES.has(run.phase) && !hasUnsettledTemporaryAsset && !hasUnsettledSaga) ||
-            (run.phase === 'paused' && !hasUnsettledLease && !hasUnsettledTemporaryAsset && !hasUnsettledSaga)
+            (TERMINAL_PHASES.has(run.phase) && !hasUnsettledSaga) ||
+            (run.phase === 'paused' && !hasUnsettledLease && !hasLiveTemporaryAsset && !hasUnsettledSaga)
         ) {
             return run;
         }

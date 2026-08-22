@@ -158,11 +158,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             );
         }
         if (result.preparationRequest === 'stem-import') {
-            const preparedStemImport = await prepareStemImport(
-                input.signal,
-                input.onLocalWorkAttempt,
-                streamIdentity.runId
-            );
+            const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
             if (preparedStemImport.status === 'cancelled') {
                 await settleAutoCreatedRun('completed');
                 input.signal?.removeEventListener('abort', onAbort);

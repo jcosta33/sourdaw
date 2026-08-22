@@ -161,6 +161,8 @@ export type AutomergeSyncHooks = {
      * Peers otherwise have unconditional write access — see `generateInvite`.
      */
     canApplySync?: (peerId: PeerId, docId: string) => boolean;
+    /** Called after a received sync has replaced the authoritative document. */
+    onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
     /** Called when an async persist after a received sync fails. */
     onPersistError?: (error: unknown) => void;
     /**
@@ -459,6 +461,7 @@ export class AutomergeSync {
         } finally {
             this.isApplyingRemoteSync = false;
         }
+        this.hooks.onSyncApplied?.({ peerId, docId });
 
         // Entry-level invalidation, run against the projected post-sync
         // history: capabilities whose entry the sync removed or whose metadata

@@ -6,12 +6,11 @@ import {
     beginMixAnalysis,
     completeMixAnalysis,
     failMixAnalysis,
-    getAgentRunCleanupOwnerIds,
     initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
-import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import {
     clampDeviceParameterValue,
     getAllTracks,
@@ -69,7 +68,6 @@ import {
     canMutateBranchMetadata,
     configureCollaborationAssetOwner,
     leaveSession,
-    reclaimInterruptedStagedAssets,
 } from '#/modules/Collaboration/useCases';
 import {
     commandBatchPreflightPort,
@@ -128,7 +126,6 @@ import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost
 import { projectStore } from '#/modules/Project/stores';
 import {
     productionBriefActionBatchAdmission,
-    getProjectLoadEpoch,
     initGrooveTemplateDirtyTracking,
     initProjectDirtyTracking,
     migrateLegacyProjectSnapshots,
@@ -214,44 +211,11 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
-const captureReferencedAssetHashes = () => [
-    ...new Set(
-        (trackStore.value?.tracks ?? []).flatMap((track) =>
-            track.clips.flatMap((clip) => (clip.assetHash ? [clip.assetHash] : []))
-        )
-    ),
-];
 configureCollaborationAssetOwner({
-    captureProjectEpoch: () => ({
-        ownerId: projectStore.value?.projectId,
-        epoch: getProjectLoadEpoch(),
-        committed: projectStore.value?.initialized === true && projectStore.value.loading === false,
-    }),
-    subscribeProjectEpoch: (listener) =>
-        projectStore.subscribe((state) =>
-            listener({
-                ownerId: state?.projectId,
-                epoch: getProjectLoadEpoch(),
-                committed: state?.initialized === true && state.loading === false,
-            })
-        ),
-    captureReferencedHashes: captureReferencedAssetHashes,
-    subscribeReferencedHashes: (listener) => trackStore.subscribe(() => listener(captureReferencedAssetHashes())),
+    captureOwnerId: () => projectStore.value?.projectId,
 });
 try {
-    const cleanupOwnerIds = getAgentRunCleanupOwnerIds();
     recoverInterruptedAgentRuns();
-    void reclaimInterruptedStagedAssets(cleanupOwnerIds)
-        .then((result) => {
-            if (result.status === 'failed') {
-                throw new Error(`Interrupted staged asset recovery failed: ${result.reason}`);
-            }
-        })
-        .catch((error: unknown) => {
-            logger.error(
-                new Error('Interrupted staged assets could not be reclaimed during startup', { cause: error })
-            );
-        });
 } catch (error) {
     logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
 }

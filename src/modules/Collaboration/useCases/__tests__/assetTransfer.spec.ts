@@ -311,59 +311,6 @@ describe('AssetTransfer', () => {
         retriedTransfer.dispose();
     });
 
-    it('persists the cleanup owner and creation time needed to recover a staged lease after restart', async () => {
-        const now = vi.spyOn(Date, 'now').mockReturnValue(1_735_689_600_000);
-
-        const staged = await transfer.stageLocalAsset(
-            new Blob(['restart-orphan']),
-            'restart-orphan.wav',
-            'asset-stage-restart-orphan',
-            'agent-run-crashed'
-        );
-
-        expect(durableAssetIndexedDb.readLease(staged.leaseId)).toMatchObject({
-            cleanupOwnerId: 'agent-run-crashed',
-            createdAt: 1_735_689_600_000,
-        });
-        now.mockRestore();
-    });
-
-    it('reclaims only the persisted staging set owned by an interrupted operation after restart', async () => {
-        const orphaned = await transfer.stageLocalAsset(
-            new Blob(['orphaned-after-restart']),
-            'orphaned.wav',
-            'asset-stage-orphaned-after-restart',
-            'agent-run-interrupted'
-        );
-        const retained = await transfer.stageLocalAsset(
-            new Blob(['still-live-after-restart']),
-            'retained.wav',
-            'asset-stage-retained-after-restart',
-            'agent-run-still-live'
-        );
-        transfer.dispose();
-        vi.resetModules();
-        const [{ createDurableAssetRepository: createFreshRepository }, { AssetTransfer: FreshAssetTransfer }] =
-            await Promise.all([import('../../repositories/durableAssetRepository'), import('../assetTransfer')]);
-
-        await expect(
-            createFreshRepository(TEST_OWNER).reclaimInterruptedStagedAssets(['agent-run-interrupted'])
-        ).resolves.toMatchObject({
-            status: 'reclaimed',
-            releases: [expect.objectContaining({ leaseId: orphaned.leaseId, status: 'released' })],
-        });
-
-        const recreated = new FreshAssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
-        await expect(recreated.reopenStagedAsset(orphaned.leaseId, orphaned.hash)).resolves.toEqual({
-            status: 'failed',
-            reason: 'lease-terminal-conflict',
-        });
-        await expect(recreated.reopenStagedAsset(retained.leaseId, retained.hash)).resolves.toMatchObject({
-            status: 'opened',
-        });
-        recreated.dispose();
-    });
-
     it('quiesces an already-started staging write before rebinding its owner', async () => {
         const durableAssets = createDurableAssetRepository(TEST_OWNER);
         const stagingStarted = Promise.withResolvers<void>();
@@ -600,31 +547,6 @@ describe('AssetTransfer', () => {
             hash: staged.hash,
         });
         recreated.dispose();
-    });
-
-    it('reconciles exact project references while retaining shared hashes until the final owner releases them', async () => {
-        const otherOwner = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, 'project:other');
-        const blob = new Blob(['shared-project-reference'], { type: 'audio/wav' });
-        const hash = await transfer.addLocalAsset(blob, 'owner-a.wav');
-        await otherOwner.addLocalAsset(blob, 'owner-b.wav');
-
-        await (
-            transfer as unknown as {
-                reconcileOwnedAssets: (hashes: readonly string[]) => Promise<{ status: string }>;
-            }
-        ).reconcileOwnedAssets([]);
-        await expect(otherOwner.reopenLocalAsset(hash)).resolves.toMatchObject({ status: 'opened', hash });
-
-        await (
-            otherOwner as unknown as {
-                reconcileOwnedAssets: (hashes: readonly string[]) => Promise<{ status: string }>;
-            }
-        ).reconcileOwnedAssets([]);
-        await expect(otherOwner.reopenLocalAsset(hash)).resolves.toEqual({
-            status: 'failed',
-            reason: 'missing-asset',
-        });
-        otherOwner.dispose();
     });
 
     it('releases exactly once and deletes only uncommitted unshared bytes', async () => {
@@ -1351,5 +1273,89 @@ describe('AssetTransfer', () => {
         vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS * 2);
 
         expect(onTransferFailed).not.toHaveBeenCalled();
+    });
+
+    it('dispose prevents queued owner work from starting after an in-flight operation settles', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const firstStarted = Promise.withResolvers<void>();
+        const allowFirst = Promise.withResolvers<void>();
+        const storeDurableAsset = vi.fn(async (...input: Parameters<typeof durableAssets.storeDurableAsset>) => {
+            if (storeDurableAsset.mock.calls.length === 1) {
+                firstStarted.resolve();
+                await allowFirst.promise;
+            }
+            return durableAssets.storeDurableAsset(...input);
+        });
+        const disposable = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER, {
+            ...durableAssets,
+            storeDurableAsset,
+        });
+
+        const first = disposable.addLocalAsset(new Blob(['first']), 'first.wav');
+        await firstStarted.promise;
+        const queued = disposable.addLocalAsset(new Blob(['queued']), 'queued.wav');
+        disposable.dispose();
+        allowFirst.resolve();
+
+        await first;
+        await expect(queued).rejects.toThrow('disposed');
+        expect(storeDurableAsset).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispose prevents an in-flight owner operation from repopulating the resident cache', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const writeStarted = Promise.withResolvers<void>();
+        const allowWrite = Promise.withResolvers<void>();
+        const disposable = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER, {
+            ...durableAssets,
+            storeDurableAsset: async (...input) => {
+                writeStarted.resolve();
+                await allowWrite.promise;
+                return durableAssets.storeDurableAsset(...input);
+            },
+        });
+
+        const write = disposable.addLocalAsset(new Blob(['in-flight']), 'in-flight.wav');
+        await writeStarted.promise;
+        disposable.dispose();
+        allowWrite.resolve();
+        const hash = await write;
+
+        expect(disposable.hasAsset(hash)).toBe(false);
+    });
+
+    it('dispose prevents an in-flight durable request lookup from sending on the stale session', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const stored = await durableAssets.storeDurableAsset(new Blob(['serve-after-dispose']), 'serve.wav');
+        const lookupStarted = Promise.withResolvers<void>();
+        const allowLookup = Promise.withResolvers<void>();
+        const stalePeer = makePeerManager();
+        const disposable = new AssetTransfer(
+            stalePeer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            TEST_OWNER,
+            {
+                ...durableAssets,
+                reopenDurableAsset: async (...input) => {
+                    lookupStarted.resolve();
+                    await allowLookup.promise;
+                    return durableAssets.reopenDurableAsset(...input);
+                },
+            }
+        );
+
+        const request = disposable.handleMessage('requester', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({ type: 'asset.request', hash: stored.hash, missingChunks: [] }),
+        });
+        await lookupStarted.promise;
+        disposable.dispose();
+        allowLookup.resolve();
+        await request;
+
+        expect(stalePeer.sendCrdtSync).not.toHaveBeenCalled();
+        expect(stalePeer.sendCrdtSyncBuffered).not.toHaveBeenCalled();
+        expect(disposable.hasAsset(stored.hash)).toBe(false);
     });
 });

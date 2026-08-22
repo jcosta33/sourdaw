@@ -46,6 +46,7 @@ const automergeSyncMock = vi.hoisted(() => ({
         hooks: {
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
+            onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
             onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
             onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
         };
@@ -65,7 +66,6 @@ const assetTransferMock = vi.hoisted(() => ({
         dispose: ReturnType<typeof vi.fn>;
         releaseStagedAsset: ReturnType<typeof vi.fn>;
         rebindOwner: ReturnType<typeof vi.fn>;
-        reconcileOwnedAssets: ReturnType<typeof vi.fn>;
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
@@ -141,6 +141,7 @@ vi.mock('../../automergeSync', () => ({
         hooks: {
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
+            onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
             onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
             onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
         }
@@ -174,7 +175,6 @@ vi.mock('../../assetTransfer', () => ({
             dispose: vi.fn(),
             releaseStagedAsset: vi.fn(),
             rebindOwner: vi.fn().mockResolvedValue({ status: 'rebound' }),
-            reconcileOwnedAssets: vi.fn().mockResolvedValue({ status: 'reconciled' }),
             options,
         };
         assetTransferMock.instances.push(instance);
@@ -183,6 +183,7 @@ vi.mock('../../assetTransfer', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    DOC_PREFIX_ROOT: 'root',
     DOC_BRANCHES: '__branches__',
     setupProjectionBridge: vi.fn().mockReturnValue(crdtMock.cleanupProjectionBridge),
     removeCrdtDoc: crdtMock.removeCrdtDoc,
@@ -343,8 +344,6 @@ describe('sessionRuntimePrimitives', () => {
 });
 
 describe('sessionRuntimePrimitives runtime wiring', () => {
-    let notifyOwnerId: (ownerId: string | undefined) => void = () => undefined;
-    let notifyReferencedHashes: (hashes: readonly string[]) => void = () => undefined;
     let currentOwnerId = 'project:local-before-sync';
 
     beforeEach(() => {
@@ -361,19 +360,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         crdtMock.waitForCrdtDocumentTransition.mockReturnValue(null);
         currentOwnerId = 'project:local-before-sync';
         configureCollaborationAssetOwner({
-            captureProjectEpoch: () => ({ ownerId: currentOwnerId, epoch: 1, committed: true }),
-            subscribeProjectEpoch: (listener) => {
-                notifyOwnerId = (ownerId) => {
-                    currentOwnerId = ownerId ?? currentOwnerId;
-                    listener({ ownerId, epoch: 1, committed: true });
-                };
-                return () => undefined;
-            },
-            captureReferencedHashes: () => [],
-            subscribeReferencedHashes: (listener) => {
-                notifyReferencedHashes = listener;
-                return () => undefined;
-            },
+            captureOwnerId: () => currentOwnerId,
         });
     });
 
@@ -394,19 +381,94 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBe(peerManager);
         });
 
-        it('rebinds a provisional join owner only after synchronized project identity and references arrive', async () => {
+        it('rebinds a provisional join owner only after an authoritative host root sync', async () => {
             sessionRuntimePrimitives.initialize('collaboration-join:attempt-1', {
                 rebindToSynchronizedOwner: true,
             });
-            collaborationStore.set({ isEnabled: true } as CollaborationState);
+            collaborationStore.set(
+                makeState({
+                    isEnabled: true,
+                    isHost: false,
+                    peers: [
+                        {
+                            id: 'host-peer',
+                            name: 'Host',
+                            color: '#000',
+                            isHost: true,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                    ],
+                })
+            );
             const assetTransfer = latestAssetTransfer();
 
-            notifyOwnerId('project:host-authoritative');
-            notifyReferencedHashes(['sha256:host-clip']);
+            currentOwnerId = 'project:host-authoritative';
+            latestAutomergeSync().hooks.onSyncApplied?.({ peerId: 'host-peer', docId: 'root' });
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(assetTransfer.rebindOwner).toHaveBeenCalledExactlyOnceWith('project:host-authoritative');
-            expect(assetTransfer.reconcileOwnedAssets).toHaveBeenCalledExactlyOnceWith(['sha256:host-clip']);
+        });
+
+        it('rebinds on an explicit host root sync when the synchronized project id equals the local id', async () => {
+            currentOwnerId = 'project:same-local-and-host-id';
+            configureCollaborationAssetOwner({
+                captureOwnerId: () => currentOwnerId,
+            });
+            collaborationStore.set(
+                makeState({
+                    isEnabled: true,
+                    isHost: false,
+                    peers: [
+                        {
+                            id: 'host-peer',
+                            name: 'Host',
+                            color: '#000',
+                            isHost: true,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                    ],
+                })
+            );
+            sessionRuntimePrimitives.initialize('collaboration-join:attempt-same-id', {
+                rebindToSynchronizedOwner: true,
+            });
+
+            latestAutomergeSync().hooks.onSyncApplied?.({ peerId: 'host-peer', docId: 'root' });
+            await sessionRuntimePrimitives.flushAssetOwnership();
+
+            expect(latestAssetTransfer().rebindOwner).toHaveBeenCalledExactlyOnceWith('project:same-local-and-host-id');
+        });
+
+        it('does not treat a non-host root write as the authoritative join handoff', async () => {
+            collaborationStore.set(
+                makeState({
+                    isEnabled: true,
+                    isHost: false,
+                    peers: [
+                        {
+                            id: 'collaborator-peer',
+                            name: 'Collaborator',
+                            color: '#000',
+                            isHost: false,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                    ],
+                })
+            );
+            sessionRuntimePrimitives.initialize('collaboration-join:attempt-non-host', {
+                rebindToSynchronizedOwner: true,
+            });
+
+            latestAutomergeSync().hooks.onSyncApplied?.({ peerId: 'collaborator-peer', docId: 'root' });
+            await sessionRuntimePrimitives.flushAssetOwnership();
+
+            expect(latestAssetTransfer().rebindOwner).not.toHaveBeenCalled();
         });
     });
 

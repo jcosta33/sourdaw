@@ -181,6 +181,16 @@ describe('AutomergeSync', () => {
         expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
+    it('reports an applied root sync even when project identity text need not change', () => {
+        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
+        const onSyncApplied = vi.fn();
+        const sync = new AutomergeSync(makePeerManager(), { onSyncApplied });
+
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+
+        expect(onSyncApplied).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
+    });
+
     it('defers an incoming branch-document sync until its owning transition releases the document', async () => {
         let releaseTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;
         const transition = new Promise<'aborted' | 'committed'>((resolve) => {
