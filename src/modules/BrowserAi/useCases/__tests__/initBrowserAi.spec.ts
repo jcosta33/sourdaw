@@ -445,13 +445,17 @@ describe('initBrowserAi', () => {
         expect(renderQueueStore.value?.phraseStatusMap['clip-1']).toBe('preview');
     });
 
-    it('should mark only rendered phrases whose note array reference changed after the baseline', async () => {
+    it('should mark legacy and canonical DDSP rendered phrases stale when a clip note array changes after the baseline', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
         renderQueueStore.set({
             entries: [],
             cachedPhraseIds: [],
-            phraseStatusMap: { 'clip-rendered': 'final', 'clip-queued': 'queued' },
+            phraseStatusMap: {
+                'clip-rendered': 'final',
+                'clip-rendered-ddsp': 'preview',
+                'clip-queued': 'queued',
+            },
         });
 
         injectDependencies(initBrowserAi, {
@@ -476,6 +480,7 @@ describe('initBrowserAi', () => {
         onMidiChange({ notesByClipId: { 'clip-rendered': [], 'clip-queued': [] } });
 
         expect(renderQueueStore.value?.phraseStatusMap['clip-rendered']).toBe('stale');
+        expect(renderQueueStore.value?.phraseStatusMap['clip-rendered-ddsp']).toBe('stale');
         // A 'queued' phrase has not rendered anything yet — it must not be
         // demoted to stale just because its notes changed.
         expect(renderQueueStore.value?.phraseStatusMap['clip-queued']).toBe('queued');
