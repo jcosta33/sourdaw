@@ -22,6 +22,10 @@ sources:
 **Accepted 2026-08-17.** This narrows ADR 0016: browser-capable model features still require exact
 artifact admission. Browser WebLLM architecture remains, but its quantized artifacts are withheld.
 
+> **Partial supersession — 2026-08-22.** ADR 0035 supersedes this decision only for the three
+> pinned WebLLM Qwen conversions and the WebLLM-withholding consequence below. Every other
+> admission requirement, stack decision, and consequence remains accepted.
+
 ## Context
 
 A framework license does not license every checkpoint, conversion, voice, or quantized repository
@@ -39,7 +43,7 @@ from product controls. Its neutral architecture may remain.
 | Whisper                 | Admit    | Pinned `ggml-base.en.bin` size and SHA-256; MIT model repository; Unlicense `whisper-rs` runtime. |
 | DDSP checkpoints        | Withhold | Exact GCS checkpoint licenses and immutable digests remain unproved.                              |
 | RAVE models             | Withhold | No model artifact, source, digest, or license is admitted.                                        |
-| WebLLM Qwen conversions | Withhold | Base Qwen licenses do not prove the exact MLC quantized artifact repositories.                    |
+| WebLLM Qwen conversions | Withhold | Historical decision; ADR 0035 now admits only the three pinned Qwen conversions under Apache-2.0. |
 | Native denoise          | Keep     | The current downward expander is first-party DSP with no external model artifact.                 |
 | Stem separation         | Withhold | No replacement model stack is admitted; the current repository reports it unavailable.            |
 
@@ -50,8 +54,10 @@ loading and keeps DDSP out of the runtime registry and model manager.
 ## Consequences
 
 - Hosted language models remain desktop-only and explicit.
-- This release has no browser-local language model.
+- The original release had no browser-local language model; ADR 0035 admits the pinned WebLLM Qwen
+  conversions.
 - Kokoro, Whisper, and Basic Pitch remain available with their notices.
 - Native denoise remains available without a model dependency.
-- DDSP, RAVE, or WebLLM can return only after a later ADR admits exact artifacts and obligations.
+- DDSP and RAVE can return only after a later ADR admits exact artifacts and obligations. ADR 0035
+  admits the pinned WebLLM Qwen conversions with its stated obligations.
 - Stem separation remains unavailable until a complete replacement stack passes admission.

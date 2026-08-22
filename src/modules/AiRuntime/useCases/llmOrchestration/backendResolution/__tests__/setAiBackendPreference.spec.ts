@@ -21,7 +21,14 @@ describe('setAiBackendPreference', () => {
         expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
     });
 
-    it('persists the selected browser backend without clearing compatible readiness', () => {
+    it('persists the selected browser backend from idle', () => {
+        setAiBackendPreference('webllm');
+
+        expect(aiBackendPreferenceStore.value).toBe('webllm');
+        expect(llmStatusStore.value).toEqual({ state: 'idle' });
+    });
+
+    it('preserves compatible browser backend readiness', () => {
         llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: 'browser-model' });
 
         setAiBackendPreference('webllm');

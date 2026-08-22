@@ -47,6 +47,14 @@ See [TensorFlow.js-NOTICE.txt](./TensorFlow.js-NOTICE.txt),
 [seedrandom-MIT.txt](./seedrandom-MIT.txt). These runtime notices do not grant or characterize the
 separately downloaded DDSP checkpoint artifacts; the product admission gate remains closed.
 
+## WebLLM Qwen models
+
+Web and desktop builds can download three pinned MLC-format Qwen models for browser-local WebLLM
+inference. Their upstream Qwen 1.7B, 4B, and 8B models are Apache-2.0; the MLC cards identify those
+models as the source of the corresponding conversions. The complete Apache-2.0 text and attribution,
+the pinned MLC revisions, and the artifact-verification boundary are recorded in
+[Apache-2.0.txt](./Apache-2.0.txt) and [Qwen-NOTICE.txt](./Qwen-NOTICE.txt).
+
 ## Trademarks
 
 See [TRADEMARKS.md](./TRADEMARKS.md).

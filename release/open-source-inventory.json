@@ -265,7 +265,7 @@
         {
             "id": "webllm-qwen-artifacts",
             "kind": "model-stack",
-            "retention": "defer-behind-admission",
+            "retention": "keep-with-obligations",
             "owner": "OS-04",
             "releaseModes": ["web", "desktop"],
             "paths": [
@@ -276,13 +276,20 @@
                 "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
                 "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts",
                 "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
-                "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx"
+                "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx",
+                "public/legal/Apache-2.0.txt",
+                "public/legal/Qwen-NOTICE.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "sources": [
                 "https://huggingface.co/mlc-ai/Qwen3-1.7B-q4f16_1-MLC",
                 "https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC",
                 "https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC",
-                "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs-bin"
+                "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs-bin",
+                "https://huggingface.co/Qwen/Qwen3-1.7B/blob/main/LICENSE",
+                "https://huggingface.co/Qwen/Qwen3-4B/blob/main/LICENSE",
+                "https://huggingface.co/Qwen/Qwen3-8B/blob/main/LICENSE",
+                "https://github.com/mlc-ai/web-llm/blob/main/LICENSE"
             ],
             "revisions": [
                 "Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
@@ -295,13 +302,23 @@
                 "sha256:2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f",
                 "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
             ],
-            "licenses": ["Apache-2.0:Qwen-base-models", "unverified:exact-MLC-quantized-artifact-repositories"],
-            "productSurfaces": ["withheld browser-local language model"],
-            "evidence": [
-                "The manifest pins exact artifacts, but the three quantized repository cards publish no license metadata.",
-                "Runtime, preferences, and status controls consume the false release-admission gate."
+            "licenses": [
+                "Apache-2.0:Qwen3-1.7B-4B-8B-upstream-models",
+                "Apache-2.0:MLC-WebLLM-runtime",
+                "residual:exact-MLC-conversion-repositories-omit-license-metadata"
             ],
-            "obligations": ["Keep the stack unreachable until exact repositories and runtime obligations are proved."]
+            "productSurfaces": ["browser-local language model", "desktop-local language model"],
+            "evidence": [
+                "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
+                "Each MLC conversion card identifies its official Qwen model; Qwen3 1.7B, 4B, and 8B publish Apache-2.0 licenses.",
+                "Apache-2.0 covers object form produced by mechanical transformation or conversion and grants distribution of works and derivative works in source or object form.",
+                "The exact conversion cards omit repository-level LICENSE metadata; this is residual provenance evidence, not evidence that the upstream Apache grant disappeared."
+            ],
+            "obligations": [
+                "Carry the Apache-2.0 text and Qwen attribution in public/legal/Apache-2.0.txt and public/legal/Qwen-NOTICE.txt with every web and desktop release.",
+                "Preserve the pinned revisions, artifact digests, byte verification, and fail-closed behavior when WebGPU is unavailable.",
+                "Reassess admission if conflicting licensing or provenance evidence appears for an exact conversion artifact."
+            ]
         },
         {
             "id": "whisper-model",
