@@ -120,6 +120,20 @@ export type FakeAudioIndexedDbControls = {
      */
     abortWritesTo: (storeName: string) => void;
     allowWrites: () => void;
+    /** Abort exactly the next readwrite transaction, then resume normal writes. */
+    abortNextWrite: () => void;
+    /** Hold readonly completion after its requests have produced their snapshots. */
+    pauseReadonlySettlements: () => void;
+    /** Release the oldest held readonly completion. */
+    releaseNextReadonlySettlement: () => void;
+    /** Readonly completions currently held after request delivery. */
+    pendingReadonlySettlementCount: () => number;
+    /** Hold readwrite completion after its writes have been staged. */
+    pauseWriteSettlements: () => void;
+    /** Release the oldest held readwrite commit or abort. */
+    releaseNextWriteSettlement: () => void;
+    /** Readwrite completions currently held after request delivery. */
+    pendingWriteSettlementCount: () => number;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
     /** Number of `indexedDB.open` calls issued against the fake. */
@@ -172,7 +186,8 @@ class FakeTransaction {
         private readonly tables: Tables,
         private readonly scope: readonly string[],
         private readonly willAbort: boolean,
-        private readonly meters: ByteMeters
+        private readonly meters: ByteMeters,
+        private readonly holdSettlement?: (settle: () => void) => void
     ) {
         for (const name of scope) {
             this.staged.set(name, new Map<string, StoredValue | null>());
@@ -230,6 +245,10 @@ class FakeTransaction {
             // A handler may have queued further requests on this transaction;
             // real IDB keeps the transaction alive while that happens.
             this.schedule();
+            return;
+        }
+        if (this.holdSettlement) {
+            this.holdSettlement(() => this.settle(this.willAbort));
             return;
         }
         this.settle(this.willAbort);
@@ -405,6 +424,11 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     const transactionScopes: string[][] = [];
     let abortWrites = false;
     let abortWritesToStore: string | null = null;
+    let abortNextWrite = false;
+    let pauseReadonlySettlements = false;
+    let pauseWriteSettlements = false;
+    const pendingReadonlySettlements: Array<() => void> = [];
+    const pendingWriteSettlements: Array<() => void> = [];
     let writeTransactionCount = 0;
     let openRequestCount = 0;
     let closeCount = 0;
@@ -455,8 +479,26 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                     writeTransactionCount++;
                 }
                 const doomed =
-                    isWrite && (abortWrites || (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
-                return new FakeTransaction(tables, scope, doomed, meters);
+                    isWrite &&
+                    (abortWrites ||
+                        abortNextWrite ||
+                        (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
+                if (isWrite && abortNextWrite) {
+                    abortNextWrite = false;
+                }
+                let heldSettlements: Array<() => void> | undefined;
+                if (isWrite && pauseWriteSettlements) {
+                    heldSettlements = pendingWriteSettlements;
+                } else if (!isWrite && pauseReadonlySettlements) {
+                    heldSettlements = pendingReadonlySettlements;
+                }
+                return new FakeTransaction(
+                    tables,
+                    scope,
+                    doomed,
+                    meters,
+                    heldSettlements ? (settle) => heldSettlements.push(settle) : undefined
+                );
             },
             isClosed: () => closed,
         };
@@ -519,6 +561,23 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
             abortWrites = false;
             abortWritesToStore = null;
         },
+        abortNextWrite: () => {
+            abortNextWrite = true;
+        },
+        pauseReadonlySettlements: () => {
+            pauseReadonlySettlements = true;
+        },
+        releaseNextReadonlySettlement: () => {
+            pendingReadonlySettlements.shift()?.();
+        },
+        pendingReadonlySettlementCount: () => pendingReadonlySettlements.length,
+        pauseWriteSettlements: () => {
+            pauseWriteSettlements = true;
+        },
+        releaseNextWriteSettlement: () => {
+            pendingWriteSettlements.shift()?.();
+        },
+        pendingWriteSettlementCount: () => pendingWriteSettlements.length,
         writeTransactionCount: () => writeTransactionCount,
         openRequestCount: () => openRequestCount,
         closeCount: () => closeCount,

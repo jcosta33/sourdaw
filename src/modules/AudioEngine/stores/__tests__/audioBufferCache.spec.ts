@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
-import { installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
 
 // Loaded fresh per test. The cache holds one IndexedDB connection for the life
 // of the module (audit M-045), and these tests install a new `indexedDB` double
@@ -771,6 +771,133 @@ describe('audioBufferCache conversions', () => {
         expect(backing.meta.get('generation-pcm')?.preparedOwner?.leaseId).toBe(
             secondResult.status === 'persisted' ? secondResult.leaseId : undefined
         );
+    });
+
+    it('rejects occupied legacy and project-owned ids without changing runtime PCM or either durable row', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const legacy = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        legacy.getChannelData(0)[0] = 0.2;
+        audioBufferCache.set('legacy-collision', legacy);
+        await flushIndexedDbTasks();
+
+        const project = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        project.getChannelData(0)[0] = 0.4;
+        const stagedProject = await audioBufferCache.persistPreparedBuffer({
+            id: 'project-collision',
+            buffer: project,
+        });
+        if (stagedProject.status !== 'persisted') {
+            throw new TypeError('Expected project collision fixture to persist');
+        }
+        await audioBufferCache.releasePreparedBuffer({
+            id: 'project-collision',
+            leaseId: stagedProject.leaseId,
+            disposition: 'project-owned',
+        });
+
+        for (const [id, original] of [
+            ['legacy-collision', legacy],
+            ['project-collision', project],
+        ] as const) {
+            const durablePcm = structuredClone(controls.committed.get(id));
+            const durableMeta = structuredClone(controls.committedMeta.get(id));
+            const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            replacement.getChannelData(0)[0] = 0.9;
+
+            await expect(audioBufferCache.persistPreparedBuffer({ id, buffer: replacement })).resolves.toEqual({
+                status: 'failed',
+                reason: 'Prepared audio buffer ID is already occupied.',
+            });
+            expect(audioBufferCache.get(id)).toBe(original);
+            expect(controls.committed.get(id)).toEqual(durablePcm);
+            expect(controls.committedMeta.get(id)).toEqual(durableMeta);
+        }
+    });
+
+    it('does not let a stale reopen overwrite a newer prepared buffer in memory after it commits', async () => {
+        const controls = installFakeAudioIndexedDb();
+        controls.committed.set('reopen-race', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        });
+        controls.committedMeta.set('reopen-race', {
+            lastAccessed: 1,
+            sizeInBytes: 4,
+            preparedOwner: { schemaVersion: 1, leaseId: 'lease-a', status: 'temporary' },
+        });
+        controls.pauseReadonlySettlements();
+
+        const staleReopen = audioBufferCache.reopenPreparedBuffer({
+            id: 'reopen-race',
+            leaseId: 'lease-a',
+            context: createTestContext(
+                vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+        while (controls.pendingReadonlySettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        replacement.getChannelData(0)[0] = 0.75;
+        const persisted = await audioBufferCache.persistPreparedBuffer({ id: 'reopen-race', buffer: replacement });
+        expect(persisted).toMatchObject({ status: 'persisted', bufferId: 'reopen-race' });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected replacement prepared PCM to persist');
+        }
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'reopen-race',
+                leaseId: persisted.leaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+
+        controls.releaseNextReadonlySettlement();
+        await expect(staleReopen).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio reopen was superseded.',
+        });
+        expect(audioBufferCache.get('reopen-race')).toBe(replacement);
+        expect(controls.committed.get('reopen-race')?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(controls.committedMeta.get('reopen-race')?.preparedOwner?.leaseId).toBe(persisted.leaseId);
+        expect(controls.committedMeta.get('reopen-race')?.preparedOwner?.status).toBe('project-owned');
+    });
+
+    it('reports a committed owner as persisted when a superseding prepared write later aborts', async () => {
+        const controls = installFakeAudioIndexedDb();
+        controls.pauseWriteSettlements();
+        const firstBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        firstBuffer.getChannelData(0)[0] = 0.25;
+        const first = audioBufferCache.persistPreparedBuffer({ id: 'commit-truth', buffer: firstBuffer });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.abortNextWrite();
+        const secondBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        secondBuffer.getChannelData(0)[0] = 0.75;
+        const second = audioBufferCache.persistPreparedBuffer({ id: 'commit-truth', buffer: secondBuffer });
+        while (controls.pendingWriteSettlementCount() < 2) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.releaseNextWriteSettlement();
+        controls.releaseNextWriteSettlement();
+        const [firstResult, secondResult] = await Promise.all([first, second]);
+
+        expect(firstResult).toMatchObject({ status: 'persisted', bufferId: 'commit-truth' });
+        expect(secondResult).toMatchObject({ status: 'failed', reason: 'IDB transaction aborted' });
+        expect(controls.committed.get('commit-truth')?.channelData[0]?.[0]).toBeCloseTo(0.25);
+        expect(controls.committedMeta.get('commit-truth')?.preparedOwner?.leaseId).toBe(
+            firstResult.status === 'persisted' ? firstResult.leaseId : undefined
+        );
+        expect(audioBufferCache.get('commit-truth')).toBe(firstBuffer);
     });
 
     it('keeps every active-project buffer resident when the project exceeds the LRU cap', async () => {

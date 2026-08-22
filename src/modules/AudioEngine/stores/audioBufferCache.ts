@@ -77,8 +77,43 @@ const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
 const pinnedBufferIds = new Set<string>();
 const residentFreezeProjectIdById = new Map<string, number | undefined>();
+let nextBufferLifecycleEpoch = 0;
+let runtimeClearEpoch = 0;
+const bufferLifecycleEpochById = new Map<string, number>();
+const activeBufferReopenCountById = new Map<string, number>();
+
+type BufferLifecycleSnapshot = {
+    bufferEpoch: number | undefined;
+    clearEpoch: number;
+};
+
+function bumpBufferLifecycleEpoch(id: string): void {
+    bufferLifecycleEpochById.set(id, ++nextBufferLifecycleEpoch);
+}
+
+function beginBufferReopen(id: string): BufferLifecycleSnapshot {
+    activeBufferReopenCountById.set(id, (activeBufferReopenCountById.get(id) ?? 0) + 1);
+    return { bufferEpoch: bufferLifecycleEpochById.get(id), clearEpoch: runtimeClearEpoch };
+}
+
+function finishBufferReopen(id: string): void {
+    const remaining = (activeBufferReopenCountById.get(id) ?? 1) - 1;
+    if (remaining > 0) {
+        activeBufferReopenCountById.set(id, remaining);
+        return;
+    }
+    activeBufferReopenCountById.delete(id);
+    if (!cache.has(id) && !persistenceGenerationById.has(id)) {
+        bufferLifecycleEpochById.delete(id);
+    }
+}
+
+function isBufferLifecycleCurrent(id: string, snapshot: BufferLifecycleSnapshot): boolean {
+    return snapshot.bufferEpoch === bufferLifecycleEpochById.get(id) && snapshot.clearEpoch === runtimeClearEpoch;
+}
 
 function audioCacheSet(id: string, buffer: AudioBuffer, freezeProjectId?: number, ownershipKnown = false): void {
+    bumpBufferLifecycleEpoch(id);
     // Promote existing entry to MRU position
     if (cache.has(id)) {
         cache.delete(id);
@@ -399,6 +434,12 @@ type SerializedBuffer = {
 
 let nextPersistenceGeneration = 0;
 const persistenceGenerationById = new Map<string, number>();
+type PreparedPersistenceAttempt = {
+    generation: number;
+    settled: Promise<void>;
+    settle: () => void;
+};
+const preparedPersistenceAttemptById = new Map<string, PreparedPersistenceAttempt>();
 let nextImportCandidateId = 0;
 let activeImportCandidateId = 0;
 let committedImportCandidateId = 0;
@@ -433,6 +474,26 @@ function claimPersistenceGeneration(id: string): number {
     return generation;
 }
 
+function registerPreparedPersistenceAttempt(id: string, generation: number): PreparedPersistenceAttempt {
+    let settle = (): void => undefined;
+    const settled = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
+    const attempt = { generation, settled, settle };
+    preparedPersistenceAttemptById.set(id, attempt);
+    return attempt;
+}
+
+async function waitForSupersedingPreparedPersistence(id: string, generation: number): Promise<void> {
+    for (;;) {
+        const attempt = preparedPersistenceAttemptById.get(id);
+        if (!attempt || attempt.generation <= generation) {
+            return;
+        }
+        await attempt.settled;
+    }
+}
+
 function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     const channelData: Float32Array[] = [];
     let sizeInBytes = 0;
@@ -450,6 +511,10 @@ function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     };
 }
 
+function isFloat32Array(value: unknown): value is Float32Array {
+    return Object.prototype.toString.call(value) === '[object Float32Array]';
+}
+
 function isValidSerializedBuffer(data: SerializedBuffer | undefined): data is SerializedBuffer {
     if (!data || !Array.isArray(data.channelData)) {
         return false;
@@ -463,7 +528,7 @@ function isValidSerializedBuffer(data: SerializedBuffer | undefined): data is Se
         data.numberOfChannels > 0 &&
         length > 0 &&
         data.channelData.length === data.numberOfChannels &&
-        data.channelData.every((channel) => channel instanceof Float32Array && channel.length === length) &&
+        data.channelData.every((channel) => isFloat32Array(channel) && channel.length === length) &&
         Number.isFinite(data.lastAccessed) &&
         data.sizeInBytes === sizeInBytes
     );
@@ -485,6 +550,26 @@ function readPreparedBufferOwner(meta: BufferMeta | undefined): PreparedBufferOw
         return 'invalid';
     }
     return owner;
+}
+
+function isReplaceablePreparedBuffer(data: SerializedBuffer | undefined, meta: BufferMeta | undefined): boolean {
+    const owner = readPreparedBufferOwner(meta);
+    return (
+        isValidSerializedBuffer(data) &&
+        !!meta &&
+        Number.isFinite(meta.lastAccessed) &&
+        meta.sizeInBytes === data.sizeInBytes &&
+        owner !== 'invalid' &&
+        owner?.status === 'temporary'
+    );
+}
+
+async function readPreparedOwnerFromIdb(id: string): Promise<PreparedBufferOwner | null | 'invalid'> {
+    const db = await openDb();
+    const tx = db.transaction(META_STORE_NAME, 'readonly');
+    const meta = await awaitRequest(tx.objectStore(META_STORE_NAME).get(id) as IDBRequest<BufferMeta | undefined>);
+    await awaitTransaction(tx);
+    return readPreparedBufferOwner(meta);
 }
 
 function failureReason(error: unknown): string {
@@ -673,13 +758,18 @@ function clearWaveformCachesForId(id: string) {
  * empty `mipmapLevel1Cache` too — that is the map this helper reaches only
  * via `clearWaveformCachesForId`. */
 function evictCachedBuffer(id: string): void {
+    bumpBufferLifecycleEpoch(id);
     cache.delete(id);
     residentFreezeProjectIdById.delete(id);
     clearWaveformCachesForId(id);
     accessRefreshStampById.delete(id);
+    if (!activeBufferReopenCountById.has(id) && !persistenceGenerationById.has(id)) {
+        bufferLifecycleEpochById.delete(id);
+    }
 }
 
 function clearRuntimeCacheState(): void {
+    runtimeClearEpoch++;
     cache.clear();
     residentFreezeProjectIdById.clear();
     pinnedBufferIds.clear();
@@ -689,6 +779,7 @@ function clearRuntimeCacheState(): void {
     // project's peaks when the incoming project reuses an id.
     mipmapLevel1Cache.clear();
     accessRefreshStampById.clear();
+    bufferLifecycleEpochById.clear();
 }
 
 type PreparedAudioBuffers = {
@@ -823,22 +914,32 @@ type ReleasePreparedBufferInput = {
     disposition: 'discard' | 'project-owned';
 };
 
-/** Publish synchronously for preview, but report durable only after the exact IDB commit. */
+/** Persist one collision-safe prepared owner, then publish its committed PCM for synchronous reads. */
 async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput) {
     const leaseId = `prepared-audio-${crypto.randomUUID()}`;
     const data = serializeBuffer(buffer);
     const generation = claimPersistenceGeneration(id);
-    audioCacheSet(id, buffer, undefined, true);
-    clearWaveformCachesForId(id);
-    accessRefreshStampById.set(id, data.lastAccessed);
+    const attempt = registerPreparedPersistenceAttempt(id, generation);
+    bumpBufferLifecycleEpoch(id);
     try {
         const db = await openDb();
         if (persistenceGenerationById.get(id) !== generation) {
             return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
         }
         const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-        tx.objectStore(STORE_NAME).put(data, id);
-        tx.objectStore(META_STORE_NAME).put(
+        const store = tx.objectStore(STORE_NAME);
+        const metaStore = tx.objectStore(META_STORE_NAME);
+        const [existingData, existingMeta] = await Promise.all([
+            awaitRequest(store.get(id) as IDBRequest<SerializedBuffer | undefined>),
+            awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>),
+        ]);
+        const occupied = existingData !== undefined || existingMeta !== undefined;
+        if (occupied && !isReplaceablePreparedBuffer(existingData, existingMeta)) {
+            await awaitTransaction(tx);
+            return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
+        }
+        store.put(data, id);
+        metaStore.put(
             {
                 lastAccessed: data.lastAccessed,
                 preparedOwner: { schemaVersion: 1, leaseId, status: 'temporary' },
@@ -848,12 +949,23 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
         );
         await awaitTransaction(tx);
         if (persistenceGenerationById.get(id) !== generation) {
-            return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+            await waitForSupersedingPreparedPersistence(id, generation);
+            const owner = await readPreparedOwnerFromIdb(id);
+            if (owner === 'invalid' || owner?.leaseId !== leaseId) {
+                return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+            }
         }
+        audioCacheSet(id, buffer, undefined, true);
+        clearWaveformCachesForId(id);
+        accessRefreshStampById.set(id, data.lastAccessed);
         return { status: 'persisted' as const, bufferId: id, leaseId };
     } catch (error) {
         return { status: 'failed' as const, reason: failureReason(error) };
     } finally {
+        attempt.settle();
+        if (preparedPersistenceAttemptById.get(id) === attempt) {
+            preparedPersistenceAttemptById.delete(id);
+        }
         if (persistenceGenerationById.get(id) === generation) {
             persistenceGenerationById.delete(id);
         }
@@ -862,6 +974,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
 
 /** Reconstruct one exact prepared owner without making every playback read async. */
 async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBufferInput) {
+    const lifecycle = beginBufferReopen(id);
     try {
         const db = await openDb();
         const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
@@ -870,6 +983,9 @@ async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBuff
             awaitRequest(tx.objectStore(META_STORE_NAME).get(id) as IDBRequest<BufferMeta | undefined>),
         ]);
         await awaitTransaction(tx);
+        if (!isBufferLifecycleCurrent(id, lifecycle)) {
+            return { status: 'failed' as const, reason: 'Prepared audio reopen was superseded.' };
+        }
         if (!data || !meta) {
             return { status: 'missing' as const };
         }
@@ -897,12 +1013,15 @@ async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBuff
         return { status: 'reopened' as const, bufferId: id, ownership: owner.status };
     } catch (error) {
         return { status: 'failed' as const, reason: failureReason(error) };
+    } finally {
+        finishBufferReopen(id);
     }
 }
 
 /** Settle one temporary owner transactionally; project transfer retains PCM. */
 async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePreparedBufferInput) {
     const generation = claimPersistenceGeneration(id);
+    bumpBufferLifecycleEpoch(id);
     try {
         const db = await openDb();
         if (persistenceGenerationById.get(id) !== generation) {
@@ -939,17 +1058,11 @@ async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePrepar
             }
             metaStore.put({ ...meta, preparedOwner: { ...owner, status: 'project-owned' } } satisfies BufferMeta, id);
             await awaitTransaction(tx);
-            if (persistenceGenerationById.get(id) !== generation) {
-                return { status: 'failed' as const, reason: 'Prepared audio settlement was superseded.' };
-            }
             return { status: 'released' as const, disposition: 'project-owned' as const };
         }
         store.delete(id);
         metaStore.delete(id);
         await awaitTransaction(tx);
-        if (persistenceGenerationById.get(id) !== generation) {
-            return { status: 'failed' as const, reason: 'Prepared audio settlement was superseded.' };
-        }
         evictCachedBuffer(id);
         return { status: 'released' as const, disposition: 'discarded' as const };
     } catch (error) {
