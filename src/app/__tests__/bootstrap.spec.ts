@@ -112,10 +112,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
-    initializeVoiceInputAvailability: noop,
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
+    initializeVoiceInputAvailability: noop,
     setVoiceToggleEventBus: noop,
 }));
 
