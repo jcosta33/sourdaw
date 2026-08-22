@@ -60,16 +60,20 @@ describe('yeastStore', () => {
 
     // Inside this closure `document` is the Automerge doc, not the jsdom
     // global — keep every doc assertion here for that reason.
-    function persistedRack(
-        deviceId: string
-    ): Record<string, { deleted: boolean; order?: number; value: YeastProcessorInfo }> {
-        const slot = document.yeast as {
-            racks: Record<
-                string,
-                { processors: Record<string, { deleted: boolean; order?: number; value: YeastProcessorInfo }> }
-            >;
-        };
-        return slot.racks[deviceId]!.processors;
+    type PersistedRack = {
+        deleted: boolean;
+        order?: number;
+        value: YeastProcessorInfo;
+    };
+
+    function persistedRackOrUndefined(deviceId: string): Record<string, PersistedRack> | undefined {
+        const slot = document.yeast as
+            { racks?: Record<string, { processors: Record<string, PersistedRack> }> } | undefined;
+        return slot?.racks?.[deviceId]?.processors;
+    }
+
+    function persistedRack(deviceId: string): Record<string, PersistedRack> {
+        return persistedRackOrUndefined(deviceId)!;
     }
 
     beforeEach(() => {
@@ -190,7 +194,7 @@ describe('yeastStore', () => {
         }
         trackStore.set({ ...tracks, selectedTrackId: 'track-yeast-2' });
 
-        expect(persistedRack(SECOND_DEVICE_ID)).not.toHaveProperty('authored-on-a');
+        expect(persistedRackOrUndefined(SECOND_DEVICE_ID) ?? {}).not.toHaveProperty('authored-on-a');
         expect(document.foreign).toBeUndefined();
         expect(Object.keys(persistedRack(DEVICE_ID))).toEqual(['authored-on-a']);
         expect(yeastStore.value?.processors).toEqual([]);
