@@ -1,0 +1,19 @@
+tests/e2e/browserAiTestId.spec.ts
+  s_24b1bdbc3c31ad::t_885fc4c792d202 1,5,7,12-16,18-19,23,27-28,31-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f98ee18e300956fc52d0544d60ae7b94d1636e93",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
