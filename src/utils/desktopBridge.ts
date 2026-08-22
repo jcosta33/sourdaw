@@ -325,3 +325,26 @@ export async function desktopPathJoin(...segments: string[]): Promise<string> {
 export async function desktopSamplesBaseUrl(): Promise<string> {
     return sourdawBridge().paths.samplesBase();
 }
+
+/** The platform the desktop shell runs on, or null off-desktop. */
+export function desktopPlatform(): string | null {
+    if (!isDesktopRuntime()) {
+        return null;
+    }
+    return sourdawBridge().platform;
+}
+
+/** The frameless window chrome's controls. Only meaningful on the Linux desktop build. */
+export function desktopWindowControls(): SourdawDesktopBridge['windowControls'] {
+    return sourdawBridge().windowControls;
+}
+
+/**
+ * True on the Linux desktop build, where the shell window is frameless and the
+ * app draws its own minimize/maximize/close in the header. macOS chrome comes
+ * from the window-controls overlay; every other platform keeps the native
+ * frame.
+ */
+export function usesFramelessWindowChrome(): boolean {
+    return isDesktopRuntime() && desktopPlatform() === 'linux';
+}

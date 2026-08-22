@@ -37,6 +37,11 @@ import type { NativeHost } from './native.js';
  */
 export type SenderFrameCarrier = {
     readonly senderFrame?: { readonly url?: string } | null;
+    /**
+     * The sending web contents, untyped here so the router stays Electron-free.
+     * Only the channels that act on the sender's own window read it.
+     */
+    readonly sender?: unknown;
 };
 
 export type IpcMainLike = {
@@ -60,19 +65,31 @@ export const senderFrameUrl = (event: SenderFrameCarrier): string | undefined =>
  * embedded document, must not be able to open a native save dialog any more
  * than it can invoke a command; one shared wrapper is what stops that from
  * being a rule that some handlers merely happen to follow.
+ *
+ * This variant also hands the event to the handler: the window controls
+ * resolve the calling window from its sender. `withTrustedSender` delegates
+ * here, so the refusal can never drift between the two.
  */
-export const withTrustedSender =
+export const withTrustedSenderEvent =
     <Result>(
         name: string,
         isTrustedFrameUrl: (url: string | undefined) => boolean,
-        handler: (...args: readonly unknown[]) => Result
+        handler: (event: SenderFrameCarrier, ...args: readonly unknown[]) => Result
     ) =>
     (event: SenderFrameCarrier, ...args: readonly unknown[]): Result => {
         if (!isTrustedFrameUrl(senderFrameUrl(event))) {
             throw new Error(`${name} rejected: the sender frame is not the application`);
         }
-        return handler(...args);
+        return handler(event, ...args);
     };
+
+/** The same guard for a handler that reads only the arguments. */
+export const withTrustedSender = <Result>(
+    name: string,
+    isTrustedFrameUrl: (url: string | undefined) => boolean,
+    handler: (...args: readonly unknown[]) => Result
+): ((event: SenderFrameCarrier, ...args: readonly unknown[]) => Result) =>
+    withTrustedSenderEvent(name, isTrustedFrameUrl, (_event, ...args) => handler(...args));
 
 /**
  * Convert the renderer's arguments into what the addon accepts.
