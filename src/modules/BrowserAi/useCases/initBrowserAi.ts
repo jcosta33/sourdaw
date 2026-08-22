@@ -19,6 +19,7 @@ import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroA
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
 import { checkDdspInstrumentReady } from '../repositories/checkDdspInstrumentReady';
 import { checkVerifiedModel } from '../repositories/checkVerifiedModel';
+import { getStorageStatus } from '../repositories/getStorageStatus';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
@@ -46,9 +47,17 @@ export const initBrowserAi = inject({
     detectCapabilitiesRepo,
     checkVerifiedModel,
     checkDdspInstrumentReady,
+    getStorageStatus,
     withDdspInstrumentLock,
 })(
-    ({ logger, detectCapabilitiesRepo, checkVerifiedModel, checkDdspInstrumentReady, withDdspInstrumentLock }) =>
+    ({
+        logger,
+        detectCapabilitiesRepo,
+        checkVerifiedModel,
+        checkDdspInstrumentReady,
+        getStorageStatus,
+        withDdspInstrumentLock,
+    }) =>
         async function initBrowserAi(): Promise<void> {
             logger.info('[BrowserAi] Initializing…');
 
@@ -126,13 +135,21 @@ export const initBrowserAi = inject({
                 };
             }
 
+            let storageUsedBytes = 0;
+            try {
+                const storageStatus = await getStorageStatus();
+                storageUsedBytes = storageStatus.usedBytes;
+            } catch (error) {
+                logger.warn(`[BrowserAi] Storage usage probe failed: ${String(error)}`);
+            }
+
             // ── 4. Populate model registry store ───────────────────────────
             modelRegistryStore.set({
                 ddspInstruments,
                 kokoroModel,
                 diffSingerVoicebanks: [],
                 vocoder: null,
-                storageUsedBytes: 0,
+                storageUsedBytes,
             });
 
             logger.info(

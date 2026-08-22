@@ -6,6 +6,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
@@ -76,14 +78,15 @@ export const OWNER_VISUAL_ASSET_PATHS = [
     'build/icons/**',
 ] as const;
 
-export const DDSP_TFJS_RUNTIME_PATHS = [
-    'package.json',
-    'pnpm-lock.yaml',
+const DDSP_TFJS_LEGAL_PATHS = [
     'public/legal/Apache-2.0.txt',
     'public/legal/Magenta.js-NOTICE.txt',
     'public/legal/TensorFlow.js-NOTICE.txt',
     'public/legal/seedrandom-MIT.txt',
     'public/legal/THIRD-PARTY-NOTICES.md',
+] as const;
+
+export const DDSP_TFJS_APPLICATION_RUNTIME_PATHS = [
     'src/modules/BrowserAi/models/InferenceRequest.ts',
     'src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts',
     'src/modules/BrowserAi/services/computeDdspSessionKey.ts',
@@ -91,12 +94,44 @@ export const DDSP_TFJS_RUNTIME_PATHS = [
     'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
 ] as const;
 
-const DDSP_TFJS_LEGAL_PATHS = [
-    'public/legal/Apache-2.0.txt',
-    'public/legal/Magenta.js-NOTICE.txt',
-    'public/legal/TensorFlow.js-NOTICE.txt',
-    'public/legal/seedrandom-MIT.txt',
+export const DDSP_TFJS_RUNTIME_PATHS = [
+    'package.json',
+    'pnpm-lock.yaml',
+    ...DDSP_TFJS_LEGAL_PATHS,
+    ...DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
+] as const;
+
+export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md';
+const DDSP_ARTIFACT_MANIFEST_PATH = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+const DDSP_MODEL_ENFORCEMENT_PATHS = [
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+    'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+    'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+    'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorker.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+    'src/modules/BrowserAi/useCases/downloadModel.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/removeModel.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+] as const;
+
+export const DDSP_MODEL_PATHS = [
+    DDSP_ADMISSION_DECISION_PATH,
+    'electron/protocol.ts',
     'public/legal/THIRD-PARTY-NOTICES.md',
+    'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+    ...DDSP_MODEL_ENFORCEMENT_PATHS,
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
@@ -537,10 +572,13 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
     };
 }
 
-/** Exact distributed code and notice closure for the release-withheld DDSP worker runtime. */
-export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceContract {
+/** Exact distributed code and notice closure for the DDSP worker runtime. */
+export function ddspTfjsRuntimeReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
     return {
         kind: 'runtime-library',
+        retention: 'keep-with-obligations',
+        owner: 'OS-04',
+        releaseModes: ['source', 'web', 'desktop'],
         paths: [...DDSP_TFJS_RUNTIME_PATHS],
         sources: [
             'git:github.com/tensorflow/tfjs@e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
@@ -567,6 +605,7 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceCo
             'npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0',
             'npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0',
             'npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5',
+            ...DDSP_TFJS_APPLICATION_RUNTIME_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
             ...DDSP_TFJS_LEGAL_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
         ],
         licenses: [
@@ -574,6 +613,68 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceCo
             'Apache-2.0:long',
             'Apache-2.0:Magenta.js-Roll-adaptation',
             'MIT:seedrandom-and-Alea',
+        ],
+        productSurfaces: ['browser and desktop DDSP hardware-WebGPU worker runtime'],
+        evidence: [
+            'Exact package versions and npm integrity digests are pinned in the install graph; package and lock file contents are not independently content-digested here.',
+            'The release validator content-digests the application runtime sources and legal files listed by this surface.',
+            'Together these records bind the dependency integrity, application runtime, and legal-file obligations represented here without claiming a self-referential complete closure.',
+            'The runtime accepts only locally verified checkpoint artifact transfers and registers no CPU or WebGL fallback.',
+        ],
+        obligations: [
+            'Keep the Apache-2.0 and MIT texts and exact component notices with every distribution.',
+            'Do not characterize separately downloaded DDSP checkpoint artifacts under these runtime licenses.',
+        ],
+    };
+}
+
+/** Exact admitted identity, delivery boundary, and legal status of the Magenta DDSP checkpoints. */
+export function ddspModelsReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
+    const decision = readFileSync(resolve(root, DDSP_ADMISSION_DECISION_PATH), 'utf8');
+    const admittedManifest = /Admitted `DdspArtifactManifest` SHA-256:\s*`([a-f0-9]{64})`/u.exec(decision)?.[1];
+    const currentManifest = fileSha256(resolve(root, DDSP_ARTIFACT_MANIFEST_PATH));
+    if (admittedManifest === undefined || admittedManifest !== currentManifest) {
+        throw new Error('ADR 0035 does not admit the current DDSP artifact manifest');
+    }
+    const artifacts = Object.values(DDSP_ARTIFACTS).flat();
+
+    return {
+        kind: 'model-stack',
+        retention: 'keep-with-obligations',
+        owner: 'OS-04',
+        releaseModes: ['web', 'desktop'],
+        paths: [...DDSP_MODEL_PATHS],
+        sources: [
+            'https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md',
+            'https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
+            'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+            DDSP_ADMISSION_DECISION_PATH,
+        ],
+        revisions: [
+            DDSP_CHECKPOINT_VERSION,
+            'Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa',
+            `${artifacts.length} exact artifacts`,
+        ],
+        digests: [
+            `sha256:${fileSha256(resolve(root, DDSP_ADMISSION_DECISION_PATH))}:${DDSP_ADMISSION_DECISION_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'electron/protocol.ts'))}:electron/protocol.ts`,
+            `sha256:${currentManifest}:${DDSP_ARTIFACT_MANIFEST_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'))}:public/legal/THIRD-PARTY-NOTICES.md`,
+            ...DDSP_MODEL_ENFORCEMENT_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+            ...artifacts.map(({ sha256, sizeBytes, url }) => `sha256:${sha256}:bytes:${sizeBytes}:${url}`),
+        ],
+        licenses: ['unverified:exact-GCS-checkpoint-artifacts'],
+        productSurfaces: ['explicit browser and desktop downloads of four pinned Magenta DDSP instruments'],
+        evidence: [
+            'DdspArtifactManifest pins the exact URL, byte size, and SHA-256 for all twelve admitted artifacts.',
+            'Each user-requested direct Magenta download is staged and verified before its local generation is published or used.',
+            'Sourdaw does not bundle or redistribute the checkpoint bytes.',
+        ],
+        obligations: [
+            'Keep the checkpoint license explicitly unverified; runtime licenses and notices do not cover the weights.',
+            'Keep all checkpoint bytes out of Sourdaw distributions and fetch only the admitted identities directly from Magenta until issue #2595 is resolved.',
+            'Rollback requires all of: set MODEL_RELEASE_ADMISSION.ddsp to false; remove the exact Magenta DDSP source from electron/protocol.ts connect-src; and remove its release inventory egress assignment from release/open-source-inventory.json.',
         ],
     };
 }
@@ -598,7 +699,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
 
 function assertSurfaceContract(
     surface: Partial<ReleaseSurface> | undefined,
-    expected: Partial<SurfaceContract>,
+    expected: Partial<ReleaseSurface>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
@@ -606,6 +707,10 @@ function assertSurfaceContract(
             throw new Error(`${label} release inventory ${field} does not match provenance`);
         }
     }
+}
+
+export function assertDdspModelsReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
+    assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
 }
 
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
@@ -1100,6 +1205,8 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
             'DDSP TF.js runtime'
         )
     );
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
