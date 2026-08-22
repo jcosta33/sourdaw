@@ -62,6 +62,82 @@ printf '%s\n' \
     > "$fake_bin/cargo"
 chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo"
 
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" node --input-type=module <<'NODE'
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+
+const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
+const failures = [];
+
+function expect(condition, message) {
+    if (!condition) {
+        failures.push(message);
+    }
+}
+
+function stepNamed(job, name) {
+    return job?.steps?.find((step) => step.name === name);
+}
+
+const events = workflow.on;
+const decide = workflow.jobs?.decide;
+const secrets = workflow.jobs?.secrets;
+const gate = workflow.jobs?.gate;
+const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
+const checkout = stepNamed(secrets, 'Checkout');
+const secretScan = stepNamed(secrets, 'Scan history for secrets');
+const secretScanRun = secretScan?.run ?? '';
+const secretScanUses = secretScan?.uses ?? '';
+const secretScanEnv = secretScan?.env ?? {};
+const secretScanEnvJson = JSON.stringify(secretScanEnv);
+const gateNeeds = gate?.needs ?? [];
+
+expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
+expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
+expect(events?.schedule !== undefined, 'schedule trigger must remain present');
+expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+expect(
+    decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
+    'decide must run the heavy path only for approved pull_request_review submissions'
+);
+expect(
+    resolveScopeRun.includes('"$EVENT" = "schedule"') &&
+        resolveScopeRun.includes('"$EVENT" = "workflow_dispatch"') &&
+        resolveScopeRun.includes('heavy=true') &&
+        resolveScopeRun.includes('"$EVENT" = "pull_request_review"'),
+    'schedule, dispatch, and pull_request_review events must keep resolving to the heavy path'
+);
+expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
+expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(checkout?.uses ?? ''), 'secrets checkout action must be pinned to a full commit SHA');
+expect(checkout?.with?.['fetch-depth'] === 0, 'secret scan checkout must fetch full history');
+expect(secretScanUses === '', 'secret scan must not use gitleaks-action, which rejects pull_request_review events');
+expect(secretScanEnv.GITLEAKS_VERSION === '8.30.1', 'secret scan must pin the Gitleaks binary version');
+expect(secretScanEnv.GITLEAKS_SHA256 === '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb', 'secret scan must pin the Gitleaks binary SHA-256 digest');
+expect(
+    secretScanRun.includes('https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz'),
+    'secret scan must download the pinned Gitleaks Linux x64 release binary'
+);
+expect(secretScanRun.includes('sha256sum --check'), 'secret scan must verify the downloaded Gitleaks binary digest');
+expect(/["']?\$gitleaks_dir\/gitleaks["']? git/u.test(secretScanRun), 'secret scan must invoke the event-agnostic Gitleaks git scanner');
+expect(secretScanRun.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
+expect(secretScanRun.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
+expect(!secretScanRun.includes('GITHUB_EVENT_NAME') && !secretScanRun.includes('github.event'), 'secret scan invocation must not branch on the triggering event');
+expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
+expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(gateNeeds.includes('secrets'), 'Gate must continue to need the secrets job');
+expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
+expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
+
+if (failures.length > 0) {
+    for (const failure of failures) {
+        console.error(`workflow secret scan contract failed: ${failure}`);
+    }
+    process.exit(1);
+}
+
+console.log('workflow secret scan contract: PASS');
+NODE
+
 # A PATH that has the fake npm but no cargo at all, used to prove the missing
 # toolchain precondition. `sh` and `dirname` are the only external commands
 # needed to reach the precondition, so they are the only ones linked in.
