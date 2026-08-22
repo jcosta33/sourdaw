@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { writeFileBytes } from '#/utils/desktopBridge';
 
+import { desktopInvoke } from '../desktopInvoke';
 import { getProjectDirectory } from '../getProjectDirectory';
 import { isNativeAvailable } from '../helpers';
 import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
-import { desktopInvoke } from '../desktopInvoke';
 
 vi.mock('../helpers', () => ({
     isNativeAvailable: vi.fn(),

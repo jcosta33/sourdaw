@@ -390,7 +390,7 @@ export function validateLgplRuntimeProvenance(
         }
     }
 
-    const normalizedRelinking = relinking.replace(/\s+/g, ' ');
+    const normalizedRelinking = relinking.replaceAll(/\s+/g, ' ');
     if (REQUIRED_RELINKING_PREAMBLE.some((marker) => !normalizedRelinking.includes(marker))) {
         errors.push('matching application-source directions drifted');
     }

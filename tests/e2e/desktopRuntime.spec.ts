@@ -106,6 +106,14 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
                 samplesBase: () => Promise.reject(new Error('Unexpected native path call: samplesBase')),
                 join: () => Promise.reject(new Error('Unexpected native path call: join')),
             },
+            voiceDictation: {
+                start: () => Promise.reject(new Error('Unexpected native dictation call: start')),
+                stop: () => Promise.reject(new Error('Unexpected native dictation call: stop')),
+                cancel: () => Promise.reject(new Error('Unexpected native dictation call: cancel')),
+                // Subscribing crosses no IPC, matching `listen` above; the
+                // unsubscribe is a no-op because nothing here ever emits.
+                listenTerminal: () => () => undefined,
+            },
         };
 
         Reflect.set(window, '__SOURDAW_BRIDGE_CALLS__', calls);

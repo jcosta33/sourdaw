@@ -1,5 +1,5 @@
-import { basename_from_path } from '#/utils/path-basename';
 import { isDesktopRuntime, readFileBytes } from '#/utils/desktopBridge';
+import { basename_from_path } from '#/utils/path-basename';
 
 import { openViaNative } from './openViaNative';
 

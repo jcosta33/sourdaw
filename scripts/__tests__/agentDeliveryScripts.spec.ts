@@ -6,8 +6,12 @@ import { describe, expect, it } from 'vitest';
 import { coordinateDelivery } from '../deliverPullRequest.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
+    BOOTSTRAP_PATH,
     executeTrustedSnapshot,
+    hoistToOriginBootstrap,
+    REPOSITORY_ROOT_ENV,
     runTrustedGithubWriteCommand,
+    shouldHoistToOrigin,
     trustedDependencyPaths,
 } from '../trustedGithubWriteBootstrap.ts';
 
@@ -87,33 +91,34 @@ describe('package scripts and gitignore', () => {
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
-        for (const changedPath of paths) {
-            let executed = false;
-            await expect(
-                runTrustedGithubWriteCommand('deliver', ['42'], {
-                    resolveOriginMain: () => 'trusted-sha',
-                    readLocalSource: (candidate) => (candidate === changedPath ? 'mutated' : 'trusted'),
-                    readOriginSource: (commit) => {
-                        expect(commit).toBe('trusted-sha');
-                        return 'trusted';
-                    },
-                    executeSnapshot: async () => {
-                        executed = true;
-                        return 0;
-                    },
-                })
-            ).rejects.toThrow(new RegExp(changedPath.replaceAll('.', '\\.')));
-            expect(executed).toBe(false);
-        }
+        // A lane holding a different copy of any executed script — mutated, or
+        // simply older than main — still delivers, and still runs main's code.
+        // Every source handed to the snapshot comes from the pinned origin
+        // commit, and the port exposes no way to read the lane's copy at all.
+        // This says nothing about the loader itself, which `package.json`
+        // resolves from the working tree and no snapshot imports.
+        let executedSources: ReadonlyMap<string, string> | undefined;
+        const exitCode = await runTrustedGithubWriteCommand('deliver', ['42'], {
+            resolveOriginMain: () => 'trusted-sha',
+            readOriginSource: (commit, candidate) => {
+                expect(commit).toBe('trusted-sha');
+                return `origin:${candidate}`;
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                executedSources = snapshot.sources;
+                return 0;
+            },
+        });
+
+        expect(exitCode).toBe(0);
+        expect([...(executedSources ?? new Map())]).toEqual(paths.map((path) => [path, `origin:${path}`]));
 
         let executedUncheckedDependency = false;
-        const sourceFor = (candidate: string) =>
-            candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted';
         await expect(
             runTrustedGithubWriteCommand('deliver', ['42'], {
                 resolveOriginMain: () => 'trusted-sha',
-                readLocalSource: sourceFor,
-                readOriginSource: (_commit, candidate) => sourceFor(candidate),
+                readOriginSource: (_commit, candidate) =>
+                    candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted',
                 executeSnapshot: async () => {
                     executedUncheckedDependency = true;
                     return 0;
@@ -123,10 +128,9 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
-    it('pins one origin commit and executes only the verified snapshot after local mutation', async () => {
+    it('pins one origin commit and executes only that snapshot while origin advances', async () => {
         const paths = trustedDependencyPaths('deliver');
         const trusted = new Map(paths.map((path) => [path, `trusted:${path}`]));
-        const local = new Map(trusted);
         const originReads: string[] = [];
         let resolves = 0;
         let liveOrigin = 'pinned-sha';
@@ -138,14 +142,12 @@ describe('package scripts and gitignore', () => {
                 liveOrigin = 'advanced-sha';
                 return resolved;
             },
-            readLocalSource: (path) => local.get(path) ?? '',
             readOriginSource: (commit, path) => {
                 expect(liveOrigin).toBe('advanced-sha');
                 originReads.push(`${commit}:${path}`);
                 return trusted.get(path) ?? '';
             },
             executeSnapshot: async (command, args, snapshot) => {
-                local.set('scripts/deliverPullRequest.ts', 'mutated-after-verification');
                 expect(command).toBe('deliver');
                 expect(args).toEqual(['2495']);
                 expect(snapshot.commit).toBe('pinned-sha');
@@ -157,6 +159,41 @@ describe('package scripts and gitignore', () => {
         expect(result).toBe(17);
         expect(resolves).toBe(1);
         expect(originReads).toEqual(paths.map((path) => `pinned-sha:${path}`));
+    });
+
+    it('hands the invocation to origin/main when the executing loader differs', async () => {
+        const origin = `loader ${REPOSITORY_ROOT_ENV}`;
+
+        expect(shouldHoistToOrigin(origin, origin)).toBe(false);
+        expect(shouldHoistToOrigin('lane loader', origin)).toBe(true);
+        // An origin copy that predates the root-from-caller contract derives the
+        // repository root from its own module URL, so hoisting to it out of a
+        // temporary directory would run git against that directory.
+        expect(shouldHoistToOrigin('lane loader', 'loader without the contract')).toBe(false);
+    });
+
+    it('runs the hoisted loader from origin bytes and tells it the repository root', async () => {
+        const seen: Array<{ source: string; argv: string[]; repositoryRoot: string }> = [];
+        const exitCode = await hoistToOriginBootstrap(
+            `origin loader ${REPOSITORY_ROOT_ENV}`,
+            '/repo/root',
+            ['deliver', '2633'],
+            (entryPath, argv, repositoryRoot) => {
+                seen.push({ source: readFileSync(entryPath, 'utf8'), argv, repositoryRoot });
+                return 7;
+            }
+        );
+
+        expect(exitCode).toBe(7);
+        expect(seen).toEqual([
+            { source: `origin loader ${REPOSITORY_ROOT_ENV}`, argv: ['deliver', '2633'], repositoryRoot: '/repo/root' },
+        ]);
+    });
+
+    it('keeps the loader inside its own trusted closure', () => {
+        for (const command of ['deliver', 'issue:reconcile'] as const) {
+            expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
+        }
     });
 
     it('cleans the exact-byte snapshot tree after success and failure', async () => {

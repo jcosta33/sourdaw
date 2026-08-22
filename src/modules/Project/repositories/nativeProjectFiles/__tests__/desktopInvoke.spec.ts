@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { desktopInvoke as bridgeInvoke } from '#/utils/desktopBridge';
 
-import { isNativeAvailable } from '../helpers';
 import { desktopInvoke } from '../desktopInvoke';
+import { isNativeAvailable } from '../helpers';
 
 vi.mock('#/utils/desktopBridge', () => ({
     desktopInvoke: vi.fn(),

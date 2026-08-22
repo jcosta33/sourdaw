@@ -43,8 +43,33 @@ export function parseArgs(args: string[]): Options {
     return { files, fix, full };
 }
 
-function runStep(label: string, args: string[]): void {
-    const result = spawnSync('pnpm', args, { stdio: 'inherit' });
+const ESLINT_HEAP_MIB = 6_144;
+const HEAP_FLAG = /--max[-_]old[-_]space[-_]size(?:=|\s+)(\d+)/;
+
+/**
+ * A cold `--cache` eslint run holds the whole type-aware program in one process
+ * and needs more heap than Node's default gives it on a small machine, so the
+ * run aborts with an OOM mark-compact failure instead of reporting lint results
+ * — a crash a caller tells from a pass only by reading the output.
+ *
+ * An ancestor that already set `--max-old-space-size` is obeyed rather than
+ * overridden. `pnpm guard` is such an ancestor, and V8 honours the last
+ * occurrence of a repeated flag, so appending a larger one would silently
+ * defeat exactly the ceiling the guard exists to impose. A run that needs more
+ * heap than the guard allows has to say so through the guard, not around it —
+ * today it cannot, which is #2678, and until that lands this command does not
+ * complete under the guard from a cold cache.
+ */
+export function eslintEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const current = source.NODE_OPTIONS ?? '';
+    if (HEAP_FLAG.test(current)) {
+        return source;
+    }
+    return { ...source, NODE_OPTIONS: `${current} --max-old-space-size=${ESLINT_HEAP_MIB}`.trim() };
+}
+
+function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
+    const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
     if (result.error !== undefined) {
         throw new Error(`${label} failed to start: ${result.error.message}`);
     }
@@ -67,17 +92,21 @@ function main(): number {
             ...(options.fix ? ['--fix'] : []),
             ...targets,
         ]);
-        runStep('eslint', [
-            'exec',
+        runStep(
             'eslint',
-            '--quiet',
-            '--concurrency=off',
-            '--cache',
-            '--cache-location',
-            'node_modules/.cache/eslint/',
-            ...(options.fix ? ['--fix'] : []),
-            ...eslintTargets,
-        ]);
+            [
+                'exec',
+                'eslint',
+                '--quiet',
+                '--concurrency=off',
+                '--cache',
+                '--cache-location',
+                'node_modules/.cache/eslint/',
+                ...(options.fix ? ['--fix'] : []),
+                ...eslintTargets,
+            ],
+            eslintEnvironment(process.env)
+        );
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
