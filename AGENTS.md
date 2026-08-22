@@ -42,8 +42,9 @@ change, conflicting evidence, or unresolved ambiguity. Escalate a blocked or dis
 then return to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated
 failure. Ignore an agent's own confidence.
 
-Diversify delegated PR work among equally adequate models at the cheapest adequate tier. When that
-set offers an alternative, assign reviewers a model different from the author's.
+For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
+Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
+author's.
 
 Every dispatch carries the objective, lane, branch, scope, exclusions, dependencies, acceptance
 conditions, and checks. Require back only status, changed paths, decisive evidence, and blockers.
@@ -57,8 +58,8 @@ Reviewers are blind. Each one gets the head, the diff, and exactly one stance â€
 reviewer's prose, the author's transcript, or the orchestrator's reasoning. Independence is the
 entire value, and a reviewer shown prior findings anchors to them.
 
-Derive stances from the risk surface. Default to three independent stances; use fewer for narrow
-low-risk PRs and more until every material risk is covered. The recurring surfaces are correctness,
+Assign one independent stance per material risk. Expect about three on a typical PR; never add a
+stance to meet that number or omit one to stay near it. The recurring surfaces are correctness,
 module boundaries and contracts, real-time audio safety, project integrity and undo, security and
 platform boundaries, and test validity.
 
