@@ -267,12 +267,21 @@ artifacts. Their loader, `scripts/trustedGithubWriteBootstrap.ts`, is the except
 resolves it from the working tree, and nothing in the snapshot imports it, so it is the one file in
 the closure that runs as the lane holds it.
 
-Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
-account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually
-does: it blocks deletion and non-fast-forward, forces a squashed pull request, and demands resolved
-threads — it requires no status check and no approving review, so it constrains how a change lands
-and judges nothing about the change itself. The affected local checks and the review below are the
-only gate a change passes, so a check you skipped is a check nobody ran.
+Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
+`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
+when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
+reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
+`gate`.
+
+Hosted checks are not a licence to skip the affected local checks before publishing: a red run
+costs a round trip, and the heavy lane does not run at all until a review approves. They are what
+catches the surfaces an affected-only run cannot see — the repository-wide gates, and the two native
+platform legs that no local machine builds.
+
+`main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
+forces a squashed pull request, and demands resolved threads. Whether it also requires `gate` is
+repository configuration, not something this file can promise.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it carries each package's build script because that name is not derivable from the

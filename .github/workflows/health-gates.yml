@@ -1,149 +1,449 @@
 name: Health gates
 
-# Runs on manual dispatch only.
+# Two lanes.
 #
-# Automatic triggers were removed because the account's Actions billing is
-# suspended: every run fails within seconds with "The job was not started
-# because recent account payments have failed or your spending limit needs to
-# be increased", producing a red check on every pull request that says nothing
-# about the code. A gate that always fails is worse than no gate — it trains
-# everyone to ignore it.
+# The fast lane runs on every push to a pull request. It is the whole of what a
+# reviewer needs to be reading compiled code: types, boundaries, lint, format,
+# artifact freshness, and the cheap inventory scripts, in about two minutes.
 #
-# The job definitions are kept rather than deleted, because they are the
-# record of what the gates actually run. To restore automatic CI once billing
-# is resolved, put back:
+# The heavy lane runs when a review is submitted with state `approved`, on the
+# nightly schedule, and on manual dispatch. Unit suite, build, Rust workspace,
+# collaboration server, end-to-end, and the two native platform legs. Deferring
+# it to approval is what keeps a rapid push-fix-push cycle from spending an hour
+# of runner time per commit; running the fast lane unconditionally is what stops
+# a reviewer from approving code that has never compiled.
 #
-#   on:
-#     pull_request:
-#     push:
-#       branches:
-#         - main
+# `gate` is the only job the branch ruleset requires by name. It depends on
+# every other job and passes when each either succeeded or was legitimately
+# skipped. A required check that names a filtered job directly would sit pending
+# forever on any pull request that skips it, so nothing else may be required and
+# `gate` must not be renamed.
 #
-# Until then the same checks run locally, and the equivalents are:
-#
-#   pnpm test:health-gates
-#   pnpm health:web:full
-#   pnpm health:server:full
-#
-# `health-gates-server.sh` covers the collaboration server build *and* the Rust
-# workspace (clippy --all-targets, then cargo test in debug). It is one script
-# on purpose: the local run and the CI run execute the same commands, so they
-# cannot drift.
-#
-# Note that a local run cannot catch a file that exists on disk but was never
-# committed. Verifying a merge target from a clean checkout — a fresh worktree
-# installed off the lockfile — is the substitute for that, and it is the one
-# thing local gates genuinely miss.
+# Runners are standard GitHub-hosted labels only. Public repositories bill
+# nothing for those; larger and GPU runners bill even here.
+
 on:
+  pull_request:
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    # Catches what the path filters and the approval gate leave unobserved.
+    # Nine repository-wide gates went red under exactly that blind spot while
+    # nothing ran automatically at all.
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: health-gates-${{ github.event.pull_request.number || github.ref }}
+  # Superseded pull-request runs are cancelled; a scheduled or dispatched run
+  # against main is not, because there is nothing newer to supersede it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: 24.19.0
+
 jobs:
-  web:
-    name: Web app health gates
+  decide:
+    name: Decide scope
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A review that requests changes or only comments starts nothing.
+    if: github.event_name != 'pull_request_review' || github.event.review.state == 'approved'
+    outputs:
+      heavy: ${{ steps.scope.outputs.heavy }}
+      rust: ${{ steps.scope.outputs.rust }}
+      server: ${{ steps.scope.outputs.server }}
+      e2e: ${{ steps.scope.outputs.e2e }}
+      web: ${{ steps.scope.outputs.web }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
-          node-version: 24.19.0
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'scripts/health-gates-server.sh'
+            server:
+              - 'server/**'
+              - 'scripts/health-gates-server.sh'
+            e2e:
+              - 'src/**'
+              - 'public/**'
+              - 'tests/e2e/**'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            web:
+              - 'src/**'
+              - 'public/**'
+              - 'electron/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'vite.config.ts'
+              - 'tsconfig*.json'
+
+      - name: Resolve scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          RUST: ${{ steps.filter.outputs.rust }}
+          SERVER: ${{ steps.filter.outputs.server }}
+          E2E: ${{ steps.filter.outputs.e2e }}
+          WEB: ${{ steps.filter.outputs.web }}
+        run: |
+          set -euo pipefail
+          # A scheduled or dispatched run answers "is main healthy", which no
+          # pull request's changed paths can narrow — every leg runs.
+          if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
+            printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          heavy=false
+          if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
+          {
+            printf 'heavy=%s\n' "$heavy"
+            printf 'rust=%s\n' "$RUST"
+            printf 'server=%s\n' "$SERVER"
+            printf 'e2e=%s\n' "$E2E"
+            printf 'web=%s\n' "$WEB"
+          } >> "$GITHUB_OUTPUT"
+
+  fast:
+    name: Fast lane
+    needs: decide
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Enable Corepack
         run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test health gate infrastructure
+      # Cheap and unconditional. `wasm:verify` rebuilds nothing — it compares
+      # recorded hashes — and a stale committed artifact is exactly what a path
+      # filter would hide.
+      - name: Artifact freshness
+        run: pnpm wasm:verify
+
+      - name: Module boundaries
+        run: pnpm deps:validate
+
+      - name: App types
+        run: pnpm typecheck
+
+      - name: Test types
+        run: pnpm typecheck:test
+
+      - name: Script types
+        run: pnpm typecheck:scripts
+
+      - name: End-to-end types
+        run: pnpm typecheck:e2e
+
+      - name: Desktop shell types
+        run: pnpm typecheck:electron
+
+      - name: Lint
+        run: pnpm lint:full
+
+      - name: Format
+        run: pnpm exec prettier --check "src/**/*.{ts,tsx}" "scripts/**/*.ts" "electron/**/*.ts"
+
+      - name: Command argument schemas
+        run: pnpm test:command-schema
+
+      - name: Release inventory
+        run: pnpm test:release-inventory
+
+      - name: Test collection scope
+        run: pnpm test:collection-scope
+
+      - name: Barrel mock coverage
+        run: pnpm test:barrel-mocks
+
+      - name: Health gate infrastructure
         run: pnpm test:health-gates
 
-      - name: Web health gates
-        run: pnpm health:web:full
-
-  server:
-    name: Collaboration server and Rust workspace health gates
+  unit:
+    name: Unit suite ${{ matrix.shard }}/4
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.19.0
-          cache: npm
-          cache-dependency-path: server/package-lock.json
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Enable Corepack
         run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The suite is dominated by jsdom construction and module loading rather
+      # than assertions, so worker count is the lever that matters. The local
+      # default of two exists for the agent resource guard, not for CI.
+      - name: Run shard
+        env:
+          VITEST_MAX_WORKERS: 4
+        run: pnpm test:run --shard=${{ matrix.shard }}/4
+
+  build:
+    name: Production build
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+  rust:
+    name: Rust workspace and collaboration server
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
 
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
       - name: Install ALSA development headers
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       # No version is pinned here on purpose: `rustup show` reads
-      # rust-toolchain.toml, so the toolchain cannot drift from what a local
-      # run uses.
+      # rust-toolchain.toml, so the toolchain cannot drift from a local run.
       - name: Install the pinned Rust toolchain
         run: rustup show
 
       - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install server dependencies
         working-directory: server
         run: npm ci
 
-      # Builds the collaboration server and runs the Rust workspace gate
-      # (clippy --all-targets, then cargo test in debug). One script so the
-      # local run and the CI run cannot drift.
+      # One script so the local run and the CI run cannot drift. It keeps the
+      # Rust legs in debug on purpose: `assert_no_alloc`'s `disable_release`
+      # feature is on by default, so a release build turns every real-time
+      # allocation guard into a no-op that passes while proving nothing.
       - name: Server and Rust workspace health gates
         run: pnpm health:server:full
 
-  # E2E gate. Inert while this workflow is `workflow_dispatch`-only (Actions
-  # billing is suspended — see the header comment). To activate, restore the
-  # pull_request / push triggers named there; this job then runs the full
-  # Playwright suite via the playwright.config.ts `webServer` (auto-starts Vite
-  # on :5173), --workers=1 for determinism, and fails the build on any red spec.
-  # The suite must be deterministic and green before this gates merges — gating
-  # a flaky or red suite trains everyone to ignore it.
-  e2e:
-    name: End-to-end health gate
-    runs-on: ubuntu-latest
+  native-macos:
+    name: Native audio backend (macOS)
+    needs: decide
+    # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
+    # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
+    # the only place it compiles, and public repositories get those free.
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.rust == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.19.0
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Test the native crate
+        run: cargo test --package sourdaw-native
+
+  native-windows:
+    name: Windows device layer
+    needs: decide
+    # The WASAPI backend under crates/daw-engine/src/device/wasapi/ compiles
+    # only for the Windows target: elsewhere `cfg(any(windows, test))` reaches
+    # its pure policy half and never the windows-crate integration code. A
+    # native runner replaces the cross-compilation oracle #2253 asked for.
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.rust == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Compile-verify the device layer
+        run: cargo check --package daw-engine
+
+  e2e:
+    name: End-to-end ${{ matrix.shard }}/8
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Playwright E2E suite
-        run: pnpm test:e2e
+      # Without this the suite cannot start: nothing else in the repository
+      # installs a browser, and there is no postinstall hook that would.
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Upload Playwright report
+      - name: Run shard
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/8 --reporter=blob
+
+      - name: Upload blob report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+
+  e2e-report:
+    name: End-to-end report
+    needs: e2e
+    if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download blob reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: e2e-blob-*
+          path: all-blob-reports
+          merge-multiple: true
+
+      - name: Merge into one report
+        run: pnpm exec playwright merge-reports --reporter=html all-blob-reports
+
+      - name: Upload report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  gate:
+    name: Health gates
+    # The single required status check. It runs whatever happened upstream, so
+    # a pull request that legitimately skips every heavy leg still reports a
+    # conclusion instead of sitting pending.
+    if: always()
+    needs:
+      - decide
+      - fast
+      - unit
+      - build
+      - rust
+      - native-macos
+      - native-windows
+      - e2e
+      - e2e-report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to have succeeded or been skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RESULTS"
+          failed=$(printf '%s' "$RESULTS" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key): \(.value.result)"')
+          if [ -n "$failed" ]; then
+            printf 'failing jobs:\n%s\n' "$failed"
+            exit 1
+          fi
+          printf 'every job succeeded or was skipped\n'
