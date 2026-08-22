@@ -38,6 +38,7 @@ import {
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
+import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -228,6 +229,8 @@ fn curve(key: u32) {
             'crates/daw-dsp/src/grand_boule/coupled_strings.rs',
             `//! No body or soundboard property enters string coefficient derivation.
 struct PolarizationDecay { prompt_hz: f32, aftersound_hz: f32 }
+const POLARIZATION_TRANSFER_GAIN: f32 = 30.0;
+const AFTERSOUND_MIX: f32 = 0.7;
 fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
     let register = note_frequency_hz;
     PolarizationDecay {
@@ -261,7 +264,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/AudioEngine/workers/grandBouleEngineWorker.ts', 'export const worker = 1;'],
         ['src/modules/AudioEngine/worklets/grandBouleEngineCore.ts', 'export const core = 1;'],
         ['src/modules/AudioEngine/worklets/grandBouleProcessor.ts', 'export const processor = 1;'],
-        ['.agents/decisions/0035-readmit-grand-boule.md', '# Grand Boule admission'],
+        ['.agents/decisions/0036-readmit-grand-boule.md', '# Grand Boule admission'],
         ['src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts', 'export const presets = [];'],
         ['src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx', 'export const tab = 1;'],
         [
@@ -280,11 +283,18 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/app/bootstrap.ts', 'export const bootstrap = 1;'],
         ['src/app/getProductionCommandHandlerMaps.ts', 'export const handlers = 1;'],
         ['src/utils/handlerContract.ts', 'export type Action = unknown;'],
+        ['src/modules/Command/useCases/versionedCommandArgumentKeys.ts', 'export const keys = [];'],
+        ['src/modules/Arrangement/useCases/index.ts', 'export const arrangement = 1;'],
         ['src/app/prepareOfflineDeviceSetup.ts', 'export const offline = 1;'],
         ['src/modules/AudioEngine/useCases/buildDeviceChain.ts', 'export const chain = 1;'],
         ['src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts', 'export const prepare = 1;'],
         ['crates/daw-dsp/benches/quantum.rs', 'fn grand_boule() {}'],
         ['crates/daw-dsp/benches/wasm/deviceRecipes.js', 'export const grandBoule = 1;'],
+        ['crates/daw-dsp/benches/wasm/quantumCostProcessor.js', 'export const processor = 1;'],
+        ['crates/daw-dsp/benches/wasm/run.mjs', 'export const runner = 1;'],
+        ['crates/daw-dsp/benches/wasm/renderTable.mjs', 'export const renderer = 1;'],
+        ['crates/daw-dsp/benches/quantum-cost-table.json', '{}'],
+        ['crates/daw-dsp/benches/quantum-cost-table.md', '# retained measurement'],
         ['crates/daw-dsp/tests/quantum_bench_census.rs', 'fn census() {}'],
         ['scripts/checkReleaseInventory.ts', 'export const check = 1;'],
     ] as const) {
@@ -327,31 +337,62 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     );
     const detail = 'active_voices() = 64, expected 64 from 64 note-ons, output RMS 1.000e-1';
     const data = {
+        machine: {
+            cpu: 'Fixture CPU',
+            hardwareModel: 'Fixture Model',
+            performanceCores: '4',
+            efficiencyCores: '0',
+            memoryGb: 16,
+            os: 'Fixture OS',
+            arch: 'arm64',
+            gitBase: 'fixture-base',
+            workingTree: 'clean',
+            logicalCores: 4,
+            gitSha: revision,
+            takenAt: '2026-08-23T00:00:00.000Z',
+        },
         sourceRevision: revision,
         sourceDigests,
-        machine: { gitSha: revision, workingTree: 'clean' },
+        browser: 'fixture-browser',
+        userAgent: 'fixture-agent',
         budgetMs: 2.666,
-        referenceProject: { audioWorstQuantumUpperMs: 2.1, workerMedianMs: 2.2 },
+        options: { warmupQuanta: 4, measureQuanta: 8 },
+        load: { before: 1.25, after: 1.5 },
+        referenceProject: {
+            audioThread: [['grand_boule_ring_consumer', 1]],
+            worker: [['grand_boule', 1]],
+            audioFloorMs: 0.1,
+            audioFloorPartialFrom: [],
+            audioUpperBoundMs: 1,
+            audioWorstQuantumUpperMs: 2.1,
+            audioMedianMs: 0.9,
+            meanLoad: 1.5,
+            workerFloorMs: 1.8,
+            workerMedianMs: 2.2,
+        },
         rows: [
             {
                 id: 'grand_boule',
+                label: 'Grand Boule (64 voices) — production Worker cost site',
+                note: 'fixture',
                 costSite: 'worker',
                 warmVerify: { ok: true, detail },
                 lateVerify: { ok: true, detail },
+                stats: { median: 2.125, floor: 1.875, min: 1.8 },
+                load: { mean: 1.5 },
+                zeroFraction: 0,
+                stationary: true,
+                floorMeasurable: true,
+                dutyCycle: null,
+                calibration: { segments: 1, medianTicksPerMs: 1000, spreadPct: 0 },
+                wallRatio: 0.8,
             },
         ],
     };
     const jsonPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.json');
     const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
     writeFileSync(jsonPath, JSON.stringify(data));
-    writeFileSync(
-        markdownPath,
-        [
-            revision,
-            detail,
-            ...Object.entries(sourceDigests).flatMap(([path, digest]) => [path, `sha256:${digest}`]),
-        ].join('\n')
-    );
+    writeFileSync(markdownPath, renderGeneratedRegion(data));
     return { jsonPath, revision };
 }
 
@@ -894,13 +935,23 @@ describe('release inventory', () => {
 
             const representatives = [
                 'crates/daw-dsp/src/grand_boule/engine.rs',
-                '.agents/decisions/0035-readmit-grand-boule.md',
+                '.agents/decisions/0036-readmit-grand-boule.md',
                 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
                 'src/infra/release/deviceReleaseAdmission.ts',
                 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
                 'src/modules/GrandBoule/models/GrandBouleConfig.ts',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
                 'src/app/prepareOfflineDeviceSetup.ts',
                 'crates/daw-dsp/benches/quantum.rs',
+                'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
+                'crates/daw-dsp/tests/quantum_bench_census.rs',
+                'scripts/checkReleaseInventory.ts',
             ];
             writeGrandBouleReleaseFixture(root);
             const baseline = grandBouleReleaseInventoryContract(root).digests;
@@ -909,9 +960,15 @@ describe('release inventory', () => {
                 const original = readFileSync(absolute, 'utf8');
                 writeFileSync(absolute, `${original}\nmutation-${index}`);
                 const changed = grandBouleReleaseInventoryContract(root).digests;
+                const boundaryIndex = GRAND_BOULE_RELEASE_REGISTRY.boundaries.findIndex(({ gitPathspecs }) =>
+                    gitPathspecs.some((pathspec) => {
+                        const normalized = pathspec.replace(/^:\(glob\)/u, '').replace(/\/\*\*$/u, '');
+                        return path === normalized || path.startsWith(`${normalized}/`);
+                    })
+                );
                 expect(
                     changed.flatMap((digest, changedIndex) => (digest === baseline[changedIndex] ? [] : [changedIndex]))
-                ).toEqual([index]);
+                ).toEqual([boundaryIndex]);
                 writeFileSync(absolute, original);
             }
         } finally {
@@ -953,6 +1010,38 @@ describe('release inventory', () => {
             changed.sourceDigests['crates/daw-dsp/benches/quantum.rs'] = '0'.repeat(64);
             writeFileSync(jsonPath, JSON.stringify(changed));
             expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('source digest drifted');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects stale or decoy rounded measurement numbers in the generated Markdown region', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-render-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const originalMarkdown = readFileSync(markdownPath, 'utf8');
+
+            writeFileSync(
+                markdownPath,
+                originalMarkdown.replace(
+                    '| Audio thread, worst quantum, upper bound | 2.1 |',
+                    '| Audio thread, worst quantum, upper bound | 9.9 |'
+                )
+            );
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'generated region does not match JSON rendering'
+            );
+
+            writeFileSync(markdownPath, originalMarkdown);
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{ stats: { median: number } }>;
+            };
+            data.rows[0]!.stats.median = 1.125;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'generated region does not match JSON rendering'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

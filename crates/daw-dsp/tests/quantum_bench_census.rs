@@ -354,6 +354,8 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
         "the browser WASM processor must import GrandBouleInstance"
     );
     for required in [
+        "    'grand_boule',",
+        "grand_boule: 'worker'",
         "wanted('grand_boule')",
         "new dsp.GrandBouleInstance(SAMPLE_RATE, 64)",
     ] {

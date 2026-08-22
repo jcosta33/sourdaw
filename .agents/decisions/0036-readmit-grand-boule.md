@@ -1,6 +1,6 @@
 ---
 type: adr
-id: 0035
+id: 0036
 title: Readmit Grand Boule with a finite FIR body
 status: accepted
 date: 2026-08-22
@@ -14,6 +14,7 @@ sources:
     - https://www.acs.psu.edu/drussell/publications/pianohammer.pdf
     - https://www.speech.kth.se/prod/publications/files/qpsr/1993/1993_34_4_015-022.pdf
     - https://www.ioc.ee/~stulov/actaa2005.pdf
+    - 'Gabriel Weinreich, “Coupled piano strings,” JASA 62(6), 1474-1484 (1977)'
     - https://copyright.gov/comp3/chap300/ch300-copyrightable-authorship.pdf#page=22
     - crates/daw-dsp/src/grand_boule/mod.rs
     - crates/daw-dsp/src/grand_boule/parameters.rs
@@ -28,7 +29,7 @@ sources:
     - scripts/checkReleaseInventory.ts
 ---
 
-# 0035 - Readmit Grand Boule with a finite FIR body
+# 0036 - Readmit Grand Boule with a finite FIR body
 
 ## Context
 
@@ -100,11 +101,12 @@ separately rather than swept into the reauthorship claim.
 
 ### Retained scientific inputs
 
-| Input                                                                 | Exact source                                                                                                                                 | Engineering reuse basis                                                                                                                                                                                                              |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Hammer contact-spectrum anchors at low/high register and strike speed | D. A. Russell and T. D. Rossing, “Testing the Nonlinearity of Piano Hammers Using Residual Shock Spectra,” _Acustica_ 84(5), 967-975 (1998). | Factual scientific measurements are used as interpolation anchors in `voice.rs`. The interpolation, MIDI mapping, filter, and source code are project-authored; no source code or table expression was copied.                       |
-| Precursor and other structure-borne mechanical-transient guidance     | A. Askenfelt, “Observations on the Transient Components of the Piano Tone,” _STL-QPSR_ 34(4), 15-22 (1993).                                  | The observed transient categories and timing relationship are scientific guidance. Burst durations, levels, filters, pooling, and code in `mechanical_noise.rs` are project-authored; no source code or table expression was copied. |
-| Simplified three-parameter hereditary hammer relation                 | A. Stulov, “Experimental and Computational Studies of Piano Hammers,” _Acta Acustica united with Acustica_ 91(6), 1086-1097 (2005).          | The published scientific equation is implemented in project-authored Rust in `hammer.rs`; no source code or table expression was copied.                                                                                             |
+| Input                                                                                  | Exact source                                                                                                                                 | Engineering reuse basis                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hammer contact-spectrum anchors at low/high register and strike speed                  | D. A. Russell and T. D. Rossing, “Testing the Nonlinearity of Piano Hammers Using Residual Shock Spectra,” _Acustica_ 84(5), 967-975 (1998). | Factual scientific measurements are used as interpolation anchors in `voice.rs`. The interpolation, MIDI mapping, filter, and source code are project-authored; no source code or table expression was copied.                                                                                       |
+| Precursor and other structure-borne mechanical-transient guidance                      | A. Askenfelt, “Observations on the Transient Components of the Piano Tone,” _STL-QPSR_ 34(4), 15-22 (1993).                                  | The observed transient categories and timing relationship are scientific guidance. Burst durations, levels, filters, pooling, and code in `mechanical_noise.rs` are project-authored; no source code or table expression was copied.                                                                 |
+| Simplified three-parameter hereditary hammer relation                                  | A. Stulov, “Experimental and Computational Studies of Piano Hammers,” _Acta Acustica united with Acustica_ 91(6), 1086-1097 (2005).          | The published scientific equation is implemented in project-authored Rust in `hammer.rs`; no source code or table expression was copied.                                                                                                                                                             |
+| Coupled-string aftersound inputs (`BRIDGE_COUPLING_GAIN = 30`, `HORIZONTAL_MIX = 0.7`) | Gabriel Weinreich, “Coupled piano strings,” _JASA_ 62(6), 1474-1484 (1977).                                                                  | Factual scientific measurements and engineering inputs are retained as anchors in the project-authored aftersound implementation. The transfer, mix, naming, and source code remain project-authored; these values are not independently revoiced and no source code or table expression was copied. |
 
 This engineering reuse classification follows the distinction between copyrightable expression
 and ideas, methods, principles, discoveries, and facts described in U.S. Copyright Office

@@ -647,7 +647,7 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "crates/daw-dsp/src/grand_boule/**",
-                ".agents/decisions/0035-readmit-grand-boule.md",
+                ".agents/decisions/0036-readmit-grand-boule.md",
                 "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
                 "src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
@@ -664,6 +664,8 @@
                 "src/modules/AudioEngine/worklets/grandBoule*.ts",
                 "src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts",
                 "src/modules/GrandBoule/**",
+                "src/modules/Command/useCases/versionedCommandArgumentKeys.ts",
+                "src/modules/Arrangement/useCases/index.ts",
                 "src/app/bootstrap.ts",
                 "src/app/getProductionCommandHandlerMaps.ts",
                 "src/utils/handlerContract.ts",
@@ -672,39 +674,44 @@
                 "src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts",
                 "crates/daw-dsp/benches/quantum.rs",
                 "crates/daw-dsp/benches/wasm/deviceRecipes.js",
+                "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
+                "crates/daw-dsp/benches/wasm/run.mjs",
+                "crates/daw-dsp/benches/wasm/renderTable.mjs",
+                "crates/daw-dsp/benches/quantum-cost-table.json",
+                "crates/daw-dsp/benches/quantum-cost-table.md",
                 "crates/daw-dsp/tests/quantum_bench_census.rs",
                 "scripts/checkReleaseInventory.ts"
             ],
             "sources": [
                 "crates/daw-dsp/src/grand_boule/",
-                ".agents/decisions/0035-readmit-grand-boule.md",
+                ".agents/decisions/0036-readmit-grand-boule.md",
                 "Grand Boule discovery, catalog, factory, and release-admission source",
                 "Grand Boule AudioEngine live host, registry, scheduling, worker, and worklet source",
                 "Grand Boule project-state action, hydration, and offline-composition source",
-                "Grand Boule native/browser measurement and release-checker source",
+                "Grand Boule browser runner, gates, reference population, processor, recipe, renderer, native benchmark, census, retained JSON/Markdown evidence, and release-checker source",
                 "distributed daw-dsp WASM glue, declarations, mirrors, and binary"
             ],
             "revisions": [
                 "current tracked Rust source",
-                "current tracked ADR 0035 source-admission record",
+                "current tracked ADR 0036 source-admission record",
                 "current tracked discovery, factory, and release-admission boundaries",
                 "current tracked live host, scheduling, action, hydration, and offline boundaries",
-                "current tracked benchmark and release-proof source"
+                "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
                 "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
-                "tracked-set-sha256:63841fbb891bc172b26248267e5097173ca56817666e2b389fbd84d789d0f6cc:grand-boule-admission-decision",
+                "tracked-set-sha256:a35da9a5010b35d6e8efb4f727ae2bdb82cefdcc74d9ebca29f67f96a28be5c8:grand-boule-admission-decision",
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
-                "tracked-set-sha256:7993111c98213f10b2cd9218c5a1b43df878044b179d21a39d45873548c7a1c6:grand-boule-project-state",
+                "tracked-set-sha256:2d4b32be7355fc9e0c4b1c8c4480cd055da6ae79b34dadf37066dcbfd3850267:grand-boule-project-state",
                 "tracked-set-sha256:3707375707b26f2d1b256521af91f71e40c8db6316ea82a0b328a61a2e0fad0b:grand-boule-offline-composition",
-                "tracked-set-sha256:bc76920f0ccb34a99a28894699663ff35c4abd52284aa2093c4c8940913916cd:grand-boule-release-proof"
+                "tracked-set-sha256:e380c1badf499d7cbfe3a13e258c208632b84dd0141ca8dcd0bf49d265d7573f:grand-boule-release-proof"
             ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADR 0035 records the dated source-admission record, finite FIR body design-around, frequency-only prompt/aftersound decay curves, independently revoiced project parameters, and engineering-not-legal-certainty boundary.",
+                "ADR 0036 records the dated source-admission record, finite FIR body design-around, frequency-only prompt/aftersound decay curves, retained Weinreich aftersound inputs, independently authored project parameters, and engineering-not-legal-certainty boundary.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
                 "The release checker pins admitted bytes and rejects legacy literals, including branded morph aliases; this constrains source identity and does not prove authorship."
             ],

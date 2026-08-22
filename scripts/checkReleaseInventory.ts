@@ -12,6 +12,7 @@ import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
+import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 
 export const RETENTION_CLASSES = [
     'keep',
@@ -519,7 +520,8 @@ export function assertGrandBouleRustWasmBoundary(root: string): void {
 
 export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
     'attack_sampler.rs': 'project-authored implementation',
-    'coupled_strings.rs': 'project-authored polarization curves using standard modal-decay concepts',
+    'coupled_strings.rs':
+        'project-authored aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
     'duplex.rs': 'project-authored implementation using standard duplex-string acoustics',
     'engine.rs': 'project-authored orchestration and product voicing',
     'hammer.rs': 'project-authored implementation of the cited Stulov scientific relation',
@@ -627,6 +629,8 @@ export function assertGrandBouleDesignAroundSource(root: string): void {
         'fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay',
         'prompt_hz: 0.58 + 0.72 * register + 7.2 * register.powf(2.4)',
         'aftersound_hz: 0.012 + 0.025 * register + 0.105 * register * register',
+        'const POLARIZATION_TRANSFER_GAIN: f32 = 30.0;',
+        'const AFTERSOUND_MIX: f32 = 0.7;',
         'No body or soundboard property enters string coefficient',
     ]) {
         if (!coupledStrings.includes(required)) {
@@ -797,6 +801,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         throw new Error('Grand Boule measured reference project exceeds its render budget');
     }
     const markdown = readFileSync(resolve(root, markdownPath), 'utf8');
+    assertGeneratedRegionMatches(markdown, data);
     for (const required of [revision, row.warmVerify.detail!, row.lateVerify.detail!]) {
         if (!markdown.includes(required)) {
             throw new Error(`Grand Boule JSON and Markdown measurement tables disagree on ${required}`);
@@ -839,8 +844,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             digestLabel: 'grand-boule-native-rust',
         },
         {
-            paths: ['.agents/decisions/0035-readmit-grand-boule.md'],
-            gitPathspecs: ['.agents/decisions/0035-readmit-grand-boule.md'],
+            paths: ['.agents/decisions/0036-readmit-grand-boule.md'],
+            gitPathspecs: ['.agents/decisions/0036-readmit-grand-boule.md'],
             digestLabel: 'grand-boule-admission-decision',
         },
         {
@@ -897,12 +902,16 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
         {
             paths: [
                 'src/modules/GrandBoule/**',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
                 'src/app/bootstrap.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
             gitPathspecs: [
                 'src/modules/GrandBoule',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
                 'src/app/bootstrap.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
@@ -926,12 +935,22 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             paths: [
                 'crates/daw-dsp/benches/quantum.rs',
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
                 'crates/daw-dsp/tests/quantum_bench_census.rs',
                 'scripts/checkReleaseInventory.ts',
             ],
             gitPathspecs: [
                 'crates/daw-dsp/benches/quantum.rs',
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
                 'crates/daw-dsp/tests/quantum_bench_census.rs',
                 'scripts/checkReleaseInventory.ts',
             ],
@@ -963,19 +982,19 @@ export function grandBouleReleaseInventoryContract(
         paths: GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ paths }) => [...paths]),
         sources: [
             'crates/daw-dsp/src/grand_boule/',
-            '.agents/decisions/0035-readmit-grand-boule.md',
+            '.agents/decisions/0036-readmit-grand-boule.md',
             'Grand Boule discovery, catalog, factory, and release-admission source',
             'Grand Boule AudioEngine live host, registry, scheduling, worker, and worklet source',
             'Grand Boule project-state action, hydration, and offline-composition source',
-            'Grand Boule native/browser measurement and release-checker source',
+            'Grand Boule browser runner, gates, reference population, processor, recipe, renderer, native benchmark, census, retained JSON/Markdown evidence, and release-checker source',
             'distributed daw-dsp WASM glue, declarations, mirrors, and binary',
         ],
         revisions: [
             'current tracked Rust source',
-            'current tracked ADR 0035 source-admission record',
+            'current tracked ADR 0036 source-admission record',
             'current tracked discovery, factory, and release-admission boundaries',
             'current tracked live host, scheduling, action, hydration, and offline boundaries',
-            'current tracked benchmark and release-proof source',
+            'current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners',
         ],
         digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
             ({ gitPathspecs, digestLabel }) =>
